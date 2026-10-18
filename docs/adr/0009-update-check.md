@@ -21,7 +21,9 @@ So a reload can serve a cached `index.html` for up to about 10 minutes, which st
 - Every build gets a build ID: the first 12 characters of `GITHUB_SHA` in CI, `local-<base36 timestamp>` for local builds, and `dev` under `npm run dev`.
 - `vite.config.ts` injects `__APP_VERSION__` (the `package.json` version) and `__BUILD_ID__` with `define`.
 - A build-only inline Vite plugin writes `dist/version.json` as `{ "version", "buildId" }`.
+- The check reads only `buildId`. `version` is there for humans; the check never reads or trusts it.
 - The check compares build IDs, not versions. Version bumps can be deferred, so a deploy can ship with an unchanged version.
+- The build fails unless the `package.json` version is SemVer 2.0.0 (the semver.org regex: no leading zeros in numeric identifiers, no empty identifiers) of at most 32 characters, and the build ID matches `[A-Za-z0-9._-]{1,64}`.
 
 **The check.**
 
@@ -39,7 +41,7 @@ So a reload can serve a cached `index.html` for up to about 10 minutes, which st
 - Ending a check (settle or dispose) always aborts its request, so a rejected or unread body cannot keep downloading.
 - There are no timers or polling. Checks start only from the title screen opening and the wake events above.
 - Offline, timeout, or a bad response: it stays silent and shows nothing.
-- `version.json` is treated as a bad response unless the body is at most 1024 bytes, `version` is SemVer of at most 32 characters, and `buildId` matches `[A-Za-z0-9._-]{1,64}`. The build fails if its own version or build ID breaks these rules.
+- `version.json` is treated as a bad response unless the body is at most 1024 bytes of a JSON object whose `buildId` matches `[A-Za-z0-9._-]{1,64}`. Every other field, including `version`, is ignored and never trusted.
 - Under `npm run dev` it makes no request.
 
 **The prompt.**

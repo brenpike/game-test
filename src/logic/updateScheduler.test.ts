@@ -10,8 +10,8 @@ import {
 } from './updateScheduler';
 
 const CURRENT = 'current-build';
-const REMOTE: BuildManifest = { version: '0.5.0', buildId: 'remote-build' };
-const NEWER: BuildManifest = { version: '0.6.0', buildId: 'newer-build' };
+const REMOTE: BuildManifest = { buildId: 'remote-build' };
+const NEWER: BuildManifest = { buildId: 'newer-build' };
 
 /** Applies events in order from a starting state and returns every step. */
 function runEvents(start: UpdateSchedulerState, events: readonly UpdateSchedulerEvent[]): UpdateSchedulerStep[] {

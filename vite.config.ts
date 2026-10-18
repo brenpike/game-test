@@ -35,7 +35,9 @@ export default defineConfig(({ command }) => {
   const appVersion = readPackageVersion();
   const buildId = resolveBuildId(command);
   if (!isAppVersion(appVersion)) {
-    throw new Error(`package.json version ${JSON.stringify(appVersion)} must be SemVer of at most 32 characters.`);
+    throw new Error(
+      `package.json version ${JSON.stringify(appVersion)} must be SemVer 2.0.0 (semver.org grammar) of at most 32 characters.`,
+    );
   }
   if (!isBuildId(buildId)) {
     throw new Error(`Build id ${JSON.stringify(buildId)} must match [A-Za-z0-9._-]{1,64}.`);

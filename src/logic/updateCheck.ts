@@ -1,6 +1,5 @@
-/** Build identity published next to the app as `version.json`. */
+/** The part of `version.json` the update check trusts: only the build id. */
 export interface BuildManifest {
-  readonly version: string;
   readonly buildId: string;
 }
 
@@ -24,25 +23,32 @@ const SHORT_BUILD_ID_LENGTH = 7;
 
 const BUILD_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 const APP_VERSION_MAX_LENGTH = 32;
-const APP_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+// https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
+const APP_VERSION_PATTERN =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
 /** True for a build id of 1 to 64 characters from `[A-Za-z0-9._-]`. */
 export function isBuildId(value: unknown): value is string {
   return typeof value === 'string' && BUILD_ID_PATTERN.test(value);
 }
 
-/** True for a SemVer version string of at most 32 characters. */
+/**
+ * True for a SemVer 2.0.0 version string (semver.org grammar) of at most 32 characters.
+ * A build-time check used by `vite.config.ts`; the runtime never validates a remote version.
+ */
 export function isAppVersion(value: unknown): value is string {
   return typeof value === 'string' && value.length <= APP_VERSION_MAX_LENGTH && APP_VERSION_PATTERN.test(value);
 }
 
-/** Validates untrusted manifest JSON; null when it is not a usable manifest. Extra fields are ignored. */
+/**
+ * Reads the trusted build id from untrusted manifest JSON; null when it is not a non-array object
+ * with a valid `buildId`. Every other field, including `version`, is ignored and never trusted.
+ */
 export function parseBuildManifest(data: unknown): BuildManifest | null {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) return null;
-  const record = data as Record<string, unknown>;
-  const { version, buildId } = record;
-  if (!isAppVersion(version) || !isBuildId(buildId)) return null;
-  return { version, buildId };
+  const { buildId } = data as Record<string, unknown>;
+  if (!isBuildId(buildId)) return null;
+  return { buildId };
 }
 
 /** Parses untrusted manifest text; null when it is too long, not JSON, or not a usable manifest. */
