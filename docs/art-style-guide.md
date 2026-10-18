@@ -780,7 +780,7 @@ Character creator option (PRD F2). Layer 8. Colours come from the spot table in 
 | Dots | Body: (-8,-4) r 2.2, (-18,-9) r 2.0, (-22,6) r 2.4. Tail: s 0.15 v -0.4 r 2.2, s 0.35 v +0.35 r 2.0, s 0.55 v -0.3 r 1.8, s 0.75 v +0.2 r 1.5. | `derived (provisional)` |
 | Patches | Body: (-14,-3) ellipse 6 x 4.5 rotated -0.3, and (-26,7) ellipse 5 x 3.5. Tail: s 0.45 v -0.2 ellipse 5 x 3.5. | `derived (provisional)` |
 
-Spots draw on top of any Dream colour (PRD F14). Wild's own speckles are its morph cue and stay. Player spots add to them. Source: `derived (provisional)`.
+Spots draw on top of any Dream colour (PRD F14). Wild's own speckles and flecks are a morph extra (3b), not a spot option. On a Wild with no Dream colour they stay, and player spots add to them. While a Dream colour is on, they are off with the other morph extras (6h); only the player spots show. Source: `derived (provisional)`.
 
 ### 6o. Sizes
 
@@ -1129,7 +1129,7 @@ Everything is soft, slow, and looping. Times are periods (one full cycle).
 | Leg-loss puff | 0.5 s. The puff scales 0.6 to 1.3 while alpha goes 1 to 0. Twinkles drift 10 px out and fade. | Puff at scale 1.0 and alpha 0.9 for 0.5 s, then gone. Twinkles still. |
 | Regrowth | Fill follows progress (about 20 s per leg, tuning). Front twinkles bob +/-1.5 px every 1.2 s. At full, three twinkles burst 6 px out over 0.4 s. | Static twinkles, no burst. |
 | Protected ring | The glint arc travels once around every 2.4 s. Ring alpha is constant. | Glint fixed at the upper-left. |
-| Leg-count wobble (A9) | Extra tilt +0.05 rad per lost leg (up to +0.15 at one leg) on the 1.2 s swim cycle. | None. The slowdown stays. |
+| Leg-count wobble (A9) | Extra tilt +0.05 rad per lost leg on the 1.2 s swim cycle: 0 with four legs, +0.05 with three, +0.10 with two, +0.15 with one leg left (three lost). | None. The slowdown stays. |
 | Hint sparkle | Fades in over 0.4 s on entering range. Bobs +/-2 px over 2.4 s. Rotates +/-0.15 rad. Fades out over 0.4 s on leaving. | No bob or spin. |
 | Dash pot wobble | +/-0.08 rad, two swings over 0.4 s. | None. |
 | Crumble | Shards move 6 to 10 px out and sink 16 px, fading over 0.6 s. | Three still shards for 0.6 s. |
@@ -1176,7 +1176,7 @@ Target: WCAG 2.1 AA. Values below are `derived (provisional)` unless noted.
 | Protected ring | The better line is at least 4.19 at every sample (6q) | Ink or white, whichever is better | `derived (provisional)` |
 | Hint star | White alone is 1.56 on shallow water; white vs deep is 7.01 | Ink carries on shallow water; white carries on deep | `derived (provisional)` |
 
-All five morphs pass the dual-separation rule at all nine sampled water gradient stops (melanoid relies on its rim light in the deep stops) (recheck pending, see section 12).
+Leucistic, Golden albino, and GFP pass the dual-separation rule at all nine sampled water gradient stops. Melanoid passes only with its rim light (3.20 at t = 0.875, 4.13 at t = 1). Wild does not pass yet: at t = 0.875 (#0e70a4) its body and ink both score 2.65:1. A corrective cue for Wild is still to be chosen and tested (section 12).
 
 **Greyscale check (PRD X2, F15)**
 
@@ -1248,7 +1248,7 @@ Everything below is `derived (provisional)`. Confirm each in a prototype before 
 | Home Spot and treasures | Home Spot burrow, Dash pot, hint sparkle sizes and alpha, revealed treasure, Paint shell (7d, 7e) |
 | Home Tank kit | Layout, layer order, decoration rules, placement states (7f) |
 | New motion, sparkles, and widths | New motion rows (9); sparkle shapes (4e); new widths (4b) |
-| Contrast method and Wild recheck | New checks sample the clean gradient at nine evenly spaced points (sRGB interpolation). With that method the Wild body #b0b86e scores 2.65:1 at t = 0.875 (#0e70a4), where ink is also 2.65:1, so the claim in section 10 that all five morphs pass needs rechecking against real renders. |
+| Contrast method and Wild recheck | New checks sample the clean gradient at nine evenly spaced points (sRGB interpolation). With that method the Wild body #b0b86e scores 2.65:1 at t = 0.875 (#0e70a4), where ink is also 2.65:1, so Wild fails the dual-separation rule at that stop (section 10). Choose and test a corrective cue for Wild, then recheck it against real renders. |
 | Parallel build | The in-game tilapia and legs are being built at the same time as these sections. Reconcile this guide and that code once both land. |
 | Environment kit | Remaining items in 7b |
 | Asset padding | 4 px at 1x and 8 px at 2x |
