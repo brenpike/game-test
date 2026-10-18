@@ -1,6 +1,6 @@
 # ADR 0007: Kid safety and privacy by design
 
-- Status: Accepted
+- Status: Accepted. The "No harsh fail states" play rule is amended by [ADR 0008](0008-gentle-fail-state.md).
 - Date: 2026-10-18
 
 ## Context
@@ -20,7 +20,7 @@ The game has:
 
 Play rules:
 
-- **No harsh fail states.** Challenges are optional; missing one never costs progress.
+- **No harsh fail states.** Challenges are optional; missing one never costs progress. Amended by [ADR 0008](0008-gentle-fail-state.md).
 - **Reduced motion is respected** (`prefers-reduced-motion`), per the accessibility rules in [`docs/art-style-guide.md`](../art-style-guide.md).
 - **Content is never scary or gory.** Regeneration is shown with sparkles, not injury.
 
