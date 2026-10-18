@@ -400,8 +400,10 @@ export class TreasureView {
       sprites.star.setVisible(false);
       return;
     }
+    // The frame a fade ends stays hidden, so a star back in range restarts after it, not from it.
+    const wasFading = sprites.hintFadeAge !== null;
     sprites.hintFadeAge = ambient ? nextAge(sprites.hintFadeAge, frame.dt, HINT_FADE_S) : null;
-    if (sprites.hintFadeAge === null) {
+    if (!wasFading) {
       this.advanceHintShown(sprites, inRange, ambient, frame.dt);
     }
     const star = sprites.star;
