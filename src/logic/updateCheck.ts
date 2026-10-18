@@ -69,11 +69,27 @@ export function decideUpdate(input: UpdateDecisionInput): UpdateDecision {
   return { kind: 'prompt', manifest: remote };
 }
 
-/** Same-origin path to the manifest under the app base, with a cache-busting nonce. */
-export function manifestUrl(baseUrl: string, nonce: string): string {
-  const withLeading = baseUrl.startsWith('/') ? baseUrl : `/${baseUrl}`;
-  const base = withLeading.endsWith('/') ? withLeading : `${withLeading}/`;
-  return `${base}${BUILD_MANIFEST_FILE}?${CACHE_BUST_PARAM}=${encodeURIComponent(nonce)}`;
+/**
+ * The one URL builder for the update check (ADR 0009). Reads only the origin of `pageHref`;
+ * its path, query and hash are never kept. Returns `<origin><base>/<file>?<param>=<value>`
+ * with no hash, or null when the page or base does not parse, the page has an opaque origin,
+ * or the base leaves the page's origin.
+ */
+function appUrl(pageHref: string, baseUrl: string, file: string, param: string, value: string): string | null {
+  try {
+    const pageOrigin = new URL(pageHref).origin;
+    if (pageOrigin === 'null') return null;
+    const originRoot = `${pageOrigin}/`;
+    const base = new URL(baseUrl, originRoot);
+    if (base.origin !== pageOrigin) return null;
+    const basePath = base.pathname.endsWith('/') ? base.pathname : `${base.pathname}/`;
+    const url = new URL(originRoot);
+    url.pathname = `${basePath}${file}`;
+    url.searchParams.set(param, value);
+    return url.href;
+  } catch {
+    return null;
+  }
 }
 
 /** Options for the manifest request; the browser glue spreads these and must not add or override any. */
@@ -105,18 +121,11 @@ export interface ManifestResponseFacts {
 }
 
 /**
- * Absolute manifest URL resolved against the page; null when the page or base does not parse,
- * or when the base or the resolved manifest URL leaves the page's origin.
+ * Absolute manifest URL `<page origin><base>version.json?t=<nonce>`; null when the page or base
+ * does not parse, or the base leaves the page's origin.
  */
 export function manifestRequestUrl(pageHref: string, baseUrl: string, nonce: string): string | null {
-  try {
-    const pageOrigin = new URL(pageHref).origin;
-    if (new URL(baseUrl, pageHref).origin !== pageOrigin) return null;
-    const resolved = new URL(manifestUrl(baseUrl, nonce), pageHref);
-    return resolved.origin === pageOrigin ? resolved.href : null;
-  } catch {
-    return null;
-  }
+  return appUrl(pageHref, baseUrl, BUILD_MANIFEST_FILE, CACHE_BUST_PARAM, nonce);
 }
 
 /**
@@ -135,11 +144,13 @@ export function isAcceptedManifestResponse(response: ManifestResponseFacts, requ
   }
 }
 
-/** Path and query for reloading into a build; keeps other params, drops origin and hash. */
-export function reloadUrl(href: string, buildId: string): string {
-  const url = new URL(href);
-  url.searchParams.set(RELOAD_PARAM, buildId);
-  return `${url.pathname}${url.search}`;
+/**
+ * Absolute URL `<page origin><base>?v=<buildId>` for reloading into a build. Keeps no path,
+ * query or hash from the current page. Null when the page or base does not parse, or the base
+ * leaves the page's origin.
+ */
+export function reloadUrl(pageHref: string, baseUrl: string, buildId: string): string | null {
+  return appUrl(pageHref, baseUrl, '', RELOAD_PARAM, buildId);
 }
 
 /** Build id a previous reload targeted, read from the reload param; null when absent. */

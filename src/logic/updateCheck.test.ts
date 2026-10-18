@@ -14,7 +14,6 @@ import {
   isAppVersion,
   isBuildId,
   manifestRequestUrl,
-  manifestUrl,
   parseBuildManifest,
   parseBuildManifestText,
   reloadUrl,
@@ -49,6 +48,25 @@ const INVALID_VERSIONS = ['', 'latest', '1.2', 'v1.2.3', '1.2.3.4', `1.2.3-${'a'
 
 const PAGES_HREF = 'https://brenpike.github.io/game-test/';
 const PAGES_MANIFEST_URL = 'https://brenpike.github.io/game-test/version.json?t=n';
+const PAGES_RELOAD_URL = 'https://brenpike.github.io/game-test/?v=new';
+const HOSTILE_PAGE_HREFS = [
+  'https://brenpike.github.io//evil.example/p?x=1',
+  'https://brenpike.github.io//evil.example/game-test/',
+  'https://brenpike.github.io/other/path/index.html',
+  'https://brenpike.github.io/game-test/../../evil?x=1',
+  'https://brenpike.github.io/game-test/%2F%2Fevil.example/',
+  'https://brenpike.github.io/game-test/?debug=1&v=old&t=old&x=2',
+  'https://brenpike.github.io/game-test/#//evil.example/',
+  'https://brenpike.github.io/game-test/index.html?v=old#top',
+  'https://user:pass@brenpike.github.io/game-test/',
+];
+const UNBUILDABLE_INPUTS: ReadonlyArray<readonly [pageHref: string, baseUrl: string]> = [
+  [PAGES_HREF, '//evil.example/'],
+  [PAGES_HREF, 'https://evil.example/game-test/'],
+  ['not a url', '/game-test/'],
+  ['file:///home/player/game-test/index.html', '/game-test/'],
+  ['data:text/html,game', '/game-test/'],
+];
 
 /** Returns a decision input for a new remote build, with overrides applied. */
 function inputWith(overrides: Partial<UpdateDecisionInput>): UpdateDecisionInput {
@@ -232,29 +250,6 @@ describe('decideUpdate', () => {
   });
 });
 
-describe('manifestUrl', () => {
-  it('builds a path under the root base', () => {
-    expect(manifestUrl('/', '123')).toBe('/version.json?t=123');
-  });
-
-  it('builds a path under the GitHub Pages base', () => {
-    expect(manifestUrl('/game-test/', '123')).toBe('/game-test/version.json?t=123');
-  });
-
-  it('adds a missing trailing slash to the base', () => {
-    expect(manifestUrl('/game-test', '123')).toBe('/game-test/version.json?t=123');
-  });
-
-  it('stays path-only for a base without a leading slash', () => {
-    expect(manifestUrl('game-test/', '123')).toBe('/game-test/version.json?t=123');
-    expect(manifestUrl('', '123')).toBe('/version.json?t=123');
-  });
-
-  it('URL-encodes the nonce', () => {
-    expect(manifestUrl('/', 'a b&c=d')).toBe('/version.json?t=a%20b%26c%3Dd');
-  });
-});
-
 describe('MANIFEST_REQUEST_POLICY', () => {
   it('pins exactly the six agreed request options', () => {
     expect(MANIFEST_REQUEST_POLICY).toEqual({
@@ -285,16 +280,23 @@ describe('manifestRequestUrl', () => {
     expect(manifestRequestUrl('http://localhost:4173/', '/', 'n')).toBe('http://localhost:4173/version.json?t=n');
   });
 
-  it('rejects a protocol-relative base pointing at another host', () => {
-    expect(manifestRequestUrl(PAGES_HREF, '//evil.example/', 'n')).toBeNull();
+  it('adds a missing trailing slash to the base', () => {
+    expect(manifestRequestUrl(PAGES_HREF, '/game-test', 'n')).toBe(PAGES_MANIFEST_URL);
   });
 
-  it('rejects an absolute cross-origin base', () => {
-    expect(manifestRequestUrl(PAGES_HREF, 'https://evil.example/game-test/', 'n')).toBeNull();
+  it('treats a base without a leading slash as rooted at the page origin', () => {
+    expect(manifestRequestUrl(PAGES_HREF, 'game-test/', 'n')).toBe(PAGES_MANIFEST_URL);
+    expect(manifestRequestUrl('https://brenpike.github.io/other/page', 'game-test/', 'n')).toBe(PAGES_MANIFEST_URL);
   });
 
-  it('rejects an unparseable page href', () => {
-    expect(manifestRequestUrl('not a url', '/game-test/', 'n')).toBeNull();
+  it('treats an empty base as the origin root', () => {
+    expect(manifestRequestUrl(PAGES_HREF, '', 'n')).toBe('https://brenpike.github.io/version.json?t=n');
+  });
+
+  it('URL-encodes the nonce', () => {
+    const url = manifestRequestUrl('http://localhost:4173/', '/', 'a b&c=d');
+    expect(url).toBe('http://localhost:4173/version.json?t=a+b%26c%3Dd');
+    expect(new URL(url ?? '').searchParams.get(CACHE_BUST_PARAM)).toBe('a b&c=d');
   });
 });
 
@@ -338,22 +340,62 @@ describe('isAcceptedManifestResponse', () => {
 });
 
 describe('reloadUrl', () => {
-  it('replaces the reload param and drops origin and hash', () => {
-    expect(reloadUrl(LIVE_HREF, 'new')).toBe('/game-test/?v=new');
+  it('builds the base URL with only the reload param', () => {
+    expect(reloadUrl(PAGES_HREF, '/game-test/', 'new')).toBe(PAGES_RELOAD_URL);
   });
 
-  it('adds the reload param when absent', () => {
-    expect(reloadUrl('https://brenpike.github.io/game-test/', 'new')).toBe('/game-test/?v=new');
+  it('replaces an earlier reload param and drops the page hash', () => {
+    expect(reloadUrl(LIVE_HREF, '/game-test/', 'new')).toBe(PAGES_RELOAD_URL);
   });
 
-  it('keeps the pathname and other params', () => {
-    expect(reloadUrl('https://brenpike.github.io/game-test/index.html?debug=1&v=old&x=2#top', 'new')).toBe(
-      '/game-test/index.html?debug=1&v=new&x=2',
-    );
+  it('keeps no path, query or hash from the current page', () => {
+    expect(
+      reloadUrl('https://brenpike.github.io/game-test/index.html?debug=1&v=old&x=2#top', '/game-test/', 'new'),
+    ).toBe(PAGES_RELOAD_URL);
+  });
+
+  it('ignores a page path that looks like another host', () => {
+    expect(reloadUrl('https://brenpike.github.io//evil.example/p?x=1', '/game-test/', 'new')).toBe(PAGES_RELOAD_URL);
+  });
+
+  it('builds under the root base', () => {
+    expect(reloadUrl('http://localhost:4173/x', '/', 'new')).toBe('http://localhost:4173/?v=new');
   });
 
   it('URL-encodes the build id', () => {
-    expect(reloadUrl('http://localhost:5173/', 'a&b=c')).toBe('/?v=a%26b%3Dc');
+    expect(reloadUrl('http://localhost:4173/', '/', 'a&b=c')).toBe('http://localhost:4173/?v=a%26b%3Dc');
+  });
+});
+
+describe('update check URL builders', () => {
+  it.each(UNBUILDABLE_INPUTS)('return null for page %s with base %s', (pageHref, baseUrl) => {
+    expect(manifestRequestUrl(pageHref, baseUrl, 'n')).toBeNull();
+    expect(reloadUrl(pageHref, baseUrl, 'new')).toBeNull();
+  });
+
+  it.each(HOSTILE_PAGE_HREFS)('stay on the page origin under the base for %s', (pageHref) => {
+    const pageOrigin = new URL(pageHref).origin;
+    const built: ReadonlyArray<readonly [string | null, string]> = [
+      [manifestRequestUrl(pageHref, '/game-test/', 'n'), CACHE_BUST_PARAM],
+      [reloadUrl(pageHref, '/game-test/', 'new'), RELOAD_PARAM],
+    ];
+    for (const [href, param] of built) {
+      expect(href).not.toBeNull();
+      const url = new URL(href ?? '');
+      expect(url.origin).toBe(pageOrigin);
+      expect(url.username).toBe('');
+      expect(url.password).toBe('');
+      expect(url.pathname.startsWith('/game-test/')).toBe(true);
+      expect([...url.searchParams.keys()]).toEqual([param]);
+      expect(url.hash).toBe('');
+    }
+  });
+
+  it('build the exact URLs for every hostile page href', () => {
+    for (const pageHref of HOSTILE_PAGE_HREFS) {
+      expect(manifestRequestUrl(pageHref, '/game-test/', 'n')).toBe(PAGES_MANIFEST_URL);
+      expect(reloadUrl(pageHref, '/game-test/', 'new')).toBe(PAGES_RELOAD_URL);
+    }
   });
 });
 
@@ -364,8 +406,9 @@ describe('attemptedBuildIdFrom', () => {
   });
 
   it('round-trips an encoded build id from reloadUrl', () => {
-    const path = reloadUrl(LIVE_HREF, 'a&b=c');
-    expect(attemptedBuildIdFrom(`https://brenpike.github.io${path}`)).toBe('a&b=c');
+    const url = reloadUrl(LIVE_HREF, '/game-test/', 'a&b=c');
+    expect(url).not.toBeNull();
+    expect(attemptedBuildIdFrom(url ?? '')).toBe('a&b=c');
   });
 
   it('returns null when the reload param is absent', () => {

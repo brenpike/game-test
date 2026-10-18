@@ -90,10 +90,17 @@ async function fetchRemoteManifest(signal: AbortSignal): Promise<BuildManifest |
   }
 }
 
-function clearCheckTimeout(watch: UpdateWatch): void {
-  if (watch.timeoutId === null) return;
-  window.clearTimeout(watch.timeoutId);
-  watch.timeoutId = null;
+/**
+ * Ends the current check: clears its timeout and aborts its request, so a check's request and
+ * response body never outlive the check, even when the body was rejected or never read.
+ */
+function endCheck(watch: UpdateWatch): void {
+  if (watch.timeoutId !== null) {
+    window.clearTimeout(watch.timeoutId);
+    watch.timeoutId = null;
+  }
+  watch.controller?.abort();
+  watch.controller = null;
 }
 
 /** Steps the scheduler, stores the new state, then runs the action it asked for. */
@@ -126,10 +133,9 @@ function startCheck(watch: UpdateWatch): void {
     .catch(() => undefined);
 }
 
-/** Clears the finished check's timer and controller before reporting it, so a follow-up check starts clean. */
+/** Ends the finished check before reporting it, so a follow-up check starts clean. */
 function settleCheck(watch: UpdateWatch, remote: BuildManifest | null): void {
-  clearCheckTimeout(watch);
-  watch.controller = null;
+  endCheck(watch);
   dispatch(watch, { kind: 'settled', nowMs: performance.now(), remote });
 }
 
@@ -156,9 +162,7 @@ function stopWatch(watch: UpdateWatch, handleVisibilityChange: () => void, handl
   document.removeEventListener('visibilitychange', handleVisibilityChange);
   window.removeEventListener('online', handleWake);
   window.removeEventListener('pageshow', handleWake);
-  clearCheckTimeout(watch);
-  watch.controller?.abort();
-  watch.controller = null;
+  endCheck(watch);
 }
 
 /**
@@ -187,7 +191,11 @@ export function watchForUpdates(onReady: (manifest: BuildManifest) => void): () 
   return () => stopWatch(watch, handleVisibilityChange, handleWake);
 }
 
-/** Reloads into the new build via `?v=<buildId>`, bypassing the cached index.html. Saved progress is untouched. */
+/**
+ * Reloads into the new build at `<page origin><base>?v=<buildId>`, bypassing the cached index.html.
+ * Does nothing when no same-origin reload URL can be built. Saved progress is untouched.
+ */
 export function applyUpdate(manifest: BuildManifest): void {
-  window.location.replace(reloadUrl(window.location.href, manifest.buildId));
+  const url = reloadUrl(window.location.href, import.meta.env.BASE_URL, manifest.buildId);
+  if (url !== null) window.location.replace(url);
 }
