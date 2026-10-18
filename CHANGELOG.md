@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hiding spots now shuffle each trip. Treasures lost when carried home reappear next trip in a fresh spot.
 - The canal now has at least 3 tilapia, and only one telegraphs or lunges at a time.
 
+### Fixed
+
+- Turning on reduced motion during play now ends fades and pops that are already running (banners, the banking card, the home screen and the snack pop) at once.
+
 ## [0.4.0] - 2026-10-18
 
 ### Added
