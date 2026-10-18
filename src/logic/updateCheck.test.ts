@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BUILD_MANIFEST_FILE,
   CACHE_BUST_PARAM,
+  MANIFEST_REQUEST_POLICY,
   MAX_BUILD_MANIFEST_BYTES,
   RELOAD_PARAM,
   UPDATE_CHECK_MIN_INTERVAL_MS,
@@ -9,14 +10,17 @@ import {
   attemptedBuildIdFrom,
   decideUpdate,
   formatVersionLabel,
+  isAcceptedManifestResponse,
   isAppVersion,
   isBuildId,
+  manifestRequestUrl,
   manifestUrl,
   parseBuildManifest,
   parseBuildManifestText,
   reloadUrl,
   shouldCheck,
   type BuildManifest,
+  type ManifestResponseFacts,
   type UpdateDecisionInput,
 } from './updateCheck';
 
@@ -43,9 +47,17 @@ const INVALID_BUILD_IDS = [
 const VALID_VERSIONS = ['0.2.0', '1.0.0-beta.1+build.5'];
 const INVALID_VERSIONS = ['', 'latest', '1.2', 'v1.2.3', '1.2.3.4', `1.2.3-${'a'.repeat(27)}`, '1.2.3\n', ' 1.2.3'];
 
+const PAGES_HREF = 'https://brenpike.github.io/game-test/';
+const PAGES_MANIFEST_URL = 'https://brenpike.github.io/game-test/version.json?t=n';
+
 /** Returns a decision input for a new remote build, with overrides applied. */
 function inputWith(overrides: Partial<UpdateDecisionInput>): UpdateDecisionInput {
   return { enabled: true, currentBuildId: CURRENT, remote: REMOTE, attemptedBuildId: null, ...overrides };
+}
+
+/** Returns facts for an accepted manifest response, with overrides applied. */
+function responseWith(overrides: Partial<ManifestResponseFacts>): ManifestResponseFacts {
+  return { ok: true, redirected: false, type: 'basic', url: PAGES_MANIFEST_URL, ...overrides };
 }
 
 describe('constants', () => {
@@ -240,6 +252,88 @@ describe('manifestUrl', () => {
 
   it('URL-encodes the nonce', () => {
     expect(manifestUrl('/', 'a b&c=d')).toBe('/version.json?t=a%20b%26c%3Dd');
+  });
+});
+
+describe('MANIFEST_REQUEST_POLICY', () => {
+  it('pins exactly the six agreed request options', () => {
+    expect(MANIFEST_REQUEST_POLICY).toEqual({
+      method: 'GET',
+      mode: 'same-origin',
+      redirect: 'error',
+      cache: 'no-store',
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+    });
+  });
+
+  it('is frozen', () => {
+    expect(Object.isFrozen(MANIFEST_REQUEST_POLICY)).toBe(true);
+  });
+});
+
+describe('manifestRequestUrl', () => {
+  it('resolves under the GitHub Pages base', () => {
+    expect(manifestRequestUrl(PAGES_HREF, '/game-test/', 'n')).toBe(PAGES_MANIFEST_URL);
+  });
+
+  it('ignores the page query and hash', () => {
+    expect(manifestRequestUrl(LIVE_HREF, '/game-test/', 'n')).toBe(PAGES_MANIFEST_URL);
+  });
+
+  it('resolves under the root base', () => {
+    expect(manifestRequestUrl('http://localhost:4173/', '/', 'n')).toBe('http://localhost:4173/version.json?t=n');
+  });
+
+  it('rejects a protocol-relative base pointing at another host', () => {
+    expect(manifestRequestUrl(PAGES_HREF, '//evil.example/', 'n')).toBeNull();
+  });
+
+  it('rejects an absolute cross-origin base', () => {
+    expect(manifestRequestUrl(PAGES_HREF, 'https://evil.example/game-test/', 'n')).toBeNull();
+  });
+
+  it('rejects an unparseable page href', () => {
+    expect(manifestRequestUrl('not a url', '/game-test/', 'n')).toBeNull();
+  });
+});
+
+describe('isAcceptedManifestResponse', () => {
+  it('accepts an ok, unredirected, basic response for the requested URL', () => {
+    expect(isAcceptedManifestResponse(responseWith({}), PAGES_MANIFEST_URL)).toBe(true);
+  });
+
+  it('accepts the same origin and path with a different query', () => {
+    const url = 'https://brenpike.github.io/game-test/version.json?t=other';
+    expect(isAcceptedManifestResponse(responseWith({ url }), PAGES_MANIFEST_URL)).toBe(true);
+  });
+
+  it('rejects a response that is not ok', () => {
+    expect(isAcceptedManifestResponse(responseWith({ ok: false }), PAGES_MANIFEST_URL)).toBe(false);
+  });
+
+  it('rejects a redirected response', () => {
+    expect(isAcceptedManifestResponse(responseWith({ redirected: true }), PAGES_MANIFEST_URL)).toBe(false);
+  });
+
+  it('rejects opaque and cors responses', () => {
+    expect(isAcceptedManifestResponse(responseWith({ type: 'opaque' }), PAGES_MANIFEST_URL)).toBe(false);
+    expect(isAcceptedManifestResponse(responseWith({ type: 'cors' }), PAGES_MANIFEST_URL)).toBe(false);
+  });
+
+  it('rejects a response from another origin', () => {
+    const url = 'https://evil.example/game-test/version.json?t=n';
+    expect(isAcceptedManifestResponse(responseWith({ url }), PAGES_MANIFEST_URL)).toBe(false);
+  });
+
+  it('rejects a response for another path', () => {
+    const url = 'https://brenpike.github.io/other/version.json?t=n';
+    expect(isAcceptedManifestResponse(responseWith({ url }), PAGES_MANIFEST_URL)).toBe(false);
+  });
+
+  it('rejects an empty or unparseable response URL', () => {
+    expect(isAcceptedManifestResponse(responseWith({ url: '' }), PAGES_MANIFEST_URL)).toBe(false);
+    expect(isAcceptedManifestResponse(responseWith({ url: 'not a url' }), PAGES_MANIFEST_URL)).toBe(false);
   });
 });
 

@@ -27,9 +27,15 @@ So a reload can serve a cached `index.html` for up to about 10 minutes, which st
 
 - It runs on the title screen only (later also the Home Tank). Never during a trip.
 - Browser glue in `src/platform/updates.ts` sends a `GET` to `<base>version.json?t=<random nonce>`. The base is `/game-test/`, so the request goes to the game's own website only (same origin).
-- Request options: `cache: 'no-store'`, `credentials: 'omit'`, `referrerPolicy: 'no-referrer'`, no body, no custom headers, 8 s timeout.
+- Request options: `method: 'GET'`, `mode: 'same-origin'`, `redirect: 'error'`, `cache: 'no-store'`, `credentials: 'omit'`, `referrerPolicy: 'no-referrer'`, no body, no custom headers, 8 s timeout.
+- These options are declared once, as `MANIFEST_REQUEST_POLICY` in `src/logic/updateCheck.ts`. The browser glue spreads them and must not add or override any option except the abort signal.
+- The request URL is resolved against the page and must stay on the page's origin. A redirect or a cross-origin hop makes the check fail before any other site is contacted.
+- A response counts only if it is `ok`, not redirected, of type `basic`, and its final URL has the same origin and path as the request.
 - It sends no player data: no body, no cookies, no identifiers. The only value sent is a random cache-busting nonce.
-- It checks again on `visibilitychange`, `online`, and `pageshow`, at most once every 60 s.
+- It checks again on `visibilitychange`, `online`, and `pageshow`.
+- After a check that got a usable `version.json`, the next check waits at least 60 s from that check's start. A failed check does not start the wait.
+- Only one check runs at a time. Wake events during a check merge into at most one follow-up check, made only if that check fails.
+- There are no timers or polling. Checks start only from the title screen opening and the wake events above.
 - Offline, timeout, or a bad response: it stays silent and shows nothing.
 - `version.json` is treated as a bad response unless the body is at most 1024 bytes, `version` is SemVer of at most 32 characters, and `buildId` matches `[A-Za-z0-9._-]{1,64}`. The build fails if its own version or build ID breaks these rules.
 - Under `npm run dev` it makes no request.
@@ -47,9 +53,9 @@ So a reload can serve a cached `index.html` for up to about 10 minutes, which st
 
 **Code layout.**
 
-- The update decision is pure and lives in `src/logic/updateCheck.ts`, with headless tests ([ADR 0006](0006-testing-strategy.md)).
+- The update decision, request policy, response acceptance, and check scheduling are pure. They live in `src/logic/updateCheck.ts` and `src/logic/updateScheduler.ts`, with headless tests ([ADR 0006](0006-testing-strategy.md)).
 - Build constants are passed in as arguments. `src/logic/` never references `__APP_VERSION__` or `__BUILD_ID__`.
-- Network, page location, and build constants live in `src/platform/`, kept thin.
+- Network, page location, timers, and build constants live in `src/platform/`, kept thin: the glue only runs what the scheduler decides.
 
 **Pages cache.**
 
@@ -71,6 +77,7 @@ So a reload can serve a cached `index.html` for up to about 10 minutes, which st
 
 - The Pages cache can serve an old `index.html` for about 10 minutes after a deploy. The prompt covers that window.
 - Builds deployed before this feature have no check, so players on them need one manual reload (worst case about 10 minutes after the deploy).
-- Each title screen visit makes one small same-origin request, at most once every 60 s.
+- Each title screen visit makes a small same-origin request, plus at most one follow-up if it fails while wake events arrive. After a check that got a usable `version.json`, the next waits at least 60 s from that check's start.
+- If the host ever redirects `version.json`, the check fails silently by design and no prompt appears.
 - A future Capacitor wrapper ([ADR 0003](0003-capacitor-mobile-deferred.md)) bundles the game, so this check must be revisited then.
 - [ADR 0007](0007-kid-safety-and-privacy.md) status points here for the refined network rule.

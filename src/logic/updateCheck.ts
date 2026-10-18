@@ -76,6 +76,65 @@ export function manifestUrl(baseUrl: string, nonce: string): string {
   return `${base}${BUILD_MANIFEST_FILE}?${CACHE_BUST_PARAM}=${encodeURIComponent(nonce)}`;
 }
 
+/** Options for the manifest request; the browser glue spreads these and must not add or override any. */
+export interface ManifestRequestPolicy {
+  readonly method: 'GET';
+  readonly mode: 'same-origin';
+  readonly redirect: 'error';
+  readonly cache: 'no-store';
+  readonly credentials: 'omit';
+  readonly referrerPolicy: 'no-referrer';
+}
+
+/** The one declaration of the manifest request options (ADR 0009). */
+export const MANIFEST_REQUEST_POLICY: ManifestRequestPolicy = Object.freeze({
+  method: 'GET',
+  mode: 'same-origin',
+  redirect: 'error',
+  cache: 'no-store',
+  credentials: 'omit',
+  referrerPolicy: 'no-referrer',
+});
+
+/** Fields of a manifest response that decide whether its body may be read. */
+export interface ManifestResponseFacts {
+  readonly ok: boolean;
+  readonly redirected: boolean;
+  readonly type: string;
+  readonly url: string;
+}
+
+/**
+ * Absolute manifest URL resolved against the page; null when the page or base does not parse,
+ * or when the base or the resolved manifest URL leaves the page's origin.
+ */
+export function manifestRequestUrl(pageHref: string, baseUrl: string, nonce: string): string | null {
+  try {
+    const pageOrigin = new URL(pageHref).origin;
+    if (new URL(baseUrl, pageHref).origin !== pageOrigin) return null;
+    const resolved = new URL(manifestUrl(baseUrl, nonce), pageHref);
+    return resolved.origin === pageOrigin ? resolved.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True only for an ok, unredirected, same-origin (`basic`) response whose final URL has the
+ * request's origin and path. The query may differ. A missing or unparseable URL is rejected.
+ */
+export function isAcceptedManifestResponse(response: ManifestResponseFacts, requestUrl: string): boolean {
+  if (response.ok !== true || response.redirected !== false || response.type !== 'basic') return false;
+  if (response.url === '') return false;
+  try {
+    const requested = new URL(requestUrl);
+    const received = new URL(response.url);
+    return received.origin === requested.origin && received.pathname === requested.pathname;
+  } catch {
+    return false;
+  }
+}
+
 /** Path and query for reloading into a build; keeps other params, drops origin and hash. */
 export function reloadUrl(href: string, buildId: string): string {
   const url = new URL(href);
