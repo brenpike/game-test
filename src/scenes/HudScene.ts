@@ -15,11 +15,12 @@ import {
 import { createLegs, type LegStatus } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { stickLayout, stickSteer, type StickLayout } from '../logic/stick';
+import { legsSnapshot } from '../logic/trip';
 import {
   TRIP_EVENTS,
   TRIP_REGISTRY_KEYS,
   type LegSlotSnapshot,
-  type LegsSnapshot,
+  type TripSnapshot,
 } from '../logic/tripEvents';
 import { LEGS_LABEL, SWIM_AGAIN_LABEL, TRIP_END_BODY, TRIP_END_TITLE } from '../logic/tripText';
 import { LEGS } from '../logic/tuning';
@@ -80,9 +81,9 @@ interface LegIconView {
   mark: Phaser.GameObjects.Image;
 }
 
-/** Legs display state for a whole axolotl, used until the swim scene publishes one. */
-function wholeLegs(): LegsSnapshot {
-  return { slots: createLegs().slots, present: LEGS.count, protected: false };
+/** Trip display state for a swimming, whole axolotl, used until the swim scene publishes one. */
+function createSwimmingTrip(): TripSnapshot {
+  return { phase: 'swimming', legs: legsSnapshot(createLegs()) };
 }
 
 /**
@@ -120,7 +121,7 @@ export class HudScene extends Phaser.Scene {
   private stickPointer: Phaser.Input.Pointer | null = null;
   private stickDownTime = 0;
   private lastSteer: SteerPayload = { x: 0, y: 0 };
-  private legs: LegsSnapshot = wholeLegs();
+  private trip: TripSnapshot = createSwimmingTrip();
   private legsPanel!: Phaser.GameObjects.Graphics;
   private legsLabel!: Phaser.GameObjects.Text;
   private legIcons: LegIconView[] = [];
@@ -130,7 +131,6 @@ export class HudScene extends Phaser.Scene {
   private tripCardTitle!: Phaser.GameObjects.Text;
   private tripCardBody!: Phaser.GameObjects.Text;
   private swimAgainButton!: UiButton;
-  private tripEnded = false;
   private tripEndShownAt = 0;
   private newTripRequested = false;
 
@@ -145,7 +145,7 @@ export class HudScene extends Phaser.Scene {
     this.dashState = { phase: 'ready', charge: 1 };
     this.stickPointer = null;
     this.lastSteer = { x: 0, y: 0 };
-    this.tripEnded = false;
+    this.trip = createSwimmingTrip();
     this.tripEndShownAt = 0;
     this.newTripRequested = false;
   }
@@ -155,7 +155,7 @@ export class HudScene extends Phaser.Scene {
     this.motion = motionProfile(this.registry.get(REGISTRY_KEYS.reducedMotion) === true);
     this.collected = Number(this.registry.get(REGISTRY_KEYS.collected) ?? 0);
     this.total = Number(this.registry.get(REGISTRY_KEYS.total) ?? 0);
-    this.legs = (this.registry.get(TRIP_REGISTRY_KEYS.legs) as LegsSnapshot | undefined) ?? wholeLegs();
+    this.trip = (this.registry.get(TRIP_REGISTRY_KEYS.state) as TripSnapshot | undefined) ?? createSwimmingTrip();
     useCssCamera(this.cameras.main, this.view.fit.dpr);
 
     this.buildCounter();
@@ -173,13 +173,12 @@ export class HudScene extends Phaser.Scene {
     this.game.events.on(GAME_EVENTS.DASH_STATE, this.handleDashState, this);
     this.game.events.on(GAME_EVENTS.REQUEST_PAUSE, this.pauseSwim, this);
     this.game.events.on(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
-    this.game.events.on(TRIP_EVENTS.LEGS_STATE, this.handleLegsState, this);
-    this.game.events.on(TRIP_EVENTS.TRIP_ENDED, this.handleTripEnded, this);
-    this.game.events.on(TRIP_EVENTS.TRIP_STARTED, this.handleTripStarted, this);
+    this.game.events.on(TRIP_EVENTS.STATE, this.handleTripState, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
 
     this.layout();
     this.drawLegs();
+    if (this.trip.phase === 'ended') this.showTripCard();
   }
 
   update(): void {
@@ -487,7 +486,7 @@ export class HudScene extends Phaser.Scene {
 
   /** Shows each leg icon for the current snapshot, sorted present, regrowing, lost. */
   private drawLegs(): void {
-    const slots = [...this.legs.slots].sort((a, b) => LEG_DISPLAY_RANK[a.status] - LEG_DISPLAY_RANK[b.status]);
+    const slots = [...this.trip.legs.slots].sort((a, b) => LEG_DISPLAY_RANK[a.status] - LEG_DISPLAY_RANK[b.status]);
     this.legIcons.forEach((icon, index) => this.drawLegIcon(icon, slots[index]));
   }
 
@@ -537,7 +536,7 @@ export class HudScene extends Phaser.Scene {
   // ---- actions -------------------------------------------------------------
 
   private requestDash(): void {
-    if (this.paused || this.tripEnded) return;
+    if (this.paused || this.trip.phase !== 'swimming') return;
     this.game.events.emit(GAME_EVENTS.REQUEST_DASH);
   }
 
@@ -550,7 +549,7 @@ export class HudScene extends Phaser.Scene {
   }
 
   private captureStick(pointer: Phaser.Input.Pointer): void {
-    if (this.paused || this.tripEnded || this.stickPointer) return;
+    if (this.paused || this.trip.phase !== 'swimming' || this.stickPointer) return;
     this.stickPointer = pointer;
     this.stickDownTime = pointer.downTime;
     this.tweens.killTweensOf(this.stickKnob);
@@ -608,7 +607,7 @@ export class HudScene extends Phaser.Scene {
   }
 
   private pauseSwim(): void {
-    if (this.paused || this.tripEnded) return;
+    if (this.paused || this.trip.phase === 'ended') return;
     this.paused = true;
     this.releaseStick();
     this.scene.pause(SCENE_KEYS.swim);
@@ -628,7 +627,7 @@ export class HudScene extends Phaser.Scene {
 
   /** Enter or Space: starts a new trip while the trip-end card shows (ignoring key repeat), else resumes. */
   private handleConfirmKey(event: KeyboardEvent): void {
-    if (this.tripEnded) {
+    if (this.trip.phase === 'ended') {
       if (!event.repeat) this.requestNewTrip();
       return;
     }
@@ -637,7 +636,7 @@ export class HudScene extends Phaser.Scene {
 
   /** Asks the swim scene for a new trip once, after the card has shown for TRIP_END_MIN_MS. */
   private requestNewTrip(): void {
-    if (!this.tripEnded || this.newTripRequested) return;
+    if (this.trip.phase !== 'ended' || this.newTripRequested) return;
     if (this.time.now - this.tripEndShownAt < TRIP_END_MIN_MS) return;
     this.newTripRequested = true;
     this.game.events.emit(TRIP_EVENTS.REQUEST_NEW_TRIP);
@@ -680,15 +679,22 @@ export class HudScene extends Phaser.Scene {
     this.drawDashRing();
   }
 
-  private handleLegsState(payload: LegsSnapshot): void {
-    this.legs = payload;
+  /**
+   * Redraws the legs from the snapshot and follows its phase: into 'carrying' drops the swim pad,
+   * into 'ended' shows the trip-end card, out of 'ended' hides it.
+   */
+  private handleTripState(snapshot: TripSnapshot): void {
+    const previousPhase = this.trip.phase;
+    this.trip = snapshot;
     this.drawLegs();
+    if (snapshot.phase === previousPhase) return;
+    if (previousPhase === 'ended') this.hideTripCard();
+    if (snapshot.phase === 'carrying') this.releaseStick();
+    if (snapshot.phase === 'ended') this.showTripCard();
   }
 
   /** Shows the trip-end card, faded in unless reduced motion is on, and hides Pause while it shows. */
-  private handleTripEnded(): void {
-    if (this.tripEnded) return;
-    this.tripEnded = true;
+  private showTripCard(): void {
     this.newTripRequested = false;
     this.tripEndShownAt = this.time.now;
     this.releaseStick();
@@ -700,8 +706,7 @@ export class HudScene extends Phaser.Scene {
     }
   }
 
-  private handleTripStarted(): void {
-    this.tripEnded = false;
+  private hideTripCard(): void {
     this.newTripRequested = false;
     this.tweens.killTweensOf(this.tripCard);
     this.tripCard.setVisible(false).setAlpha(1);
@@ -741,8 +746,6 @@ export class HudScene extends Phaser.Scene {
     this.game.events.off(GAME_EVENTS.DASH_STATE, this.handleDashState, this);
     this.game.events.off(GAME_EVENTS.REQUEST_PAUSE, this.pauseSwim, this);
     this.game.events.off(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
-    this.game.events.off(TRIP_EVENTS.LEGS_STATE, this.handleLegsState, this);
-    this.game.events.off(TRIP_EVENTS.TRIP_ENDED, this.handleTripEnded, this);
-    this.game.events.off(TRIP_EVENTS.TRIP_STARTED, this.handleTripStarted, this);
+    this.game.events.off(TRIP_EVENTS.STATE, this.handleTripState, this);
   }
 }

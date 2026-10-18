@@ -1,6 +1,5 @@
 import * as Phaser from 'phaser';
 import { AXO_MAX_TAIL_AMP, AXO_SCENE_SCALE, type AxolotlPose } from '../art/drawAxolotl';
-import { CARRY_BUBBLE_R } from '../art/drawEffects';
 import { DEPTH } from '../art/layers';
 import { HAZE, SURFACE_LINE, SURFACE_LINE_WIDTH, T_STATIC, WATER_SHALLOW } from '../art/palette';
 import { BUBBLE_RADII, type TexInfo } from '../art/textures';
@@ -13,14 +12,7 @@ import {
   createCollectibles,
   type Collectible,
 } from '../logic/collectibles';
-import {
-  createEncounter,
-  createEncounterContext,
-  resetEncounter,
-  stepEncounter,
-  type EncounterContext,
-  type EncounterState,
-} from '../logic/encounter';
+import { createEncounterContext } from '../logic/encounter';
 import { currentAt, reedDragAt, reedsNear } from '../logic/environment';
 import {
   GAME_EVENTS,
@@ -31,26 +23,25 @@ import {
   type ReducedMotionPayload,
   type SteerPayload,
 } from '../logic/gameEvents';
-import {
-  createLegs,
-  isProtected,
-  legSwimTuning,
-  legWobble,
-  presentCount,
-  quantizeProgress,
-  type LegsState,
-} from '../logic/legs';
+import { legSwimTuning, legWobble } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { mulberry32 } from '../logic/rng';
 import { steerFromKeys, type KeyState } from '../logic/steering';
 import { startDashVelocity, stepSwim, swimIntensity, type SwimBounds, type SwimState } from '../logic/swimPhysics';
 import { createDash, dashCharge, tryStartDash, updateDash, type DashState } from '../logic/tailDash';
 import {
-  TRIP_EVENTS,
-  TRIP_REGISTRY_KEYS,
-  type LegsSnapshot,
-  type TripEndedPayload,
-} from '../logic/tripEvents';
+  createTrip,
+  createTripContext,
+  newTrip,
+  sameTripSnapshot,
+  stepTrip,
+  tripAxolotlPos,
+  tripSnapshot,
+  type TripContext,
+  type TripEvent,
+  type TripState,
+} from '../logic/trip';
+import { TRIP_EVENTS, TRIP_REGISTRY_KEYS, type TripSnapshot } from '../logic/tripEvents';
 import { SWIM } from '../logic/tuning';
 import { len, type Vec2 } from '../logic/vec';
 import { SURF, WORLD_H, ZONE_W, swimBounds, waveY, type CurrentZone } from '../logic/zone';
@@ -96,9 +87,6 @@ const SURFACE_STEP = 8;
 const SURFACE_BAND_BOTTOM = SURF + 3;
 const LOW_FPS = 45;
 const LOW_FPS_REDRAW_S = 1 / 30;
-const LEG_PROGRESS_STEPS = 10;
-const CARRY_FLOAT_SPEED = 28;
-const CARRY_SURFACE_GAP = 12;
 
 interface SteerKeys {
   left: Phaser.Input.Keyboard.Key[];
@@ -129,27 +117,6 @@ function wrapInto(value: number, min: number, max: number): number {
   return min + ((((value - min) % span) + span) % span);
 }
 
-/** Legs display state with regrow progress quantized to LEG_PROGRESS_STEPS levels. */
-function snapshotLegs(legs: LegsState): LegsSnapshot {
-  return {
-    slots: legs.slots.map((slot) => ({
-      status: slot.status,
-      progress: quantizeProgress(slot.progress, LEG_PROGRESS_STEPS),
-    })),
-    present: presentCount(legs),
-    protected: isProtected(legs),
-  };
-}
-
-function sameLegsSnapshot(a: LegsSnapshot, b: LegsSnapshot): boolean {
-  return (
-    a.present === b.present &&
-    a.protected === b.protected &&
-    a.slots.length === b.slots.length &&
-    a.slots.every((slot, i) => slot.status === b.slots[i].status && slot.progress === b.slots[i].progress)
-  );
-}
-
 function placeBaked(image: Phaser.GameObjects.Image, info: TexInfo): Phaser.GameObjects.Image {
   return image.setOrigin(info.originNormX, info.originNormY).setScale(1 / info.scale);
 }
@@ -168,10 +135,9 @@ export class SwimScene extends Phaser.Scene {
   private items: Collectible[] = [];
   private bubbles!: BubbleSystem;
   private allDone = false;
-  private encounter!: EncounterState;
-  private encounterCtx!: EncounterContext;
-  private legs!: LegsSnapshot;
-  private tripEnded = false;
+  private trip!: TripState;
+  private tripCtx!: TripContext;
+  private snapshot!: TripSnapshot;
 
   private padSteer: Vec2 = { x: 0, y: 0 };
   private lastSteer: Vec2 = { x: 0, y: 0 };
@@ -211,7 +177,6 @@ export class SwimScene extends Phaser.Scene {
     this.assets = data;
     this.clock = 0;
     this.allDone = false;
-    this.tripEnded = false;
     this.dashKeyLatched = false;
     this.padSteer = { x: 0, y: 0 };
     this.lastPose = null;
@@ -231,8 +196,8 @@ export class SwimScene extends Phaser.Scene {
     this.dash = createDash();
     this.items = createCollectibles(zone.collectibles);
     this.bubbles = createBubbles();
-    this.encounter = createEncounter(zone);
-    this.encounterCtx = createEncounterContext({ bounds: this.bounds });
+    this.trip = createTrip(zone);
+    this.tripCtx = createTripContext({ encounter: createEncounterContext({ bounds: this.bounds }) });
     this.registry.set(REGISTRY_KEYS.total, this.items.length);
     this.registry.set(REGISTRY_KEYS.collected, countCollected(this.items));
 
@@ -249,7 +214,7 @@ export class SwimScene extends Phaser.Scene {
     this.events.on(Phaser.Scenes.Events.RESUME, this.handleResume, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
 
-    this.publishLegs(snapshotLegs(this.encounter.legs));
+    this.publishSnapshot(tripSnapshot(this.trip));
     this.renderFrame(0);
     this.scene.launch(SCENE_KEYS.hud, this.assets);
   }
@@ -258,11 +223,10 @@ export class SwimScene extends Phaser.Scene {
     const dt = Math.min(Math.max(deltaMs / 1000, 0), SWIM.dtMax);
     this.clock += dt;
     this.releaseDashLatch();
-    if (this.tripEnded) {
-      this.floatHome(dt);
-    } else {
+    if (this.trip.phase === 'swimming') {
       this.stepPlay(dt);
     }
+    this.advanceTrip(dt);
     this.followPoint.set(this.swim.x, this.swim.y);
     this.renderFrame(dt);
   }
@@ -283,7 +247,7 @@ export class SwimScene extends Phaser.Scene {
         dashing: this.dash.phase === 'dashing',
       },
       dt,
-      legSwimTuning(this.legs.present),
+      legSwimTuning(this.snapshot.legs.present),
     );
     const previousPhase = this.dash.phase;
     this.dash = updateDash(this.dash, dt);
@@ -291,7 +255,6 @@ export class SwimScene extends Phaser.Scene {
       this.emitDashState();
     }
     this.collectSnacks();
-    this.advanceEncounter(dt);
   }
 
   // ---- setup ---------------------------------------------------------------
@@ -327,7 +290,7 @@ export class SwimScene extends Phaser.Scene {
       .image(this.swim.x, this.swim.y, this.assets.axolotl.key)
       .setOrigin(axoInfo.originNormX, axoInfo.originNormY)
       .setDepth(DEPTH.axolotl);
-    this.predatorView = new PredatorView(this, this.assets, this.encounter.tilapias.length);
+    this.predatorView = new PredatorView(this, this.assets, this.trip.encounter.tilapias.length);
 
     this.bubbleImages = Array.from({ length: BUBBLE_MAX_ALIVE }, () =>
       this.add.image(0, 0, baked.bubbles[0].key).setVisible(false).setDepth(DEPTH.bubbles),
@@ -420,7 +383,7 @@ export class SwimScene extends Phaser.Scene {
   }
 
   private requestDash(): void {
-    if (this.tripEnded) return;
+    if (this.trip.phase !== 'swimming') return;
     const attempt = tryStartDash(this.dash);
     if (!attempt.started) return;
     this.dash = attempt.state;
@@ -477,58 +440,74 @@ export class SwimScene extends Phaser.Scene {
     });
   }
 
-  private advanceEncounter(dt: number): void {
-    const result = stepEncounter(this.encounter, { x: this.swim.x, y: this.swim.y }, dt, this.encounterCtx);
-    this.encounter = result.state;
-    if (result.impulse) {
-      this.swim = { ...this.swim, vx: result.impulse.x, vy: result.impulse.y };
+  /**
+   * Steps the trip. Swimming: a bump sets the swim velocity. Carrying or ended: the trip
+   * places the axolotl, still. The carry advances only with this frame `dt`, so pause freezes it.
+   */
+  private advanceTrip(dt: number): void {
+    const result = stepTrip(
+      this.trip,
+      { axolotlPos: { x: this.swim.x, y: this.swim.y }, reduced: !this.motion.ambient },
+      dt,
+      this.tripCtx,
+    );
+    this.trip = result.state;
+    if (this.trip.phase === 'swimming') {
+      if (result.impulse) {
+        this.swim = { ...this.swim, vx: result.impulse.x, vy: result.impulse.y };
+      }
+    } else {
+      this.placeCarried();
     }
+    this.handleTripEvents(result.events);
     this.predatorView.handleEvents(result.events);
-    this.syncLegs();
-    if (result.events.some((event) => event.type === 'carriedHome')) {
-      this.startCarryHome();
+    this.syncSnapshot();
+  }
+
+  /** Puts the axolotl where the trip holds it while carried or ended, with no velocity. */
+  private placeCarried(): void {
+    const pos = tripAxolotlPos(this.trip);
+    if (!pos) {
+      throw new Error(`SwimScene: no axolotl position for trip phase "${this.trip.phase}"`);
+    }
+    this.swim = { ...this.swim, x: pos.x, y: pos.y, vx: 0, vy: 0 };
+  }
+
+  /** Clears pad steering when the carry starts; a still (reduced-motion) arrival snaps the camera home. */
+  private handleTripEvents(events: readonly TripEvent[]): void {
+    for (const event of events) {
+      if (event.type === 'carryStart') {
+        this.padSteer = { x: 0, y: 0 };
+      }
+      if (event.type === 'arrivedHome' && event.still) {
+        this.followPoint.set(this.trip.home.x, this.trip.home.y);
+        this.cameras.main.centerOn(this.trip.home.x, this.trip.home.y);
+      }
     }
   }
 
-  private syncLegs(): void {
-    const snapshot = snapshotLegs(this.encounter.legs);
-    if (sameLegsSnapshot(snapshot, this.legs)) return;
-    this.publishLegs(snapshot);
+  private syncSnapshot(): void {
+    const snapshot = tripSnapshot(this.trip);
+    if (sameTripSnapshot(snapshot, this.snapshot)) return;
+    this.publishSnapshot(snapshot);
   }
 
-  private publishLegs(snapshot: LegsSnapshot): void {
-    this.legs = snapshot;
-    this.registry.set(TRIP_REGISTRY_KEYS.legs, snapshot);
-    this.game.events.emit(TRIP_EVENTS.LEGS_STATE, snapshot);
+  private publishSnapshot(snapshot: TripSnapshot): void {
+    this.snapshot = snapshot;
+    this.registry.set(TRIP_REGISTRY_KEYS.state, snapshot);
+    this.game.events.emit(TRIP_EVENTS.STATE, snapshot);
   }
 
   /**
-   * Ends the trip. The axolotl arrives with four legs (ADR 0008), so the legs are restored and
-   * published before TRIP_ENDED: the card's "all four legs grew back" matches the legs display.
+   * Starts a new trip in place once the last one has ended: Home Spot, four legs, fresh tilapia
+   * and Dash. Snacks are kept (PRD A19). Ignored in any other phase.
    */
-  private startCarryHome(): void {
-    this.tripEnded = true;
-    this.swim = { ...this.swim, vx: 0, vy: 0 };
-    this.padSteer = { x: 0, y: 0 };
-    this.encounter = { ...this.encounter, legs: createLegs() };
-    this.publishLegs(snapshotLegs(this.encounter.legs));
-    const payload: TripEndedPayload = { reason: 'carriedHome' };
-    this.game.events.emit(TRIP_EVENTS.TRIP_ENDED, payload);
-  }
-
-  /** The carry bubble rises gently toward the surface; it stays still under reduced motion. */
-  private floatHome(dt: number): void {
-    if (!this.motion.ambient) return;
-    const targetY = Math.min(this.swim.y, SURF + CARRY_BUBBLE_R + CARRY_SURFACE_GAP);
-    this.swim = { ...this.swim, y: Math.max(targetY, this.swim.y - CARRY_FLOAT_SPEED * dt) };
-  }
-
-  /** Starts a new trip in place: start spot, four legs, fresh tilapia and Dash. Snacks are kept. */
   private handleRequestNewTrip(): void {
-    const zone = this.assets.zone;
-    this.tripEnded = false;
+    const next = newTrip(this.trip);
+    if (next === this.trip) return;
+    this.trip = next;
     this.dashKeyLatched = true;
-    this.swim = { x: zone.start.x, y: zone.start.y, vx: 0, vy: 0, facing: 1 };
+    this.swim = { x: next.home.x, y: next.home.y, vx: 0, vy: 0, facing: 1 };
     this.lastFacing = this.swim.facing;
     this.tweens.killTweensOf(this.turn);
     this.turn.squash = 1;
@@ -536,18 +515,16 @@ export class SwimScene extends Phaser.Scene {
     this.lastSteer = { x: 0, y: 0 };
     this.sparkleLevel = 0;
     this.dash = createDash();
-    this.encounter = resetEncounter(zone);
     this.predatorView.reset();
     this.followPoint.set(this.swim.x, this.swim.y);
     this.cameras.main.centerOn(this.swim.x, this.swim.y);
     this.emitDashState();
-    this.game.events.emit(TRIP_EVENTS.TRIP_STARTED);
-    this.publishLegs(snapshotLegs(this.encounter.legs));
+    this.publishSnapshot(tripSnapshot(this.trip));
     this.renderFrame(0);
   }
 
   private handleHidden(): void {
-    if (this.tripEnded) return;
+    if (this.trip.phase === 'ended') return;
     this.game.events.emit(GAME_EVENTS.REQUEST_PAUSE);
   }
 
@@ -590,11 +567,11 @@ export class SwimScene extends Phaser.Scene {
     const t = this.motion.ambient ? this.clock : T_STATIC;
     this.renderAxolotl(dt);
     this.predatorView.render({
-      encounter: this.encounter,
+      encounter: this.trip.encounter,
       axolotl: this.axolotl,
       motion: this.motion,
       dt,
-      carried: this.tripEnded,
+      phase: this.trip.phase,
     });
     this.renderReeds(dt, t);
     this.renderSnacks(t);
@@ -632,7 +609,7 @@ export class SwimScene extends Phaser.Scene {
       blink: this.motion.ambient ? blinkAt(this.clock) : 1,
       tailAmp: dashing ? AXO_MAX_TAIL_AMP : 1 + (this.motion.ambient ? SWIM_TAIL_BOOST * intensity : 0),
       sparkle: this.sparkleLevel,
-      legs: this.legs.slots,
+      legs: this.snapshot.legs.slots,
     };
     this.redrawAxolotl(pose, dt);
 
@@ -640,7 +617,8 @@ export class SwimScene extends Phaser.Scene {
     const bob = this.motion.bob * BOB_SHARE * (1 - intensity) * Math.sin((TAU * t) / 3);
     const swimTilt = Phaser.Math.Clamp(this.swim.vy / SWIM.maxSpeed, -1, 1) * MAX_TILT;
     const idleTilt = this.motion.ambient ? IDLE_TILT * (1 - intensity) * Math.cos((TAU * t) / 3) : 0;
-    const wobble = this.tripEnded ? 0 : legWobble(this.legs.present, this.clock, !this.motion.ambient);
+    const wobble =
+      this.trip.phase === 'swimming' ? legWobble(this.snapshot.legs.present, this.clock, !this.motion.ambient) : 0;
     this.axolotl
       .setPosition(this.swim.x, this.swim.y + bob)
       .setFlipX(facing < 0)
@@ -648,9 +626,9 @@ export class SwimScene extends Phaser.Scene {
       .setRotation(facing * (swimTilt + idleTilt) + wobble);
   }
 
-  /** Dashing look and trail; a frozen dash shows nothing while the axolotl is carried home. */
+  /** Dashing look and trail, only while swimming: a frozen dash shows nothing once the carry starts. */
   private isDashing(): boolean {
-    return !this.tripEnded && this.dash.phase === 'dashing';
+    return this.trip.phase === 'swimming' && this.dash.phase === 'dashing';
   }
 
   private startTurnSquash(): void {

@@ -3,10 +3,12 @@ import { AXO_LEG_ROOTS } from '../art/drawAxolotl';
 import type { TilapiaPose } from '../art/drawTilapia';
 import { DEPTH } from '../art/layers';
 import type { TexInfo } from '../art/textures';
-import type { EncounterEvent, EncounterState } from '../logic/encounter';
+import type { EncounterState } from '../logic/encounter';
 import { isProtected } from '../logic/legs';
 import type { MotionProfile } from '../logic/motion';
 import { phaseProgress, type TilapiaPhase, type TilapiaState } from '../logic/tilapia';
+import type { TripEvent } from '../logic/trip';
+import type { TripPhase } from '../logic/tripEvents';
 import type { Vec2 } from '../logic/vec';
 import type { GameAssets } from './BootScene';
 
@@ -31,13 +33,13 @@ const REGROW_LIFE_S = 0.7;
 const REGROW_SPREAD_PX = 12;
 const REGROW_RISE_PX = 10;
 
-/** One frame of predator rendering input. `carried` is true while the axolotl floats home. */
+/** One frame of predator rendering input. `phase` is the trip phase for this frame. */
 export interface PredatorFrame {
   encounter: EncounterState;
   axolotl: Phaser.GameObjects.Image;
   motion: MotionProfile;
   dt: number;
-  carried: boolean;
+  phase: TripPhase;
 }
 
 interface TilapiaSprites {
@@ -114,8 +116,8 @@ export class PredatorView {
     );
   }
 
-  /** Starts the effects for this step's encounter events: a poof on a hit, sparkles on a regrown leg. */
-  handleEvents(events: readonly EncounterEvent[]): void {
+  /** Starts the effects for this step's trip events: a poof on a hit, sparkles on a regrown leg. */
+  handleEvents(events: readonly TripEvent[]): void {
     for (const event of events) {
       if (event.type === 'hit') this.startPoof(event.leg);
       if (event.type === 'regrown') this.startRegrowSparkles(event.leg);
@@ -128,7 +130,7 @@ export class PredatorView {
       this.renderTilapia(this.tilapias[i], tilapia, frame);
     });
     this.renderHalo(frame);
-    this.carryBubble.setVisible(frame.carried).setPosition(frame.axolotl.x, frame.axolotl.y);
+    this.renderCarryBubble(frame);
     this.renderPoofs(frame);
     this.renderRegrowSparkles(frame);
   }
@@ -182,8 +184,17 @@ export class PredatorView {
   }
 
   private renderHalo(frame: PredatorFrame): void {
-    const visible = !frame.carried && isProtected(frame.encounter.legs);
+    const visible = frame.phase === 'swimming' && isProtected(frame.encounter.legs);
     this.halo.setVisible(visible).setPosition(frame.axolotl.x, frame.axolotl.y).setRotation(frame.axolotl.rotation);
+  }
+
+  /**
+   * The carry bubble shows only in the 'carrying' phase, centred on the axolotl. Under reduced
+   * motion the trip holds the axolotl still, so the bubble is static too.
+   */
+  private renderCarryBubble(frame: PredatorFrame): void {
+    const visible = frame.phase === 'carrying';
+    this.carryBubble.setVisible(visible).setPosition(frame.axolotl.x, frame.axolotl.y);
   }
 
   private startPoof(leg: number): void {
