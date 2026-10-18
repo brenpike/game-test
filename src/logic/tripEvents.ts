@@ -1,15 +1,12 @@
 import type { LegStatus } from './legs';
 
 /**
- * Event names for a trip (legs and the carried-home ending), shared between the game scene
- * and the UI scene. Values never repeat a `GAME_EVENTS` value.
+ * Event names for a trip, shared between the game scene and the UI scene. The `TripSnapshot`
+ * (`TRIP_EVENTS.STATE`) is the only scene to HUD trip channel. Values never repeat a `GAME_EVENTS` value.
  */
 export const TRIP_EVENTS = Object.freeze({
-  LEGS_STATE: 'trip-legs-state',
-  TRIP_ENDED: 'trip-ended',
-  REQUEST_NEW_TRIP: 'request-new-trip',
-  TRIP_STARTED: 'trip-started',
   STATE: 'trip-state',
+  REQUEST_NEW_TRIP: 'request-new-trip',
 } as const);
 
 export type TripEventName = (typeof TRIP_EVENTS)[keyof typeof TRIP_EVENTS];
@@ -36,25 +33,14 @@ export interface TripSnapshot {
   legs: LegsSnapshot;
 }
 
-/** Why a trip ended. Only being carried home after losing the fourth leg exists so far. */
-export type TripEndReason = 'carriedHome';
-
-export interface TripEndedPayload {
-  reason: TripEndReason;
-}
-
 /** Payload type for each event; `undefined` marks payload-less events. */
 export interface TripEventPayloads {
-  [TRIP_EVENTS.LEGS_STATE]: LegsSnapshot;
-  [TRIP_EVENTS.TRIP_ENDED]: TripEndedPayload;
-  [TRIP_EVENTS.REQUEST_NEW_TRIP]: undefined;
-  [TRIP_EVENTS.TRIP_STARTED]: undefined;
   [TRIP_EVENTS.STATE]: TripSnapshot;
+  [TRIP_EVENTS.REQUEST_NEW_TRIP]: undefined;
 }
 
 /** Keys for trip values stored in the shared game registry. Values never repeat a `REGISTRY_KEYS` value. */
 export const TRIP_REGISTRY_KEYS = Object.freeze({
-  legs: 'tripLegs',
   state: 'tripState',
 } as const);
 

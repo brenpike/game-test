@@ -257,6 +257,6 @@ describe('trip events contract', () => {
     for (const name of Object.values(TRIP_EVENTS)) expect(gameValues.has(name)).toBe(false);
     expect(new Set(Object.values(TRIP_EVENTS)).size).toBe(Object.values(TRIP_EVENTS).length);
     const registryValues = new Set<string>(Object.values(REGISTRY_KEYS));
-    expect(registryValues.has(TRIP_REGISTRY_KEYS.legs)).toBe(false);
+    for (const key of Object.values(TRIP_REGISTRY_KEYS)) expect(registryValues.has(key)).toBe(false);
   });
 });
