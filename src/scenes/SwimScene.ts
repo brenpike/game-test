@@ -32,6 +32,7 @@ import {
   type SteerPayload,
 } from '../logic/gameEvents';
 import {
+  createLegs,
   isProtected,
   legSwimTuning,
   legWobble,
@@ -501,10 +502,16 @@ export class SwimScene extends Phaser.Scene {
     this.game.events.emit(TRIP_EVENTS.LEGS_STATE, snapshot);
   }
 
+  /**
+   * Ends the trip. The axolotl arrives with four legs (ADR 0008), so the legs are restored and
+   * published before TRIP_ENDED: the card's "all four legs grew back" matches the legs display.
+   */
   private startCarryHome(): void {
     this.tripEnded = true;
     this.swim = { ...this.swim, vx: 0, vy: 0 };
     this.padSteer = { x: 0, y: 0 };
+    this.encounter = { ...this.encounter, legs: createLegs() };
+    this.publishLegs(snapshotLegs(this.encounter.legs));
     const payload: TripEndedPayload = { reason: 'carriedHome' };
     this.game.events.emit(TRIP_EVENTS.TRIP_ENDED, payload);
   }
