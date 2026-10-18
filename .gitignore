@@ -1,2 +1,4 @@
 .hivemind/
 .claude/worktrees/
+node_modules/
+dist/
