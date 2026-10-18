@@ -1,0 +1,144 @@
+/**
+ * Art palette and metrics. Every value comes from docs/art-style-guide.md
+ * (section 3a unless noted), which is a port of prototypes/art-styles/cartoon.js.
+ * Presentational only: no game state, no Phaser.
+ */
+
+// ---- Reference viewport (guide section 1) -------------------------------
+export const VIEW_W = 480;
+export const VIEW_H = 360;
+/** Water line, logical px. */
+export const SURF = 80;
+/** Time used for the reduced-motion still frame (guide section 9). */
+export const T_STATIC = 1.0;
+
+// ---- Ink and fixed colours ----------------------------------------------
+/** Single outline colour for every object. Never use pure black. */
+export const INK = '#2b2350';
+/** Main outline width, logical px. Constant at every object size. */
+export const LW = 3.5;
+export const EYE = '#1b1535';
+export const WHITE = '#ffffff';
+/** Page background around the 4:3 canvas ("deep canal teal"). */
+export const LETTERBOX = '#0c6a8c';
+
+// ---- Sky, sun, clouds ----------------------------------------------------
+export const SKY_TOP = '#4fc3ff';
+export const SKY_HORIZON = '#c4f1ff';
+export const SUN = '#ffe14a';
+export const SUN_RAY = '#ffb52e';
+export const CLOUD_SHINE = '#cfeeff';
+export const SUN_SHINE = 'rgba(255,255,255,0.9)';
+
+// ---- Willows and chinampa bank ------------------------------------------
+export const WILLOW_TRUNK = '#a56a3b';
+export const WILLOW_STRAND = '#35b342';
+export const WILLOW_FOLIAGE = '#43c74d';
+export const WILLOW_SHINE = '#9af27a';
+export const BANK_SOIL = '#a2623a';
+export const SOIL_DETAIL = '#7f4a2a';
+export const GRASS = '#63d94f';
+export const GRASS_SHINE = '#a6f58a';
+
+// ---- Water (clean state, guide 3a and 3c) --------------------------------
+export const WATER_SHALLOW = '#55e4d8';
+export const WATER_MID = '#1cb6cc';
+export const WATER_DEEP = '#0a5c98';
+/** Gradient stop positions, shared by every water state. */
+export const WATER_STOP_MID = 0.45;
+/** y where the water gradient ends (deep stop). */
+export const WATER_GRADIENT_END_Y = 330;
+export const HAZE = 'rgba(40,200,215,0.12)';
+export const SURFACE_LINE = 'rgba(236,255,252,0.95)';
+export const SURFACE_LINE_WIDTH = 3.4;
+/** Light-ray peak alpha at the top of a shaft; fades to 0 at y 300. */
+export const RAY_ALPHA = 0.12;
+export const RAY_ALPHA_SWING = 0.05;
+export const RAY_END_Y = 300;
+
+// ---- Canal bed and pebbles ----------------------------------------------
+export const BED_TOP = '#b78552';
+export const BED_BOTTOM = '#8c5e3a';
+export const BED_LIP = '#e0b07a';
+export const MUD = 'rgba(110,70,40,0.55)';
+export const PEBBLE_A = '#d4cfe6';
+export const PEBBLE_B = '#a9bfd6';
+export const PEBBLE_C = '#efdcba';
+export const PEBBLE_D = '#97a6c4';
+export const PEBBLE_E = '#e0b095';
+export const PEBBLE_COLOURS: readonly string[] = [PEBBLE_A, PEBBLE_B, PEBBLE_C, PEBBLE_D, PEBBLE_E];
+export const PEBBLE_SHINE = 'rgba(255,255,255,0.8)';
+
+// ---- Reeds, lily pads, flower -------------------------------------------
+export const REED_LIGHT = '#63d247';
+export const REED_DARK = '#45b83e';
+export const REED_LEAF = '#86e660';
+export const CATTAIL = '#9a5426';
+export const LILY_PAD = '#47ce5a';
+export const LILY_PAD_SHINE = '#a2f58c';
+export const FLOWER_PETAL = '#ff82bf';
+export const FLOWER_FRONT_PETAL = '#ffb4dc';
+export const PETAL_SHINE = 'rgba(255,255,255,0.9)';
+/** Flower centre uses the sun colour. */
+export const FLOWER_CENTRE = SUN;
+
+// ---- Axolotl detail colours that are not morph slots --------------------
+export const FIN_RAY = 'rgba(236,120,160,0.65)';
+export const BODY_SHINE = 'rgba(255,255,255,0.75)';
+export const FRECKLE = 'rgba(236,120,160,0.55)';
+export const BLUSH = 'rgba(255,100,148,0.5)';
+
+// ---- Bubbles -------------------------------------------------------------
+export const BUBBLE_FILL = 'rgba(255,255,255,0.38)';
+export const BUBBLE_STROKE = 'rgba(43,35,80,0.85)';
+export const BUBBLE_STROKE_WIDTH = 2;
+
+// ---- Morph role slots (guide 3b) ----------------------------------------
+/**
+ * A morph swaps colours through these named slots. Shapes, line weights and
+ * layer order never change. Only LEUCISTIC is implemented.
+ */
+export interface MorphPalette {
+  readonly body: string;
+  readonly farSide: string;
+  readonly fin: string;
+  readonly belly: string;
+  readonly gillNearStem: string;
+  readonly gillNearFilament: string;
+  readonly gillFarStem: string;
+  readonly gillFarFilament: string;
+  readonly eye: string;
+  readonly mouth: string;
+}
+
+/** Leucistic colourway: the approved prototype hero. */
+export const LEUCISTIC: MorphPalette = {
+  body: '#ffb7cf',
+  farSide: '#f58fb0',
+  fin: '#ffd9e6',
+  belly: '#ffe3ed',
+  gillNearStem: '#ff5f8d',
+  gillNearFilament: '#ff7fa6',
+  gillFarStem: '#e8507f',
+  gillFarFilament: '#f26b92',
+  eye: EYE,
+  mouth: '#e8567e',
+};
+
+// ---- UI roles (guide 3d and section 8) -----------------------------------
+export const UI_TEXT = INK;
+export const UI_PRIMARY = '#ffe14a';
+export const UI_SECONDARY = '#55e4d8';
+export const UI_ACCENT = '#ff82bf';
+export const UI_SUCCESS = '#86e660';
+export const UI_PANEL = '#ffffff';
+export const UI_PANEL_PINK = '#ffd9e6';
+/** White text on the letterbox colour is 6.08:1. */
+export const UI_ON_LETTERBOX = '#ffffff';
+
+/**
+ * Rounded system sans-serif stack. No webfont is fetched; the final typeface
+ * is deferred (guide section 8).
+ */
+export const UI_FONT =
+  'ui-rounded, "SF Pro Rounded", "Nunito", "Varela Round", "Quicksand", "Segoe UI", system-ui, sans-serif';
