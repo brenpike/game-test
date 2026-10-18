@@ -18,7 +18,8 @@ Current milestone: **swim test** (one canal zone, swim controls, Tail Dash).
 | Mobile wrapper | Capacitor (deferred) | not installed | Ships the same web build to iOS and Android later; web first for now. | [0003](adr/0003-capacitor-mobile-deferred.md) |
 | Hosting / CI | GitHub Pages via GitHub Actions | n/a | Free static hosting; lint, test, and build on every PR; deploy on push to `main`. | [0005](adr/0005-hosting-github-pages.md) |
 | Art pipeline | Procedural Canvas 2D baked into Phaser textures | n/a | Reuses the approved cartoon prototype code; vector-sourced sprite atlases later. | [0004](adr/0004-art-pipeline.md) |
-| Kid-safety posture | No ads, chat, IAP, analytics, accounts, or third-party requests | n/a | Players are 8 to 12; the game must be safe and private by design. | [0007](adr/0007-kid-safety-and-privacy.md) |
+| Kid-safety posture | No ads, chat, IAP, analytics, accounts, or third-party requests; the only request beyond loading the game is one first-party update check | n/a | Players are 8 to 12; the game must be safe and private by design. | [0007](adr/0007-kid-safety-and-privacy.md), [0009](adr/0009-update-check.md) |
+| Updates | First-party `version.json` check on the title screen; one-tap reload to the new build; version shown in small text | n/a | Play-testers get the new build right after a deploy, never mid-trip, with no player data sent. | [0009](adr/0009-update-check.md) |
 | Fail state | Gentle: a predator hit costs one leg that regrows; losing all four legs sends you home and loses only unbanked trip finds | n/a | Gives exploring real stakes without punishing players aged 8 to 12; banked progress is never lost. | [0008](adr/0008-gentle-fail-state.md) |
 
 Live build: <https://brenpike.github.io/game-test/>
@@ -30,6 +31,7 @@ Live build: <https://brenpike.github.io/game-test/>
 | `src/logic/` | Pure game rules: swim physics, steering, Tail Dash, zones, collectibles, bubbles. | No Phaser, no DOM, no imports from `src/art` or `src/scenes`. Covered by headless Vitest tests. |
 | `src/art/` | Draws art with Canvas 2D (ported from the cartoon prototype) and registers it as Phaser textures. | Follows [`docs/art-style-guide.md`](art-style-guide.md). |
 | `src/scenes/` | Phaser glue: scenes, input, rendering, and wiring logic to art. | Thin; game rules belong in `src/logic/`. |
+| `src/platform/` | Browser glue: network, page location, and build-time constants. | Thin; not tested headless. Passes build constants into `src/logic/` as arguments. |
 
 The boundary is enforced by an ESLint `no-restricted-imports` rule on `src/logic/**` in [`eslint.config.js`](../eslint.config.js).
 It blocks `phaser`, `phaser/**`, and any `art` or `scenes` path.
