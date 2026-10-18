@@ -63,6 +63,11 @@ function telegraphing(target: Point, ctx = canalCtx): TilapiaState {
   return result.state;
 }
 
+function lungingFrom(pos: Point, aim: Point): TilapiaState {
+  const fish = createTilapia({ id: 'edge', waypoints: [pos] });
+  return { ...fish, phase: 'lunge', elapsed: 0, duration: TILAPIA.lungeDuration, aim };
+}
+
 function wanderTarget(rand: () => number, ctx: TilapiaContext): () => Point {
   const target = { x: 200, y: 200 };
   let goal = { x: 200, y: 200 };
@@ -119,9 +124,13 @@ function simulate(route: TilapiaRoute, ctx: TilapiaContext, seed: number, second
   let lungeOrigin: Point = state.pos;
   const steps = Math.round(seconds / DT);
   for (let i = 1; i <= steps; i++) {
-    const result = stepTilapia(state, nextTarget(), DT, ctx);
+    const target = nextTarget();
+    const result = stepTilapia(state, target, DT, ctx);
     state = result.state;
     checkStepEvents(result.events, i * DT, marks, stats);
+    if (result.events.some((event) => event.type === 'lungeEnd' && event.connected)) {
+      expect(inSafeArea(target, ctx.safeArea)).toBe(false);
+    }
     if (state.phase === 'telegraph') lungeOrigin = state.pos;
     if (state.phase === 'lunge' || result.events.some((event) => event.type === 'lungeEnd')) {
       const travelled = Math.hypot(state.pos.x - lungeOrigin.x, state.pos.y - lungeOrigin.y);
@@ -308,6 +317,44 @@ describe('tilapia', () => {
     expect(state.phase).toBe('lunge');
     expect(state.pos.x).toBe(face);
     expect(bodyGap(state.pos, area)).toBeGreaterThanOrEqual(TILAPIA.bodyRadius);
+  });
+
+  it('never connects with a target on the safe area edge and ends the lunge by duration', () => {
+    const area = zone.safeArea;
+    const sheltered = { x: area.x1, y: 200 };
+    const fish = lungingFrom({ x: area.x1 + TILAPIA.bodyRadius, y: 200 }, { x: -1, y: 0 });
+    expect(lungeConnects(fish, sheltered)).toBe(true);
+    const early = runFor(fish, sheltered, TILAPIA.lungeDuration - 0.1);
+    expect(early.events).toEqual([]);
+    expect(early.state.phase).toBe('lunge');
+    const rest = runFor(early.state, sheltered, 0.1 + DT);
+    expect(rest.events).toEqual([{ type: 'lungeEnd', connected: false }]);
+    expect(rest.state.phase).toBe('cooldown');
+  });
+
+  it('does not connect when the target shelters mid-lunge within hit radius', () => {
+    const area = zone.safeArea;
+    const face = area.x1 + TILAPIA.bodyRadius;
+    const fish = createTilapia({ id: 'edge', waypoints: [{ x: face + 100, y: 200 }] });
+    const exposed = { x: area.x1 + 1, y: 200 };
+    const telegraph = stepTilapia(fish, exposed, DT, canalCtx).state;
+    const lunging = stepTilapia(telegraph, exposed, TILAPIA.windup, canalCtx);
+    expect(eventTypes(lunging.events)).toEqual(['lungeStart']);
+    const sheltered = { x: area.x1, y: 200 };
+    const atFace = runFor(lunging.state, sheltered, 0.3);
+    expect(atFace.events).toEqual([]);
+    expect(atFace.state.phase).toBe('lunge');
+    expect(atFace.state.pos.x).toBe(face);
+    expect(lungeConnects(atFace.state, sheltered)).toBe(true);
+    const rest = runFor(atFace.state, sheltered, TILAPIA.lungeDuration - 0.3);
+    expect(rest.events).toEqual([{ type: 'lungeEnd', connected: false }]);
+  });
+
+  it('still connects with a target just outside the safe area edge', () => {
+    const area = zone.safeArea;
+    const fish = lungingFrom({ x: area.x1 + TILAPIA.bodyRadius, y: 200 }, { x: -1, y: 0 });
+    const result = stepTilapia(fish, { x: area.x1 + 0.001, y: 200 }, DT, canalCtx);
+    expect(result.events).toEqual([{ type: 'lungeEnd', connected: true }]);
   });
 
   it('touches only when not lunging and bumps gently away from the tilapia', () => {

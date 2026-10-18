@@ -135,9 +135,13 @@ export function phaseProgress(state: TilapiaState): number {
  * and outside the safe area. The telegraph holds position for max(windup, minWindup) seconds,
  * then re-checks the same condition: true locks the aim and starts a lunge, false emits
  * `telegraphCancel` and enters cooldown. A lunge moves along the locked aim at `lungeSpeed`
- * for at most `lungeDuration`; it ends early when it connects (checked by `lungeConnects`
- * after each move), emitting `lungeEnd` with `connected: true`. The caller applies the hit
- * on that event. Every lunge end and every cancel enters a full `cooldown`, during which the
+ * for at most `lungeDuration`; it ends early when it connects, emitting `lungeEnd` with
+ * `connected: true`. The caller applies the hit on that event.
+ *
+ * Safe-area immunity: a lunge connects only when `lungeConnects` holds after the move AND the
+ * target is outside the safe area (edges count as inside, per `inSafeArea`). The same exposure
+ * rule gates the telegraph. A lunge at a sheltered target never connects: it runs its full
+ * `lungeDuration` and ends with `connected: false`. Every lunge end and every cancel enters a full `cooldown`, during which the
  * tilapia drifts back along its route; `cooldownEnd` returns it to patrol.
  *
  * All movement is clamped to `bounds` and kept clear of the safe area grown by `bodyRadius`,
@@ -228,7 +232,7 @@ function stepLunge(state: TilapiaState, target: Point, dt: number, ctx: TilapiaC
   const aim = state.aim ?? { x: state.facing, y: 0 };
   const pos = moveClamped(state.pos, scale(aim, ctx.tuning.lungeSpeed * used), ctx);
   const moved: TilapiaState = { ...state, pos, elapsed: state.elapsed + used };
-  const connected = lungeConnects(moved, target, ctx.tuning);
+  const connected = lungeConnects(moved, target, ctx.tuning) && targetExposed(target, ctx);
   if (connected || moved.elapsed >= moved.duration) {
     return { state: enterCooldown(moved, ctx), used, event: { type: 'lungeEnd', connected } };
   }
@@ -251,7 +255,12 @@ function enterCooldown(state: TilapiaState, ctx: TilapiaContext): TilapiaState {
 }
 
 function canLunge(from: Point, target: Point, ctx: TilapiaContext): boolean {
-  return inLungeRange(from, target, ctx.tuning) && !inSafeArea(target, ctx.safeArea);
+  return inLungeRange(from, target, ctx.tuning) && targetExposed(target, ctx);
+}
+
+/** Whether the target can be attacked: outside the safe area, whose edges count as inside. */
+function targetExposed(target: Point, ctx: TilapiaContext): boolean {
+  return !inSafeArea(target, ctx.safeArea);
 }
 
 function lockAim(from: Point, target: Point, facing: -1 | 1): Point {

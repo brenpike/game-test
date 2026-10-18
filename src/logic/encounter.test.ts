@@ -138,6 +138,25 @@ describe('stepEncounter bump', () => {
   });
 });
 
+describe('stepEncounter safe area immunity', () => {
+  it('never hits an axolotl on the safe area edge from a lunge at the keep-out face', () => {
+    const face: Point = { x: zone.safeArea.x1 + TILAPIA.bodyRadius, y: 200 };
+    const homeEdge: Point = { x: zone.safeArea.x1, y: 200 };
+    const start = createEncounter({ ...zone, tilapiaRoutes: [{ id: 'edge', waypoints: [face] }] });
+    const tilapia = {
+      ...start.tilapias[0],
+      phase: 'lunge' as const,
+      elapsed: 0,
+      duration: TILAPIA.lungeDuration,
+      aim: { x: -1, y: 0 },
+    };
+    const lunging: EncounterState = { ...start, tilapias: [tilapia] };
+    const { state, events } = run(lunging, homeEdge, TILAPIA.lungeDuration + TILAPIA.cooldown + DT);
+    expect(typesOf(events, ['hit', 'carriedHome'])).toEqual([]);
+    expect(presentCount(state.legs)).toBe(4);
+  });
+});
+
 describe('stepEncounter same-frame order', () => {
   const target: Point = { x: 600, y: 200 };
 
