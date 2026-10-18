@@ -2,14 +2,18 @@ import { describe, expect, it } from 'vitest';
 import {
   BUILD_MANIFEST_FILE,
   CACHE_BUST_PARAM,
+  MAX_BUILD_MANIFEST_BYTES,
   RELOAD_PARAM,
   UPDATE_CHECK_MIN_INTERVAL_MS,
   UPDATE_CHECK_TIMEOUT_MS,
   attemptedBuildIdFrom,
   decideUpdate,
   formatVersionLabel,
+  isAppVersion,
+  isBuildId,
   manifestUrl,
   parseBuildManifest,
+  parseBuildManifestText,
   reloadUrl,
   shouldCheck,
   type BuildManifest,
@@ -19,6 +23,25 @@ import {
 const CURRENT = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const REMOTE: BuildManifest = { version: '0.5.0', buildId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' };
 const LIVE_HREF = 'https://brenpike.github.io/game-test/?v=old#x';
+const VALID_BUILD_IDS = ['0123456789ab', `local-${(1760000000000).toString(36)}`, 'dev', 'a'.repeat(64)];
+const INVALID_BUILD_IDS = [
+  '',
+  'a'.repeat(65),
+  'a/b',
+  'a?b',
+  'a&b',
+  'a%20b',
+  'a#b',
+  'a b',
+  'caf\u00e9',
+  '\u{1F600}',
+  'a\u0000b',
+  'a\nb',
+  'a\tb',
+  'abc\u007f',
+];
+const VALID_VERSIONS = ['0.2.0', '1.0.0-beta.1+build.5'];
+const INVALID_VERSIONS = ['', 'latest', '1.2', 'v1.2.3', '1.2.3.4', `1.2.3-${'a'.repeat(27)}`, '1.2.3\n', ' 1.2.3'];
 
 /** Returns a decision input for a new remote build, with overrides applied. */
 function inputWith(overrides: Partial<UpdateDecisionInput>): UpdateDecisionInput {
@@ -36,11 +59,36 @@ describe('constants', () => {
 });
 
 describe('parseBuildManifest', () => {
-  it('returns trimmed fields and ignores extra fields', () => {
-    expect(parseBuildManifest({ version: ' 0.5.0 ', buildId: '\tabc123\n', extra: 1 })).toEqual({
+  it('returns exact fields and ignores extra fields', () => {
+    expect(parseBuildManifest({ version: '0.5.0', buildId: 'abc123', extra: 1 })).toEqual({
       version: '0.5.0',
       buildId: 'abc123',
     });
+  });
+
+  it('accepts every valid build id and version', () => {
+    for (const buildId of VALID_BUILD_IDS) {
+      expect(parseBuildManifest({ version: '0.2.0', buildId })).toEqual({ version: '0.2.0', buildId });
+    }
+    for (const version of VALID_VERSIONS) {
+      expect(parseBuildManifest({ version, buildId: 'dev' })).toEqual({ version, buildId: 'dev' });
+    }
+  });
+
+  it('rejects padded fields instead of trimming them', () => {
+    expect(parseBuildManifest({ version: ' 0.5.0 ', buildId: 'abc123' })).toBeNull();
+    expect(parseBuildManifest({ version: '0.5.0', buildId: '\tabc123\n' })).toBeNull();
+    expect(parseBuildManifest({ version: '0.5.0\n', buildId: 'abc123' })).toBeNull();
+    expect(parseBuildManifest({ version: '0.5.0', buildId: ' abc123' })).toBeNull();
+  });
+
+  it('rejects invalid build ids and versions', () => {
+    for (const buildId of INVALID_BUILD_IDS) {
+      expect(parseBuildManifest({ version: '0.2.0', buildId })).toBeNull();
+    }
+    for (const version of INVALID_VERSIONS) {
+      expect(parseBuildManifest({ version, buildId: 'dev' })).toBeNull();
+    }
   });
 
   it('rejects non-objects, null and arrays', () => {
@@ -60,6 +108,86 @@ describe('parseBuildManifest', () => {
     expect(parseBuildManifest({ version: '0.5.0', buildId: null })).toBeNull();
     expect(parseBuildManifest({ version: '   ', buildId: 'abc' })).toBeNull();
     expect(parseBuildManifest({ version: '0.5.0', buildId: '' })).toBeNull();
+    expect(parseBuildManifest({ version: '0.5.0', buildId: 123 })).toBeNull();
+    expect(parseBuildManifest({ version: ['0.5.0'], buildId: 'abc' })).toBeNull();
+    expect(parseBuildManifest({ version: '0.5.0', buildId: { id: 'abc' } })).toBeNull();
+  });
+});
+
+describe('isBuildId', () => {
+  it('accepts 1 to 64 characters from [A-Za-z0-9._-]', () => {
+    for (const buildId of VALID_BUILD_IDS) expect(isBuildId(buildId)).toBe(true);
+    expect(isBuildId('A.b_c-9')).toBe(true);
+  });
+
+  it('rejects empty, too long, URL-special, whitespace, non-ASCII and control characters', () => {
+    for (const buildId of INVALID_BUILD_IDS) expect(isBuildId(buildId)).toBe(false);
+  });
+
+  it('rejects non-strings', () => {
+    expect(isBuildId(undefined)).toBe(false);
+    expect(isBuildId(null)).toBe(false);
+    expect(isBuildId(123)).toBe(false);
+    expect(isBuildId(['dev'])).toBe(false);
+  });
+});
+
+describe('isAppVersion', () => {
+  it('accepts SemVer with optional pre-release and build metadata', () => {
+    for (const version of VALID_VERSIONS) expect(isAppVersion(version)).toBe(true);
+  });
+
+  it('accepts 32 characters and rejects 33', () => {
+    const atLimit = `1.2.3-${'a'.repeat(26)}`;
+    expect(atLimit).toHaveLength(32);
+    expect(isAppVersion(atLimit)).toBe(true);
+    const overLimit = `1.2.3-${'a'.repeat(27)}`;
+    expect(overLimit).toHaveLength(33);
+    expect(isAppVersion(overLimit)).toBe(false);
+  });
+
+  it('rejects non-SemVer strings', () => {
+    for (const version of INVALID_VERSIONS) expect(isAppVersion(version)).toBe(false);
+  });
+
+  it('rejects non-strings', () => {
+    expect(isAppVersion(undefined)).toBe(false);
+    expect(isAppVersion(null)).toBe(false);
+    expect(isAppVersion(1)).toBe(false);
+  });
+});
+
+describe('parseBuildManifestText', () => {
+  const validText = JSON.stringify({ version: '0.2.0', buildId: '0123456789ab' });
+
+  it('parses a valid manifest', () => {
+    expect(parseBuildManifestText(validText)).toEqual({ version: '0.2.0', buildId: '0123456789ab' });
+  });
+
+  it('accepts text of exactly the size limit', () => {
+    const atLimit = validText.padEnd(MAX_BUILD_MANIFEST_BYTES, ' ');
+    expect(MAX_BUILD_MANIFEST_BYTES).toBe(1024);
+    expect(atLimit).toHaveLength(1024);
+    expect(parseBuildManifestText(atLimit)).toEqual({ version: '0.2.0', buildId: '0123456789ab' });
+  });
+
+  it('rejects text over the size limit', () => {
+    const overLimit = validText.padEnd(MAX_BUILD_MANIFEST_BYTES + 1, ' ');
+    expect(overLimit).toHaveLength(1025);
+    expect(parseBuildManifestText(overLimit)).toBeNull();
+  });
+
+  it('rejects malformed JSON and non-object JSON', () => {
+    expect(parseBuildManifestText('')).toBeNull();
+    expect(parseBuildManifestText('{"version":')).toBeNull();
+    expect(parseBuildManifestText('null')).toBeNull();
+    expect(parseBuildManifestText('[]')).toBeNull();
+    expect(parseBuildManifestText('"x"')).toBeNull();
+  });
+
+  it('rejects valid JSON with invalid fields', () => {
+    expect(parseBuildManifestText(JSON.stringify({ version: 'latest', buildId: 'dev' }))).toBeNull();
+    expect(parseBuildManifestText(JSON.stringify({ version: '0.2.0', buildId: 'a/b' }))).toBeNull();
   });
 });
 

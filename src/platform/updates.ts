@@ -3,12 +3,13 @@
  * Same-origin GET of `version.json` only; never touches storage or service workers.
  */
 import {
+  MAX_BUILD_MANIFEST_BYTES,
   UPDATE_CHECK_TIMEOUT_MS,
   attemptedBuildIdFrom,
   decideUpdate,
   formatVersionLabel,
   manifestUrl,
-  parseBuildManifest,
+  parseBuildManifestText,
   reloadUrl,
   shouldCheck,
   type BuildManifest,
@@ -39,6 +40,34 @@ function createNonce(): string {
   return Math.random().toString(36).slice(2);
 }
 
+/**
+ * Reads the body as strict UTF-8, stopping and cancelling the stream once it passes `maxBytes`.
+ * Null when there is no body or it is too large; rejects on a read or decode error.
+ */
+async function readBoundedText(response: Response, maxBytes: number): Promise<string | null> {
+  if (response.body === null) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+}
+
 /** Fetches and validates the remote manifest; null on offline, timeout, or a bad response (silent by design, ADR 0009). */
 async function fetchRemoteManifest(signal: AbortSignal): Promise<BuildManifest | null> {
   try {
@@ -50,7 +79,8 @@ async function fetchRemoteManifest(signal: AbortSignal): Promise<BuildManifest |
       signal,
     });
     if (!response.ok) return null;
-    return parseBuildManifest(await response.json());
+    const text = await readBoundedText(response, MAX_BUILD_MANIFEST_BYTES);
+    return text === null ? null : parseBuildManifestText(text);
   } catch {
     return null;
   }

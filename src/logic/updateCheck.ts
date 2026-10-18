@@ -9,6 +9,7 @@ export const RELOAD_PARAM = 'v';
 export const CACHE_BUST_PARAM = 't';
 export const UPDATE_CHECK_MIN_INTERVAL_MS = 60_000;
 export const UPDATE_CHECK_TIMEOUT_MS = 8_000;
+export const MAX_BUILD_MANIFEST_BYTES = 1024;
 
 export type UpdateDecision = { kind: 'none' } | { kind: 'prompt'; manifest: BuildManifest };
 
@@ -21,21 +22,39 @@ export interface UpdateDecisionInput {
 
 const SHORT_BUILD_ID_LENGTH = 7;
 
-function readTrimmedString(record: Record<string, unknown>, key: string): string | null {
-  const value = record[key];
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed === '' ? null : trimmed;
+const BUILD_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+const APP_VERSION_MAX_LENGTH = 32;
+const APP_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
+/** True for a build id of 1 to 64 characters from `[A-Za-z0-9._-]`. */
+export function isBuildId(value: unknown): value is string {
+  return typeof value === 'string' && BUILD_ID_PATTERN.test(value);
 }
 
-/** Validates untrusted manifest JSON; null when it is not a usable manifest. */
+/** True for a SemVer version string of at most 32 characters. */
+export function isAppVersion(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= APP_VERSION_MAX_LENGTH && APP_VERSION_PATTERN.test(value);
+}
+
+/** Validates untrusted manifest JSON; null when it is not a usable manifest. Extra fields are ignored. */
 export function parseBuildManifest(data: unknown): BuildManifest | null {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) return null;
   const record = data as Record<string, unknown>;
-  const version = readTrimmedString(record, 'version');
-  const buildId = readTrimmedString(record, 'buildId');
-  if (version === null || buildId === null) return null;
+  const { version, buildId } = record;
+  if (!isAppVersion(version) || !isBuildId(buildId)) return null;
   return { version, buildId };
+}
+
+/** Parses untrusted manifest text; null when it is too long, not JSON, or not a usable manifest. */
+export function parseBuildManifestText(text: string): BuildManifest | null {
+  if (text.length > MAX_BUILD_MANIFEST_BYTES) return null;
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  return parseBuildManifest(data);
 }
 
 /**

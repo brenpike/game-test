@@ -31,6 +31,7 @@ So a reload can serve a cached `index.html` for up to about 10 minutes, which st
 - It sends no player data: no body, no cookies, no identifiers. The only value sent is a random cache-busting nonce.
 - It checks again on `visibilitychange`, `online`, and `pageshow`, at most once every 60 s.
 - Offline, timeout, or a bad response: it stays silent and shows nothing.
+- `version.json` is treated as a bad response unless the body is at most 1024 bytes, `version` is SemVer of at most 32 characters, and `buildId` matches `[A-Za-z0-9._-]{1,64}`. The build fails if its own version or build ID breaks these rules.
 - Under `npm run dev` it makes no request.
 
 **The prompt.**
