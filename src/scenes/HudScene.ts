@@ -502,6 +502,8 @@ export class HudScene extends Phaser.Scene {
   /**
    * Places Go home under Pause, dropped below the top-left panels when they would meet it. When
    * that would reach the Dash ring (a very short screen), it sits left of Pause on the top row instead.
+   * When the top row has no room beside the snack counter either (a screen both narrow and short),
+   * it stacks right under Pause, so the whole button always stays on screen.
    */
   private layoutGoHome(): void {
     const { cssW } = this.view;
@@ -513,7 +515,12 @@ export class HudScene extends Phaser.Scene {
       button.container.setPosition(x, y);
       return;
     }
-    button.container.setPosition(this.pauseButton.container.x - GAP - button.width, MARGIN);
+    const topRowX = this.pauseButton.container.x - GAP - button.width;
+    if (topRowX >= MARGIN + this.counterPanelW + GAP) {
+      button.container.setPosition(topRowX, MARGIN);
+      return;
+    }
+    button.container.setPosition(Math.max(MARGIN, x), underPause);
   }
 
   private goHomeBottom(): number {
