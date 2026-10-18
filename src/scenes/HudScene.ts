@@ -609,7 +609,8 @@ export class HudScene extends Phaser.Scene {
   private pauseSwim(): void {
     if (this.paused || this.trip.phase === 'ended') return;
     this.paused = true;
-    this.releaseStick();
+    this.releaseStick(false);
+    this.setHudClockPaused(true);
     this.scene.pause(SCENE_KEYS.swim);
     this.pauseButton.container.setVisible(false);
     this.overlay.setVisible(true);
@@ -621,8 +622,22 @@ export class HudScene extends Phaser.Scene {
     this.paused = false;
     this.overlay.setVisible(false);
     this.pauseButton.container.setVisible(true);
+    this.setHudClockPaused(false);
     this.scene.resume(SCENE_KEYS.swim);
     this.game.events.emit(GAME_EVENTS.RESUMED);
+  }
+
+  /**
+   * Freezes or thaws every HUD timer and tween (banner, trip card, swim pad and any added later),
+   * so pause stops HUD motion as well as the swim scene. The pause overlay and its buttons use neither.
+   */
+  private setHudClockPaused(paused: boolean): void {
+    this.time.paused = paused;
+    if (paused) {
+      this.tweens.pauseAll();
+    } else {
+      this.tweens.resumeAll();
+    }
   }
 
   /** Enter or Space: starts a new trip while the trip-end card shows (ignoring key repeat), else resumes. */
@@ -740,6 +755,8 @@ export class HudScene extends Phaser.Scene {
 
   private handleShutdown(): void {
     this.releaseStick(false);
+    // The scene clock keeps `paused` across a restart, so thaw it here.
+    this.setHudClockPaused(false);
     this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.game.events.off(GAME_EVENTS.COLLECTED, this.handleCollected, this);
     this.game.events.off(GAME_EVENTS.ALL_COLLECTED, this.handleAllCollected, this);
