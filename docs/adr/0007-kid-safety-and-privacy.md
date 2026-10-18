@@ -1,6 +1,6 @@
 # ADR 0007: Kid safety and privacy by design
 
-- Status: Accepted. The "No harsh fail states" play rule is amended by [ADR 0008](0008-gentle-fail-state.md).
+- Status: Accepted. The "No harsh fail states" play rule is amended by [ADR 0008](0008-gentle-fail-state.md). The "No third-party network requests" rule is refined by [ADR 0009](0009-update-check.md) (one first-party update check).
 - Date: 2026-10-18
 
 ## Context
