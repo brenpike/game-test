@@ -59,6 +59,7 @@ import {
   type SceneView,
 } from './BootScene';
 import { HomeSpotView } from './HomeSpotView';
+import { addMotionTween, settleMotionTweens } from './motionTweens';
 import { PredatorView } from './PredatorView';
 import { TreasureView } from './TreasureView';
 
@@ -450,11 +451,9 @@ export class SwimScene extends Phaser.Scene {
       sprite.destroy();
       return;
     }
-    this.tweens.add({
+    addMotionTween(this, {
       targets: sprite,
-      scaleX: sprite.scaleX * 1.4,
-      scaleY: sprite.scaleY * 1.4,
-      alpha: 0,
+      props: { scaleX: sprite.scaleX * 1.4, scaleY: sprite.scaleY * 1.4, alpha: 0 },
       duration: SNACK_POP_MS,
       ease: 'Sine.easeOut',
       onComplete: () => sprite.destroy(),
@@ -597,6 +596,7 @@ export class SwimScene extends Phaser.Scene {
     }
     if (!this.motion.ambient) {
       this.streaks.forEach((streak) => streak.image.setAlpha(1));
+      settleMotionTweens(this);
     }
   }
 
@@ -702,7 +702,7 @@ export class SwimScene extends Phaser.Scene {
     if (!this.motion.turnTween) return;
     this.tweens.killTweensOf(this.turn);
     this.turn.squash = TURN_SQUASH;
-    this.tweens.add({ targets: this.turn, squash: 1, duration: TURN_MS, ease: 'Sine.easeOut' });
+    addMotionTween(this, { targets: this.turn, props: { squash: 1 }, duration: TURN_MS, ease: 'Sine.easeOut' });
   }
 
   private redrawAxolotl(pose: AxolotlPose, dt: number): void {

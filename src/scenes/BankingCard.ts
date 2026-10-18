@@ -16,6 +16,7 @@ import {
   type UiButton,
 } from './BootScene';
 import { addTreasureIcon, iconRowsSize, placeIconRows } from './FindPopup';
+import { addMotionTween } from './motionTweens';
 
 const MARGIN = 16;
 const PAD = 24;
@@ -134,7 +135,12 @@ export class BankingCard {
       return;
     }
     this.container.setAlpha(0).setScale(START_SCALE);
-    this.scene.tweens.add({ targets: this.container, alpha: 1, scale: 1, duration: FADE_MS, ease: 'Sine.easeOut' });
+    addMotionTween(this.scene, {
+      targets: this.container,
+      props: { alpha: 1, scale: 1 },
+      duration: FADE_MS,
+      ease: 'Sine.easeOut',
+    });
     this.twinkles.forEach((twinkle) => this.burstTwinkle(twinkle));
   }
 
@@ -276,6 +282,11 @@ export class BankingCard {
     const endX = image.x;
     const endY = image.y;
     image.setPosition(endX - Math.cos(angle) * TWINKLE_BURST_PX, endY - Math.sin(angle) * TWINKLE_BURST_PX);
-    this.scene.tweens.add({ targets: image, x: endX, y: endY, duration: TWINKLE_MS, ease: 'Sine.easeOut' });
+    addMotionTween(this.scene, {
+      targets: image,
+      props: { x: endX, y: endY },
+      duration: TWINKLE_MS,
+      ease: 'Sine.easeOut',
+    });
   }
 }

@@ -16,6 +16,7 @@ import {
   type UiButton,
 } from './BootScene';
 import { addTreasureIcon, iconRowsSize, placeIconRows } from './FindPopup';
+import { addMotionTween } from './motionTweens';
 
 const MARGIN = 16;
 const PAD = 24;
@@ -125,7 +126,7 @@ export class HomeScreen {
     this.scene.tweens.killTweensOf(this.container);
     this.container.setVisible(true).setAlpha(motion.ambient ? 0 : 1);
     if (motion.ambient) {
-      this.scene.tweens.add({ targets: this.container, alpha: 1, duration: FADE_MS });
+      addMotionTween(this.scene, { targets: this.container, props: { alpha: 1 }, duration: FADE_MS });
     }
   }
 

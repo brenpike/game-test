@@ -7,6 +7,7 @@ import { badgeShape, rarityName } from '../logic/hints';
 import type { MotionProfile } from '../logic/motion';
 import type { FoundInfo } from '../logic/tripEvents';
 import { drawPanel, uiTextStyle, type GameAssets, type SceneView } from './BootScene';
+import { addMotionTween } from './motionTweens';
 
 const SIDE_MARGIN = 16;
 const PAD = 12;
@@ -94,7 +95,8 @@ export function placeIconRows(
  * Find pop-up, top-centre under the banners: a white panel with the treasure icon, then its name,
  * category and rarity badge with the rarity name. Never interactive and has no dim, so presses pass
  * through to the controls. Shows one find at a time from a queue: fades in, holds, fades out on the
- * HUD clock (so pause freezes it); appears and leaves at once under reduced motion.
+ * HUD clock (so pause freezes it); appears and leaves at once under reduced motion, including when
+ * reduced motion turns on mid-fade or with finds still queued.
  */
 export class FindPopup {
   private readonly scene: Phaser.Scene;
@@ -104,16 +106,23 @@ export class FindPopup {
   private readonly name: Phaser.GameObjects.Text;
   private readonly category: Phaser.GameObjects.Text;
   private readonly rarity: Phaser.GameObjects.Text;
+  private readonly motion: () => MotionProfile;
   private view: SceneView;
   private top = 0;
-  private motion: MotionProfile | null = null;
   private icon: Phaser.GameObjects.Image | null = null;
   private badge: Phaser.GameObjects.Image | null = null;
   private queue: FoundInfo[] = [];
   private timer: Phaser.Time.TimerEvent | null = null;
 
-  constructor(scene: Phaser.Scene, assets: GameAssets, view: SceneView, depth: number) {
+  constructor(
+    scene: Phaser.Scene,
+    assets: GameAssets,
+    view: SceneView,
+    depth: number,
+    motion: () => MotionProfile,
+  ) {
     this.scene = scene;
+    this.motion = motion;
     this.treasure = assets.treasure;
     this.view = view;
     const dpr = view.fit.dpr;
@@ -133,8 +142,7 @@ export class FindPopup {
   }
 
   /** Queues the finds in order and starts the next one when none is showing. */
-  enqueue(found: readonly FoundInfo[], motion: MotionProfile): void {
-    this.motion = motion;
+  enqueue(found: readonly FoundInfo[]): void {
     this.queue.push(...found);
     if (!this.isShowing()) this.showNext();
   }
@@ -163,7 +171,7 @@ export class FindPopup {
   }
 
   private ambient(): boolean {
-    return this.motion?.ambient ?? false;
+    return this.motion().ambient;
   }
 
   /** Shows the next queued find, fading in unless motion is reduced, and schedules its leaving. */
@@ -176,7 +184,7 @@ export class FindPopup {
     this.scene.tweens.killTweensOf(this.container);
     this.container.setVisible(true).setAlpha(ambient ? 0 : 1);
     if (ambient) {
-      this.scene.tweens.add({ targets: this.container, alpha: 1, duration: FADE_MS });
+      addMotionTween(this.scene, { targets: this.container, props: { alpha: 1 }, duration: FADE_MS });
     }
     this.timer = this.scene.time.delayedCall((ambient ? FADE_MS : 0) + HOLD_MS, this.leave, [], this);
   }
@@ -188,9 +196,9 @@ export class FindPopup {
       this.finish();
       return;
     }
-    this.scene.tweens.add({
+    addMotionTween(this.scene, {
       targets: this.container,
-      alpha: 0,
+      props: { alpha: 0 },
       duration: FADE_MS,
       onComplete: () => this.finish(),
     });

@@ -40,6 +40,7 @@ import {
 } from './BootScene';
 import { FindPopup } from './FindPopup';
 import { HomeScreen } from './HomeScreen';
+import { addMotionTween, settleMotionTweens } from './motionTweens';
 
 const MARGIN = 16;
 const GAP = 12;
@@ -199,7 +200,7 @@ export class HudScene extends Phaser.Scene {
     this.buildOverlay();
     this.buildBanner();
     this.buildHint();
-    this.foundPopup = new FindPopup(this, this.assets, this.view, FIND_POPUP_DEPTH);
+    this.foundPopup = new FindPopup(this, this.assets, this.view, FIND_POPUP_DEPTH, () => this.motion);
     this.bankingCard = new BankingCard(this, this.assets, this.view, BANKING_CARD_DEPTH);
     this.homeScreen = new HomeScreen(this, this.assets, this.view, HOME_SCREEN_DEPTH);
     this.bindKeys();
@@ -743,10 +744,9 @@ export class HudScene extends Phaser.Scene {
       this.stickKnob.setPosition(centre.x, centre.y);
       return;
     }
-    this.tweens.add({
+    addMotionTween(this, {
       targets: this.stickKnob,
-      x: centre.x,
-      y: centre.y,
+      props: { x: centre.x, y: centre.y },
       duration: STICK_RECENTER_MS,
       ease: 'Sine.easeOut',
     });
@@ -855,7 +855,7 @@ export class HudScene extends Phaser.Scene {
     this.banner.setVisible(true).setAlpha(this.motion.ambient ? 0 : 1);
     this.layoutBanners();
     if (this.motion.ambient) {
-      this.tweens.add({ targets: this.banner, alpha: 1, duration: BANNER_FADE_MS });
+      addMotionTween(this, { targets: this.banner, props: { alpha: 1 }, duration: BANNER_FADE_MS });
     }
     this.bannerTimer = this.time.delayedCall(BANNER_MS, this.hideBanner, [], this);
   }
@@ -866,9 +866,9 @@ export class HudScene extends Phaser.Scene {
       this.dropBanner();
       return;
     }
-    this.tweens.add({
+    addMotionTween(this, {
       targets: this.banner,
-      alpha: 0,
+      props: { alpha: 0 },
       duration: BANNER_FADE_MS,
       onComplete: () => this.dropBanner(),
     });
@@ -917,7 +917,7 @@ export class HudScene extends Phaser.Scene {
   private announceFinds(snapshot: TripSnapshot): void {
     if (snapshot.found.length < this.announcedCount) this.announcedCount = 0;
     if (snapshot.phase === 'swimming') {
-      this.foundPopup.enqueue(snapshot.found.slice(this.announcedCount), this.motion);
+      this.foundPopup.enqueue(snapshot.found.slice(this.announcedCount));
     }
     this.announcedCount = snapshot.found.length;
   }
@@ -944,7 +944,7 @@ export class HudScene extends Phaser.Scene {
     this.hint.setVisible(true).setAlpha(this.motion.ambient ? 0 : 1);
     this.layoutBanners();
     if (this.motion.ambient) {
-      this.tweens.add({ targets: this.hint, alpha: 1, duration: HINT_FADE_MS });
+      addMotionTween(this, { targets: this.hint, props: { alpha: 1 }, duration: HINT_FADE_MS });
     }
     this.hintTimer = this.time.delayedCall(HINT_FADE_MS + HINT_HOLD_MS, this.fadeOutHint, [], this);
   }
@@ -955,9 +955,9 @@ export class HudScene extends Phaser.Scene {
       this.hideHint();
       return;
     }
-    this.tweens.add({
+    addMotionTween(this, {
       targets: this.hint,
-      alpha: 0,
+      props: { alpha: 0 },
       duration: HINT_FADE_MS,
       onComplete: () => this.hideHint(),
     });
@@ -973,8 +973,14 @@ export class HudScene extends Phaser.Scene {
     this.layoutBanners();
   }
 
+  /**
+   * Switches the HUD motion profile. When reduced motion turns on, ends every running motion tween
+   * in this scene at its end state: the banners, the hint, the find pop-up, the banking card, the
+   * home screen and the swim pad.
+   */
   private handleReducedMotion(payload: ReducedMotionPayload): void {
     this.motion = motionProfile(payload.reduced);
+    if (!this.motion.ambient) settleMotionTweens(this);
   }
 
   private handleResize(): void {
