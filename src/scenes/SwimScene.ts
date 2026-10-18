@@ -41,10 +41,11 @@ import {
   tripSnapshot,
   type TripContext,
   type TripEvent,
+  type TripInput,
   type TripState,
 } from '../logic/trip';
 import { TRIP_EVENTS, TRIP_REGISTRY_KEYS, type TripSnapshot } from '../logic/tripEvents';
-import { SWIM } from '../logic/tuning';
+import { LEGS, SWIM } from '../logic/tuning';
 import { len, type Vec2 } from '../logic/vec';
 import { SURF, WORLD_H, ZONE_W, swimBounds, waveY, type CurrentZone } from '../logic/zone';
 import {
@@ -59,6 +60,7 @@ import {
 } from './BootScene';
 import { HomeSpotView } from './HomeSpotView';
 import { PredatorView } from './PredatorView';
+import { TreasureView } from './TreasureView';
 
 const TAU = Math.PI * 2;
 const SIM_SEED = 0xb0bb1e;
@@ -124,7 +126,10 @@ function placeBaked(image: Phaser.GameObjects.Image, info: TexInfo): Phaser.Game
   return image.setOrigin(info.originNormX, info.originNormY).setScale(1 / info.scale);
 }
 
-/** The canal zone: swimming, snacks, currents, reeds, bubbles, Tail Dash and the tilapia. */
+/**
+ * The canal zone: swimming, snacks, currents, reeds, bubbles, Tail Dash, the tilapia, the Home
+ * Spot and the hidden treasures (hint stars, Dash pots, the cave and the past-the-current marker).
+ */
 export class SwimScene extends Phaser.Scene {
   private assets!: GameAssets;
   private motion!: MotionProfile;
@@ -147,11 +152,13 @@ export class SwimScene extends Phaser.Scene {
   private keys: SteerKeys = { left: [], right: [], up: [], down: [] };
   private dashKeys: Phaser.Input.Keyboard.Key[] = [];
   private dashKeyLatched = false;
+  private dashingThisFrame = false;
 
   private followPoint = new Phaser.Math.Vector2();
   private axolotl!: Phaser.GameObjects.Image;
   private predatorView!: PredatorView;
   private homeSpotView!: HomeSpotView;
+  private treasureView!: TreasureView;
   private reeds: Phaser.GameObjects.Image[] = [];
   private reedNudge: number[] = [];
   private pads: Phaser.GameObjects.Image[] = [];
@@ -182,6 +189,7 @@ export class SwimScene extends Phaser.Scene {
     this.clock = 0;
     this.allDone = false;
     this.dashKeyLatched = false;
+    this.dashingThisFrame = false;
     this.padSteer = { x: 0, y: 0 };
     this.lastPose = null;
     this.turn = { squash: 1 };
@@ -200,7 +208,10 @@ export class SwimScene extends Phaser.Scene {
     this.dash = createDash();
     this.items = createCollectibles(zone.collectibles);
     this.bubbles = createBubbles();
-    this.trip = createTrip(zone);
+    // INVARIANT: trip seeds are never saved. The first trip per scene start is random; later
+    // trips use newTrip's default, nextTripSeed.
+    const tripSeed = Math.floor(Math.random() * 0x100000000) >>> 0;
+    this.trip = createTrip(zone, LEGS, [], tripSeed);
     this.tripCtx = createTripContext({ encounter: createEncounterContext({ bounds: this.bounds }) });
     this.registry.set(REGISTRY_KEYS.total, this.items.length);
     this.registry.set(REGISTRY_KEYS.collected, countCollected(this.items));
@@ -243,6 +254,7 @@ export class SwimScene extends Phaser.Scene {
 
     const zone = this.assets.zone;
     const pos = { x: this.swim.x, y: this.swim.y };
+    this.dashingThisFrame = this.dash.phase === 'dashing';
     this.swim = stepSwim(
       this.swim,
       steer,
@@ -250,7 +262,7 @@ export class SwimScene extends Phaser.Scene {
         current: currentAt(pos, zone.currents),
         dragMul: reedDragAt(pos, zone.reedPatches),
         bounds: this.bounds,
-        dashing: this.dash.phase === 'dashing',
+        dashing: this.dashingThisFrame,
       },
       dt,
       legSwimTuning(this.snapshot.legs.present),
@@ -282,7 +294,8 @@ export class SwimScene extends Phaser.Scene {
       .setDepth(DEPTH.haze);
     this.streaks = zone.currents.flatMap((current) => this.buildStreaks(current));
 
-    this.homeSpotView = new HomeSpotView(this, this.assets, this.trip.homeSpot, this.trip.finds);
+    this.homeSpotView = new HomeSpotView(this, this.assets, this.trip.homeSpot);
+    this.treasureView = new TreasureView(this, this.assets, zone, this.trip.placed);
 
     this.snacks.clear();
     for (const item of this.items) {
@@ -449,16 +462,17 @@ export class SwimScene extends Phaser.Scene {
   }
 
   /**
-   * Steps the trip. Swimming: a bump sets the swim velocity. Banked, carrying or ended: the trip
-   * places the axolotl, still. The carry advances only with this frame `dt`, so pause freezes it.
+   * Steps the trip. Swimming: a bump sets the swim velocity, and a Tail Dash active this step can
+   * break Dash pots. Banked, carrying or ended: the trip places the axolotl, still. The carry
+   * advances only with this frame `dt`, so pause freezes it.
    */
   private advanceTrip(dt: number): void {
-    const result = stepTrip(
-      this.trip,
-      { axolotlPos: { x: this.swim.x, y: this.swim.y }, reduced: !this.motion.ambient },
-      dt,
-      this.tripCtx,
-    );
+    const input: TripInput = {
+      axolotlPos: { x: this.swim.x, y: this.swim.y },
+      reduced: !this.motion.ambient,
+      dashing: this.trip.phase === 'swimming' && this.dashingThisFrame,
+    };
+    const result = stepTrip(this.trip, input, dt, this.tripCtx);
     this.trip = result.state;
     if (this.trip.phase === 'swimming') {
       if (result.impulse) {
@@ -475,6 +489,7 @@ export class SwimScene extends Phaser.Scene {
     this.handleTripEvents(events);
     this.predatorView.handleEvents(events);
     this.homeSpotView.handleEvents(events);
+    this.treasureView.handleEvents(events);
   }
 
   /** Puts the axolotl where the trip holds it while banked, carried or ended, with no velocity. */
@@ -513,7 +528,8 @@ export class SwimScene extends Phaser.Scene {
 
   /**
    * Starts a new trip in place once the last one has ended: Home Spot, four legs, fresh tilapia
-   * and Dash. Snacks are kept (PRD A19). Ignored in any other phase.
+   * and Dash, and every unbanked treasure placed again with its Dash pot sealed. Snacks are kept
+   * (PRD A19). Ignored in any other phase.
    */
   private handleRequestNewTrip(): void {
     const next = newTrip(this.trip);
@@ -528,8 +544,10 @@ export class SwimScene extends Phaser.Scene {
     this.lastSteer = { x: 0, y: 0 };
     this.sparkleLevel = 0;
     this.dash = createDash();
+    this.dashingThisFrame = false;
     this.predatorView.reset();
     this.homeSpotView.reset();
+    this.treasureView.reset(next.placed);
     this.followPoint.set(this.swim.x, this.swim.y);
     this.cameras.main.centerOn(this.swim.x, this.swim.y);
     this.emitDashState();
@@ -606,7 +624,15 @@ export class SwimScene extends Phaser.Scene {
   private renderFrame(dt: number): void {
     const t = this.motion.ambient ? this.clock : T_STATIC;
     this.renderAxolotl(dt);
-    this.homeSpotView.render({ holdings: this.trip.holdings, motion: this.motion, dt, time: this.clock });
+    this.homeSpotView.render({ motion: this.motion, dt, time: this.clock });
+    this.treasureView.render({
+      placed: this.trip.placed,
+      holdings: this.trip.holdings,
+      axolotl: { x: this.swim.x, y: this.swim.y },
+      motion: this.motion,
+      dt,
+      time: this.clock,
+    });
     this.predatorView.render({
       encounter: this.trip.encounter,
       axolotl: this.axolotl,

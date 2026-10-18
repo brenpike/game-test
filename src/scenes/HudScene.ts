@@ -38,6 +38,7 @@ import {
   type SceneView,
   type UiButton,
 } from './BootScene';
+import { FindPopup } from './FindPopup';
 import { HomeScreen } from './HomeScreen';
 
 const MARGIN = 16;
@@ -75,6 +76,8 @@ const BAG_STATUS_PX = 18;
 const BAG_GAP = 6;
 const HINT_HOLD_MS = 6000;
 const HINT_FADE_MS = 400;
+// INVARIANT: the find pop-up sits above the banners and below the banking card and the home screen.
+const FIND_POPUP_DEPTH = DEPTH.ui + 6;
 const BANKING_CARD_DEPTH = DEPTH.ui + 8;
 const HOME_SCREEN_DEPTH = DEPTH.ui + 9;
 const OVERLAY_DEPTH = DEPTH.ui + 10;
@@ -105,7 +108,7 @@ function widestText(text: Phaser.GameObjects.Text, values: readonly string[]): n
 /**
  * Screen-space UI over the swim scene: snack counter, legs display, Trip Bag display, Pause, Dash,
  * the contextual Go home button, swim pad, pause overlay, the all-snacks and first-trip hint
- * banners, the banking card and the home screen.
+ * banners, the find pop-up, the banking card and the home screen.
  */
 export class HudScene extends Phaser.Scene {
   private assets!: GameAssets;
@@ -159,6 +162,9 @@ export class HudScene extends Phaser.Scene {
   private hintTimer: Phaser.Time.TimerEvent | null = null;
   private bankingCard!: BankingCard;
   private homeScreen!: HomeScreen;
+  private foundPopup!: FindPopup;
+  /** How many of the trip's finds the pop-up has been given. */
+  private announcedCount = 0;
 
   constructor() {
     super(SCENE_KEYS.hud);
@@ -173,6 +179,7 @@ export class HudScene extends Phaser.Scene {
     this.lastSteer = { x: 0, y: 0 };
     this.trip = createSwimmingTrip();
     this.hintTimer = null;
+    this.announcedCount = 0;
   }
 
   create(): void {
@@ -181,6 +188,7 @@ export class HudScene extends Phaser.Scene {
     this.collected = Number(this.registry.get(REGISTRY_KEYS.collected) ?? 0);
     this.total = Number(this.registry.get(REGISTRY_KEYS.total) ?? 0);
     this.trip = (this.registry.get(TRIP_REGISTRY_KEYS.state) as TripSnapshot | undefined) ?? createSwimmingTrip();
+    this.announcedCount = this.trip.found.length;
     useCssCamera(this.cameras.main, this.view.fit.dpr);
 
     this.buildCounter();
@@ -191,6 +199,7 @@ export class HudScene extends Phaser.Scene {
     this.buildOverlay();
     this.buildBanner();
     this.buildHint();
+    this.foundPopup = new FindPopup(this, this.assets, this.view, FIND_POPUP_DEPTH);
     this.bankingCard = new BankingCard(this, this.assets, this.view, BANKING_CARD_DEPTH);
     this.homeScreen = new HomeScreen(this, this.assets, this.view, HOME_SCREEN_DEPTH);
     this.bindKeys();
@@ -589,11 +598,19 @@ export class HudScene extends Phaser.Scene {
     );
   }
 
-  /** Stacks the banners: the hint first while it shows, then the all-snacks banner. */
+  /**
+   * Stacks the banners: the hint first while it shows, then the all-snacks banner, then the find
+   * pop-up under the visible ones.
+   */
   private layoutBanners(): void {
     const top = this.bannerTop();
     const hintBottom = this.layoutTopBanner(this.hintPanel, this.hintText, top);
-    this.layoutTopBanner(this.bannerPanel, this.bannerText, this.hint.visible ? hintBottom + GAP : top);
+    const bannerY = this.hint.visible ? hintBottom + GAP : top;
+    const bannerBottom = this.layoutTopBanner(this.bannerPanel, this.bannerText, bannerY);
+    let stackBottom = top;
+    if (this.hint.visible) stackBottom = hintBottom;
+    if (this.banner.visible) stackBottom = bannerBottom;
+    this.foundPopup.layout(this.view, stackBottom + GAP);
   }
 
   /** Draws one centred pink banner panel at `top` around its text and returns its bottom edge. */
@@ -782,7 +799,7 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Freezes or thaws every HUD timer and tween (banners, banking card, home screen, swim pad and any added later),
+   * Freezes or thaws every HUD timer and tween (banners, find pop-up, banking card, home screen, swim pad and any added later),
    * so pause stops HUD motion as well as the swim scene. The pause overlay and its buttons use neither.
    */
   private setHudClockPaused(paused: boolean): void {
@@ -836,6 +853,7 @@ export class HudScene extends Phaser.Scene {
     this.bannerTimer?.remove(false);
     this.tweens.killTweensOf(this.banner);
     this.banner.setVisible(true).setAlpha(this.motion.ambient ? 0 : 1);
+    this.layoutBanners();
     if (this.motion.ambient) {
       this.tweens.add({ targets: this.banner, alpha: 1, duration: BANNER_FADE_MS });
     }
@@ -845,15 +863,21 @@ export class HudScene extends Phaser.Scene {
   private hideBanner(): void {
     this.bannerTimer = null;
     if (!this.motion.ambient) {
-      this.banner.setVisible(false);
+      this.dropBanner();
       return;
     }
     this.tweens.add({
       targets: this.banner,
       alpha: 0,
       duration: BANNER_FADE_MS,
-      onComplete: () => this.banner.setVisible(false),
+      onComplete: () => this.dropBanner(),
     });
+  }
+
+  /** Hides the all-snacks banner and lets the find pop-up move up. */
+  private dropBanner(): void {
+    this.banner.setVisible(false);
+    this.layoutBanners();
   }
 
   private handleDashState(payload: DashStatePayload): void {
@@ -862,9 +886,10 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Redraws the legs and Trip Bag from the snapshot and follows its phase: leaving 'swimming' drops
-   * the swim pad and the hint, into 'banked' shows the banking card, into 'ended' shows the home
-   * screen, and leaving either hides it.
+   * Redraws the legs and Trip Bag from the snapshot, announces new finds, and follows its phase:
+   * leaving 'swimming' drops the swim pad and the hint, into 'banked' or 'ended' clears the find
+   * pop-up, into 'banked' shows the banking card, into 'ended' shows the home screen, and leaving
+   * either hides it.
    */
   private handleTripState(snapshot: TripSnapshot): void {
     const previousPhase = this.trip.phase;
@@ -872,6 +897,7 @@ export class HudScene extends Phaser.Scene {
     this.drawLegs();
     this.drawTripBag();
     this.refreshControls();
+    this.announceFinds(snapshot);
     if (snapshot.phase === previousPhase) return;
     if (previousPhase === 'banked') this.hideBankingCard();
     if (previousPhase === 'ended') this.homeScreen.hide();
@@ -879,8 +905,21 @@ export class HudScene extends Phaser.Scene {
       this.releaseStick();
       this.hideHint();
     }
+    if (snapshot.phase === 'banked' || snapshot.phase === 'ended') this.foundPopup.clear();
     if (snapshot.phase === 'banked') this.showBankingCard();
     if (snapshot.phase === 'ended') this.homeScreen.show(snapshot, this.motion);
+  }
+
+  /**
+   * Queues the finds picked up since the last snapshot on the find pop-up, only while swimming.
+   * A shorter found list means a new trip, so counting starts again.
+   */
+  private announceFinds(snapshot: TripSnapshot): void {
+    if (snapshot.found.length < this.announcedCount) this.announcedCount = 0;
+    if (snapshot.phase === 'swimming') {
+      this.foundPopup.enqueue(snapshot.found.slice(this.announcedCount), this.motion);
+    }
+    this.announcedCount = snapshot.found.length;
   }
 
   /** Shows the banking card and captures Tab so it moves focus between the card buttons. */
@@ -958,6 +997,7 @@ export class HudScene extends Phaser.Scene {
     for (const button of [this.pauseButton, this.dashButton, this.goHomeButton, this.resumeButton]) {
       button.setResolution(dpr);
     }
+    this.foundPopup.setResolution(dpr);
     this.bankingCard.setResolution(dpr);
     this.homeScreen.setResolution(dpr);
     this.layout();

@@ -1,11 +1,11 @@
 import * as Phaser from 'phaser';
 import { HOME_TANK_WALL, UI_PANEL } from '../art/palette';
 import { iconKey } from '../art/textures';
+import type { TreasureTextures } from '../art/treasureTextures';
 import type { MotionProfile } from '../logic/motion';
-import { findKinds } from '../logic/trip';
-import { TRIP_EVENTS, type TripSnapshot } from '../logic/tripEvents';
+import { foundInfos } from '../logic/trip';
+import { TRIP_EVENTS, type TripEnding, type TripSnapshot } from '../logic/tripEvents';
 import { SWIM_AGAIN_LABEL, homeScreenText } from '../logic/tripText';
-import type { FindSpawn } from '../logic/zone';
 import {
   createButton,
   cssColor,
@@ -15,6 +15,7 @@ import {
   type SceneView,
   type UiButton,
 } from './BootScene';
+import { addTreasureIcon, iconRowsSize, placeIconRows } from './FindPopup';
 
 const MARGIN = 16;
 const PAD = 24;
@@ -23,21 +24,28 @@ const TITLE_PX = 34;
 const BODY_PX = 20;
 const ICON_PX = 32;
 const ICON_GAP = 12;
+const TREASURE_ICON_PX = 32;
 const TEXT_MIN_W = 120;
 const TEXT_MAX_W = 420;
 const BACKDROP_COVER = 8192;
 const FADE_MS = 400;
 const MIN_SHOW_MS = 800;
 
+/** The treasure ids the home screen body names: banked this trip when going home, returned when carried home. */
+function namedTreasureIds(ending: TripEnding): readonly string[] {
+  return ending.reason === 'wentHome' ? ending.bankedThisTrip : ending.returned;
+}
+
 /**
  * Interim end-of-trip home screen: an opaque Home Tank wall backdrop that swallows presses, a white
- * panel with the house icon, title, body and banked line, and the Swim again button. Built only from
- * the trip snapshot's ending and banked count through homeScreenText(). This is a thin seam: the
- * Home Tank (#12) replaces this view behind the same show, hide, layout, press and setResolution calls.
+ * panel with the house icon, title, body, banked line, a wrapping icon row of the treasures the body
+ * names, and the Swim again button. Built only from the trip snapshot's ending and banked count
+ * through homeScreenText(). This is a thin seam: the Home Tank (#12) replaces this view behind the
+ * same show, hide, layout, press and setResolution calls.
  */
 export class HomeScreen {
   private readonly scene: Phaser.Scene;
-  private readonly finds: readonly FindSpawn[];
+  private readonly treasure: TreasureTextures;
   private readonly container: Phaser.GameObjects.Container;
   private readonly panel: Phaser.GameObjects.Graphics;
   private readonly icon: Phaser.GameObjects.Image;
@@ -46,13 +54,14 @@ export class HomeScreen {
   private readonly bankedLine: Phaser.GameObjects.Text;
   private readonly button: UiButton;
   private view: SceneView;
+  private treasureIcons: Phaser.GameObjects.Image[] = [];
   private shownAt = 0;
   private requested = false;
 
   constructor(scene: Phaser.Scene, assets: GameAssets, view: SceneView, depth: number) {
     this.scene = scene;
     this.view = view;
-    this.finds = assets.zone.finds;
+    this.treasure = assets.treasure;
     const dpr = view.fit.dpr;
     const backdrop = scene.add
       .rectangle(
@@ -102,13 +111,14 @@ export class HomeScreen {
     if (!ending) throw new Error(`HomeScreen: trip phase "${snapshot.phase}" has no ending`);
     const text = homeScreenText({
       reason: ending.reason,
-      returnedKinds: findKinds(ending.returned, this.finds),
-      bankedThisTripKinds: findKinds(ending.bankedThisTrip, this.finds),
+      returnedNames: foundInfos(ending.returned).map((info) => info.name),
+      bankedThisTripNames: foundInfos(ending.bankedThisTrip).map((info) => info.name),
       bankedTotal: snapshot.banked,
     });
     this.title.setText(text.title);
     this.body.setText(text.body);
     this.bankedLine.setText(text.bankedLine);
+    this.buildTreasureRow(foundInfos(namedTreasureIds(ending)).map((info) => info.id));
     this.requested = false;
     this.shownAt = this.scene.time.now;
     this.layout(this.view);
@@ -140,7 +150,10 @@ export class HomeScreen {
     this.button.setResolution(dpr);
   }
 
-  /** Centres the panel; tightens its padding when a short screen cannot fit the full padding. */
+  /**
+   * Centres the panel; tightens its padding when a short screen cannot fit the full padding. The
+   * treasure icon row wraps to the text width and takes no room (nor padding) when empty.
+   */
   layout(view: SceneView): void {
     this.view = view;
     const { cssW, cssH } = view;
@@ -150,13 +163,18 @@ export class HomeScreen {
     this.bankedLine.setWordWrapWidth(textW, true);
     const headW = ICON_PX + ICON_GAP + this.title.width;
     const headH = Math.max(ICON_PX, this.title.height);
-    const contentH = headH + this.body.height + this.bankedLine.height + this.button.height;
-    const pad = contentH + 5 * PAD <= cssH - 2 * MARGIN ? PAD : TIGHT_PAD;
+    const { width: rowW, height: rowH } = iconRowsSize(this.treasureIcons.length, textW);
+    const sections = [headH, this.body.height, this.bankedLine.height, rowH, this.button.height].filter(
+      (height) => height > 0,
+    );
+    const contentH = sections.reduce((sum, height) => sum + height, 0);
+    const gaps = sections.length + 1;
+    const pad = contentH + gaps * PAD <= cssH - 2 * MARGIN ? PAD : TIGHT_PAD;
     const panelW = Math.min(
       cssW - 2 * MARGIN,
-      Math.max(headW, this.body.width, this.bankedLine.width, this.button.width) + 2 * PAD,
+      Math.max(headW, this.body.width, this.bankedLine.width, rowW, this.button.width) + 2 * PAD,
     );
-    const panelH = contentH + 5 * pad;
+    const panelH = contentH + gaps * pad;
     const panelY = Math.max(MARGIN, (cssH - panelH) / 2);
     drawPanel(this.panel, (cssW - panelW) / 2, panelY, panelW, panelH, UI_PANEL);
     let y = panelY + pad;
@@ -168,6 +186,19 @@ export class HomeScreen {
     y += this.body.height + pad;
     this.bankedLine.setPosition((cssW - this.bankedLine.width) / 2, y);
     y += this.bankedLine.height + pad;
+    if (rowH > 0) {
+      placeIconRows(this.treasureIcons, cssW / 2, y, textW);
+      y += rowH + pad;
+    }
     this.button.container.setPosition((cssW - this.button.width) / 2, y);
+  }
+
+  /** Replaces the treasure icon row with one 32 px icon per id. */
+  private buildTreasureRow(ids: readonly string[]): void {
+    for (const icon of this.treasureIcons) {
+      icon.destroy();
+    }
+    this.treasureIcons = ids.map((id) => addTreasureIcon(this.scene, this.treasure, TREASURE_ICON_PX, id));
+    this.container.add(this.treasureIcons);
   }
 }

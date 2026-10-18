@@ -1,11 +1,11 @@
 import * as Phaser from 'phaser';
 import { INK, UI_PANEL } from '../art/palette';
 import type { TexInfo } from '../art/textures';
+import type { TreasureTextures } from '../art/treasureTextures';
 import type { MotionProfile } from '../logic/motion';
-import { findKinds } from '../logic/trip';
+import { foundInfos } from '../logic/trip';
 import { TRIP_EVENTS, type TripSnapshot } from '../logic/tripEvents';
 import { BANKED_TITLE, GO_HOME_LABEL, KEEP_EXPLORING_LABEL, bankedBody } from '../logic/tripText';
-import type { FindKind, FindSpawn } from '../logic/zone';
 import {
   createButton,
   cssColor,
@@ -15,6 +15,7 @@ import {
   type SceneView,
   type UiButton,
 } from './BootScene';
+import { addTreasureIcon, iconRowsSize, placeIconRows } from './FindPopup';
 
 const MARGIN = 16;
 const PAD = 24;
@@ -23,8 +24,7 @@ const TITLE_PX = 34;
 const BODY_PX = 20;
 const TEXT_MIN_W = 120;
 const TEXT_MAX_W = 420;
-const ICON_BOX_PX = 32;
-const ICON_GAP = 8;
+const ICON_PX = 32;
 const BUTTON_GAP = 12;
 const STACK_BELOW_W = 460;
 const DIM_ALPHA = 0.45;
@@ -50,14 +50,14 @@ interface CardTwinkle {
 }
 
 /**
- * Banking celebration card over the swim scene: dim, white panel, title, a row of the finds just
- * banked, the banked text and the Keep exploring / Go home buttons. Laid out around the screen
- * centre so the fade-in scale grows from the middle. Each button emits its trip request once.
+ * Banking celebration card over the swim scene: dim, white panel, title, the icons of the treasures
+ * just banked in wrapping rows, the banked text naming them and the Keep exploring / Go home
+ * buttons. Laid out around the screen centre so the fade-in scale grows from the middle. Each
+ * button emits its trip request once.
  */
 export class BankingCard {
   private readonly scene: Phaser.Scene;
-  private readonly finds: readonly FindSpawn[];
-  private readonly findIcons: Readonly<Record<FindKind, TexInfo>>;
+  private readonly treasure: TreasureTextures;
   private readonly sparkle: TexInfo;
   private readonly container: Phaser.GameObjects.Container;
   private readonly panel: Phaser.GameObjects.Graphics;
@@ -74,8 +74,7 @@ export class BankingCard {
   constructor(scene: Phaser.Scene, assets: GameAssets, view: SceneView, depth: number) {
     this.scene = scene;
     this.view = view;
-    this.finds = assets.zone.finds;
-    this.findIcons = { pebble: assets.baked.pebble };
+    this.treasure = assets.treasure;
     this.sparkle = assets.baked.sparkle;
     const dpr = view.fit.dpr;
     const ink = cssColor(INK);
@@ -124,9 +123,9 @@ export class BankingCard {
     this.requested = false;
     this.shownAt = this.scene.time.now;
     this.setFocus(KEEP_EXPLORING_INDEX);
-    const kinds = findKinds(snapshot.justBanked, this.finds);
-    this.body.setText(bankedBody(kinds, snapshot.banked));
-    this.buildRow(kinds);
+    const infos = foundInfos(snapshot.justBanked);
+    this.body.setText(bankedBody(infos.map((info) => info.name), snapshot.banked));
+    this.buildRow(infos.map((info) => info.id));
     this.layout(this.view);
     this.scene.tweens.killTweensOf(this.container);
     this.container.setVisible(true);
@@ -180,8 +179,7 @@ export class BankingCard {
     const textW = Math.max(TEXT_MIN_W, Math.min(TEXT_MAX_W, cssW - 2 * (MARGIN + PAD)));
     this.title.setWordWrapWidth(textW, true);
     this.body.setWordWrapWidth(textW, true);
-    const rowW = this.rowWidth();
-    const rowH = this.icons.length > 0 ? ICON_BOX_PX : 0;
+    const { width: rowW, height: rowH } = iconRowsSize(this.icons.length, textW);
     const buttonsW = stacked ? keepExploring.width : keepExploring.width + BUTTON_GAP + goHome.width;
     const buttonsH = stacked ? keepExploring.height + BUTTON_GAP + goHome.height : keepExploring.height;
     const sections = [this.title.height, rowH, this.body.height, buttonsH].filter((height) => height > 0);
@@ -199,7 +197,7 @@ export class BankingCard {
     this.title.setPosition(-this.title.width / 2, y);
     y += this.title.height + pad;
     if (rowH > 0) {
-      this.layoutRow(y);
+      this.layoutRow(y, textW, rowW, rowH);
       y += rowH + pad;
     }
     this.body.setPosition(-this.body.width / 2, y);
@@ -227,19 +225,14 @@ export class BankingCard {
     this.scene.game.events.emit(BUTTON_REQUESTS[index]);
   }
 
-  /** Replaces the find icons (each fitted to a 32 px box) and the 3 to 5 twinkles around them. */
-  private buildRow(kinds: readonly FindKind[]): void {
+  /** Replaces the treasure icons (one 32 px icon per id) and the 3 to 5 twinkles around them. */
+  private buildRow(ids: readonly string[]): void {
     this.clearRow();
-    for (const kind of kinds) {
-      const info = this.findIcons[kind];
-      const image = this.scene.add
-        .image(0, 0, info.key)
-        .setOrigin(0.5, 0.5)
-        .setScale(ICON_BOX_PX / Math.max(info.w, info.h) / info.scale);
-      this.icons.push(image);
+    for (const id of ids) {
+      this.icons.push(addTreasureIcon(this.scene, this.treasure, ICON_PX, id));
     }
-    if (kinds.length === 0) return;
-    const count = Phaser.Math.Clamp(kinds.length + 2, TWINKLE_MIN, TWINKLE_MAX);
+    if (ids.length === 0) return;
+    const count = Phaser.Math.Clamp(ids.length + 2, TWINKLE_MIN, TWINKLE_MAX);
     for (let i = 0; i < count; i++) {
       const image = this.scene.add
         .image(0, 0, this.sparkle.key)
@@ -262,20 +255,15 @@ export class BankingCard {
     this.twinkles = [];
   }
 
-  private rowWidth(): number {
-    const count = this.icons.length;
-    return count > 0 ? count * ICON_BOX_PX + (count - 1) * ICON_GAP : 0;
-  }
-
-  /** Centres the icon row at `top` and puts each twinkle at its end point, from the left side over the top to the right. */
-  private layoutRow(top: number): void {
-    const rowW = this.rowWidth();
-    const centreY = top + ICON_BOX_PX / 2;
-    this.icons.forEach((icon, index) => {
-      icon.setPosition(-rowW / 2 + index * (ICON_BOX_PX + ICON_GAP) + ICON_BOX_PX / 2, centreY);
-    });
+  /**
+   * Wraps the icons into centred rows no wider than `maxW` from `top` down, and puts each twinkle at
+   * its end point around the whole `rowW` by `rowH` block, from the left side over the top to the right.
+   */
+  private layoutRow(top: number, maxW: number, rowW: number, rowH: number): void {
+    placeIconRows(this.icons, 0, top, maxW);
+    const centreY = top + rowH / 2;
     const radiusX = rowW / 2 + TWINKLE_SIDE_PX;
-    const radiusY = ICON_BOX_PX / 2 + TWINKLE_ABOVE_PX;
+    const radiusY = rowH / 2 + TWINKLE_ABOVE_PX;
     for (const twinkle of this.twinkles) {
       this.scene.tweens.killTweensOf(twinkle.image);
       twinkle.image.setPosition(Math.cos(twinkle.angle) * radiusX, centreY + Math.sin(twinkle.angle) * radiusY);
