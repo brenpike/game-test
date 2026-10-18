@@ -51,6 +51,26 @@ export interface ViewTuning {
   bakeScaleMax: number;
 }
 
+/** On-screen steering pad tuning; units are CSS px unless noted. */
+export interface StickTuning {
+  /** Pad base diameter in CSS px at full scale. */
+  baseDiameter: number;
+  /** Knob diameter in CSS px at full scale. */
+  knobDiameter: number;
+  /** Fraction of the base radius the knob centre may move from the pad centre. */
+  travel: number;
+  /** Fraction of travel inside which steering is zero. */
+  deadzone: number;
+  /** Gap in CSS px between the pad footprint and the view edges. */
+  margin: number;
+  /** Gap in CSS px between the pad and other reserved UI. */
+  gap: number;
+  /** Touch capture padding beyond the pad footprint, in base radii. */
+  zoneReach: number;
+  /** Smallest pad scale allowed on cramped views. */
+  minScale: number;
+}
+
 export const SWIM: Readonly<SwimTuning> = Object.freeze({
   maxSpeed: 150,
   accel: 520,
@@ -76,4 +96,15 @@ export const VIEW: Readonly<ViewTuning> = Object.freeze({
   minVisibleW: 320,
   dprCap: 2,
   bakeScaleMax: 3,
+});
+
+export const STICK: Readonly<StickTuning> = Object.freeze({
+  baseDiameter: 128,
+  knobDiameter: 52,
+  travel: 0.8,
+  deadzone: 0.12,
+  margin: 16,
+  gap: 12,
+  zoneReach: 0.75,
+  minScale: 0.7,
 });

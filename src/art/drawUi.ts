@@ -3,8 +3,8 @@
  * the scene lays a label over the button (icons are always paired with a label).
  * Presentational only.
  */
-import { INK, LW, BODY_SHINE, WHITE } from './palette';
-import type { TexSize } from './canvasKit';
+import { INK, LW, BODY_SHINE, WHITE, UI_ACCENT, UI_PANEL } from './palette';
+import { TAU, frameFromBounds, type TexSize } from './canvasKit';
 
 /** Wide button, logical px. At least 64 tall (primary actions). */
 export const BUTTON_WIDE = { w: 200, h: 64 } as const;
@@ -16,6 +16,20 @@ export const BUTTON_PRESS_OFFSET = 3;
 export const BUTTON_MARGIN = 8;
 /** Icon box size, logical px. */
 export const ICON_SIZE = 32;
+
+/**
+ * Swim pad (on-screen directional stick), nominal logical radii. These are the
+ * largest displayed sizes; the HUD only scales down from them.
+ */
+export const STICK_BASE_R = 64;
+export const STICK_KNOB_R = 26;
+/** Base fill alpha: low enough that the world shows through the pad. */
+const STICK_BASE_ALPHA = 0.45;
+/** Guide ring (where the knob rests) and chevron distance, as a fraction of the base radius. */
+const STICK_GUIDE_FRAC = 0.5;
+const STICK_CHEVRON_FRAC = 0.78;
+/** Chevron half-width, logical px. */
+const STICK_CHEVRON_S = 8;
 
 export type IconKind = 'dash' | 'pause' | 'play' | 'snack';
 
@@ -156,4 +170,92 @@ export function paintIcon(ctx: CanvasRenderingContext2D, kind: IconKind, size: n
     }
   }
   ctx.restore();
+}
+
+/** Room around a stick disc for half the outline plus a pixel of bake slack. */
+const STICK_PAD = LW / 2 + 1;
+
+/** Texture frame for a stick disc of radius r. Origin is the disc centre. */
+export function stickTextureSize(r: number): TexSize {
+  return frameFromBounds(-r, -r, r, r, STICK_PAD);
+}
+
+/** Arc stroke used for the small top shine on both stick parts. */
+function stickShine(ctx: CanvasRenderingContext2D, radius: number, from: number, to: number, width: number): void {
+  ctx.save();
+  ctx.lineWidth = width;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = BODY_SHINE;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, (from * Math.PI) / 180, (to * Math.PI) / 180);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Paint the swim pad base centred at local (0, 0): translucent light disc, ink
+ * outline, thin guide ring, four ink chevrons (N, E, S, W: direction by shape),
+ * small top shine. Use stickTextureSize(r) for the frame.
+ */
+export function paintStickBase(ctx: CanvasRenderingContext2D, r: number): void {
+  const disc = new Path2D();
+  disc.arc(0, 0, r, 0, TAU);
+
+  ctx.save();
+  ctx.globalAlpha = STICK_BASE_ALPHA;
+  ctx.fillStyle = UI_PANEL;
+  ctx.fill(disc);
+  ctx.restore();
+
+  ctx.lineWidth = LW;
+  ctx.strokeStyle = INK;
+  ctx.stroke(disc);
+
+  // thin inner guide ring
+  ctx.save();
+  ctx.globalAlpha = 0.45;
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = INK;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * STICK_GUIDE_FRAC, 0, TAU);
+  ctx.stroke();
+  ctx.restore();
+
+  // four chevrons, each pointing outward from the centre
+  const s = STICK_CHEVRON_S;
+  const d = r * STICK_CHEVRON_FRAC;
+  ctx.save();
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = INK;
+  for (let i = 0; i < 4; i++) {
+    ctx.save();
+    ctx.rotate((i * Math.PI) / 2);
+    ctx.beginPath();
+    ctx.moveTo(-s, -d + s * 0.5);
+    ctx.lineTo(0, -d - s * 0.5);
+    ctx.lineTo(s, -d + s * 0.5);
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+
+  stickShine(ctx, r * 0.86, -150, -118, 4);
+}
+
+/**
+ * Paint the swim pad knob centred at local (0, 0): solid accent disc, ink
+ * outline, small top shine. Use stickTextureSize(r) for the frame.
+ */
+export function paintStickKnob(ctx: CanvasRenderingContext2D, r: number): void {
+  const disc = new Path2D();
+  disc.arc(0, 0, r, 0, TAU);
+  ctx.fillStyle = UI_ACCENT;
+  ctx.fill(disc);
+  ctx.lineWidth = LW;
+  ctx.strokeStyle = INK;
+  ctx.stroke(disc);
+
+  stickShine(ctx, r * 0.62, -150, -100, 3.5);
 }

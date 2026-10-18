@@ -36,9 +36,14 @@ import {
   BUTTON_SQUARE,
   BUTTON_WIDE,
   ICON_SIZE,
+  STICK_BASE_R,
+  STICK_KNOB_R,
   buttonTextureSize,
   paintButton,
   paintIcon,
+  paintStickBase,
+  paintStickKnob,
+  stickTextureSize,
   type IconKind,
 } from './drawUi';
 import { LEUCISTIC, UI_ACCENT, UI_PRIMARY, UI_SECONDARY, UI_SUCCESS, type MorphPalette } from './palette';
@@ -54,6 +59,8 @@ export const TEX = {
   bug: 'bug',
   sparkle: 'sparkle',
   streak: 'streak',
+  stickBase: 'stick-base',
+  stickKnob: 'stick-knob',
 } as const;
 
 /** Bubble radii baked, logical px. */
@@ -182,6 +189,8 @@ export interface BakedTextures {
   /** One per BUBBLE_RADII entry, same order. Anchor is the bubble centre. */
   readonly bubbles: readonly TexInfo[];
   readonly icons: Readonly<Record<IconKind, TexInfo>>;
+  /** Swim pad parts. Anchor is the disc centre. Baked at STICK_BASE_R / STICK_KNOB_R. */
+  readonly stick: { readonly base: TexInfo; readonly knob: TexInfo };
 }
 
 /** Bake all static textures into the scene's texture manager. */
@@ -253,7 +262,20 @@ export function bakeTextures(scene: Phaser.Scene, opts: BakeOptions): BakedTextu
     icons[kind] = add(bake(scene, iconKey(kind), iconSize, bakeScale, (ctx) => paintIcon(ctx, kind, ICON_SIZE)));
   }
 
-  return { info, bg, reeds, pads, worm, bug, sparkle, streak, bubbles, icons };
+  const stick = {
+    base: add(
+      bake(scene, TEX.stickBase, stickTextureSize(STICK_BASE_R), bakeScale, (ctx) =>
+        paintStickBase(ctx, STICK_BASE_R),
+      ),
+    ),
+    knob: add(
+      bake(scene, TEX.stickKnob, stickTextureSize(STICK_KNOB_R), bakeScale, (ctx) =>
+        paintStickKnob(ctx, STICK_KNOB_R),
+      ),
+    ),
+  };
+
+  return { info, bg, reeds, pads, worm, bug, sparkle, streak, bubbles, icons, stick };
 }
 
 // ---------------------------------------------------------------------------

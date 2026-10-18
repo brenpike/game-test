@@ -34,8 +34,8 @@ npm install
 | Action | Touch | Keyboard |
 |---|---|---|
 | Start | Tap | Enter |
-| Swim | Hold or drag to swim toward your finger; tap to swim to a spot | Arrow keys or WASD |
-| Tail Dash | Double-tap, or the Dash button | Space or Shift |
+| Swim | Drag the swim pad in the bottom-left corner | Arrow keys or WASD |
+| Tail Dash | Dash button (bottom-right) | Space or Shift |
 | Pause | Pause button | P or Esc |
 
 The game respects your device's reduced-motion setting.
