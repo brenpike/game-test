@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TILAPIA } from './tuning';
 import {
   BED_TOP,
   SURF,
@@ -9,6 +10,8 @@ import {
   isInsideCurrent,
   swimBounds,
   waveY,
+  type Point,
+  type SafeArea,
   type ZoneLayout,
 } from './zone';
 
@@ -53,6 +56,12 @@ function expectZoneInvariants(zone: ZoneLayout): void {
     expect(pad.x).toBeGreaterThanOrEqual(0);
     expect(pad.x).toBeLessThanOrEqual(ZONE_W);
   }
+}
+
+function distanceToArea(pos: Point, area: SafeArea): number {
+  const dx = Math.max(area.x0 - pos.x, 0, pos.x - area.x1);
+  const dy = Math.max(area.y0 - pos.y, 0, pos.y - area.y1);
+  return Math.hypot(dx, dy);
 }
 
 describe('zone constants', () => {
@@ -124,5 +133,37 @@ describe('buildCanalZone', () => {
 
   it.each(EXTRA_SEEDS)('satisfies layout invariants for seed %i', (seed) => {
     expectZoneInvariants(buildCanalZone(seed));
+  });
+
+  it.each([0xa70107, ...EXTRA_SEEDS])('places the safe area around the start for seed %i', (seed) => {
+    const zone = buildCanalZone(seed);
+    const area = zone.safeArea;
+    expect(zone.start.x).toBeGreaterThanOrEqual(area.x0);
+    expect(zone.start.x).toBeLessThanOrEqual(area.x1);
+    expect(zone.start.y).toBeGreaterThanOrEqual(area.y0);
+    expect(zone.start.y).toBeLessThanOrEqual(area.y1);
+  });
+
+  it.each([0xa70107, ...EXTRA_SEEDS])('keeps tilapia routes in the water and out of the safe area for seed %i', (seed) => {
+    const zone = buildCanalZone(seed);
+    const bounds = swimBounds();
+    expect(zone.tilapiaRoutes.length).toBeGreaterThanOrEqual(1);
+    for (const route of zone.tilapiaRoutes) {
+      expect(route.waypoints.length).toBeGreaterThanOrEqual(2);
+      for (const point of route.waypoints) {
+        expect(point.x).toBeGreaterThanOrEqual(bounds.minX);
+        expect(point.x).toBeLessThanOrEqual(bounds.maxX);
+        expect(point.y).toBeGreaterThanOrEqual(bounds.minY);
+        expect(point.y).toBeLessThanOrEqual(bounds.maxY);
+        expect(distanceToArea(point, zone.safeArea)).toBeGreaterThanOrEqual(TILAPIA.bodyRadius);
+      }
+    }
+  });
+
+  it('builds the safe area and routes without changing seeded content', () => {
+    const zone = buildCanalZone();
+    expect(zone.safeArea).toEqual({ x0: 40, x1: 300, y0: SURF, y1: BED_TOP });
+    expect(buildCanalZone(7).safeArea).toEqual(zone.safeArea);
+    expect(buildCanalZone(7).tilapiaRoutes).toEqual(zone.tilapiaRoutes);
   });
 });

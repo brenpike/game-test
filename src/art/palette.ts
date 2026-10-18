@@ -142,3 +142,41 @@ export const UI_ON_LETTERBOX = '#ffffff';
  */
 export const UI_FONT =
   'ui-rounded, "SF Pro Rounded", "Nunito", "Varela Round", "Quicksand", "Segoe UI", system-ui, sans-serif';
+
+// ---- Predator (provisional) ----------------------------------------------
+// Every value in this section is derived (provisional): not in the approved
+// prototype, so confirm in a prototype before final art. The tilapia is cooler
+// and less saturated than the hero so the axolotl stays the warmest, brightest
+// thing on screen (guide section 2).
+/**
+ * Tilapia body, provisional. Contrast: body vs water deep #0a5c98 3.81:1
+ * (body carries); ink vs shallow 9.24:1 and vs mid 5.90:1 (outline carries).
+ */
+export const TILAPIA_BODY = '#b4bfdc';
+/** Tilapia fins, provisional. Darker cool tone so fins read as the far/back parts. */
+export const TILAPIA_FIN = '#8f9cc4';
+/** Tilapia belly band, provisional. */
+export const TILAPIA_BELLY = '#dfe5f2';
+/**
+ * Soft tinted marks inside the tilapia (body bars, fin rays, gill line),
+ * provisional. Never ink. They also tell the tilapia from the axolotl without hue.
+ */
+export const TILAPIA_MARK = 'rgba(110,124,172,0.55)';
+/** Inside of the tilapia's open mouth, provisional. Cool, never red. */
+export const TILAPIA_MOUTH = '#7d89b3';
+/** Alert sign bubble fill, provisional. Reuses the sun yellow; ink "!" on it is 11.05:1. */
+export const ALERT_FILL = SUN;
+/** Telegraph glint fill, provisional. */
+export const GLINT_FILL = WHITE;
+/** Poof puff fill, provisional. White cloud puffs, never red. */
+export const POOF_PUFF = WHITE;
+/** Poof puff shine, provisional. Reuses the cloud shine. */
+export const POOF_SHINE = CLOUD_SHINE;
+/** Poof sparkle fill, provisional. Reuses the sun yellow. */
+export const POOF_SPARKLE = SUN;
+/** Protected halo: soft ring band behind the dots, provisional. */
+export const HALO_BAND = 'rgba(255,255,255,0.22)';
+/** Protected halo: dot fill, provisional. Ink-stroked dots carry against shallow water. */
+export const HALO_DOT = 'rgba(255,255,255,0.95)';
+/** Carry bubble inner rim, provisional. White vs water deep is 6.6:1. */
+export const CARRY_RIM = 'rgba(255,255,255,0.9)';

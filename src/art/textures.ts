@@ -112,7 +112,7 @@ export interface TexInfo {
   readonly pxH: number;
 }
 
-function makeInfo(key: string, scale: number, size: TexSize): TexInfo {
+export function makeInfo(key: string, scale: number, size: TexSize): TexInfo {
   const pxW = Math.max(1, Math.ceil(size.w * scale - 1e-6));
   const pxH = Math.max(1, Math.ceil(size.h * scale - 1e-6));
   return {
@@ -136,7 +136,7 @@ function createCanvas(scene: Phaser.Scene, info: TexInfo): Phaser.Textures.Canva
   return tex;
 }
 
-function bake(
+export function bake(
   scene: Phaser.Scene,
   key: string,
   size: TexSize,
