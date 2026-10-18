@@ -13,6 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.4.0] - 2026-10-18
+
+### Added
+
+- Trip Bag. It holds the finds you pick up on a trip and shows they are "not safe yet".
+- Home Spot. A marked spot (burrow, flag, and dotted ring) where every trip starts.
+- Placeholder shiny pebble finds in the canal.
+- Banking at the Home Spot. A short celebration plays, then you choose Keep exploring or Go home. Works with touch and keyboard (H for Go home).
+- First-trip banking hint.
+
+### Changed
+
+- The "Carried home!" card is now the interim home screen. You reach it with Go home or by being carried home. It shows your banked total and Swim again.
+- Being carried home now returns unbanked finds to where they were found. Banked finds stay safe.
+
 ## [0.3.0] - 2026-10-18
 
 ### Added
