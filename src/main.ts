@@ -78,7 +78,7 @@ const game = new Phaser.Game({
     height: initialView.canvasH,
     zoom: 1 / initialView.dpr,
   },
-  input: { activePointers: 2 },
+  input: { activePointers: 3 },
   scene: [BootScene, TitleScene, SwimScene, HudScene],
 });
 

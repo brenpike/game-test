@@ -20,17 +20,11 @@ import {
   type CollectedPayload,
   type DashStatePayload,
   type ReducedMotionPayload,
+  type SteerPayload,
 } from '../logic/gameEvents';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { mulberry32 } from '../logic/rng';
-import {
-  classifyRelease,
-  isDoubleTap,
-  steerFromKeys,
-  steerToward,
-  type KeyState,
-  type TapPoint,
-} from '../logic/steering';
+import { steerFromKeys, type KeyState } from '../logic/steering';
 import { startDashVelocity, stepSwim, swimIntensity, type SwimBounds, type SwimState } from '../logic/swimPhysics';
 import { createDash, dashCharge, tryStartDash, updateDash, type DashState } from '../logic/tailDash';
 import { SWIM } from '../logic/tuning';
@@ -126,10 +120,7 @@ export class SwimScene extends Phaser.Scene {
   private bubbles!: BubbleSystem;
   private allDone = false;
 
-  private steerPointer: Phaser.Input.Pointer | null = null;
-  private pointerTarget: Vec2 | null = null;
-  private tapTarget: Vec2 | null = null;
-  private lastTap: TapPoint | null = null;
+  private padSteer: Vec2 = { x: 0, y: 0 };
   private lastSteer: Vec2 = { x: 0, y: 0 };
   private keys: SteerKeys = { left: [], right: [], up: [], down: [] };
 
@@ -164,10 +155,7 @@ export class SwimScene extends Phaser.Scene {
     this.assets = data;
     this.clock = 0;
     this.allDone = false;
-    this.steerPointer = null;
-    this.pointerTarget = null;
-    this.tapTarget = null;
-    this.lastTap = null;
+    this.padSteer = { x: 0, y: 0 };
     this.lastPose = null;
     this.turn = { squash: 1 };
     this.swimPhase = (TAU * T_STATIC) / 1.2;
@@ -194,6 +182,7 @@ export class SwimScene extends Phaser.Scene {
 
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.game.events.on(GAME_EVENTS.REQUEST_DASH, this.handleRequestDash, this);
+    this.game.events.on(GAME_EVENTS.STEER, this.handleSteer, this);
     this.game.events.on(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
     this.game.events.on(Phaser.Core.Events.HIDDEN, this.handleHidden, this);
     this.events.on(Phaser.Scenes.Events.RESUME, this.handleResume, this);
@@ -206,7 +195,6 @@ export class SwimScene extends Phaser.Scene {
   update(_time: number, deltaMs: number): void {
     const dt = Math.min(Math.max(deltaMs / 1000, 0), SWIM.dtMax);
     this.clock += dt;
-    this.pollSteerPointer();
     const steer = this.computeSteer();
     this.lastSteer = steer;
 
@@ -304,7 +292,6 @@ export class SwimScene extends Phaser.Scene {
   }
 
   private setupInput(): void {
-    this.input.on(Phaser.Input.Events.POINTER_DOWN, this.handlePointerDown, this);
     const keyboard = this.input.keyboard;
     if (!keyboard) return;
     const codes = Phaser.Input.Keyboard.KeyCodes;
@@ -322,48 +309,6 @@ export class SwimScene extends Phaser.Scene {
 
   // ---- input ---------------------------------------------------------------
 
-  private handlePointerDown(pointer: Phaser.Input.Pointer): void {
-    this.steerPointer = pointer;
-    this.tapTarget = null;
-    this.pointerTarget = this.worldPointOf(pointer);
-  }
-
-  private pollSteerPointer(): void {
-    const pointer = this.steerPointer;
-    if (!pointer) return;
-    if (pointer.isDown) {
-      this.pointerTarget = this.worldPointOf(pointer);
-      return;
-    }
-    this.steerPointer = null;
-    this.pointerTarget = null;
-    this.handleRelease(pointer);
-  }
-
-  private handleRelease(pointer: Phaser.Input.Pointer): void {
-    const dpr = this.view.fit.dpr;
-    const kind = classifyRelease(pointer.downTime, pointer.upTime, pointer.getDistance() / dpr);
-    if (kind === 'drag') {
-      this.tapTarget = null;
-      this.lastTap = null;
-      return;
-    }
-    const target = this.worldPointOf(pointer);
-    const tap: TapPoint = { t: pointer.upTime, x: pointer.upX / dpr, y: pointer.upY / dpr };
-    this.tapTarget = target;
-    if (isDoubleTap(this.lastTap, tap)) {
-      this.lastTap = null;
-      this.requestDash({ x: target.x - this.swim.x, y: target.y - this.swim.y });
-      return;
-    }
-    this.lastTap = tap;
-  }
-
-  private worldPointOf(pointer: Phaser.Input.Pointer): Vec2 {
-    const point = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-    return { x: point.x, y: point.y };
-  }
-
   private readKeys(): KeyState {
     return {
       left: anyKeyDown(this.keys.left),
@@ -375,35 +320,29 @@ export class SwimScene extends Phaser.Scene {
 
   private computeSteer(): Vec2 {
     const keySteer = steerFromKeys(this.readKeys());
-    if (len(keySteer) > 0) {
-      this.tapTarget = null;
-      return keySteer;
-    }
-    const target = this.pointerTarget ?? this.tapTarget;
-    if (!target) return { x: 0, y: 0 };
-    const steer = steerToward(this.swim, target, SWIM);
-    if (len(steer) === 0 && target === this.tapTarget) {
-      this.tapTarget = null;
-    }
-    return steer;
+    return len(keySteer) > 0 ? keySteer : this.padSteer;
+  }
+
+  private handleSteer(payload: SteerPayload): void {
+    this.padSteer = { x: payload.x, y: payload.y };
   }
 
   private handleDashKey(event: KeyboardEvent): void {
     if (event.repeat) return;
-    this.requestDash(null);
+    this.requestDash();
   }
 
   private handleRequestDash(): void {
     if (!this.sys.isActive()) return;
-    this.requestDash(null);
+    this.requestDash();
   }
 
-  private requestDash(hint: Vec2 | null): void {
+  private requestDash(): void {
     const attempt = tryStartDash(this.dash);
     if (!attempt.started) return;
     this.dash = attempt.state;
     const velocity = { x: this.swim.vx, y: this.swim.vy };
-    const direction = hint && len(hint) > 0 ? hint : len(this.lastSteer) > 0 ? this.lastSteer : velocity;
+    const direction = len(this.lastSteer) > 0 ? this.lastSteer : velocity;
     this.swim = startDashVelocity(this.swim, direction);
     this.emitDashState();
   }
@@ -460,9 +399,7 @@ export class SwimScene extends Phaser.Scene {
   }
 
   private handleResume(): void {
-    this.steerPointer = null;
-    this.pointerTarget = null;
-    this.lastTap = null;
+    this.padSteer = { x: 0, y: 0 };
   }
 
   private handleReducedMotion(payload: ReducedMotionPayload): void {
@@ -487,6 +424,7 @@ export class SwimScene extends Phaser.Scene {
   private handleShutdown(): void {
     this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.game.events.off(GAME_EVENTS.REQUEST_DASH, this.handleRequestDash, this);
+    this.game.events.off(GAME_EVENTS.STEER, this.handleSteer, this);
     this.game.events.off(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
     this.game.events.off(Phaser.Core.Events.HIDDEN, this.handleHidden, this);
     this.events.off(Phaser.Scenes.Events.RESUME, this.handleResume, this);

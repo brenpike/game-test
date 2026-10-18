@@ -1,5 +1,5 @@
 import * as Phaser from 'phaser';
-import { BUTTON_SQUARE, buttonRadius } from '../art/drawUi';
+import { BUTTON_SQUARE, STICK_BASE_R, STICK_KNOB_R, buttonRadius } from '../art/drawUi';
 import { DEPTH } from '../art/layers';
 import { INK, UI_PANEL, UI_PANEL_PINK, WHITE } from '../art/palette';
 import { iconKey } from '../art/textures';
@@ -9,8 +9,11 @@ import {
   type CollectedPayload,
   type DashStatePayload,
   type ReducedMotionPayload,
+  type SteerPayload,
 } from '../logic/gameEvents';
 import { motionProfile, type MotionProfile } from '../logic/motion';
+import { stickLayout, stickSteer, type StickLayout } from '../logic/stick';
+import { add, clampLen } from '../logic/vec';
 import {
   SCENE_KEYS,
   createButton,
@@ -45,8 +48,14 @@ const BANNER_TEXT_PX = 24;
 const BANNER_MS = 3000;
 const BANNER_FADE_MS = 250;
 const BANNER_TEXT = 'Yum! You found every snack!';
+const STICK_IDLE_ALPHA = 0.8;
+const STICK_ACTIVE_ALPHA = 1;
+const STICK_RECENTER_MS = 90;
+const STEER_EPSILON = 0.01;
+// INVARIANT: the capture zone sits below every HUD button in depth so Pause, Dash and the pause overlay win the press.
+const STICK_ZONE_DEPTH = DEPTH.ui - 1;
 
-/** Screen-space UI over the swim scene: snack counter, Pause, Dash, pause overlay and the all-snacks banner. */
+/** Screen-space UI over the swim scene: snack counter, Pause, Dash, swim pad, pause overlay and the all-snacks banner. */
 export class HudScene extends Phaser.Scene {
   private assets!: GameAssets;
   private view!: SceneView;
@@ -70,6 +79,14 @@ export class HudScene extends Phaser.Scene {
   private bannerPanel!: Phaser.GameObjects.Graphics;
   private bannerText!: Phaser.GameObjects.Text;
   private bannerTimer: Phaser.Time.TimerEvent | null = null;
+  private counterPanelH = 0;
+  private stickBase!: Phaser.GameObjects.Image;
+  private stickKnob!: Phaser.GameObjects.Image;
+  private stickZone!: Phaser.GameObjects.Zone;
+  private stick!: StickLayout;
+  private stickPointer: Phaser.Input.Pointer | null = null;
+  private stickDownTime = 0;
+  private lastSteer: SteerPayload = { x: 0, y: 0 };
 
   constructor() {
     super(SCENE_KEYS.hud);
@@ -80,6 +97,8 @@ export class HudScene extends Phaser.Scene {
     this.paused = false;
     this.bannerTimer = null;
     this.dashState = { phase: 'ready', charge: 1 };
+    this.stickPointer = null;
+    this.lastSteer = { x: 0, y: 0 };
   }
 
   create(): void {
@@ -91,6 +110,7 @@ export class HudScene extends Phaser.Scene {
 
     this.buildCounter();
     this.buildButtons();
+    this.buildStick();
     this.buildOverlay();
     this.buildBanner();
     this.bindKeys();
@@ -104,6 +124,10 @@ export class HudScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
 
     this.layout();
+  }
+
+  update(): void {
+    this.updateStick();
   }
 
   // ---- build ---------------------------------------------------------------
@@ -146,6 +170,23 @@ export class HudScene extends Phaser.Scene {
       onPress: () => this.requestDash(),
     });
     this.dashButton.container.setDepth(DEPTH.ui);
+  }
+
+  /** Swim pad: fixed base, moving knob and an invisible capture zone laid out by layoutStick(). */
+  private buildStick(): void {
+    const { base, knob } = this.assets.baked.stick;
+    this.stickBase = this.add
+      .image(0, 0, base.key)
+      .setOrigin(base.originNormX, base.originNormY)
+      .setAlpha(STICK_IDLE_ALPHA)
+      .setDepth(DEPTH.ui);
+    this.stickKnob = this.add
+      .image(0, 0, knob.key)
+      .setOrigin(knob.originNormX, knob.originNormY)
+      .setAlpha(STICK_IDLE_ALPHA)
+      .setDepth(DEPTH.ui);
+    this.stickZone = this.add.zone(0, 0, 1, 1).setOrigin(0, 0).setDepth(STICK_ZONE_DEPTH).setInteractive();
+    this.stickZone.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, this.captureStick, this);
   }
 
   private buildOverlay(): void {
@@ -200,6 +241,7 @@ export class HudScene extends Phaser.Scene {
   private layout(): void {
     this.layoutCounter();
     this.layoutButtons();
+    this.layoutStick();
     this.layoutOverlay();
     this.layoutBanner();
     this.drawDashRing();
@@ -215,6 +257,7 @@ export class HudScene extends Phaser.Scene {
     const contentH = Math.max(COUNTER_ICON_PX, this.counterText.height);
     const panelW = PANEL_PAD + COUNTER_ICON_PX + GAP / 2 + this.counterText.width + PANEL_PAD;
     const panelH = contentH + 2 * PANEL_PAD;
+    this.counterPanelH = panelH;
     drawPanel(this.counterPanel, MARGIN, MARGIN, panelW, panelH, UI_PANEL);
     this.counterIcon.setPosition(MARGIN + PANEL_PAD, MARGIN + PANEL_PAD + (contentH - COUNTER_ICON_PX) / 2);
     this.counterText.setPosition(
@@ -240,6 +283,22 @@ export class HudScene extends Phaser.Scene {
       centreX - this.dashButton.width / 2,
       centreY - this.dashButton.height / 2,
     );
+  }
+
+  /** Places the swim pad bottom-left, clear of the counter above and the Dash ring to the right. Keeps any capture. */
+  private layoutStick(): void {
+    const { cssW, cssH } = this.view;
+    const reserveTop = MARGIN + this.counterPanelH;
+    const reserveRight = MARGIN + 2 * (this.ringRadius() + RING_TRACK_PX / 2);
+    this.stick = stickLayout({ cssW, cssH }, { top: reserveTop, right: reserveRight });
+    const { centre, baseR, knobR, zone } = this.stick;
+    const { base, knob } = this.assets.baked.stick;
+    this.stickBase.setPosition(centre.x, centre.y).setScale(baseR / STICK_BASE_R / base.scale);
+    this.stickKnob.setScale(knobR / STICK_KNOB_R / knob.scale);
+    this.tweens.killTweensOf(this.stickKnob);
+    this.stickKnob.setPosition(centre.x, centre.y);
+    this.stickZone.setPosition(zone.x, zone.y).setSize(zone.w, zone.h);
+    if (this.stickPointer) this.updateStick();
   }
 
   private layoutOverlay(): void {
@@ -304,9 +363,68 @@ export class HudScene extends Phaser.Scene {
     this.pauseSwim();
   }
 
+  private captureStick(pointer: Phaser.Input.Pointer): void {
+    if (this.paused || this.stickPointer) return;
+    this.stickPointer = pointer;
+    this.stickDownTime = pointer.downTime;
+    this.tweens.killTweensOf(this.stickKnob);
+    this.stickBase.setAlpha(STICK_ACTIVE_ALPHA);
+    this.stickKnob.setAlpha(STICK_ACTIVE_ALPHA);
+    this.updateStick();
+  }
+
+  /** Moves the knob toward the captured pointer and emits the steer it implies; releases once the press ends. */
+  private updateStick(): void {
+    const pointer = this.stickPointer;
+    if (!pointer) return;
+    if (!pointer.isDown || pointer.downTime !== this.stickDownTime) {
+      this.releaseStick();
+      return;
+    }
+    const { centre, travel } = this.stick;
+    const point = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+    const offset = { x: point.x - centre.x, y: point.y - centre.y };
+    const knobAt = add(centre, clampLen(offset, travel));
+    this.stickKnob.setPosition(knobAt.x, knobAt.y);
+    this.emitSteer(stickSteer(offset, travel));
+  }
+
+  /** Drops any capture, sends a zero steer and recentres the knob, eased only when `animate` is set. */
+  private releaseStick(animate: boolean = this.motion.ambient): void {
+    this.stickPointer = null;
+    this.emitSteer({ x: 0, y: 0 });
+    this.stickBase.setAlpha(STICK_IDLE_ALPHA);
+    this.stickKnob.setAlpha(STICK_IDLE_ALPHA);
+    this.tweens.killTweensOf(this.stickKnob);
+    const { centre } = this.stick;
+    if (!animate) {
+      this.stickKnob.setPosition(centre.x, centre.y);
+      return;
+    }
+    this.tweens.add({
+      targets: this.stickKnob,
+      x: centre.x,
+      y: centre.y,
+      duration: STICK_RECENTER_MS,
+      ease: 'Sine.easeOut',
+    });
+  }
+
+  /** Emits GAME_EVENTS.STEER only when the steer differs from the last one sent. */
+  private emitSteer(steer: SteerPayload): void {
+    const last = this.lastSteer;
+    if (Math.abs(steer.x - last.x) < STEER_EPSILON && Math.abs(steer.y - last.y) < STEER_EPSILON) {
+      const settledToZero = steer.x === 0 && steer.y === 0 && (last.x !== 0 || last.y !== 0);
+      if (!settledToZero) return;
+    }
+    this.lastSteer = { x: steer.x, y: steer.y };
+    this.game.events.emit(GAME_EVENTS.STEER, this.lastSteer);
+  }
+
   private pauseSwim(): void {
     if (this.paused) return;
     this.paused = true;
+    this.releaseStick();
     this.scene.pause(SCENE_KEYS.swim);
     this.pauseButton.container.setVisible(false);
     this.overlay.setVisible(true);
@@ -377,6 +495,7 @@ export class HudScene extends Phaser.Scene {
   }
 
   private handleShutdown(): void {
+    this.releaseStick(false);
     this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.game.events.off(GAME_EVENTS.COLLECTED, this.handleCollected, this);
     this.game.events.off(GAME_EVENTS.ALL_COLLECTED, this.handleAllCollected, this);

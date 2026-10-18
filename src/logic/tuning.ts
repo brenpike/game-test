@@ -17,28 +17,12 @@ export interface SwimTuning {
   dashDuration: number;
   /** Cooldown after a dash in seconds. */
   dashCooldown: number;
-  /** Distance in px at which pointer steering reaches full strength. */
-  arriveRadius: number;
-  /** Distance in px inside which pointer steering is zero. */
-  deadzone: number;
   /** Minimum |vx| in px/s before facing may flip. */
   turnHysteresis: number;
   /** Fraction of velocity reflected when hitting a bound. */
   edgeBounce: number;
   /** Largest simulated step in seconds. */
   dtMax: number;
-}
-
-/** Pointer gesture classification tuning. */
-export interface InputTuning {
-  /** Longest press in ms that still counts as a tap. */
-  tapMaxMs: number;
-  /** Largest pointer travel in px that still counts as a tap. */
-  tapMaxMovePx: number;
-  /** Longest gap in ms between taps that forms a double tap. */
-  doubleTapMs: number;
-  /** Largest distance in px between taps that forms a double tap. */
-  doubleTapMaxDistPx: number;
 }
 
 /** Viewport fitting tuning. */
@@ -78,18 +62,9 @@ export const SWIM: Readonly<SwimTuning> = Object.freeze({
   dashSpeed: 330,
   dashDuration: 0.3,
   dashCooldown: 1.6,
-  arriveRadius: 60,
-  deadzone: 8,
   turnHysteresis: 12,
   edgeBounce: 0.2,
   dtMax: 0.05,
-});
-
-export const INPUT: Readonly<InputTuning> = Object.freeze({
-  tapMaxMs: 220,
-  tapMaxMovePx: 12,
-  doubleTapMs: 300,
-  doubleTapMaxDistPx: 48,
 });
 
 export const VIEW: Readonly<ViewTuning> = Object.freeze({
