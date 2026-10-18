@@ -12,10 +12,10 @@ import {
   type ReducedMotionPayload,
   type SteerPayload,
 } from '../logic/gameEvents';
-import { createLegs, type LegStatus } from '../logic/legs';
+import type { LegStatus } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { stickLayout, stickSteer, type StickLayout } from '../logic/stick';
-import { legsSnapshot } from '../logic/trip';
+import { idleTripSnapshot } from '../logic/trip';
 import {
   TRIP_EVENTS,
   TRIP_REGISTRY_KEYS,
@@ -83,7 +83,7 @@ interface LegIconView {
 
 /** Trip display state for a swimming, whole axolotl, used until the swim scene publishes one. */
 function createSwimmingTrip(): TripSnapshot {
-  return { phase: 'swimming', legs: legsSnapshot(createLegs()) };
+  return idleTripSnapshot();
 }
 
 /**
