@@ -32,6 +32,19 @@ Design language for the axolotl kids game (ages 8-12, web first, then mobile). T
 - Tail fin height. The code builds the top fin as `2 + 9 * sin(...)` and the bottom fin as `2 + 7 * sin(...)`, measured outward from the tail core edge. So the fin reaches 2 px at both ends and peaks at 11 px (top) and 9 px (bottom). Earlier notes quoted "max 9 / max 7"; those are the sine amplitudes only. This guide uses the code values (section 6).
 - Bubble spawn offset. The code places a bubble 49 px in front of the body centre (unscaled by the 0.95 scene scale) and 4 px lower. This guide records it as written.
 
+**MVP additions.** MVP visuals from the [Axolotl MVP PRD](prds/axolotl-mvp.md) are specified in this guide. All are derived (provisional) and listed in section 12.
+
+**PRD conflict rows resolved here**
+
+| PRD row | Resolution |
+|---|---|
+| An "invulnerability flash" after a hit | No flashing. Protected time is a steady bubble ring (6q). The flashing rule is in section 10. |
+| Art style guide: accessories "never cover the eyes", but glasses are a planned Wearable | Face slot with eye zones. Face items draw below the eyes (6a layer 11.5, 6i). |
+| Section 7b had no rarity colours, badge shapes, Home Tank kit, collectibles, or hazard art | Rarity colours 3e and badge shapes 8. Tilapia 7c. Home Spot 7d. Treasures, Dash pot, hint sparkle, and Paint shells 7e. Home Tank kit 7f. 7b updated. |
+| No Wearable slot anchors, no face, gill, or spot variants, and no Dream colour patterns | Slot anchors 6i. Face, gill, and spot variants 6l, 6m, 6n, 6o. Dream colours 3f and patterns 6p. |
+| Non-art rows: ADR 0007 "No harsh fail states" (now amended by ADR 0008), and "no network requests" | No guide change. Leg-loss art stays gentle (6q). |
+| PRD open question 4: Home Spot, burrow or buoy | Burrow (7d). |
+
 ---
 
 ## 2. Principles
@@ -184,13 +197,24 @@ A dash means "keep the Leucistic value"; it has not been decided separately yet 
 
 | Morph | Extra cue | Source |
 |---|---|---|
-| Leucistic | Prototype look: freckles, blush, soft pink | `cartoon.js` |
+| Leucistic | Prototype look: blush, soft pink, solid dark bead eyes with no ring. The prototype freckles are now the player's Freckles spot option (6n), not a morph cue. | `cartoon.js`, `derived (provisional)` |
 | Wild | Dark speckle pattern in #5f6b33 (6 to 9 speckles) plus a few gold flecks in #ffe14a | `derived (provisional)` |
 | Golden albino | Light eye with a ring; shimmer glints with no outline | `derived (provisional)` |
-| Melanoid | Darkest value of all morphs; matte (no freckles, body shine alpha 0.45 instead of 0.75); 2 px rim light in #c7c2ee along the upper silhouette. **The rim light is required**: ink against the melanoid body is only 1.74:1. | `derived (provisional)` |
+| Melanoid | Darkest value of all morphs; matte (no shiny flecks; body shine alpha 0.45 instead of 0.75); 2 px rim light in #c7c2ee along the upper silhouette. **The rim light is required**: ink against the melanoid body is only 1.74:1. | `derived (provisional)` |
 | GFP | Soft glow halo in #7dff8f at about 0.35 alpha, outside the outline, pulsing no faster than every 2.4 s; small sparkles | `derived (provisional)` |
 
-**Luminance order** (darkest to lightest, relative luminance): melanoid 0.077, wild 0.446, leucistic 0.596, golden 0.689, GFP 0.858. Leucistic and golden are close, so eye value and pattern separate them. The UI never shows a morph by colour alone: always its name plus a distinct badge shape. Source: `derived (provisional)`.
+**Luminance order** (darkest to lightest, relative luminance): melanoid 0.077, wild 0.446, leucistic 0.596, golden 0.689, GFP 0.858. Leucistic and golden are close, so eye value and pattern separate them. The UI never shows a morph by colour alone: always its name plus a distinct badge shape. Dream colours (3f) are paints, not morphs. Source: `derived (provisional)`.
+
+**Spot colour per morph (used by 6n)**
+
+| Morph or paint | Spot colour | Note | Source |
+|---|---|---|---|
+| Leucistic | rgba(236,120,160,0.55) | The prototype freckle | `cartoon.js` |
+| Wild | rgba(113,74,119,0.55) | Far gill stem #714a77 at 0.55 | `derived (provisional)` |
+| Golden albino | rgba(239,115,80,0.55) | #ef7350 at 0.55 | `derived (provisional)` |
+| Melanoid | rgba(199,194,238,0.35) | Rim colour, so spots show on the dark body | `derived (provisional)` |
+| Dream colours with body relative luminance 0.2 or more | rgba(43,35,80,0.30) | Ink at 0.30 | `derived (provisional)` |
+| Midnight blue, Galaxy, and Tie-dye galaxy | rgba(255,255,255,0.45) | White at 0.45 on the dark Dream bodies | `derived (provisional)` |
 
 ### 3c. Water states
 
@@ -224,6 +248,137 @@ All UI text uses ink #2b2350 (`derived (provisional)` use of a `cartoon.js` colo
 
 These colours all come from the prototype palette; their use as UI roles is the new part.
 
+### 3e. Rarity colours
+
+There are four rarities, in this order: Common, Rare, Epic, Legendary. Each has a fill, a badge shape (section 8), and its name in text. Shape and name carry the meaning. Colour is the weakest cue.
+
+| Rarity | Fill | Relative luminance | Contrast with ink | Badge shape | Source |
+|---|---|---|---|---|---|
+| Common | #e3ecef | 0.826 | 12.0:1 | Circle | `derived (provisional)` |
+| Rare | #5ab8ff | 0.437 | 6.67:1 | Rounded diamond | `derived (provisional)` |
+| Epic | #b07cff | 0.309 | 4.92:1 | Rounded shield | `derived (provisional)` |
+| Legendary | #ffc12e | 0.596 | 8.86:1 | Rounded five-point star | `derived (provisional)` |
+
+**Greyscale contrast between rarity fills**
+
+| Pair | Contrast | Source |
+|---|---|---|
+| Common / Rare | 1.80:1 | `derived (provisional)` |
+| Common / Epic | 2.44:1 | `derived (provisional)` |
+| Common / Legendary | 1.36:1 | `derived (provisional)` |
+| Rare / Epic | 1.36:1 | `derived (provisional)` |
+| Rare / Legendary | 1.33:1 | `derived (provisional)` |
+| Epic / Legendary | 1.80:1 | `derived (provisional)` |
+
+No pair reaches 3:1, so value alone never identifies a rarity. Shape and name do. All four fills pass 4.5:1 with ink, so ink text or icons may sit on them. Legendary #ffc12e is also the Legendary wearable trim (6i).
+
+### 3f. Dream colours
+
+There are twelve Dream colours. They are found in Paint shells. A Dream colour is a paint over the real morph, never a morph (PRD F14, C12). It swaps the body and gill role slots of 3b. The real morph keeps its eye and mouth slots.
+
+Each colour is two picks (body and gill) plus fixed sRGB mixes:
+
+- Far side = body mixed 12% toward ink.
+- Fin = body mixed 40% toward white.
+- Belly = body mixed 55% toward white.
+- Near filament = gill mixed 22% toward white.
+- Far stem = gill mixed 10% toward ink.
+- Far filament = near filament mixed 8% toward ink.
+
+**Dream colour slots**
+
+| Dream colour | Rarity | Kind | Body | Far side | Fin | Belly | Near stem, near filament | Far stem, far filament | Source |
+|---|---|---|---|---|---|---|---|---|---|
+| Mint | Common | Solid | #a8f0cf | #99d7c0 | #cbf6e2 | #d8f8e9 | #34c98e, #61d5a7 | #33b888, #5dc7a0 | `derived (provisional)` |
+| Sky blue | Common | Solid | #9fd8ff | #91c2ea | #c5e8ff | #d4edff | #3a96e8, #65aded | #388ad9, #60a2e0 | `derived (provisional)` |
+| Lavender | Common | Solid | #cdb8ff | #baa6ea | #e1d4ff | #e8dfff | #9575e6, #ac93ec | #8a6dd7, #a28ae0 | `derived (provisional)` |
+| Sunset orange | Rare | Solid | #ffb070 | #e69f6c | #ffd0a9 | #ffdbbf | #ff6a3d, #ff8b68 | #ea633f, #ee8366 | `derived (provisional)` |
+| Bubblegum | Rare | Solid | #ffa6da | #e696c9 | #ffcae9 | #ffd7ee | #e0449c, #e76db2 | #ce4194, #d867aa | `derived (provisional)` |
+| Midnight blue | Rare | Solid | #2f3a8f | #2f3787 | #8289bc | #a1a6cd | #6f8cff, #8fa5ff | #6882ee, #879bf1 | `derived (provisional)` |
+| Hearts | Epic | Patterned | #fff0b3 | #e6d7a7 | #fff6d1 | #fff8dd | #ff5f8d, #ff82a6 | #ea5987, #ee7a9f | `derived (provisional)` |
+| Tie-dye | Epic | Patterned | #ffe9a8 | #e6d19d | #fff2cb | #fff5d8 | #ff7fbf, #ff9bcd | #ea76b4, #ee91c3 | `derived (provisional)` |
+| Iridescent | Epic | Sheen | #d7ccff | #c2b8ea | #e7e0ff | #ede8ff | #8fe3ff, #a8e9ff | #85d0ee, #9ed9f1 | `derived (provisional)` |
+| Rainbow | Legendary | Patterned | #ff6b6b | #e66268 | #ffa6a6 | #ffbcbc | #b07cff, #c199ff | #a373ee, #b590f1 | `derived (provisional)` |
+| Galaxy | Legendary | Patterned | #2b2f7a | #2b2e75 | #8082af | #a0a1c3 | #ff8fd0, #ffa8da | #ea84c3, #ee9dcf | `derived (provisional)` |
+| Tie-dye galaxy | Legendary | Patterned | #3a2f7a | #382e75 | #8982af | #a6a1c3 | #7fd4ff, #9bddff | #77c2ee, #92cef1 | `derived (provisional)` |
+
+**Pattern colours**
+
+| Dream colour | Pattern colours | Contrast | Source |
+|---|---|---|---|
+| Hearts | Hearts #ff5f8d | 2.53:1 vs base | `derived (provisional)` |
+| Tie-dye | Bands #ff7fbf, #7fd4ff, #ffe14a, with 1.2 px dividers rgba(255,255,255,0.8) | - | `derived (provisional)` |
+| Iridescent | Stripes rgba(255,255,255,0.7) and #8f7fe0 at 0.6 alpha | White vs #8f7fe0 3.34:1 | `derived (provisional)` |
+| Rainbow | Bands #ff6b6b, #ffa64d, #ffe14a, #7fe07f, #6cb8ff, #b07cff, with 1.2 px white dividers rgba(255,255,255,0.8) | Adjacent pairs are only 1.43, 1.49, 1.25, 1.30, 1.39:1, so the dividers are required | `derived (provisional)` |
+| Galaxy | Nebula rgba(255,127,191,0.35); stars #ffffff | Stars 11.73:1 vs base | `derived (provisional)` |
+| Tie-dye galaxy | Bands #ff7fbf and #7fd4ff at 0.75 alpha; stars #ffffff | Band #ff7fbf 4.84:1 vs base; band #7fd4ff 6.83:1; stars 11.24:1 | `derived (provisional)` |
+
+**Contrast checks.** The checks use nine evenly spaced samples of the clean water gradient, t = 0 to 1 in eighths, with sRGB interpolation between stops 0 / 0.45 / 1: #55e4d8, #45d7d5, #35cad1, #26bece, #1aaec7, #1699bb, #1285b0, #0e70a4, #0a5c98.
+
+| Dream colour | Body vs ink | Body vs deep #0a5c98 | Worst dual separation over the samples | Eye bead #1b1535 vs body | Extras | Source |
+|---|---|---|---|---|---|---|
+| Mint | 10.99 | 5.35 | 3.43 | 13.30 | None | `derived (provisional)` |
+| Sky blue | 9.42 | 4.58 | 3.43 | 11.40 | None | `derived (provisional)` |
+| Lavender | 8.15 | 3.97 | 3.07 | 9.87 | None | `derived (provisional)` |
+| Sunset orange | 8.02 | 3.90 | 3.02 | 9.70 | None | `derived (provisional)` |
+| Bubblegum | 8.03 | 3.91 | 3.03 | 9.72 | None | `derived (provisional)` |
+| Midnight blue | 1.45 | 1.41 | 2.05 without rim | 1.76 | Rim light + eye ring | `derived (provisional)` |
+| Hearts | 12.59 | 6.13 | 3.67 | 15.24 | None | `derived (provisional)` |
+| Tie-dye | 11.98 | 5.83 | 3.49 | 14.50 | None | `derived (provisional)` |
+| Iridescent | 9.58 | 4.66 | 3.43 | 11.59 | None | `derived (provisional)` |
+| Rainbow (band 1) | 5.19 | 2.52 | 2.52 (worst band #b07cff 2.39) | 6.28 | Rim light | `derived (provisional)` |
+| Galaxy | 1.23 | 1.67 | 2.05 | 1.49 | Rim light + eye ring | `derived (provisional)` |
+| Tie-dye galaxy | 1.28 | 1.60 | 2.05 | 1.55 | Rim light + eye ring | `derived (provisional)` |
+
+**Rim light.** 2 px #c7c2ee along the upper silhouette, as Melanoid. With it, ink carries 3.43:1 or better for t up to 0.75, and the rim carries 3.20:1 at t = 0.875 and 4.13:1 at t = 1.
+
+**Eye ring.** 1.5 px #c7c2ee around the morph eye, whenever the morph eye against the Dream body is under 3:1. Ring against eye bead is 10.27:1. Ring against Midnight blue is 5.83:1, Galaxy 6.91:1, Tie-dye galaxy 6.63:1. It also covers the Golden albino light eye on dark Dream colours (#d6336c against Midnight blue is 2.14:1).
+
+**Greyscale note.** Mint, Sky blue, Lavender, Sunset orange, and Bubblegum are 1.00 to 1.37:1 apart (Midnight blue is 5.5:1 or more from them). So the name label is the greyscale cue for solids (PRD F15). Every Dream colour carries the Dream marker (6p), so it never reads as a real morph.
+
+### 3g. Trip, hazard and prop colours
+
+| Item | Role | Value | Contrast | Source |
+|---|---|---|---|---|
+| Tilapia body | Fill | #b8cbb0 | Ink 8.37:1. Vs deep 4.07:1. Vs sample t = 0.875 #0e70a4 3.15:1, where ink alone is 2.65:1, so the body carries. Worst dual separation 3.15:1. | `derived (provisional)` |
+| Tilapia fin | Fill | #d4e0d0 | 10.54:1 with ink | `derived (provisional)` |
+| Tilapia far fin | Fill | #a7b7a4 | - | `derived (provisional)` |
+| Tilapia belly | Fill | #e3eadf | 11.72:1 with ink | `derived (provisional)` |
+| Tilapia bars | Body detail | rgba(70,95,80,0.22) | - | `derived (provisional)` |
+| Tilapia fin rays and gill-cover line | Internal detail lines | rgba(70,95,80,0.4) | - | `derived (provisional)` |
+| Tilapia shine | Highlight | rgba(255,255,255,0.6) | - | `derived (provisional)` |
+| Tilapia eye | Bead | #1b1535 | 10.13:1 vs body | `derived (provisional)` |
+| Tilapia lunge mouth | Fill | #e8567e | - | `derived (provisional)` |
+| Telegraph bubble | Fill, with an ink "!" | #ffffff | 14.39:1 (ink "!") | `derived (provisional)` |
+| Twinkle | Arms and core | Arms #ffe14a, core #ffffff (as the swim-test tail sparkles) | - | `derived (provisional)` |
+| 4-point star | Fill and outline | Fill #ffffff, ink outline | - | `derived (provisional)` |
+| Legs display, leg present | Fill | #e8567e | 3.46:1 vs white panel; 4.16:1 vs ink | `derived (provisional)` |
+| Legs display, dashed outline | Outline | Ink | 14.39:1 vs white | `derived (provisional)` |
+| Lost leg on the body | Dashed outline | rgba(43,35,80,0.55) | - | `derived (provisional)` |
+| Leg-loss puff | Fill and outline | Fill #ffffff, ink outline | - | `derived (provisional)` |
+| Protected ring | Outer line, inner line, glint | Outer #2b2350, inner #ffffff, glint #ffffff | The better line at each sample is 4.19:1 or more. Ink: 9.24 to 3.43:1 for t up to 0.75. White: 4.19, 5.42, 7.01:1 at t = 0.75, 0.875, 1. | `derived (provisional)` |
+| Home Spot stones | Fill | Pebbles A to E (3a) | 5.87 to 10.7:1 with ink | `derived (provisional)` |
+| Home Spot opening | Fill | #4a3a6e | 3.06:1 vs bed top #b78552 | `derived (provisional)` |
+| Home Spot glow | Soft light | rgba(255,225,74,0.25) | - | `derived (provisional)` |
+| Home Spot post | Fill | #a56a3b | - | `derived (provisional)` |
+| Home Spot flag | Fill, with an ink house icon | #ffe14a | 11.05:1 (ink house icon) | `derived (provisional)` |
+| Home Spot safe-ring dots | Fill and stroke | Bubble fill rgba(255,255,255,0.38); bubble stroke rgba(43,35,80,0.85) | - | `derived (provisional)` |
+| Dash pot | Fill | #e0915f | 5.75:1 with ink. Ink vs bed top is 4.45:1, so the outline carries on the bed. | `derived (provisional)` |
+| Dash pot rim | Fill | #efb48a | 7.93:1 with ink | `derived (provisional)` |
+| Dash pot cracks | Internal detail lines | #7f4a2a | - | `derived (provisional)` |
+| Dash pot shine | Highlight | rgba(255,255,255,0.75) | - | `derived (provisional)` |
+| Paint shell | Fill | #efdcba | 10.7:1 with ink | `derived (provisional)` |
+| Paint shell ridges | Internal detail lines | #e0b095 | - | `derived (provisional)` |
+| Tongue | Fill | #ff9fb5 | 7.46:1 with ink; 1.79:1 vs mouth #e8567e, so the ink outline separates them | `derived (provisional)` |
+| Home Tank wall | Fill | #fff1d6 | 12.89:1 with ink | `derived (provisional)` |
+| Home Tank stand | Fill | #a56a3b | - | `derived (provisional)` |
+| Home Tank lid | Fill | #d4cfe6 | 9.5:1 with ink | `derived (provisional)` |
+| Home Tank air gap | Fill | #c4f1ff | 11.91:1 with ink | `derived (provisional)` |
+| Home Tank glass shine | Highlight | rgba(255,255,255,0.25) | - | `derived (provisional)` |
+| Home Tank water | Gradient | Clean water gradient (3c) | - | `derived (provisional)` |
+| Home Tank gravel | Fill | Bed and pebble colours (3a) | - | `derived (provisional)` |
+| Hint star | Fill and outline | White with ink outline | White alone is only 1.56:1 on shallow water, where the ink carries. White carries on deep (7.01:1). | `derived (provisional)` |
+
 ---
 
 ## 4. Line and shape rules
@@ -236,6 +391,7 @@ These colours all come from the prototype palette; their use as UI roles is the 
 | Main line width (LW) | 3.5 logical px | `cartoon.js` |
 | Line join and cap | Round, round | `cartoon.js` |
 | Outline weight vs object size | Constant. A small object keeps the same line as a big one. Clouds are scaled, so they draw their line at LW / cloud scale to stay 3.5 px on screen. | `cartoon.js` |
+| Size variants | Small, Medium and Large (6o) are a uniform scale of the whole axolotl, ink, wearables and Dream overlay included (x0.85 / x1.00 / x1.15). This is the one exception to the constant-outline rule. It keeps every clearance in 6i true at every size (PRD F13). | `derived (provisional)` |
 | Corners | Rounded everywhere (ellipses and smooth curves) | `cartoon.js` |
 | Pixel density | Draw at device pixel ratio, capped at 2 | `cartoon.js` |
 
@@ -252,6 +408,25 @@ These colours all come from the prototype palette; their use as UI roles is the 
 | Flower centre | 2.4 | `cartoon.js` |
 | Mouth-corner ticks | 2.0 | `cartoon.js` |
 | Bubble stroke | 2.0, in rgba(43,35,80,0.85) | `cartoon.js` |
+| Rarity badge outline | 2.6 (`shape`) | `derived (provisional)` |
+| Dream swatch tile outline | 2.6 | `derived (provisional)` |
+| Wearable silhouettes | 2.8 (`shape`) | `derived (provisional)` |
+| Glasses frame band | 3.5 total: ink only, or colour 1.5 with `ol` 1.0 each side | `derived (provisional)` |
+| Eye lid lines | 2.0 | `derived (provisional)` |
+| Tongue and small "o" mouth outline | 2.4 | `derived (provisional)` |
+| 4-point star outline | 1.6 (1.8 when R is 6 or more) | `derived (provisional)` |
+| Lost leg on the body | Dashed 1.5, dash 2.5, gap 2.5, in rgba(43,35,80,0.55) | `derived (provisional)` |
+| Legs display | Dashed 2.0, dash 3, gap 3, in ink | `derived (provisional)` |
+| Protected ring | Ink 2.0 plus white 2.4. The white line sits 2.2 inside the ink line. | `derived (provisional)` |
+| Tilapia pectoral fin | 2.8 | `derived (provisional)` |
+| Home Spot stones | 2.6 | `derived (provisional)` |
+| Home Spot flag | 2.8 | `derived (provisional)` |
+| Home Spot house icon | 2.4 | `derived (provisional)` |
+| Dash pot | 3.5 (`blob`) | `derived (provisional)` |
+| Dash pot shards | 2.6 | `derived (provisional)` |
+| Paint shell | 2.6 | `derived (provisional)` |
+| Home Tank glass outline and lid | 3.5 | `derived (provisional)` |
+| Home Tank gravel pebbles | 2.6 | `derived (provisional)` |
 
 **Tube outlines** (a tube is a thick round-capped stroke; the outline width `ol` is added on each side, so total ink = width + 2 x ol)
 
@@ -268,6 +443,8 @@ These colours all come from the prototype palette; their use as UI roles is the 
 | Willow trunk | 4.6 | 3.0 | `cartoon.js` |
 | Reed stalk | 3.6 | 2.5 | `cartoon.js` |
 | Cattail head | 6.4 | 2.6 | `cartoon.js` |
+| Wearable tubes (ribbons, scarf ends) | 3.2 | 2.4 | `derived (provisional)` |
+| Twinkle arms | 3 | 1.6 | `derived (provisional)` |
 
 **Internal detail lines are not ink.** They are soft tinted lines drawn inside a shape, never in outline colour:
 
@@ -290,6 +467,15 @@ These colours all come from the prototype palette; their use as UI roles is the 
 ### 4d. Close-ups and portraits
 
 When the axolotl is drawn much larger than in the scene (cards, portraits, store art), do not keep 3.5 px. Scale the outline with the character: about **2.9% of snout-to-tail length L**. This is the in-scene ratio (3.5 px outline on a roughly 121 px axolotl). Source: `derived (provisional)`.
+
+### 4e. Sparkle shapes
+
+| Shape | Construction | Used for | Source |
+|---|---|---|---|
+| Twinkle | Two crossed round-capped tubes (a plus shape). Arms #ffe14a, width 3, with `ol` 1.6. White core of radius 0.32 x the arm radius. It matches the swim-test tail sparkles. | The leg-loss puff, regrowth, and the pot crumble | `derived (provisional)` |
+| 4-point star | Filled concave four-point star. Outer radius R, inner radius 0.38R, tip rounding 0.15R. Fill #ffffff, ink outline 1.6 (1.8 when R is 6 or more). | The treasure hint, the telegraph glint, the regrowing mark in the legs display, the Dream marker, Legendary wearable twinkles, and Galaxy stars (no outline needed on the dark Galaxy bases) | `derived (provisional)` |
+
+Neither shape ever blinks. Only slow size or position changes are allowed (section 9).
 
 ---
 
