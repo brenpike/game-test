@@ -37,6 +37,10 @@ npm install
 | Swim | Drag the swim pad in the bottom-left corner | Arrow keys or WASD |
 | Tail Dash | Dash button (bottom-right) | Space or Shift |
 | Pause | Pause button | P or Esc |
+| Keep your finds safe | Swim into the Home Spot ring | Swim into the Home Spot ring |
+| Keep exploring or Go home | Keep exploring or Go home button | Left/Right or Tab to choose, Enter or Space to press, H for Go home |
+| Go home from the Home Spot | Go home button (top-right, at the Home Spot) | H |
+| Swim again from home | Swim again button | Enter or Space |
 
 The game respects your device's reduced-motion setting.
 
