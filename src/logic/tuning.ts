@@ -99,6 +99,21 @@ export interface TilapiaTuning {
   bumpCooldown: number;
 }
 
+/** Carried-home transition tuning, used after the fourth leg is lost. */
+export interface CarryTuning {
+  /** Full-motion carry speed in px/s along a straight line to the Home Spot. */
+  speed: number;
+  /** Shortest full-motion carry in seconds, so even a very short carry reads as a gentle float. */
+  minTime: number;
+  /** Longest full-motion carry in seconds, so a far carry never drags on. */
+  maxTime: number;
+  /**
+   * Seconds a reduced-motion carry holds before arriving. Under reduced motion the axolotl
+   * does not travel: it rests in a still bubble where it was, then appears at the Home Spot.
+   */
+  stillHold: number;
+}
+
 export const SWIM: Readonly<SwimTuning> = Object.freeze({
   maxSpeed: 150,
   accel: 520,
@@ -152,4 +167,12 @@ export const TILAPIA: Readonly<TilapiaTuning> = Object.freeze({
   patrolSpeed: 45,
   bumpSpeed: 160,
   bumpCooldown: 0.6,
+});
+
+/** Provisional carried-home values; a gentle float of 1.5 to 5 s, or a 1.5 s still bubble. */
+export const CARRY: Readonly<CarryTuning> = Object.freeze({
+  speed: 300,
+  minTime: 1.5,
+  maxTime: 5,
+  stillHold: 1.5,
 });

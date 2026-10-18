@@ -9,6 +9,7 @@ export const TRIP_EVENTS = Object.freeze({
   TRIP_ENDED: 'trip-ended',
   REQUEST_NEW_TRIP: 'request-new-trip',
   TRIP_STARTED: 'trip-started',
+  STATE: 'trip-state',
 } as const);
 
 export type TripEventName = (typeof TRIP_EVENTS)[keyof typeof TRIP_EVENTS];
@@ -26,6 +27,15 @@ export interface LegsSnapshot {
   protected: boolean;
 }
 
+/** Trip phase: swimming, being carried home after the fourth leg is lost, or ended at home. */
+export type TripPhase = 'swimming' | 'carrying' | 'ended';
+
+/** Trip display state: the phase and the legs display state. */
+export interface TripSnapshot {
+  phase: TripPhase;
+  legs: LegsSnapshot;
+}
+
 /** Why a trip ended. Only being carried home after losing the fourth leg exists so far. */
 export type TripEndReason = 'carriedHome';
 
@@ -39,11 +49,13 @@ export interface TripEventPayloads {
   [TRIP_EVENTS.TRIP_ENDED]: TripEndedPayload;
   [TRIP_EVENTS.REQUEST_NEW_TRIP]: undefined;
   [TRIP_EVENTS.TRIP_STARTED]: undefined;
+  [TRIP_EVENTS.STATE]: TripSnapshot;
 }
 
 /** Keys for trip values stored in the shared game registry. Values never repeat a `REGISTRY_KEYS` value. */
 export const TRIP_REGISTRY_KEYS = Object.freeze({
   legs: 'tripLegs',
+  state: 'tripState',
 } as const);
 
 export type TripRegistryKey = (typeof TRIP_REGISTRY_KEYS)[keyof typeof TRIP_REGISTRY_KEYS];
