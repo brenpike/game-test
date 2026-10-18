@@ -166,6 +166,44 @@ describe('stepEncounter same-frame order', () => {
     expect(result.events.map((event) => event.type)).toEqual(['hit', 'regrowStart']);
     expect(result.impulse).toBeUndefined();
     expect(result.state.bumpCooldownLeft).toBe(TILAPIA.bumpCooldown);
+    expect(result.state.legs.protectedLeft).toBe(LEGS.protectedTime);
+  });
+
+  it('blocks a hit in the step where protected time runs out partway through', () => {
+    const legs: EncounterState['legs'] = { ...createEncounter(zone).legs, protectedLeft: DT / 2 };
+    const result = stepEncounter(lungingAt(target, legs), target, DT);
+    expect(result.events[0]).toEqual({ type: 'protectedEnd' });
+    expect(typesOf(result.events, ['hit', 'regrowStart', 'carriedHome'])).toEqual([]);
+    expect(presentCount(result.state.legs)).toBe(LEGS.count);
+    expect(isProtected(result.state.legs)).toBe(false);
+    expect(result.state.tilapias[0].phase).toBe('cooldown');
+  });
+
+  it('lands a hit in the first step after protected time has run out', () => {
+    const legs: EncounterState['legs'] = { ...createEncounter(zone).legs, protectedLeft: DT / 2 };
+    const ended = stepEncounter({ ...createEncounter(zone), legs }, { x: 1800, y: 200 }, DT).state;
+    expect(isProtected(ended.legs)).toBe(false);
+    const result = stepEncounter(lungingAt(target, ended.legs), target, DT);
+    expect(typesOf(result.events, ['hit'])).toEqual(['hit']);
+    expect(presentCount(result.state.legs)).toBe(LEGS.count - 1);
+  });
+
+  it('counts a leg that finishes regrowing in the step, so a same-step hit cannot end the trip', () => {
+    const legs: EncounterState['legs'] = {
+      slots: [
+        { status: 'regrowing', progress: 1 - (DT / 2) / LEGS.regrowTime },
+        { status: 'lost', progress: 0 },
+        { status: 'lost', progress: 0 },
+        { status: 'present', progress: 1 },
+      ],
+      protectedLeft: 0,
+      regrowQueue: [0, 1, 2],
+    };
+    const result = stepEncounter(lungingAt(target, legs), target, DT);
+    expect(result.events.map((event) => event.type)).toEqual(['regrown', 'regrowStart', 'hit']);
+    expect(typesOf(result.events, ['carriedHome'])).toEqual([]);
+    expect(presentCount(result.state.legs)).toBe(1);
+    expect(result.state.tripOver).toBe(false);
   });
 
   it('emits regrown before the hit when both happen in one step', () => {

@@ -113,6 +113,15 @@ export function resetEncounter(
  * route order, then one bump check. So a leg that finishes regrowing in the same step as a
  * hit emits `regrown` before `hit`.
  *
+ * Within-step timing always favours the axolotl. A lunge contact can happen at any moment
+ * inside the step, so a hit is judged against the kindest leg state over the whole step:
+ * a leg that finishes regrowing anywhere in the step counts as present, and protected time
+ * that was still running when the step began blocks every hit in that step, even if it runs
+ * out partway through. Protected time only counts down and only a hit restarts it, so when
+ * it is 0 at the start of the step it was 0 for the whole step and a hit is always fair. A
+ * hit's new protected time starts in full at the end of the step. So step size can never
+ * cost a leg, or end a trip, that a finer timeline would have spared.
+ *
  * A connected lunge calls `tryHit`. While protected the hit costs no leg and emits nothing;
  * the tilapia then sits in cooldown inside its contact radius, so the bump check below can
  * push the axolotl gently away. Losing the last present leg emits `hit` then `carriedHome`
@@ -139,7 +148,8 @@ export function stepEncounter(
     legs,
     bumpCooldownLeft: Math.max(0, state.bumpCooldownLeft - step),
   };
-  const pass = stepTilapias(timed, axolotlPos, step, ctx);
+  const canHit = !isProtected(state.legs);
+  const pass = stepTilapias(timed, axolotlPos, step, ctx, canHit);
   events.push(...pass.events);
   if (pass.hit || pass.state.tripOver || pass.state.bumpCooldownLeft > 0) {
     return { state: pass.state, events };
@@ -147,11 +157,13 @@ export function stepEncounter(
   return applyBump(pass.state, axolotlPos, events, ctx);
 }
 
+/** Steps every tilapia; `canHit` false means protected time was running at the step start. */
 function stepTilapias(
   state: EncounterState,
   axolotlPos: Point,
   dt: number,
   ctx: EncounterContext,
+  canHit: boolean,
 ): TilapiaPass {
   const tilapiaCtx: TilapiaContext = { safeArea: state.safeArea, bounds: ctx.bounds, tuning: ctx.tilapia };
   let current: EncounterState = { ...state, tilapias: [...state.tilapias] };
@@ -164,7 +176,7 @@ function stepTilapias(
     for (const event of result.events) {
       if (event.type === 'telegraphStart') events.push({ type: 'telegraph', tilapiaId });
       if (event.type === 'lungeStart') events.push({ type: 'lunge', tilapiaId, aim: event.aim });
-      if (event.type === 'lungeEnd' && event.connected && !current.tripOver) {
+      if (event.type === 'lungeEnd' && event.connected && canHit && !current.tripOver) {
         const landed = applyHit(current, result.state, ctx);
         current = landed.state;
         events.push(...landed.events);
