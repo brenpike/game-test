@@ -1,7 +1,8 @@
 import * as Phaser from 'phaser';
-import type { AxolotlPose } from '../art/drawAxolotl';
+import { AXO_LEG_ROOTS, type AxolotlPose, type LegLook } from '../art/drawAxolotl';
 import type { ReedLook } from '../art/drawScenery';
 import { INK, LW, UI_FONT } from '../art/palette';
+import { bakePredatorTextures, type PredatorTextures } from '../art/predatorTextures';
 import {
   TEX,
   bakeTextures,
@@ -33,6 +34,7 @@ export interface GameAssets {
   zone: ZoneLayout;
   baked: BakedTextures;
   axolotl: AxolotlTexture;
+  predator: PredatorTextures;
 }
 
 /** CSS viewport size plus the fitted view derived from the Scale Manager. */
@@ -100,6 +102,22 @@ export function blinkAt(seconds: number): number {
   return seconds % BLINK_PERIOD < BLINK_LENGTH ? BLINK_CLOSED : 1;
 }
 
+/** Whether two leg looks would paint the same leg. A missing look paints as present. */
+function sameLegLook(a: LegLook | undefined, b: LegLook | undefined): boolean {
+  const statusA = a?.status ?? 'present';
+  const statusB = b?.status ?? 'present';
+  if (statusA !== statusB) return false;
+  return statusA !== 'regrowing' || a?.progress === b?.progress;
+}
+
+/** Whether two leg lists would paint the same legs. The painter reads one look per AXO_LEG_ROOTS entry. */
+function sameLegs(a: readonly LegLook[] | undefined, b: readonly LegLook[] | undefined): boolean {
+  for (let i = 0; i < AXO_LEG_ROOTS.length; i++) {
+    if (!sameLegLook(a?.[i], b?.[i])) return false;
+  }
+  return true;
+}
+
 /** Whether two poses would paint the same frame. */
 export function samePose(a: AxolotlPose, b: AxolotlPose): boolean {
   return (
@@ -107,7 +125,8 @@ export function samePose(a: AxolotlPose, b: AxolotlPose): boolean {
     a.gillPhase === b.gillPhase &&
     a.blink === b.blink &&
     a.tailAmp === b.tailAmp &&
-    a.sparkle === b.sparkle
+    a.sparkle === b.sparkle &&
+    sameLegs(a.legs, b.legs)
   );
 }
 
@@ -280,7 +299,8 @@ export class BootScene extends Phaser.Scene {
       pads: zone.pads,
     });
     const axolotl = createAxolotlTexture(this, TEX.axolotl, bakeScale);
-    const assets: GameAssets = { zone, baked, axolotl };
+    const predator = bakePredatorTextures(this, bakeScale);
+    const assets: GameAssets = { zone, baked, axolotl, predator };
     this.scene.start(SCENE_KEYS.title, assets);
   }
 }
