@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.2.0] - 2026-10-18
+
+### Added
+
+- On-screen swim pad in the bottom-left corner. It is analog and works alongside the Dash button.
+
+### Changed
+
+- Touch swimming now uses the swim pad, so your finger no longer covers the axolotl.
+
+### Removed
+
+- Hold/drag-on-water steering, tap-to-swim-to-a-spot, and double-tap to dash. Use the swim pad and the Dash button instead.
+
 ## [0.1.0] - 2026-10-18
 
 ### Added

@@ -28,7 +28,7 @@ const BODY_PX = 18;
 const AXO_WORLD_Y = 210;
 const TITLE_TEXT = 'Axolotl Swim Test';
 const CONTROLS_TEXT =
-  'Hold or drag to swim. Double-tap or press Dash to zoom.\n' +
+  'Use the swim pad in the corner to swim. Press Dash to zoom.\n' +
   'Keys: arrows or WASD to swim, Space to dash, P to pause.\n' +
   'Find all the snacks!';
 

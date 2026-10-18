@@ -10,6 +10,7 @@ export const GAME_EVENTS = Object.freeze({
   PAUSED: 'paused',
   RESUMED: 'resumed',
   REDUCED_MOTION: 'reduced-motion',
+  STEER: 'steer',
 } as const);
 
 export type GameEventName = (typeof GAME_EVENTS)[keyof typeof GAME_EVENTS];
@@ -34,6 +35,12 @@ export interface ReducedMotionPayload {
   reduced: boolean;
 }
 
+/** Pad steer vector with length in [0, 1]; y grows downward. */
+export interface SteerPayload {
+  x: number;
+  y: number;
+}
+
 /** Payload type for each event; `undefined` marks payload-less events. */
 export interface GameEventPayloads {
   [GAME_EVENTS.COLLECTED]: CollectedPayload;
@@ -44,6 +51,7 @@ export interface GameEventPayloads {
   [GAME_EVENTS.PAUSED]: undefined;
   [GAME_EVENTS.RESUMED]: undefined;
   [GAME_EVENTS.REDUCED_MOTION]: ReducedMotionPayload;
+  [GAME_EVENTS.STEER]: SteerPayload;
 }
 
 /** Keys for values stored in the shared game registry. */
