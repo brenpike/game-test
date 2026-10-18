@@ -55,6 +55,50 @@ export interface StickTuning {
   minScale: number;
 }
 
+/** Leg loss, regrowth and leg-dependent swim tuning. */
+export interface LegTuning {
+  /** Legs on a whole axolotl. */
+  count: number;
+  /** Seconds for one lost leg to regrow; legs regrow one at a time. */
+  regrowTime: number;
+  /** Seconds after a hit during which no further hit can land. */
+  protectedTime: number;
+  /** Top speed multiplier indexed by legs present minus one (1, 2, 3, 4 legs). */
+  speedByLegs: readonly number[];
+  /** Peak wobble angle in radians added per missing leg. */
+  wobbleAmp: number;
+  /** Wobble cycle length in seconds. */
+  wobblePeriod: number;
+}
+
+/** Tilapia patrol, telegraph and lunge tuning. */
+export interface TilapiaTuning {
+  /** Shortest allowed telegraph wind-up in seconds; the PRD floor. */
+  minWindup: number;
+  /** Telegraph wind-up in seconds; must be at least minWindup. */
+  windup: number;
+  /** Seconds after a lunge before the next telegraph may start. */
+  cooldown: number;
+  /** Centre distance in px within which a telegraph and lunge may start. */
+  lungeRange: number;
+  /** Lunge speed in px/s. */
+  lungeSpeed: number;
+  /** Lunge duration in seconds. */
+  lungeDuration: number;
+  /** Centre distance in px at which a lunge connects as a hit. */
+  hitRadius: number;
+  /** Centre distance in px at which a non-lunging tilapia bumps the axolotl. */
+  contactRadius: number;
+  /** Tilapia body radius in px, used for clearance from the safe area. */
+  bodyRadius: number;
+  /** Patrol cruise speed in px/s. */
+  patrolSpeed: number;
+  /** Speed in px/s given to the axolotl by a gentle bump. */
+  bumpSpeed: number;
+  /** Seconds after a bump before another bump can apply. */
+  bumpCooldown: number;
+}
+
 export const SWIM: Readonly<SwimTuning> = Object.freeze({
   maxSpeed: 150,
   accel: 520,
@@ -82,4 +126,30 @@ export const STICK: Readonly<StickTuning> = Object.freeze({
   gap: 12,
   zoneReach: 0.75,
   minScale: 0.7,
+});
+
+/** Provisional leg values; regrow, protected time and speed shares from the PRD Tuning values. */
+export const LEGS: Readonly<LegTuning> = Object.freeze({
+  count: 4,
+  regrowTime: 20,
+  protectedTime: 2,
+  speedByLegs: Object.freeze([0.6, 0.75, 0.9, 1]),
+  wobbleAmp: 0.06,
+  wobblePeriod: 0.9,
+});
+
+/** Provisional tilapia values; windup floor and cooldown from the PRD Tuning values. */
+export const TILAPIA: Readonly<TilapiaTuning> = Object.freeze({
+  minWindup: 0.8,
+  windup: 0.9,
+  cooldown: 2.5,
+  lungeRange: 140,
+  lungeSpeed: 380,
+  lungeDuration: 0.4,
+  hitRadius: 30,
+  contactRadius: 34,
+  bodyRadius: 24,
+  patrolSpeed: 45,
+  bumpSpeed: 160,
+  bumpCooldown: 0.6,
 });

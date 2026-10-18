@@ -22,6 +22,13 @@ const SNACK_MIN_SPACING = 40;
 const SNACK_START_CLEARANCE = 90;
 const SNACK_MAX_ATTEMPTS = 400;
 const PAD_COUNT = 6;
+const SAFE_AREA: Readonly<SafeArea> = Object.freeze({ x0: 40, x1: 300, y0: SURF, y1: BED_TOP });
+const TILAPIA_ROUTE_POINTS: readonly (readonly [number, number])[] = [
+  [460, 170],
+  [720, 140],
+  [700, 250],
+  [480, 240],
+];
 
 /** Structural 2D point; matches any `{ x, y }` vector shape. */
 export interface Point {
@@ -83,6 +90,20 @@ export interface SwimBounds {
   maxY: number;
 }
 
+/** Home Spot safe area; the tilapia never enters it. Inclusive edges. */
+export interface SafeArea {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+
+/** Tilapia patrol loop: visits waypoints in order, then wraps to the first. */
+export interface TilapiaRoute {
+  id: string;
+  waypoints: Point[];
+}
+
 export interface ZoneLayout {
   width: number;
   height: number;
@@ -95,6 +116,8 @@ export interface ZoneLayout {
   pads: PadSpec[];
   bankChunks: number[];
   sunChunk: number;
+  safeArea: SafeArea;
+  tilapiaRoutes: TilapiaRoute[];
 }
 
 /** Water surface height at world x and time t (seconds); ported from prototypes/art-styles/cartoon.js. */
@@ -224,6 +247,10 @@ function buildPads(rand: () => number): PadSpec[] {
   return pads;
 }
 
+function buildTilapiaRoutes(): TilapiaRoute[] {
+  return [{ id: 'tilapia-0', waypoints: TILAPIA_ROUTE_POINTS.map(([x, y]) => ({ x, y })) }];
+}
+
 /** Deterministically builds the 4-screen canal zone layout from a mulberry32 seed. */
 export function buildCanalZone(seed: number = DEFAULT_ZONE_SEED): ZoneLayout {
   const rand = mulberry32(seed);
@@ -253,5 +280,7 @@ export function buildCanalZone(seed: number = DEFAULT_ZONE_SEED): ZoneLayout {
     pads: buildPads(rand),
     bankChunks: [1, 3],
     sunChunk: 0,
+    safeArea: { ...SAFE_AREA },
+    tilapiaRoutes: buildTilapiaRoutes(),
   };
 }

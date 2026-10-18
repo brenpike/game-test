@@ -35,6 +35,31 @@ export const AXO_SCENE_SCALE = 0.95;
 /** Largest tail amplitude the texture frame is sized for. */
 export const AXO_MAX_TAIL_AMP = 1.6;
 
+/** Per-leg status for leg loss and regrowth (issue #7). */
+export type LegStatus = 'present' | 'regrowing' | 'lost';
+
+/** Look of one leg. `progress` is 0..1 and only read while `status` is 'regrowing'. */
+export interface LegLook {
+  readonly status: LegStatus;
+  readonly progress: number;
+}
+
+/**
+ * Local root point of each leg, in leg draw order (same order as
+ * `AxolotlPose.legs`): far-front, far-rear, near-front, near-rear. Matches guide 6e.
+ * Presentational anchor for callers (for example a poof effect). Provisional.
+ */
+export interface LegRoot {
+  readonly x: number;
+  readonly y: number;
+}
+export const AXO_LEG_ROOTS: readonly LegRoot[] = [
+  { x: 8, y: 15 },
+  { x: -14, y: 17 },
+  { x: 18, y: 15 },
+  { x: -24, y: 17 },
+];
+
 export interface AxolotlPose {
   /** Tail and leg cycle phase, radians (period 1.2 s at 2*pi * t / 1.2). */
   swimPhase: number;
@@ -46,6 +71,12 @@ export interface AxolotlPose {
   tailAmp: number;
   /** Regeneration glints along the tail, 0 none to 1 full. */
   sparkle: number;
+  /**
+   * Optional per-leg looks, length 4, in leg draw order (see AXO_LEG_ROOTS):
+   * far-front, far-rear, near-front, near-rear. Undefined draws all four legs
+   * present, exactly as before. A missing entry counts as present.
+   */
+  legs?: readonly LegLook[];
 }
 
 /** A calm, eyes-open pose. */
@@ -125,15 +156,86 @@ function gill(
   inkMany(ctx, segs);
 }
 
-function leg(ctx: CanvasRenderingContext2D, bx: number, by: number, ang: number, len: number, colour: string): void {
-  const ex = bx + Math.cos(ang) * len;
-  const ey = by + Math.sin(ang) * len;
-  const segs: Seg[] = [seg(line(bx, by, ex, ey), 8, colour, 3.1)];
+/**
+ * `k` (0..1, default 1) scales a growing leg; k = 1 is the normal leg, unchanged.
+ */
+function leg(
+  ctx: CanvasRenderingContext2D,
+  bx: number,
+  by: number,
+  ang: number,
+  len: number,
+  colour: string,
+  k = 1,
+): void {
+  const ex = bx + Math.cos(ang) * len * k;
+  const ey = by + Math.sin(ang) * len * k;
+  const ol = 0.5 + 0.5 * k;
+  const segs: Seg[] = [seg(line(bx, by, ex, ey), 8 * k, colour, 3.1 * ol)];
   for (let d = -1; d <= 1; d++) {
     const ta = ang + d * 0.6;
-    segs.push(seg(line(ex, ey, ex + Math.cos(ta) * 8.5, ey + Math.sin(ta) * 8.5), 4.2, colour, 2.6));
+    segs.push(seg(line(ex, ey, ex + Math.cos(ta) * 8.5 * k, ey + Math.sin(ta) * 8.5 * k), 4.2 * k, colour, 2.6 * ol));
   }
   inkMany(ctx, segs);
+}
+
+// Leg ghost (lost / regrowing). Provisional values.
+/** Outline radius around the leg tube and around each toe, just outside the inked leg. */
+const GHOST_R_LEG = 8.2;
+const GHOST_R_TOE = 5.6;
+/** Ghost ink alpha: faint when lost, a little firmer while regrowing. */
+const GHOST_ALPHA_LOST = 0.55;
+const GHOST_ALPHA_REGROW = 0.75;
+/** Leg-regrowth glints: arm radius at full strength. */
+const LEG_GLINT_R = 3.8;
+/** Below this progress no fill is drawn yet, only the outline and glints. */
+const LEG_FILL_MIN = 0.04;
+
+function capsule(p: Path2D, x1: number, y1: number, x2: number, y2: number, r: number): void {
+  const a = Math.atan2(y2 - y1, x2 - x1);
+  p.moveTo(x1 + Math.cos(a + Math.PI / 2) * r, y1 + Math.sin(a + Math.PI / 2) * r);
+  p.arc(x1, y1, r, a + Math.PI / 2, a + (3 * Math.PI) / 2);
+  p.arc(x2, y2, r, a - Math.PI / 2, a + Math.PI / 2);
+  p.closePath();
+}
+
+/**
+ * Faint dashed ink outline of the full leg: where it was, or is growing back.
+ * Dashes and a pale under-line keep it readable on dark and light water without
+ * colour. No stump, no red.
+ */
+function legGhost(
+  ctx: CanvasRenderingContext2D,
+  bx: number,
+  by: number,
+  ang: number,
+  len: number,
+  alpha: number,
+): void {
+  const ex = bx + Math.cos(ang) * len;
+  const ey = by + Math.sin(ang) * len;
+  const g = new Path2D();
+  capsule(g, bx, by, ex, ey, GHOST_R_LEG);
+  for (let d = -1; d <= 1; d++) {
+    const ta = ang + d * 0.6;
+    capsule(g, ex, ey, ex + Math.cos(ta) * 8.5, ey + Math.sin(ta) * 8.5, GHOST_R_TOE);
+  }
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.5;
+  ctx.lineWidth = 3.6;
+  ctx.strokeStyle = WHITE;
+  ctx.stroke(g);
+  ctx.globalAlpha = alpha;
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = INK;
+  ctx.setLineDash([3, 3]);
+  ctx.stroke(g);
+  ctx.restore();
+}
+
+function legProgress(look: LegLook): number {
+  const p = look.progress;
+  return Number.isFinite(p) ? Math.min(1, Math.max(0, p)) : 0;
 }
 
 function eye(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, blink: number, colour: string): void {
@@ -205,6 +307,50 @@ function paintRegenGlints(ctx: CanvasRenderingContext2D, tail: readonly TailPoin
 }
 
 /**
+ * Sparkles near each regrowing leg: rounded plus-shaped twinkles around the toes.
+ * Size follows the swim phase (period 1.2 s, far below 3 flashes per second), so
+ * they hold still when the phase is frozen. Still drawn at progress 0 and 1.
+ */
+function paintLegGlints(
+  ctx: CanvasRenderingContext2D,
+  pose: AxolotlPose,
+  legAng: readonly number[],
+  legLen: readonly number[],
+): void {
+  const legs = pose.legs;
+  if (!legs) return;
+  for (let i = 0; i < 4; i++) {
+    const look = legs[i];
+    if (!look || look.status !== 'regrowing') continue;
+    const strength = 0.6 + 0.4 * legProgress(look);
+    const { x, y } = AXO_LEG_ROOTS[i];
+    const a = legAng[i];
+    const ex = x + Math.cos(a) * legLen[i];
+    const ey = y + Math.sin(a) * legLen[i];
+    const dx = Math.cos(a);
+    const dy = Math.sin(a);
+    // Beside the toes on both sides, and just past the toes.
+    const spots: readonly (readonly [number, number])[] = [
+      [ex - dy * 11 + dx * 3, ey + dx * 11 + dy * 3],
+      [ex + dy * 11 + dx * 3, ey - dx * 11 + dy * 3],
+      [ex + dx * 14, ey + dy * 14],
+    ];
+    spots.forEach(([gx, gy], k) => {
+      const r = LEG_GLINT_R * strength * (0.6 + 0.4 * Math.sin(pose.swimPhase + k * 1.3 + i * 0.9));
+      if (r < 0.4) return;
+      inkMany(ctx, [
+        seg(line(gx - r, gy, gx + r, gy), 3, SUN, 1.6),
+        seg(line(gx, gy - r, gx, gy + r), 3, SUN, 1.6),
+      ]);
+      const core = new Path2D();
+      ell(core, gx, gy, r * 0.32, r * 0.32);
+      ctx.fillStyle = WHITE;
+      ctx.fill(core);
+    });
+  }
+}
+
+/**
  * Paint the axolotl in local units, facing right, origin at local (0, 0).
  * The caller sets the transform (see AXO_TEX for the frame).
  */
@@ -220,10 +366,28 @@ export function drawAxolotl(
   for (const g of FAR_GILLS) gill(ctx, g, tfl, palette.gillFarStem, palette.gillFarFilament);
 
   // 2-3. legs behind the body: far pair darker, then near pair
-  leg(ctx, 8, 15, Math.PI / 2 - 0.2 + 0.35 * Math.sin(swim + Math.PI), 14, palette.farSide);
-  leg(ctx, -14, 17, Math.PI / 2 + 0.5 + 0.35 * Math.sin(swim), 14, palette.farSide);
-  leg(ctx, 18, 15, Math.PI / 2 - 0.2 + 0.35 * Math.sin(swim), 15, palette.body);
-  leg(ctx, -24, 17, Math.PI / 2 + 0.5 + 0.35 * Math.sin(swim + Math.PI), 15, palette.body);
+  // Order matches AXO_LEG_ROOTS: far-front, far-rear, near-front, near-rear.
+  const legAng = [
+    Math.PI / 2 - 0.2 + 0.35 * Math.sin(swim + Math.PI),
+    Math.PI / 2 + 0.5 + 0.35 * Math.sin(swim),
+    Math.PI / 2 - 0.2 + 0.35 * Math.sin(swim),
+    Math.PI / 2 + 0.5 + 0.35 * Math.sin(swim + Math.PI),
+  ];
+  const legLen = [14, 14, 15, 15];
+  const legColour = [palette.farSide, palette.farSide, palette.body, palette.body];
+  for (let i = 0; i < 4; i++) {
+    const { x, y } = AXO_LEG_ROOTS[i];
+    const look = pose.legs?.[i];
+    if (!look || look.status === 'present') {
+      leg(ctx, x, y, legAng[i], legLen[i], legColour[i]);
+    } else if (look.status === 'lost') {
+      legGhost(ctx, x, y, legAng[i], legLen[i], GHOST_ALPHA_LOST);
+    } else {
+      const pr = legProgress(look);
+      legGhost(ctx, x, y, legAng[i], legLen[i], GHOST_ALPHA_REGROW);
+      if (pr >= LEG_FILL_MIN) leg(ctx, x, y, legAng[i], legLen[i], legColour[i], pr);
+    }
+  }
 
   // tail geometry
   const tail = tailPoints(swim, pose.tailAmp);
@@ -352,4 +516,5 @@ export function drawAxolotl(
 
   // regeneration glints sit on top of everything
   paintRegenGlints(ctx, tail, pose);
+  if (pose.legs) paintLegGlints(ctx, pose, legAng, legLen);
 }
