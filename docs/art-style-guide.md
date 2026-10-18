@@ -32,6 +32,19 @@ Design language for the axolotl kids game (ages 8-12, web first, then mobile). T
 - Tail fin height. The code builds the top fin as `2 + 9 * sin(...)` and the bottom fin as `2 + 7 * sin(...)`, measured outward from the tail core edge. So the fin reaches 2 px at both ends and peaks at 11 px (top) and 9 px (bottom). Earlier notes quoted "max 9 / max 7"; those are the sine amplitudes only. This guide uses the code values (section 6).
 - Bubble spawn offset. The code places a bubble 49 px in front of the body centre (unscaled by the 0.95 scene scale) and 4 px lower. This guide records it as written.
 
+**MVP additions.** MVP visuals from the [Axolotl MVP PRD](prds/axolotl-mvp.md) are specified in this guide. All are derived (provisional) and listed in section 12.
+
+**PRD conflict rows resolved here**
+
+| PRD row | Resolution |
+|---|---|
+| An "invulnerability flash" after a hit | No flashing. Protected time is a steady bubble ring (6q). The flashing rule is in section 10. |
+| Art style guide: accessories "never cover the eyes", but glasses are a planned Wearable | Face slot with eye zones. Face items draw below the eyes (6a layer 11.5, 6i). |
+| Section 7b had no rarity colours, badge shapes, Home Tank kit, collectibles, or hazard art | Rarity colours 3e and badge shapes 8. Tilapia 7c. Home Spot 7d. Treasures, Dash pot, hint sparkle, and Paint shells 7e. Home Tank kit 7f. 7b updated. |
+| No Wearable slot anchors, no face, gill, or spot variants, and no Dream colour patterns | Slot anchors 6i. Face, gill, and spot variants 6l, 6m, 6n, 6o. Dream colours 3f and patterns 6p. |
+| Non-art rows: ADR 0007 "No harsh fail states" (now amended by ADR 0008), and "no network requests" | No guide change. Leg-loss art stays gentle (6q). |
+| PRD open question 4: Home Spot, burrow or buoy | Burrow (7d). |
+
 ---
 
 ## 2. Principles
@@ -177,20 +190,31 @@ A dash means "keep the Leucistic value"; it has not been decided separately yet 
 | Leucistic (default) | #ff5f8d, #ff7fa6 | #e8507f, #f26b92 | #1b1535 | #e8567e | `cartoon.js` |
 | Wild | #8a5f8f, #a77aa9 | #714a77, #8c6490 | #1b1535 | #c85a74 | `derived (provisional)` |
 | Golden albino | #ff8a65, #ffa585 | #ef7350, #f78f6c | light eye #d6336c with a 1.5 px ring in #2b2350 | #e86a5a | `derived (provisional)` |
-| Melanoid | #6b4f8f, #8467a8 | #563f75, #6e558f | #1b1535 with a ring in #c7c2ee | - | `derived (provisional)` |
+| Melanoid | #6b4f8f, #8467a8 | #563f75, #6e558f | #1b1535 with a ring in #cec9f0 | - | `derived (provisional)` |
 | GFP | #7ee05a, #a4ef84 | #63c945, #89de68 | - | - | `derived (provisional)` |
 
 **Non-hue cue for each morph** (a morph must be recognisable without colour)
 
 | Morph | Extra cue | Source |
 |---|---|---|
-| Leucistic | Prototype look: freckles, blush, soft pink | `cartoon.js` |
+| Leucistic | Prototype look: blush, soft pink, solid dark bead eyes with no ring. The prototype freckles are now the player's Freckles spot option (6n), not a morph cue. | `cartoon.js`, `derived (provisional)` |
 | Wild | Dark speckle pattern in #5f6b33 (6 to 9 speckles) plus a few gold flecks in #ffe14a | `derived (provisional)` |
 | Golden albino | Light eye with a ring; shimmer glints with no outline | `derived (provisional)` |
-| Melanoid | Darkest value of all morphs; matte (no freckles, body shine alpha 0.45 instead of 0.75); 2 px rim light in #c7c2ee along the upper silhouette. **The rim light is required**: ink against the melanoid body is only 1.74:1. | `derived (provisional)` |
+| Melanoid | Darkest value of all morphs; matte (no shiny flecks; body shine alpha 0.45 instead of 0.75); 2 px rim light in #cec9f0 along the upper silhouette, top fin edge included. **The rim light is required**: ink against the melanoid body is only 1.74:1, while ink against the rim is 9.07:1 (section 10). | `derived (provisional)` |
 | GFP | Soft glow halo in #7dff8f at about 0.35 alpha, outside the outline, pulsing no faster than every 2.4 s; small sparkles | `derived (provisional)` |
 
-**Luminance order** (darkest to lightest, relative luminance): melanoid 0.077, wild 0.446, leucistic 0.596, golden 0.689, GFP 0.858. Leucistic and golden are close, so eye value and pattern separate them. The UI never shows a morph by colour alone: always its name plus a distinct badge shape. Source: `derived (provisional)`.
+**Luminance order** (darkest to lightest, relative luminance): melanoid 0.077, wild 0.446, leucistic 0.596, golden 0.689, GFP 0.858. Leucistic and golden are close, so eye value and pattern separate them. The UI never shows a morph by colour alone: always its name plus a distinct badge shape. Dream colours (3f) are paints, not morphs. Source: `derived (provisional)`.
+
+**Spot colour per morph (used by 6n)**
+
+| Morph or paint | Spot colour | Note | Source |
+|---|---|---|---|
+| Leucistic | rgba(236,120,160,0.55) | The prototype freckle | `cartoon.js` |
+| Wild | rgba(113,74,119,0.55) | Far gill stem #714a77 at 0.55 | `derived (provisional)` |
+| Golden albino | rgba(239,115,80,0.55) | #ef7350 at 0.55 | `derived (provisional)` |
+| Melanoid | rgba(206,201,240,0.35) | Rim colour, so spots show on the dark body | `derived (provisional)` |
+| Dream colours with body relative luminance 0.2 or more | rgba(43,35,80,0.30) | Ink at 0.30 | `derived (provisional)` |
+| Midnight blue, Galaxy, and Tie-dye galaxy | rgba(255,255,255,0.45) | White at 0.45 on the dark Dream bodies | `derived (provisional)` |
 
 ### 3c. Water states
 
@@ -224,6 +248,137 @@ All UI text uses ink #2b2350 (`derived (provisional)` use of a `cartoon.js` colo
 
 These colours all come from the prototype palette; their use as UI roles is the new part.
 
+### 3e. Rarity colours
+
+There are four rarities, in this order: Common, Rare, Epic, Legendary. Each has a fill, a badge shape (section 8), and its name in text. Shape and name carry the meaning. Colour is the weakest cue.
+
+| Rarity | Fill | Relative luminance | Contrast with ink | Badge shape | Source |
+|---|---|---|---|---|---|
+| Common | #e3ecef | 0.826 | 12.0:1 | Circle | `derived (provisional)` |
+| Rare | #5ab8ff | 0.437 | 6.67:1 | Rounded diamond | `derived (provisional)` |
+| Epic | #b07cff | 0.309 | 4.92:1 | Rounded shield | `derived (provisional)` |
+| Legendary | #ffc12e | 0.596 | 8.86:1 | Rounded five-point star | `derived (provisional)` |
+
+**Greyscale contrast between rarity fills**
+
+| Pair | Contrast | Source |
+|---|---|---|
+| Common / Rare | 1.80:1 | `derived (provisional)` |
+| Common / Epic | 2.44:1 | `derived (provisional)` |
+| Common / Legendary | 1.36:1 | `derived (provisional)` |
+| Rare / Epic | 1.36:1 | `derived (provisional)` |
+| Rare / Legendary | 1.33:1 | `derived (provisional)` |
+| Epic / Legendary | 1.80:1 | `derived (provisional)` |
+
+No pair reaches 3:1, so value alone never identifies a rarity. Shape and name do. All four fills pass 4.5:1 with ink, so ink text or icons may sit on them. Legendary #ffc12e is also the Legendary wearable trim (6i).
+
+### 3f. Dream colours
+
+There are twelve Dream colours. They are found in Paint shells. A Dream colour is a paint over the real morph, never a morph (PRD F14, C12). It swaps the body and gill role slots of 3b. The real morph keeps its eye and mouth slots.
+
+Each colour is two picks (body and gill) plus fixed sRGB mixes:
+
+- Far side = body mixed 12% toward ink.
+- Fin = body mixed 40% toward white.
+- Belly = body mixed 55% toward white.
+- Near filament = gill mixed 22% toward white.
+- Far stem = gill mixed 10% toward ink.
+- Far filament = near filament mixed 8% toward ink.
+
+**Dream colour slots**
+
+| Dream colour | Rarity | Kind | Body | Far side | Fin | Belly | Near stem, near filament | Far stem, far filament | Source |
+|---|---|---|---|---|---|---|---|---|---|
+| Mint | Common | Solid | #a8f0cf | #99d7c0 | #cbf6e2 | #d8f8e9 | #34c98e, #61d5a7 | #33b888, #5dc7a0 | `derived (provisional)` |
+| Sky blue | Common | Solid | #9fd8ff | #91c2ea | #c5e8ff | #d4edff | #3a96e8, #65aded | #388ad9, #60a2e0 | `derived (provisional)` |
+| Lavender | Common | Solid | #d6c5ff | #c1b2ea | #e6dcff | #ede5ff | #9575e6, #ac93ec | #8a6dd7, #a28ae0 | `derived (provisional)` |
+| Sunset orange | Rare | Solid | #ffc18e | #e6ae87 | #ffdabb | #ffe3cc | #ff6a3d, #ff8b68 | #ea633f, #ee8366 | `derived (provisional)` |
+| Bubblegum | Rare | Solid | #ffb9e2 | #e6a7d0 | #ffd5ee | #ffe0f2 | #e0449c, #e76db2 | #ce4194, #d867aa | `derived (provisional)` |
+| Midnight blue | Rare | Solid | #2f3a8f | #2f3787 | #8289bc | #a1a6cd | #6f8cff, #8fa5ff | #6882ee, #879bf1 | `derived (provisional)` |
+| Hearts | Epic | Patterned | #fff0b3 | #e6d7a7 | #fff6d1 | #fff8dd | #ff5f8d, #ff82a6 | #ea5987, #ee7a9f | `derived (provisional)` |
+| Tie-dye | Epic | Patterned | #ffe9a8 | #e6d19d | #fff2cb | #fff5d8 | #ff7fbf, #ff9bcd | #ea76b4, #ee91c3 | `derived (provisional)` |
+| Iridescent | Epic | Sheen | #d7ccff | #c2b8ea | #e7e0ff | #ede8ff | #8fe3ff, #a8e9ff | #85d0ee, #9ed9f1 | `derived (provisional)` |
+| Rainbow | Legendary | Patterned | #ff6b6b | #e66268 | #ffa6a6 | #ffbcbc | #b07cff, #c199ff | #a373ee, #b590f1 | `derived (provisional)` |
+| Galaxy | Legendary | Patterned | #2b2f7a | #2b2e75 | #8082af | #a0a1c3 | #ff8fd0, #ffa8da | #ea84c3, #ee9dcf | `derived (provisional)` |
+| Tie-dye galaxy | Legendary | Patterned | #3a2f7a | #382e75 | #8982af | #a6a1c3 | #7fd4ff, #9bddff | #77c2ee, #92cef1 | `derived (provisional)` |
+
+**Pattern colours**
+
+| Dream colour | Pattern colours | Contrast | Source |
+|---|---|---|---|
+| Hearts | Hearts #ff5f8d | 2.53:1 vs base | `derived (provisional)` |
+| Tie-dye | Bands #ff7fbf, #7fd4ff, #ffe14a, with 1.2 px dividers rgba(255,255,255,0.8) | - | `derived (provisional)` |
+| Iridescent | Stripes rgba(255,255,255,0.7) and #8f7fe0 at 0.6 alpha | White vs #8f7fe0 3.34:1 | `derived (provisional)` |
+| Rainbow | Bands #ff6b6b, #ffa64d, #ffe14a, #7fe07f, #6cb8ff, #b07cff, with 1.2 px white dividers rgba(255,255,255,0.8) | Adjacent pairs are only 1.43, 1.49, 1.25, 1.30, 1.39:1, so the dividers are required | `derived (provisional)` |
+| Galaxy | Nebula rgba(255,127,191,0.35); stars #ffffff | Stars 11.73:1 vs base | `derived (provisional)` |
+| Tie-dye galaxy | Bands #ff7fbf and #7fd4ff at 0.75 alpha; stars #ffffff | Band #ff7fbf 4.84:1 vs base; band #7fd4ff 6.83:1; stars 11.24:1 | `derived (provisional)` |
+
+**Contrast checks.** Method in section 10: the worst case on any background is the square root of body vs ink. Dark bodies and Rainbow use the rim light.
+
+| Dream colour | Body vs ink | Worst case on any background | Eye bead #1b1535 vs body | Extras | Source |
+|---|---|---|---|---|---|
+| Mint | 10.99 | 3.31 | 13.30 | None | `derived (provisional)` |
+| Sky blue | 9.42 | 3.07 | 11.40 | None | `derived (provisional)` |
+| Lavender | 9.11 | 3.02 | 11.03 | None | `derived (provisional)` |
+| Sunset orange | 9.10 | 3.02 | 11.01 | None | `derived (provisional)` |
+| Bubblegum | 9.11 | 3.02 | 11.03 | None | `derived (provisional)` |
+| Midnight blue | 1.45 | 1.21 alone; 3.01 with the rim light | 1.76 | Rim light + eye ring | `derived (provisional)` |
+| Hearts | 12.59 | 3.55 | 15.24 | Pattern inset (6p) | `derived (provisional)` |
+| Tie-dye | 11.98 | 3.46 | 14.50 | Pattern inset (6p) | `derived (provisional)` |
+| Iridescent | 9.58 | 3.09 | 11.59 | Pattern inset (6p) | `derived (provisional)` |
+| Rainbow (band 1) | 5.19 | 2.28 alone (bands 2.22 to 3.32); 3.01 with the rim light | 6.28 | Rim light | `derived (provisional)` |
+| Galaxy | 1.23 | 1.11 alone; 3.01 with the rim light | 1.49 | Rim light + eye ring | `derived (provisional)` |
+| Tie-dye galaxy | 1.28 | 1.13 alone; 3.01 with the rim light | 1.55 | Rim light + eye ring | `derived (provisional)` |
+
+**Rim light.** 2 px #cec9f0 along the upper silhouette, top fin edge included, as Melanoid. Ink and rim are 9.07:1, so one of them is 3.01:1 or better on any background (10).
+
+**Eye ring.** 1.5 px #cec9f0 around the morph eye, whenever the morph eye against the Dream body is under 3:1. Ring against eye bead is 10.98:1. Ring against Midnight blue is 6.24:1, Galaxy 7.39:1, Tie-dye galaxy 7.09:1. It also covers the Golden albino light eye on dark Dream colours (#d6336c against Midnight blue is 2.14:1).
+
+**Greyscale note.** Mint, Sky blue, Lavender, Sunset orange, and Bubblegum are 1.00 to 1.21:1 apart (Midnight blue is 6.25:1 or more from them). So the name label is the greyscale cue for solids (PRD F15). Every Dream colour carries the Dream marker (6p), so it never reads as a real morph.
+
+### 3g. Trip, hazard and prop colours
+
+| Item | Role | Value | Contrast | Source |
+|---|---|---|---|---|
+| Tilapia body | Fill | #c2d2bb | 9.07:1 with ink, so body or ink is 3.01:1 or better on any background (10). | `derived (provisional)` |
+| Tilapia fin | Fill | #d4e0d0 | 10.54:1 with ink | `derived (provisional)` |
+| Tilapia far fin | Fill | #a7b7a4 | Depth tone for fins behind the body only; never an outer-edge fin, so not an edge partner (10). | `derived (provisional)` |
+| Tilapia belly | Fill | #e3eadf | 11.72:1 with ink | `derived (provisional)` |
+| Tilapia bars | Body detail | rgba(70,95,80,0.22) | - | `derived (provisional)` |
+| Tilapia fin rays and gill-cover line | Internal detail lines | rgba(70,95,80,0.4) | - | `derived (provisional)` |
+| Tilapia shine | Highlight | rgba(255,255,255,0.6) | - | `derived (provisional)` |
+| Tilapia eye | Bead | #1b1535 | 10.98:1 vs body | `derived (provisional)` |
+| Tilapia lunge mouth | Fill | #e8567e | - | `derived (provisional)` |
+| Telegraph bubble | Fill, with an ink "!" | #ffffff | 14.39:1 (ink "!") | `derived (provisional)` |
+| Twinkle | Arms and core | Arms #ffe14a, core #ffffff (as the swim-test tail sparkles) | - | `derived (provisional)` |
+| 4-point star | Fill and outline | Fill #ffffff, ink outline | - | `derived (provisional)` |
+| Legs display, leg present | Fill | #e8567e | 3.46:1 vs white panel; 4.16:1 vs ink | `derived (provisional)` |
+| Legs display, dashed outline | Outline | Ink | 14.39:1 vs white | `derived (provisional)` |
+| Lost leg on the body | Dashed outline | rgba(43,35,80,0.55) | - | `derived (provisional)` |
+| Leg-loss puff | Fill and outline | Fill #ffffff, ink outline | - | `derived (provisional)` |
+| Protected ring | Outer line, inner line, glint | Outer #2b2350, inner #ffffff, glint #ffffff | Ink and white are 14.39:1, so one line is 3.79:1 or better on any background (10). Both lines are opaque. | `derived (provisional)` |
+| Home Spot stones | Fill | Pebbles A and C (3a) | 9.50 and 10.70:1 with ink; 3.08:1 or better on any background (10) | `derived (provisional)` |
+| Home Spot opening | Fill | #1b1535 (the eye colour) | 3.13:1 or better against every bed colour (#b78552 to #8c5e3a) | `derived (provisional)` |
+| Home Spot glow | Soft light | rgba(255,225,74,0.25) | - | `derived (provisional)` |
+| Home Spot post | Fill | #a56a3b | - | `derived (provisional)` |
+| Home Spot flag | Fill, with an ink house icon | #ffe14a | 11.05:1 (ink house icon) | `derived (provisional)` |
+| Home Spot safe-ring dots | Fill and stroke | Fill #ffffff, ink stroke 2.0, both opaque | 14.39:1; 3.79:1 or better on any background (10) | `derived (provisional)` |
+| Dash pot | Fill | #efc5aa | 9.07:1 with ink; 3.01:1 or better on any background (10). | `derived (provisional)` |
+| Dash pot rim | Fill | #f9e1d0 | 11.45:1 with ink | `derived (provisional)` |
+| Dash pot cracks | Internal detail lines | #7f4a2a | - | `derived (provisional)` |
+| Dash pot shine | Highlight | rgba(255,255,255,0.75) | - | `derived (provisional)` |
+| Paint shell | Fill | #efdcba | 10.7:1 with ink | `derived (provisional)` |
+| Paint shell ridges | Internal detail lines | #e0b095 | - | `derived (provisional)` |
+| Tongue | Fill | #ff9fb5 | 7.46:1 with ink; 1.79:1 vs mouth #e8567e, so the ink outline separates them | `derived (provisional)` |
+| Home Tank wall | Fill | #fff1d6 | 12.89:1 with ink | `derived (provisional)` |
+| Home Tank stand | Fill | #a56a3b | - | `derived (provisional)` |
+| Home Tank lid | Fill | #d4cfe6 | 9.5:1 with ink | `derived (provisional)` |
+| Home Tank air gap | Fill | #c4f1ff | 11.91:1 with ink | `derived (provisional)` |
+| Home Tank glass shine | Highlight | rgba(255,255,255,0.25) | - | `derived (provisional)` |
+| Home Tank water | Gradient | Clean water gradient (3c) | - | `derived (provisional)` |
+| Home Tank gravel | Fill | Bed and pebble colours (3a) | - | `derived (provisional)` |
+| Hint star | Fill and outline | White fill and ink outline, both opaque at every rarity | 14.39:1; 3.79:1 or better on any background (10) | `derived (provisional)` |
+
 ---
 
 ## 4. Line and shape rules
@@ -236,6 +391,7 @@ These colours all come from the prototype palette; their use as UI roles is the 
 | Main line width (LW) | 3.5 logical px | `cartoon.js` |
 | Line join and cap | Round, round | `cartoon.js` |
 | Outline weight vs object size | Constant. A small object keeps the same line as a big one. Clouds are scaled, so they draw their line at LW / cloud scale to stay 3.5 px on screen. | `cartoon.js` |
+| Size variants | Small, Medium and Large (6o) are a uniform scale of the whole axolotl, ink, wearables and Dream overlay included (x0.85 / x1.00 / x1.15). This is the one exception to the constant-outline rule. It keeps every clearance in 6i true at every size (PRD F13). | `derived (provisional)` |
 | Corners | Rounded everywhere (ellipses and smooth curves) | `cartoon.js` |
 | Pixel density | Draw at device pixel ratio, capped at 2 | `cartoon.js` |
 
@@ -252,6 +408,25 @@ These colours all come from the prototype palette; their use as UI roles is the 
 | Flower centre | 2.4 | `cartoon.js` |
 | Mouth-corner ticks | 2.0 | `cartoon.js` |
 | Bubble stroke | 2.0, in rgba(43,35,80,0.85) | `cartoon.js` |
+| Rarity badge outline | 2.6 (`shape`) | `derived (provisional)` |
+| Dream swatch tile outline | 2.6 | `derived (provisional)` |
+| Wearable silhouettes | 2.8 (`shape`) | `derived (provisional)` |
+| Glasses frame band | 3.5 total: ink only, or colour 1.5 with `ol` 1.0 each side | `derived (provisional)` |
+| Eye lid lines | 2.0 | `derived (provisional)` |
+| Tongue and small "o" mouth outline | 2.4 | `derived (provisional)` |
+| 4-point star outline | 1.6 (1.8 when R is 6 or more) | `derived (provisional)` |
+| Lost leg on the body | Dashed 1.5, dash 2.5, gap 2.5, in rgba(43,35,80,0.55) | `derived (provisional)` |
+| Legs display | Dashed 2.0, dash 3, gap 3, in ink | `derived (provisional)` |
+| Protected ring | Ink 2.0 plus white 2.4. The white line sits 2.2 inside the ink line. | `derived (provisional)` |
+| Tilapia pectoral fin | 2.8 | `derived (provisional)` |
+| Home Spot stones | 2.6 | `derived (provisional)` |
+| Home Spot flag | 2.8 | `derived (provisional)` |
+| Home Spot house icon | 2.4 | `derived (provisional)` |
+| Dash pot | 3.5 (`blob`) | `derived (provisional)` |
+| Dash pot shards | 2.6 | `derived (provisional)` |
+| Paint shell | 2.6 | `derived (provisional)` |
+| Home Tank glass outline and lid | 3.5 | `derived (provisional)` |
+| Home Tank gravel pebbles | 2.6 | `derived (provisional)` |
 
 **Tube outlines** (a tube is a thick round-capped stroke; the outline width `ol` is added on each side, so total ink = width + 2 x ol)
 
@@ -268,6 +443,9 @@ These colours all come from the prototype palette; their use as UI roles is the 
 | Willow trunk | 4.6 | 3.0 | `cartoon.js` |
 | Reed stalk | 3.6 | 2.5 | `cartoon.js` |
 | Cattail head | 6.4 | 2.6 | `cartoon.js` |
+| Wearable tubes (ribbons, scarf ends) | 3.2 | 2.4 | `derived (provisional)` |
+| Twinkle arms | 3 | 1.6 | `derived (provisional)` |
+| Home Spot post | 3.6 | 2.5 | `derived (provisional)` |
 
 **Internal detail lines are not ink.** They are soft tinted lines drawn inside a shape, never in outline colour:
 
@@ -290,6 +468,15 @@ These colours all come from the prototype palette; their use as UI roles is the 
 ### 4d. Close-ups and portraits
 
 When the axolotl is drawn much larger than in the scene (cards, portraits, store art), do not keep 3.5 px. Scale the outline with the character: about **2.9% of snout-to-tail length L**. This is the in-scene ratio (3.5 px outline on a roughly 121 px axolotl). Source: `derived (provisional)`.
+
+### 4e. Sparkle shapes
+
+| Shape | Construction | Used for | Source |
+|---|---|---|---|
+| Twinkle | Two crossed round-capped tubes (a plus shape). Arms #ffe14a, width 3, with `ol` 1.6. White core of radius 0.32 x the arm radius. It matches the swim-test tail sparkles. | The leg-loss puff, regrowth, and the pot crumble | `derived (provisional)` |
+| 4-point star | Filled concave four-point star. Outer radius R, inner radius 0.38R, tip rounding 0.15R. Fill #ffffff, ink outline 1.6 (1.8 when R is 6 or more). | The treasure hint, the telegraph glint, the regrowing mark in the legs display, the Dream marker, Legendary wearable twinkles, and Galaxy stars (no outline needed on the dark Galaxy bases) | `derived (provisional)` |
+
+Neither shape ever blinks. Only slow size or position changes are allowed (section 9).
 
 ---
 
@@ -325,12 +512,22 @@ Layer order, back to front (each layer is its own animated part in production):
 | 4 | Merged silhouette | Tail + torso + head as one `blob` | `cartoon.js` |
 | 5 | Fin bands and fin rays | Lighter bands plus ray lines and core edge line | `cartoon.js` |
 | 6 | Belly | Light ellipse | `cartoon.js` |
+| 6.5 | Dream overlay | Pattern, Dream marker, and rim light when a Dream colour is on (6p). Clipped to the silhouette and fin fill (inset per 6p). | `derived (provisional)` |
 | 7 | Shines | Body and head shine | `cartoon.js` |
-| 8 | Freckles | Three | `cartoon.js` |
+| 8 | Spots | The player Spots option (6n). The prototype's three freckles are its Freckles option. | `cartoon.js`, `derived (provisional)` |
+| 8.5 | Tail item | Wearable, Tail slot (6i) | `derived (provisional)` |
 | 9 | Near gills | In front of the body, sprouting from the cheek | `cartoon.js` |
+| 9.5 | Neck item | Wearable, Neck slot (6i) | `derived (provisional)` |
 | 10 | Blush | Two cheek ellipses | `cartoon.js` |
+| 10.5 | Head item | Wearable, Head slot (6i) | `derived (provisional)` |
 | 11 | Mouth | Fill, outline, corner ticks | `cartoon.js` |
+| 11.5 | Face item | Wearable, Face slot (6i). It sits below the eyes on purpose: eyes always paint last, so no Face item can cover them. | `derived (provisional)` |
 | 12 | Eyes | Bead plus two glints | `cartoon.js` |
+
+Notes:
+
+- Decimal rows are new. Whole numbers keep the prototype numbering, because code comments use them.
+- Effects draw after the axolotl: the leg-loss puff, regrowth twinkles, and the protected ring (6q).
 
 ### 6b. Proportions (relative to L = 127)
 
@@ -417,31 +614,89 @@ Three gills per side. They fan from straight up (top gill) to straight back (bot
 | Swap method | Replace colours through the role slots in 3b. Never redraw the shape. | `derived (provisional)` |
 | Extras | A morph may add a pattern overlay, an eye variant, a rim light, or a halo (see the non-hue cue table in 3b). | `derived (provisional)` |
 | Outline | Always #2b2350 and the same widths on every morph. | `cartoon.js` |
-| Melanoid | Rim light is required for readability on deep water. | `derived (provisional)` |
+| Melanoid | Rim light is required: body vs ink is only 1.74:1 (section 10). | `derived (provisional)` |
 | GFP | Halo sits outside the outline; the pulse is gentle (section 10). | `derived (provisional)` |
+| Dream colours | See 6p. The real morph never changes. A Dream colour swaps only the body and gill slots (3f). Eye and mouth stay. | `derived (provisional)` |
+| Morph extras under a Dream colour | While a Dream colour is on, the real morph's body extras are off: Wild speckles and flecks, Golden shimmer glints, and Melanoid matte shine and rim light. The Dream rim light and eye ring rules (3f) apply instead. | `derived (provisional)` |
 
-### 6i. Accessory anchor rules
+### 6i. Wearable slots and keep-clear zones
+
+PRD C10, F8, F13. All values are in the axolotl's local units, facing right (L = 127).
+
+**Rules**
 
 | Rule | Detail | Source |
 |---|---|---|
-| Line rules | Accessories follow the same ink colour, widths, and techniques as the rest of the art. | `derived (provisional)` |
-| Anchor | The top of the head ellipse: local point (26,-23). | `derived (provisional)` |
-| Keep clear | Never cover the eyes. Never cover the gill roots (local x 1 to 6). | `derived (provisional)` |
-| Facing | Accessories are authored facing right and mirror with the character. | `derived (provisional)` |
+| Line rules | Wearable silhouettes use 2.8 (`shape`). Tubes are 3.2 with `ol` 2.4. The glasses band is 3.5. Same ink colour as the rest of the art. | `derived (provisional)` |
+| Facing | Authored facing right. Mirrors with the character. | `derived (provisional)` |
+| Scale | Drawn in the axolotl's local units and scaled with it, so every clearance holds at every size (6o, 4a). | `derived (provisional)` |
+| One item per slot | An axolotl wears at most one item in each slot. | `derived (provisional)` |
+| Keep clear | Never cover the eyes or the gill roots, in any slot, at any size. | `derived (provisional)` |
+
+**Keep-clear zones**
+
+| Zone | Geometry | Source |
+|---|---|---|
+| Near eye zone | Circle, centre (28,-6), radius 8.2 (eye radius 6.4 + 1.8) | `derived (provisional)` |
+| Far eye zone | Circle, centre (42,-7), radius 7.1 (5.3 + 1.8) | `derived (provisional)` |
+| Gill-root zone | Box, x -5 to 12, y -22 to 13. It holds all six roots of 6d plus the stem ink. | `derived (provisional)` |
+| Mouth zone | The ink of every mouth variant (6l) plus 1 unit. Its highest points are the corner ticks at (26.4,7.6) and (50.4,4.6). | `derived (provisional)` |
+
+No wearable paint goes inside any zone. The one exception is the clear lens tint over the eye zones. Eye variants (6l) stay inside the eye zones.
+
+**Slots**
+
+| Slot | Examples | Anchor | Footprint, ink included | Layer | Moves with | Source |
+|---|---|---|---|---|---|---|
+| Head | Hats, flowers, crowns | (26,-23), the head top (existing anchor) | x 16 to 36. Rests on the head outline. Lowest painted point no lower than y -19.5. Top no higher than y -46. | 10.5 | Head | `derived (provisional)` |
+| Neck | Necklaces, scarves | (17,16), the throat | x 13 to 22, y 11 to 21, inside the silhouette. Nothing hangs below the silhouette, so the front legs stay visible. | 9.5 | Head and body | `derived (provisional)` |
+| Face | Glasses | (35,-6.5), between the eyes | x 14 to 54, y -18 to 6. Outside both eye zones and at least 1 unit from the mouth zone. | 11.5 | Head | `derived (provisional)` |
+| Tail | Bows, ribbons | Top edge of the tail core at tail point 4 of 14 (s about 0.29). It is (-42.6,-5.6) when the tail is straight. | Within 9 units of the anchor. Rotates with the local tail direction. | 8.5 | Tail wave | `derived (provisional)` |
+
+**Tail space.** Marks on the tail use two numbers. s runs from 0 at the tail root (x -30) to 1 at the tip (x -74). v is the offset from the tail centreline as a fraction of the local tail half-height, and + is down. Tail-space marks move with the tail wave. 6n, 6p, and the Tail slot use it.
+
+**Clearance notes**
+
+- The Head item to glasses gap is 1.8 units (glasses top at y -17.7).
+- Gill stems of every style stay left of about x 15.5 (the far top stem at full flutter), so Head items (x 16 or more) never cover a stem. They may overlap far gill filament tips, which draw behind everything.
+
+**Glasses construction**
+
+| Detail | Value | Source |
+|---|---|---|
+| Why one frame | The eyes are only about 2.3 units apart, so no frame can pass between them. | `derived (provisional)` |
+| Shape | One merged frame: the union of a near lens circle (centre (28,-6), radius 9.95) and a far lens circle (centre (42,-7), radius 8.85). Drawn as one outline with no inner seam (like `blob`). | `derived (provisional)` |
+| Band | 3.5 units, centred on that outline. Its inner edge lies on the eye zones, 1.8 units from each bead. | `derived (provisional)` |
+| Notches | At about (35.3,-12.8) on top and (36.2,-0.3) underneath, so the frame reads as two lenses. | `derived (provisional)` |
+| Outer extents | x 16.3 to 52.6, y -17.7 to 5.7. The gap to the near mouth tick is about 1.0. | `derived (provisional)` |
+| Lenses | Clear, or a white tint rgba(255,255,255,0.25). The eyes draw on top (layer 12), so the bead and both glints always show. | `derived (provisional)` |
+| Temple stub | Optional, from the near lens back to x 14 at most. | `derived (provisional)` |
+| Never | Dark or opaque lenses. | `derived (provisional)` |
+
+**Rarity look ladder** (Wearables and Decorations, PRD F9)
+
+| Rarity | Look | Source |
+|---|---|---|
+| Common | One flat colour plus one shine | `derived (provisional)` |
+| Rare | Adds one trim band in a second colour | `derived (provisional)` |
+| Epic | Adds one rounded gem (radius 2.5) or a small repeat pattern | `derived (provisional)` |
+| Legendary | Adds trim in #ffc12e and one static 4-point star (R 3) | `derived (provisional)` |
+
+The ladder reads in greyscale by counted details, not colour.
 
 ### 6j. Expressions
 
-Only "happy" and "blink" exist in the prototype. Others are to be designed using the same eye and mouth construction.
+Only "happy" and "blink" exist in the prototype. Others are to be designed using the same eye and mouth construction. The eye variants in 6l are the resting look. An expression temporarily overrides them and then returns. Blink squashes any eye variant to 12% height.
 
 | Expression | Notes | Source |
 |---|---|---|
 | Happy (default) | Open "D" smile, round beads, blush | `cartoon.js` |
 | Blink | Eye squashed to 12% height for 0.14 s | `cartoon.js` |
-| Curious | To design | `derived (provisional)` |
+| Curious | To design. A resting eye variant exists (6l). | `derived (provisional)` |
 | Surprised | To design | `derived (provisional)` |
-| Sleepy | To design | `derived (provisional)` |
+| Sleepy | To design. A resting eye variant exists (6l). | `derived (provisional)` |
 | Sad | To design (gentle, never scary) | `derived (provisional)` |
-| Determined | To design | `derived (provisional)` |
+| Determined | To design. A resting eye variant exists (6l). | `derived (provisional)` |
 | Excited | To design | `derived (provisional)` |
 | Regenerating | To design (sparkles, never gory) | `derived (provisional)` |
 
@@ -460,7 +715,171 @@ Only "happy" and "blink" exist in the prototype. Others are to be designed using
 | Rest on bed | To design | `derived (provisional)` |
 | Nudge / interact | To design | `derived (provisional)` |
 | Front 3/4 card portrait | To design | `derived (provisional)` |
-| Accessory test pose | To design; used to check anchors in 6i | `derived (provisional)` |
+| Wearable test pose | Check all four slots together at Small and Large, with Long gills and every eye and mouth variant (6i, 6l to 6o). To design. | `derived (provisional)` |
+
+### 6l. Face variants
+
+Character creator options (PRD F2, F6). r is the eye radius: near 6.4, far 5.3. Eye centres are in 6c. Lid lines are clipped to the bead and drawn in ink.
+
+**Eyes**
+
+| Variant | Construction | Source |
+|---|---|---|
+| Happy (default) | The prototype bead and two glints (6c) | `cartoon.js` |
+| Sleepy | Bead clipped above a lid through the eye centre, curved down 0.15r at the middle. Lid line ink 2.0. Only glint 2, moved to (-0.3r, +0.45r). | `derived (provisional)` |
+| Determined | Bead clipped above a straight lid from (-r, -0.6r) at the back to (+r, -0.25r) at the snout side, so it slopes down toward the snout. Lid line ink 2.0. Glints are clipped with the bead. | `derived (provisional)` |
+| Curious | Bead radius 1.1r (near 7.04, far 5.83). Glint 1 radius 0.45r. No lid. | `derived (provisional)` |
+| Grumpy | Bead clipped above a straight lid from (-r, -0.05r) at the back to (+r, -0.4r) at the snout side, so it slopes down toward the back: sulky, never angry. Lid line ink 2.0. Only glint 2. | `derived (provisional)` |
+
+**Eye rules**
+
+| Rule | Detail | Source |
+|---|---|---|
+| Zones | All eye marks stay inside the eye zones (6i). | `derived (provisional)` |
+| Shape | No brows or sharp shapes. | `derived (provisional)` |
+| Visible bead | Never less than about 45% of the round bead area. | `derived (provisional)` |
+| Colour | The morph eye colour and any ring (3b, 3f) apply to every variant. | `derived (provisional)` |
+
+**Mouths**
+
+| Variant | Construction | Source |
+|---|---|---|
+| Open "D" (default) | The prototype mouth (6c) | `cartoon.js` |
+| Smile | No fill. Ink 2.4 quadratic from (28,10) to (49,7) with control (38,19); lowest point about y 13.8. Prototype corner ticks. | `derived (provisional)` |
+| Tongue-out | Open "D" plus a tongue ellipse, centre (40,15.5), radii 4.6 x 3.6, fill #ff9fb5, ink 2.4 (`shape`). Drawn over the mouth fill. It pokes about 4 units below the lower lip curve. | `derived (provisional)` |
+| Small "o" | Ellipse, centre (39,11), radii 3.4 x 4.0, mouth slot fill, ink 2.4. No ticks. | `derived (provisional)` |
+
+**Mouth rules.** All mouths stay inside the mouth zone (6i). No teeth.
+
+### 6m. Gill styles
+
+Character creator option (PRD F2). Fluffy is the prototype (6d). Lengths are the stem length per gill. Bend is the sideways bow (near / far).
+
+| Style | Near stems (top / middle / bottom) | Far stems (top / middle / bottom) | Side filaments per side | Filament length | Tip pair length | Bend (near / far) | Source |
+|---|---|---|---|---|---|---|---|
+| Fluffy (default) | 34 / 37 / 31 | 28 / 32 / 26 | 3, at u 0.35, 0.6, 0.82 | 13 x (1.05 - 0.55u) | 8 | 5 / 4 | `cartoon.js` |
+| Long | 44 / 48 / 40 | 36 / 42 / 34 | 2, at u 0.5, 0.8 | 13 x (1.05 - 0.55u) | 10 | 6 / 5 | `derived (provisional)` |
+| Short | 24 / 26 / 22 | 20 / 22 / 18 | 2, at u 0.45, 0.8 | 9 x (1.05 - 0.55u) | 6 | 4 / 3 | `derived (provisional)` |
+
+Rules:
+
+- Roots, angles, widths, colours, and flutter never change. So the gill-root zone (6i) is the same for every style.
+- Styles read by silhouette: length and filament count.
+- Long tips reach about y -63 local. This sets the texture frame (section 11).
+
+Source for the rules: `derived (provisional)`.
+
+### 6n. Spots
+
+Character creator option (PRD F2). Layer 8. Colours come from the spot table in 3b. Flat fills, no ink outline. Never on the head (x > 0). Tail marks use tail space (6i).
+
+| Option | Marks | Source |
+|---|---|---|
+| None | No marks | `derived (provisional)` |
+| Freckles | The prototype's three freckles (6g) | `cartoon.js` |
+| Dots | Body: (-8,-4) r 2.2, (-18,-9) r 2.0, (-22,6) r 2.4. Tail: s 0.15 v -0.4 r 2.2, s 0.35 v +0.35 r 2.0, s 0.55 v -0.3 r 1.8, s 0.75 v +0.2 r 1.5. | `derived (provisional)` |
+| Patches | Body: (-14,-3) ellipse 6 x 4.5 rotated -0.3, and (-26,7) ellipse 5 x 3.5. Tail: s 0.45 v -0.2 ellipse 5 x 3.5. | `derived (provisional)` |
+
+Spots draw on top of any Dream colour (PRD F14). Wild's own speckles and flecks are a morph extra (3b), not a spot option. On a Wild with no Dream colour they stay, and player spots add to them. While a Dream colour is on, they are off with the other morph extras (6h); only the player spots show. Source: `derived (provisional)`.
+
+### 6o. Sizes
+
+Character creator option (PRD F2, F4).
+
+| Size | Scale | Length in the scene | Source |
+|---|---|---|---|
+| Small | x0.85 | About 103 px | `derived (provisional)` |
+| Medium (default) | x1.00 (prototype) | About 121 px | `cartoon.js` |
+| Large | x1.15 | About 139 px | `derived (provisional)` |
+
+Rules:
+
+- Uniform scale about local (0,0), including ink, wearables, and the Dream overlay (the 4a exception).
+- Size is looks only. The hit area and speed never change (PRD F4).
+- Every 6i clearance holds at every size, because it is defined in local units.
+
+Source for the rules: `derived (provisional)`.
+
+### 6p. Dream colours on the body
+
+PRD F14, F15. Slot colours and contrast checks are in 3f. Tail marks use tail space (6i).
+
+**Rules**
+
+| Rule | Detail | Source |
+|---|---|---|
+| Slots | The 3f values replace the body, far side, fin, belly, and gill slots. Eye and mouth come from the real morph. | `derived (provisional)` |
+| Morph extras | Off (6h). | `derived (provisional)` |
+| Pattern overlay | Layer 6.5. Clipped to the silhouette and fin fill, and only where x <= 14, so the face keeps the plain Dream body colour. On Hearts, Tie-dye, and Iridescent the clip is inset 2 units from the silhouette and fin edges, so the colour next to the ink is always the body. Otherwise the Tie-dye #ff7fbf band would drop to 2.49:1 and the Iridescent stripe to 2.46:1 (section 10). On Rainbow, Galaxy, and Tie-dye galaxy the overlay runs to the edge under the rim light. Rainbow's head is band 1, which is its body colour. | `derived (provisional)` |
+| Dream marker | Three 4-point stars (4e), R 2.6, white with ink 1.6. On the top fin band at tail points s 0.55, 0.68, and 0.81, centred between the core edge and the fin edge. Shown on every Dream colour, solid or patterned. Real morphs never carry it. | `derived (provisional)` |
+| Rim light and eye ring | Per 3f. | `derived (provisional)` |
+| Spots | Per 3b and 6n. Drawn on top. | `derived (provisional)` |
+| Progress | A Dream colour never changes perks, the real morph, or Collection Book unlocks. | `derived (provisional)` |
+
+**Pattern geometry**
+
+| Dream colour | Geometry | Source |
+|---|---|---|
+| Hearts | Seven hearts, each 6 wide x 5.5 tall, #ff5f8d, no outline, rotated alternately +0.3 and -0.3 rad. Body: (-24,-7), (-12,6), (-2,-10), (6,15). Tail: s 0.25 v +0.3, s 0.5 v -0.3, s 0.75 v +0.1. | `derived (provisional)` |
+| Tie-dye | On the torso, an Archimedean spiral of three repeating bands (#ff7fbf, #7fd4ff, #ffe14a), each 5 wide, 2 turns, centred (-10,3), outer radius about 18. On the tail, the same bands as slanted stripes every 0.12 of s. 1.2 px dividers rgba(255,255,255,0.8). | `derived (provisional)` |
+| Iridescent | A stripe pair slanted 45 degrees, rising toward the snout: white rgba(255,255,255,0.7) 5 wide, a 2-unit gap, then #8f7fe0 at 0.6 alpha 3 wide. It glides from x 14 to the tail tip every 4 s (section 9). Static at x -10 under reduced motion. | `derived (provisional)` |
+| Rainbow | Six bands across the body axis. Band 1 #ff6b6b is the head (x > 14). Bands 2 to 6 (#ffa64d, #ffe14a, #7fe07f, #6cb8ff, #b07cff) split x 14 to -74 equally, about 17.6 each, with boundaries at x -3.6, -21.2, -38.8 (tail s 0.2) and -56.4 (s 0.6). Dividers 1.2 px rgba(255,255,255,0.8). Rim light. | `derived (provisional)` |
+| Galaxy | Base #2b2f7a. Two nebula ellipses rgba(255,127,191,0.35): body (-14,0) 14 x 8 rotated -0.2, and tail s 0.45 v 0 10 x 6. Ten white 4-point stars, no outline: body (-26,-8) R 3, (-16,8) R 2, (-6,-6) R 2.4, (4,10) R 1.8; tail s 0.1 v -0.3 R 2, s 0.2 v -0.4 R 2.2, s 0.35 v +0.3 R 1.6, s 0.5 v -0.2 R 2.6, s 0.65 v +0.35 R 1.8, s 0.8 v -0.1 R 2. Plus four white dots r 0.8 between them. Rim light and eye ring. | `derived (provisional)` |
+| Tie-dye galaxy | Base #3a2f7a. The Tie-dye spiral and tail stripes using two bands only (#ff7fbf, #7fd4ff) at 0.75 alpha, with the white dividers. Six white 4-point stars, R 1.6 to 2.6, in the gaps. Rim light and eye ring. | `derived (provisional)` |
+
+**Greyscale cue**
+
+| Look | Cue | Source |
+|---|---|---|
+| Hearts | Heart shapes | `derived (provisional)` |
+| Tie-dye | Spiral on a light body | `derived (provisional)` |
+| Iridescent | Paired diagonal stripes, no shapes | `derived (provisional)` |
+| Rainbow | Six cross bands with dividers | `derived (provisional)` |
+| Galaxy | Stars and soft blobs on a near-black body | `derived (provisional)` |
+| Tie-dye galaxy | Spiral plus stars on a near-black body | `derived (provisional)` |
+| The six solids | No pattern. A name label beside the swatch (8) plus the Dream marker. | `derived (provisional)` |
+| Real morphs | No Dream marker | `derived (provisional)` |
+
+### 6q. Legs, leg loss, regrowth, and protected time
+
+PRD A5 to A8, ADR 0008. Always gentle: sparkles and outlines, never gore.
+
+**Legs on the body**
+
+| State | Look | Source |
+|---|---|---|
+| Present | Normal leg (6e). | `cartoon.js` |
+| Lost | A ghost outline of the leg-and-toes tube shape: dashed ink rgba(43,35,80,0.55), 1.5 wide, dash 2.5, gap 2.5, no fill. It paddles like a normal leg. Faint on purpose: not a cue object (section 10); the legs display shows leg state. | `derived (provisional)` |
+| Regrowing | The slot fill (body colour for near legs, far side for far legs) grows from the leg root to the toe tips with progress. The regrown part has its normal tube outline. The rest stays ghost. Two twinkles (R 3) sit at the growth front. At 100% there is a short burst of three twinkles. | `derived (provisional)` |
+| Never | Blood, a wound, a stump, or a detached limb. The leg never falls off. | `derived (provisional)` |
+
+**Leg-loss puff.** At the lost leg's root (6e roots): three overlapping white circles r 7, 6, and 5, drawn as a `blob` with ink 3.5, plus four twinkles R 4 to 6. The puff covers the switch to the ghost outline. Colours are always white and sun yellow, never red. Source: `derived (provisional)`.
+
+**Legs display (HUD).** Four leg icons in a row in a white #ffffff panel (section 8 panel style), under the snack counter at top-left. Source: `derived (provisional)`.
+
+| Detail | Value | Source |
+|---|---|---|
+| Icon box | 28 x 32 px, gap 8, panel padding 12 | `derived (provisional)` |
+| Icon shape | Leg tube from (14,4) to (14,18), colour width 9, `ol` 2.6. Three toes from (14,18), length 8, width 4.6, `ol` 2.2, splayed -0.6, 0, and +0.6 rad from straight down. | `derived (provisional)` |
+| Present | Solid ink outline, fill #e8567e, one shine | `derived (provisional)` |
+| Regrowing (at most one) | Dashed ink outline (2.0, dash 3, gap 3). Fill #e8567e rises from the root toward the toes in proportion to progress. A 4-point star R 5 (white, ink 1.6) at the top-right of the icon box. | `derived (provisional)` |
+| Lost | Dashed ink outline only, no fill | `derived (provisional)` |
+| Order | Left to right: present, regrowing, lost | `derived (provisional)` |
+
+In greyscale, fill against empty is 3.46:1, solid and dashed outlines differ, and the star marks regrowing. No state relies on hue (A8, X2). Source: `derived (provisional)`.
+
+**Protected ring** (replaces any "invulnerability flash")
+
+| Detail | Value | Source |
+|---|---|---|
+| Shape | An ellipse in the axolotl's local space, centre (-10,-4), radii 72 x 56 | `derived (provisional)` |
+| Lines | Outer line ink #2b2350 2.0. Inner line #ffffff 2.4, drawn 2.2 inside. | `derived (provisional)` |
+| Glint | A white arc, 3 wide and 0.5 rad long, at the upper left | `derived (provisional)` |
+| Alpha | Opaque (alpha 1.0) and constant for the whole protected time (about 2 s, tuning). No blinking, no pulsing, no fill over the hero. | `derived (provisional)` |
+| Motion | Only the glint arc moves (section 9). Everything is static under reduced motion. | `derived (provisional)` |
+| Cue | The ring shape is the greyscale cue. | `derived (provisional)` |
+| Layer | Draws after the axolotl. | `derived (provisional)` |
+| Distinct | Must stay distinct from any future carried-home bubble. | `derived (provisional)` |
 
 ---
 
@@ -485,7 +904,155 @@ Only "happy" and "blink" exist in the prototype. Others are to be designed using
 
 ### 7b. Still to design
 
-Trajinera boats, chinampa crops, home tank kit (glass, gravel, decor), collectibles, challenge hazards, pollution debris. All must follow sections 2, 4, and 5. Source: `derived (provisional)`.
+Designed in this guide: tilapia (7c), Home Spot (7d), hidden treasures, Dash pot, hint sparkle and Paint shells (7e), Home Tank kit (7f), rarity badges (3e, 8).
+
+Still to design:
+
+- trajinera boats; chinampa crops; pollution debris;
+- the small cave and past-the-current hiding places;
+- the carried-home transition (it must stay distinct from the protected ring, for example a filled bubble, and needs a still card under reduced motion);
+- the banking celebration; the Trip Bag icon;
+- perk icons (Speed, Regrowth, Dash, Shell, Treasure sense, Snack magnet);
+- Collection Book pages and unfound-morph silhouettes;
+- morph badge shapes (they must not reuse the rarity shapes or the Dream swatch tile);
+- the stranded axolotl's "a little lost" pose;
+- each catalogue Decoration and Wearable (drawn to 6i, 7e and 7f).
+
+All must follow sections 2, 4, and 5. Source: `derived (provisional)`.
+
+### 7c. Tilapia (canal hazard)
+
+PRD A1 to A4, X1; ADR 0008. Colours are in 3g. All values below are `derived (provisional)`.
+
+**Character rules**
+
+| Rule | Detail | Source |
+|---|---|---|
+| Shape | Round, cartoony, calm. | `derived (provisional)` |
+| Never | Teeth. Open jaws (except the small lunge "o"). Angry brows. Red eyes. Spikes or sharp fins. Real tilapia spines are drawn as soft scallops. | `derived (provisional)` |
+| Never shown | Catching, holding, or eating the axolotl (A11). | `derived (provisional)` |
+| Hierarchy | Never warmer or more saturated than the hero, and no tilapia fill is lighter than the hero's belly #ffe3ed. The body #c2d2bb (relative luminance 0.61) is a touch lighter than the hero body #ffb7cf (0.60), because 0.607 is the least an edge partner can be (section 10). | `derived (provisional)` |
+
+**Construction.** Local units, facing right, drawn x0.95. Total length 100, about 95 px.
+
+| Part | Construction | Source |
+|---|---|---|
+| Body | Ellipse (0,0) radii 36 x 29, merged (`blob`) with a tail-stem ellipse (-36,0) radii 9 x 11 | `derived (provisional)` |
+| Tail fin | Rounded fan from x -42 to -64. Trailing edge spans y -19 to 19 with a rounded notch 4 deep at y 0. Lobe corner radius 7. Three fin rays. | `derived (provisional)` |
+| Dorsal fin | x -26 to 20 along the top outline, rising 9. Top edge is four rounded scallops. | `derived (provisional)` |
+| Anal fin | Rounded lobe, x -24 to -8, 7 below the outline | `derived (provisional)` |
+| Pectoral fin | Rounded paddle, root (10,6), 12 x 6, rotated -0.5 rad. `shape` ink 2.8. | `derived (provisional)` |
+| Belly | Ellipse (4,13) radii 24 x 9 | `derived (provisional)` |
+| Bars | Four vertical soft bars at x -22, -11, 0, 11, each 5 wide, clipped to the body. Internal, not ink. | `derived (provisional)` |
+| Gill cover | Soft arc at x 18 from y -14 to 12, 1.6 px. Internal, not ink. | `derived (provisional)` |
+| Shine | Ellipse (-8,-17) radii 11 x 3 | `derived (provisional)` |
+| Eye | Bead r 5.2 at (22,-8) with the two glints of 6c | `derived (provisional)` |
+| Rest mouth | Short ink 2.4 smile from (32,2) to (36,3.5) | `derived (provisional)` |
+
+**Poses**
+
+| Pose | Look | Source |
+|---|---|---|
+| Patrol | Relaxed swim. | `derived (provisional)` |
+| Telegraph wind-up (A2) | Body squashed to x 0.9, y 1.08. Tail fin swung 0.35 rad. Dorsal fin raised to 1.4x height (still scalloped). Pectoral tucked to -0.9 rad. Mouth a straight 4-unit ink line. Plus the glint and the "!" bubble below. | `derived (provisional)` |
+| Lunge | Stretched to x 1.12, y 0.92. Fins swept back. Small "o" mouth: ellipse (35,3) radii 2.6 x 3.2, fill #e8567e, ink 2.4. Two soft current-streak strokes behind, no ink. | `derived (provisional)` |
+| Cooldown | The 6l Sleepy lid on its eye and a slower tail. It reads as resting. | `derived (provisional)` |
+| After a hit | It turns away. There is no contact pose. | `derived (provisional)` |
+| Bump (touch without a lunge) | No pose change. | `derived (provisional)` |
+
+**Telegraph signals.** The glint, the pose, and the bubble hold for the whole wind-up (at least the minimum wind-up time, tuning). They read without colour and without motion.
+
+| Signal | Construction | Source |
+|---|---|---|
+| Glint | 4-point star (4e), R 7, white, ink 1.8, at (26,-22) | `derived (provisional)` |
+| "!" bubble | Rounded rectangle 22 x 26 px, corner radius 10, white, ink 3.5 (`shape`). A rounded tail points down at the fish. A rounded "!" in ink: bar 4 x 11 and dot r 2.2. Centred 12 px above the dorsal fin top. Always upright, never mirrored or rotated. | `derived (provisional)` |
+
+### 7d. Home Spot
+
+PRD A13 to A15. It is a burrow, not a buoy (this resolves PRD open question 4). It sits on the canal bed where play happens and reads as an axolotl home. Colours are in 3g. All values below are `derived (provisional)`.
+
+| Part | Construction | Source |
+|---|---|---|
+| Arch | Seven rounded stones (ellipses 12 x 9) in pebble colours A and C in turn (A, C, A, C, A, C, A), `shape` ink 2.6. Outer width 72, height 44. Base on the bed. | `derived (provisional)` |
+| Opening | Rounded arch 40 wide, 28 tall, flat bottom, fill #1b1535. A glow ellipse rgba(255,225,74,0.25), 24 x 12, at the bottom centre. | `derived (provisional)` |
+| Marker post | Tube #a56a3b, width 3.6, `ol` 2.5, rising 34 px from the arch top | `derived (provisional)` |
+| Marker flag | Rounded flag 24 x 18, corner radius 5, #ffe14a, ink 2.8, carrying the house icon | `derived (provisional)` |
+| House icon | Ink 2.4: a square body 10 x 8 under a rounded roof 14 wide and 6 tall. Reuse it for any "go home" UI. | `derived (provisional)` |
+| Safe-area edge | Opaque white #ffffff dots of radius 3 with an ink 2.0 stroke (section 10), every 16 px along the safe-area circle, drawn behind the axolotl. The circle radius is gameplay tuning. The tilapia never crosses it. | `derived (provisional)` |
+| Greyscale cues | Arch silhouette, flag, house icon, dotted ring | `derived (provisional)` |
+
+### 7e. Hidden treasures
+
+PRD B1, B5 to B8. Colours are in 3g. All values below are `derived (provisional)`.
+
+**Hiding.** Treasures behind reeds draw before the reed layer. Treasures under pads draw before the pads. The cave and past-the-current spots are in 7b.
+
+**Dash pot**
+
+| Part | Construction | Source |
+|---|---|---|
+| Body | Ellipse 30 x 24, fill #efc5aa, `blob` ink 3.5 | `derived (provisional)` |
+| Rim | Ellipse 18 x 6 on top, fill #f9e1d0 | `derived (provisional)` |
+| Cracks | Two lines, #7f4a2a, 1.6 px. Internal, not ink. | `derived (provisional)` |
+| Dash icon | The Dash button icon from `src/art/drawUi.ts`: two open, right-pointing chevrons, each 7 wide and 14 tall in a 32 box, round joins. Drawn here in ink 2.4, 10 px tall, on the belly. | `derived (provisional)` |
+| Shine | One, at the upper-left | `derived (provisional)` |
+
+**"Dash needed" hint.** A rounded speech bubble 28 x 26, white, ink 3.5, with a tail toward the pot. It holds the Dash icon at 16 px. It shows for 1.5 s after a bump without a dash, with the pot wobble (section 9). Never red, never an "X". Source: `derived (provisional)`.
+
+**Crumble.** Five rounded shards (pot colours, ink 2.6, 6 to 9 px) plus three twinkles (4e). No flash or white-out. Alpha only ever decreases. Source: `derived (provisional)`.
+
+**Hint sparkle.** A 4-point star (4e), white with ink 1.8, drawn above the reeds and pads at the hiding spot. Rarer is smaller. Ink and fill are always opaque (section 10). It is steady while in range and never blinks. It differs from the yellow eight-arm Tail Dash sparkle by shape and colour. The range is gameplay tuning (PRD B7).
+
+| Rarity | R | Source |
+|---|---|---|
+| Common | 7 | `derived (provisional)` |
+| Rare | 6 | `derived (provisional)` |
+| Epic | 5 | `derived (provisional)` |
+| Legendary | 4 | `derived (provisional)` |
+
+**Revealed treasure.** Its catalogue icon at 28 px on the longest side, with a gentle bob (section 9). Source: `derived (provisional)`.
+
+**Paint shell.** Scallop shell 26 x 22, fill #efdcba, five ridges #e0b095 at 1.6 px (internal), `shape` ink 2.6. A round paint blob of radius 6 in its opening shows the Dream swatch look (section 8). Source: `derived (provisional)`.
+
+### 7f. Home Tank kit
+
+PRD C7 to C9. UI text says "Home Tank", never "fish tank". Layout at the 480 x 360 reference viewport (section 1). Colours are in 3g. All values below are `derived (provisional)`.
+
+**Layout**
+
+| Part | Construction | Source |
+|---|---|---|
+| Wall | Full background, #fff1d6 | `derived (provisional)` |
+| Stand | Band y 340 to 360, #a56a3b, with an ink 3.5 top edge | `derived (provisional)` |
+| Tank | Rounded rectangle x 16 to 464, y 24 to 340, corner radius 20, ink 3.5 (`shape`) | `derived (provisional)` |
+| Lid | Rounded bar x 10 to 470, y 16 to 30, #d4cfe6, ink 3.5 | `derived (provisional)` |
+| Air gap | y 30 to 44, #c4f1ff | `derived (provisional)` |
+| Water | Clean gradient (3c), stops 0 / 0.45 / 1 from y 44 to 340. Surface line as the canal (rgba(236,255,252,0.95), 3.4 px, same wave) at y 44. | `derived (provisional)` |
+| Gravel | y 300 to 340. Bed gradient #b78552 to #8c5e3a under packed rounded pebbles of radius 4 to 7 in pebble colours A to E, ink 2.6, with pebble shine. Top edge wobble +/-3. | `derived (provisional)` |
+| Glass shine | Two slanted stripes, rgba(255,255,255,0.25), 18 and 8 wide, at the upper-left. Drawn before the axolotls (the hero is never hazed). | `derived (provisional)` |
+
+**Layer order, back to front.** Wall, stand, lid back, air gap, water, gravel, decorations (back to front by base y), glass shine, axolotls, bubbles, surface line, tank outline and lid front, UI.
+
+**Decorations and axolotls**
+
+| Rule | Detail | Source |
+|---|---|---|
+| Base | On the gravel top (about y 304) | `derived (provisional)` |
+| Footprint | At most 120 x 140 | `derived (provisional)` |
+| Ink | Standard ink rules (4a to 4c) | `derived (provisional)` |
+| Motion | Plants sway like reeds. Everything else is still. | `derived (provisional)` |
+| Castles | Rounded towers, round windows, rounded crenellations | `derived (provisional)` |
+| Axolotls | Same construction at scene scale 0.95 x the size factor (6o) | `derived (provisional)` |
+
+**Placement**
+
+| State | Look | Source |
+|---|---|---|
+| Selected item | The double focus ring of section 8 | `derived (provisional)` |
+| Valid move | A ghost (the item's fills at 0.5 alpha, its ink outline opaque) that keeps the double focus ring of section 8. The ring is opaque, so it carries on any background (10). | `derived (provisional)` |
+| Invalid move (outside the tank) | The ghost with a dashed ink outline, still inside the double focus ring, plus a "no" icon: a white disc with an ink ring and a diagonal ink bar, 24 px | `derived (provisional)` |
+
+Never colour alone.
 
 ---
 
@@ -508,7 +1075,22 @@ All values in this section are `derived (provisional)` unless the row says other
 | Typeface | A rounded sans-serif. Final font choice is deferred; names are candidates only. | `derived (provisional)` |
 | Icons | Always paired with a text label. A disabled button uses an icon (for example a lock) as well as a dimmed colour, never colour alone. | `derived (provisional)` |
 | Text on letterbox | White text on #0c6a8c is 6.08:1 (`cartoon.html` value). | `cartoon.html` |
-| Morph display | Morph name plus a badge with a distinct shape per morph. Never colour alone. | `derived (provisional)` |
+| Morph display | Morph name plus a badge with a distinct shape per morph. Never colour alone. Morph badges must not reuse the rarity shapes (circle, diamond, shield, star) or the Dream swatch tile. | `derived (provisional)` |
+| Rarity display | Badge plus the rarity name in ink bold (at least 18 px) beside it, everywhere. Badge box 24 x 24 px in lists, 32 x 32 px in the find pop-up and detail views. Outline 2.6 (`shape`, constant). One white shine rgba(255,255,255,0.8) at the upper-left. Shapes are in the table below. Fills are in 3e. | `derived (provisional)` |
+| Dream colour display | A swatch tile: a rounded square 32 x 32, corner radius 8, outline 2.6. It shows the body colour plus a simplified pattern. Hearts: one 14 px heart. Tie-dye: a two-turn spiral. Iridescent: the stripe pair. Rainbow: six vertical bands with dividers. Galaxy: three stars. Tie-dye galaxy: a spiral and two stars. Solid tiles are plain with one shine. The name label always sits beside the tile. In the Treasure Chest and the Collection Book the label "Dream colour - not found in nature" goes with it (PRD C11, C12, F15). The PRD text writes that label with an em dash; this guide is ASCII only, so the build text must follow the PRD wording. | `derived (provisional)` |
+| Find pop-up (B8) | White panel. Item icon 48 px. Name bold 22 px. Category as text. Rarity badge 32 px with its name. | `derived (provisional)` |
+| Wearable display | The slot name as text with every Wearable. The perk is shown as icon plus text and value (PRD F10). Perk icons are still to design (7b). | `derived (provisional)` |
+| Legs display | See 6q. | `derived (provisional)` |
+| World bubbles ("!" and "dash needed") | White, ink 3.5, always upright, never mirrored. | `derived (provisional)` |
+
+**Rarity badge shapes** (24 x 24 box, origin top-left; scale up by 32 / 24 for the 32 px badge)
+
+| Rarity | Shape | Source |
+|---|---|---|
+| Common | Circle, r 10.5 | `derived (provisional)` |
+| Rare | Rounded diamond: a square of side 15.5 rotated 45 degrees, corner radius 2.5 | `derived (provisional)` |
+| Epic | Rounded shield: flat top at y 2 from x 3 to 21 with corner radius 4, straight sides to y 12, curving to a rounded point at (12,22.5) with tip radius 2.5 | `derived (provisional)` |
+| Legendary | Rounded five-point star: outer radius 11.5, inner radius 5.5, tip radius 2, one point up | `derived (provisional)` |
 
 ---
 
@@ -536,6 +1118,27 @@ Everything is soft, slow, and looping. Times are periods (one full cycle).
 | Frame step | - | Clamp dt to 50 ms so a slow frame never causes a jump | `cartoon.js` |
 | Reduced motion | - | Show one still frame (time t = 1.0 s) | `cartoon.js` |
 
+**MVP motion.** Every row has its reduced-motion (RM) still. Source for all rows: `derived (provisional)`.
+
+| Motion | Period and detail | RM still |
+|---|---|---|
+| Tilapia swim | Tail fin swing +/-0.3 rad at 1.0 s. Pectoral flap +/-0.25 rad at 1.0 s. Bob +/-3 px over 2.4 s. | Still patrol pose. Position may still move for gameplay. |
+| Telegraph | Pose eases into the wind-up over 0.2 s and holds. Glint grows over 0.2 s and holds. "!" bubble scales 0.6 to 1.0 over 0.15 s and holds. | Pose, glint, and bubble appear at full size at once. |
+| Lunge | Stretch eases in over 0.1 s. Streaks fade over 0.3 s. | Stretch pose only. |
+| Cooldown | Tail at half speed. | Still. |
+| Leg-loss puff | 0.5 s. The puff scales 0.6 to 1.3 while alpha goes 1 to 0. Twinkles drift 10 px out and fade. | Puff at scale 1.0 and alpha 1.0 for 0.5 s, then gone. Twinkles still. |
+| Regrowth | Fill follows progress (about 20 s per leg, tuning). Front twinkles bob +/-1.5 px every 1.2 s. At full, three twinkles burst 6 px out over 0.4 s. | Static twinkles, no burst. |
+| Protected ring | The glint arc travels once around every 2.4 s. Ring alpha is constant. | Glint fixed at the upper-left. |
+| Leg-count wobble (A9) | Extra tilt +0.05 rad per lost leg on the 1.2 s swim cycle: 0 with four legs, +0.05 with three, +0.10 with two, +0.15 with one leg left (three lost). | None. The slowdown stays. |
+| Hint sparkle | Fades in over 0.4 s on entering range. Bobs +/-2 px over 2.4 s. Rotates +/-0.15 rad. Fades out over 0.4 s on leaving. | No bob or spin. |
+| Dash pot wobble | +/-0.08 rad, two swings over 0.4 s. | None. |
+| Crumble | Shards move 6 to 10 px out and sink 16 px, fading over 0.6 s. | Three still shards for 0.6 s. |
+| Revealed treasure | Bob +/-2 px over 3 s. | Still. |
+| Iridescent sheen | Glides head to tail every 4 s. | Still at x -10. |
+| Home Spot flag and ring | Flag sway +/-0.1 rad over 2 s. Ring bubbles bob +/-1 px over 3 s. | Still. |
+| Home Tank axolotls | Idle hover plus slow laps of 16 to 24 s, each with its own phase. | Still poses (PRD C8). |
+| Tank plants | Reed sway. | Still. |
+
 ---
 
 ## 10. Accessibility
@@ -547,23 +1150,64 @@ Target: WCAG 2.1 AA. Values below are `derived (provisional)` unless noted.
 | Rule | Detail | Source |
 |---|---|---|
 | Reduced motion | When the player prefers reduced motion, show still poses (the prototype freezes at t = 1.0 s). | `cartoon.js` |
-| Flashing | The GFP glow pulses no faster than every 2.4 s, far below 3 flashes per second. No other flashing effects. | `derived (provisional)` |
-| Hazards | Challenge hazards are signalled by shape and motion, not by hue. | `derived (provisional)` |
-| Regeneration | Never gory. Use sparkles and a faint outline of the limb growing back. | `derived (provisional)` |
+| Flashing | No flashing. There is no invulnerability flash; protected time is the steady ring (6q). Allowed: the GFP halo pulse (2.4 s or slower; GFP is not in the MVP), one-time fades of 0.4 s or longer (puff, crumble, hint sparkle), and small moving highlights at constant brightness (protected glint arc, Iridescent sheen). Nothing blinks. No screen shake (PRD X4). | `derived (provisional)` |
+| Hazards | Challenge hazards are signalled by shape and motion, not by hue. The tilapia telegraph is the star glint, the "!" bubble, and the wind-up pose (7c), not hue, and it holds still under reduced motion. | `derived (provisional)` |
+| Regeneration | Never gory. Leg loss is a white puff, and the lost leg is a faint dashed outline that fills back in with twinkles (6q). | `derived (provisional)` |
 
-**Contrast: the dual-separation rule.** Against its background, the axolotl must get at least one of these at 3:1 or better: body fill, or ink outline. Haze is never applied to the hero.
+**Contrast: the pair rule.** On any background, every cue object must get at least 3:1 from its ink outline or from its edge partner. Haze is never applied to the hero.
 
-| Pair | Ratio | Which one carries | Source |
-|---|---|---|---|
-| Ink #2b2350 vs body #ffb7cf | 8.86 | - | `derived (provisional)` |
-| Ink #2b2350 vs shallow #55e4d8 | 9.24 | Outline carries | `derived (provisional)` |
-| Ink #2b2350 vs mid #1cb6cc | 5.9 | Outline carries | `derived (provisional)` |
-| Ink #2b2350 vs deep #0a5c98 | 2.05 | Fails alone; body carries | `derived (provisional)` |
-| Body #ffb7cf vs deep #0a5c98 | 4.31 | Body carries | `derived (provisional)` |
-| Body #ffb7cf vs shallow #55e4d8 | 1.04 | Fails alone; outline carries | `derived (provisional)` |
-| Melanoid body #4f4a6e vs ink #2b2350 | 1.74 | Fails; the 2 px rim light #c7c2ee is **required** (4.13 vs deep #0a5c98) | `derived (provisional)` |
+**Cue objects.** The axolotl, tilapia, protected ring, hint sparkle, telegraph glint and "!" bubble, Dream marker, leg-loss puff and twinkles, Dash pot, Paint shell, Home Spot (arch, flag, safe-ring dots), revealed treasure icons, and the Home Tank focus ring. Prototype scenery (sky, bank, water, light rays, bed, pebbles, reeds, pads, bubbles) and Home Tank decorations are background. The lost-leg ghost (6q) is faint on purpose; the legs display carries leg state.
 
-All five morphs pass the dual-separation rule at all nine sampled water gradient stops (melanoid relies on its rim light in the deep stops).
+**Edge partner.** The opaque fill just inside the ink along the outer silhouette, meaning the body (merged silhouette) and the fins on the outer edge. NOT edge partners: depth details behind the body (far legs, far gills, tilapia far fin), tube details (gills, legs, Home Spot post), and wearables. Pattern overlays never touch the edge on bodies that pass alone (6p). On a rim-lit body the rim light is the edge partner along the upper silhouette, top fin edge included. The lower edge is not required to pass: light comes from above, and a full-outline rim would read as a second outline colour (section 2). See section 12.
+
+**Method: check the pair, not the background.** Ink and partner are opaque, so their ratio P decides. On any background the better of the two is at least the square root of P:
+
+- a background darker or lighter than both is beaten by the far colour by more than P;
+- a background between them splits P into two ratios that multiply to P.
+
+The worst background is the middle one and gets exactly the square root of P.
+
+- A pair passes on every background (every water state, every gradient point, haze, light rays, Home Tank glass, scenery) if and only if P is 9:1 or more. No samples are needed.
+- Ink #2b2350 has relative luminance 0.0229, so a 9:1 partner needs 0.607 or more.
+- The clean gradient's luminance runs from 0.100 (#0a5c98) to 0.624 (#55e4d8), so for pairs from about 4.2:1 to 85:1 the worst case happens in the canal (t is 0 at the surface, 1 at y 330).
+
+**Alpha.** While a cue object is on screen, its ink outline and edge partner stay at alpha 1.0. Fading either mixes it with the background and breaks the guarantee. Examples: a hint star at alpha 0.7 drops to 2.63:1 on clean water; with an opaque outline and a 0.7 white fill it still drops to 2.88:1 on some backgrounds. Only one-time fades of 0.4 s or longer (Flashing row) may lower alpha, on the way in or out. Fills inside the silhouette (patterns, spots, shines, glow) may use alpha.
+
+| Pair | Pair ratio | Worst case on any background | Result | Source |
+|---|---|---|---|---|
+| Ink vs Leucistic body #ffb7cf | 8.86 | 2.98 (canal t about 0.82, #1079a9) | 0.02 short; recorded residual (section 12) | `derived (provisional)` |
+| Ink vs Leucistic fin #ffd9e6 | 11.19 | 3.34 | Passes | `derived (provisional)` |
+| Ink vs Golden albino body #ffd36b | 10.13 | 3.18 | Passes | `derived (provisional)` |
+| Ink vs GFP body #e2f7b0 | 12.45 | 3.53 | Passes | `derived (provisional)` |
+| Ink vs Wild body #b0b86e | 6.80 | 2.61 (canal t about 0.89, #0e6fa3) | Fails; corrective cue still to choose (section 12) | `derived (provisional)` |
+| Ink vs Melanoid body #4f4a6e | 1.74 | 1.32 | Fails alone; the rim light is **required** | `derived (provisional)` |
+| Ink vs rim light #cec9f0 | 9.07 | 3.01 | Passes (Melanoid, Rainbow, dark Dream colours) | `derived (provisional)` |
+| Dream colours | See 3f | - | - | `derived (provisional)` |
+| Ink vs tilapia body #c2d2bb | 9.07 | 3.01 | Passes | `derived (provisional)` |
+| Ink vs tilapia fin #d4e0d0 | 10.54 | 3.25 | Passes | `derived (provisional)` |
+| Ink vs white #ffffff | 14.39 | 3.79 | Passes: protected ring, hint star, telegraph glint and "!" bubble, Dream marker, leg-loss puff, Home Spot ring dots, focus ring | `derived (provisional)` |
+| Ink vs sun yellow #ffe14a | 11.05 | 3.32 | Passes: twinkles, Home Spot flag | `derived (provisional)` |
+| Ink vs Dash pot #efc5aa and rim #f9e1d0 | 9.07, 11.45 | 3.01, 3.38 | Passes | `derived (provisional)` |
+| Ink vs Paint shell #efdcba | 10.70 | 3.27 | Passes | `derived (provisional)` |
+| Ink vs Home Spot stones, pebble A #d4cfe6 and pebble C #efdcba | 9.50, 10.70 | 3.08, 3.27 | Passes | `derived (provisional)` |
+| Home Spot opening #1b1535 vs bed #b78552 to #8c5e3a | 5.38 to 3.13 | - | Passes against every bed colour | `derived (provisional)` |
+| Rarity fills vs ink | 4.92 to 12.0 (3e) | - | UI on opaque fills | `derived (provisional)` |
+| Legs fill #e8567e vs white panel | 3.46 | - | UI on an opaque panel | `derived (provisional)` |
+
+Golden albino and GFP pass on any background. Melanoid passes with its rim light. Leucistic is 0.02 short (2.98:1) and is a recorded residual (section 12). Wild fails (2.61:1); a corrective cue is still to be chosen and tested (section 12, issue #13).
+
+**Greyscale check (PRD X2, F15)**
+
+| Item | Cue | Source |
+|---|---|---|
+| Rarity | Shape plus name | `derived (provisional)` |
+| Legs on the body | Solid, dashed ghost, or part-filled with twinkles | `derived (provisional)` |
+| Legs display | Filled, part-filled with star, or empty. Solid vs dashed outline. | `derived (provisional)` |
+| Telegraph | Star glint, "!" bubble, wind-up pose | `derived (provisional)` |
+| Protected | The ring | `derived (provisional)` |
+| Dream colours | Pattern cues (6p). Solids by name label. Dream marker vs real morphs. | `derived (provisional)` |
+| Wearable slots | Slot name text | `derived (provisional)` |
+| Hint sparkle | Star shape, sized by rarity | `derived (provisional)` |
 
 **Checklist**
 
@@ -572,7 +1216,7 @@ All five morphs pass the dual-separation rule at all nine sampled water gradient
 | Text contrast | 4.5:1 for text under 18 pt (14 pt bold); 3:1 for larger text and for icons | `derived (provisional)` |
 | Focus | Every interactive element has a visible double-ring focus indicator (section 8) | `derived (provisional)` |
 | Touch targets | At least 48 x 48 CSS px; primary at least 64 px tall | `derived (provisional)` |
-| Non-colour meaning | Morph, water state, hazard, and disabled state all have a shape, text, or motion cue | `derived (provisional)` |
+| Non-colour meaning | Morph, water state, hazard, disabled state, rarity, legs, telegraph, protected time, Dream colours, and perks all have a shape, text, or motion cue (see the greyscale check above) | `derived (provisional)` |
 | Themes | There is one theme today. If more are added, re-check every pair above. | `derived (provisional)` |
 
 ---
@@ -590,24 +1234,46 @@ Engine-agnostic. Do not commit to an engine or file format yet. All items `deriv
 | Morphs | Palette swap through role slots (3b), plus a pattern overlay and an eye variant where needed. Never redraw per morph. |
 | Naming | Name layers by slot role (for example `body`, `far-side`, `gill-near-stem`) so a swap can find them. |
 | Outline | Bake the ink outline into the art at the widths in section 4, or draw it by the three techniques. Keep it #2b2350 (`derived (provisional)`). |
+| Wearables | One layer per slot (`wear-tail`, `wear-neck`, `wear-head`, `wear-face` at 8.5, 9.5, 10.5, 11.5), authored in axolotl local units at Medium, facing right. |
+| Dream colours | Slot swap plus one `dream-overlay` layer (pattern, marker, rim light), clipped to the silhouette and fin fill (inset per 6p). |
+| Spots | Layer `spots`. |
+| Face variants and gill styles | Separate parts, so creator previews can swap them. |
+| Texture frames | Must include Long gill tips (to about y -63), Head items (to y -46), the Large size (x1.15), and the existing padding. The protected ring and effects are separate sprites. |
 
 ---
 
 ## 12. Provisional values needing prototype confirmation
 
-Everything below is `derived (provisional)`. Confirm each in a prototype before final art.
+Everything in the table below is `derived (provisional)`. Confirm each in a prototype before final art. Recorded residuals follow the table.
 
 | Area | What to confirm |
 |---|---|
 | Morph colours | All values for Wild, Golden albino, Melanoid, and GFP in 3b, including the slots marked "-" (Melanoid mouth; GFP eye and mouth), which currently inherit the Leucistic value |
-| Morph extras (`derived (provisional)`) | Wild speckles (6 to 9, #5f6b33) and gold flecks; golden shimmer glints; melanoid matte shine (alpha 0.45), rim light (2 px, #c7c2ee), and the width of its eye ring (try 1.5 px, matching golden); GFP halo (#7dff8f, about 0.35 alpha) and pulse (2.4 s or slower) plus sparkles |
+| Morph extras (`derived (provisional)`) | Wild speckles (6 to 9, #5f6b33) and gold flecks; golden shimmer glints; melanoid matte shine (alpha 0.45), rim light (2 px, #cec9f0, top fin edge included), and the width of its eye ring (try 1.5 px, matching golden); GFP halo (#7dff8f, about 0.35 alpha) and pulse (2.4 s or slower) plus sparkles |
 | Water states | Murky and Polluted gradient colours, haze, silt motes, debris, drooping reeds; gradient stop positions assumed equal to Clean |
-| Contrast claims | All morph-versus-water-stop checks (the sheet values above were recomputed for the key pairs, but the full 5 x 9 grid needs checking against real renders) |
+| Contrast claims | The pair method (section 10) needs no water samples. Confirm in real renders that ink outlines and edge partners draw at alpha 1.0, and that anti-aliasing keeps the 2 px rim light and the 2-unit pattern inset (6p) visible at 1x. |
 | UI | Colour roles, button shape and size, focus ring, text sizes, touch target sizes |
 | Typeface | Final rounded sans-serif (deferred) |
 | Close-up outline weight | About 2.9% of L for scaled-up art |
 | Turn pose | Replaces the prototype's instant flip |
 | Expressions and poses | Every item marked "To design" in 6j and 6k |
-| Accessory anchor | Head-top anchor point (26,-23) and the keep-clear zones |
-| Environment kit | All items in 7b |
+| Wearable slots | Anchors, footprints, keep-clear zones (eye zones r + 1.8, gill-root box, mouth zone), layers 8.5 to 11.5, glasses construction, rarity look ladder (6i) |
+| Rarity | 3e colours, badge shapes and sizes, 2.6 outline (8) |
+| Creator variants | Face variants, gill styles, spots (per-morph spot colours; freckles moved from a Leucistic cue to a spot option), sizes 0.85 / 1.00 / 1.15 and the outline-scaling exception (4a, 6l to 6o) |
+| Dream colours | All slot values and the mixing rule, pattern geometry and colours, Dream marker, rim light and eye ring rule, spot colours on Dream colours, swatch tile (3f, 6p, 8), the lightened Lavender, Sunset orange, and Bubblegum bodies, and the 2-unit pattern inset |
+| Tilapia | Geometry, colours, poses, glint, and "!" bubble (7c, 3g), the body #c2d2bb, a touch lighter than the hero body (7c) |
+| Legs | Ghost and regrowth, puff, legs display, protected ring (6q, 3g) |
+| Home Spot and treasures | Home Spot burrow (stones in pebbles A and C, opening #1b1535, opaque ring dots), Dash pot (#efc5aa, rim #f9e1d0), hint sparkle sizes (opaque at every rarity), revealed treasure, Paint shell (7d, 7e) |
+| Home Tank kit | Layout, layer order, decoration rules, placement states (7f), placement ghost inside the focus ring and the "no" icon |
+| New motion, sparkles, and widths | New motion rows (9); sparkle shapes (4e); new widths (4b) |
+| Wild recheck | Under the pair method (section 10) the Wild body #b0b86e is 6.80:1 with ink, so its worst case is 2.61:1 (canal t about 0.89, #0e6fa3). A 9:1 partner needs relative luminance 0.607. The Wild body is 0.446, and lightening it that far would make Wild lighter than Leucistic and break the luminance order (3b). Choose and test a corrective cue for Wild in a prototype (for example a light rim that does not copy Melanoid's), then recheck. Tracked in issue #13. |
+| Rim-lit lower edge | The rim light runs along the upper silhouette only (section 10). On Melanoid, Midnight blue, Galaxy, Tie-dye galaxy, and Rainbow the lower edge has no 9:1 partner. Check in a render on deep water that the top-lit edge is enough to read the silhouette. If it is not, prototype a fuller rim that does not read as a second outline colour. |
+| Parallel build | The in-game tilapia and legs are being built at the same time as these sections. Reconcile this guide and that code once both land. |
+| Environment kit | Remaining items in 7b |
 | Asset padding | 4 px at 1x and 8 px at 2x |
+
+**Recorded residuals** (decisions, not values to confirm)
+
+| Residual | Root cause | Bounded impact | Remediation considered and rejected | Review |
+|---|---|---|---|---|
+| Leucistic body vs ink | The approved prototype body #ffb7cf is 8.86:1 with ink, just under the 9:1 pair the rule needs (relative luminance 0.596; 0.607 needed). Its worst case on any background is 2.98:1, at the band of the clean gradient near t = 0.82 (#1079a9). | 0.02 under 3:1, only along the plain body edge, and only where the water is near that one shade. Fin #ffd9e6 (3.34:1) and belly #ffe3ed (3.46:1) pass everywhere. The gap is too small to see. | Lightening the body to #ffbad1 (9.05:1) would change an approved `cartoon.js` value, and section 1 makes the prototype the record. Revisit if the prototype body changes. | PR #19, https://github.com/brenpike/game-test/pull/19#discussion_r4308192112 |
