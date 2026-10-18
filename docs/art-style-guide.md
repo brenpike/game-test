@@ -511,12 +511,22 @@ Layer order, back to front (each layer is its own animated part in production):
 | 4 | Merged silhouette | Tail + torso + head as one `blob` | `cartoon.js` |
 | 5 | Fin bands and fin rays | Lighter bands plus ray lines and core edge line | `cartoon.js` |
 | 6 | Belly | Light ellipse | `cartoon.js` |
+| 6.5 | Dream overlay | Pattern, Dream marker, and rim light when a Dream colour is on (6p). Clipped to the silhouette and fin fill. | `derived (provisional)` |
 | 7 | Shines | Body and head shine | `cartoon.js` |
-| 8 | Freckles | Three | `cartoon.js` |
+| 8 | Spots | The player Spots option (6n). The prototype's three freckles are its Freckles option. | `cartoon.js`, `derived (provisional)` |
+| 8.5 | Tail item | Wearable, Tail slot (6i) | `derived (provisional)` |
 | 9 | Near gills | In front of the body, sprouting from the cheek | `cartoon.js` |
+| 9.5 | Neck item | Wearable, Neck slot (6i) | `derived (provisional)` |
 | 10 | Blush | Two cheek ellipses | `cartoon.js` |
+| 10.5 | Head item | Wearable, Head slot (6i) | `derived (provisional)` |
 | 11 | Mouth | Fill, outline, corner ticks | `cartoon.js` |
+| 11.5 | Face item | Wearable, Face slot (6i). It sits below the eyes on purpose: eyes always paint last, so no Face item can cover them. | `derived (provisional)` |
 | 12 | Eyes | Bead plus two glints | `cartoon.js` |
+
+Notes:
+
+- Decimal rows are new. Whole numbers keep the prototype numbering, because code comments use them.
+- Effects draw after the axolotl: the leg-loss puff, regrowth twinkles, and the protected ring (6q).
 
 ### 6b. Proportions (relative to L = 127)
 
@@ -605,29 +615,87 @@ Three gills per side. They fan from straight up (top gill) to straight back (bot
 | Outline | Always #2b2350 and the same widths on every morph. | `cartoon.js` |
 | Melanoid | Rim light is required for readability on deep water. | `derived (provisional)` |
 | GFP | Halo sits outside the outline; the pulse is gentle (section 10). | `derived (provisional)` |
+| Dream colours | See 6p. The real morph never changes. A Dream colour swaps only the body and gill slots (3f). Eye and mouth stay. | `derived (provisional)` |
+| Morph extras under a Dream colour | While a Dream colour is on, the real morph's body extras are off: Wild speckles and flecks, Golden shimmer glints, and Melanoid matte shine and rim light. The Dream rim light and eye ring rules (3f) apply instead. | `derived (provisional)` |
 
-### 6i. Accessory anchor rules
+### 6i. Wearable slots and keep-clear zones
+
+PRD C10, F8, F13. All values are in the axolotl's local units, facing right (L = 127).
+
+**Rules**
 
 | Rule | Detail | Source |
 |---|---|---|
-| Line rules | Accessories follow the same ink colour, widths, and techniques as the rest of the art. | `derived (provisional)` |
-| Anchor | The top of the head ellipse: local point (26,-23). | `derived (provisional)` |
-| Keep clear | Never cover the eyes. Never cover the gill roots (local x 1 to 6). | `derived (provisional)` |
-| Facing | Accessories are authored facing right and mirror with the character. | `derived (provisional)` |
+| Line rules | Wearable silhouettes use 2.8 (`shape`). Tubes are 3.2 with `ol` 2.4. The glasses band is 3.5. Same ink colour as the rest of the art. | `derived (provisional)` |
+| Facing | Authored facing right. Mirrors with the character. | `derived (provisional)` |
+| Scale | Drawn in the axolotl's local units and scaled with it, so every clearance holds at every size (6o, 4a). | `derived (provisional)` |
+| One item per slot | An axolotl wears at most one item in each slot. | `derived (provisional)` |
+| Keep clear | Never cover the eyes or the gill roots, in any slot, at any size. | `derived (provisional)` |
+
+**Keep-clear zones**
+
+| Zone | Geometry | Source |
+|---|---|---|
+| Near eye zone | Circle, centre (28,-6), radius 8.2 (eye radius 6.4 + 1.8) | `derived (provisional)` |
+| Far eye zone | Circle, centre (42,-7), radius 7.1 (5.3 + 1.8) | `derived (provisional)` |
+| Gill-root zone | Box, x -5 to 12, y -22 to 13. It holds all six roots of 6d plus the stem ink. | `derived (provisional)` |
+| Mouth zone | The ink of every mouth variant (6l) plus 1 unit. Its highest points are the corner ticks at (26.4,7.6) and (50.4,4.6). | `derived (provisional)` |
+
+No wearable paint goes inside any zone. The one exception is the clear lens tint over the eye zones. Eye variants (6l) stay inside the eye zones.
+
+**Slots**
+
+| Slot | Examples | Anchor | Footprint, ink included | Layer | Moves with | Source |
+|---|---|---|---|---|---|---|
+| Head | Hats, flowers, crowns | (26,-23), the head top (existing anchor) | x 16 to 36. Rests on the head outline. Lowest painted point no lower than y -19.5. Top no higher than y -46. | 10.5 | Head | `derived (provisional)` |
+| Neck | Necklaces, scarves | (17,16), the throat | x 13 to 22, y 11 to 21, inside the silhouette. Nothing hangs below the silhouette, so the front legs stay visible. | 9.5 | Head and body | `derived (provisional)` |
+| Face | Glasses | (35,-6.5), between the eyes | x 14 to 54, y -18 to 6. Outside both eye zones and at least 1 unit from the mouth zone. | 11.5 | Head | `derived (provisional)` |
+| Tail | Bows, ribbons | Top edge of the tail core at tail point 4 of 14 (s about 0.29). It is (-42.6,-5.6) when the tail is straight. | Within 9 units of the anchor. Rotates with the local tail direction. | 8.5 | Tail wave | `derived (provisional)` |
+
+**Tail space.** Marks on the tail use two numbers. s runs from 0 at the tail root (x -30) to 1 at the tip (x -74). v is the offset from the tail centreline as a fraction of the local tail half-height, and + is down. Tail-space marks move with the tail wave. 6n, 6p, and the Tail slot use it.
+
+**Clearance notes**
+
+- The Head item to glasses gap is 1.8 units (glasses top at y -17.7).
+- Gill stems of every style stay left of about x 15.5 (the far top stem at full flutter), so Head items (x 16 or more) never cover a stem. They may overlap far gill filament tips, which draw behind everything.
+
+**Glasses construction**
+
+| Detail | Value | Source |
+|---|---|---|
+| Why one frame | The eyes are only about 2.3 units apart, so no frame can pass between them. | `derived (provisional)` |
+| Shape | One merged frame: the union of a near lens circle (centre (28,-6), radius 9.95) and a far lens circle (centre (42,-7), radius 8.85). Drawn as one outline with no inner seam (like `blob`). | `derived (provisional)` |
+| Band | 3.5 units, centred on that outline. Its inner edge lies on the eye zones, 1.8 units from each bead. | `derived (provisional)` |
+| Notches | At about (35.3,-12.8) on top and (36.2,-0.3) underneath, so the frame reads as two lenses. | `derived (provisional)` |
+| Outer extents | x 16.3 to 52.6, y -17.7 to 5.7. The gap to the near mouth tick is about 1.0. | `derived (provisional)` |
+| Lenses | Clear, or a white tint rgba(255,255,255,0.25). The eyes draw on top (layer 12), so the bead and both glints always show. | `derived (provisional)` |
+| Temple stub | Optional, from the near lens back to x 14 at most. | `derived (provisional)` |
+| Never | Dark or opaque lenses. | `derived (provisional)` |
+
+**Rarity look ladder** (Wearables and Decorations, PRD F9)
+
+| Rarity | Look | Source |
+|---|---|---|
+| Common | One flat colour plus one shine | `derived (provisional)` |
+| Rare | Adds one trim band in a second colour | `derived (provisional)` |
+| Epic | Adds one rounded gem (radius 2.5) or a small repeat pattern | `derived (provisional)` |
+| Legendary | Adds trim in #ffc12e and one static 4-point star (R 3) | `derived (provisional)` |
+
+The ladder reads in greyscale by counted details, not colour.
 
 ### 6j. Expressions
 
-Only "happy" and "blink" exist in the prototype. Others are to be designed using the same eye and mouth construction.
+Only "happy" and "blink" exist in the prototype. Others are to be designed using the same eye and mouth construction. The eye variants in 6l are the resting look. An expression temporarily overrides them and then returns. Blink squashes any eye variant to 12% height.
 
 | Expression | Notes | Source |
 |---|---|---|
 | Happy (default) | Open "D" smile, round beads, blush | `cartoon.js` |
 | Blink | Eye squashed to 12% height for 0.14 s | `cartoon.js` |
-| Curious | To design | `derived (provisional)` |
+| Curious | To design. A resting eye variant exists (6l). | `derived (provisional)` |
 | Surprised | To design | `derived (provisional)` |
-| Sleepy | To design | `derived (provisional)` |
+| Sleepy | To design. A resting eye variant exists (6l). | `derived (provisional)` |
 | Sad | To design (gentle, never scary) | `derived (provisional)` |
-| Determined | To design | `derived (provisional)` |
+| Determined | To design. A resting eye variant exists (6l). | `derived (provisional)` |
 | Excited | To design | `derived (provisional)` |
 | Regenerating | To design (sparkles, never gory) | `derived (provisional)` |
 
@@ -646,7 +714,171 @@ Only "happy" and "blink" exist in the prototype. Others are to be designed using
 | Rest on bed | To design | `derived (provisional)` |
 | Nudge / interact | To design | `derived (provisional)` |
 | Front 3/4 card portrait | To design | `derived (provisional)` |
-| Accessory test pose | To design; used to check anchors in 6i | `derived (provisional)` |
+| Wearable test pose | Check all four slots together at Small and Large, with Long gills and every eye and mouth variant (6i, 6l to 6o). To design. | `derived (provisional)` |
+
+### 6l. Face variants
+
+Character creator options (PRD F2, F6). r is the eye radius: near 6.4, far 5.3. Eye centres are in 6c. Lid lines are clipped to the bead and drawn in ink.
+
+**Eyes**
+
+| Variant | Construction | Source |
+|---|---|---|
+| Happy (default) | The prototype bead and two glints (6c) | `cartoon.js` |
+| Sleepy | Bead clipped above a lid through the eye centre, curved down 0.15r at the middle. Lid line ink 2.0. Only glint 2, moved to (-0.3r, +0.45r). | `derived (provisional)` |
+| Determined | Bead clipped above a straight lid from (-r, -0.6r) at the back to (+r, -0.25r) at the snout side, so it slopes down toward the snout. Lid line ink 2.0. Glints are clipped with the bead. | `derived (provisional)` |
+| Curious | Bead radius 1.1r (near 7.04, far 5.83). Glint 1 radius 0.45r. No lid. | `derived (provisional)` |
+| Grumpy | Bead clipped above a straight lid from (-r, -0.05r) at the back to (+r, -0.4r) at the snout side, so it slopes down toward the back: sulky, never angry. Lid line ink 2.0. Only glint 2. | `derived (provisional)` |
+
+**Eye rules**
+
+| Rule | Detail | Source |
+|---|---|---|
+| Zones | All eye marks stay inside the eye zones (6i). | `derived (provisional)` |
+| Shape | No brows or sharp shapes. | `derived (provisional)` |
+| Visible bead | Never less than about 45% of the round bead area. | `derived (provisional)` |
+| Colour | The morph eye colour and any ring (3b, 3f) apply to every variant. | `derived (provisional)` |
+
+**Mouths**
+
+| Variant | Construction | Source |
+|---|---|---|
+| Open "D" (default) | The prototype mouth (6c) | `cartoon.js` |
+| Smile | No fill. Ink 2.4 quadratic from (28,10) to (49,7) with control (38,19); lowest point about y 13.8. Prototype corner ticks. | `derived (provisional)` |
+| Tongue-out | Open "D" plus a tongue ellipse, centre (40,15.5), radii 4.6 x 3.6, fill #ff9fb5, ink 2.4 (`shape`). Drawn over the mouth fill. It pokes about 4 units below the lower lip curve. | `derived (provisional)` |
+| Small "o" | Ellipse, centre (39,11), radii 3.4 x 4.0, mouth slot fill, ink 2.4. No ticks. | `derived (provisional)` |
+
+**Mouth rules.** All mouths stay inside the mouth zone (6i). No teeth.
+
+### 6m. Gill styles
+
+Character creator option (PRD F2). Fluffy is the prototype (6d). Lengths are the stem length per gill. Bend is the sideways bow (near / far).
+
+| Style | Near stems (top / middle / bottom) | Far stems (top / middle / bottom) | Side filaments per side | Filament length | Tip pair length | Bend (near / far) | Source |
+|---|---|---|---|---|---|---|---|
+| Fluffy (default) | 34 / 37 / 31 | 28 / 32 / 26 | 3, at u 0.35, 0.6, 0.82 | 13 x (1.05 - 0.55u) | 8 | 5 / 4 | `cartoon.js` |
+| Long | 44 / 48 / 40 | 36 / 42 / 34 | 2, at u 0.5, 0.8 | 13 x (1.05 - 0.55u) | 10 | 6 / 5 | `derived (provisional)` |
+| Short | 24 / 26 / 22 | 20 / 22 / 18 | 2, at u 0.45, 0.8 | 9 x (1.05 - 0.55u) | 6 | 4 / 3 | `derived (provisional)` |
+
+Rules:
+
+- Roots, angles, widths, colours, and flutter never change. So the gill-root zone (6i) is the same for every style.
+- Styles read by silhouette: length and filament count.
+- Long tips reach about y -63 local. This sets the texture frame (section 11).
+
+Source for the rules: `derived (provisional)`.
+
+### 6n. Spots
+
+Character creator option (PRD F2). Layer 8. Colours come from the spot table in 3b. Flat fills, no ink outline. Never on the head (x > 0). Tail marks use tail space (6i).
+
+| Option | Marks | Source |
+|---|---|---|
+| None | No marks | `derived (provisional)` |
+| Freckles | The prototype's three freckles (6g) | `cartoon.js` |
+| Dots | Body: (-8,-4) r 2.2, (-18,-9) r 2.0, (-22,6) r 2.4. Tail: s 0.15 v -0.4 r 2.2, s 0.35 v +0.35 r 2.0, s 0.55 v -0.3 r 1.8, s 0.75 v +0.2 r 1.5. | `derived (provisional)` |
+| Patches | Body: (-14,-3) ellipse 6 x 4.5 rotated -0.3, and (-26,7) ellipse 5 x 3.5. Tail: s 0.45 v -0.2 ellipse 5 x 3.5. | `derived (provisional)` |
+
+Spots draw on top of any Dream colour (PRD F14). Wild's own speckles are its morph cue and stay. Player spots add to them. Source: `derived (provisional)`.
+
+### 6o. Sizes
+
+Character creator option (PRD F2, F4).
+
+| Size | Scale | Length in the scene | Source |
+|---|---|---|---|
+| Small | x0.85 | About 103 px | `derived (provisional)` |
+| Medium (default) | x1.00 (prototype) | About 121 px | `cartoon.js` |
+| Large | x1.15 | About 139 px | `derived (provisional)` |
+
+Rules:
+
+- Uniform scale about local (0,0), including ink, wearables, and the Dream overlay (the 4a exception).
+- Size is looks only. The hit area and speed never change (PRD F4).
+- Every 6i clearance holds at every size, because it is defined in local units.
+
+Source for the rules: `derived (provisional)`.
+
+### 6p. Dream colours on the body
+
+PRD F14, F15. Slot colours and contrast checks are in 3f. Tail marks use tail space (6i).
+
+**Rules**
+
+| Rule | Detail | Source |
+|---|---|---|
+| Slots | The 3f values replace the body, far side, fin, belly, and gill slots. Eye and mouth come from the real morph. | `derived (provisional)` |
+| Morph extras | Off (6h). | `derived (provisional)` |
+| Pattern overlay | Layer 6.5. Clipped to the silhouette and fin fill, and only where x <= 14, so the face keeps the plain Dream body colour. Rainbow's head is band 1, which is its body colour. | `derived (provisional)` |
+| Dream marker | Three 4-point stars (4e), R 2.6, white with ink 1.6. On the top fin band at tail points s 0.55, 0.68, and 0.81, centred between the core edge and the fin edge. Shown on every Dream colour, solid or patterned. Real morphs never carry it. | `derived (provisional)` |
+| Rim light and eye ring | Per 3f. | `derived (provisional)` |
+| Spots | Per 3b and 6n. Drawn on top. | `derived (provisional)` |
+| Progress | A Dream colour never changes perks, the real morph, or Collection Book unlocks. | `derived (provisional)` |
+
+**Pattern geometry**
+
+| Dream colour | Geometry | Source |
+|---|---|---|
+| Hearts | Seven hearts, each 6 wide x 5.5 tall, #ff5f8d, no outline, rotated alternately +0.3 and -0.3 rad. Body: (-24,-7), (-12,6), (-2,-10), (6,15). Tail: s 0.25 v +0.3, s 0.5 v -0.3, s 0.75 v +0.1. | `derived (provisional)` |
+| Tie-dye | On the torso, an Archimedean spiral of three repeating bands (#ff7fbf, #7fd4ff, #ffe14a), each 5 wide, 2 turns, centred (-10,3), outer radius about 18. On the tail, the same bands as slanted stripes every 0.12 of s. 1.2 px dividers rgba(255,255,255,0.8). | `derived (provisional)` |
+| Iridescent | A stripe pair slanted 45 degrees, rising toward the snout: white rgba(255,255,255,0.7) 5 wide, a 2-unit gap, then #8f7fe0 at 0.6 alpha 3 wide. It glides from x 14 to the tail tip every 4 s (section 9). Static at x -10 under reduced motion. | `derived (provisional)` |
+| Rainbow | Six bands across the body axis. Band 1 #ff6b6b is the head (x > 14). Bands 2 to 6 (#ffa64d, #ffe14a, #7fe07f, #6cb8ff, #b07cff) split x 14 to -74 equally, about 17.6 each, with boundaries at x -3.6, -21.2, -38.8 (tail s 0.2) and -56.4 (s 0.6). Dividers 1.2 px rgba(255,255,255,0.8). Rim light. | `derived (provisional)` |
+| Galaxy | Base #2b2f7a. Two nebula ellipses rgba(255,127,191,0.35): body (-14,0) 14 x 8 rotated -0.2, and tail s 0.45 v 0 10 x 6. Ten white 4-point stars, no outline: body (-26,-8) R 3, (-16,8) R 2, (-6,-6) R 2.4, (4,10) R 1.8; tail s 0.1 v -0.3 R 2, s 0.2 v -0.4 R 2.2, s 0.35 v +0.3 R 1.6, s 0.5 v -0.2 R 2.6, s 0.65 v +0.35 R 1.8, s 0.8 v -0.1 R 2. Plus four white dots r 0.8 between them. Rim light and eye ring. | `derived (provisional)` |
+| Tie-dye galaxy | Base #3a2f7a. The Tie-dye spiral and tail stripes using two bands only (#ff7fbf, #7fd4ff) at 0.75 alpha, with the white dividers. Six white 4-point stars, R 1.6 to 2.6, in the gaps. Rim light and eye ring. | `derived (provisional)` |
+
+**Greyscale cue**
+
+| Look | Cue | Source |
+|---|---|---|
+| Hearts | Heart shapes | `derived (provisional)` |
+| Tie-dye | Spiral on a light body | `derived (provisional)` |
+| Iridescent | Paired diagonal stripes, no shapes | `derived (provisional)` |
+| Rainbow | Six cross bands with dividers | `derived (provisional)` |
+| Galaxy | Stars and soft blobs on a near-black body | `derived (provisional)` |
+| Tie-dye galaxy | Spiral plus stars on a near-black body | `derived (provisional)` |
+| The six solids | No pattern. A name label beside the swatch (8) plus the Dream marker. | `derived (provisional)` |
+| Real morphs | No Dream marker | `derived (provisional)` |
+
+### 6q. Legs, leg loss, regrowth, and protected time
+
+PRD A5 to A8, ADR 0008. Always gentle: sparkles and outlines, never gore.
+
+**Legs on the body**
+
+| State | Look | Source |
+|---|---|---|
+| Present | Normal leg (6e). | `cartoon.js` |
+| Lost | A ghost outline of the leg-and-toes tube shape: dashed ink rgba(43,35,80,0.55), 1.5 wide, dash 2.5, gap 2.5, no fill. It paddles like a normal leg. | `derived (provisional)` |
+| Regrowing | The slot fill (body colour for near legs, far side for far legs) grows from the leg root to the toe tips with progress. The regrown part has its normal tube outline. The rest stays ghost. Two twinkles (R 3) sit at the growth front. At 100% there is a short burst of three twinkles. | `derived (provisional)` |
+| Never | Blood, a wound, a stump, or a detached limb. The leg never falls off. | `derived (provisional)` |
+
+**Leg-loss puff.** At the lost leg's root (6e roots): three overlapping white circles r 7, 6, and 5, drawn as a `blob` with ink 3.5, plus four twinkles R 4 to 6. The puff covers the switch to the ghost outline. Colours are always white and sun yellow, never red. Source: `derived (provisional)`.
+
+**Legs display (HUD).** Four leg icons in a row in a white #ffffff panel (section 8 panel style), under the snack counter at top-left. Source: `derived (provisional)`.
+
+| Detail | Value | Source |
+|---|---|---|
+| Icon box | 28 x 32 px, gap 8, panel padding 12 | `derived (provisional)` |
+| Icon shape | Leg tube from (14,4) to (14,18), colour width 9, `ol` 2.6. Three toes from (14,18), length 8, width 4.6, `ol` 2.2, splayed -0.6, 0, and +0.6 rad from straight down. | `derived (provisional)` |
+| Present | Solid ink outline, fill #e8567e, one shine | `derived (provisional)` |
+| Regrowing (at most one) | Dashed ink outline (2.0, dash 3, gap 3). Fill #e8567e rises from the root toward the toes in proportion to progress. A 4-point star R 5 (white, ink 1.6) at the top-right of the icon box. | `derived (provisional)` |
+| Lost | Dashed ink outline only, no fill | `derived (provisional)` |
+| Order | Left to right: present, regrowing, lost | `derived (provisional)` |
+
+In greyscale, fill against empty is 3.46:1, solid and dashed outlines differ, and the star marks regrowing. No state relies on hue (A8, X2). Source: `derived (provisional)`.
+
+**Protected ring** (replaces any "invulnerability flash")
+
+| Detail | Value | Source |
+|---|---|---|
+| Shape | An ellipse in the axolotl's local space, centre (-10,-4), radii 72 x 56 | `derived (provisional)` |
+| Lines | Outer line ink #2b2350 2.0. Inner line #ffffff 2.4, drawn 2.2 inside. | `derived (provisional)` |
+| Glint | A white arc, 3 wide and 0.5 rad long, at the upper left | `derived (provisional)` |
+| Alpha | Constant for the whole protected time (about 2 s, tuning). No blinking, no pulsing, no fill over the hero. | `derived (provisional)` |
+| Motion | Only the glint arc moves (section 9). Everything is static under reduced motion. | `derived (provisional)` |
+| Cue | The ring shape is the greyscale cue. | `derived (provisional)` |
+| Layer | Draws after the axolotl. | `derived (provisional)` |
+| Distinct | Must stay distinct from any future carried-home bubble. | `derived (provisional)` |
 
 ---
 
