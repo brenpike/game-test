@@ -628,6 +628,20 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
+   * Hands back a pause this HUD made when the HUD goes away, so a new HUD never shows live
+   * controls over a frozen swim scene. Resumes now (not queued) and only a swim scene that is
+   * still paused, so a swim scene that has stopped is never woken.
+   */
+  private releaseSwimPause(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    const scenes = this.game.scene;
+    if (!scenes.isPaused(SCENE_KEYS.swim)) return;
+    scenes.resume(SCENE_KEYS.swim);
+    this.game.events.emit(GAME_EVENTS.RESUMED);
+  }
+
+  /**
    * Freezes or thaws every HUD timer and tween (banner, trip card, swim pad and any added later),
    * so pause stops HUD motion as well as the swim scene. The pause overlay and its buttons use neither.
    */
@@ -757,6 +771,7 @@ export class HudScene extends Phaser.Scene {
     this.releaseStick(false);
     // The scene clock keeps `paused` across a restart, so thaw it here.
     this.setHudClockPaused(false);
+    this.releaseSwimPause();
     this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.game.events.off(GAME_EVENTS.COLLECTED, this.handleCollected, this);
     this.game.events.off(GAME_EVENTS.ALL_COLLECTED, this.handleAllCollected, this);
