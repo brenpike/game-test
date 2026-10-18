@@ -15,6 +15,7 @@ import {
   waveY,
   type Point,
   type SafeArea,
+  type TilapiaRoute,
   type ZoneLayout,
 } from './zone';
 
@@ -61,6 +62,75 @@ function expectZoneInvariants(zone: ZoneLayout): void {
     expect(pad.x).toBeGreaterThanOrEqual(0);
     expect(pad.x).toBeLessThanOrEqual(ZONE_W);
   }
+}
+
+const TILAPIA_ROUTES: readonly TilapiaRoute[] = [
+  {
+    id: 'tilapia-0',
+    waypoints: [
+      { x: 460, y: 170 },
+      { x: 720, y: 140 },
+      { x: 700, y: 250 },
+      { x: 480, y: 240 },
+    ],
+  },
+  {
+    id: 'tilapia-1',
+    waypoints: [
+      { x: 1010, y: 150 },
+      { x: 1240, y: 170 },
+      { x: 1230, y: 260 },
+      { x: 1020, y: 250 },
+    ],
+  },
+  {
+    id: 'tilapia-2',
+    waypoints: [
+      { x: 1530, y: 150 },
+      { x: 1760, y: 170 },
+      { x: 1750, y: 250 },
+      { x: 1540, y: 240 },
+    ],
+  },
+];
+
+function distanceToSegment(point: Point, a: Point, b: Point): number {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const lengthSq = abx * abx + aby * aby;
+  const along = lengthSq === 0 ? 0 : ((point.x - a.x) * abx + (point.y - a.y) * aby) / lengthSq;
+  const clamped = Math.min(1, Math.max(0, along));
+  return Math.hypot(point.x - (a.x + clamped * abx), point.y - (a.y + clamped * aby));
+}
+
+function crossProduct(origin: Point, a: Point, b: Point): number {
+  return (a.x - origin.x) * (b.y - origin.y) - (a.y - origin.y) * (b.x - origin.x);
+}
+
+function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
+  const abSplit = Math.sign(crossProduct(a, b, c)) * Math.sign(crossProduct(a, b, d)) < 0;
+  const cdSplit = Math.sign(crossProduct(c, d, a)) * Math.sign(crossProduct(c, d, b)) < 0;
+  return abSplit && cdSplit;
+}
+
+function distanceBetweenSegments(a: Point, b: Point, c: Point, d: Point): number {
+  if (segmentsCross(a, b, c, d)) return 0;
+  return Math.min(distanceToSegment(a, c, d), distanceToSegment(b, c, d), distanceToSegment(c, a, b), distanceToSegment(d, a, b));
+}
+
+function loopSegments(waypoints: readonly Point[]): [Point, Point][] {
+  return waypoints.map((point, i): [Point, Point] => [point, waypoints[(i + 1) % waypoints.length]]);
+}
+
+/** Minimum distance between two closed polylines (each route loop wraps to its first waypoint). */
+function routeGap(first: TilapiaRoute, second: TilapiaRoute): number {
+  let gap = Infinity;
+  for (const [a, b] of loopSegments(first.waypoints)) {
+    for (const [c, d] of loopSegments(second.waypoints)) {
+      gap = Math.min(gap, distanceBetweenSegments(a, b, c, d));
+    }
+  }
+  return gap;
 }
 
 function distanceToArea(pos: Point, area: SafeArea): number {
@@ -161,8 +231,35 @@ describe('buildCanalZone', () => {
         expect(point.y).toBeGreaterThanOrEqual(bounds.minY);
         expect(point.y).toBeLessThanOrEqual(bounds.maxY);
         expect(distanceToArea(point, zone.safeArea)).toBeGreaterThanOrEqual(TILAPIA.bodyRadius);
+        expect(inHomeSpot(point, zone.homeSpot)).toBe(false);
       }
     }
+  });
+
+  it('pins three tilapia routes, tilapia-0 to tilapia-2', () => {
+    const routes = buildCanalZone().tilapiaRoutes;
+    expect(routes).toHaveLength(3);
+    expect(routes.map((route) => route.id)).toEqual(['tilapia-0', 'tilapia-1', 'tilapia-2']);
+    expect(routes).toEqual(TILAPIA_ROUTES);
+  });
+
+  it('keeps every pair of tilapia routes at least twice the lunge range apart', () => {
+    const routes = buildCanalZone().tilapiaRoutes;
+    for (let i = 0; i < routes.length; i++) {
+      for (let j = i + 1; j < routes.length; j++) {
+        expect(routeGap(routes[i], routes[j])).toBeGreaterThanOrEqual(2 * TILAPIA.lungeRange);
+      }
+    }
+  });
+
+  it('measures route gaps between closed loops, including the wrap segment', () => {
+    const square: TilapiaRoute = { id: 'a', waypoints: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }] };
+    const left: TilapiaRoute = { id: 'b', waypoints: [{ x: -30, y: 5 }, { x: -20, y: 5 }] };
+    const crossing: TilapiaRoute = { id: 'c', waypoints: [{ x: 5, y: -5 }, { x: 5, y: 15 }] };
+    expect(routeGap(square, left)).toBeCloseTo(20, 9);
+    expect(routeGap(square, crossing)).toBe(0);
+    const [first, second] = buildCanalZone().tilapiaRoutes;
+    expect(routeGap(first, second)).toBeCloseTo(290.2, 1);
   });
 
   it('builds the safe area and routes without changing seeded content', () => {

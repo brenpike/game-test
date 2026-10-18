@@ -32,11 +32,25 @@ const FIND_POINTS: readonly (readonly [number, number])[] = [
   [1560, 118],
   [1840, 230],
 ];
-const TILAPIA_ROUTE_POINTS: readonly (readonly [number, number])[] = [
-  [460, 170],
-  [720, 140],
-  [700, 250],
-  [480, 240],
+const TILAPIA_ROUTES: readonly (readonly (readonly [number, number])[])[] = [
+  [
+    [460, 170],
+    [720, 140],
+    [700, 250],
+    [480, 240],
+  ],
+  [
+    [1010, 150],
+    [1240, 170],
+    [1230, 260],
+    [1020, 250],
+  ],
+  [
+    [1530, 150],
+    [1760, 170],
+    [1750, 250],
+    [1540, 240],
+  ],
 ];
 
 /** Structural 2D point; matches any `{ x, y }` vector shape. */
@@ -288,8 +302,15 @@ function buildPads(rand: () => number): PadSpec[] {
   return pads;
 }
 
+/**
+ * Three fixed patrol loops, ids `tilapia-0` to `tilapia-2`, left to right along the canal. The
+ * closest two routes are 290.2 px apart, more than twice the lunge range of 140 px.
+ */
 function buildTilapiaRoutes(): TilapiaRoute[] {
-  return [{ id: 'tilapia-0', waypoints: TILAPIA_ROUTE_POINTS.map(([x, y]) => ({ x, y })) }];
+  return TILAPIA_ROUTES.map((points, i) => ({
+    id: `tilapia-${i}`,
+    waypoints: points.map(([x, y]) => ({ x, y })),
+  }));
 }
 
 function buildFinds(): FindSpawn[] {

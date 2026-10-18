@@ -35,6 +35,11 @@ export interface TilapiaContext {
   safeArea: SafeArea;
   bounds: SwimBounds;
   tuning: TilapiaTuning;
+  /**
+   * When true, a patrolling tilapia does not start a telegraph this step because another
+   * tilapia is already telegraphing or lunging. Absent means false.
+   */
+  telegraphBlocked?: boolean;
 }
 
 export interface TilapiaStepResult {
@@ -132,8 +137,11 @@ export function phaseProgress(state: TilapiaState): number {
  * Non-finite or non-positive dt returns the input state unchanged with no events.
  *
  * Phases: patrol follows the route; a telegraph starts when the target is in lunge range
- * and outside the safe area. The telegraph holds position for max(windup, minWindup) seconds,
- * then re-checks the same condition: true locks the aim and starts a lunge, false emits
+ * and outside the safe area, unless `ctx.telegraphBlocked` is true (another tilapia is
+ * telegraphing or lunging), in which case it keeps patrolling. The block only stops a
+ * telegraph from starting: a telegraph, lunge or cooldown already running is unaffected.
+ * The telegraph holds position for max(windup, minWindup) seconds, then re-checks range and
+ * exposure (not the block): true locks the aim and starts a lunge, false emits
  * `telegraphCancel` and enters cooldown. A lunge moves along the locked aim at `lungeSpeed`
  * for at most `lungeDuration`; it ends early when it connects, emitting `lungeEnd` with
  * `connected: true`. The caller applies the hit on that event.
@@ -185,7 +193,7 @@ function stepPatrol(
   dt: number,
   ctx: TilapiaContext,
 ): PhaseStep {
-  if (canLunge(state.pos, target, ctx)) {
+  if (!ctx.telegraphBlocked && canLunge(state.pos, target, ctx)) {
     const windup = Math.max(ctx.tuning.windup, ctx.tuning.minWindup);
     const telegraph: TilapiaState = {
       ...state,
