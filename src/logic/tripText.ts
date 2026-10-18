@@ -35,11 +35,7 @@ export const WENT_HOME_TITLE = 'Welcome home!';
 
 const EMPTY_BAG_STATUS = 'empty';
 
-const FIND_NAMES: Readonly<Record<string, readonly [singular: string, plural: string]>> = {
-  pebble: ['shiny pebble', 'shiny pebbles'],
-};
-
-const UNKNOWN_FIND_NAME: readonly [singular: string, plural: string] = ['find', 'finds'];
+const MAX_LISTED_NAMES = 3;
 
 /** Why the home screen is showing: the player chose to go home, or a bubble carried them. */
 export type HomeScreenReason = 'wentHome' | 'carriedHome';
@@ -47,8 +43,8 @@ export type HomeScreenReason = 'wentHome' | 'carriedHome';
 /** Everything the home screen needs to describe how the trip ended. */
 export interface HomeScreenInput {
   reason: HomeScreenReason;
-  returnedKinds: readonly string[];
-  bankedThisTripKinds: readonly string[];
+  returnedNames: readonly string[];
+  bankedThisTripNames: readonly string[];
   bankedTotal: number;
 }
 
@@ -60,30 +56,17 @@ export interface HomeScreenText {
   button: string;
 }
 
-/** Display name of a find kind, singular when count is 1, plural otherwise. */
-export function findName(kind: string, count: number): string {
-  const [singular, plural] = FIND_NAMES[kind] ?? UNKNOWN_FIND_NAME;
-  return count === 1 ? singular : plural;
-}
-
-function countKinds(kinds: readonly string[]): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const kind of kinds) counts.set(kind, (counts.get(kind) ?? 0) + 1);
-  return counts;
-}
-
 function joinWithAnd(parts: readonly string[]): string {
   if (parts.length <= 1) return parts.join('');
   return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
 }
 
-/** Describes a list of finds grouped by kind in first-seen order, e.g. "3 shiny pebbles". */
-export function describeFinds(kinds: readonly string[]): string {
-  if (kinds.length === 0) return 'no finds';
-  const parts = [...countKinds(kinds)].map(
-    ([kind, count]) => `${count} ${findName(kind, count)}`,
-  );
-  return joinWithAnd(parts);
+/** Lists treasure names, e.g. "Sun hat and Pond plant"; past three it ends "and 2 more". */
+export function describeTreasures(names: readonly string[]): string {
+  if (names.length === 0) return 'no treasures';
+  if (names.length <= MAX_LISTED_NAMES) return joinWithAnd(names);
+  const listed = names.slice(0, MAX_LISTED_NAMES).join(', ');
+  return `${listed} and ${names.length - MAX_LISTED_NAMES} more`;
 }
 
 /** Short Trip Bag status: warns that carried finds are not safe yet. */
@@ -92,34 +75,36 @@ export function tripBagStatus(count: number): string {
 }
 
 function bankedTotalLine(total: number): string {
-  if (total === 0) return 'No finds at the Home Spot yet.';
-  const [singular, plural] = UNKNOWN_FIND_NAME;
-  return `You have ${total} ${total === 1 ? singular : plural} safe at the Home Spot.`;
+  if (total === 0) return 'No treasures at the Home Spot yet.';
+  return `You have ${total} ${total === 1 ? 'treasure' : 'treasures'} safe at the Home Spot.`;
 }
 
-/** Body of the banking card: what was just banked and the Home Spot total. */
-export function bankedBody(kinds: readonly string[], total: number): string {
+/** Body of the banking card: which treasures were just banked and the Home Spot total. */
+export function bankedBody(names: readonly string[], total: number): string {
   const totalLine = bankedTotalLine(total);
-  if (kinds.length === 0) return `Nothing new to bring in. ${totalLine}`;
-  const verb = kinds.length === 1 ? 'is' : 'are';
-  return `${describeFinds(kinds)} ${verb} safe now! ${totalLine}`;
+  if (names.length === 0) return `Nothing new to bring in. ${totalLine}`;
+  const verb = names.length === 1 ? 'is' : 'are';
+  return `${describeTreasures(names)} ${verb} safe now! ${totalLine}`;
 }
 
-function returnedSentence(returnedKinds: readonly string[]): string {
-  if (returnedKinds.length === 0) return 'Nothing was lost.';
-  return `${describeFinds(returnedKinds)} went back to where you found them.`;
+function returnedSentence(returnedNames: readonly string[]): string {
+  if (returnedNames.length === 0) return 'Nothing was lost.';
+  if (returnedNames.length === 1) {
+    return `${returnedNames[0]} floated off to a new hiding spot. Look for it next trip!`;
+  }
+  return `${describeTreasures(returnedNames)} floated off to new hiding spots. Look for them next trip!`;
 }
 
-function carriedHomeBody(returnedKinds: readonly string[]): string {
+function carriedHomeBody(returnedNames: readonly string[]): string {
   return (
-    `${TRIP_END_BODY} ${returnedSentence(returnedKinds)} ` +
-    'Finds at the Home Spot are always safe.'
+    `${TRIP_END_BODY} ${returnedSentence(returnedNames)} ` +
+    'Treasures at the Home Spot are always safe.'
   );
 }
 
-function wentHomeBody(bankedThisTripKinds: readonly string[]): string {
-  if (bankedThisTripKinds.length === 0) return 'You swam home safe and sound.';
-  return `You swam home safe and sound. This trip you brought home ${describeFinds(bankedThisTripKinds)}.`;
+function wentHomeBody(bankedThisTripNames: readonly string[]): string {
+  if (bankedThisTripNames.length === 0) return 'You swam home safe and sound.';
+  return `You swam home safe and sound. This trip you brought home ${describeTreasures(bankedThisTripNames)}.`;
 }
 
 /** Builds the end-of-trip home screen text for going home or being carried home. */
@@ -128,8 +113,8 @@ export function homeScreenText(input: HomeScreenInput): HomeScreenText {
   return {
     title: isCarried ? TRIP_END_TITLE : WENT_HOME_TITLE,
     body: isCarried
-      ? carriedHomeBody(input.returnedKinds)
-      : wentHomeBody(input.bankedThisTripKinds),
+      ? carriedHomeBody(input.returnedNames)
+      : wentHomeBody(input.bankedThisTripNames),
     bankedLine: bankedTotalLine(input.bankedTotal),
     button: SWIM_AGAIN_LABEL,
   };

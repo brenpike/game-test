@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { CANAL_TREASURES, treasureById } from './catalogue';
+import { coversAt, isDeep, spotMatchesLabels } from './hiding';
 import { inSafeArea } from './tilapia';
 import { FINDS, TILAPIA } from './tuning';
 import {
   BED_TOP,
   CANAL_AREA_ID,
+  SPOT_MIN_SPACING,
   SURF,
   WORLD_H,
   ZONE_SCREENS,
@@ -13,6 +16,7 @@ import {
   isInsideCurrent,
   swimBounds,
   waveY,
+  type HidingSpot,
   type Point,
   type SafeArea,
   type TilapiaRoute,
@@ -21,7 +25,20 @@ import {
 
 const EXTRA_SEEDS = [1, 2, 3, 42, 1234, 0xdeadbeef, 0x12345678, 987654321];
 const ALL_SEEDS = [0xa70107, ...EXTRA_SEEDS];
-const FIND_IDS = ['canal/pebble-1', 'canal/pebble-2', 'canal/pebble-3', 'canal/pebble-4', 'canal/pebble-5'];
+const FIXED_SPOTS: readonly HidingSpot[] = [
+  { id: 'canal/spot-cave-1', cover: 'cave', rarity: 'epic', container: false, x: 1500, y: 230 },
+  { id: 'canal/spot-cave-2', cover: 'cave', rarity: 'legendary', container: true, x: 1558, y: 230 },
+  { id: 'canal/spot-cave-3', cover: 'cave', rarity: 'epic', container: false, x: 1616, y: 230 },
+  { id: 'canal/spot-cave-4', cover: 'cave', rarity: 'legendary', container: true, x: 1500, y: 288 },
+  { id: 'canal/spot-cave-5', cover: 'cave', rarity: 'epic', container: false, x: 1558, y: 288 },
+  { id: 'canal/spot-cave-6', cover: 'cave', rarity: 'legendary', container: true, x: 1616, y: 288 },
+  { id: 'canal/spot-current-1', cover: 'pastCurrent', rarity: 'epic', container: false, x: 1190, y: 162 },
+  { id: 'canal/spot-current-2', cover: 'pastCurrent', rarity: 'legendary', container: true, x: 1260, y: 162 },
+  { id: 'canal/spot-current-3', cover: 'pastCurrent', rarity: 'legendary', container: true, x: 1190, y: 220 },
+  { id: 'canal/spot-current-4', cover: 'pastCurrent', rarity: 'epic', container: false, x: 1260, y: 220 },
+  { id: 'canal/spot-current-5', cover: 'pastCurrent', rarity: 'epic', container: false, x: 1190, y: 278 },
+  { id: 'canal/spot-current-6', cover: 'pastCurrent', rarity: 'legendary', container: true, x: 1260, y: 278 },
+];
 
 function expectZoneInvariants(zone: ZoneLayout): void {
   const bounds = swimBounds();
@@ -270,6 +287,42 @@ describe('buildCanalZone', () => {
   });
 });
 
+describe('seeded content golden pin (v0.4.0)', () => {
+  it('keeps reeds, pads and snacks identical for the default seed', () => {
+    const zone = buildCanalZone();
+    expect(zone.reeds).toHaveLength(22);
+    expect(zone.reeds[0].bx).toBeCloseTo(364.4302624510601, 9);
+    expect(zone.reeds[zone.reeds.length - 1].bx).toBeCloseTo(1774.447806943208, 9);
+
+    const padXs = [152.54123428836465, 562.476081745699, 777.9833907261491, 1064.4019156508148, 1536.3621501810849, 1760.0520987901837];
+    expect(zone.pads).toHaveLength(padXs.length);
+    padXs.forEach((x, i) => expect(zone.pads[i].x).toBeCloseTo(x, 9));
+
+    const firstSnack = zone.collectibles[0];
+    expect(firstSnack.id).toBe('snack-0');
+    expect(firstSnack.kind).toBe('worm');
+    expect(firstSnack.x).toBeCloseTo(72.8267567123597, 9);
+    expect(firstSnack.y).toBeCloseTo(110.19012401765212, 9);
+    const lastSnack = zone.collectibles[15];
+    expect(lastSnack.id).toBe('snack-15');
+    expect(lastSnack.kind).toBe('bug');
+    expect(lastSnack.x).toBeCloseTo(1821.906239259988, 9);
+    expect(lastSnack.y).toBeCloseTo(213.23013308318332, 9);
+
+    const patchXs = [
+      [347.7242391509935, 411.4360785158351],
+      [641.7804688028991, 707.7564802039415],
+      [1346.841099866666, 1404.1428034985438],
+      [1713.7261524302885, 1784.447806943208],
+    ];
+    expect(zone.reedPatches).toHaveLength(patchXs.length);
+    patchXs.forEach(([x0, x1], i) => {
+      expect(zone.reedPatches[i].x0).toBeCloseTo(x0, 9);
+      expect(zone.reedPatches[i].x1).toBeCloseTo(x1, 9);
+    });
+  });
+});
+
 describe('Home Spot', () => {
   it('rings the start with radius 72 in the canal area', () => {
     const zone = buildCanalZone();
@@ -301,42 +354,128 @@ describe('Home Spot', () => {
     expect(inHomeSpot({ x: spot.x, y: spot.y - spot.radius - 0.001 }, spot)).toBe(false);
   });
 });
-
 describe('finds', () => {
-  it('uses the pinned, unique, area-scoped ids', () => {
+  it('has one find per canal treasure, in catalogue order, with unique area-scoped ids', () => {
     const zone = buildCanalZone();
     const ids = zone.finds.map((find) => find.id);
-    expect(ids).toEqual(FIND_IDS);
+    expect(ids).toEqual(CANAL_TREASURES.map((treasure) => treasure.id));
     expect(new Set(ids).size).toBe(ids.length);
     for (const id of ids) {
       expect(id.startsWith(`${zone.areaId}/`)).toBe(true);
     }
+  });
+
+  it.each(ALL_SEEDS)('gives every find a large enough pool of matching spots for seed %i', (seed) => {
+    const zone = buildCanalZone(seed);
+    const spotById = new Map(zone.spots.map((spot) => [spot.id, spot]));
     for (const find of zone.finds) {
-      expect(find.kind).toBe('pebble');
+      const treasure = treasureById(find.id);
+      expect(treasure).toBeDefined();
+      const rarity = treasure?.rarity;
+      const sameRarity = CANAL_TREASURES.filter((other) => other.rarity === rarity).length;
+      expect(find.pool.length).toBeGreaterThan(0);
+      expect(find.pool.length).toBeGreaterThanOrEqual(sameRarity + 1);
+      for (const spotId of find.pool) {
+        expect(spotById.get(spotId)?.rarity).toBe(rarity);
+      }
+    }
+  });
+});
+
+describe('hiding spots', () => {
+  it.each(ALL_SEEDS)('uses unique canal spot ids that match their labels for seed %i', (seed) => {
+    const zone = buildCanalZone(seed);
+    const ids = zone.spots.map((spot) => spot.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const spot of zone.spots) {
+      expect(spot.id.startsWith('canal/spot-')).toBe(true);
+      expect(spotMatchesLabels(spot, zone)).toBe(true);
     }
   });
 
-  it.each(ALL_SEEDS)('places every find in the water, outside the safe area and away from the ring for seed %i', (seed) => {
+  it.each(ALL_SEEDS)('places spots in the water, outside the safe area, clear of the ring and spaced for seed %i', (seed) => {
     const zone = buildCanalZone(seed);
     const bounds = swimBounds();
-    const spot = zone.homeSpot;
-    for (const find of zone.finds) {
-      expect(find.x).toBeGreaterThanOrEqual(bounds.minX);
-      expect(find.x).toBeLessThanOrEqual(bounds.maxX);
-      expect(find.y).toBeGreaterThanOrEqual(bounds.minY);
-      expect(find.y).toBeLessThanOrEqual(bounds.maxY);
-      expect(inSafeArea(find, zone.safeArea)).toBe(false);
-      expect(Math.hypot(find.x - spot.x, find.y - spot.y)).toBeGreaterThanOrEqual(
-        spot.radius + FINDS.pickupRadius + 8,
-      );
+    const home = zone.homeSpot;
+    for (const spot of zone.spots) {
+      expect(spot.x).toBeGreaterThanOrEqual(bounds.minX);
+      expect(spot.x).toBeLessThanOrEqual(bounds.maxX);
+      expect(spot.y).toBeGreaterThanOrEqual(bounds.minY);
+      expect(spot.y).toBeLessThanOrEqual(bounds.maxY);
+      expect(inSafeArea(spot, zone.safeArea)).toBe(false);
+      expect(Math.hypot(spot.x - home.x, spot.y - home.y)).toBeGreaterThanOrEqual(home.radius + FINDS.pickupRadius + 8);
+    }
+    for (let i = 0; i < zone.spots.length; i++) {
+      for (let j = i + 1; j < zone.spots.length; j++) {
+        const [a, b] = [zone.spots[i], zone.spots[j]];
+        expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(SPOT_MIN_SPACING);
+      }
+    }
+    const containers = zone.spots.filter((spot) => spot.container);
+    for (let i = 0; i < containers.length; i++) {
+      for (let j = i + 1; j < containers.length; j++) {
+        const [a, b] = [containers[i], containers[j]];
+        expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(2 * FINDS.containerRadius);
+      }
     }
   });
 
-  it.each(EXTRA_SEEDS)('keeps finds and the Home Spot identical for seed %i', (seed) => {
+  it.each(ALL_SEEDS)('uses all five hiding kinds and keeps Common and Rare shallow for seed %i', (seed) => {
+    const zone = buildCanalZone(seed);
+    for (const cover of ['reeds', 'pad', 'cave', 'pastCurrent'] as const) {
+      expect(zone.spots.some((spot) => coversAt(spot, zone).includes(cover))).toBe(true);
+    }
+    expect(zone.spots.some((spot) => spot.container)).toBe(true);
+    for (const spot of zone.spots.filter((other) => other.rarity === 'common' || other.rarity === 'rare')) {
+      expect(isDeep(spot, zone)).toBe(false);
+    }
+  });
+
+  it.each(ALL_SEEDS)('keeps every derived spot inside a reed patch or under a pad for seed %i', (seed) => {
+    const zone = buildCanalZone(seed);
+    for (const spot of zone.spots) {
+      expect(coversAt(spot, zone)).toContain(spot.cover);
+    }
+    expect(zone.spots.filter((spot) => spot.cover === 'reeds')).toHaveLength(12);
+    expect(zone.spots.filter((spot) => spot.cover === 'pad')).toHaveLength(5);
+  });
+
+  it.each(EXTRA_SEEDS)('keeps finds, fixed spots, cave, path and Home Spot identical for seed %i', (seed) => {
     const base = buildCanalZone();
     const zone = buildCanalZone(seed);
-    expect(zone.finds).toEqual(base.finds);
+    const fixed = (layout: ZoneLayout): HidingSpot[] =>
+      layout.spots.filter((spot) => spot.cover === 'cave' || spot.cover === 'pastCurrent');
+    expect(zone.finds.map((find) => find.id)).toEqual(base.finds.map((find) => find.id));
+    expect(fixed(zone)).toEqual(fixed(base));
+    expect(zone.cave).toEqual(base.cave);
+    expect(zone.mainPath).toEqual(base.mainPath);
     expect(zone.homeSpot).toEqual(base.homeSpot);
     expect(zone.areaId).toBe(base.areaId);
+  });
+
+  it.each(ALL_SEEDS)('derives reed and pad spot positions from the seed patches and pads for seed %i', (seed) => {
+    const zone = buildCanalZone(seed);
+    const spotById = new Map(zone.spots.map((spot) => [spot.id, spot]));
+    zone.reedPatches.forEach((patch, p) => {
+      const cx = (patch.x0 + patch.x1) / 2;
+      expect(spotById.get(`canal/spot-reeds-${p}-a`)).toMatchObject({ x: cx, y: 172, rarity: 'common' });
+      expect(spotById.get(`canal/spot-reeds-${p}-b`)).toMatchObject({ x: cx, y: 228, rarity: 'common' });
+      expect(spotById.get(`canal/spot-reeds-${p}-deep`)).toMatchObject({ x: cx, y: 288, rarity: 'rare' });
+    });
+    for (let i = 1; i < zone.pads.length; i++) {
+      expect(spotById.get(`canal/spot-pad-${i}`)).toMatchObject({ x: zone.pads[i].x, y: 100, rarity: 'rare' });
+    }
+    expect(spotById.has('canal/spot-pad-0')).toBe(false);
+  });
+
+  it('pins the fixed cave and past-current spots, the cave and the main path', () => {
+    const zone = buildCanalZone();
+    expect(zone.cave).toEqual({ id: 'canal/cave', x0: 1480, x1: 1640, y0: 200, y1: 318 });
+    expect(zone.mainPath).toEqual([
+      { x: 120, y: 200 },
+      { x: 1840, y: 200 },
+    ]);
+    expect(SPOT_MIN_SPACING).toBe(56);
+    expect(zone.spots.slice(0, 12)).toEqual(FIXED_SPOTS);
   });
 });
