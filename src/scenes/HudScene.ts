@@ -12,19 +12,20 @@ import {
   type ReducedMotionPayload,
   type SteerPayload,
 } from '../logic/gameEvents';
-import { createLegs, type LegStatus } from '../logic/legs';
+import type { LegStatus } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { stickLayout, stickSteer, type StickLayout } from '../logic/stick';
-import { legsSnapshot } from '../logic/trip';
+import { idleTripSnapshot } from '../logic/trip';
 import {
   TRIP_EVENTS,
   TRIP_REGISTRY_KEYS,
   type LegSlotSnapshot,
   type TripSnapshot,
 } from '../logic/tripEvents';
-import { LEGS_LABEL, SWIM_AGAIN_LABEL, TRIP_END_BODY, TRIP_END_TITLE } from '../logic/tripText';
+import { BANKING_HINT, GO_HOME_LABEL, LEGS_LABEL, TRIP_BAG_LABEL, tripBagStatus } from '../logic/tripText';
 import { LEGS } from '../logic/tuning';
 import { add, clampLen } from '../logic/vec';
+import { BankingCard } from './BankingCard';
 import {
   SCENE_KEYS,
   createButton,
@@ -37,6 +38,7 @@ import {
   type SceneView,
   type UiButton,
 } from './BootScene';
+import { HomeScreen } from './HomeScreen';
 
 const MARGIN = 16;
 const GAP = 12;
@@ -67,10 +69,15 @@ const LEGS_ICON_PX = 32;
 const LEGS_ICON_GAP = 4;
 const LEGS_TEXT_PX = 22;
 const LEG_DISPLAY_RANK: Readonly<Record<LegStatus, number>> = { present: 0, regrowing: 1, lost: 2 };
-const TRIP_END_BODY_PX = 20;
-const TRIP_END_TEXT_MAX_W = 420;
-const TRIP_END_FADE_MS = 300;
-const TRIP_END_MIN_MS = 800;
+const BAG_ICON_PX = 32;
+const BAG_TEXT_PX = 22;
+const BAG_STATUS_PX = 18;
+const BAG_GAP = 6;
+const HINT_HOLD_MS = 6000;
+const HINT_FADE_MS = 400;
+const BANKING_CARD_DEPTH = DEPTH.ui + 8;
+const HOME_SCREEN_DEPTH = DEPTH.ui + 9;
+const OVERLAY_DEPTH = DEPTH.ui + 10;
 // INVARIANT: the capture zone sits below every HUD button in depth so Pause, Dash and the pause overlay win the press.
 const STICK_ZONE_DEPTH = DEPTH.ui - 1;
 
@@ -83,12 +90,22 @@ interface LegIconView {
 
 /** Trip display state for a swimming, whole axolotl, used until the swim scene publishes one. */
 function createSwimmingTrip(): TripSnapshot {
-  return { phase: 'swimming', legs: legsSnapshot(createLegs()) };
+  return idleTripSnapshot();
+}
+
+/** Returns the widest width `text` takes for any of `values`, leaving `text` showing the last one. */
+function widestText(text: Phaser.GameObjects.Text, values: readonly string[]): number {
+  let widest = 0;
+  for (const value of values) {
+    widest = Math.max(widest, text.setText(value).width);
+  }
+  return widest;
 }
 
 /**
- * Screen-space UI over the swim scene: snack counter, legs display, Pause, Dash, swim pad,
- * pause overlay, the all-snacks banner and the carried-home trip-end card.
+ * Screen-space UI over the swim scene: snack counter, legs display, Trip Bag display, Pause, Dash,
+ * the contextual Go home button, swim pad, pause overlay, the all-snacks and first-trip hint
+ * banners, the banking card and the home screen.
  */
 export class HudScene extends Phaser.Scene {
   private assets!: GameAssets;
@@ -114,6 +131,7 @@ export class HudScene extends Phaser.Scene {
   private bannerText!: Phaser.GameObjects.Text;
   private bannerTimer: Phaser.Time.TimerEvent | null = null;
   private counterPanelH = 0;
+  private counterPanelW = 0;
   private stickBase!: Phaser.GameObjects.Image;
   private stickKnob!: Phaser.GameObjects.Image;
   private stickZone!: Phaser.GameObjects.Zone;
@@ -126,13 +144,21 @@ export class HudScene extends Phaser.Scene {
   private legsLabel!: Phaser.GameObjects.Text;
   private legIcons: LegIconView[] = [];
   private legsPanelBottom = 0;
-  private tripCard!: Phaser.GameObjects.Container;
-  private tripCardPanel!: Phaser.GameObjects.Graphics;
-  private tripCardTitle!: Phaser.GameObjects.Text;
-  private tripCardBody!: Phaser.GameObjects.Text;
-  private swimAgainButton!: UiButton;
-  private tripEndShownAt = 0;
-  private newTripRequested = false;
+  private legsPanelW = 0;
+  private bagPanel!: Phaser.GameObjects.Graphics;
+  private bagIcon!: Phaser.GameObjects.Image;
+  private bagLabel!: Phaser.GameObjects.Text;
+  private bagCount!: Phaser.GameObjects.Text;
+  private bagStatus!: Phaser.GameObjects.Text;
+  private bagPanelBottom = 0;
+  private bagPanelW = 0;
+  private goHomeButton!: UiButton;
+  private hint!: Phaser.GameObjects.Container;
+  private hintPanel!: Phaser.GameObjects.Graphics;
+  private hintText!: Phaser.GameObjects.Text;
+  private hintTimer: Phaser.Time.TimerEvent | null = null;
+  private bankingCard!: BankingCard;
+  private homeScreen!: HomeScreen;
 
   constructor() {
     super(SCENE_KEYS.hud);
@@ -146,8 +172,7 @@ export class HudScene extends Phaser.Scene {
     this.stickPointer = null;
     this.lastSteer = { x: 0, y: 0 };
     this.trip = createSwimmingTrip();
-    this.tripEndShownAt = 0;
-    this.newTripRequested = false;
+    this.hintTimer = null;
   }
 
   create(): void {
@@ -160,11 +185,14 @@ export class HudScene extends Phaser.Scene {
 
     this.buildCounter();
     this.buildLegs();
+    this.buildTripBag();
     this.buildButtons();
     this.buildStick();
     this.buildOverlay();
     this.buildBanner();
-    this.buildTripCard();
+    this.buildHint();
+    this.bankingCard = new BankingCard(this, this.assets, this.view, BANKING_CARD_DEPTH);
+    this.homeScreen = new HomeScreen(this, this.assets, this.view, HOME_SCREEN_DEPTH);
     this.bindKeys();
 
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this);
@@ -178,7 +206,10 @@ export class HudScene extends Phaser.Scene {
 
     this.layout();
     this.drawLegs();
-    if (this.trip.phase === 'ended') this.showTripCard();
+    this.refreshControls();
+    if (this.trip.phase === 'banked') this.showBankingCard();
+    if (this.trip.phase === 'ended') this.homeScreen.show(this.trip, this.motion);
+    this.showHintOnce();
   }
 
   update(): void {
@@ -223,6 +254,21 @@ export class HudScene extends Phaser.Scene {
       .setDepth(DEPTH.ui);
   }
 
+  /** Trip Bag panel: bag icon, label, count and status, laid out by layoutTripBag(). */
+  private buildTripBag(): void {
+    const dpr = this.view.fit.dpr;
+    const iconInfo = this.assets.baked.icons.bag;
+    this.bagPanel = this.add.graphics().setDepth(DEPTH.ui);
+    this.bagIcon = this.add
+      .image(0, 0, iconKey('bag'))
+      .setOrigin(0, 0)
+      .setScale(BAG_ICON_PX / iconInfo.w / iconInfo.scale)
+      .setDepth(DEPTH.ui);
+    this.bagLabel = this.add.text(0, 0, TRIP_BAG_LABEL, uiTextStyle(BAG_TEXT_PX, dpr)).setDepth(DEPTH.ui);
+    this.bagCount = this.add.text(0, 0, '', uiTextStyle(BAG_TEXT_PX, dpr)).setDepth(DEPTH.ui);
+    this.bagStatus = this.add.text(0, 0, '', uiTextStyle(BAG_STATUS_PX, dpr, false)).setDepth(DEPTH.ui);
+  }
+
   private buildButtons(): void {
     const dpr = this.view.fit.dpr;
     this.pauseButton = createButton(this, this.assets.baked, {
@@ -249,6 +295,18 @@ export class HudScene extends Phaser.Scene {
       onPress: () => this.requestDash(),
     });
     this.dashButton.container.setDepth(DEPTH.ui);
+
+    this.goHomeButton = createButton(this, this.assets.baked, {
+      fill: 'secondary',
+      shape: 'wide',
+      size: 1,
+      label: GO_HOME_LABEL,
+      icon: 'home',
+      dpr,
+      pressOnDown: false,
+      onPress: () => this.requestGoHome(),
+    });
+    this.goHomeButton.container.setDepth(DEPTH.ui).setVisible(false);
   }
 
   /** Swim pad: fixed base, moving knob and an invisible capture zone laid out by layoutStick(). */
@@ -295,7 +353,7 @@ export class HudScene extends Phaser.Scene {
     this.resumeButton.setFocused(true);
     this.overlay = this.add
       .container(0, 0, [dim, this.overlayPanel, this.overlayTitle, this.resumeButton.container])
-      .setDepth(DEPTH.ui + 10)
+      .setDepth(OVERLAY_DEPTH)
       .setVisible(false);
   }
 
@@ -311,33 +369,16 @@ export class HudScene extends Phaser.Scene {
       .setVisible(false);
   }
 
-  /** Carried-home card: dim, panel, title, body and the focused Swim again button. Drawn above the banner. */
-  private buildTripCard(): void {
-    const dpr = this.view.fit.dpr;
-    const dim = this.addScreenDim();
-    this.tripCardPanel = this.add.graphics();
-    this.tripCardTitle = this.add.text(0, 0, TRIP_END_TITLE, {
-      ...uiTextStyle(OVERLAY_TITLE_PX, dpr),
+  /** First-trip hint banner: pink panel and the banking hint, stacked with the all-snacks banner. */
+  private buildHint(): void {
+    this.hintPanel = this.add.graphics();
+    this.hintText = this.add.text(0, 0, BANKING_HINT, {
+      ...uiTextStyle(BANNER_TEXT_PX, this.view.fit.dpr),
       align: 'center',
     });
-    this.tripCardBody = this.add.text(0, 0, TRIP_END_BODY, {
-      ...uiTextStyle(TRIP_END_BODY_PX, dpr, false),
-      align: 'center',
-    });
-    this.swimAgainButton = createButton(this, this.assets.baked, {
-      fill: 'primary',
-      shape: 'wide',
-      size: RESUME_BUTTON_SIZE,
-      label: SWIM_AGAIN_LABEL,
-      icon: 'play',
-      dpr,
-      pressOnDown: false,
-      onPress: () => this.requestNewTrip(),
-    });
-    this.swimAgainButton.setFocused(true);
-    this.tripCard = this.add
-      .container(0, 0, [dim, this.tripCardPanel, this.tripCardTitle, this.tripCardBody, this.swimAgainButton.container])
-      .setDepth(DEPTH.ui + 10)
+    this.hint = this.add
+      .container(0, 0, [this.hintPanel, this.hintText])
+      .setDepth(DEPTH.ui + 5)
       .setVisible(false);
   }
 
@@ -348,6 +389,10 @@ export class HudScene extends Phaser.Scene {
     keyboard.on('keydown-ESC', this.togglePause, this);
     keyboard.on('keydown-ENTER', this.handleConfirmKey, this);
     keyboard.on('keydown-SPACE', this.handleConfirmKey, this);
+    keyboard.on('keydown-LEFT', this.handleFocusKey, this);
+    keyboard.on('keydown-RIGHT', this.handleFocusKey, this);
+    keyboard.on('keydown-TAB', this.handleFocusKey, this);
+    keyboard.on('keydown-H', this.handleGoHomeKey, this);
   }
 
   // ---- layout --------------------------------------------------------------
@@ -355,11 +400,14 @@ export class HudScene extends Phaser.Scene {
   private layout(): void {
     this.layoutCounter();
     this.layoutLegs();
+    this.layoutTripBag();
     this.layoutButtons();
+    this.layoutGoHome();
     this.layoutStick();
     this.layoutOverlay();
-    this.layoutBanner();
-    this.layoutTripCard();
+    this.layoutBanners();
+    this.bankingCard.layout(this.view);
+    this.homeScreen.layout(this.view);
     this.drawDashRing();
   }
 
@@ -374,6 +422,7 @@ export class HudScene extends Phaser.Scene {
     const panelW = PANEL_PAD + COUNTER_ICON_PX + GAP / 2 + this.counterText.width + PANEL_PAD;
     const panelH = contentH + 2 * PANEL_PAD;
     this.counterPanelH = panelH;
+    this.counterPanelW = panelW;
     drawPanel(this.counterPanel, MARGIN, MARGIN, panelW, panelH, UI_PANEL);
     this.counterIcon.setPosition(MARGIN + PANEL_PAD, MARGIN + PANEL_PAD + (contentH - COUNTER_ICON_PX) / 2);
     this.counterText.setPosition(
@@ -391,6 +440,7 @@ export class HudScene extends Phaser.Scene {
     const panelW = PANEL_PAD + label.width + GAP / 2 + iconsW + PANEL_PAD;
     const panelH = contentH + 2 * PANEL_PAD;
     this.legsPanelBottom = top + panelH;
+    this.legsPanelW = panelW;
     drawPanel(this.legsPanel, MARGIN, top, panelW, panelH, UI_PANEL);
     label.setPosition(MARGIN + PANEL_PAD, top + PANEL_PAD + (contentH - label.height) / 2);
     const iconsX = MARGIN + PANEL_PAD + label.width + GAP / 2;
@@ -401,6 +451,80 @@ export class HudScene extends Phaser.Scene {
       icon.fill.setPosition(iconX, iconY);
       icon.mark.setPosition(iconX + LEGS_ICON_PX - icon.mark.displayWidth, iconY);
     });
+  }
+
+  /**
+   * Places the Trip Bag panel under the legs panel: icon, label, count, status. The count and status
+   * slots are sized for their widest values, so the panel never changes width as the bag fills.
+   */
+  private layoutTripBag(): void {
+    const top = this.legsPanelBottom + GAP;
+    const countW = widestText(
+      this.bagCount,
+      Array.from({ length: this.assets.zone.finds.length + 1 }, (_, count) => String(count)),
+    );
+    const statusW = widestText(this.bagStatus, [tripBagStatus(0), tripBagStatus(1)]);
+    const contentH = Math.max(BAG_ICON_PX, this.bagLabel.height, this.bagCount.height, this.bagStatus.height);
+    const labelX = MARGIN + PANEL_PAD + BAG_ICON_PX + BAG_GAP;
+    const countX = labelX + this.bagLabel.width + BAG_GAP;
+    const statusX = countX + countW + BAG_GAP;
+    const panelW = statusX + statusW + PANEL_PAD - MARGIN;
+    const panelH = contentH + 2 * PANEL_PAD;
+    this.bagPanelBottom = top + panelH;
+    this.bagPanelW = panelW;
+    drawPanel(this.bagPanel, MARGIN, top, panelW, panelH, UI_PANEL);
+    const middleY = top + PANEL_PAD + contentH / 2;
+    this.bagIcon.setPosition(MARGIN + PANEL_PAD, middleY - BAG_ICON_PX / 2);
+    this.bagLabel.setPosition(labelX, middleY - this.bagLabel.height / 2);
+    this.bagCount.setPosition(countX, middleY - this.bagCount.height / 2);
+    this.bagStatus.setPosition(statusX, middleY - this.bagStatus.height / 2);
+    this.drawTripBag();
+  }
+
+  /** Shows the Trip Bag count and status for the current snapshot. */
+  private drawTripBag(): void {
+    const count = this.trip.bag.length;
+    this.bagCount.setText(String(count));
+    this.bagStatus.setText(tripBagStatus(count));
+  }
+
+  /** Right edge of the widest top-left panel (snack counter, legs, Trip Bag). */
+  private leftPanelsRight(): number {
+    return MARGIN + Math.max(this.counterPanelW, this.legsPanelW, this.bagPanelW);
+  }
+
+  /** Top edge of the Dash ring track. */
+  private dashRingTop(): number {
+    const centreY = this.dashButton.container.y + this.dashButton.height / 2;
+    return centreY - this.ringRadius() - RING_TRACK_PX / 2;
+  }
+
+  /**
+   * Places Go home under Pause, dropped below the top-left panels when they would meet it. When
+   * that would reach the Dash ring (a very short screen), it sits left of Pause on the top row instead.
+   * When the top row has no room beside the snack counter either (a screen both narrow and short),
+   * it stacks right under Pause, so the whole button always stays on screen.
+   */
+  private layoutGoHome(): void {
+    const { cssW } = this.view;
+    const button = this.goHomeButton;
+    const x = cssW - MARGIN - button.width;
+    const underPause = MARGIN + this.pauseButton.height + GAP;
+    const y = x < this.leftPanelsRight() + GAP ? Math.max(underPause, this.bagPanelBottom + GAP) : underPause;
+    if (y + button.height + GAP <= this.dashRingTop()) {
+      button.container.setPosition(x, y);
+      return;
+    }
+    const topRowX = this.pauseButton.container.x - GAP - button.width;
+    if (topRowX >= MARGIN + this.counterPanelW + GAP) {
+      button.container.setPosition(topRowX, MARGIN);
+      return;
+    }
+    button.container.setPosition(Math.max(MARGIN, x), underPause);
+  }
+
+  private goHomeBottom(): number {
+    return this.goHomeButton.container.y + this.goHomeButton.height;
   }
 
   /** Ring radius clearing the rounded corners of the square Dash button. */
@@ -422,10 +546,13 @@ export class HudScene extends Phaser.Scene {
     );
   }
 
-  /** Places the swim pad bottom-left, clear of the counter and legs panels and the Dash ring. Keeps any capture. */
+  /**
+   * Places the swim pad bottom-left, clear of the top-left panels, the Go home button and the Dash
+   * ring. Keeps any capture.
+   */
   private layoutStick(): void {
     const { cssW, cssH } = this.view;
-    const reserveTop = this.legsPanelBottom;
+    const reserveTop = Math.max(this.bagPanelBottom, this.goHomeBottom());
     const reserveRight = MARGIN + 2 * (this.ringRadius() + RING_TRACK_PX / 2);
     this.stick = stickLayout({ cssW, cssH }, { top: reserveTop, right: reserveRight });
     const { centre, baseR, knobR, zone } = this.stick;
@@ -453,35 +580,31 @@ export class HudScene extends Phaser.Scene {
     );
   }
 
-  private layoutBanner(): void {
-    const { cssW } = this.view;
-    this.bannerText.setWordWrapWidth(Math.max(120, cssW - 2 * (MARGIN + PANEL_PAD)), true);
-    const panelW = this.bannerText.width + 2 * PANEL_PAD;
-    const panelH = this.bannerText.height + 2 * PANEL_PAD;
-    const top = Math.max(MARGIN + this.pauseButton.height + GAP + 8, this.legsPanelBottom + GAP);
-    drawPanel(this.bannerPanel, (cssW - panelW) / 2, top, panelW, panelH, UI_PANEL_PINK);
-    this.bannerText.setPosition((cssW - this.bannerText.width) / 2, top + PANEL_PAD);
+  /** Top edge for the banners: clear of Pause, the top-left panels and Go home. */
+  private bannerTop(): number {
+    return Math.max(
+      MARGIN + this.pauseButton.height + GAP + 8,
+      this.bagPanelBottom + GAP,
+      this.goHomeBottom() + GAP,
+    );
   }
 
-  /** Centres the trip-end card; tightens its padding when a short screen cannot fit the full padding. */
-  private layoutTripCard(): void {
-    const { cssW, cssH } = this.view;
-    const title = this.tripCardTitle;
-    const body = this.tripCardBody;
-    const button = this.swimAgainButton;
-    const textW = Math.max(120, Math.min(TRIP_END_TEXT_MAX_W, cssW - 2 * (MARGIN + OVERLAY_PAD)));
-    title.setWordWrapWidth(textW, true);
-    body.setWordWrapWidth(textW, true);
-    const contentH = title.height + body.height + button.height;
-    const pad = contentH + 4 * OVERLAY_PAD <= cssH - 2 * MARGIN ? OVERLAY_PAD : GAP;
-    const panelW = Math.min(cssW - 2 * MARGIN, Math.max(button.width, title.width, body.width) + 2 * OVERLAY_PAD);
-    const panelH = contentH + 4 * pad;
-    const panelX = (cssW - panelW) / 2;
-    const panelY = Math.max(MARGIN, (cssH - panelH) / 2);
-    drawPanel(this.tripCardPanel, panelX, panelY, panelW, panelH, UI_PANEL);
-    title.setPosition((cssW - title.width) / 2, panelY + pad);
-    body.setPosition((cssW - body.width) / 2, panelY + 2 * pad + title.height);
-    button.container.setPosition((cssW - button.width) / 2, panelY + 3 * pad + title.height + body.height);
+  /** Stacks the banners: the hint first while it shows, then the all-snacks banner. */
+  private layoutBanners(): void {
+    const top = this.bannerTop();
+    const hintBottom = this.layoutTopBanner(this.hintPanel, this.hintText, top);
+    this.layoutTopBanner(this.bannerPanel, this.bannerText, this.hint.visible ? hintBottom + GAP : top);
+  }
+
+  /** Draws one centred pink banner panel at `top` around its text and returns its bottom edge. */
+  private layoutTopBanner(panel: Phaser.GameObjects.Graphics, text: Phaser.GameObjects.Text, top: number): number {
+    const { cssW } = this.view;
+    text.setWordWrapWidth(Math.max(120, cssW - 2 * (MARGIN + PANEL_PAD)), true);
+    const panelW = text.width + 2 * PANEL_PAD;
+    const panelH = text.height + 2 * PANEL_PAD;
+    drawPanel(panel, (cssW - panelW) / 2, top, panelW, panelH, UI_PANEL_PINK);
+    text.setPosition((cssW - text.width) / 2, top + PANEL_PAD);
+    return top + panelH;
   }
 
   /** Shows each leg icon for the current snapshot, sorted present, regrowing, lost. */
@@ -538,6 +661,23 @@ export class HudScene extends Phaser.Scene {
   private requestDash(): void {
     if (this.paused || this.trip.phase !== 'swimming') return;
     this.game.events.emit(GAME_EVENTS.REQUEST_DASH);
+  }
+
+  /** Asks the swim scene to end the trip, only while swimming inside the Home Spot ring and not paused. */
+  private requestGoHome(): void {
+    if (this.paused || this.trip.phase !== 'swimming' || !this.trip.inHomeSpot) return;
+    this.game.events.emit(TRIP_EVENTS.REQUEST_GO_HOME);
+  }
+
+  /**
+   * Shows Pause unless paused or a banking card or home screen is up, and Go home only while
+   * swimming inside the Home Spot ring and not paused.
+   */
+  private refreshControls(): void {
+    const phase = this.trip.phase;
+    const modal = phase === 'banked' || phase === 'ended';
+    this.pauseButton.container.setVisible(!this.paused && !modal);
+    this.goHomeButton.container.setVisible(!this.paused && phase === 'swimming' && this.trip.inHomeSpot);
   }
 
   private togglePause(): void {
@@ -612,7 +752,7 @@ export class HudScene extends Phaser.Scene {
     this.releaseStick(false);
     this.setHudClockPaused(true);
     this.scene.pause(SCENE_KEYS.swim);
-    this.pauseButton.container.setVisible(false);
+    this.refreshControls();
     this.overlay.setVisible(true);
     this.game.events.emit(GAME_EVENTS.PAUSED);
   }
@@ -621,7 +761,7 @@ export class HudScene extends Phaser.Scene {
     if (!this.paused) return;
     this.paused = false;
     this.overlay.setVisible(false);
-    this.pauseButton.container.setVisible(true);
+    this.refreshControls();
     this.setHudClockPaused(false);
     this.scene.resume(SCENE_KEYS.swim);
     this.game.events.emit(GAME_EVENTS.RESUMED);
@@ -642,7 +782,7 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Freezes or thaws every HUD timer and tween (banner, trip card, swim pad and any added later),
+   * Freezes or thaws every HUD timer and tween (banners, banking card, home screen, swim pad and any added later),
    * so pause stops HUD motion as well as the swim scene. The pause overlay and its buttons use neither.
    */
   private setHudClockPaused(paused: boolean): void {
@@ -654,21 +794,34 @@ export class HudScene extends Phaser.Scene {
     }
   }
 
-  /** Enter or Space: starts a new trip while the trip-end card shows (ignoring key repeat), else resumes. */
+  /**
+   * Enter or Space: resumes when paused; otherwise presses the focused banking card button or
+   * Swim again on the home screen, ignoring key repeat.
+   */
   private handleConfirmKey(event: KeyboardEvent): void {
-    if (this.trip.phase === 'ended') {
-      if (!event.repeat) this.requestNewTrip();
+    if (this.paused) {
+      this.resumeSwim();
       return;
     }
-    this.resumeSwim();
+    if (event.repeat) return;
+    if (this.trip.phase === 'banked') this.bankingCard.pressFocused();
+    if (this.trip.phase === 'ended') this.homeScreen.press();
   }
 
-  /** Asks the swim scene for a new trip once, after the card has shown for TRIP_END_MIN_MS. */
-  private requestNewTrip(): void {
-    if (this.trip.phase !== 'ended' || this.newTripRequested) return;
-    if (this.time.now - this.tripEndShownAt < TRIP_END_MIN_MS) return;
-    this.newTripRequested = true;
-    this.game.events.emit(TRIP_EVENTS.REQUEST_NEW_TRIP);
+  /** Left, Right or Tab: moves the banking card focus to the other button, ignoring key repeat. */
+  private handleFocusKey(event: KeyboardEvent): void {
+    if (this.paused || event.repeat || this.trip.phase !== 'banked') return;
+    this.bankingCard.moveFocus();
+  }
+
+  /** H: Go home from the banking card, or from the Home Spot while swimming. Ignores key repeat. */
+  private handleGoHomeKey(event: KeyboardEvent): void {
+    if (this.paused || event.repeat) return;
+    if (this.trip.phase === 'banked') {
+      this.bankingCard.pressGoHome();
+      return;
+    }
+    this.requestGoHome();
   }
 
   // ---- game events ---------------------------------------------------------
@@ -709,37 +862,76 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Redraws the legs from the snapshot and follows its phase: into 'carrying' drops the swim pad,
-   * into 'ended' shows the trip-end card, out of 'ended' hides it.
+   * Redraws the legs and Trip Bag from the snapshot and follows its phase: leaving 'swimming' drops
+   * the swim pad and the hint, into 'banked' shows the banking card, into 'ended' shows the home
+   * screen, and leaving either hides it.
    */
   private handleTripState(snapshot: TripSnapshot): void {
     const previousPhase = this.trip.phase;
     this.trip = snapshot;
     this.drawLegs();
+    this.drawTripBag();
+    this.refreshControls();
     if (snapshot.phase === previousPhase) return;
-    if (previousPhase === 'ended') this.hideTripCard();
-    if (snapshot.phase === 'carrying') this.releaseStick();
-    if (snapshot.phase === 'ended') this.showTripCard();
-  }
-
-  /** Shows the trip-end card, faded in unless reduced motion is on, and hides Pause while it shows. */
-  private showTripCard(): void {
-    this.newTripRequested = false;
-    this.tripEndShownAt = this.time.now;
-    this.releaseStick();
-    this.pauseButton.container.setVisible(false);
-    this.tweens.killTweensOf(this.tripCard);
-    this.tripCard.setVisible(true).setAlpha(this.motion.ambient ? 0 : 1);
-    if (this.motion.ambient) {
-      this.tweens.add({ targets: this.tripCard, alpha: 1, duration: TRIP_END_FADE_MS });
+    if (previousPhase === 'banked') this.hideBankingCard();
+    if (previousPhase === 'ended') this.homeScreen.hide();
+    if (snapshot.phase !== 'swimming') {
+      this.releaseStick();
+      this.hideHint();
     }
+    if (snapshot.phase === 'banked') this.showBankingCard();
+    if (snapshot.phase === 'ended') this.homeScreen.show(snapshot, this.motion);
   }
 
-  private hideTripCard(): void {
-    this.newTripRequested = false;
-    this.tweens.killTweensOf(this.tripCard);
-    this.tripCard.setVisible(false).setAlpha(1);
-    this.pauseButton.container.setVisible(!this.paused);
+  /** Shows the banking card and captures Tab so it moves focus between the card buttons. */
+  private showBankingCard(): void {
+    this.input.keyboard?.addCapture(Phaser.Input.Keyboard.KeyCodes.TAB);
+    this.bankingCard.show(this.trip, this.motion);
+  }
+
+  private hideBankingCard(): void {
+    this.input.keyboard?.removeCapture(Phaser.Input.Keyboard.KeyCodes.TAB);
+    this.bankingCard.hide();
+  }
+
+  /**
+   * Shows the banking hint once per session, at the start of the first trip: fades in, holds for
+   * HINT_HOLD_MS on the HUD clock (so pause freezes it), then fades out. Appears and leaves at once
+   * under reduced motion.
+   */
+  private showHintOnce(): void {
+    if (this.registry.get(TRIP_REGISTRY_KEYS.bankingHintShown) === true || this.trip.phase !== 'swimming') return;
+    this.registry.set(TRIP_REGISTRY_KEYS.bankingHintShown, true);
+    this.hint.setVisible(true).setAlpha(this.motion.ambient ? 0 : 1);
+    this.layoutBanners();
+    if (this.motion.ambient) {
+      this.tweens.add({ targets: this.hint, alpha: 1, duration: HINT_FADE_MS });
+    }
+    this.hintTimer = this.time.delayedCall(HINT_FADE_MS + HINT_HOLD_MS, this.fadeOutHint, [], this);
+  }
+
+  private fadeOutHint(): void {
+    this.hintTimer = null;
+    if (!this.motion.ambient) {
+      this.hideHint();
+      return;
+    }
+    this.tweens.add({
+      targets: this.hint,
+      alpha: 0,
+      duration: HINT_FADE_MS,
+      onComplete: () => this.hideHint(),
+    });
+  }
+
+  /** Hides the hint at once and lets the all-snacks banner take the top slot. */
+  private hideHint(): void {
+    this.hintTimer?.remove(false);
+    this.hintTimer = null;
+    if (!this.hint.visible) return;
+    this.tweens.killTweensOf(this.hint);
+    this.hint.setVisible(false).setAlpha(1);
+    this.layoutBanners();
   }
 
   private handleReducedMotion(payload: ReducedMotionPayload): void {
@@ -753,22 +945,27 @@ export class HudScene extends Phaser.Scene {
     const texts = [
       this.counterText,
       this.legsLabel,
+      this.bagLabel,
+      this.bagCount,
+      this.bagStatus,
       this.overlayTitle,
       this.bannerText,
-      this.tripCardTitle,
-      this.tripCardBody,
+      this.hintText,
     ];
     for (const text of texts) {
       text.setResolution(dpr);
     }
-    for (const button of [this.pauseButton, this.dashButton, this.resumeButton, this.swimAgainButton]) {
+    for (const button of [this.pauseButton, this.dashButton, this.goHomeButton, this.resumeButton]) {
       button.setResolution(dpr);
     }
+    this.bankingCard.setResolution(dpr);
+    this.homeScreen.setResolution(dpr);
     this.layout();
   }
 
   private handleShutdown(): void {
     this.releaseStick(false);
+    this.input.keyboard?.removeCapture(Phaser.Input.Keyboard.KeyCodes.TAB);
     // The scene clock keeps `paused` across a restart, so thaw it here.
     this.setHudClockPaused(false);
     this.releaseSwimPause();

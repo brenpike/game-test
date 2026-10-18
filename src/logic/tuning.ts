@@ -114,6 +114,12 @@ export interface CarryTuning {
   stillHold: number;
 }
 
+/** Trip find pickup tuning. */
+export interface FindTuning {
+  /** Centre distance in px within which the axolotl picks up a find. */
+  pickupRadius: number;
+}
+
 export const SWIM: Readonly<SwimTuning> = Object.freeze({
   maxSpeed: 150,
   accel: 520,
@@ -175,4 +181,9 @@ export const CARRY: Readonly<CarryTuning> = Object.freeze({
   minTime: 1.5,
   maxTime: 5,
   stillHold: 1.5,
+});
+
+/** Provisional find values. */
+export const FINDS: Readonly<FindTuning> = Object.freeze({
+  pickupRadius: 24,
 });

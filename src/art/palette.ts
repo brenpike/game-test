@@ -180,3 +180,34 @@ export const HALO_BAND = 'rgba(255,255,255,0.22)';
 export const HALO_DOT = 'rgba(255,255,255,0.95)';
 /** Carry bubble inner rim, provisional. White vs water deep is 6.6:1. */
 export const CARRY_RIM = 'rgba(255,255,255,0.9)';
+
+// ---- Home Spot (guide 3g and 7d, provisional) ----------------------------
+// Every value in this section is derived (provisional).
+/** Burrow arch stones, in turn A, C, A, C, A, C, A. 9.50 and 10.70:1 with ink. */
+export const HOME_STONE_A = PEBBLE_A;
+export const HOME_STONE_C = PEBBLE_C;
+export const HOME_STONES: readonly string[] = [HOME_STONE_A, HOME_STONE_C];
+/** Burrow opening, the eye colour. 3.13:1 or better against every bed colour. */
+export const HOME_OPENING = EYE;
+/** Soft glow at the bottom of the opening. Inside the silhouette, so alpha is allowed. */
+export const HOME_GLOW = 'rgba(255,225,74,0.25)';
+/** Marker post tube, the willow trunk brown. */
+export const HOME_POST = WILLOW_TRUNK;
+/** Marker flag, sun yellow. Ink house icon on it is 11.05:1. */
+export const HOME_FLAG = SUN;
+/** Safe-ring dot fill. Opaque, with an opaque ink 2.0 stroke: 14.39:1. */
+export const HOME_RING_DOT = WHITE;
+/** Home Tank wall (3g), also the interim home screen backdrop. 12.89:1 with ink. */
+export const HOME_TANK_WALL = '#fff1d6';
+
+// ---- Finds (provisional) -------------------------------------------------
+/**
+ * Shiny pebble placeholder find, provisional. Reuses pebble A: 9.50:1 with
+ * ink, so ink or fill is 3.08:1 or better on any background (guide 10).
+ */
+export const FIND_PEBBLE = PEBBLE_A;
+/** Shiny pebble shine, the pebble shine. */
+export const FIND_PEBBLE_SHINE = PEBBLE_SHINE;
+/** Twinkle (guide 4e): sun-yellow arms, white core. */
+export const TWINKLE_ARM = SUN;
+export const TWINKLE_CORE = WHITE;

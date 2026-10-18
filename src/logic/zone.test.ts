@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { TILAPIA } from './tuning';
+import { inSafeArea } from './tilapia';
+import { FINDS, TILAPIA } from './tuning';
 import {
   BED_TOP,
+  CANAL_AREA_ID,
   SURF,
   WORLD_H,
   ZONE_SCREENS,
   ZONE_W,
   buildCanalZone,
+  inHomeSpot,
   isInsideCurrent,
   swimBounds,
   waveY,
@@ -16,6 +19,8 @@ import {
 } from './zone';
 
 const EXTRA_SEEDS = [1, 2, 3, 42, 1234, 0xdeadbeef, 0x12345678, 987654321];
+const ALL_SEEDS = [0xa70107, ...EXTRA_SEEDS];
+const FIND_IDS = ['canal/pebble-1', 'canal/pebble-2', 'canal/pebble-3', 'canal/pebble-4', 'canal/pebble-5'];
 
 function expectZoneInvariants(zone: ZoneLayout): void {
   const bounds = swimBounds();
@@ -165,5 +170,76 @@ describe('buildCanalZone', () => {
     expect(zone.safeArea).toEqual({ x0: 40, x1: 300, y0: SURF, y1: BED_TOP });
     expect(buildCanalZone(7).safeArea).toEqual(zone.safeArea);
     expect(buildCanalZone(7).tilapiaRoutes).toEqual(zone.tilapiaRoutes);
+  });
+});
+
+describe('Home Spot', () => {
+  it('rings the start with radius 72 in the canal area', () => {
+    const zone = buildCanalZone();
+    expect(CANAL_AREA_ID).toBe('canal');
+    expect(zone.areaId).toBe('canal');
+    expect({ x: zone.homeSpot.x, y: zone.homeSpot.y }).toEqual(zone.start);
+    expect(zone.homeSpot.radius).toBe(72);
+  });
+
+  it.each(ALL_SEEDS)('keeps the ring inside the safe area and clear of snacks for seed %i', (seed) => {
+    const zone = buildCanalZone(seed);
+    const spot = zone.homeSpot;
+    const area = zone.safeArea;
+    expect(spot.x - spot.radius).toBeGreaterThanOrEqual(area.x0);
+    expect(spot.x + spot.radius).toBeLessThanOrEqual(area.x1);
+    expect(spot.y - spot.radius).toBeGreaterThanOrEqual(area.y0);
+    expect(spot.y + spot.radius).toBeLessThanOrEqual(area.y1);
+    for (const snack of zone.collectibles) {
+      expect(inHomeSpot(snack, spot)).toBe(false);
+    }
+  });
+
+  it('counts the edge as inside and just beyond as outside', () => {
+    const spot = buildCanalZone().homeSpot;
+    expect(inHomeSpot({ x: spot.x, y: spot.y }, spot)).toBe(true);
+    expect(inHomeSpot({ x: spot.x + spot.radius, y: spot.y }, spot)).toBe(true);
+    expect(inHomeSpot({ x: spot.x, y: spot.y - spot.radius }, spot)).toBe(true);
+    expect(inHomeSpot({ x: spot.x + spot.radius + 0.001, y: spot.y }, spot)).toBe(false);
+    expect(inHomeSpot({ x: spot.x, y: spot.y - spot.radius - 0.001 }, spot)).toBe(false);
+  });
+});
+
+describe('finds', () => {
+  it('uses the pinned, unique, area-scoped ids', () => {
+    const zone = buildCanalZone();
+    const ids = zone.finds.map((find) => find.id);
+    expect(ids).toEqual(FIND_IDS);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) {
+      expect(id.startsWith(`${zone.areaId}/`)).toBe(true);
+    }
+    for (const find of zone.finds) {
+      expect(find.kind).toBe('pebble');
+    }
+  });
+
+  it.each(ALL_SEEDS)('places every find in the water, outside the safe area and away from the ring for seed %i', (seed) => {
+    const zone = buildCanalZone(seed);
+    const bounds = swimBounds();
+    const spot = zone.homeSpot;
+    for (const find of zone.finds) {
+      expect(find.x).toBeGreaterThanOrEqual(bounds.minX);
+      expect(find.x).toBeLessThanOrEqual(bounds.maxX);
+      expect(find.y).toBeGreaterThanOrEqual(bounds.minY);
+      expect(find.y).toBeLessThanOrEqual(bounds.maxY);
+      expect(inSafeArea(find, zone.safeArea)).toBe(false);
+      expect(Math.hypot(find.x - spot.x, find.y - spot.y)).toBeGreaterThanOrEqual(
+        spot.radius + FINDS.pickupRadius + 8,
+      );
+    }
+  });
+
+  it.each(EXTRA_SEEDS)('keeps finds and the Home Spot identical for seed %i', (seed) => {
+    const base = buildCanalZone();
+    const zone = buildCanalZone(seed);
+    expect(zone.finds).toEqual(base.finds);
+    expect(zone.homeSpot).toEqual(base.homeSpot);
+    expect(zone.areaId).toBe(base.areaId);
   });
 });

@@ -32,6 +32,8 @@ import { createDash, dashCharge, tryStartDash, updateDash, type DashState } from
 import {
   createTrip,
   createTripContext,
+  goHome,
+  keepExploring,
   newTrip,
   sameTripSnapshot,
   stepTrip,
@@ -55,6 +57,7 @@ import {
   type GameAssets,
   type SceneView,
 } from './BootScene';
+import { HomeSpotView } from './HomeSpotView';
 import { PredatorView } from './PredatorView';
 
 const TAU = Math.PI * 2;
@@ -148,6 +151,7 @@ export class SwimScene extends Phaser.Scene {
   private followPoint = new Phaser.Math.Vector2();
   private axolotl!: Phaser.GameObjects.Image;
   private predatorView!: PredatorView;
+  private homeSpotView!: HomeSpotView;
   private reeds: Phaser.GameObjects.Image[] = [];
   private reedNudge: number[] = [];
   private pads: Phaser.GameObjects.Image[] = [];
@@ -211,6 +215,8 @@ export class SwimScene extends Phaser.Scene {
     this.game.events.on(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
     this.game.events.on(Phaser.Core.Events.HIDDEN, this.handleHidden, this);
     this.game.events.on(TRIP_EVENTS.REQUEST_NEW_TRIP, this.handleRequestNewTrip, this);
+    this.game.events.on(TRIP_EVENTS.REQUEST_KEEP_EXPLORING, this.handleRequestKeepExploring, this);
+    this.game.events.on(TRIP_EVENTS.REQUEST_GO_HOME, this.handleRequestGoHome, this);
     this.events.on(Phaser.Scenes.Events.RESUME, this.handleResume, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
 
@@ -275,6 +281,8 @@ export class SwimScene extends Phaser.Scene {
       .setOrigin(0, 0)
       .setDepth(DEPTH.haze);
     this.streaks = zone.currents.flatMap((current) => this.buildStreaks(current));
+
+    this.homeSpotView = new HomeSpotView(this, this.assets, this.trip.homeSpot, this.trip.finds);
 
     this.snacks.clear();
     for (const item of this.items) {
@@ -441,7 +449,7 @@ export class SwimScene extends Phaser.Scene {
   }
 
   /**
-   * Steps the trip. Swimming: a bump sets the swim velocity. Carrying or ended: the trip
+   * Steps the trip. Swimming: a bump sets the swim velocity. Banked, carrying or ended: the trip
    * places the axolotl, still. The carry advances only with this frame `dt`, so pause freezes it.
    */
   private advanceTrip(dt: number): void {
@@ -459,12 +467,17 @@ export class SwimScene extends Phaser.Scene {
     } else {
       this.placeCarried();
     }
-    this.handleTripEvents(result.events);
-    this.predatorView.handleEvents(result.events);
+    this.dispatchTripEvents(result.events);
     this.syncSnapshot();
   }
 
-  /** Puts the axolotl where the trip holds it while carried or ended, with no velocity. */
+  private dispatchTripEvents(events: readonly TripEvent[]): void {
+    this.handleTripEvents(events);
+    this.predatorView.handleEvents(events);
+    this.homeSpotView.handleEvents(events);
+  }
+
+  /** Puts the axolotl where the trip holds it while banked, carried or ended, with no velocity. */
   private placeCarried(): void {
     const pos = tripAxolotlPos(this.trip);
     if (!pos) {
@@ -516,11 +529,36 @@ export class SwimScene extends Phaser.Scene {
     this.sparkleLevel = 0;
     this.dash = createDash();
     this.predatorView.reset();
+    this.homeSpotView.reset();
     this.followPoint.set(this.swim.x, this.swim.y);
     this.cameras.main.centerOn(this.swim.x, this.swim.y);
     this.emitDashState();
     this.publishSnapshot(tripSnapshot(this.trip));
     this.renderFrame(0);
+  }
+
+  /**
+   * Leaves the banked card and swims on from where the axolotl was held. A dash key held from
+   * confirming the card must be released before it dashes. Ignored in any other phase.
+   */
+  private handleRequestKeepExploring(): void {
+    const next = keepExploring(this.trip);
+    if (next === this.trip) return;
+    this.trip = next;
+    this.dashKeyLatched = true;
+    this.padSteer = { x: 0, y: 0 };
+    this.publishSnapshot(tripSnapshot(this.trip));
+  }
+
+  /** Ends the trip by choice (from the banked card, or swimming inside the ring). Ignored when not allowed. */
+  private handleRequestGoHome(): void {
+    const result = goHome(this.trip);
+    if (result.state === this.trip) return;
+    this.trip = result.state;
+    this.padSteer = { x: 0, y: 0 };
+    this.placeCarried();
+    this.dispatchTripEvents(result.events);
+    this.publishSnapshot(tripSnapshot(this.trip));
   }
 
   private handleHidden(): void {
@@ -558,6 +596,8 @@ export class SwimScene extends Phaser.Scene {
     this.game.events.off(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
     this.game.events.off(Phaser.Core.Events.HIDDEN, this.handleHidden, this);
     this.game.events.off(TRIP_EVENTS.REQUEST_NEW_TRIP, this.handleRequestNewTrip, this);
+    this.game.events.off(TRIP_EVENTS.REQUEST_KEEP_EXPLORING, this.handleRequestKeepExploring, this);
+    this.game.events.off(TRIP_EVENTS.REQUEST_GO_HOME, this.handleRequestGoHome, this);
     this.events.off(Phaser.Scenes.Events.RESUME, this.handleResume, this);
   }
 
@@ -566,6 +606,7 @@ export class SwimScene extends Phaser.Scene {
   private renderFrame(dt: number): void {
     const t = this.motion.ambient ? this.clock : T_STATIC;
     this.renderAxolotl(dt);
+    this.homeSpotView.render({ holdings: this.trip.holdings, motion: this.motion, dt, time: this.clock });
     this.predatorView.render({
       encounter: this.trip.encounter,
       axolotl: this.axolotl,

@@ -363,6 +363,12 @@ Each colour is two picks (body and gill) plus fixed sRGB mixes:
 | Home Spot post | Fill | #a56a3b | - | `derived (provisional)` |
 | Home Spot flag | Fill, with an ink house icon | #ffe14a | 11.05:1 (ink house icon) | `derived (provisional)` |
 | Home Spot safe-ring dots | Fill and stroke | Fill #ffffff, ink stroke 2.0, both opaque | 14.39:1; 3.79:1 or better on any background (10) | `derived (provisional)` |
+| Shiny pebble (placeholder find) | Fill | #d4cfe6 (pebble A, 3a), opaque, with an opaque ink outline | 9.50:1 with ink; 3.08:1 or better on any background (10) | `derived (provisional)` |
+| Shiny pebble shine | Highlight | rgba(255,255,255,0.8) (the pebble shine, 3a) | - | `derived (provisional)` |
+| Shiny pebble twinkle | Arms and core | The twinkle (4e): arms #ffe14a, core #ffffff | - | `derived (provisional)` |
+| Banking card and Trip Bag display | Panel | #ffffff (3d) | 14.39:1 (ink text and icons) | `derived (provisional)` |
+| Interim home screen | Full-screen backdrop | #fff1d6 (the Home Tank wall), opaque | 12.89:1 with ink | `derived (provisional)` |
+| First-trip hint banner | Panel | #ffd9e6 (3d soft pink) | 11.19:1 (ink text) | `derived (provisional)` |
 | Dash pot | Fill | #efc5aa | 9.07:1 with ink; 3.01:1 or better on any background (10). | `derived (provisional)` |
 | Dash pot rim | Fill | #f9e1d0 | 11.45:1 with ink | `derived (provisional)` |
 | Dash pot cracks | Internal detail lines | #7f4a2a | - | `derived (provisional)` |
@@ -422,6 +428,10 @@ Each colour is two picks (body and gill) plus fixed sRGB mixes:
 | Home Spot stones | 2.6 | `derived (provisional)` |
 | Home Spot flag | 2.8 | `derived (provisional)` |
 | Home Spot house icon | 2.4 | `derived (provisional)` |
+| House icon in the 32 icon box | 3.6 (2.4 x 1.5) | `derived (provisional)` |
+| Trip Bag icon | 3.0 | `derived (provisional)` |
+| Home Spot ring dots | 2.0 | `derived (provisional)` |
+| Shiny pebble | 2.6 (`shape`) | `derived (provisional)` |
 | Dash pot | 3.5 (`blob`) | `derived (provisional)` |
 | Dash pot shards | 2.6 | `derived (provisional)` |
 | Paint shell | 2.6 | `derived (provisional)` |
@@ -904,14 +914,13 @@ In greyscale, fill against empty is 3.46:1, solid and dashed outlines differ, an
 
 ### 7b. Still to design
 
-Designed in this guide: tilapia (7c), Home Spot (7d), hidden treasures, Dash pot, hint sparkle and Paint shells (7e), Home Tank kit (7f), rarity badges (3e, 8).
+Designed in this guide: tilapia (7c), Home Spot (7d), hidden treasures, Dash pot, hint sparkle, Paint shells and the placeholder shiny pebble (7e), Home Tank kit (7f), rarity badges (3e, 8), the banking celebration card and the Trip Bag icon and display (8).
 
 Still to design:
 
 - trajinera boats; chinampa crops; pollution debris;
 - the small cave and past-the-current hiding places;
 - the carried-home transition (it must stay distinct from the protected ring, for example a filled bubble, and needs a still card under reduced motion);
-- the banking celebration; the Trip Bag icon;
 - perk icons (Speed, Regrowth, Dash, Shell, Treasure sense, Snack magnet);
 - Collection Book pages and unfound-morph silhouettes;
 - morph badge shapes (they must not reuse the rarity shapes or the Dream swatch tile);
@@ -979,6 +988,13 @@ PRD A13 to A15. It is a burrow, not a buoy (this resolves PRD open question 4). 
 | Marker flag | Rounded flag 24 x 18, corner radius 5, #ffe14a, ink 2.8, carrying the house icon | `derived (provisional)` |
 | House icon | Ink 2.4: a square body 10 x 8 under a rounded roof 14 wide and 6 tall. Reuse it for any "go home" UI. | `derived (provisional)` |
 | Safe-area edge | Opaque white #ffffff dots of radius 3 with an ink 2.0 stroke (section 10), every 16 px along the safe-area circle, drawn behind the axolotl. The circle radius is gameplay tuning. The tilapia never crosses it. | `derived (provisional)` |
+| Ring | A circle of radius 72 (tuning) centred on the trip start (120, 200 in the canal). It sits strictly inside the tilapia keep-out rectangle (x 40 to 300, from the water line to the bed top): the ring spans x 48 to 192 and y 128 to 272. The keep-out stays a rectangle; only the ring is drawn. | `derived (provisional)` |
+| Ring dot count | One dot per 16 px of circumference, rounded: count = round(2 x pi x radius / 16), evenly spaced. Radius 72 gives 28 dots, 16.2 px apart. | `derived (provisional)` |
+| Placement | Burrow base on the bed, directly below the ring centre. The marker post base sits on the arch top (44 above the burrow base). | `derived (provisional)` |
+| Sizes | Stone "12 x 9" is the full ellipse (radii 6 x 4.5), its long side along the arch. Stone centres lie on a half-ellipse 30.2 wide and 30.9 tall, so the outer ink edge is 72 x 44. The flag hangs to the right of the post, its top level with the post top. House icon sizes are to the outer edge of the ink, as for the 32 icon box; on the flag it is centred on the part clear of the post. | `derived (provisional)` |
+| House icon, 32 box | The 7d house icon at x 1.5 about the box centre: 21 x 21 to the outer ink edge, ink 3.6. Used on the Go home buttons and by the home screen title. | `derived (provisional)` |
+| Shines | One pebble shine rgba(255,255,255,0.8) at the upper left of each stone. The flag has no shine (the house icon fills it). | `derived (provisional)` |
+| Layer | Above the haze and below the collectibles: burrow and flag, then the ring dots over them, so the ring edge stays whole. The hero is never hazed, nor are these cue objects. | `derived (provisional)` |
 | Greyscale cues | Arch silhouette, flag, house icon, dotted ring | `derived (provisional)` |
 
 ### 7e. Hidden treasures
@@ -1011,6 +1027,16 @@ PRD B1, B5 to B8. Colours are in 3g. All values below are `derived (provisional)
 | Legendary | 4 | `derived (provisional)` |
 
 **Revealed treasure.** Its catalogue icon at 28 px on the longest side, with a gentle bob (section 9). Source: `derived (provisional)`.
+
+**Shiny pebble (placeholder find).** Stands in for treasures until the catalogue is drawn; display name "shiny pebble", five per canal area, each in open water outside the keep-out rectangle. It is never hidden, so it has no hint star.
+
+| Part | Construction | Source |
+|---|---|---|
+| Body | Ellipse radii 12.7 x 9.6, tilted -0.15 rad, fill #d4cfe6, `shape` ink 2.6. 28 px on the longest side with ink. Ink and fill are always opaque. | `derived (provisional)` |
+| Shine | One ellipse rgba(255,255,255,0.8), radii 3.6 x 1.8, at (-4.8, -3.6), tilted -0.5 rad | `derived (provisional)` |
+| Twinkle | One small twinkle (4e), arm radius 5, at (11, -8), the pebble's upper right. Never the 4-point star: that marks hidden treasures. | `derived (provisional)` |
+| Anchor | Pebble centre | `derived (provisional)` |
+| Icon use | The same art is the find's icon on the banking card | `derived (provisional)` |
 
 **Paint shell.** Scallop shell 26 x 22, fill #efdcba, five ridges #e0b095 at 1.6 px (internal), `shape` ink 2.6. A round paint blob of radius 6 in its opening shows the Dream swatch look (section 8). Source: `derived (provisional)`.
 
@@ -1082,6 +1108,13 @@ All values in this section are `derived (provisional)` unless the row says other
 | Wearable display | The slot name as text with every Wearable. The perk is shown as icon plus text and value (PRD F10). Perk icons are still to design (7b). | `derived (provisional)` |
 | Legs display | See 6q. | `derived (provisional)` |
 | World bubbles ("!" and "dash needed") | White, ink 3.5, always upright, never mirrored. | `derived (provisional)` |
+| Trip Bag icon | A drawstring pouch in the 32 icon box: rounded body from (12.5,12) down to y 27.5, a gathered top flaring to y 6, and one loose drawstring end. Ink 3.0 only, round joins and caps, no fill. | `derived (provisional)` |
+| Trip Bag display (A16) | White panel (panel style below), padding 12, under the legs display at top-left. Bag icon 32 px, the label "Trip Bag", the count as a number in bold ink 22 px, and "not safe yet" in ink 18 px or more while the bag holds finds. Icon, number, and text carry the meaning, never colour. | `derived (provisional)` |
+| Panel style | Fill, ink 3.5 outline, corner radius min(height / 2, 18). | `derived (provisional)` |
+| Banking card (A14) | Dim the game behind (ink at 0.45). White panel, padding 24, centred. Title in bold ink 34 px ("Safe at the Home Spot!"). A row of find icons (each find's art in a 32 px box, gap 8) above the description text (20 px, max width 420). The banked total as text, 20 px. Two wide buttons, both 64 px tall with a 12 px gap: Keep exploring (primary #ffe14a, play icon) and Go home (secondary #55e4d8, house icon). Side by side, Keep exploring on the left; stacked, Keep exploring on top, when the canvas is under 460 CSS px wide. | `derived (provisional)` |
+| Go home button (contextual) | Wide secondary #55e4d8 button, 64 px tall, house icon and the label "Go home", top-right under the Pause button with a 12 px gap. Shown only at the Home Spot. | `derived (provisional)` |
+| Interim home screen | Replaces the carried-home card. Full-screen opaque #fff1d6 backdrop (the Home Tank wall), no dim. White panel, padding 24, centred, with the house icon (32 px) left of the title (bold ink 34 px), then body text 20 px (max width 420), the banked line 20 px, and one primary 64 px button. | `derived (provisional)` |
+| First-trip hint banner | Soft pink #ffd9e6 panel (panel style), padding 12, centred near the top, ink text 24 px: "Bring finds to the Home Spot to keep them safe." No icon needed: the text carries it. | `derived (provisional)` |
 
 **Rarity badge shapes** (24 x 24 box, origin top-left; scale up by 32 / 24 for the 32 px badge)
 
@@ -1135,7 +1168,15 @@ Everything is soft, slow, and looping. Times are periods (one full cycle).
 | Crumble | Shards move 6 to 10 px out and sink 16 px, fading over 0.6 s. | Three still shards for 0.6 s. |
 | Revealed treasure | Bob +/-2 px over 3 s. | Still. |
 | Iridescent sheen | Glides head to tail every 4 s. | Still at x -10. |
-| Home Spot flag and ring | Flag sway +/-0.1 rad over 2 s. Ring bubbles bob +/-1 px over 3 s. | Still. |
+| Home Spot flag and ring | Flag sway +/-0.1 rad over 2 s, turning around the post base. Ring dots bob +/-1 px over 3 s, each dot's phase set by its angle around the ring. | Flag upright, dots on the circle. |
+| Flag twinkle burst (banking) | Three twinkles (4e) burst 6 px out from the flag over 0.6 s, once per banking, then fade out. | Three still twinkles beside the flag for 0.6 s, then gone. |
+| Banking card | Fades in over 0.4 s while scaling 0.92 to 1.0, once. | Appears at full size and alpha at once. |
+| Banking card twinkles | Three to five twinkles burst 6 px out around the find icons over 0.6 s, once. | Still twinkles at their end positions. |
+| Shiny pebble | Bob +/-2 px over 3 s. | Still. |
+| Pickup pop | The pebble scales 1.0 to 1.3 while alpha goes 1 to 0, over 0.4 s, once. | Gone at once; the Trip Bag number shows the pickup. |
+| Returned finds (carried home) | Fade in at their spots over 0.4 s, once. | Appear at once. |
+| Interim home screen | Fades in over 0.4 s, once. | Appears at once. |
+| First-trip hint banner | Fades in and out over 0.4 s. Holds still while shown. | Appears and leaves at once. |
 | Home Tank axolotls | Idle hover plus slow laps of 16 to 24 s, each with its own phase. | Still poses (PRD C8). |
 | Tank plants | Reed sway. | Still. |
 
@@ -1156,7 +1197,7 @@ Target: WCAG 2.1 AA. Values below are `derived (provisional)` unless noted.
 
 **Contrast: the pair rule.** On any background, every cue object must get at least 3:1 from its ink outline or from its edge partner. Haze is never applied to the hero.
 
-**Cue objects.** The axolotl, tilapia, protected ring, hint sparkle, telegraph glint and "!" bubble, Dream marker, leg-loss puff and twinkles, Dash pot, Paint shell, Home Spot (arch, flag, safe-ring dots), revealed treasure icons, and the Home Tank focus ring. Prototype scenery (sky, bank, water, light rays, bed, pebbles, reeds, pads, bubbles) and Home Tank decorations are background. The lost-leg ghost (6q) is faint on purpose; the legs display carries leg state.
+**Cue objects.** The axolotl, tilapia, protected ring, hint sparkle, telegraph glint and "!" bubble, Dream marker, leg-loss puff and twinkles, Dash pot, Paint shell, Home Spot (arch, flag, safe-ring dots), shiny pebble, revealed treasure icons, and the Home Tank focus ring. Prototype scenery (sky, bank, water, light rays, bed, pebbles, reeds, pads, bubbles) and Home Tank decorations are background. The lost-leg ghost (6q) is faint on purpose; the legs display carries leg state.
 
 **Edge partner.** The opaque fill just inside the ink along the outer silhouette, meaning the body (merged silhouette) and the fins on the outer edge. NOT edge partners: depth details behind the body (far legs, far gills, tilapia far fin), tube details (gills, legs, Home Spot post), and wearables. Pattern overlays never touch the edge on bodies that pass alone (6p). On a rim-lit body the rim light is the edge partner along the upper silhouette, top fin edge included. The lower edge is not required to pass: light comes from above, and a full-outline rim would read as a second outline colour (section 2). See section 12.
 
@@ -1191,6 +1232,8 @@ The worst background is the middle one and gets exactly the square root of P.
 | Ink vs Paint shell #efdcba | 10.70 | 3.27 | Passes | `derived (provisional)` |
 | Ink vs Home Spot stones, pebble A #d4cfe6 and pebble C #efdcba | 9.50, 10.70 | 3.08, 3.27 | Passes | `derived (provisional)` |
 | Home Spot opening #1b1535 vs bed #b78552 to #8c5e3a | 5.38 to 3.13 | - | Passes against every bed colour | `derived (provisional)` |
+| Ink vs shiny pebble #d4cfe6 | 9.50 | 3.08 | Passes | `derived (provisional)` |
+| Ink vs interim home screen backdrop #fff1d6 | 12.89 | - | UI on an opaque backdrop | `derived (provisional)` |
 | Rarity fills vs ink | 4.92 to 12.0 (3e) | - | UI on opaque fills | `derived (provisional)` |
 | Legs fill #e8567e vs white panel | 3.46 | - | UI on an opaque panel | `derived (provisional)` |
 
@@ -1208,6 +1251,10 @@ Golden albino and GFP pass on any background. Melanoid passes with its rim light
 | Dream colours | Pattern cues (6p). Solids by name label. Dream marker vs real morphs. | `derived (provisional)` |
 | Wearable slots | Slot name text | `derived (provisional)` |
 | Hint sparkle | Star shape, sized by rarity | `derived (provisional)` |
+| Home Spot | Arch silhouette, flag with house icon, dotted ring | `derived (provisional)` |
+| Shiny pebble | Outlined pebble shape, twinkle, and bob; never the hint star | `derived (provisional)` |
+| Trip Bag | Bag icon, the number, and the "not safe yet" text | `derived (provisional)` |
+| Banking card choices | Play icon plus "Keep exploring"; house icon plus "Go home". Primary and secondary differ by icon and label, not only fill. | `derived (provisional)` |
 
 **Checklist**
 
@@ -1216,7 +1263,7 @@ Golden albino and GFP pass on any background. Melanoid passes with its rim light
 | Text contrast | 4.5:1 for text under 18 pt (14 pt bold); 3:1 for larger text and for icons | `derived (provisional)` |
 | Focus | Every interactive element has a visible double-ring focus indicator (section 8) | `derived (provisional)` |
 | Touch targets | At least 48 x 48 CSS px; primary at least 64 px tall | `derived (provisional)` |
-| Non-colour meaning | Morph, water state, hazard, disabled state, rarity, legs, telegraph, protected time, Dream colours, and perks all have a shape, text, or motion cue (see the greyscale check above) | `derived (provisional)` |
+| Non-colour meaning | Morph, water state, hazard, disabled state, rarity, legs, telegraph, protected time, Dream colours, perks, the Home Spot, finds, and the Trip Bag all have a shape, text, or motion cue (see the greyscale check above) | `derived (provisional)` |
 | Themes | There is one theme today. If more are added, re-check every pair above. | `derived (provisional)` |
 
 ---
@@ -1265,6 +1312,9 @@ Everything in the table below is `derived (provisional)`. Confirm each in a prot
 | Legs | Ghost and regrowth, puff, legs display, protected ring (6q, 3g) |
 | Home Spot and treasures | Home Spot burrow (stones in pebbles A and C, opening #1b1535, opaque ring dots), Dash pot (#efc5aa, rim #f9e1d0), hint sparkle sizes (opaque at every rarity), revealed treasure, Paint shell (7d, 7e) |
 | Home Tank kit | Layout, layer order, decoration rules, placement states (7f), placement ghost inside the focus ring and the "no" icon |
+| Home Spot ring and burrow layout | Ring radius 72 inside the keep-out rectangle, dot count rule (one per 16 px), burrow below the ring centre, stone arch geometry, house icon fit on the flag (about 0.6 px clear of the flag ink at top and bottom), layer order (7d) |
+| Shiny pebble | Placeholder find look, pebble A fill, twinkle, size and motion (7e, 9) |
+| Trip Bag and banking UI | Trip Bag icon and display, banking card layout and buttons, Go home button position, interim home screen, first-trip hint banner, the 32-box house icon (8) |
 | New motion, sparkles, and widths | New motion rows (9); sparkle shapes (4e); new widths (4b) |
 | Wild recheck | Under the pair method (section 10) the Wild body #b0b86e is 6.80:1 with ink, so its worst case is 2.61:1 (canal t about 0.89, #0e6fa3). A 9:1 partner needs relative luminance 0.607. The Wild body is 0.446, and lightening it that far would make Wild lighter than Leucistic and break the luminance order (3b). Choose and test a corrective cue for Wild in a prototype (for example a light rim that does not copy Melanoid's), then recheck. Tracked in issue #13. |
 | Rim-lit lower edge | The rim light runs along the upper silhouette only (section 10). On Melanoid, Midnight blue, Galaxy, Tie-dye galaxy, and Rainbow the lower edge has no 9:1 partner. Check in a render on deep water that the top-lit edge is enough to read the silhouette. If it is not, prototype a fuller rim that does not read as a second outline colour. |

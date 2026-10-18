@@ -10,6 +10,8 @@
 import * as Phaser from 'phaser';
 import { beginDraw, clearAll, type TexSize } from './canvasKit';
 import { AXO_REST_POSE, AXO_TEX, drawAxolotl, type AxolotlPose } from './drawAxolotl';
+import { PEBBLE_TEX, paintShinyPebble } from './drawFinds';
+import { BURROW_TEX, FLAG_TEX, RING_DOT_TEX, paintBurrow, paintMarkerFlag, paintRingDot } from './drawHomeSpot';
 import {
   BUG_TEX,
   SPARKLE_TEX,
@@ -61,6 +63,10 @@ export const TEX = {
   streak: 'streak',
   stickBase: 'stick-base',
   stickKnob: 'stick-knob',
+  homeBurrow: 'home-burrow',
+  homeFlag: 'home-flag',
+  homeRingDot: 'home-ring-dot',
+  pebble: 'find-pebble',
 } as const;
 
 /** Bubble radii baked, logical px. */
@@ -79,7 +85,7 @@ export type ButtonVisual = 'normal' | 'pressed' | 'focused';
 const FILL_NAMES = Object.keys(BUTTON_FILLS) as ButtonFill[];
 const SHAPES: readonly ButtonShape[] = ['wide', 'square'];
 const VISUALS: readonly ButtonVisual[] = ['normal', 'pressed', 'focused'];
-const ICON_KINDS: readonly IconKind[] = ['dash', 'pause', 'play', 'snack'];
+const ICON_KINDS: readonly IconKind[] = ['dash', 'pause', 'play', 'snack', 'home', 'bag'];
 
 export const bgKey = (i: number): string => `bg-${i}`;
 export const reedKey = (i: number): string => `reed-${i}`;
@@ -191,6 +197,14 @@ export interface BakedTextures {
   readonly icons: Readonly<Record<IconKind, TexInfo>>;
   /** Swim pad parts. Anchor is the disc centre. Baked at STICK_BASE_R / STICK_KNOB_R. */
   readonly stick: { readonly base: TexInfo; readonly knob: TexInfo };
+  /**
+   * Home Spot parts (provisional). Burrow anchor is its base centre (on the bed);
+   * flag anchor is the post base (place it at BURROW_FLAG_OFFSET from the burrow,
+   * sway it around the anchor); ring dot anchor is the dot centre.
+   */
+  readonly homeSpot: { readonly burrow: TexInfo; readonly flag: TexInfo; readonly ringDot: TexInfo };
+  /** Shiny pebble placeholder find (provisional). Anchor is the pebble centre. */
+  readonly pebble: TexInfo;
 }
 
 /** Bake all static textures into the scene's texture manager. */
@@ -275,7 +289,14 @@ export function bakeTextures(scene: Phaser.Scene, opts: BakeOptions): BakedTextu
     ),
   };
 
-  return { info, bg, reeds, pads, worm, bug, sparkle, streak, bubbles, icons, stick };
+  const homeSpot = {
+    burrow: add(bake(scene, TEX.homeBurrow, BURROW_TEX, bakeScale, paintBurrow)),
+    flag: add(bake(scene, TEX.homeFlag, FLAG_TEX, bakeScale, paintMarkerFlag)),
+    ringDot: add(bake(scene, TEX.homeRingDot, RING_DOT_TEX, bakeScale, paintRingDot)),
+  };
+  const pebble = add(bake(scene, TEX.pebble, PEBBLE_TEX, bakeScale, paintShinyPebble));
+
+  return { info, bg, reeds, pads, worm, bug, sparkle, streak, bubbles, icons, stick, homeSpot, pebble };
 }
 
 // ---------------------------------------------------------------------------

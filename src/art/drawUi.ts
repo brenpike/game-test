@@ -31,7 +31,53 @@ const STICK_CHEVRON_FRAC = 0.78;
 /** Chevron half-width, logical px. */
 const STICK_CHEVRON_S = 8;
 
-export type IconKind = 'dash' | 'pause' | 'play' | 'snack';
+export type IconKind = 'dash' | 'pause' | 'play' | 'snack' | 'home' | 'bag';
+
+/**
+ * House icon (guide 7d), shared by the Home Spot flag and every "go home" UI.
+ * Sizes are to the outer edge of the ink, as for the 32 icon box: a rounded
+ * roof 14 wide and 6 tall over a square body 10 x 8, ink 2.4.
+ */
+export const HOUSE_ICON = { w: 14, h: 14, roofH: 6, bodyW: 10, lw: 2.4 } as const;
+/** House icon scale inside the 32 icon box: 21 x 21 outer, ink 3.6. Provisional. */
+export const HOUSE_ICON_BOX_SCALE = 1.5;
+/** Rounding of the roof peak, at scale 1. Provisional. */
+const HOUSE_ROOF_ROUND = 2;
+
+/**
+ * Stroke the house icon centred on (cx, cy), `scale` times its guide size.
+ * Ink only, round joins and caps; the line width scales with the icon.
+ */
+export function strokeHouseIcon(ctx: CanvasRenderingContext2D, cx: number, cy: number, scale = 1): void {
+  const { w, h, roofH, bodyW, lw } = HOUSE_ICON;
+  const half = lw / 2;
+  // centreline coordinates, so the outer ink edge lands on the guide sizes
+  const top = -h / 2 + half;
+  const eave = -h / 2 + roofH;
+  const bottom = h / 2 - half;
+  const roofX = w / 2 - half;
+  const bodyX = bodyW / 2 - half;
+
+  const p = new Path2D();
+  p.moveTo(-roofX, eave);
+  p.arcTo(0, top, roofX, eave, HOUSE_ROOF_ROUND);
+  p.lineTo(roofX, eave);
+  p.closePath();
+  p.moveTo(-bodyX, eave);
+  p.lineTo(-bodyX, bottom);
+  p.lineTo(bodyX, bottom);
+  p.lineTo(bodyX, eave);
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  ctx.lineWidth = lw;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = INK;
+  ctx.stroke(p);
+  ctx.restore();
+}
 
 export interface ButtonState {
   /** Draw moved down by BUTTON_PRESS_OFFSET. */
@@ -166,6 +212,30 @@ export function paintIcon(ctx: CanvasRenderingContext2D, kind: IconKind, size: n
       w.bezierCurveTo(8, 11, 14, 11, 16, 17);
       w.bezierCurveTo(18, 23, 23, 23, 26, 13);
       ctx.stroke(w);
+      break;
+    }
+    case 'home': {
+      // the shared 7d house icon, sized for the 32 box
+      strokeHouseIcon(ctx, ICON_SIZE / 2, ICON_SIZE / 2, HOUSE_ICON_BOX_SCALE);
+      break;
+    }
+    case 'bag': {
+      // Trip Bag: a drawstring pouch, ink only
+      ctx.lineWidth = 3;
+      const pouch = new Path2D();
+      pouch.moveTo(12.5, 12);
+      pouch.bezierCurveTo(5, 16, 4.5, 27.5, 16, 27.5);
+      pouch.bezierCurveTo(27.5, 27.5, 27, 16, 19.5, 12);
+      pouch.closePath();
+      // gathered top above the drawstring
+      pouch.moveTo(12.5, 12);
+      pouch.lineTo(9.5, 6);
+      pouch.quadraticCurveTo(16, 8, 22.5, 6);
+      pouch.lineTo(19.5, 12);
+      // loose drawstring end
+      pouch.moveTo(19.5, 12);
+      pouch.quadraticCurveTo(24, 13, 24.5, 17);
+      ctx.stroke(pouch);
       break;
     }
   }

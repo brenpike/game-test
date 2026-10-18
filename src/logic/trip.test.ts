@@ -6,6 +6,10 @@ import {
   LEG_PROGRESS_STEPS,
   createTrip,
   createTripContext,
+  findKinds,
+  goHome,
+  idleTripSnapshot,
+  keepExploring,
   legsSnapshot,
   newTrip,
   sameTripSnapshot,
@@ -18,9 +22,9 @@ import {
   type TripState,
   type TripStepResult,
 } from './trip';
-import { TRIP_EVENTS, TRIP_REGISTRY_KEYS } from './tripEvents';
-import { CARRY, LEGS, SWIM } from './tuning';
-import { buildCanalZone, swimBounds, type Point } from './zone';
+import { TRIP_EVENTS, TRIP_REGISTRY_KEYS, type TripSnapshot } from './tripEvents';
+import { CARRY, FINDS, LEGS, SWIM } from './tuning';
+import { buildCanalZone, swimBounds, type FindSpawn, type Point } from './zone';
 
 const DT = 1 / 60;
 const PAUSE_DTS = [0, -1, Number.NaN, Number.POSITIVE_INFINITY];
@@ -30,6 +34,17 @@ const inRange: Point = { x: routeStart.x + 60, y: routeStart.y };
 const ctx = createTripContext({ encounter: createEncounterContext({ legs: { ...LEGS, regrowTime: 1e9 } }) });
 const farZone: TripSource = { ...zone, tilapiaRoutes: [{ id: 'far', waypoints: [{ x: 1500, y: 200 }] }] };
 const farTarget: Point = { x: 1560, y: 200 };
+const home: Point = zone.start;
+const outside: Point = { x: 400, y: 200 };
+const pebbleA: FindSpawn = { id: 'canal/pebble-a', kind: 'pebble', x: 500, y: 200 };
+const pebbleB: FindSpawn = { id: 'canal/pebble-b', kind: 'pebble', x: 600, y: 260 };
+const findZone: TripSource = {
+  ...zone,
+  tilapiaRoutes: [{ id: 'calm', waypoints: [{ x: 1800, y: 120 }] }],
+  finds: [pebbleA, pebbleB],
+};
+const carryFind: FindSpawn = { id: 'canal/pebble-c', kind: 'pebble', x: inRange.x, y: inRange.y };
+const carryZone: TripSource = { ...zone, finds: [carryFind, pebbleB] };
 
 interface Drive {
   state: TripState;
@@ -51,6 +66,26 @@ function drive(state: TripState, input: TripInput, until: TripEvent['type'], lim
     if (last.events.some((event) => event.type === until)) break;
   }
   return { state: current, events, last, seconds };
+}
+
+function stepAt(state: TripState, pos: Point): TripStepResult {
+  return stepTrip(state, { axolotlPos: pos, reduced: false }, DT, ctx);
+}
+
+function walk(state: TripState, path: Point[]): Drive {
+  let current = state;
+  const events: TripEvent[] = [];
+  let last: TripStepResult = { state, events: [] };
+  for (const pos of path) {
+    last = stepAt(current, pos);
+    current = last.state;
+    events.push(...last.events);
+  }
+  return { state: current, events, last, seconds: path.length * DT };
+}
+
+function banked(): Drive {
+  return walk(createTrip(findZone), [pebbleA, pebbleB, outside, home]);
 }
 
 function countOf(events: TripEvent[], type: TripEvent['type']): number {
@@ -93,6 +128,226 @@ describe('createTrip', () => {
     expect(trip.home).toEqual(zone.start);
     expect(trip.encounter).toEqual(createEncounter(zone));
     expect(tripAxolotlPos(trip)).toBeNull();
+  });
+
+  it('starts with an empty bag, the given banked ids, inside the Home Spot and no ending', () => {
+    const trip = createTrip(findZone, LEGS, ['canal/pebble-9', 'canal/pebble-9', 'canal/pebble-8']);
+    expect(trip.holdings.bag).toEqual([]);
+    expect(trip.holdings.banked).toEqual(['canal/pebble-9', 'canal/pebble-8']);
+    expect(trip.inHomeSpot).toBe(true);
+    expect(trip.ending).toBeNull();
+    expect(trip.bankedThisTrip).toEqual([]);
+    expect(trip.justBanked).toEqual([]);
+    expect(trip.heldAt).toBeNull();
+  });
+});
+
+describe('stepTrip finds', () => {
+  it('picks up a find at its spot once and fills the bag', () => {
+    const near: Point = { x: pebbleA.x + FINDS.pickupRadius, y: pebbleA.y };
+    const { state, events } = walk(createTrip(findZone), [near, pebbleA, pebbleA]);
+    expect(events.filter((event) => event.type === 'pickedUp')).toEqual([{ type: 'pickedUp', id: pebbleA.id }]);
+    expect(state.holdings.bag).toEqual([pebbleA.id]);
+    expect(state.inHomeSpot).toBe(false);
+    expect(state.phase).toBe('swimming');
+  });
+
+  it('does not pick up a find just outside the pickup radius', () => {
+    const away: Point = { x: pebbleA.x + FINDS.pickupRadius + 0.5, y: pebbleA.y };
+    const result = stepAt(createTrip(findZone), away);
+    expect(result.events).toEqual([]);
+    expect(result.state.holdings.bag).toEqual([]);
+  });
+
+  it('never picks up a banked find again', () => {
+    const preBanked = createTrip(findZone, LEGS, [pebbleA.id]);
+    expect(countOf(stepAt(preBanked, pebbleA).events, 'pickedUp')).toBe(0);
+    const resumed = keepExploring(banked().state);
+    const again = walk(resumed, [outside, pebbleA, pebbleB]);
+    expect(countOf(again.events, 'pickedUp')).toBe(0);
+    expect(again.state.holdings.bag).toEqual([]);
+  });
+
+  it('banks the whole bag inside the ring, freezing the trip where the axolotl is', () => {
+    const before = walk(createTrip(findZone, LEGS, ['canal/pebble-9']), [pebbleA, pebbleB, outside]).state;
+    expect(before.holdings.bag).toEqual([pebbleA.id, pebbleB.id]);
+    const result = stepAt(before, home);
+    expect(result.events).toEqual([{ type: 'banked', ids: [pebbleA.id, pebbleB.id] }]);
+    expect(result.impulse).toBeUndefined();
+    const { state } = result;
+    expect(state.phase).toBe('banked');
+    expect(state.holdings.bag).toEqual([]);
+    expect(state.holdings.banked.length).toBe(before.holdings.banked.length + 2);
+    expect(state.holdings.banked).toEqual(['canal/pebble-9', pebbleA.id, pebbleB.id]);
+    expect(state.justBanked).toEqual([pebbleA.id, pebbleB.id]);
+    expect(state.bankedThisTrip).toEqual([pebbleA.id, pebbleB.id]);
+    expect(state.inHomeSpot).toBe(true);
+    expect(tripAxolotlPos(state)).toEqual(home);
+  });
+
+  it('does nothing inside the ring with an empty bag', () => {
+    const start = walk(createTrip(findZone), [outside]).state;
+    const result = stepAt(start, home);
+    expect(result.events).toEqual([]);
+    expect(result.state.phase).toBe('swimming');
+    expect(result.state.inHomeSpot).toBe(true);
+    expect(result.state.holdings).toBe(start.holdings);
+    expect(tripAxolotlPos(result.state)).toBeNull();
+  });
+
+  it('does not re-bank after keepExploring inside the ring, and banks again after a new find', () => {
+    const resumed = keepExploring(banked().state);
+    expect(resumed.phase).toBe('swimming');
+    expect(resumed.justBanked).toEqual([]);
+    expect(resumed.heldAt).toBeNull();
+    const stay = walk(resumed, [home, home, home]);
+    expect(stay.events).toEqual([]);
+    expect(stay.state.phase).toBe('swimming');
+    const extra: FindSpawn = { id: 'canal/pebble-x', kind: 'pebble', x: 700, y: 200 };
+    const withExtra: TripState = { ...stay.state, finds: [...stay.state.finds, extra] };
+    const trip = walk(withExtra, [outside, extra, outside, home]);
+    expect(trip.events).toEqual([
+      { type: 'pickedUp', id: extra.id },
+      { type: 'banked', ids: [extra.id] },
+    ]);
+    expect(trip.state.phase).toBe('banked');
+    expect(trip.state.justBanked).toEqual([extra.id]);
+    expect(trip.state.bankedThisTrip).toEqual([pebbleA.id, pebbleB.id, extra.id]);
+  });
+
+  it('keepExploring returns the same object outside the banked phase', () => {
+    const swimming = createTrip(findZone);
+    const carry = carrying(zone, inRange, false).state;
+    const done = ended();
+    expect(keepExploring(swimming)).toBe(swimming);
+    expect(keepExploring(carry)).toBe(carry);
+    expect(keepExploring(done)).toBe(done);
+  });
+});
+
+describe('banked trip', () => {
+  it('returns the same state for every step, including pause dts, with legs frozen', () => {
+    const base = banked().state;
+    const state: TripState = { ...base, encounter: { ...base.encounter, legs: regrowingLegs(0.3) } };
+    for (const dt of [DT, 1, ...PAUSE_DTS]) {
+      for (const pos of [home, pebbleA, inRange]) {
+        const result = stepTrip(state, { axolotlPos: pos, reduced: false }, dt, ctx);
+        expect(result.state).toBe(state);
+        expect(result.events).toEqual([]);
+        expect(result.impulse).toBeUndefined();
+      }
+    }
+    expect(tripAxolotlPos(state)).toEqual(home);
+  });
+});
+
+describe('goHome', () => {
+  it('ends a banked trip with wentHome and every id banked this trip', () => {
+    const state = banked().state;
+    const result = goHome(state);
+    expect(result.events).toEqual([]);
+    expect(result.state.phase).toBe('ended');
+    expect(result.state.ending).toEqual({
+      reason: 'wentHome',
+      returned: [],
+      bankedThisTrip: [pebbleA.id, pebbleB.id],
+    });
+    expect(result.state.holdings).toBe(state.holdings);
+    expect(tripAxolotlPos(result.state)).toEqual(state.home);
+  });
+
+  it('ends from swimming inside the ring with an empty bag and changes nothing else', () => {
+    const state = createTrip(findZone, LEGS, ['canal/pebble-9']);
+    const result = goHome(state);
+    expect(result.events).toEqual([]);
+    expect(result.state.phase).toBe('ended');
+    expect(result.state.holdings).toBe(state.holdings);
+    expect(result.state.ending).toEqual({ reason: 'wentHome', returned: [], bankedThisTrip: [] });
+  });
+
+  it('banks a non-empty bag first when going home from swimming inside the ring', () => {
+    const start = createTrip(findZone, LEGS, ['canal/pebble-9']);
+    const state: TripState = { ...start, holdings: { bag: [pebbleA.id], banked: ['canal/pebble-9'] } };
+    const result = goHome(state);
+    expect(result.events).toEqual([{ type: 'banked', ids: [pebbleA.id] }]);
+    expect(result.state.phase).toBe('ended');
+    expect(result.state.holdings).toEqual({ bag: [], banked: ['canal/pebble-9', pebbleA.id] });
+    expect(result.state.ending).toEqual({ reason: 'wentHome', returned: [], bankedThisTrip: [pebbleA.id] });
+  });
+
+  it('is a no-op outside the ring, while carrying or once ended', () => {
+    const away = walk(createTrip(findZone), [pebbleA, outside]).state;
+    const carry = carrying(zone, inRange, false).state;
+    const carryInside: TripState = { ...carry, inHomeSpot: true };
+    const done = ended();
+    for (const state of [away, carry, carryInside, done]) {
+      const result = goHome(state);
+      expect(result.state).toBe(state);
+      expect(result.events).toEqual([]);
+    }
+  });
+});
+
+describe('carried home with finds', () => {
+  function carriedHome(): { start: TripState; arrived: Drive } {
+    const start = createTrip(carryZone, LEGS, ['canal/pebble-9']);
+    const carry = drive(start, { axolotlPos: inRange, reduced: false }, 'carryStart');
+    expect(carry.state.holdings.bag).toEqual([carryFind.id]);
+    const arrived = drive(carry.state, { axolotlPos: pebbleB, reduced: false }, 'arrivedHome');
+    return { start, arrived };
+  }
+
+  it('returns exactly the bag ids, keeps banked, restores four legs and ends carriedHome', () => {
+    const { arrived } = carriedHome();
+    const { state } = arrived;
+    expect(arrived.last.events).toEqual([{ type: 'arrivedHome', still: false, returned: [carryFind.id] }]);
+    expect(state.phase).toBe('ended');
+    expect(state.holdings).toEqual({ bag: [], banked: ['canal/pebble-9'] });
+    expect(presentCount(state.encounter.legs)).toBe(LEGS.count);
+    expect(state.ending).toEqual({ reason: 'carriedHome', returned: [carryFind.id], bankedThisTrip: [] });
+    expect(state.inHomeSpot).toBe(true);
+  });
+
+  it('picks nothing up during the carry', () => {
+    const { arrived } = carriedHome();
+    expect(countOf(arrived.events, 'pickedUp')).toBe(0);
+    expect(arrived.state.holdings.bag).toEqual([]);
+  });
+
+  it('lets returned finds be picked up again next trip', () => {
+    const next = newTrip(carriedHome().arrived.state);
+    const result = stepAt(next, carryFind);
+    expect(countOf(result.events, 'pickedUp')).toBe(1);
+    expect(result.state.holdings.bag).toEqual([carryFind.id]);
+  });
+});
+
+describe('snacks are not finds (A19)', () => {
+  it('never puts a snack id in the bag, banked or returned', () => {
+    const snackIds = new Set(zone.collectibles.map((snack) => snack.id));
+    const findIds = zone.finds.map((find) => find.id);
+    const path: Point[] = [...zone.collectibles, ...zone.finds];
+    const swum = walk(createTrip(zone), path);
+    expect(swum.state.phase).toBe('swimming');
+    expect([...swum.state.holdings.bag].sort()).toEqual([...findIds].sort());
+    const bankedTrip = stepAt(swum.state, home).state;
+    expect([...bankedTrip.holdings.banked].sort()).toEqual([...findIds].sort());
+    const carry = drive(swum.state, { axolotlPos: inRange, reduced: false }, 'carryStart').state;
+    const arrived = drive(carry, { axolotlPos: inRange, reduced: false }, 'arrivedHome').state;
+    const ids = [
+      ...swum.state.holdings.bag,
+      ...bankedTrip.holdings.banked,
+      ...(arrived.ending?.returned ?? []),
+    ];
+    expect([...(arrived.ending?.returned ?? [])].sort()).toEqual([...findIds].sort());
+    for (const id of ids) expect(snackIds.has(id)).toBe(false);
+  });
+});
+
+describe('findKinds', () => {
+  it('maps ids to kinds in id order and omits unknown ids', () => {
+    expect(findKinds([pebbleB.id, 'nope', pebbleA.id], findZone.finds)).toEqual(['pebble', 'pebble']);
+    expect(findKinds([], findZone.finds)).toEqual([]);
   });
 });
 
@@ -188,7 +443,7 @@ describe('stepTrip still carry', () => {
       arrivals.push(...result.events);
       if (current.phase === 'carrying') expect(tripAxolotlPos(current)).toEqual(farTarget);
     }
-    expect(arrivals).toEqual([{ type: 'arrivedHome', still: true }]);
+    expect(arrivals).toEqual([{ type: 'arrivedHome', still: true, returned: [] }]);
     expect(Math.abs(seconds - CARRY.stillHold)).toBeLessThanOrEqual(DT + 1e-9);
     expect(tripAxolotlPos(current)).toEqual(current.home);
   });
@@ -230,6 +485,20 @@ describe('newTrip', () => {
     expect(fresh.encounter).toEqual(createEncounter(zone));
   });
 
+  it('keeps banked finds with an empty bag and four legs (A18)', () => {
+    const done = goHome(banked().state).state;
+    const fresh = newTrip(done);
+    expect(fresh.phase).toBe('swimming');
+    expect(fresh.holdings).toEqual({ bag: [], banked: [pebbleA.id, pebbleB.id] });
+    expect(presentCount(fresh.encounter.legs)).toBe(LEGS.count);
+    expect(fresh.ending).toBeNull();
+    expect(fresh.bankedThisTrip).toEqual([]);
+    expect(fresh.justBanked).toEqual([]);
+    expect(fresh.inHomeSpot).toBe(true);
+    expect(fresh.finds).toEqual(findZone.finds);
+    expect(fresh.homeSpot).toEqual(findZone.homeSpot);
+  });
+
   it('returns the same object while swimming or carrying', () => {
     const swimming = createTrip(zone);
     const carry = carrying(zone, inRange, false).state;
@@ -258,6 +527,60 @@ describe('snapshots', () => {
     expect(sameTripSnapshot(tripSnapshot(base), tripSnapshot(nextStep))).toBe(false);
     expect(sameTripSnapshot(tripSnapshot(base), tripSnapshot(phaseOnly))).toBe(false);
   });
+
+  it('reports the bag ids, banked count, ring, latest banking and ending', () => {
+    const state = banked().state;
+    expect(tripSnapshot(state)).toEqual({
+      phase: 'banked',
+      legs: legsSnapshot(state.encounter.legs),
+      bag: [],
+      banked: 2,
+      inHomeSpot: true,
+      justBanked: [pebbleA.id, pebbleB.id],
+      ending: null,
+    });
+    const done = tripSnapshot(goHome(state).state);
+    expect(done.ending).toEqual({ reason: 'wentHome', returned: [], bankedThisTrip: [pebbleA.id, pebbleB.id] });
+  });
+
+  it('starts idle as a whole axolotl swimming at the Home Spot with nothing found', () => {
+    expect(idleTripSnapshot()).toEqual(tripSnapshot(createTrip(zone)));
+  });
+
+  it('detects a change in each find and ending field', () => {
+    const base: TripSnapshot = {
+      ...idleTripSnapshot(),
+      bag: ['a'],
+      banked: 1,
+      justBanked: ['b'],
+      ending: { reason: 'wentHome', returned: ['c'], bankedThisTrip: ['b'] },
+    };
+    const ending = base.ending as NonNullable<TripSnapshot['ending']>;
+    const copy: TripSnapshot = { ...base, bag: ['a'], ending: { ...ending, returned: ['c'] } };
+    expect(sameTripSnapshot(base, copy)).toBe(true);
+    const changes: TripSnapshot[] = [
+      { ...base, bag: ['a', 'x'] },
+      { ...base, bag: ['x'] },
+      { ...base, banked: 2 },
+      { ...base, inHomeSpot: false },
+      { ...base, justBanked: [] },
+      { ...base, justBanked: ['x'] },
+      { ...base, ending: null },
+      { ...base, ending: { ...ending, reason: 'carriedHome' } },
+      { ...base, ending: { ...ending, returned: [] } },
+      { ...base, ending: { ...ending, bankedThisTrip: ['x'] } },
+    ];
+    for (const changed of changes) {
+      expect(sameTripSnapshot(base, changed)).toBe(false);
+      expect(sameTripSnapshot(changed, base)).toBe(false);
+    }
+  });
+
+  it('copies arrays so a snapshot does not share state', () => {
+    const state = banked().state;
+    const snapshot = tripSnapshot(state);
+    expect(snapshot.justBanked).not.toBe(state.justBanked);
+  });
 });
 
 describe('trip contract', () => {
@@ -274,6 +597,12 @@ describe('trip contract', () => {
     expect(new Set(tripKeys).size).toBe(tripKeys.length);
     for (const key of tripKeys) expect(gameKeys.has(key)).toBe(false);
   });
+
+  it('includes the banking requests and the banking hint key', () => {
+    expect(TRIP_EVENTS.REQUEST_KEEP_EXPLORING).toBe('request-keep-exploring');
+    expect(TRIP_EVENTS.REQUEST_GO_HOME).toBe('request-go-home');
+    expect(TRIP_REGISTRY_KEYS.bankingHintShown).toBe('bankingHintShown');
+  });
 });
 
 describe('determinism', () => {
@@ -284,6 +613,17 @@ describe('determinism', () => {
     const second = drive(carrying(farZone, farTarget, false).state, input, 'arrivedHome');
     expect(second.state).toEqual(first.state);
     expect(second.events).toEqual(first.events);
+    expect(random).not.toHaveBeenCalled();
+  });
+
+  it('replays the same pickup, banking and going home without Math.random', () => {
+    const random = vi.spyOn(Math, 'random');
+    const path = [pebbleA, outside, pebbleB, outside, home];
+    const first = walk(createTrip(findZone), path);
+    const second = walk(createTrip(findZone), path);
+    expect(second.state).toEqual(first.state);
+    expect(second.events).toEqual(first.events);
+    expect(goHome(second.state)).toEqual(goHome(first.state));
     expect(random).not.toHaveBeenCalled();
   });
 });

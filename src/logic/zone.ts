@@ -8,6 +8,7 @@ export const ZONE_SCREENS = 4;
 export const ZONE_W = SCREEN_W * ZONE_SCREENS;
 
 export const DEFAULT_ZONE_SEED = 0xa70107;
+export const CANAL_AREA_ID = 'canal';
 
 const TAU = Math.PI * 2;
 const REED_CLUSTER_ANCHORS = [320, 600, 1320, 1660];
@@ -23,6 +24,14 @@ const SNACK_START_CLEARANCE = 90;
 const SNACK_MAX_ATTEMPTS = 400;
 const PAD_COUNT = 6;
 const SAFE_AREA: Readonly<SafeArea> = Object.freeze({ x0: 40, x1: 300, y0: SURF, y1: BED_TOP });
+const HOME_SPOT_RADIUS = 72;
+const FIND_POINTS: readonly (readonly [number, number])[] = [
+  [420, 286],
+  [900, 150],
+  [1240, 272],
+  [1560, 118],
+  [1840, 230],
+];
 const TILAPIA_ROUTE_POINTS: readonly (readonly [number, number])[] = [
   [460, 170],
   [720, 140],
@@ -98,6 +107,30 @@ export interface SafeArea {
   y1: number;
 }
 
+/**
+ * Home Spot bank zone: the drawn ring, a circle centred on the zone start (provisional radius).
+ * The axolotl is at the Home Spot when its centre is inside or on the circle. The tilapia
+ * keep-out stays the rectangular SafeArea; the ring sits strictly inside it, so the tilapia
+ * never enters the ring. Every find sits outside the SafeArea, so a trip always carries risk.
+ * Rejected: banking anywhere in the SafeArea (no visible edge, larger bank zone) and a circular
+ * SafeArea (rewrites the tilapia keep-out for no benefit).
+ */
+export interface HomeSpot {
+  x: number;
+  y: number;
+  radius: number;
+}
+
+export type FindKind = 'pebble';
+
+/** Fixed find spawn; ids are `${areaId}/<kind>-<n>` and stay stable across seeds. */
+export interface FindSpawn {
+  id: string;
+  kind: FindKind;
+  x: number;
+  y: number;
+}
+
 /** Tilapia patrol loop: visits waypoints in order, then wraps to the first. */
 export interface TilapiaRoute {
   id: string;
@@ -105,6 +138,7 @@ export interface TilapiaRoute {
 }
 
 export interface ZoneLayout {
+  areaId: string;
   width: number;
   height: number;
   chunks: number;
@@ -118,6 +152,8 @@ export interface ZoneLayout {
   sunChunk: number;
   safeArea: SafeArea;
   tilapiaRoutes: TilapiaRoute[];
+  homeSpot: HomeSpot;
+  finds: FindSpawn[];
 }
 
 /** Water surface height at world x and time t (seconds); ported from prototypes/art-styles/cartoon.js. */
@@ -133,6 +169,11 @@ export function swimBounds(): SwimBounds {
 /** Whether a point lies inside a current zone (inclusive edges). */
 export function isInsideCurrent(pos: Point, zone: CurrentZone): boolean {
   return pos.x >= zone.x0 && pos.x <= zone.x1 && pos.y >= zone.y0 && pos.y <= zone.y1;
+}
+
+/** Whether a point is at the Home Spot: centre distance at most the radius (inclusive). */
+export function inHomeSpot(pos: Point, spot: HomeSpot): boolean {
+  return Math.hypot(pos.x - spot.x, pos.y - spot.y) <= spot.radius;
 }
 
 function buildReedCluster(rand: () => number, anchor: number, firstIndex: number): ReedSpec[] {
@@ -251,6 +292,10 @@ function buildTilapiaRoutes(): TilapiaRoute[] {
   return [{ id: 'tilapia-0', waypoints: TILAPIA_ROUTE_POINTS.map(([x, y]) => ({ x, y })) }];
 }
 
+function buildFinds(): FindSpawn[] {
+  return FIND_POINTS.map(([x, y], i) => ({ id: `${CANAL_AREA_ID}/pebble-${i + 1}`, kind: 'pebble', x, y }));
+}
+
 /** Deterministically builds the 4-screen canal zone layout from a mulberry32 seed. */
 export function buildCanalZone(seed: number = DEFAULT_ZONE_SEED): ZoneLayout {
   const rand = mulberry32(seed);
@@ -269,6 +314,7 @@ export function buildCanalZone(seed: number = DEFAULT_ZONE_SEED): ZoneLayout {
   ];
 
   return {
+    areaId: CANAL_AREA_ID,
     width: ZONE_W,
     height: WORLD_H,
     chunks: ZONE_SCREENS,
@@ -282,5 +328,7 @@ export function buildCanalZone(seed: number = DEFAULT_ZONE_SEED): ZoneLayout {
     sunChunk: 0,
     safeArea: { ...SAFE_AREA },
     tilapiaRoutes: buildTilapiaRoutes(),
+    homeSpot: { x: start.x, y: start.y, radius: HOME_SPOT_RADIUS },
+    finds: buildFinds(),
   };
 }

@@ -7,6 +7,8 @@ import type { LegStatus } from './legs';
 export const TRIP_EVENTS = Object.freeze({
   STATE: 'trip-state',
   REQUEST_NEW_TRIP: 'request-new-trip',
+  REQUEST_KEEP_EXPLORING: 'request-keep-exploring',
+  REQUEST_GO_HOME: 'request-go-home',
 } as const);
 
 export type TripEventName = (typeof TRIP_EVENTS)[keyof typeof TRIP_EVENTS];
@@ -24,24 +26,53 @@ export interface LegsSnapshot {
   protected: boolean;
 }
 
-/** Trip phase: swimming, being carried home after the fourth leg is lost, or ended at home. */
-export type TripPhase = 'swimming' | 'carrying' | 'ended';
+/**
+ * Trip phase: swimming, frozen at the Home Spot while the banked card shows, being carried home
+ * after the fourth leg is lost, or ended at home.
+ */
+export type TripPhase = 'swimming' | 'banked' | 'carrying' | 'ended';
 
-/** Trip display state: the phase and the legs display state. */
+/** How a trip ended: the player chose Go home, or the axolotl was carried home. */
+export type TripEndReason = 'wentHome' | 'carriedHome';
+
+/**
+ * How an ended trip ended. `returned` is the find ids sent back to the world (carried home only).
+ * `bankedThisTrip` is every find id banked during the trip, in banking order.
+ */
+export interface TripEnding {
+  reason: TripEndReason;
+  returned: string[];
+  bankedThisTrip: string[];
+}
+
+/**
+ * Trip display state. `bag` is the Trip Bag find ids in pickup order and `banked` the banked
+ * find count. `inHomeSpot` is whether the axolotl centre is inside the Home Spot ring.
+ * `justBanked` is the find ids of the latest banking, shown on the banked card. `ending` is set
+ * only once the trip has ended.
+ */
 export interface TripSnapshot {
   phase: TripPhase;
   legs: LegsSnapshot;
+  bag: string[];
+  banked: number;
+  inHomeSpot: boolean;
+  justBanked: string[];
+  ending: TripEnding | null;
 }
 
 /** Payload type for each event; `undefined` marks payload-less events. */
 export interface TripEventPayloads {
   [TRIP_EVENTS.STATE]: TripSnapshot;
   [TRIP_EVENTS.REQUEST_NEW_TRIP]: undefined;
+  [TRIP_EVENTS.REQUEST_KEEP_EXPLORING]: undefined;
+  [TRIP_EVENTS.REQUEST_GO_HOME]: undefined;
 }
 
 /** Keys for trip values stored in the shared game registry. Values never repeat a `REGISTRY_KEYS` value. */
 export const TRIP_REGISTRY_KEYS = Object.freeze({
   state: 'tripState',
+  bankingHintShown: 'bankingHintShown',
 } as const);
 
 export type TripRegistryKey = (typeof TRIP_REGISTRY_KEYS)[keyof typeof TRIP_REGISTRY_KEYS];
