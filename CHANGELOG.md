@@ -13,6 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.3.0] - 2026-10-18
+
+### Added
+
+- Invasive tilapia patrol the canal. They never enter the start area. Every lunge is telegraphed with a wind-up pose, a "!" sign, and a glint, so it is readable without colour and under reduced motion. A cooldown follows each lunge.
+- Leg loss and regrowth. A connecting lunge removes one of the axolotl's four legs with a sparkle poof, and a steady stretch of protected time follows. Legs regrow one at a time after about 20 s.
+- Legs display in the HUD. Each leg shows as present, regrowing (with progress), or lost, by shape and fill.
+- Gentle trip end. Losing the fourth leg floats the axolotl home in a bubble. A kind "Carried home!" card offers "Swim again" with four legs. Snacks are kept.
+- Update check. The title screen offers "A new version is ready!" with a one-tap Update. It checks only the game's own site, sends no player data, stays silent when offline, and never touches saved progress (see ADR 0009).
+- Version and build shown in small text on the title screen.
+- Art style guide in `docs/art-style-guide.md`: provisional MVP visuals for rarity badges, the tilapia and its telegraph, leg states, the protected ring, the Home Spot burrow, the Dash pot, the hint sparkle, the Home Tank kit, Wearable slots with keep-clear zones, creator variants, and 12 Dream colours.
+
+### Changed
+
+- Swim speed and wobble now scale with leg count. One leg still beats every current.
+- Tail Dash works at any leg count.
+
 ## [0.2.0] - 2026-10-18
 
 ### Added

@@ -4,7 +4,7 @@ import tseslint from 'typescript-eslint';
 
 export default defineConfig(
   {
-    ignores: ['dist/', 'node_modules/', 'coverage/', 'prototypes/'],
+    ignores: ['dist/', 'node_modules/', 'coverage/', 'prototypes/', '.claude/'],
   },
   js.configs.recommended,
   tseslint.configs.recommended,
