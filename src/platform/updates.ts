@@ -62,7 +62,10 @@ function clearCheckTimeout(watch: UpdateWatch): void {
   watch.timeoutId = null;
 }
 
-/** Runs one check and reports a new build at most once per build id. */
+/**
+ * Runs one check and reports a new build at most once per build id.
+ * A build counts as reported only after `onReady` returns, so a throwing `onReady` is retried on the next check.
+ */
 async function runCheck(watch: UpdateWatch): Promise<void> {
   const controller = new AbortController();
   watch.inFlight = controller;
@@ -86,8 +89,8 @@ async function runCheck(watch: UpdateWatch): Promise<void> {
   if (decision.kind !== 'prompt') return;
   const { manifest } = decision;
   if (watch.notifiedBuildIds.has(manifest.buildId)) return;
-  watch.notifiedBuildIds.add(manifest.buildId);
   watch.onReady(manifest);
+  watch.notifiedBuildIds.add(manifest.buildId);
 }
 
 /** Starts a check unless disposed, one is in flight, or the 60 s throttle has not passed. */
@@ -96,7 +99,8 @@ function requestCheck(watch: UpdateWatch): void {
   const nowMs = performance.now();
   if (!shouldCheck(nowMs, watch.lastCheckMs)) return;
   watch.lastCheckMs = nowMs;
-  void runCheck(watch);
+  // Any failure, including a throwing onReady, stays silent (ADR 0009) and never becomes an unhandled rejection.
+  void runCheck(watch).catch(() => undefined);
 }
 
 /** Ends a watch: removes listeners, clears the timeout, and aborts any in-flight check. */
