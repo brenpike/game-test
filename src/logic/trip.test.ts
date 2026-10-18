@@ -334,6 +334,24 @@ describe('stepTrip Dash pots', () => {
     expect(countOf(arrived.events, 'dashNeeded')).toBe(0);
     expect(placedPot(arrived.state)?.sealed).toBe(true);
   });
+
+  it('keeps the placed, touching and found arrays across steps that change none of them', () => {
+    const start = createTrip(potZone);
+    const away = stepAt(start, outside);
+    expect(away.state.placed).toBe(start.placed);
+    expect(away.state.touchingPots).toBe(start.touchingPots);
+    expect(away.state.found).toBe(start.found);
+    const touching = stepAt(away.state, potSpot);
+    const still = stepAt(touching.state, potSpot);
+    expect(still.state.touchingPots).toEqual([BOW]);
+    expect(still.state.touchingPots).toBe(touching.state.touchingPots);
+    expect(still.state.placed).toBe(start.placed);
+    const broke = stepAt(still.state, potSpot, true);
+    expect(broke.state.placed).not.toBe(start.placed);
+    expect(placedPot(broke.state)?.sealed).toBe(false);
+    expect(placedPot(start)?.sealed).toBe(true);
+    expect(start.found).toEqual([]);
+  });
 });
 
 describe('per-trip placement', () => {

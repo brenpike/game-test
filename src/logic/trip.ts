@@ -372,7 +372,8 @@ function stepSwimming(state: TripState, input: TripInput, step: number, ctx: Tri
 /**
  * Touches every sealed Dash pot within `tuning.containerRadius` of the axolotl: a dash breaks it
  * (`containerBroken`), otherwise a pot not touched on the previous step pushes `dashNeeded`.
- * Returns the placed treasures and the ids of the pots still sealed and touching.
+ * Returns the placed treasures and the ids of the pots still sealed and touching. Each list is the
+ * state's own array when it did not change, so a step that touches no pot allocates neither.
  */
 function touchPots(
   state: TripState,
@@ -380,28 +381,27 @@ function touchPots(
   tuning: FindTuning,
   events: TripEvent[],
 ): Pick<TripState, 'placed' | 'touchingPots'> {
-  const placed: PlacedFind[] = [];
+  let placed = state.placed;
   const touchingPots: FindId[] = [];
-  for (const find of state.placed) {
-    if (!find.sealed || distanceTo(find, input.axolotlPos) > tuning.containerRadius) {
-      placed.push(find);
-    } else if (input.dashing) {
+  state.placed.forEach((find, index) => {
+    if (!find.sealed || distanceTo(find, input.axolotlPos) > tuning.containerRadius) return;
+    if (input.dashing) {
       events.push({ type: 'containerBroken', id: find.id, spotId: find.spotId, at: { x: find.x, y: find.y } });
-      placed.push({ ...find, sealed: false });
-    } else {
-      if (!state.touchingPots.includes(find.id)) {
-        events.push({ type: 'dashNeeded', id: find.id, spotId: find.spotId, at: { x: find.x, y: find.y } });
-      }
-      touchingPots.push(find.id);
-      placed.push(find);
+      if (placed === state.placed) placed = [...state.placed];
+      placed[index] = { ...find, sealed: false };
+      return;
     }
-  }
-  return { placed, touchingPots };
+    if (!state.touchingPots.includes(find.id)) {
+      events.push({ type: 'dashNeeded', id: find.id, spotId: find.spotId, at: { x: find.x, y: find.y } });
+    }
+    touchingPots.push(find.id);
+  });
+  return { placed, touchingPots: sameIds(touchingPots, state.touchingPots) ? state.touchingPots : touchingPots };
 }
 
 /**
  * Puts every unsealed treasure not yet held within `tuning.pickupRadius` of `pos` into the Trip Bag
- * and onto `found`, pushing `pickedUp` each.
+ * and onto `found`, pushing `pickedUp` each. `found` is the state's own array when nothing was picked up.
  */
 function pickUpNearby(
   state: TripState,
@@ -410,12 +410,12 @@ function pickUpNearby(
   events: TripEvent[],
 ): Pick<TripState, 'holdings' | 'found'> {
   let holdings = state.holdings;
-  const found = [...state.found];
+  let found = state.found;
   for (const find of state.placed) {
     if (find.sealed || isHeld(holdings, find.id)) continue;
     if (distanceTo(find, pos) > tuning.pickupRadius) continue;
     holdings = pickUp(holdings, find.id);
-    found.push(find.id);
+    found = [...found, find.id];
     const at = { x: find.x, y: find.y };
     events.push({ type: 'pickedUp', id: find.id, spotId: find.spotId, at, found: foundInfo(find.id) });
   }

@@ -143,8 +143,12 @@ function rarityOf(id: FindId): Rarity {
 export class TreasureView {
   private readonly assets: GameAssets;
   private readonly finds: FindSprites[];
+  private readonly spritesById: ReadonlyMap<FindId, FindSprites>;
   private readonly crumbles: Crumble[];
   private crumbleCursor = 0;
+  /** The placed list `placedById` indexes; the trip keeps the same array until a pot breaks or a trip starts. */
+  private placedRef: readonly PlacedFind[] | null = null;
+  private placedById: ReadonlyMap<FindId, PlacedFind> = new Map();
 
   constructor(scene: Phaser.Scene, assets: GameAssets, zone: ZoneLayout, placed: readonly PlacedFind[]) {
     this.assets = assets;
@@ -159,6 +163,7 @@ export class TreasureView {
     }
     bakedImage(scene, hiding.currentMarker, pastCurrentMarkerX(current, zone.homeSpot), baseY, DEPTH.currentMarker);
     this.finds = zone.finds.map((find, i) => this.createFindSprites(scene, find.id, i));
+    this.spritesById = new Map(this.finds.map((sprites) => [sprites.id, sprites]));
     this.crumbles = Array.from({ length: CRUMBLE_POOL }, () => this.createCrumble(scene));
     this.reset(placed);
   }
@@ -174,7 +179,7 @@ export class TreasureView {
 
   /** Draws one frame. */
   render(frame: TreasureFrame): void {
-    const placedById = new Map(frame.placed.map((find) => [find.id, find]));
+    const placedById = this.placedIndex(frame.placed);
     for (const sprites of this.finds) {
       const find = placedById.get(sprites.id);
       if (find) {
@@ -191,7 +196,7 @@ export class TreasureView {
    * clears every effect, hint state and timer.
    */
   reset(placed: readonly PlacedFind[]): void {
-    const placedById = new Map(placed.map((find) => [find.id, find]));
+    const placedById = this.placedIndex(placed);
     for (const sprites of this.finds) {
       this.hideFind(sprites);
       const find = placedById.get(sprites.id);
@@ -255,8 +260,17 @@ export class TreasureView {
     return { shards, twinkles, at: { x: 0, y: 0 }, age: CRUMBLE_LIFE_S };
   }
 
+  /** The placed treasures by id, rebuilt only when `placed` is a different array from last time. */
+  private placedIndex(placed: readonly PlacedFind[]): ReadonlyMap<FindId, PlacedFind> {
+    if (placed !== this.placedRef) {
+      this.placedRef = placed;
+      this.placedById = new Map(placed.map((find) => [find.id, find]));
+    }
+    return this.placedById;
+  }
+
   private findSprites(id: FindId): FindSprites {
-    const sprites = this.finds.find((candidate) => candidate.id === id);
+    const sprites = this.spritesById.get(id);
     if (!sprites) {
       throw new Error(`TreasureView: no sprites for find "${id}"`);
     }
