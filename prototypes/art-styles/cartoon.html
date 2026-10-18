@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Axolotl art style prototype - Cute Cartoon</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    /* deep canal teal: letterbox matches the scene's water */
+    background: #0c6a8c;
+  }
+  canvas {
+    display: block;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    /* contain-fit at 4:3 */
+    width: min(100vw, calc(100vh * 4 / 3));
+    height: auto;
+    aspect-ratio: 4 / 3;
+  }
+</style>
+</head>
+<body>
+<canvas id="scene" width="480" height="360" role="img" aria-label="Cute cartoon style: a pink axolotl swimming in a Xochimilco canal with reeds, lily pads and a chinampa bank">Cute cartoon style axolotl scene (canvas animation).</canvas>
+<script src="cartoon.js" defer></script>
+</body>
+</html>

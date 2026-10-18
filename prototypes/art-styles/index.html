@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Axolotl Game — Art Style Prototypes</title>
+<style>
+  :root {
+    --bg: #eef6fa;
+    --surface: #ffffff;
+    --text: #1d2b36;
+    --text-muted: #3f4f5c;
+    --accent: #0b5a8a;
+    --accent-hover: #083f61;
+    --border: #b9d3e0;
+    --focus: #7a1fa2;
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    padding: clamp(16px, 4vw, 40px);
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+  header {
+    max-width: 1200px;
+    margin: 0 auto 24px;
+  }
+  h1 {
+    margin: 0 0 8px;
+    font-size: clamp(1.5rem, 4vw, 2.25rem);
+    line-height: 1.2;
+  }
+  header p {
+    margin: 0;
+    font-size: 1.0625rem;
+    color: var(--text-muted);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+    gap: clamp(16px, 2.5vw, 28px);
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  figure {
+    margin: 0;
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  iframe {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    border: 0;
+    background: #dfeaf0;
+  }
+  figcaption {
+    padding: 14px 16px 8px;
+    border-top: 2px solid var(--border);
+  }
+  .style-name {
+    display: block;
+    margin: 0 0 4px;
+    font-size: 1.25rem;
+    font-weight: 700;
+  }
+  .style-desc {
+    display: block;
+    margin: 0 0 8px;
+    color: var(--text-muted);
+  }
+  .open-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 4px;
+    margin-left: -4px;
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    border-radius: 6px;
+  }
+  .open-link:hover { color: var(--accent-hover); }
+  .open-link:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Axolotl Game — Art Style Prototypes</h1>
+  <p>Compare three looks for the game side by side, then open any one full page to try it.</p>
+</header>
+
+<main class="grid">
+  <figure>
+    <iframe src="cartoon.html" title="Cartoon style prototype preview" loading="lazy"></iframe>
+    <figcaption>
+      <span class="style-name">Cartoon</span>
+      <span class="style-desc">Bold outlines and bright, flat colors.</span>
+      <a class="open-link" href="cartoon.html">Open full page: Cartoon</a>
+    </figcaption>
+  </figure>
+
+  <figure>
+    <iframe src="pixel.html" title="Pixel style prototype preview" loading="lazy"></iframe>
+    <figcaption>
+      <span class="style-name">Pixel</span>
+      <span class="style-desc">Chunky retro blocks and a limited palette.</span>
+      <a class="open-link" href="pixel.html">Open full page: Pixel</a>
+    </figcaption>
+  </figure>
+
+  <figure>
+    <iframe src="watercolor.html" title="Watercolor style prototype preview" loading="lazy"></iframe>
+    <figcaption>
+      <span class="style-name">Watercolor</span>
+      <span class="style-desc">Soft color washes and gentle, blurry edges.</span>
+      <a class="open-link" href="watercolor.html">Open full page: Watercolor</a>
+    </figcaption>
+  </figure>
+</main>
+</body>
+</html>
