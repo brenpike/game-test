@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.5.0] - 2026-10-18
+
+### Added
+
+- Hidden treasures in the canal: 4 Decorations, 4 Wearables (one per slot, perk stored as data) and 12 Paint shells, across Common, Rare, Epic and Legendary.
+- Rarity badges (circle, diamond, shield, star) with the rarity name.
+- Paint shells, each with a Dream colour swatch.
+- Dash pots: Legendary treasures hide in a pot that only Tail Dash can break, with a "dash needed" bubble and a crumble.
+- Hint sparkle near unfound treasures. Rarer treasures give a smaller, shorter-range hint.
+- Find pop-up showing the treasure's icon, name, category and rarity.
+- A small cave and a past-the-current hiding area.
+
+### Changed
+
+- Placeholder shiny pebbles replaced by real treasures. The banking card and home screen name and show them.
+- Hiding spots now shuffle each trip. Treasures lost when carried home reappear next trip in a fresh spot.
+- The canal now has at least 3 tilapia, and only one telegraphs or lunges at a time.
+
 ## [0.4.0] - 2026-10-18
 
 ### Added
