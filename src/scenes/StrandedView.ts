@@ -143,6 +143,13 @@ export class StrandedView {
   /**
    * Repaints the texture when the pose or morph changes. While the frame rate is low, repaints are
    * capped at 30 a second, as for the explorer.
+   *
+   * Known trade-off: with normal motion the pose changes almost every frame, so this is one more
+   * live texture repaint per frame, on top of the explorer's. It uses the same reactive low-FPS cap
+   * as the explorer, the title axolotl and the Home Tank axolotls, and costs about the same as a
+   * second axolotl in the tank. Caching or quantizing poses ahead of time was considered and not
+   * done here: doing it for one view would split the axolotl rendering pattern, and the planned
+   * move to pre-baked sprite atlases (ADR 0004) is where that change belongs for every axolotl.
    */
   private redraw(morph: RealMorphId, pose: AxolotlPose, dt: number): void {
     const lastPose = this.paintedMorph === morph ? this.lastPose : null;

@@ -362,6 +362,36 @@ describe('stepFollower', () => {
     expect(pathLength).toBeLessThan(RESCUE.followGap + RESCUE.maxLag + SWIM.dashSpeed * DT + RESCUE.trailStep);
   });
 
+  it('settles followGap of path behind a leader that stops after a straight swim', () => {
+    let rescue = rescueAt({ x: 500, y: 200 });
+    for (let i = 1; i <= 60; i++) rescue = stepFollower(rescue, { x: 500 + i * 3, y: 200 }, DT);
+    for (let i = 0; i < STOP_STEPS; i++) rescue = stepFollower(rescue, { x: 680, y: 200 }, DT);
+    expect(rescue.pos.x).toBeCloseTo(680 - RESCUE.followGap, 6);
+    expect(rescue.pos.y).toBeCloseTo(200, 6);
+  });
+
+  it('keeps the same trail array, untouched, while the leader moves less than a trail step', () => {
+    let rescue = rescueAt({ x: 500, y: 200 });
+    for (let i = 1; i <= 30; i++) rescue = stepFollower(rescue, { x: 500 + i * 3, y: 200 }, DT);
+    const trail = rescue.trail;
+    const before = trail.map((point) => ({ ...point }));
+    const newest = trail[trail.length - 1];
+    const next = stepFollower(rescue, { x: newest.x + RESCUE.trailStep / 2, y: 200 }, DT);
+    expect(next.trail).toBe(trail);
+    expect(trail).toEqual(before);
+  });
+
+  it('adds a point in a new trail array and leaves the input trail untouched', () => {
+    let rescue = rescueAt({ x: 500, y: 200 });
+    for (let i = 1; i <= 30; i++) rescue = stepFollower(rescue, { x: 500 + i * 3, y: 200 }, DT);
+    const trail = rescue.trail;
+    const before = trail.map((point) => ({ ...point }));
+    const next = stepFollower(rescue, { x: 600, y: 200 }, DT);
+    expect(next.trail).not.toBe(trail);
+    expect(next.trail[next.trail.length - 1]).toEqual({ x: 600, y: 200 });
+    expect(trail).toEqual(before);
+  });
+
   it('faces the way it swims', () => {
     let rescue = rescueAt({ x: 500, y: 200 });
     for (let i = 1; i <= 60; i++) rescue = stepFollower(rescue, { x: 500 + i * 2.5, y: 200 }, DT);

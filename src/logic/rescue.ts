@@ -138,7 +138,7 @@ export function stepFollower(
 ): RescueState {
   if (!(dt > 0) || !Number.isFinite(dt)) return rescue;
   const trail = trimTrail(appendTrail(rescue.trail, leader, tuning.trailStep), leader, tuning.followGap + tuning.maxLag);
-  const target = pointBehind(leader, [...trail].reverse().concat([rescue.pos]), tuning.followGap);
+  const target = pointBehind(leader, trail, rescue.pos, tuning.followGap);
   const moved = moveToward(rescue.pos, target, tuning.followSpeed * dt);
   const pos = leashTo(moved, leader, tuning.maxLag);
   return { ...rescue, pos, trail, facing: nextFacing(rescue.facing, (pos.x - rescue.pos.x) / dt) };
@@ -187,9 +187,13 @@ function lerpPoint(from: Point, to: Point, t: number): Point {
   return { x: from.x + (to.x - from.x) * share, y: from.y + (to.y - from.y) * share };
 }
 
-function appendTrail(trail: readonly Point[], leader: Point, trailStep: number): Point[] {
+/**
+ * The trail with `leader` added once it has moved at least `trailStep` from the newest point.
+ * Returns the same array when nothing is added, so a step that adds no point allocates nothing.
+ */
+function appendTrail(trail: Point[], leader: Point, trailStep: number): Point[] {
   const last = trail[trail.length - 1];
-  if (last && distanceBetween(last, leader) < trailStep) return [...trail];
+  if (last && distanceBetween(last, leader) < trailStep) return trail;
   return [...trail, { x: leader.x, y: leader.y }];
 }
 
@@ -205,11 +209,16 @@ function trimTrail(trail: Point[], leader: Point, keepLength: number): Point[] {
   return trail;
 }
 
-/** The point `distance` of path behind `leader` along `points` (newest first), or the last point. */
-function pointBehind(leader: Point, points: readonly Point[], distance: number): Point {
+/**
+ * The point `distance` of path behind `leader`, walking `trail` (oldest first) from its newest
+ * point back to its oldest and then on to `end`; `end` when the path is shorter. Walks in place,
+ * with no copy of the trail.
+ */
+function pointBehind(leader: Point, trail: readonly Point[], end: Point, distance: number): Point {
   let remaining = distance;
   let previous = leader;
-  for (const point of points) {
+  for (let i = trail.length - 1; i >= -1; i--) {
+    const point = i >= 0 ? trail[i] : end;
     const segment = distanceBetween(previous, point);
     if (segment >= remaining && segment > 0) return lerpPoint(previous, point, remaining / segment);
     remaining -= segment;
