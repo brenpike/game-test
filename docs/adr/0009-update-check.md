@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-18
+- Updated: 2026-10-18. The repository was renamed from `game-test` to `glam-gills` (issue #28), so the URL and base path below changed. The decision is unchanged.
 - Refines: [ADR 0007](0007-kid-safety-and-privacy.md) (its "No third-party network requests" rule only; every other rule stays in force)
 
 ## Context
@@ -28,7 +29,7 @@ So a reload can serve a cached `index.html` for up to about 10 minutes, which st
 **The check.**
 
 - It runs on the title screen only (later also the Home Tank). Never during a trip.
-- Browser glue in `src/platform/updates.ts` sends a `GET` to `<base>version.json?t=<random nonce>`. The base is `/game-test/`, so the request goes to the game's own website only (same origin).
+- Browser glue in `src/platform/updates.ts` sends a `GET` to `<base>version.json?t=<random nonce>`. The base is `/glam-gills/`, so the request goes to the game's own website only (same origin).
 - Request options: `method: 'GET'`, `mode: 'same-origin'`, `redirect: 'error'`, `cache: 'no-store'`, `credentials: 'omit'`, `referrerPolicy: 'no-referrer'`, no body, no custom headers, 8 s timeout.
 - These options are declared once, as `MANIFEST_REQUEST_POLICY` in `src/logic/updateCheck.ts`. The browser glue spreads them and must not add or override any option except the abort signal.
 - The manifest URL and the reload URL come from one builder in `src/logic/updateCheck.ts`. It uses only the page's origin, the base, and one query param. It keeps no path, query, or hash from the current page, and it builds nothing when the base leaves the page's origin.
@@ -47,7 +48,7 @@ So a reload can serve a cached `index.html` for up to about 10 minutes, which st
 **The prompt.**
 
 - If the remote build ID differs from the running one, the title screen shows "A new version is ready!" with an Update button.
-- One tap navigates to `<page origin>/game-test/?v=<buildId>`; it keeps no path, query or hash from the current page. The new URL bypasses the cached `index.html`, and its hashed asset names load the new build.
+- One tap navigates to `<page origin>/glam-gills/?v=<buildId>`; it keeps no path, query or hash from the current page. The new URL bypasses the cached `index.html`, and its hashed asset names load the new build.
 - The `?v=` value also stops a repeat prompt for a build the player already tried to load.
 - The update never touches saved progress. The check never reads, clears, or writes `localStorage`, `sessionStorage`, IndexedDB, or Cache Storage. There is no service worker.
 

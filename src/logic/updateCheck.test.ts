@@ -25,7 +25,7 @@ import {
 
 const CURRENT = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const REMOTE: BuildManifest = { buildId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' };
-const LIVE_HREF = 'https://brenpike.github.io/game-test/?v=old#x';
+const LIVE_HREF = 'https://brenpike.github.io/glam-gills/?v=old#x';
 const VALID_BUILD_IDS = ['0123456789ab', `local-${(1760000000000).toString(36)}`, 'dev', 'a'.repeat(64)];
 const INVALID_BUILD_IDS = [
   '',
@@ -101,26 +101,26 @@ const IGNORED_VERSION_VALUES: readonly unknown[] = [
   { major: 0 },
 ];
 
-const PAGES_HREF = 'https://brenpike.github.io/game-test/';
-const PAGES_MANIFEST_URL = 'https://brenpike.github.io/game-test/version.json?t=n';
-const PAGES_RELOAD_URL = 'https://brenpike.github.io/game-test/?v=new';
+const PAGES_HREF = 'https://brenpike.github.io/glam-gills/';
+const PAGES_MANIFEST_URL = 'https://brenpike.github.io/glam-gills/version.json?t=n';
+const PAGES_RELOAD_URL = 'https://brenpike.github.io/glam-gills/?v=new';
 const HOSTILE_PAGE_HREFS = [
   'https://brenpike.github.io//evil.example/p?x=1',
-  'https://brenpike.github.io//evil.example/game-test/',
+  'https://brenpike.github.io//evil.example/glam-gills/',
   'https://brenpike.github.io/other/path/index.html',
-  'https://brenpike.github.io/game-test/../../evil?x=1',
-  'https://brenpike.github.io/game-test/%2F%2Fevil.example/',
-  'https://brenpike.github.io/game-test/?debug=1&v=old&t=old&x=2',
-  'https://brenpike.github.io/game-test/#//evil.example/',
-  'https://brenpike.github.io/game-test/index.html?v=old#top',
-  'https://user:pass@brenpike.github.io/game-test/',
+  'https://brenpike.github.io/glam-gills/../../evil?x=1',
+  'https://brenpike.github.io/glam-gills/%2F%2Fevil.example/',
+  'https://brenpike.github.io/glam-gills/?debug=1&v=old&t=old&x=2',
+  'https://brenpike.github.io/glam-gills/#//evil.example/',
+  'https://brenpike.github.io/glam-gills/index.html?v=old#top',
+  'https://user:pass@brenpike.github.io/glam-gills/',
 ];
 const UNBUILDABLE_INPUTS: ReadonlyArray<readonly [pageHref: string, baseUrl: string]> = [
   [PAGES_HREF, '//evil.example/'],
-  [PAGES_HREF, 'https://evil.example/game-test/'],
-  ['not a url', '/game-test/'],
-  ['file:///home/player/game-test/index.html', '/game-test/'],
-  ['data:text/html,game', '/game-test/'],
+  [PAGES_HREF, 'https://evil.example/glam-gills/'],
+  ['not a url', '/glam-gills/'],
+  ['file:///home/player/glam-gills/index.html', '/glam-gills/'],
+  ['data:text/html,game', '/glam-gills/'],
 ];
 
 /** Returns a decision input for a new remote build, with overrides applied. */
@@ -321,11 +321,11 @@ describe('MANIFEST_REQUEST_POLICY', () => {
 
 describe('manifestRequestUrl', () => {
   it('resolves under the GitHub Pages base', () => {
-    expect(manifestRequestUrl(PAGES_HREF, '/game-test/', 'n')).toBe(PAGES_MANIFEST_URL);
+    expect(manifestRequestUrl(PAGES_HREF, '/glam-gills/', 'n')).toBe(PAGES_MANIFEST_URL);
   });
 
   it('ignores the page query and hash', () => {
-    expect(manifestRequestUrl(LIVE_HREF, '/game-test/', 'n')).toBe(PAGES_MANIFEST_URL);
+    expect(manifestRequestUrl(LIVE_HREF, '/glam-gills/', 'n')).toBe(PAGES_MANIFEST_URL);
   });
 
   it('resolves under the root base', () => {
@@ -333,12 +333,12 @@ describe('manifestRequestUrl', () => {
   });
 
   it('adds a missing trailing slash to the base', () => {
-    expect(manifestRequestUrl(PAGES_HREF, '/game-test', 'n')).toBe(PAGES_MANIFEST_URL);
+    expect(manifestRequestUrl(PAGES_HREF, '/glam-gills', 'n')).toBe(PAGES_MANIFEST_URL);
   });
 
   it('treats a base without a leading slash as rooted at the page origin', () => {
-    expect(manifestRequestUrl(PAGES_HREF, 'game-test/', 'n')).toBe(PAGES_MANIFEST_URL);
-    expect(manifestRequestUrl('https://brenpike.github.io/other/page', 'game-test/', 'n')).toBe(PAGES_MANIFEST_URL);
+    expect(manifestRequestUrl(PAGES_HREF, 'glam-gills/', 'n')).toBe(PAGES_MANIFEST_URL);
+    expect(manifestRequestUrl('https://brenpike.github.io/other/page', 'glam-gills/', 'n')).toBe(PAGES_MANIFEST_URL);
   });
 
   it('treats an empty base as the origin root', () => {
@@ -358,7 +358,7 @@ describe('isAcceptedManifestResponse', () => {
   });
 
   it('accepts the same origin and path with a different query', () => {
-    const url = 'https://brenpike.github.io/game-test/version.json?t=other';
+    const url = 'https://brenpike.github.io/glam-gills/version.json?t=other';
     expect(isAcceptedManifestResponse(responseWith({ url }), PAGES_MANIFEST_URL)).toBe(true);
   });
 
@@ -376,7 +376,7 @@ describe('isAcceptedManifestResponse', () => {
   });
 
   it('rejects a response from another origin', () => {
-    const url = 'https://evil.example/game-test/version.json?t=n';
+    const url = 'https://evil.example/glam-gills/version.json?t=n';
     expect(isAcceptedManifestResponse(responseWith({ url }), PAGES_MANIFEST_URL)).toBe(false);
   });
 
@@ -393,21 +393,21 @@ describe('isAcceptedManifestResponse', () => {
 
 describe('reloadUrl', () => {
   it('builds the base URL with only the reload param', () => {
-    expect(reloadUrl(PAGES_HREF, '/game-test/', 'new')).toBe(PAGES_RELOAD_URL);
+    expect(reloadUrl(PAGES_HREF, '/glam-gills/', 'new')).toBe(PAGES_RELOAD_URL);
   });
 
   it('replaces an earlier reload param and drops the page hash', () => {
-    expect(reloadUrl(LIVE_HREF, '/game-test/', 'new')).toBe(PAGES_RELOAD_URL);
+    expect(reloadUrl(LIVE_HREF, '/glam-gills/', 'new')).toBe(PAGES_RELOAD_URL);
   });
 
   it('keeps no path, query or hash from the current page', () => {
     expect(
-      reloadUrl('https://brenpike.github.io/game-test/index.html?debug=1&v=old&x=2#top', '/game-test/', 'new'),
+      reloadUrl('https://brenpike.github.io/glam-gills/index.html?debug=1&v=old&x=2#top', '/glam-gills/', 'new'),
     ).toBe(PAGES_RELOAD_URL);
   });
 
   it('ignores a page path that looks like another host', () => {
-    expect(reloadUrl('https://brenpike.github.io//evil.example/p?x=1', '/game-test/', 'new')).toBe(PAGES_RELOAD_URL);
+    expect(reloadUrl('https://brenpike.github.io//evil.example/p?x=1', '/glam-gills/', 'new')).toBe(PAGES_RELOAD_URL);
   });
 
   it('builds under the root base', () => {
@@ -428,8 +428,8 @@ describe('update check URL builders', () => {
   it.each(HOSTILE_PAGE_HREFS)('stay on the page origin under the base for %s', (pageHref) => {
     const pageOrigin = new URL(pageHref).origin;
     const built: ReadonlyArray<readonly [string | null, string]> = [
-      [manifestRequestUrl(pageHref, '/game-test/', 'n'), CACHE_BUST_PARAM],
-      [reloadUrl(pageHref, '/game-test/', 'new'), RELOAD_PARAM],
+      [manifestRequestUrl(pageHref, '/glam-gills/', 'n'), CACHE_BUST_PARAM],
+      [reloadUrl(pageHref, '/glam-gills/', 'new'), RELOAD_PARAM],
     ];
     for (const [href, param] of built) {
       expect(href).not.toBeNull();
@@ -437,7 +437,7 @@ describe('update check URL builders', () => {
       expect(url.origin).toBe(pageOrigin);
       expect(url.username).toBe('');
       expect(url.password).toBe('');
-      expect(url.pathname.startsWith('/game-test/')).toBe(true);
+      expect(url.pathname.startsWith('/glam-gills/')).toBe(true);
       expect([...url.searchParams.keys()]).toEqual([param]);
       expect(url.hash).toBe('');
     }
@@ -445,8 +445,8 @@ describe('update check URL builders', () => {
 
   it('build the exact URLs for every hostile page href', () => {
     for (const pageHref of HOSTILE_PAGE_HREFS) {
-      expect(manifestRequestUrl(pageHref, '/game-test/', 'n')).toBe(PAGES_MANIFEST_URL);
-      expect(reloadUrl(pageHref, '/game-test/', 'new')).toBe(PAGES_RELOAD_URL);
+      expect(manifestRequestUrl(pageHref, '/glam-gills/', 'n')).toBe(PAGES_MANIFEST_URL);
+      expect(reloadUrl(pageHref, '/glam-gills/', 'new')).toBe(PAGES_RELOAD_URL);
     }
   });
 });
@@ -454,18 +454,18 @@ describe('update check URL builders', () => {
 describe('attemptedBuildIdFrom', () => {
   it('reads the reload param', () => {
     expect(attemptedBuildIdFrom(LIVE_HREF)).toBe('old');
-    expect(attemptedBuildIdFrom('https://brenpike.github.io/game-test/?debug=1&v=abc')).toBe('abc');
+    expect(attemptedBuildIdFrom('https://brenpike.github.io/glam-gills/?debug=1&v=abc')).toBe('abc');
   });
 
   it('round-trips an encoded build id from reloadUrl', () => {
-    const url = reloadUrl(LIVE_HREF, '/game-test/', 'a&b=c');
+    const url = reloadUrl(LIVE_HREF, '/glam-gills/', 'a&b=c');
     expect(url).not.toBeNull();
     expect(attemptedBuildIdFrom(url ?? '')).toBe('a&b=c');
   });
 
   it('returns null when the reload param is absent', () => {
-    expect(attemptedBuildIdFrom('https://brenpike.github.io/game-test/')).toBeNull();
-    expect(attemptedBuildIdFrom('https://brenpike.github.io/game-test/?debug=1#v=abc')).toBeNull();
+    expect(attemptedBuildIdFrom('https://brenpike.github.io/glam-gills/')).toBeNull();
+    expect(attemptedBuildIdFrom('https://brenpike.github.io/glam-gills/?debug=1#v=abc')).toBeNull();
   });
 });
 

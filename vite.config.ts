@@ -19,7 +19,7 @@ function resolveBuildId(command: 'build' | 'serve'): string {
 /** Emits version.json alongside the build so a running game can detect a newer deploy. */
 function createVersionJsonPlugin(version: string, buildId: string): Plugin {
   return {
-    name: 'game-test-version-json',
+    name: 'glam-gills-version-json',
     apply: 'build',
     generateBundle() {
       this.emitFile({
@@ -43,7 +43,7 @@ export default defineConfig(({ command }) => {
     throw new Error(`Build id ${JSON.stringify(buildId)} must match [A-Za-z0-9._-]{1,64}.`);
   }
   return {
-    base: command === 'build' ? '/game-test/' : '/',
+    base: command === 'build' ? '/glam-gills/' : '/',
     server: {
       host: true,
     },

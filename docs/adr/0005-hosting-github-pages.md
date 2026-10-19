@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-18
+- Updated: 2026-10-18. The repository was renamed from `game-test` to `glam-gills` (issue #28), so the URL and base path below changed. The decision is unchanged.
 
 ## Context
 
@@ -10,12 +11,12 @@ The dev environment is WSL2, where exposing the Vite dev server to a phone needs
 
 ## Decision
 
-- Host on **GitHub Pages** at <https://brenpike.github.io/game-test/>. Pages is set to build type "workflow" (GitHub Actions).
+- Host on **GitHub Pages** at <https://brenpike.github.io/glam-gills/>. Pages is set to build type "workflow" (GitHub Actions).
 - The workflow [`.github/workflows/deploy-pages.yml`](../../.github/workflows/deploy-pages.yml):
   - on pull requests: runs lint, tests, and build;
   - on push to `main`: runs the same checks, then deploys `dist/` to Pages.
 - The repository is **public** (required for free Pages).
-- Vite builds with base path `/game-test/` to match the Pages URL.
+- Vite builds with base path `/glam-gills/` to match the Pages URL.
 
 ## Alternatives considered
 
@@ -30,4 +31,4 @@ The dev environment is WSL2, where exposing the Vite dev server to a phone needs
 - Every merge to `main` updates the live build for phone play-testing.
 - Broken lint, tests, or build block the PR before it can deploy.
 - The source code is public. Nothing secret may be committed.
-- Asset and route URLs must respect the `/game-test/` base path.
+- Asset and route URLs must respect the `/glam-gills/` base path.
