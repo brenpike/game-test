@@ -4,6 +4,7 @@ import { BUTTON_SQUARE, STICK_BASE_R, STICK_KNOB_R, buttonRadius } from '../art/
 import { DEPTH } from '../art/layers';
 import { INK, UI_PANEL, UI_PANEL_PINK, WHITE } from '../art/palette';
 import { iconKey, type TexInfo } from '../art/textures';
+import { TILAPIA_FACT } from '../logic/factCards';
 import {
   GAME_EVENTS,
   REGISTRY_KEYS,
@@ -33,6 +34,7 @@ import {
   TRIP_EVENTS,
   TRIP_REGISTRY_KEYS,
   type LegSlotSnapshot,
+  type RescueSnapshot,
   type TripSnapshot,
 } from '../logic/tripEvents';
 import { ALL_SNACKS_BANNER, BANKING_HINT, GO_HOME_LABEL, LEGS_LABEL, TRIP_BAG_LABEL, tripBagStatus } from '../logic/tripText';
@@ -51,6 +53,7 @@ import {
   type SceneView,
   type UiButton,
 } from './BootScene';
+import { FactCard } from './FactCard';
 import { FindPopup } from './FindPopup';
 import { addMotionTween, settleMotionTweens } from './motionTweens';
 
@@ -90,9 +93,24 @@ const HINT_FADE_MS = 400;
 // INVARIANT: the find pop-up sits above the banners and below the banking card.
 const FIND_POPUP_DEPTH = DEPTH.ui + 6;
 const BANKING_CARD_DEPTH = DEPTH.ui + 8;
+const FACT_CARD_DEPTH = DEPTH.ui + 9;
 const OVERLAY_DEPTH = DEPTH.ui + 10;
 // INVARIANT: the capture zone sits below every HUD button in depth so Pause, Dash and the pause overlay win the press.
 const STICK_ZONE_DEPTH = DEPTH.ui - 1;
+
+/**
+ * Event names the HUD sends to the swim scene. Values never repeat a `GAME_EVENTS` or
+ * `TRIP_EVENTS` value.
+ */
+export const HUD_EVENTS = Object.freeze({
+  /** The player closed a fact card; payload FactCardSeenPayload. */
+  FACT_CARD_SEEN: 'fact-card-seen',
+} as const);
+
+/** Payload of HUD_EVENTS.FACT_CARD_SEEN: the id of the fact card closed. */
+export interface FactCardSeenPayload {
+  id: string;
+}
 
 /** One legs-display icon: dashed outline, present fill (cropped bottom-up while regrowing) and the regrow sparkle. */
 interface LegIconView {
@@ -239,6 +257,9 @@ export class HudScene extends Phaser.Scene {
   private foundPopup!: FindPopup;
   /** How many of the trip's finds the pop-up has been given. */
   private announcedCount = 0;
+  private factCard!: FactCard;
+  /** Whether the tilapia fact card has shown this trip, so it shows at most once while still due. */
+  private factCardShown = false;
 
   constructor() {
     super(SCENE_KEYS.hud);
@@ -258,6 +279,7 @@ export class HudScene extends Phaser.Scene {
     this.hintActive = false;
     this.hintHeld = false;
     this.announcedCount = 0;
+    this.factCardShown = false;
   }
 
   create(): void {
@@ -286,6 +308,7 @@ export class HudScene extends Phaser.Scene {
       () => this.layoutOverlays(),
     );
     this.bankingCard = new BankingCard(this, this.assets, this.view, BANKING_CARD_DEPTH);
+    this.factCard = new FactCard(this, this.assets, this.view, FACT_CARD_DEPTH, () => this.closeFactCard());
     this.bindKeys();
 
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this);
@@ -494,6 +517,7 @@ export class HudScene extends Phaser.Scene {
     this.layoutControls();
     this.layoutOverlay();
     this.bankingCard.layout(this.view);
+    this.factCard.layout(this.view);
     this.layoutOverlays();
   }
 
@@ -573,12 +597,13 @@ export class HudScene extends Phaser.Scene {
 
   /**
    * Returns the Trip Bag panel size: icon, label, count, status. The count and status slots are
-   * sized for their widest values, so the panel never changes width as the bag fills.
+   * sized for their widest values (every find plus a following axolotl), so the panel never changes
+   * width as the bag fills.
    */
   private measureTripBag(): Size {
     this.bagCountW = widestText(
       this.bagCount,
-      Array.from({ length: this.assets.zone.finds.length + 1 }, (_, count) => String(count)),
+      Array.from({ length: this.assets.zone.finds.length + 2 }, (_, count) => String(count)),
     );
     const statusW = widestText(this.bagStatus, [tripBagStatus(0), tripBagStatus(1)]);
     this.drawTripBag();
@@ -753,7 +778,9 @@ export class HudScene extends Phaser.Scene {
     if (goHomeVisible !== goHomeWasVisible) this.layoutOverlays();
   }
 
-  private togglePause(): void {
+  /** P or Esc: closes the fact card when it is up (ignoring key repeat), otherwise toggles Pause. */
+  private togglePause(event: KeyboardEvent): void {
+    if (this.pressFactCardKey(event)) return;
     if (this.paused) {
       this.resumeSwim();
       return;
@@ -820,13 +847,44 @@ export class HudScene extends Phaser.Scene {
 
   private pauseSwim(): void {
     if (this.paused || this.trip.phase === 'ended') return;
+    this.holdSwim();
+    this.overlay.setVisible(true);
+    this.game.events.emit(GAME_EVENTS.PAUSED);
+  }
+
+  /** Pauses play under a HUD card: drops the swim pad, freezes the HUD clock and the swim scene, hides Pause. */
+  private holdSwim(): void {
     this.paused = true;
     this.releaseStick(false);
     this.setHudClockPaused(true);
     this.scene.pause(SCENE_KEYS.swim);
     this.refreshControls();
-    this.overlay.setVisible(true);
+  }
+
+  /**
+   * Shows the tilapia fact card with play paused, as Pause does but with the card in place of the
+   * pause overlay: once per trip, while swimming and not already paused, when the snapshot says it is due.
+   */
+  private showFactCardWhenDue(snapshot: TripSnapshot): void {
+    if (!snapshot.tilapiaCardDue || this.factCardShown || this.paused || snapshot.phase !== 'swimming') return;
+    this.factCardShown = true;
+    this.holdSwim();
+    this.factCard.show();
     this.game.events.emit(GAME_EVENTS.PAUSED);
+  }
+
+  /** After OK on the fact card: tells the swim scene the card was seen, then resumes play. */
+  private closeFactCard(): void {
+    const payload: FactCardSeenPayload = { id: TILAPIA_FACT.id };
+    this.game.events.emit(HUD_EVENTS.FACT_CARD_SEEN, payload);
+    this.resumeSwim();
+  }
+
+  /** Presses OK on the fact card for a key that is not a repeat. Returns whether the card is up. */
+  private pressFactCardKey(event: KeyboardEvent): boolean {
+    if (!this.factCard.isShowing()) return false;
+    if (!event.repeat) this.factCard.press();
+    return true;
   }
 
   private resumeSwim(): void {
@@ -869,10 +927,11 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Enter or Space: resumes when paused; otherwise presses the focused banking card button,
-   * ignoring key repeat.
+   * Enter or Space: closes the fact card when it is up (ignoring key repeat); resumes when paused;
+   * otherwise presses the focused banking card button, ignoring key repeat.
    */
   private handleConfirmKey(event: KeyboardEvent): void {
+    if (this.pressFactCardKey(event)) return;
     if (this.paused) {
       this.resumeSwim();
       return;
@@ -949,17 +1008,21 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Redraws the legs and Trip Bag from the snapshot, announces new finds, and follows its phase:
-   * leaving 'swimming' drops the swim pad and the hint, into 'banked' or 'ended' clears the find
-   * pop-up, into 'banked' shows the banking card, and leaving 'banked' hides it.
+   * Redraws the legs and Trip Bag from the snapshot, announces new finds and a newly following
+   * axolotl, shows the tilapia fact card when it is due, and follows its phase: leaving 'swimming'
+   * drops the swim pad and the hint, into 'banked' or 'ended' clears the find pop-up, into 'banked'
+   * shows the banking card, and leaving 'banked' hides it.
    */
   private handleTripState(snapshot: TripSnapshot): void {
     const previousPhase = this.trip.phase;
+    const previousRescue = this.trip.rescue;
     this.trip = snapshot;
     this.drawLegs();
     this.drawTripBag();
     this.refreshControls();
     this.announceFinds(snapshot);
+    this.announceRescue(previousRescue, snapshot);
+    this.showFactCardWhenDue(snapshot);
     if (snapshot.phase === previousPhase) return;
     if (previousPhase === 'banked') this.hideBankingCard();
     if (snapshot.phase !== 'swimming') {
@@ -980,6 +1043,14 @@ export class HudScene extends Phaser.Scene {
       this.foundPopup.enqueue(snapshot.found.slice(this.announcedCount));
     }
     this.announcedCount = snapshot.found.length;
+  }
+
+  /** Queues the stranded axolotl on the find pop-up when it starts following, only while swimming. */
+  private announceRescue(previous: RescueSnapshot | null, snapshot: TripSnapshot): void {
+    const rescue = snapshot.rescue;
+    if (snapshot.phase !== 'swimming' || rescue === null || rescue.status !== 'following') return;
+    if (previous?.status === 'following') return;
+    this.foundPopup.enqueueRescue(rescue.morph);
   }
 
   /** Shows the banking card and captures Tab so it moves focus between the card buttons. */
@@ -1069,6 +1140,7 @@ export class HudScene extends Phaser.Scene {
     }
     this.foundPopup.setResolution(dpr);
     this.bankingCard.setResolution(dpr);
+    this.factCard.setResolution(dpr);
     this.layout();
   }
 

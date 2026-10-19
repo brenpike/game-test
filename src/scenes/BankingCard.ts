@@ -3,6 +3,7 @@ import { INK, UI_PANEL } from '../art/palette';
 import type { TexInfo } from '../art/textures';
 import type { TreasureTextures } from '../art/treasureTextures';
 import { CARD, cardButtonsStacked, cardTextWidth, fitCard, iconRowsSize } from '../logic/cardFit';
+import { morphById, rescueMorphsIn } from '../logic/morphs';
 import type { MotionProfile } from '../logic/motion';
 import { foundInfos } from '../logic/trip';
 import { TRIP_EVENTS, type TripSnapshot } from '../logic/tripEvents';
@@ -55,8 +56,8 @@ function wrappedLineCount(text: Phaser.GameObjects.Text, content: string): numbe
 
 /**
  * Banking celebration card over the swim scene: dim, white panel, title, the icons of the treasures
- * just banked in wrapping rows, the banked text naming them (or a short wording that counts them)
- * and the Keep exploring / Go home buttons. layout() lets fitCard() pick the wording, drop icon rows
+ * just banked in wrapping rows, the banked text naming them and any axolotl rescued with them (or a
+ * short wording that counts them) and the Keep exploring / Go home buttons. layout() lets fitCard() pick the wording, drop icon rows
  * or clip the body to fit the canvas. Laid out around the screen centre so the fade-in scale grows
  * from the middle. Each button emits its trip request once.
  */
@@ -131,7 +132,11 @@ export class BankingCard {
     this.setFocus(KEEP_EXPLORING_INDEX);
     const infos = foundInfos(snapshot.justBanked);
     const names = infos.map((info) => info.name);
-    this.bodyOptions = [bankedBody(names, snapshot.banked), bankedBodyShort(names.length, snapshot.banked)];
+    const rescuedNames = rescueMorphsIn(snapshot.justBanked).map((morph) => morphById(morph).displayName);
+    this.bodyOptions = [
+      bankedBody(names, snapshot.banked, rescuedNames),
+      bankedBodyShort(names.length, snapshot.banked, rescuedNames.length),
+    ];
     this.buildRow(infos.map((info) => info.id));
     this.layout(this.view);
     this.scene.tweens.killTweensOf(this.container);

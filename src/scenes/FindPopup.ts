@@ -1,11 +1,13 @@
 import * as Phaser from 'phaser';
 import { UI_PANEL } from '../art/palette';
+import type { MorphTextures } from '../art/morphTextures';
 import type { TexInfo } from '../art/textures';
 import type { TreasureIconSize, TreasureTextures } from '../art/treasureTextures';
 import { ICON_ROW_BOX_PX, ICON_ROW_GAP_PX, iconsPerRow } from '../logic/cardFit';
 import { categoryName, treasureSlug } from '../logic/catalogue';
 import { badgeShape, rarityName } from '../logic/hints';
 import { FIND_POPUP, findPopupBox, type Rect, type Size } from '../logic/hudLayout';
+import { RESCUE_POPUP_DETAIL, morphById, type RealMorphId } from '../logic/morphs';
 import type { MotionProfile } from '../logic/motion';
 import type { FoundInfo } from '../logic/tripEvents';
 import { drawPanel, uiTextStyle, type GameAssets, type SceneView } from './BootScene';
@@ -59,6 +61,15 @@ export function placeIconRows(
 }
 
 
+/** One queued pop-up: a found treasure, or a stranded axolotl now following the player. */
+type PopupItem = { kind: 'treasure'; found: FoundInfo } | { kind: 'axolotl'; morph: RealMorphId };
+
+/** The icon and badge of one pop-up item. */
+interface PopupImages {
+  icon: Phaser.GameObjects.Image;
+  badge: Phaser.GameObjects.Image;
+}
+
 /** A measured pop-up panel size and the name wrap width that produced it. */
 interface MeasuredBox {
   size: Size;
@@ -72,8 +83,9 @@ function textSize(text: Phaser.GameObjects.Text): Size {
 
 /**
  * Find pop-up: a white panel with the treasure icon, then its name, category and rarity badge with
- * the rarity name. The HUD places it through placeHudOverlays(): top-centre under the banners when
- * that clears the controls, otherwise in the free room nearest there. With no room it is held:
+ * the rarity name; for a rescued axolotl, its portrait, then its name, the rescue detail and its
+ * morph badge with the morph name. The HUD places it through placeHudOverlays(): top-centre under
+ * the banners when that clears the controls, otherwise in the free room nearest there. With no room it is held:
  * hidden, with its hold timer paused, until the HUD places it again. Never interactive and has no
  * dim, so presses pass through to the controls. Shows one find at a time from a queue: fades in,
  * holds, fades out on the HUD clock (so pause freezes it); appears and leaves at once under reduced
@@ -82,6 +94,7 @@ function textSize(text: Phaser.GameObjects.Text): Size {
 export class FindPopup {
   private readonly scene: Phaser.Scene;
   private readonly treasure: TreasureTextures;
+  private readonly morph: MorphTextures;
   private readonly container: Phaser.GameObjects.Container;
   private readonly panel: Phaser.GameObjects.Graphics;
   private readonly name: Phaser.GameObjects.Text;
@@ -91,8 +104,8 @@ export class FindPopup {
   private readonly requestPlacement: () => void;
   private icon: Phaser.GameObjects.Image | null = null;
   private badge: Phaser.GameObjects.Image | null = null;
-  private queue: FoundInfo[] = [];
-  private current: FoundInfo | null = null;
+  private queue: PopupItem[] = [];
+  private current: PopupItem | null = null;
   private timer: Phaser.Time.TimerEvent | null = null;
   /** Whether placement found no room, so the pop-up is hidden and its timer paused. */
   private held = false;
@@ -115,6 +128,7 @@ export class FindPopup {
     this.motion = motion;
     this.requestPlacement = requestPlacement;
     this.treasure = assets.treasure;
+    this.morph = assets.morph;
     const dpr = view.fit.dpr;
     this.panel = scene.add.graphics();
     this.name = scene.add.text(0, 0, '', uiTextStyle(FIND_POPUP.nameTextPx, dpr));
@@ -133,7 +147,13 @@ export class FindPopup {
 
   /** Queues the finds in order and starts the next one when no find is current. */
   enqueue(found: readonly FoundInfo[]): void {
-    this.queue.push(...found);
+    this.queue.push(...found.map((info): PopupItem => ({ kind: 'treasure', found: info })));
+    if (!this.hasFind()) this.showNext();
+  }
+
+  /** Queues the rescued axolotl of `morph` and starts it when no find is current. */
+  enqueueRescue(morph: RealMorphId): void {
+    this.queue.push({ kind: 'axolotl', morph });
     if (!this.hasFind()) this.showNext();
   }
 
@@ -252,17 +272,38 @@ export class FindPopup {
     this.showNext();
   }
 
-  /** Replaces the icon, badge and texts with the find's. */
-  private fill(found: FoundInfo): void {
+  /** Replaces the icon, badge and texts with the item's. */
+  private fill(item: PopupItem): void {
     this.measured = [];
     this.icon?.destroy();
     this.badge?.destroy();
-    this.icon = addTreasureIcon(this.scene, this.treasure, FIND_POPUP.iconPx, found.id);
-    this.badge = addCentredImage(this.scene, this.treasure.badges[FIND_POPUP.badgePx][badgeShape(found.rarity)]);
-    this.container.add([this.icon, this.badge]);
+    const images = item.kind === 'treasure' ? this.fillTreasure(item.found) : this.fillAxolotl(item.morph);
+    this.icon = images.icon;
+    this.badge = images.badge;
+    this.container.add([images.icon, images.badge]);
+  }
+
+  /** Sets the treasure's name, category and rarity name; returns its icon and rarity badge. */
+  private fillTreasure(found: FoundInfo): PopupImages {
     this.name.setText(found.name);
     this.category.setText(categoryName(found.category));
     this.rarity.setText(rarityName(found.rarity));
+    return {
+      icon: addTreasureIcon(this.scene, this.treasure, FIND_POPUP.iconPx, found.id),
+      badge: addCentredImage(this.scene, this.treasure.badges[FIND_POPUP.badgePx][badgeShape(found.rarity)]),
+    };
+  }
+
+  /** Sets the axolotl's display name, the rescue detail and the morph name; returns its portrait and morph badge. */
+  private fillAxolotl(morphId: RealMorphId): PopupImages {
+    const morph = morphById(morphId);
+    this.name.setText(morph.displayName);
+    this.category.setText(RESCUE_POPUP_DETAIL);
+    this.rarity.setText(morph.name);
+    return {
+      icon: addCentredImage(this.scene, this.morph.portraits[morphId][FIND_POPUP.iconPx]),
+      badge: addCentredImage(this.scene, this.morph.badges[FIND_POPUP.badgePx][morph.badge]),
+    };
   }
 
   /**
