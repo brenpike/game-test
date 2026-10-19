@@ -184,6 +184,13 @@ export interface CaveArea {
   y1: number;
 }
 
+/** A fixed place where a stranded axolotl may wait to be rescued (PRD C2). */
+export interface StrandingPlace {
+  id: string;
+  x: number;
+  y: number;
+}
+
 /** Tilapia patrol loop: visits waypoints in order, then wraps to the first. */
 export interface TilapiaRoute {
   id: string;
@@ -210,6 +217,7 @@ export interface ZoneLayout {
   spots: HidingSpot[];
   cave: CaveArea;
   mainPath: Point[];
+  strandingPlaces: StrandingPlace[];
 }
 
 export const CAVE: Readonly<CaveArea> = Object.freeze({ id: `${CANAL_AREA_ID}/cave`, x0: 1480, x1: 1640, y0: 200, y1: 318 });
@@ -218,6 +226,18 @@ export const CAVE: Readonly<CaveArea> = Object.freeze({ id: `${CANAL_AREA_ID}/ca
 export const MAIN_PATH: readonly Readonly<Point>[] = Object.freeze([
   Object.freeze({ x: 120, y: 200 }),
   Object.freeze({ x: 1840, y: 200 }),
+]);
+
+/**
+ * Fixed canal stranding places (PRD C2), left to right: near the start above the first reeds, on
+ * the bed under the current, between the past-current stones and the cave, and at the far end.
+ * Area data, never seeded.
+ */
+export const STRANDING_PLACES: readonly Readonly<StrandingPlace>[] = Object.freeze([
+  Object.freeze({ id: `${CANAL_AREA_ID}/strand-1`, x: 320, y: 110 }),
+  Object.freeze({ id: `${CANAL_AREA_ID}/strand-2`, x: 880, y: 292 }),
+  Object.freeze({ id: `${CANAL_AREA_ID}/strand-3`, x: 1440, y: 140 }),
+  Object.freeze({ id: `${CANAL_AREA_ID}/strand-4`, x: 1860, y: 260 }),
 ]);
 
 /** Minimum distance between two hiding spots, so one pickup radius never reaches two spots. */
@@ -483,5 +503,6 @@ export function buildCanalZone(seed: number = DEFAULT_ZONE_SEED): ZoneLayout {
     spots,
     cave: { ...CAVE },
     mainPath: MAIN_PATH.map((point) => ({ ...point })),
+    strandingPlaces: STRANDING_PLACES.map((place) => ({ ...place })),
   };
 }
