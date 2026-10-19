@@ -198,7 +198,7 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - A Legendary **Treasure** always hides in a **Dash pot**, which only **Tail Dash** can break
 - A **Hint sparkle** marks a hidden **Treasure** when the axolotl is near, and each of the last 3 **Snacks**
 - A **Tilapia** is a **Hazard**; its **Telegraph** always comes before a **Lunge**
-- A **Hit** is a **Lunge** that connects; it causes exactly one **Leg loss** and starts **Protected time**
+- A **Hit** is a **Lunge** that connects and starts **Protected time**; it causes exactly one **Leg loss**, except a hit blocked by a Shell **Perk** (at most one per trip), which costs no leg
 - Each **Leg loss** is undone by **Regrowth**, one leg at a time; eating a **Snack** speeds up **Regrowth**
 - Losing the fourth leg means the axolotl is **Carried home**
 - A **Treasure** is exactly one of **Decoration**, **Wearable**, or **Paint shell**, and has exactly one **Rarity**
