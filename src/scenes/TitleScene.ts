@@ -26,12 +26,15 @@ const MARGIN = 16;
 const PANEL_PAD = 16;
 const PANEL_MAX_W = 560;
 const TITLE_PX = 34;
+const SUBTITLE_PX = 22;
+const SUBTITLE_GAP = 4;
 const BODY_PX = 18;
 const VERSION_PX = 14;
 const VERSION_GAP = 4;
 const BUTTON_GAP = 12;
 const AXO_WORLD_Y = 210;
-const TITLE_TEXT = 'Axolotl Swim Test';
+const TITLE_TEXT = 'Glam Gills';
+const SUBTITLE_TEXT = 'Find Your Flair';
 const CONTROLS_TEXT =
   'Use the swim pad in the corner to swim. Press Dash to zoom.\n' +
   'Keys: arrows or WASD to swim, Space to dash, P to pause.\n' +
@@ -45,7 +48,7 @@ interface UpdatePrompt {
   button: UiButton;
 }
 
-/** Title card: canal background, idle axolotl, game name, controls, version label, a Start button and the update prompt. */
+/** Title card: canal background, idle axolotl, game name and subtitle, controls, version label, a Start button and the update prompt. */
 export class TitleScene extends Phaser.Scene {
   private assets!: GameAssets;
   private motion!: MotionProfile;
@@ -58,6 +61,7 @@ export class TitleScene extends Phaser.Scene {
   private axolotl!: Phaser.GameObjects.Image;
   private panel!: Phaser.GameObjects.Graphics;
   private title!: Phaser.GameObjects.Text;
+  private subtitle!: Phaser.GameObjects.Text;
   private controls!: Phaser.GameObjects.Text;
   private versionText!: Phaser.GameObjects.Text;
   private startButton!: UiButton;
@@ -95,6 +99,9 @@ export class TitleScene extends Phaser.Scene {
       .setDepth(DEPTH.axolotl);
     this.panel = this.add.graphics().setDepth(DEPTH.ui);
     this.title = this.add.text(0, 0, TITLE_TEXT, uiTextStyle(TITLE_PX, this.view.fit.dpr)).setDepth(DEPTH.ui);
+    this.subtitle = this.add
+      .text(0, 0, SUBTITLE_TEXT, uiTextStyle(SUBTITLE_PX, this.view.fit.dpr))
+      .setDepth(DEPTH.ui);
     this.controls = this.add
       .text(0, 0, CONTROLS_TEXT, { ...uiTextStyle(BODY_PX, this.view.fit.dpr, false), align: 'center' })
       .setDepth(DEPTH.ui);
@@ -172,6 +179,7 @@ export class TitleScene extends Phaser.Scene {
     this.view = readSceneView(this.scale);
     useCssCamera(this.cameras.main, this.view.fit.dpr);
     this.title.setResolution(this.view.fit.dpr);
+    this.subtitle.setResolution(this.view.fit.dpr);
     this.controls.setResolution(this.view.fit.dpr);
     this.versionText.setResolution(this.view.fit.dpr);
     this.startButton.setResolution(this.view.fit.dpr);
@@ -253,20 +261,27 @@ export class TitleScene extends Phaser.Scene {
   }
 
   /**
-   * Draws the title panel (title, controls, version label) and returns its bottom.
-   * While the update prompt shows on a short screen, the controls text hides so the panels never overlap.
+   * Draws the title panel (title, subtitle, controls, version label) and returns its bottom.
+   * On a short screen the controls text hides whenever the full panel would not fit above the lower UI,
+   * so the panels never overlap. The name, subtitle and version label always show.
    */
   private layoutTitlePanel(cssW: number, lowerTop: number): number {
     this.controls.setWordWrapWidth(this.textWidth(cssW), true);
-    const fitsControls = MARGIN + this.titlePanelHeight(true) + BUTTON_GAP <= lowerTop;
-    const showControls = this.updatePrompt === null || fitsControls;
+    const showControls = MARGIN + this.titlePanelHeight(true) + BUTTON_GAP <= lowerTop;
     this.controls.setVisible(showControls);
     const panelH = this.titlePanelHeight(showControls);
-    const contentW = Math.max(this.title.width, showControls ? this.controls.width : 0, this.versionText.width);
+    const contentW = Math.max(
+      this.title.width,
+      this.subtitle.width,
+      showControls ? this.controls.width : 0,
+      this.versionText.width,
+    );
     const panelW = contentW + 2 * PANEL_PAD;
     drawPanel(this.panel, (cssW - panelW) / 2, MARGIN, panelW, panelH, UI_PANEL);
     this.title.setPosition((cssW - this.title.width) / 2, MARGIN + PANEL_PAD);
-    this.controls.setPosition((cssW - this.controls.width) / 2, MARGIN + 2 * PANEL_PAD + this.title.height);
+    const subtitleY = MARGIN + PANEL_PAD + this.title.height + SUBTITLE_GAP;
+    this.subtitle.setPosition((cssW - this.subtitle.width) / 2, subtitleY);
+    this.controls.setPosition((cssW - this.controls.width) / 2, subtitleY + this.subtitle.height + PANEL_PAD);
     const versionY = MARGIN + panelH - PANEL_PAD - this.versionText.height;
     this.versionText.setPosition((cssW - this.versionText.width) / 2, versionY);
     return MARGIN + panelH;
@@ -274,7 +289,8 @@ export class TitleScene extends Phaser.Scene {
 
   private titlePanelHeight(showControls: boolean): number {
     const controlsH = showControls ? this.controls.height + PANEL_PAD : 0;
-    return this.title.height + controlsH + VERSION_GAP + this.versionText.height + 2 * PANEL_PAD;
+    const headH = this.title.height + SUBTITLE_GAP + this.subtitle.height;
+    return headH + controlsH + VERSION_GAP + this.versionText.height + 2 * PANEL_PAD;
   }
 
   private textWidth(cssW: number): number {

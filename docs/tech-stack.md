@@ -22,7 +22,7 @@ Current milestone: **swim test** (one canal zone, swim controls, Tail Dash).
 | Updates | First-party `version.json` check on the title screen; one-tap reload to the new build; version shown in small text | n/a | Play-testers get the new build right after a deploy, never mid-trip, with no player data sent. | [0009](adr/0009-update-check.md) |
 | Fail state | Gentle: a predator hit costs one leg that regrows; losing all four legs sends you home and loses only unbanked trip finds | n/a | Gives exploring real stakes without punishing players aged 8 to 12; banked progress is never lost. | [0008](adr/0008-gentle-fail-state.md) |
 
-Live build: <https://brenpike.github.io/game-test/>
+Live build: <https://brenpike.github.io/glam-gills/>
 
 ## Architecture at a glance
 

@@ -4,7 +4,7 @@ Instructions for AI coding agents working in this repository.
 
 ## Overview
 
-`game-test` is a 2D axolotl web game for kids aged 8 to 12, built with Phaser 3, TypeScript, and Vite.
+`Glam Gills: Find Your Flair` (repo `glam-gills`) is a 2D axolotl web game for kids aged 8 to 12, built with Phaser 3, TypeScript, and Vite.
 Current milestone: the swim test. See [`README.md`](README.md) for scripts and controls, and [`docs/tech-stack.md`](docs/tech-stack.md) for stack choices.
 
 Node `>=20.19.0` (`.nvmrc` pins 20.20.2).
@@ -48,7 +48,7 @@ Markdown-only changes have no self-check.
 
 | Item | Value |
 |---|---|
-| Artifact | One: the `game-test` web app |
+| Artifact | One: the `glam-gills` web app |
 | Canonical version | `"version"` in `package.json` |
 | Changelog | [`CHANGELOG.md`](CHANGELOG.md) (Keep a Changelog) |
 | Tags | Not created yet |
@@ -73,7 +73,7 @@ No-bump paths:
 ## Deploy
 
 GitHub Pages deploys on push to `main` via [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml).
-Live URL: <https://brenpike.github.io/game-test/>. Vite builds with base path `/game-test/`.
+Live URL: <https://brenpike.github.io/glam-gills/>. Vite builds with base path `/glam-gills/`.
 
 ## Decisions
 

@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.6.0] - 2026-10-18
+
+### Changed
+
+- The game is now called Glam Gills: Find Your Flair. The title screen shows "Glam Gills" with "Find Your Flair" under it, the browser tab shows the full name, and phones use "Glam Gills" for home-screen shortcuts.
+- The game moved to <https://brenpike.github.io/glam-gills/>. The old /game-test/ link no longer works: open the new link and re-add any home-screen shortcut.
+
 ## [0.5.0] - 2026-10-18
 
 ### Added
