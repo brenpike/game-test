@@ -498,10 +498,24 @@ export class HomeTankScene extends Phaser.Scene {
     this.decorator.destroy();
     this.chest.destroy();
     this.book.destroy();
+    this.releaseSwimmers();
     const keyboard = this.input.keyboard;
     if (!keyboard) return;
     keyboard.off(Phaser.Input.Keyboard.Events.ANY_KEY_DOWN, this.handleKeyDown, this);
     keyboard.removeCapture([...CAPTURED_KEYS]);
+  }
+
+  /**
+   * Removes each axolotl's sprite and its own texture, which the texture manager would otherwise keep
+   * for the whole canal trip, then forgets the axolotls (scene shutdown).
+   */
+  private releaseSwimmers(): void {
+    for (const swimmer of this.swimmers) {
+      swimmer.image.destroy();
+      this.textures.remove(swimmer.texture.key);
+    }
+    this.swimmers = [];
+    this.rescuedWaits.length = 0;
   }
 
   // ---- layout --------------------------------------------------------------
