@@ -4,12 +4,14 @@ import { BUTTON_SQUARE, STICK_BASE_R, STICK_KNOB_R, buttonRadius } from '../art/
 import { DEPTH } from '../art/layers';
 import { INK, UI_PANEL, UI_PANEL_PINK, WHITE } from '../art/palette';
 import { iconKey, type TexInfo } from '../art/textures';
+import { exitClosedText, snacksLeftLabel } from '../logic/areaText';
 import { TILAPIA_FACT } from '../logic/factCards';
 import {
   GAME_EVENTS,
   REGISTRY_KEYS,
   type CollectedPayload,
   type DashStatePayload,
+  type ExitClosedPayload,
   type ReducedMotionPayload,
   type SnackBoostPayload,
   type SteerPayload,
@@ -63,7 +65,6 @@ const GAP = 12;
 const PANEL_PAD = 12;
 const COUNTER_ICON_PX = 32;
 const COUNTER_TEXT_PX = 22;
-const COMPACT_WIDTH = 460;
 const PAUSE_BUTTON_SIZE = 0.8;
 const DASH_BUTTON_SIZE = 1.25;
 const RESUME_BUTTON_SIZE = 1.3;
@@ -199,7 +200,7 @@ function holdTimer(timer: Phaser.Time.TimerEvent | null, held: boolean): void {
 
 /**
  * Screen-space UI over the swim scene: snack counter, legs display, Trip Bag display, Pause, Dash,
- * the contextual Go home button, swim pad, pause overlay, the all-snacks and first-trip hint
+ * the contextual Go home button, swim pad, pause overlay, the snack and first-trip hint
  * banners, the find pop-up and the banking card. When the trip ends the swim scene stops this
  * scene and opens the Home Tank, which shows the tank arrival card.
  */
@@ -226,7 +227,7 @@ export class HudScene extends Phaser.Scene {
   private bannerPanel!: Phaser.GameObjects.Graphics;
   private bannerText!: Phaser.GameObjects.Text;
   private bannerTimer: Phaser.Time.TimerEvent | null = null;
-  /** Whether the all-snacks banner is up, fading included, whether or not it has room. */
+  /** Whether the snack banner is up, fading included, whether or not it has room. */
   private bannerActive = false;
   /** Whether placement found no room for the banner, so it is hidden and its timer paused. */
   private bannerHeld = false;
@@ -328,6 +329,7 @@ export class HudScene extends Phaser.Scene {
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.game.events.on(GAME_EVENTS.COLLECTED, this.handleCollected, this);
     this.game.events.on(GAME_EVENTS.ALL_COLLECTED, this.handleAllCollected, this);
+    this.game.events.on(GAME_EVENTS.EXIT_CLOSED, this.handleExitClosed, this);
     this.game.events.on(GAME_EVENTS.DASH_STATE, this.handleDashState, this);
     this.game.events.on(GAME_EVENTS.REQUEST_PAUSE, this.pauseSwim, this);
     this.game.events.on(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
@@ -568,8 +570,7 @@ export class HudScene extends Phaser.Scene {
   }
 
   private counterLabel(): string {
-    const count = `${this.collected} / ${this.total}`;
-    return this.view.cssW < COMPACT_WIDTH ? count : `Snacks ${count}`;
+    return snacksLeftLabel(this.total - this.collected);
   }
 
   /** Sets the snack counter text and returns the counter panel size. */
@@ -708,7 +709,7 @@ export class HudScene extends Phaser.Scene {
 
   /**
    * Places the active overlays through placeHudOverlays(), clear of the visible controls: the hint
-   * while active, the all-snacks banner while active and the find pop-up while it has a find. An
+   * while active, the snack banner while active and the find pop-up while it has a find. An
    * overlay with no room is held: hidden, with its timer paused, until a later call places it.
    */
   private layoutOverlays(): void {
@@ -1015,10 +1016,24 @@ export class HudScene extends Phaser.Scene {
     this.layoutOverlays();
   }
 
-  /** Shows the all-snacks banner, fading in unless motion is reduced, for BANNER_MS on the HUD clock. */
+  /** Shows the all-snacks message in the snack banner. */
   private handleAllCollected(): void {
+    this.showSnackBanner(ALL_SNACKS_BANNER);
+  }
+
+  /** Shows the closed-exit message, with the snacks still left, in the snack banner. */
+  private handleExitClosed(payload: ExitClosedPayload): void {
+    this.showSnackBanner(exitClosedText(payload.left));
+  }
+
+  /**
+   * Shows `text` in the snack banner, fading in unless motion is reduced, for BANNER_MS on the HUD
+   * clock. A new message replaces the one up and restarts the timer.
+   */
+  private showSnackBanner(text: string): void {
     if (this.bannerTimer) this.time.removeEvent(this.bannerTimer);
     this.tweens.killTweensOf(this.banner);
+    this.bannerText.setText(text);
     this.bannerActive = true;
     this.banner.setAlpha(this.motion.ambient ? 0 : 1);
     this.layoutOverlays();
@@ -1043,7 +1058,7 @@ export class HudScene extends Phaser.Scene {
     });
   }
 
-  /** Hides the all-snacks banner and places the other overlays again. */
+  /** Hides the snack banner and places the other overlays again. */
   private dropBanner(): void {
     this.bannerActive = false;
     this.bannerHeld = false;
@@ -1242,6 +1257,7 @@ export class HudScene extends Phaser.Scene {
     this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.game.events.off(GAME_EVENTS.COLLECTED, this.handleCollected, this);
     this.game.events.off(GAME_EVENTS.ALL_COLLECTED, this.handleAllCollected, this);
+    this.game.events.off(GAME_EVENTS.EXIT_CLOSED, this.handleExitClosed, this);
     this.game.events.off(GAME_EVENTS.DASH_STATE, this.handleDashState, this);
     this.game.events.off(GAME_EVENTS.REQUEST_PAUSE, this.pauseSwim, this);
     this.game.events.off(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);

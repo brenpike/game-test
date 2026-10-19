@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { exitClosedText, snacksLeftLabel } from './areaText';
 import { CANAL_TREASURES, categoryName, type Treasure } from './catalogue';
 import { isSupportedCanvas } from './cardFit';
 import { rarityName } from './hints';
@@ -47,14 +48,13 @@ const DASH_CORNER_R = 24;
 
 /**
  * Status panel metrics from src/scenes/HudScene.ts: 12 px padding round a 32 px icon row, so every
- * panel is 56 tall; the counter drops "Snacks" below COMPACT_WIDTH.
+ * panel is 56 tall; the counter reads snacksLeftLabel() at every width.
  */
 const PANEL_H = 56;
 const PANEL_PAD = 12;
 const PANEL_ICON_PX = 32;
 const PANEL_TEXT_PX = 22;
 const COUNTER_ICON_GAP = 6;
-const COMPACT_WIDTH = 460;
 const LEGS_ICON_PX = 32;
 const LEGS_ICON_GAP = 4;
 const LEGS_LABEL_GAP = 6;
@@ -81,9 +81,13 @@ const SORTED_TREASURES: readonly Treasure[] = [...CANAL_TREASURES].sort(
 );
 const COMBINATION_TREASURES: readonly Treasure[] = SORTED_TREASURES.slice(0, 3);
 
+/** Two-digit snacks-left count: the longest closed-exit message the snack banner shows. */
+const MOST_SNACKS_LEFT = 16;
+const EXIT_CLOSED_BANNER = exitClosedText(MOST_SNACKS_LEFT);
+
 const BANNER_TEXTS: Readonly<Record<Exclude<HudOverlayId, 'findPopup'>, string>> = {
   hint: BANKING_HINT,
-  snackBanner: ALL_SNACKS_BANNER,
+  snackBanner: EXIT_CLOSED_BANNER.length > ALL_SNACKS_BANNER.length ? EXIT_CLOSED_BANNER : ALL_SNACKS_BANNER,
 };
 
 const FIT_TIMEOUT_MS = 20000;
@@ -167,9 +171,8 @@ function supportedCanvases(): Canvas[] {
 }
 
 /** Snack counter, legs and Trip Bag panel sizes the way HudScene lays them out, labels at `em`. */
-function panelSizes(cssW: number, em: number): Pick<HudControlSizes, 'counter' | 'legs' | 'bag'> {
-  const count = `${SNACK_TOTAL} / ${SNACK_TOTAL}`;
-  const counterLabel = cssW < COMPACT_WIDTH ? count : `Snacks ${count}`;
+function panelSizes(em: number): Pick<HudControlSizes, 'counter' | 'legs' | 'bag'> {
+  const counterLabel = snacksLeftLabel(SNACK_TOTAL);
   const counterW = 2 * PANEL_PAD + PANEL_ICON_PX + COUNTER_ICON_GAP + textWidth(counterLabel, PANEL_TEXT_PX, em);
   const iconsW = LEGS.count * LEGS_ICON_PX + (LEGS.count - 1) * LEGS_ICON_GAP;
   const legsW = 2 * PANEL_PAD + textWidth(LEGS_LABEL, PANEL_TEXT_PX, em) + LEGS_LABEL_GAP + iconsW;
@@ -192,7 +195,7 @@ function makeHudCase(canvas: Canvas, panelWidth: PanelWidth, goHomeVisible: bool
     goHome: GO_HOME_SIZE,
     dash: DASH_SIZE,
     dashCornerR: DASH_CORNER_R,
-    ...panelSizes(canvas.cssW, PANEL_EMS[panelWidth]),
+    ...panelSizes(PANEL_EMS[panelWidth]),
   };
   const controls = hudControls(view, sizes);
   const label = `${canvas.cssW}x${canvas.cssH} ${panelWidth} panels, Go home ${goHomeVisible ? 'visible' : 'hidden'}`;

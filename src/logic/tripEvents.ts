@@ -2,6 +2,7 @@ import type { Rarity, TreasureCategory } from './catalogue';
 import type { LegStatus } from './legs';
 import type { RealMorphId } from './morphs';
 import type { RescueStatus } from './rescue';
+import type { AreaStars } from './stars';
 
 /**
  * Event names for a trip, shared between the game scene and the UI scene. The `TripSnapshot`
@@ -34,17 +35,22 @@ export interface LegsSnapshot {
  */
 export type TripPhase = 'swimming' | 'banked' | 'carrying' | 'ended';
 
-/** How a trip ended: the player chose Go home, or the axolotl was carried home. */
-export type TripEndReason = 'wentHome' | 'carriedHome';
+/**
+ * How a trip ended: the player chose Go home, the axolotl was carried home, or it reached the open
+ * exit and beat the area (PRD H5).
+ */
+export type TripEndReason = 'wentHome' | 'carriedHome' | 'areaBeaten';
 
 /**
  * How an ended trip ended. `returned` is the find ids sent back to the world (carried home only).
- * `bankedThisTrip` is every find id banked during the trip, in banking order.
+ * `bankedThisTrip` is every find id banked during the trip, in banking order. `stars` is the stars
+ * earned this trip, set only when the area was beaten (PRD H6).
  */
 export interface TripEnding {
   reason: TripEndReason;
   returned: string[];
   bankedThisTrip: string[];
+  stars?: AreaStars;
 }
 
 /** A found treasure as the pop-up shows it: its catalogue id, name, category and rarity. */

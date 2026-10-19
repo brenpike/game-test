@@ -13,6 +13,7 @@ import { meetsTilapia } from './factCards';
 import { createLegs, isProtected, presentCount, quantizeProgress, type LegsState } from './legs';
 import { isAxolotlFindId, type RealMorphId } from './morphs';
 import { DEFAULT_TRIP_SEED, nextTripSeed, placeTreasures, type PlacedFind } from './placement';
+import { earnStars, type AreaStars } from './stars';
 import {
   createRescue,
   reachesRescue,
@@ -81,6 +82,7 @@ export interface CarryState {
  * in 'ended'. `rescue` is this trip's stranded axolotl, or null when there is none; once reached its
  * id is a Trip Bag find like any other. `tilapiaCardSeen` is whether the tilapia fact card was
  * already seen before this trip, and `metTilapia` whether the axolotl met a tilapia this trip.
+ * `legsLost` is how many legs tilapia hits took this trip; a leg grown back still counts.
  */
 export interface TripState {
   phase: TripPhase;
@@ -103,6 +105,7 @@ export interface TripState {
   rescue: RescueState | null;
   tilapiaCardSeen: boolean;
   metTilapia: boolean;
+  legsLost: number;
 }
 
 /**
@@ -112,6 +115,15 @@ export interface TripState {
 export interface TripOptions {
   stranding?: Stranding | null;
   tilapiaCardSeen?: boolean;
+}
+
+/**
+ * What the stars of a beaten area depend on beyond the trip: the area's special treasure id. The
+ * rescue part of star 3 comes from the trip itself: a rescue banked this trip, at the Home Spot or
+ * the exit, or no leg lost this trip (PRD H6).
+ */
+export interface StarContext {
+  specialTreasureId: string;
 }
 
 /** Encounter context, carry tuning and find tuning for a trip step. */
@@ -202,6 +214,7 @@ export function createTrip(
     rescue: options.stranding ? createRescue(options.stranding) : null,
     tilapiaCardSeen: options.tilapiaCardSeen ?? false,
     metTilapia: false,
+    legsLost: 0,
   };
 }
 
@@ -282,11 +295,40 @@ export function eatSnacks(
 }
 
 /**
+ * Ends the trip at the open exit (PRD H5). Allowed only while swimming; any other phase returns the
+ * input state unchanged with no events. Banks the Trip Bag first, as at the Home Spot (A14), emitting
+ * `banked` when it was not empty, then ends with reason 'areaBeaten', nothing returned, every id
+ * banked this trip and the stars earned (H6): the exit, the special treasure when banked now or on
+ * an earlier trip, and a rescue banked this trip (at the Home Spot or the exit) or no leg lost this
+ * trip. Banking comes first so a following axolotl banked at the exit counts as rescued.
+ */
+export function beatArea(state: TripState, ctx: StarContext): TripStepResult {
+  if (state.phase !== 'swimming') return { state, events: [] };
+  const events: TripEvent[] = [];
+  const banking = bankFinds(state);
+  if (banking.ids.length > 0) events.push({ type: 'banked', ids: [...banking.ids] });
+  const next = banking.state;
+  const stars = earnStars({
+    reachedExit: true,
+    specialOwned: next.holdings.banked.includes(ctx.specialTreasureId),
+    rescued: next.bankedThisTrip.some(isAxolotlFindId),
+    legLost: next.legsLost > 0,
+  });
+  const ending: TripEnding = {
+    reason: 'areaBeaten',
+    returned: [],
+    bankedThisTrip: [...next.bankedThisTrip],
+    stars,
+  };
+  return { state: { ...next, phase: 'ended', heldAt: null, ending }, events };
+}
+
+/**
  * Advances the trip by `dt` seconds. A zero, negative or non-finite `dt` (pause), or a
  * banked or ended trip, returns the input state unchanged with no events. `dt` is capped at
  * `SWIM.dtMax`.
  *
- * Swimming: steps the encounter. When it ends (fourth leg lost) the carry starts in the same
+ * Swimming: steps the encounter; each `hit` adds one to `legsLost`. When it ends (fourth leg lost) the carry starts in the same
  * step: `carryStart` is emitted, any bump impulse is dropped, and reduced motion is locked.
  * Otherwise, in placed order, every sealed Dash pot within the container radius breaks when
  * `input.dashing` (`containerBroken`), or emits `dashNeeded` when the axolotl was not already
@@ -423,11 +465,27 @@ function foundIds(found: readonly FoundInfo[]): string[] {
 
 function sameEnding(a: TripEnding | null, b: TripEnding | null): boolean {
   if (a === null || b === null) return a === b;
-  return a.reason === b.reason && sameIds(a.returned, b.returned) && sameIds(a.bankedThisTrip, b.bankedThisTrip);
+  return (
+    a.reason === b.reason &&
+    sameIds(a.returned, b.returned) &&
+    sameIds(a.bankedThisTrip, b.bankedThisTrip) &&
+    sameStars(a.stars, b.stars)
+  );
+}
+
+function sameStars(a: AreaStars | undefined, b: AreaStars | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return a.exit === b.exit && a.special === b.special && a.legsOrRescue === b.legsOrRescue;
 }
 
 function copyEnding(ending: TripEnding): TripEnding {
-  return { reason: ending.reason, returned: [...ending.returned], bankedThisTrip: [...ending.bankedThisTrip] };
+  const copy: TripEnding = {
+    reason: ending.reason,
+    returned: [...ending.returned],
+    bankedThisTrip: [...ending.bankedThisTrip],
+  };
+  if (ending.stars) copy.stars = { ...ending.stars };
+  return copy;
 }
 
 function sameLegsSnapshot(a: LegsSnapshot, b: LegsSnapshot): boolean {
@@ -443,14 +501,24 @@ function isPassedEvent(event: EncounterEvent): event is PassedEncounterEvent {
   return event.type !== 'carriedHome';
 }
 
+/** How many `hit` events, each a leg lost, are in `events`. Runs every swimming frame, so it allocates nothing. */
+function countHits(events: readonly EncounterEvent[]): number {
+  let hitCount = 0;
+  for (const event of events) {
+    if (event.type === 'hit') hitCount += 1;
+  }
+  return hitCount;
+}
+
 function stepSwimming(state: TripState, input: TripInput, step: number, ctx: TripContext): TripStepResult {
   const result = stepEncounter(state.encounter, input.axolotlPos, step, ctx.encounter);
   const events: TripEvent[] = result.events.filter(isPassedEvent);
+  const legsLost = state.legsLost + countHits(result.events);
   if (result.state.tripOver) {
     const carry = startCarry(input.axolotlPos, state.home, input.reduced, ctx.carry);
     events.push({ type: 'carryStart', from: { x: carry.from.x, y: carry.from.y }, still: carry.still });
     const rescue = rescueAtCarryStart(state);
-    return { state: { ...state, phase: 'carrying', encounter: result.state, carry, rescue }, events };
+    return { state: { ...state, phase: 'carrying', encounter: result.state, carry, rescue, legsLost }, events };
   }
   const pots = touchPots(state, input, ctx.finds, events);
   const pickup = pickUpNearby({ ...state, ...pots }, input.axolotlPos, ctx.finds, events);
@@ -465,6 +533,7 @@ function stepSwimming(state: TripState, input: TripInput, step: number, ctx: Tri
     encounter: result.state,
     inHomeSpot: inside,
     metTilapia,
+    legsLost,
   };
   if (inside && next.holdings.bag.length > 0) return bankAtHomeSpot(next, input.axolotlPos, events);
   if (result.impulse) return { state: next, events, impulse: result.impulse };
