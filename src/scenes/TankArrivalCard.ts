@@ -32,10 +32,14 @@ const DIM_COVER = 8192;
 const FADE_MS = 400;
 const MIN_SHOW_MS = 800;
 
-/** The area beaten and its best stars so far, for the "Area beaten" card (PRD H5, H7). */
+/**
+ * The area beaten and its best stars so far, for the "Area beaten" card (PRD H5, H7). `rescueOpen`
+ * is whether any axolotl is still left to rescue (PRD H6).
+ */
 export interface ArrivalAreaStars {
   area: Readonly<AreaData>;
   best: AreaStars;
+  rescueOpen: boolean;
 }
 
 /** The treasure ids the card body names: returned when carried home, otherwise banked this trip. */
@@ -45,18 +49,19 @@ function namedTreasureIds(ending: TripEnding): readonly string[] {
 
 /**
  * The star text input for the "Area beaten" card: the area label, its special treasure name, the
- * stars earned this trip and the best. Undefined for any other ending. Throws when the area was
- * beaten without its stars, or the special treasure is not in the catalogue.
+ * stars earned this trip, the best and whether a rescue is still open. Undefined for any other
+ * ending. Throws when the area was beaten without its stars, or the special treasure is not in the
+ * catalogue.
  */
 function arrivalStars(ending: TripEnding, areaStars: ArrivalAreaStars | undefined): ArrivalStars | undefined {
   if (ending.reason !== 'areaBeaten') return undefined;
   if (ending.stars === undefined || areaStars === undefined) {
     throw new Error('TankArrivalCard: the area was beaten with no stars');
   }
-  const { area, best } = areaStars;
+  const { area, best, rescueOpen } = areaStars;
   const special = treasureById(area.specialTreasureId);
   if (special === undefined) throw new Error(`TankArrivalCard: no catalogue treasure ${area.specialTreasureId}`);
-  return { areaLabel: areaLabel(area.number), specialName: special.name, earned: ending.stars, best };
+  return { areaLabel: areaLabel(area.number), specialName: special.name, earned: ending.stars, best, rescueOpen };
 }
 
 /** Display names of the rescued axolotls among find ids, e.g. 'Wild axolotl'; other ids are ignored. */

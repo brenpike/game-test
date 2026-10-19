@@ -83,21 +83,33 @@ const STAR_SAMPLES: readonly AreaStars[] = [
   ALL_STARS,
 ];
 
-function arrivalStars(earned: AreaStars, best: AreaStars): ArrivalStars {
-  return { areaLabel: 'Area 1', specialName: 'Castle tower', earned, best };
+function arrivalStars(earned: AreaStars, best: AreaStars, rescueOpen = true): ArrivalStars {
+  return { areaLabel: 'Area 1', specialName: 'Castle tower', earned, best, rescueOpen };
+}
+
+/** Area-beaten stars for every star sample with and without an open rescue, and no stars at all. */
+function areaBeatenStarSamples(): (ArrivalStars | undefined)[] {
+  const samples: (ArrivalStars | undefined)[] = [undefined];
+  for (const rescueOpen of [false, true]) {
+    samples.push(...STAR_SAMPLES.map((earned) => arrivalStars(earned, ALL_STARS, rescueOpen)));
+  }
+  return samples;
 }
 
 function areaBeatenOutputs(names: readonly string[], total: number): string[] {
   const outputs: string[] = [];
-  for (const stars of [undefined, ...STAR_SAMPLES.map((earned) => arrivalStars(earned, ALL_STARS))]) {
-    const text = arrivalText({
-      reason: 'areaBeaten',
-      returnedNames: names,
-      bankedThisTripNames: names,
-      bankedTotal: total,
-      stars,
-    });
-    outputs.push(text.title, text.body, text.shortBody, text.bankedLine, text.button);
+  for (const stars of areaBeatenStarSamples()) {
+    for (const rescuedNames of AXOLOTL_SAMPLES) {
+      const text = arrivalText({
+        reason: 'areaBeaten',
+        returnedNames: names,
+        bankedThisTripNames: names,
+        bankedTotal: total,
+        rescuedNames,
+        stars,
+      });
+      outputs.push(text.title, text.body, text.shortBody, text.bankedLine, text.button);
+    }
   }
   return outputs;
 }
@@ -597,6 +609,7 @@ describe('rescued and waiting axolotls', () => {
 
 describe('arrivalText areaBeaten (H5, H6, H7)', () => {
   const OPENING = 'You swam through the open exit!';
+  const GOLDEN = 'Golden albino axolotl';
 
   it('names the treasures banked this trip, then one line per star and the best stars', () => {
     const earned: AreaStars = { exit: true, special: false, legsOrRescue: true };
@@ -617,7 +630,10 @@ describe('arrivalText areaBeaten (H5, H6, H7)', () => {
         'Area 1: 3 of 3 stars',
       ].join('\n'),
     );
-    expect(text.body.split('\n').slice(1)).toEqual([...starLines(earned, 'Castle tower'), bestStarsLine('Area 1', ALL_STARS)]);
+    expect(text.body.split('\n').slice(1)).toEqual([
+      ...starLines(earned, 'Castle tower', false, true),
+      bestStarsLine('Area 1', ALL_STARS),
+    ]);
     expect(text.shortBody).toBe(starsShortLine(earned, ALL_STARS));
     expect(text.shortBody).toBe('2 of 3 stars! Best: 3 of 3.');
     expect(text.bankedLine).toBe('You have 6 treasures safe at the Home Spot.');
@@ -664,6 +680,94 @@ describe('arrivalText areaBeaten (H5, H6, H7)', () => {
       }
     }
     expect(OPENING.length).toBeLessThanOrEqual(34);
+  });
+
+  it('names the rescued axolotl before the treasures and praises the rescue for star 3', () => {
+    const text = arrivalText({
+      reason: 'areaBeaten',
+      returnedNames: [],
+      bankedThisTripNames: ['Sun hat'],
+      bankedTotal: 1,
+      rescuedNames: [GOLDEN],
+      stars: arrivalStars(ALL_STARS, ALL_STARS),
+    });
+    expect(text.body).toBe(
+      [
+        `${OPENING} You brought ${GOLDEN} to your Home Tank, plus Sun hat.`,
+        'You reached the exit!',
+        'You found the Castle tower!',
+        'You rescued an axolotl friend!',
+        'Area 1: 3 of 3 stars',
+      ].join('\n'),
+    );
+  });
+
+  it('names a rescued axolotl with no treasures banked', () => {
+    const text = arrivalText({
+      reason: 'areaBeaten',
+      returnedNames: [],
+      bankedThisTripNames: [],
+      bankedTotal: 0,
+      rescuedNames: [GOLDEN],
+    });
+    expect(text.body).toBe(`${OPENING} You brought ${GOLDEN} to your Home Tank.`);
+  });
+
+  it('keeps the brought-home sentence as before when no axolotl was rescued', () => {
+    for (const rescuedNames of [undefined, []]) {
+      const text = arrivalText({
+        reason: 'areaBeaten',
+        returnedNames: [],
+        bankedThisTripNames: ['Sun hat', 'Castle tower'],
+        bankedTotal: 2,
+        rescuedNames,
+      });
+      expect(text.body).toBe(`${OPENING} This trip you brought home Sun hat and Castle tower.`);
+    }
+  });
+
+  it('follows rescuedNames for the earned star 3 line', () => {
+    const lineFor = (rescuedNames: readonly string[]): string =>
+      arrivalText({
+        reason: 'areaBeaten',
+        returnedNames: [],
+        bankedThisTripNames: [],
+        bankedTotal: 0,
+        rescuedNames,
+        stars: arrivalStars(ALL_STARS, ALL_STARS),
+      }).body.split('\n')[3];
+    expect(lineFor([GOLDEN])).toBe('You rescued an axolotl friend!');
+    expect(lineFor([])).toBe('You kept all four legs!');
+  });
+
+  it('asks for a rescue for a missing star 3 only while a rescue is open', () => {
+    const lineFor = (rescueOpen: boolean): string =>
+      arrivalText({
+        reason: 'areaBeaten',
+        returnedNames: [],
+        bankedThisTripNames: [],
+        bankedTotal: 0,
+        stars: arrivalStars(NO_STARS, ALL_STARS, rescueOpen),
+      }).body.split('\n')[3];
+    expect(lineFor(true)).toBe('Rescue or keep every leg next time.');
+    expect(lineFor(false)).toBe('Keep all four legs next time.');
+  });
+
+  it('keeps the short body the stars line whether or not an axolotl was rescued', () => {
+    for (const rescueOpen of [false, true]) {
+      for (const rescuedNames of AXOLOTL_SAMPLES) {
+        const text = arrivalText({
+          reason: 'areaBeaten',
+          returnedNames: [],
+          bankedThisTripNames: makeNames(20),
+          bankedTotal: 20,
+          rescuedNames,
+          stars: arrivalStars(ALL_STARS, ALL_STARS, rescueOpen),
+        });
+        expect(text.shortBody).toBe(starsShortLine(ALL_STARS, ALL_STARS));
+        expect(text.shortBody.length).toBeLessThanOrEqual(34);
+      }
+    }
   });
 });
 

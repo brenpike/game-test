@@ -18,7 +18,7 @@ import { GAME_EVENTS, REGISTRY_KEYS, type ReducedMotionPayload } from '../logic/
 import type { Size } from '../logic/hudLayout';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { NO_REPAINT, pickSecondaryRepaint } from '../logic/repaintBudget';
-import { bestStars, setTankLayout, type Session } from '../logic/session';
+import { bestStars, canRescueMore, setTankLayout, type Session } from '../logic/session';
 import { hubStarsBadgeRect } from '../logic/starsUi';
 import { TANK, tankFrame, tankToCss, type TankFrame, type TankLayout } from '../logic/tank';
 import { tankSwimPose } from '../logic/tankSwim';
@@ -355,7 +355,9 @@ export class HomeTankScene extends Phaser.Scene {
     this.mode = 'arrival';
     this.refreshStarsBadge();
     const areaStars: ArrivalAreaStars | undefined =
-      ending.reason === 'areaBeaten' ? { area: this.area, best: bestStars(this.session, this.area.id) } : undefined;
+      ending.reason === 'areaBeaten'
+        ? { area: this.area, best: bestStars(this.session, this.area.id), rescueOpen: canRescueMore(this.session) }
+        : undefined;
     this.arrivalCard.show(ending, this.session.hub.banked.length, areaStars);
     this.refreshHubFocus();
   }

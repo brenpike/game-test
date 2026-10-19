@@ -51,13 +51,15 @@ export type ArrivalReason = 'wentHome' | 'carriedHome' | 'areaBeaten';
 
 /**
  * The stars on the "Area beaten" card: the area's UI label (such as "Area 1"), its special treasure
- * name, the stars earned this trip and the best stars so far (PRD H5 to H7).
+ * name, the stars earned this trip and the best stars so far (PRD H5 to H7). `rescueOpen` is whether
+ * any axolotl is still left to rescue.
  */
 export interface ArrivalStars {
   areaLabel: string;
   specialName: string;
   earned: AreaStars;
   best: AreaStars;
+  rescueOpen: boolean;
 }
 
 /**
@@ -231,14 +233,34 @@ function wentHomeShortBody(input: ArrivalInput): string {
 
 const AREA_BEATEN_OPENING = 'You swam through the open exit!';
 
-/** Body of the "Area beaten" card: the exit, what was brought home, then one line per star and the best stars. */
-function areaBeatenBody(bankedThisTripNames: readonly string[], stars: ArrivalStars | undefined): string {
-  const brought =
-    bankedThisTripNames.length === 0
-      ? AREA_BEATEN_OPENING
-      : `${AREA_BEATEN_OPENING} This trip you brought home ${describeTreasures(bankedThisTripNames)}.`;
+/**
+ * First line of the "Area beaten" card: the exit, then the treasures banked this trip, or an axolotl
+ * rescued this trip with any treasures after it, such as "You swam through the open exit! You brought
+ * Wild axolotl to your Home Tank, plus Sun hat."
+ */
+function areaBeatenBroughtLine(rescuedNames: readonly string[], bankedThisTripNames: readonly string[]): string {
+  if (rescuedNames.length === 0) {
+    if (bankedThisTripNames.length === 0) return AREA_BEATEN_OPENING;
+    return `${AREA_BEATEN_OPENING} This trip you brought home ${describeTreasures(bankedThisTripNames)}.`;
+  }
+  const toTank = `${AREA_BEATEN_OPENING} You brought ${describeTreasures(rescuedNames)} to your Home Tank`;
+  if (bankedThisTripNames.length === 0) return `${toTank}.`;
+  return `${toTank}, plus ${describeTreasures(bankedThisTripNames)}.`;
+}
+
+/**
+ * Body of the "Area beaten" card: the exit, what was brought home (a rescued axolotl first), then
+ * one line per star and the best stars.
+ */
+function areaBeatenBody(input: ArrivalInput): string {
+  const rescuedNames = input.rescuedNames ?? [];
+  const brought = areaBeatenBroughtLine(rescuedNames, input.bankedThisTripNames);
+  const { stars } = input;
   if (stars === undefined) return brought;
-  const lines = [...starLines(stars.earned, stars.specialName), bestStarsLine(stars.areaLabel, stars.best)];
+  const lines = [
+    ...starLines(stars.earned, stars.specialName, rescuedNames.length > 0, stars.rescueOpen),
+    bestStarsLine(stars.areaLabel, stars.best),
+  ];
   return [brought, ...lines].join('\n');
 }
 
@@ -247,7 +269,7 @@ function areaBeatenText(input: ArrivalInput): ArrivalText {
   const { stars } = input;
   return {
     title: AREA_BEATEN_TITLE,
-    body: areaBeatenBody(input.bankedThisTripNames, stars),
+    body: areaBeatenBody(input),
     shortBody: stars === undefined ? AREA_BEATEN_OPENING : starsShortLine(stars.earned, stars.best),
     bankedLine: bankedTotalLine(input.bankedTotal),
     button: ARRIVAL_OK_LABEL,

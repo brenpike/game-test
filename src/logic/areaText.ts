@@ -28,14 +28,29 @@ export function exitClosedText(left: number): string {
 }
 
 /**
- * One short line per star on the "Area beaten" card, in star order: what was earned, or a kind
- * "next time" for a star still missing. Star 3 talks about legs only (rescues come with #13).
+ * Star 3 line (PRD H6): praises the rescue when an axolotl was rescued this trip, otherwise the
+ * legs kept. A missing star 3 asks for a rescue only while there is still an axolotl to rescue.
  */
-export function starLines(earned: AreaStars, specialName: string): readonly [string, string, string] {
+function legsOrRescueLine(earned: boolean, rescued: boolean, rescueOpen: boolean): string {
+  if (earned) return rescued ? 'You rescued an axolotl friend!' : 'You kept all four legs!';
+  return rescueOpen ? 'Rescue or keep every leg next time.' : 'Keep all four legs next time.';
+}
+
+/**
+ * One short line per star on the "Area beaten" card, in star order: what was earned, or a kind
+ * "next time" for a star still missing. `rescued` is whether an axolotl was rescued this trip;
+ * `rescueOpen` is whether any axolotl is still left to rescue.
+ */
+export function starLines(
+  earned: AreaStars,
+  specialName: string,
+  rescued: boolean,
+  rescueOpen: boolean,
+): readonly [string, string, string] {
   return [
     earned.exit ? 'You reached the exit!' : 'Reach the exit next time.',
     earned.special ? `You found the ${specialName}!` : `Find the ${specialName} next time.`,
-    earned.legsOrRescue ? 'You kept all four legs!' : 'Keep all four legs next time.',
+    legsOrRescueLine(earned.legsOrRescue, rescued, rescueOpen),
   ];
 }
 

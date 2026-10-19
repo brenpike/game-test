@@ -44,6 +44,8 @@ const SNACKS_LEFT_SAMPLES = [0, 1, 2, 3, 5, 16, 99];
 
 const SPECIAL_NAMES = CANAL_TREASURES.map((treasure) => treasure.name);
 
+const ALL_STARS: AreaStars = { exit: true, special: true, legsOrRescue: true };
+
 const exportedStrings = Object.entries(areaText as Readonly<Record<string, unknown>>).filter(
   (entry): entry is [string, string] => typeof entry[1] === 'string',
 );
@@ -54,12 +56,18 @@ function allStars(): AreaStars[] {
   return flags.flatMap((exit) => flags.flatMap((special) => flags.map((legsOrRescue) => ({ exit, special, legsOrRescue }))));
 }
 
+/** Star lines for `earned` over every combination of rescued and rescueOpen. */
+function allStarLines(earned: AreaStars, specialName: string): string[] {
+  const flags = [false, true];
+  return flags.flatMap((rescued) => flags.flatMap((rescueOpen) => starLines(earned, specialName, rescued, rescueOpen)));
+}
+
 /** Every output of every text helper over the samples. */
 function collectHelperOutputs(): string[] {
   const outputs: string[] = [areaLabel(1), areaLabel(12)];
   for (const left of SNACKS_LEFT_SAMPLES) outputs.push(snacksLeftLabel(left), exitClosedText(left));
   for (const earned of allStars()) {
-    for (const name of SPECIAL_NAMES) outputs.push(...starLines(earned, name));
+    for (const name of SPECIAL_NAMES) outputs.push(...allStarLines(earned, name));
     outputs.push(bestStarsLine(areaLabel(1), earned));
     for (const best of allStars()) outputs.push(starsShortLine(earned, best));
   }
@@ -104,22 +112,40 @@ describe('area text', () => {
 
 describe('starLines', () => {
   it('gives one line per star, praising earned stars', () => {
-    const lines = starLines({ exit: true, special: true, legsOrRescue: true }, 'Sun hat');
+    const lines = starLines({ exit: true, special: true, legsOrRescue: true }, 'Sun hat', false, true);
     expect(lines).toEqual(['You reached the exit!', 'You found the Sun hat!', 'You kept all four legs!']);
   });
 
   it('says "next time" kindly for each missing star', () => {
-    const lines = starLines(NO_STARS, 'Sun hat');
-    expect(lines).toHaveLength(3);
-    for (const line of lines) expect(line).toContain('next time');
-    expect(lines[1]).toContain('Sun hat');
+    for (const rescueOpen of [false, true]) {
+      const lines = starLines(NO_STARS, 'Sun hat', false, rescueOpen);
+      expect(lines).toHaveLength(3);
+      for (const line of lines) expect(line).toContain('next time');
+      expect(lines[1]).toContain('Sun hat');
+    }
   });
 
-  it('talks about legs only for star 3, never rescues', () => {
-    for (const earned of allStars()) {
-      const third = starLines(earned, 'Sun hat')[2].toLowerCase();
-      expect(third).toContain('legs');
-      expect(third).not.toContain('rescue');
+  it('praises the rescue for an earned star 3 when an axolotl was rescued this trip', () => {
+    for (const rescueOpen of [false, true]) {
+      expect(starLines(ALL_STARS, 'Sun hat', true, rescueOpen)[2]).toBe('You rescued an axolotl friend!');
+    }
+  });
+
+  it('praises the legs kept for an earned star 3 with no rescue this trip', () => {
+    for (const rescueOpen of [false, true]) {
+      expect(starLines(ALL_STARS, 'Sun hat', false, rescueOpen)[2]).toBe('You kept all four legs!');
+    }
+  });
+
+  it('asks for a rescue or every leg for a missing star 3 while a rescue is open', () => {
+    for (const rescued of [false, true]) {
+      expect(starLines(NO_STARS, 'Sun hat', rescued, true)[2]).toBe('Rescue or keep every leg next time.');
+    }
+  });
+
+  it('asks for all four legs only for a missing star 3 once no rescue is open', () => {
+    for (const rescued of [false, true]) {
+      expect(starLines(NO_STARS, 'Sun hat', rescued, false)[2]).toBe('Keep all four legs next time.');
     }
   });
 });

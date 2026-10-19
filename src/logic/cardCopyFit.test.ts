@@ -55,14 +55,25 @@ function canalSpecialName(): string {
 
 /**
  * Worst-case stars for the "Area beaten" card: every star missing gives the longest star lines, with
- * the Area 1 label and the canal special treasure name from the catalogue.
+ * the Area 1 label and the canal special treasure name from the catalogue. An open rescue gives the
+ * longest missed star 3 line.
  */
 const WORST_STARS: ArrivalStars = {
   areaLabel: areaLabel(CANAL_AREA.number),
   specialName: canalSpecialName(),
   earned: NO_STARS,
   best: NO_STARS,
+  rescueOpen: true,
 };
+
+/**
+ * Worst-case stars for an "Area beaten" card with these axolotls: WORST_STARS, except that a rescued
+ * axolotl keeps star 3 earned, since a rescue banked this trip always earns star 3 (PRD H6).
+ */
+function beatenStars(axolotls: AxolotlCase): ArrivalStars {
+  if (axolotls.rescued.length === 0) return WORST_STARS;
+  return { ...WORST_STARS, earned: { ...NO_STARS, legsOrRescue: true } };
+}
 
 const SORTED_NAMES: readonly string[] = CANAL_TREASURES.map((treasure) => treasure.name).sort(
   (left, right) => right.length - left.length,
@@ -150,7 +161,7 @@ function supportedCanvases(): Canvas[] {
 
 /**
  * Tank arrival card sections: head, body, icon rows, actions. The "Area beaten" card adds a fixed
- * star row (starRowSize) after the head and names the treasures banked this trip.
+ * star row (starRowSize) after the head and names the axolotls and treasures banked this trip.
  */
 function arrivalSections(
   reason: ArrivalReason,
@@ -168,7 +179,7 @@ function arrivalSections(
     bankedTotal: total,
     rescuedNames: axolotls.rescued,
     waitingNames: axolotls.waiting,
-    stars: isBeaten ? WORST_STARS : undefined,
+    stars: isBeaten ? beatenStars(axolotls) : undefined,
   });
   const starRow: CardSection[] = isBeaten ? [{ kind: 'fixed', height: starRowSize().h }] : [];
   return [
