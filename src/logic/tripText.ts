@@ -30,6 +30,9 @@ export const GO_HOME_LABEL = 'Go home';
 /** Hint that teaches how banking works. */
 export const BANKING_HINT = 'Bring finds to the Home Spot to keep them safe.';
 
+/** HUD banner shown once every snack in the pond has been eaten. */
+export const ALL_SNACKS_BANNER = 'Yum! You found every snack!';
+
 /** Title of the card shown after choosing to go home. */
 export const WENT_HOME_TITLE = 'Welcome home!';
 

@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Turning on reduced motion during play now ends fades and pops that are already running (banners, the banking card, the home screen and the snack pop) at once.
 - On short screens the banking card and the home screen now keep their buttons on screen: they tighten spacing, show fewer treasure icons, then use shorter wording.
+- On small screens the find pop-up, the all-snacks banner and the first-trip hint no longer cover the swim pad, Dash or Pause. They move to free space or over the snack, legs and Trip Bag panels, and wait their turn when there is no room.
 
 ## [0.4.0] - 2026-10-18
 

@@ -90,6 +90,7 @@ function collectHelperOutputs(): string[] {
 describe('trip text', () => {
   it('exports every trip string by name', () => {
     expect(exportedStrings.map(([name]) => name).sort()).toEqual([
+      'ALL_SNACKS_BANNER',
       'BANKED_TITLE',
       'BANKING_HINT',
       'GO_HOME_LABEL',
