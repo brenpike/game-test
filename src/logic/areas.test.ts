@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AREAS, CANAL_AREA, areaById, atExit, exitContact, exitOpen } from './areas';
 import { CANAL_TREASURES } from './catalogue';
-import { createCollectibles, driftSnacks, snackDriftMaxSpeed } from './collectibles';
+import { createCollectibles, snackDriftMaxSpeed, snackX, snackY } from './collectibles';
 import { inSafeArea } from './tilapia';
 import { FINDS, LEGS, SWIM } from './tuning';
 import { CANAL_AREA_ID, DEFAULT_ZONE_SEED, SURF, buildCanalZone, inHomeSpot, swimBounds } from './zone';
@@ -131,7 +131,11 @@ describe('canal snack drift', () => {
     const bounds = swimBounds();
     const items = createCollectibles(zone.collectibles);
     for (let t = 0; t <= 120; t += 0.25) {
-      for (const snack of driftSnacks(items, zone.collectibles, t, drift, bounds)) {
+      for (let index = 0; index < items.length; index++) {
+        const snack = {
+          x: snackX(items[index], index, t, drift, bounds),
+          y: snackY(items[index], index, t, drift, bounds),
+        };
         expect(snack.x).toBeGreaterThanOrEqual(bounds.minX);
         expect(snack.x).toBeLessThanOrEqual(bounds.maxX);
         expect(snack.y).toBeGreaterThanOrEqual(bounds.minY);

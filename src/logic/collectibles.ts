@@ -42,9 +42,13 @@ export function collectNear(
   return { items: newly.length > 0 ? updated : items, newly };
 }
 
-/** Number of collected items. */
+/** Number of collected items. Counts in place: the scene asks every frame. */
 export function countCollected(items: readonly Collectible[]): number {
-  return items.filter((item) => item.collected).length;
+  let collected = 0;
+  for (const item of items) {
+    if (item.collected) collected += 1;
+  }
+  return collected;
 }
 
 /** True when every item is collected (vacuously true for an empty list). */
@@ -123,42 +127,62 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * Moves every uncollected item to its spawn plus its drift offset at time `t`, clamped to
- * `bounds`. Returns a new array; collected items are returned unchanged and spawns are never
- * mutated. Throws when items and spawns do not match one to one by index and id.
+ * On-screen x of the snack at `index` at drift time `t` (s): its stored `x` (the drift base, its
+ * spawn point) plus its drift offset, clamped to `bounds`. A collected item stays at its base.
+ * Allocates nothing: the scene asks for every snack every frame.
  */
-export function driftSnacks(
-  items: readonly Collectible[],
-  spawns: readonly CollectibleSpawn[],
-  t: number,
-  drift: SnackDrift,
-  bounds: SwimBounds,
-): Collectible[] {
-  if (items.length !== spawns.length) {
-    throw new Error(`driftSnacks: ${items.length} items but ${spawns.length} spawns`);
-  }
-  return items.map((item, i) => driftSnack(item, spawns[i], i, t, drift, bounds));
+export function snackX(item: Collectible, index: number, t: number, drift: SnackDrift, bounds: SwimBounds): number {
+  if (item.collected) return item.x;
+  return clamp(item.x + driftX(index * GOLDEN_ANGLE, t, drift), bounds.minX, bounds.maxX);
 }
 
-function driftSnack(
+/** On-screen y of the snack at `index` at drift time `t` (s); the y twin of `snackX`. */
+export function snackY(item: Collectible, index: number, t: number, drift: SnackDrift, bounds: SwimBounds): number {
+  if (item.collected) return item.y;
+  return clamp(item.y + driftY(index * GOLDEN_ANGLE, t, drift), bounds.minY, bounds.maxY);
+}
+
+function driftingInReach(
   item: Collectible,
-  spawn: CollectibleSpawn,
   index: number,
+  pos: Point,
+  radius: number,
   t: number,
   drift: SnackDrift,
   bounds: SwimBounds,
-): Collectible {
-  if (item.id !== spawn.id) {
-    throw new Error(`driftSnacks: item ${item.id} at index ${index} does not match spawn ${spawn.id}`);
+): boolean {
+  if (item.collected) return false;
+  const dx = snackX(item, index, t, drift, bounds) - pos.x;
+  const dy = snackY(item, index, t, drift, bounds) - pos.y;
+  return Math.hypot(dx, dy) <= radius;
+}
+
+/**
+ * `collectNear` against where the snacks have drifted to at time `t` (`snackX`, `snackY`). Returns
+ * null, allocating nothing, when no uncollected snack is within radius of pos (inclusive). Otherwise
+ * returns a new items array (input untouched) plus the newly collected items in index order; the
+ * collected items keep their stored base `x` and `y`.
+ */
+export function collectDriftingNear(
+  items: readonly Collectible[],
+  pos: Point,
+  radius: number,
+  t: number,
+  drift: SnackDrift,
+  bounds: SwimBounds,
+): CollectResult | null {
+  let first = 0;
+  while (first < items.length && !driftingInReach(items[first], first, pos, radius, t, drift, bounds)) {
+    first += 1;
   }
-  if (item.collected) {
-    return item;
+  if (first === items.length) return null;
+  const updated = items.slice();
+  const newly: Collectible[] = [];
+  for (let index = first; index < items.length; index++) {
+    if (!driftingInReach(items[index], index, pos, radius, t, drift, bounds)) continue;
+    const collectedItem = { ...items[index], collected: true };
+    updated[index] = collectedItem;
+    newly.push(collectedItem);
   }
-  // Runs every frame for every snack: compute each axis inline so the moved item is the only allocation.
-  const phase = index * GOLDEN_ANGLE;
-  return {
-    ...item,
-    x: clamp(spawn.x + driftX(phase, t, drift), bounds.minX, bounds.maxX),
-    y: clamp(spawn.y + driftY(phase, t, drift), bounds.minY, bounds.maxY),
-  };
+  return { items: updated, newly };
 }

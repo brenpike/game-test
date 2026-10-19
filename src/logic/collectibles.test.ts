@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_COLLECT_RADIUS,
   SPARKLE_SNACKS_LEFT,
   allCollected,
+  collectDriftingNear,
   collectNear,
   countCollected,
   createCollectibles,
-  driftSnacks,
   snackDriftMaxSpeed,
   snackDriftOffset,
+  snackX,
+  snackY,
   snacksLeft,
   sparklingSnackIds,
   type Collectible,
@@ -176,57 +179,102 @@ describe('snackDriftMaxSpeed', () => {
   });
 });
 
-describe('driftSnacks', () => {
-  it('moves uncollected items to spawn plus offset', () => {
-    const items = createCollectibles(FIVE_SPAWNS);
-    const drifted = driftSnacks(items, FIVE_SPAWNS, 2.5, DRIFT, WIDE_BOUNDS);
-    drifted.forEach((item, i) => {
+describe('snackX and snackY', () => {
+  it('put an uncollected snack at its base plus its drift offset', () => {
+    createCollectibles(FIVE_SPAWNS).forEach((item, i) => {
       const offset = snackDriftOffset(i, 2.5, DRIFT);
-      expect(item.x).toBeCloseTo(FIVE_SPAWNS[i].x + offset.x, 9);
-      expect(item.y).toBeCloseTo(FIVE_SPAWNS[i].y + offset.y, 9);
-      expect(item.id).toBe(FIVE_SPAWNS[i].id);
-      expect(item.kind).toBe(FIVE_SPAWNS[i].kind);
+      expect(snackX(item, i, 2.5, DRIFT, WIDE_BOUNDS)).toBeCloseTo(FIVE_SPAWNS[i].x + offset.x, 9);
+      expect(snackY(item, i, 2.5, DRIFT, WIDE_BOUNDS)).toBeCloseTo(FIVE_SPAWNS[i].y + offset.y, 9);
     });
   });
 
-  it('clamps drifted items to the bounds', () => {
+  it('drift from the stored base, so a moved base moves the snack', () => {
+    const [item] = createCollectibles(FIVE_SPAWNS);
+    const moved = { ...item, x: item.x + 50, y: item.y - 20 };
+    expect(snackX(moved, 0, 3, DRIFT, WIDE_BOUNDS)).toBeCloseTo(snackX(item, 0, 3, DRIFT, WIDE_BOUNDS) + 50, 9);
+    expect(snackY(moved, 0, 3, DRIFT, WIDE_BOUNDS)).toBeCloseTo(snackY(item, 0, 3, DRIFT, WIDE_BOUNDS) - 20, 9);
+  });
+
+  it('clamp to the bounds', () => {
     const tight: SwimBounds = { minX: 100, maxX: 100, minY: 100, maxY: 100 };
-    const spawns = FIVE_SPAWNS.slice(0, 1);
+    const [item] = createCollectibles(FIVE_SPAWNS);
     for (let t = 0; t <= 20; t += 0.5) {
-      const [item] = driftSnacks(createCollectibles(spawns), spawns, t, DRIFT, tight);
-      expect(item.x).toBe(100);
-      expect(item.y).toBe(100);
+      expect(snackX(item, 0, t, DRIFT, tight)).toBe(100);
+      expect(snackY(item, 0, t, DRIFT, tight)).toBe(100);
     }
   });
 
-  it('leaves collected items unchanged', () => {
+  it('leave a collected snack at its base', () => {
     const items = eatFirst(2);
-    const drifted = driftSnacks(items, FIVE_SPAWNS, 3, DRIFT, WIDE_BOUNDS);
-    expect(drifted).not.toBe(items);
-    expect(drifted[0]).toBe(items[0]);
-    expect(drifted[1]).toBe(items[1]);
-    expect(drifted[2]).not.toBe(items[2]);
+    for (let t = 0; t <= 20; t += 0.5) {
+      expect(snackX(items[1], 1, t, DRIFT, WIDE_BOUNDS)).toBe(FIVE_SPAWNS[1].x);
+      expect(snackY(items[1], 1, t, DRIFT, WIDE_BOUNDS)).toBe(FIVE_SPAWNS[1].y);
+    }
   });
 
-  it('never mutates spawns or items', () => {
-    const spawns = FIVE_SPAWNS.map((spawn) => ({ ...spawn }));
-    const items = createCollectibles(spawns);
-    const itemsBefore = items.map((item) => ({ ...item }));
-    driftSnacks(items, spawns, 4, DRIFT, WIDE_BOUNDS);
-    expect(spawns).toEqual(FIVE_SPAWNS);
-    expect(items).toEqual(itemsBefore);
+  it('are deterministic', () => {
+    const [item] = createCollectibles(FIVE_SPAWNS);
+    expect(snackX(item, 3, 7.5, DRIFT, WIDE_BOUNDS)).toBe(snackX(item, 3, 7.5, DRIFT, WIDE_BOUNDS));
+    expect(snackY(item, 3, 7.5, DRIFT, WIDE_BOUNDS)).toBe(snackY(item, 3, 7.5, DRIFT, WIDE_BOUNDS));
+  });
+});
+
+describe('collectDriftingNear', () => {
+  const t = 2.5;
+  const locateSnack = (index: number) => ({
+    x: snackX(createCollectibles(FIVE_SPAWNS)[index], index, t, DRIFT, WIDE_BOUNDS),
+    y: snackY(createCollectibles(FIVE_SPAWNS)[index], index, t, DRIFT, WIDE_BOUNDS),
   });
 
-  it('throws when the counts differ', () => {
-    expect(() => driftSnacks(createCollectibles(FIVE_SPAWNS), FIVE_SPAWNS.slice(1), 0, DRIFT, WIDE_BOUNDS)).toThrow(
-      /5 items but 4 spawns/,
-    );
+  it('returns null when no snack is in reach', () => {
+    const items = createCollectibles(FIVE_SPAWNS);
+    expect(collectDriftingNear(items, { x: 150, y: 400 }, DEFAULT_COLLECT_RADIUS, t, DRIFT, WIDE_BOUNDS)).toBeNull();
   });
 
-  it('throws when an id does not match its spawn', () => {
-    const swapped = [FIVE_SPAWNS[1], FIVE_SPAWNS[0], ...FIVE_SPAWNS.slice(2)];
-    expect(() => driftSnacks(createCollectibles(FIVE_SPAWNS), swapped, 0, DRIFT, WIDE_BOUNDS)).toThrow(
-      /item a at index 0 does not match spawn b/,
-    );
+  it('collects a snack that drifted into reach though its base is out of reach', () => {
+    const items = createCollectibles(FIVE_SPAWNS);
+    const at = locateSnack(0);
+    const pos = { x: at.x + (at.x - FIVE_SPAWNS[0].x) / 2, y: at.y + (at.y - FIVE_SPAWNS[0].y) / 2 };
+    const radius = Math.hypot(at.x - pos.x, at.y - pos.y) + 0.01;
+    expect(Math.hypot(FIVE_SPAWNS[0].x - pos.x, FIVE_SPAWNS[0].y - pos.y)).toBeGreaterThan(radius);
+    const result = collectDriftingNear(items, pos, radius, t, DRIFT, WIDE_BOUNDS);
+    expect(result?.newly.map((item) => item.id)).toEqual(['a']);
+  });
+
+  it('skips a snack whose base is in reach but which drifted out of reach', () => {
+    const items = createCollectibles(FIVE_SPAWNS);
+    const at = locateSnack(0);
+    const pos = { x: FIVE_SPAWNS[0].x, y: FIVE_SPAWNS[0].y };
+    const radius = Math.hypot(at.x - pos.x, at.y - pos.y) / 2;
+    expect(radius).toBeGreaterThan(0);
+    expect(collectDriftingNear(items, pos, radius, t, DRIFT, WIDE_BOUNDS)).toBeNull();
+  });
+
+  it('collects every snack in reach in index order and keeps their base x and y', () => {
+    const items = createCollectibles(FIVE_SPAWNS);
+    const result = collectDriftingNear(items, { x: 300, y: 100 }, 130, t, DRIFT, WIDE_BOUNDS);
+    expect(result?.newly.map((item) => item.id)).toEqual(['b', 'c', 'd']);
+    result?.newly.forEach((item) => {
+      const spawn = FIVE_SPAWNS.find((candidate) => candidate.id === item.id);
+      expect(item.collected).toBe(true);
+      expect(item.x).toBe(spawn?.x);
+      expect(item.y).toBe(spawn?.y);
+    });
+    expect(result?.items.map((item) => item.collected)).toEqual([false, true, true, true, false]);
+  });
+
+  it('does not mutate the input items and reuses the untouched ones', () => {
+    const items = createCollectibles(FIVE_SPAWNS);
+    const before = items.map((item) => ({ ...item }));
+    const result = collectDriftingNear(items, locateSnack(1), 1, t, DRIFT, WIDE_BOUNDS);
+    expect(items).toEqual(before);
+    expect(result?.items).not.toBe(items);
+    expect(result?.items[0]).toBe(items[0]);
+    expect(result?.items[1]).not.toBe(items[1]);
+  });
+
+  it('ignores already-collected snacks', () => {
+    const items = eatFirst(1);
+    expect(collectDriftingNear(items, FIVE_SPAWNS[0], 1, t, DRIFT, WIDE_BOUNDS)).toBeNull();
   });
 });

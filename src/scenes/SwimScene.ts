@@ -17,9 +17,10 @@ import {
   DEFAULT_COLLECT_RADIUS,
   SPARKLE_SNACKS_LEFT,
   allCollected,
-  collectNear,
+  collectDriftingNear,
   countCollected,
-  driftSnacks,
+  snackX,
+  snackY,
   snacksLeft,
   sparklingSnackIds,
   type Collectible,
@@ -215,6 +216,9 @@ export class SwimScene extends Phaser.Scene {
   private snackStarBaseScale = 1;
   /** Seconds each sparkling snack's star has shown, by snack id. */
   private snackStarAges = new Map<string, number>();
+  /** The items array `sparklingIds` was worked out for; it changes only when a snack is eaten. */
+  private sparklingFor: readonly Collectible[] | null = null;
+  private sparklingIds: readonly string[] = [];
   private streaks: Streak[] = [];
   private bubbleImages: Phaser.GameObjects.Image[] = [];
   private sparkles: Sparkle[] = [];
@@ -252,6 +256,8 @@ export class SwimScene extends Phaser.Scene {
     this.dashKeys = [];
     this.snacks = new Map();
     this.snackStarAges = new Map();
+    this.sparklingFor = null;
+    this.sparklingIds = [];
     this.sparkleCursor = 0;
     this.sparkleAcc = 0;
     this.sparkleLevel = 0;
@@ -282,7 +288,7 @@ export class SwimScene extends Phaser.Scene {
     const session = readSession(this.registry);
     const start = tripStart(session, Math.floor(Math.random() * 0x100000000) >>> 0);
     this.explorerPalette = MORPH_PALETTES[explorerMorph(session)];
-    this.items = this.driftedSnacks(restoreSnacks(zone.collectibles, start.eatenSnacks));
+    this.items = restoreSnacks(zone.collectibles, start.eatenSnacks);
     this.allDone = allCollected(this.items);
     const stranding = pickStranding(start.ownedMorphs, start.waitingStranded, zone.strandingPlaces, start.tripSeed);
     this.trip = createTrip(zone, LEGS, start.banked, start.tripSeed, {
@@ -351,13 +357,7 @@ export class SwimScene extends Phaser.Scene {
       this.emitDashState();
     }
     this.driftClock += dt;
-    this.items = this.driftedSnacks(this.items);
     this.collectSnacks();
-  }
-
-  /** The snacks moved to where their drift puts them at the current drift time (PRD H4). */
-  private driftedSnacks(items: readonly Collectible[]): Collectible[] {
-    return driftSnacks(items, this.assets.zone.collectibles, this.driftClock, this.area.snackDrift, this.bounds);
   }
 
   // ---- setup ---------------------------------------------------------------
@@ -525,8 +525,15 @@ export class SwimScene extends Phaser.Scene {
 
   private collectSnacks(): void {
     const before = countCollected(this.items);
-    const result = collectNear(this.items, { x: this.swim.x, y: this.swim.y }, DEFAULT_COLLECT_RADIUS);
-    if (result.items === this.items) return;
+    const result = collectDriftingNear(
+      this.items,
+      this.swim,
+      DEFAULT_COLLECT_RADIUS,
+      this.driftClock,
+      this.area.snackDrift,
+      this.bounds,
+    );
+    if (!result) return;
     this.items = result.items;
     const total = this.items.length;
     this.registry.set(REGISTRY_KEYS.collected, countCollected(this.items));
@@ -876,13 +883,19 @@ export class SwimScene extends Phaser.Scene {
     });
   }
 
+  /** Each snack where its drift puts it at the drift time (PRD H4), plus its bob. */
   private renderSnacks(t: number): void {
-    this.items.forEach((item, i) => {
+    const { snackDrift } = this.area;
+    for (let i = 0; i < this.items.length; i++) {
+      const item = this.items[i];
       const sprite = this.snacks.get(item.id);
-      if (!sprite) return;
+      if (!sprite) continue;
       const bob = this.motion.collectBob ? SNACK_BOB_PX * Math.sin((TAU * t) / SNACK_BOB_PERIOD + i) : 0;
-      sprite.setPosition(item.x, item.y + bob);
-    });
+      sprite.setPosition(
+        snackX(item, i, this.driftClock, snackDrift, this.bounds),
+        snackY(item, i, this.driftClock, snackDrift, this.bounds) + bob,
+      );
+    }
   }
 
   /**
@@ -892,13 +905,8 @@ export class SwimScene extends Phaser.Scene {
    */
   private renderSnackStars(dt: number, t: number): void {
     // Runs every frame. At most SPARKLE_SNACKS_LEFT ids, so plain array lookups and index loops
-    // replace a Set and slices: nothing is allocated here while no snack sparkles.
-    const sparkling = sparklingSnackIds(this.items);
-    if (this.snackStarAges.size > 0) {
-      for (const id of this.snackStarAges.keys()) {
-        if (!sparkling.includes(id)) this.snackStarAges.delete(id);
-      }
-    }
+    // replace a Set and slices: nothing is allocated here between snacks being eaten.
+    const sparkling = this.currentSparklingIds();
     let slot = 0;
     for (let index = 0; index < this.items.length; index++) {
       const item = this.items[index];
@@ -914,6 +922,20 @@ export class SwimScene extends Phaser.Scene {
       slot += 1;
     }
     for (let i = slot; i < this.snackStars.length; i++) this.snackStars[i].setVisible(false);
+  }
+
+  /**
+   * The sparkling snack ids, worked out again only when the items array changes (a snack is eaten);
+   * stars of snacks that stopped sparkling lose their age then.
+   */
+  private currentSparklingIds(): readonly string[] {
+    if (this.sparklingFor === this.items) return this.sparklingIds;
+    this.sparklingFor = this.items;
+    this.sparklingIds = sparklingSnackIds(this.items);
+    for (const id of this.snackStarAges.keys()) {
+      if (!this.sparklingIds.includes(id)) this.snackStarAges.delete(id);
+    }
+    return this.sparklingIds;
   }
 
   private placeSnackStar(
