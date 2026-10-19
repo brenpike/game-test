@@ -3,10 +3,15 @@ import { isSupportedCanvas } from './cardFit';
 import type { HudView, Rect, Size } from './hudLayout';
 import { decorationBandTop, tankFrame } from './tank';
 import {
+  HUB_BUTTONS,
+  HUB_LABEL_PAD,
+  LABEL_BOLD_EM,
   TRAY_PX,
   UI,
+  WIDE_BUTTON,
   chestLayout,
   decorateLayout,
+  hubButtonSize,
   hubLayout,
   nextFocusIndex,
   rowsPerPage,
@@ -48,23 +53,14 @@ const CANVAS_HEIGHTS: readonly number[] = [
   320, 340, 360, 375, 414, 440, 480, 568, 600, 667, 740, 768, 844, 932,
 ];
 
-/** A wide button at the 0.8 size the Pause button uses. */
-const SMALL_WIDE: Size = { w: 160, h: 51.2 };
+/** A hub button as the scene builds it: a wide button at hubButtonSize() for its label. */
+function hubAction(id: string, label: string, primary: boolean): HubAction {
+  const size = hubButtonSize(label, primary);
+  return { id, w: WIDE_BUTTON.w * size, h: WIDE_BUTTON.h * size };
+}
 
-/** Go exploring (primary) and two wide secondary actions. */
-const HUB_ACTIONS_3: readonly HubAction[] = [
-  { id: 'goExploring', ...WIDE },
-  { id: 'decorate', ...WIDE },
-  { id: 'treasureChest', ...WIDE },
-];
-
-/** With the Collection Book (#13), the secondary actions use the smaller wide size. */
-const HUB_ACTIONS_4: readonly HubAction[] = [
-  { id: 'goExploring', ...WIDE },
-  { id: 'decorate', ...SMALL_WIDE },
-  { id: 'treasureChest', ...SMALL_WIDE },
-  { id: 'collectionBook', ...SMALL_WIDE },
-];
+/** The hub actions the scene shows: Go exploring (primary), Decorate and Treasure Chest. */
+const HUB_ACTIONS_3: readonly HubAction[] = HUB_BUTTONS.map(({ id, label, primary }) => hubAction(id, label, primary));
 
 /** Lines `text` wraps to at `wrapW`, splitting on '\n' then greedily on ' ', every character `em * px` wide. */
 function estimateLines(text: string, px: number, wrapW: number, em: number): number {
@@ -289,30 +285,54 @@ describe('rowsPerPage', () => {
   });
 });
 
+describe('hubButtonSize', () => {
+  it('fits the icon and the wide label estimate with the pad each side', () => {
+    for (const { label, primary } of HUB_BUTTONS) {
+      const size = hubButtonSize(label, primary);
+      const labelW = label.length * LABEL_BOLD_EM * WIDE_BUTTON.labelPx;
+      const rowW = WIDE_BUTTON.iconPx * size + WIDE_BUTTON.iconGap + labelW;
+      expect(WIDE_BUTTON.w * size - rowW).toBeGreaterThanOrEqual(2 * HUB_LABEL_PAD - 1e-9);
+    }
+  });
+
+  it('keeps the primary 64 px tall and every button at least 48 px tall', () => {
+    expect(WIDE_BUTTON.h * hubButtonSize('Go', true)).toBe(64);
+    expect(WIDE_BUTTON.h * hubButtonSize('Go', false)).toBeGreaterThanOrEqual(MIN_TARGET_PX);
+  });
+
+  it('grows Treasure Chest past the 0.8 size its label overflowed', () => {
+    const chest = HUB_BUTTONS.find((spec) => spec.id === 'treasureChest');
+    expect(chest?.label).toBe('Treasure Chest');
+    expect(hubButtonSize(chest?.label ?? '', false)).toBeGreaterThan(0.8);
+  });
+
+  it('puts Go exploring first and makes it the only primary', () => {
+    expect(HUB_BUTTONS.map((spec) => spec.id)).toEqual(['goExploring', 'decorate', 'treasureChest']);
+    expect(HUB_BUTTONS.filter((spec) => spec.primary).map((spec) => spec.id)).toEqual(['goExploring']);
+  });
+});
+
 describe('hubLayout', () => {
-  it('fits 3 and 4 actions on every supported canvas', () => {
-    const problems = supportedCanvases().flatMap((view) => [
-      ...hubProblems(view, HUB_ACTIONS_3),
-      ...hubProblems(view, HUB_ACTIONS_4),
-    ]);
+  it('fits the hub actions at their real sizes on every supported canvas', () => {
+    const problems = supportedCanvases().flatMap((view) => hubProblems(view, HUB_ACTIONS_3));
     expect(problems).toEqual([]);
   });
 
   it('shows the title only when it fits above the Decorations', () => {
     const wide = { cssW: 1024, cssH: 768 };
     const title = textSize(HUB_TITLE, TITLE_PX, wide.cssW - 2 * UI.margin, BOLD_EM);
-    expect(hubLayout(wide, tankFrame(wide.cssW, wide.cssH), HUB_ACTIONS_4, title).title).not.toBeNull();
+    expect(hubLayout(wide, tankFrame(wide.cssW, wide.cssH), HUB_ACTIONS_3, title).title).not.toBeNull();
     const short = { cssW: 460, cssH: 320 };
-    expect(hubLayout(short, tankFrame(short.cssW, short.cssH), HUB_ACTIONS_4, title).title).toBeNull();
-    expect(hubLayout(wide, tankFrame(wide.cssW, wide.cssH), HUB_ACTIONS_4, null).title).toBeNull();
+    expect(hubLayout(short, tankFrame(short.cssW, short.cssH), HUB_ACTIONS_3, title).title).toBeNull();
+    expect(hubLayout(wide, tankFrame(wide.cssW, wide.cssH), HUB_ACTIONS_3, null).title).toBeNull();
   });
 
   it('keeps action order and sizes', () => {
     const view = { cssW: 460, cssH: 320 };
-    const layout = hubLayout(view, tankFrame(view.cssW, view.cssH), HUB_ACTIONS_4, null);
-    expect(layout.actions.map((placement) => placement.id)).toEqual(HUB_ACTIONS_4.map((action) => action.id));
+    const layout = hubLayout(view, tankFrame(view.cssW, view.cssH), HUB_ACTIONS_3, null);
+    expect(layout.actions.map((placement) => placement.id)).toEqual(HUB_ACTIONS_3.map((action) => action.id));
     const sizes = layout.actions.map((placement) => ({ w: placement.rect.w, h: placement.rect.h }));
-    expect(sizes).toEqual(HUB_ACTIONS_4.map((action) => ({ w: action.w, h: action.h })));
+    expect(sizes).toEqual(HUB_ACTIONS_3.map((action) => ({ w: action.w, h: action.h })));
   });
 });
 

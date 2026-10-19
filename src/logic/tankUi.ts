@@ -5,6 +5,7 @@
  */
 import type { HudView, Rect, Size } from './hudLayout';
 import { decorationBandTop, type TankFrame } from './tank';
+import { DECORATE_LABEL, GO_EXPLORING_LABEL, TREASURE_CHEST_LABEL } from './tankText';
 
 /** A Home Tank keyboard action. */
 export type TankKey = 'left' | 'right' | 'up' | 'down' | 'next' | 'previous' | 'confirm' | 'cancel' | 'putAway';
@@ -14,6 +15,50 @@ export const UI = Object.freeze({ margin: 16, gap: 12, pad: 12 });
 
 /** Side of one decorate tray square, in CSS px. */
 export const TRAY_PX = 64;
+
+/**
+ * A wide button at size 1, in CSS px, as createButton (src/scenes/BootScene.ts) builds it: the
+ * BUTTON_WIDE body and ICON_SIZE icon of src/art/drawUi.ts, the gap between icon and label, and the
+ * label size from size 1 up. src/logic must not import art or scenes, so these are copies.
+ */
+export const WIDE_BUTTON = Object.freeze({ w: 200, h: 64, iconPx: 32, iconGap: 8, labelPx: 24 });
+
+/** Bold label advance per em used to size buttons; errs wide (the cardCopyFit text estimate). */
+export const LABEL_BOLD_EM = 0.6;
+
+/** Least room between a hub button's icon-and-label row and each side of its body, in CSS px. */
+export const HUB_LABEL_PAD = 6;
+
+/** Smallest hub button size multipliers: the primary keeps its 64 px height, the others stay over 48 px. */
+const HUB_MIN_SIZE = Object.freeze({ primary: 1, secondary: 0.8 });
+
+/** A Home Tank hub action id. */
+export type HubActionId = 'goExploring' | 'decorate' | 'treasureChest';
+
+/** One hub action button: its id, its label, and whether it is the primary action. */
+export interface HubButtonSpec {
+  id: HubActionId;
+  label: string;
+  primary: boolean;
+}
+
+/** The hub actions in focus and layout order, Go exploring first (PRD C7). */
+export const HUB_BUTTONS: readonly HubButtonSpec[] = Object.freeze([
+  Object.freeze({ id: 'goExploring', label: GO_EXPLORING_LABEL, primary: true }),
+  Object.freeze({ id: 'decorate', label: DECORATE_LABEL, primary: false }),
+  Object.freeze({ id: 'treasureChest', label: TREASURE_CHEST_LABEL, primary: false }),
+]);
+
+/**
+ * The size multiplier for a wide hub button labelled `label`: the smallest one, at least the primary
+ * or secondary floor, whose body holds the icon, the gap and the label (estimated wide at 24 px) with
+ * HUB_LABEL_PAD each side. Below size 1 createButton draws the label at 22 px, so the estimate holds.
+ */
+export function hubButtonSize(label: string, primary: boolean): number {
+  const labelW = label.length * LABEL_BOLD_EM * WIDE_BUTTON.labelPx;
+  const fit = (WIDE_BUTTON.iconGap + labelW + 2 * HUB_LABEL_PAD) / (WIDE_BUTTON.w - WIDE_BUTTON.iconPx);
+  return Math.max(primary ? HUB_MIN_SIZE.primary : HUB_MIN_SIZE.secondary, fit);
+}
 
 /** One hub action button to place: its id and measured size. */
 export interface HubAction {

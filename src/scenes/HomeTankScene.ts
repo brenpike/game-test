@@ -2,15 +2,26 @@ import * as Phaser from 'phaser';
 import { AXO_SCENE_SCALE, type AxolotlPose } from '../art/drawAxolotl';
 import { DEPTH } from '../art/layers';
 import { HOME_TANK_WALL, SURFACE_LINE, SURFACE_LINE_WIDTH, T_STATIC, UI_PANEL } from '../art/palette';
+import type { IconKind } from '../art/drawUi';
 import { createAxolotlTexture, type AxolotlTexture, type TexInfo } from '../art/textures';
 import { GAME_EVENTS, REGISTRY_KEYS, type ReducedMotionPayload } from '../logic/gameEvents';
 import type { Size } from '../logic/hudLayout';
 import { motionProfile, type MotionProfile } from '../logic/motion';
-import type { Session } from '../logic/session';
-import { TANK, tankFrame, tankToCss, type TankFrame } from '../logic/tank';
+import { setTankLayout, type Session } from '../logic/session';
+import { TANK, tankFrame, tankToCss, type TankFrame, type TankLayout } from '../logic/tank';
 import { tankSwimPose } from '../logic/tankSwim';
-import { DECORATE_LABEL, GO_EXPLORING_LABEL, HOME_TANK_NAME, TREASURE_CHEST_LABEL } from '../logic/tankText';
-import { UI, hubLayout, nextFocusIndex, tankKeyFor, type TankKey } from '../logic/tankUi';
+import { HOME_TANK_NAME } from '../logic/tankText';
+import {
+  HUB_BUTTONS,
+  UI,
+  hubButtonSize,
+  hubLayout,
+  nextFocusIndex,
+  tankKeyFor,
+  type HubActionId,
+  type HubButtonSpec,
+  type TankKey,
+} from '../logic/tankUi';
 import type { TripEnding } from '../logic/tripEvents';
 import { SURF, waveY } from '../logic/zone';
 import {
@@ -28,13 +39,14 @@ import {
   type UiButton,
 } from './BootScene';
 import { settleMotionTweens } from './motionTweens';
-import { goExploring, readSession, type HomeTankStart } from './sceneFlow';
+import { goExploring, readSession, writeSession, type HomeTankStart } from './sceneFlow';
 import { TankArrivalCard } from './TankArrivalCard';
+import { TankDecorator } from './TankDecorator';
+import { TreasureChestView } from './TreasureChestView';
 
 const TAU = Math.PI * 2;
 const TITLE_PX = 34;
 const SURFACE_STEP = 8;
-const SECONDARY_SIZE = 0.8;
 const GO_EXPLORING_INDEX = 0;
 const CAPTURED_KEYS: readonly number[] = [
   Phaser.Input.Keyboard.KeyCodes.TAB,
@@ -43,11 +55,20 @@ const CAPTURED_KEYS: readonly number[] = [
   Phaser.Input.Keyboard.KeyCodes.UP,
   Phaser.Input.Keyboard.KeyCodes.DOWN,
   Phaser.Input.Keyboard.KeyCodes.SPACE,
+  Phaser.Input.Keyboard.KeyCodes.BACKSPACE,
 ];
 
+/** The icon on each hub action button. */
+const HUB_ICONS: Readonly<Record<HubActionId, IconKind>> = Object.freeze({
+  goExploring: 'play',
+  decorate: 'decorate',
+  treasureChest: 'chest',
+});
+
 /**
- * Home Tank draw order (art guide 7f): back layer, Decorations, glass shine, axolotls, surface
- * line, tank outline and lid front, hub UI, then the tank arrival card on top.
+ * Home Tank draw order (art guide 7f): back layer (wall to gravel), placed Decorations, glass shine,
+ * axolotls, surface line, tank outline and lid front, hub UI and the decorate toolbar, the Treasure
+ * Chest, then the tank arrival card on top.
  */
 const TANK_DEPTH = Object.freeze({
   back: DEPTH.bg,
@@ -57,14 +78,15 @@ const TANK_DEPTH = Object.freeze({
   surface: DEPTH.surface,
   front: DEPTH.fx,
   hub: DEPTH.ui,
+  chest: DEPTH.ui + 8,
   arrival: DEPTH.ui + 9,
 });
 
-/** What the Home Tank is showing and where keys go: the tank arrival card, or the hub. */
-type TankMode = 'arrival' | 'hub';
-
-/** A hub action id, matching the ids hubLayout() is tested with. */
-type HubActionId = 'goExploring' | 'treasureChest' | 'decorate';
+/**
+ * What the Home Tank is showing and where keys go, in priority order: the tank arrival card, the
+ * Treasure Chest, decorate mode, or the hub.
+ */
+type TankMode = 'arrival' | 'chest' | 'decorate' | 'hub';
 
 /** One hub action button. */
 interface HubButton {
@@ -120,6 +142,9 @@ export class HomeTankScene extends Phaser.Scene {
   private titlePanel!: Phaser.GameObjects.Graphics;
   private titleText!: Phaser.GameObjects.Text;
   private hubButtons: HubButton[] = [];
+  private titleFits = false;
+  private decorator!: TankDecorator;
+  private chest!: TreasureChestView;
   private arrivalCard!: TankArrivalCard;
 
   constructor() {
@@ -135,6 +160,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.focusIndex = GO_EXPLORING_INDEX;
     this.swimmers = [];
     this.hubButtons = [];
+    this.titleFits = false;
   }
 
   create(): void {
@@ -146,8 +172,16 @@ export class HomeTankScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(HOME_TANK_WALL);
 
     this.buildTank();
+    this.buildDecorator();
     this.buildSwimmers();
     this.buildHub();
+    this.chest = new TreasureChestView(
+      this,
+      { baked: this.assets.baked, treasure: this.assets.treasure },
+      this.view,
+      TANK_DEPTH.chest,
+      () => this.closeChest(),
+    );
     this.arrivalCard = new TankArrivalCard(
       this,
       this.assets,
@@ -183,6 +217,23 @@ export class HomeTankScene extends Phaser.Scene {
     this.front = this.add.image(0, 0, tank.front.key).setOrigin(0, 0).setDepth(TANK_DEPTH.front);
   }
 
+  /** The placed Decorations, always drawn, and decorate mode, entered from the hub. */
+  private buildDecorator(): void {
+    const { baked, treasure, tank } = this.assets;
+    this.decorator = new TankDecorator(
+      {
+        scene: this,
+        textures: { baked, treasure, tank },
+        depths: { decorations: TANK_DEPTH.decorations, ui: TANK_DEPTH.hub },
+        dpr: this.view.fit.dpr,
+        onLayoutChange: (layout) => this.saveTankLayout(layout),
+        onDone: () => this.stopDecorating(),
+      },
+      this.session.hub.tank,
+      this.session.hub.banked,
+    );
+  }
+
   /** One swimmer per owned axolotl, each with its own texture so their poses never share a frame. */
   private buildSwimmers(): void {
     const bakeScale = this.assets.axolotl.scale;
@@ -201,26 +252,17 @@ export class HomeTankScene extends Phaser.Scene {
     const dpr = this.view.fit.dpr;
     this.titlePanel = this.add.graphics().setDepth(TANK_DEPTH.hub);
     this.titleText = this.add.text(0, 0, HOME_TANK_NAME, uiTextStyle(TITLE_PX, dpr)).setDepth(TANK_DEPTH.hub);
-    this.hubButtons = [
-      this.addHubButton('goExploring', 'primary', 1, GO_EXPLORING_LABEL, 'play'),
-      this.addHubButton('treasureChest', 'secondary', SECONDARY_SIZE, TREASURE_CHEST_LABEL, 'chest'),
-      this.addHubButton('decorate', 'secondary', SECONDARY_SIZE, DECORATE_LABEL, 'decorate'),
-    ];
+    this.hubButtons = HUB_BUTTONS.map((spec) => this.addHubButton(spec));
   }
 
-  private addHubButton(
-    id: HubActionId,
-    fill: 'primary' | 'secondary',
-    size: number,
-    label: string,
-    icon: 'play' | 'chest' | 'decorate',
-  ): HubButton {
+  /** A wide hub button sized by hubButtonSize() to hold its icon and label. */
+  private addHubButton({ id, label, primary }: HubButtonSpec): HubButton {
     const button = createButton(this, this.assets.baked, {
-      fill,
+      fill: primary ? 'primary' : 'secondary',
       shape: 'wide',
-      size,
+      size: hubButtonSize(label, primary),
       label,
-      icon,
+      icon: HUB_ICONS[id],
       dpr: this.view.fit.dpr,
       pressOnDown: false,
       onPress: () => this.runHubAction(id),
@@ -229,7 +271,7 @@ export class HomeTankScene extends Phaser.Scene {
     return { id, button };
   }
 
-  /** One keydown handler for every Home Tank key; Tab, the arrows and Space are captured while the scene runs. */
+  /** One keydown handler for every Home Tank key; Tab, arrows, Space and Backspace are captured while it runs. */
   private bindInput(): void {
     const keyboard = this.input.keyboard;
     if (!keyboard) return;
@@ -247,9 +289,29 @@ export class HomeTankScene extends Phaser.Scene {
 
   /** The arrival card closed: back to the hub with Go exploring focused. */
   private closeArrival(): void {
+    this.showHub(GO_EXPLORING_INDEX);
+  }
+
+  /** Gives the hub the input again, showing its buttons with the focus on `focusIndex`. */
+  private showHub(focusIndex: number): void {
     this.mode = 'hub';
-    this.focusIndex = GO_EXPLORING_INDEX;
+    this.focusIndex = focusIndex;
+    this.applyHubVisibility();
     this.refreshHubFocus();
+  }
+
+  /** Leaves the hub for the Treasure Chest or decorate mode: its buttons and name panel hide. */
+  private leaveHub(mode: 'chest' | 'decorate'): void {
+    this.mode = mode;
+    this.applyHubVisibility();
+    this.refreshHubFocus();
+  }
+
+  /** Index of the hub button `id`. Throws when the hub has no such button. */
+  private hubIndexOf(id: HubActionId): number {
+    const index = this.hubButtons.findIndex((hubButton) => hubButton.id === id);
+    if (index === -1) throw new Error(`HomeTankScene: no hub button ${id}`);
+    return index;
   }
 
   /** Runs a hub action, only while the hub has the input. */
@@ -275,23 +337,58 @@ export class HomeTankScene extends Phaser.Scene {
     goExploring(this, this.assets);
   }
 
-  /** Opens the Treasure Chest. Wired in STEP-007. */
-  private openChest(): void {}
+  /** Opens the Treasure Chest over the hub (PRD C11) with the treasures banked so far. */
+  private openChest(): void {
+    this.leaveHub('chest');
+    this.chest.open(this.session.hub.banked);
+  }
 
-  /** Starts decorating the Home Tank. Wired in STEP-007. */
-  private startDecorating(): void {}
+  /** The Treasure Chest closed: back to the hub with Treasure Chest focused. */
+  private closeChest(): void {
+    this.showHub(this.hubIndexOf('treasureChest'));
+  }
+
+  /** Starts decorate mode (PRD C9); the hub hides while the decorate toolbar shows. */
+  private startDecorating(): void {
+    this.leaveHub('decorate');
+    this.decorator.enter();
+  }
+
+  /** Done or cancel in decorate mode: ends it and goes back to the hub with Decorate focused. */
+  private stopDecorating(): void {
+    this.decorator.exit();
+    this.showHub(this.hubIndexOf('decorate'));
+  }
+
+  /** Stores a placement, move or put away in the session, so the Home Tank keeps it between trips. */
+  private saveTankLayout(layout: TankLayout): void {
+    this.session = setTankLayout(readSession(this.registry), layout);
+    writeSession(this.registry, this.session);
+  }
 
   // ---- input ---------------------------------------------------------------
 
-  /** Routes a key to the arrival card while it shows, else to the hub. Unmapped keys are ignored. */
+  /**
+   * Routes a key to what has the input: the arrival card, the Treasure Chest, decorate mode, or the
+   * hub. Unmapped keys are ignored, and so is a held confirm outside the hub.
+   */
   private handleKeyDown(event: KeyboardEvent): void {
     const action = tankKeyFor(event.key, event.shiftKey);
     if (action === null) return;
-    if (this.mode === 'arrival') {
-      this.handleArrivalKey(action, event);
-      return;
+    switch (this.mode) {
+      case 'arrival':
+        this.handleArrivalKey(action, event);
+        return;
+      case 'chest':
+        if (action !== 'confirm' || !event.repeat) this.chest.handleKey(action);
+        return;
+      case 'decorate':
+        if (action !== 'confirm' || !event.repeat) this.decorator.handleKey(action);
+        return;
+      case 'hub':
+        this.handleHubKey(action, event);
+        return;
     }
-    this.handleHubKey(action, event);
   }
 
   /** Confirm presses OK on the arrival card, ignoring key repeat. */
@@ -320,7 +417,7 @@ export class HomeTankScene extends Phaser.Scene {
 
   // ---- events --------------------------------------------------------------
 
-  /** Switches the motion profile. Running motion tweens end at once and still poses show now (C8). */
+  /** Switches the motion profile. Running motion tweens end at once; still poses and upright plants show now (C8). */
   private handleReducedMotion(payload: ReducedMotionPayload): void {
     this.motion = motionProfile(payload.reduced);
     if (!this.motion.ambient) settleMotionTweens(this);
@@ -335,6 +432,8 @@ export class HomeTankScene extends Phaser.Scene {
     for (const hubButton of this.hubButtons) {
       hubButton.button.setResolution(dpr);
     }
+    this.decorator.setResolution(dpr);
+    this.chest.setResolution(dpr);
     this.arrivalCard.setResolution(dpr);
     this.layout();
     this.animate(0);
@@ -343,6 +442,8 @@ export class HomeTankScene extends Phaser.Scene {
   private handleShutdown(): void {
     this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.game.events.off(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
+    this.decorator.destroy();
+    this.chest.destroy();
     const keyboard = this.input.keyboard;
     if (!keyboard) return;
     keyboard.off(Phaser.Input.Keyboard.Events.ANY_KEY_DOWN, this.handleKeyDown, this);
@@ -351,15 +452,27 @@ export class HomeTankScene extends Phaser.Scene {
 
   // ---- layout --------------------------------------------------------------
 
-  /** Fits the tank to the canvas, then places the hub and the arrival card. */
+  /** Fits the tank to the canvas, then places the Decorations, the hub, the Treasure Chest and the arrival card. */
   private layout(): void {
     this.frame = tankFrame(this.view.cssW, this.view.cssH);
     const tank = this.assets.tank;
     placeTankLayer(this.back, tank.back, this.frame);
     placeTankLayer(this.glass, tank.glass, this.frame);
     placeTankLayer(this.front, tank.front, this.frame);
+    this.decorator.layout(this.view, this.frame);
     this.layoutHub();
+    this.chest.layout(this.view);
     this.arrivalCard.layout(this.view);
+  }
+
+  /** Shows the hub buttons unless the Treasure Chest or decorate mode is up, and the name panel only when it fits. */
+  private applyHubVisibility(): void {
+    const shown = this.mode === 'hub' || this.mode === 'arrival';
+    for (const hubButton of this.hubButtons) {
+      hubButton.button.container.setVisible(shown);
+    }
+    this.titlePanel.setVisible(shown && this.titleFits);
+    this.titleText.setVisible(shown && this.titleFits);
   }
 
   /** Places the hub buttons through hubLayout(), and the name panel only when it fits. */
@@ -375,8 +488,8 @@ export class HomeTankScene extends Phaser.Scene {
       this.hubButtons[index].button.container.setPosition(placement.rect.x, placement.rect.y);
     });
     const title = hub.title;
-    this.titlePanel.setVisible(title !== null);
-    this.titleText.setVisible(title !== null);
+    this.titleFits = title !== null;
+    this.applyHubVisibility();
     if (title === null) return;
     drawPanel(this.titlePanel, title.x, title.y, title.w, title.h, UI_PANEL);
     this.titleText.setPosition(title.x + UI.pad, title.y + UI.pad);
@@ -384,12 +497,13 @@ export class HomeTankScene extends Phaser.Scene {
 
   // ---- rendering -----------------------------------------------------------
 
-  /** Advances the clock and draws the swimmers and the surface line. */
+  /** Advances the clock and draws the swimmers, the surface line and the plant sway. */
   private animate(dt: number): void {
     this.clock += dt;
     const t = this.motion.ambient ? this.clock : T_STATIC;
     this.swimmers.forEach((swimmer, index) => this.renderSwimmer(swimmer, index, t));
     this.renderSurface(t);
+    this.decorator.update(this.clock, this.motion);
   }
 
   /** Places one axolotl from its tank pose (still under reduced motion) and repaints it when its pose changes. */
