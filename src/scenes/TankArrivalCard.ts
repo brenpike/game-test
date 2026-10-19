@@ -2,12 +2,18 @@ import * as Phaser from 'phaser';
 import { INK, UI_PANEL } from '../art/palette';
 import { iconKey } from '../art/textures';
 import type { TreasureTextures } from '../art/treasureTextures';
+import { areaLabel } from '../logic/areaText';
+import type { AreaData } from '../logic/areas';
 import { CARD, cardTextWidth, fitCard, homeTitleWrapWidth, iconRowsSize } from '../logic/cardFit';
+import { treasureById } from '../logic/catalogue';
 import type { MotionProfile } from '../logic/motion';
 import { morphById, rescueMorphsIn } from '../logic/morphs';
+import { NO_STARS, type AreaStars } from '../logic/stars';
+import { STAR_ROW, starRowSize } from '../logic/starsUi';
 import { foundInfos } from '../logic/trip';
 import type { TripEnding } from '../logic/tripEvents';
-import { ARRIVAL_OK_LABEL, arrivalText } from '../logic/tripText';
+import { ARRIVAL_OK_LABEL, arrivalText, type ArrivalStars } from '../logic/tripText';
+import { addAreaStar, showAreaStar, starFlags, type AreaStarTextures } from './AreaStarsBadge';
 import {
   createButton,
   cssColor,
@@ -26,9 +32,31 @@ const DIM_COVER = 8192;
 const FADE_MS = 400;
 const MIN_SHOW_MS = 800;
 
-/** The treasure ids the card body names: banked this trip when going home, returned when carried home. */
+/** The area beaten and its best stars so far, for the "Area beaten" card (PRD H5, H7). */
+export interface ArrivalAreaStars {
+  area: Readonly<AreaData>;
+  best: AreaStars;
+}
+
+/** The treasure ids the card body names: returned when carried home, otherwise banked this trip. */
 function namedTreasureIds(ending: TripEnding): readonly string[] {
-  return ending.reason === 'wentHome' ? ending.bankedThisTrip : ending.returned;
+  return ending.reason === 'carriedHome' ? ending.returned : ending.bankedThisTrip;
+}
+
+/**
+ * The star text input for the "Area beaten" card: the area label, its special treasure name, the
+ * stars earned this trip and the best. Undefined for any other ending. Throws when the area was
+ * beaten without its stars, or the special treasure is not in the catalogue.
+ */
+function arrivalStars(ending: TripEnding, areaStars: ArrivalAreaStars | undefined): ArrivalStars | undefined {
+  if (ending.reason !== 'areaBeaten') return undefined;
+  if (ending.stars === undefined || areaStars === undefined) {
+    throw new Error('TankArrivalCard: the area was beaten with no stars');
+  }
+  const { area, best } = areaStars;
+  const special = treasureById(area.specialTreasureId);
+  if (special === undefined) throw new Error(`TankArrivalCard: no catalogue treasure ${area.specialTreasureId}`);
+  return { areaLabel: areaLabel(area.number), specialName: special.name, earned: ending.stars, best };
 }
 
 /** Display names of the rescued axolotls among find ids, e.g. 'Wild axolotl'; other ids are ignored. */
@@ -44,26 +72,32 @@ function wrappedLineCount(text: Phaser.GameObjects.Text, content: string): numbe
 /**
  * Tank arrival card, shown over the Home Tank after a trip: an ink dim that swallows presses, a white
  * panel with the house icon, title, body (with the banked line as its last line), a wrapping icon row
- * of the treasures the body names, and the OK button. Built only from the trip ending and the banked
- * total through arrivalText(); the body also names axolotls rescued into the Home Tank and, when
- * carried home, those waiting where they were found (PRD C4, C5). The icon row shows treasures
- * only. The body has a full and a short wording; layout() lets fitCard() pick whichever fits the
- * canvas, drop icon rows, or clip the body. OK hides the card and calls `onClose`.
+ * of the treasures the body names, and the OK button. After beating the area ("Area beaten", PRD H5)
+ * the head icon is the earned Area star and a row of 3 stars, earned or missing this trip, sits under
+ * the head. Built only from the trip ending, the banked total and the area stars through
+ * arrivalText(); the body also names axolotls rescued into the Home Tank and, when carried home,
+ * those waiting where they were found (PRD C4, C5). The icon row shows treasures only. The body has a
+ * full and a short wording; layout() lets fitCard() pick whichever fits the canvas, drop icon rows,
+ * or clip the body. OK hides the card and calls `onClose`.
  */
 export class TankArrivalCard {
   private readonly scene: Phaser.Scene;
   private readonly treasure: TreasureTextures;
+  private readonly starTextures: AreaStarTextures;
   private readonly motion: () => MotionProfile;
   private readonly onClose: () => void;
   private readonly container: Phaser.GameObjects.Container;
   private readonly panel: Phaser.GameObjects.Graphics;
   private readonly icon: Phaser.GameObjects.Image;
+  private readonly headStar: Phaser.GameObjects.Image;
+  private readonly starRow: Phaser.GameObjects.Image[];
   private readonly title: Phaser.GameObjects.Text;
   private readonly body: Phaser.GameObjects.Text;
   private readonly button: UiButton;
   private view: SceneView;
   private treasureIcons: Phaser.GameObjects.Image[] = [];
   private bodyOptions: readonly string[] = [''];
+  private showsStars = false;
   private shownAt = 0;
 
   constructor(
@@ -77,6 +111,7 @@ export class TankArrivalCard {
     this.scene = scene;
     this.view = view;
     this.treasure = assets.treasure;
+    this.starTextures = assets.area.stars;
     this.motion = motion;
     this.onClose = onClose;
     const dpr = view.fit.dpr;
@@ -91,6 +126,9 @@ export class TankArrivalCard {
       .image(0, 0, iconKey('home'))
       .setOrigin(0, 0)
       .setScale(CARD.headIconPx / iconInfo.w / iconInfo.scale);
+    this.headStar = addAreaStar(scene, this.starTextures, CARD.headIconPx);
+    showAreaStar(this.headStar, this.starTextures, true, CARD.headIconPx);
+    this.starRow = starFlags(NO_STARS).map(() => addAreaStar(scene, this.starTextures, STAR_ROW.starPx));
     this.title = scene.add.text(0, 0, '', uiTextStyle(CARD.titlePx, dpr));
     this.body = scene.add.text(0, 0, '', { ...uiTextStyle(CARD.bodyPx, dpr, false), align: 'center' });
     this.button = createButton(scene, assets.baked, {
@@ -105,9 +143,19 @@ export class TankArrivalCard {
     });
     this.button.setFocused(true);
     this.container = scene.add
-      .container(0, 0, [dim, this.panel, this.icon, this.title, this.body, this.button.container])
+      .container(0, 0, [
+        dim,
+        this.panel,
+        this.icon,
+        this.headStar,
+        ...this.starRow,
+        this.title,
+        this.body,
+        this.button.container,
+      ])
       .setDepth(depth)
       .setVisible(false);
+    this.showStars(undefined);
   }
 
   /** Whether the card is on screen. */
@@ -115,8 +163,13 @@ export class TankArrivalCard {
     return this.container.visible;
   }
 
-  /** Shows the card for a trip ending and the banked total, faded in unless motion is reduced. */
-  show(ending: TripEnding, bankedTotal: number): void {
+  /**
+   * Shows the card for a trip ending and the banked total, faded in unless motion is reduced. After
+   * beating the area, `areaStars` gives the area and its best stars. Throws when the area was beaten
+   * without `areaStars` or the ending's stars.
+   */
+  show(ending: TripEnding, bankedTotal: number, areaStars?: ArrivalAreaStars): void {
+    const stars = arrivalStars(ending, areaStars);
     const text = arrivalText({
       reason: ending.reason,
       returnedNames: foundInfos(ending.returned).map((info) => info.name),
@@ -124,7 +177,9 @@ export class TankArrivalCard {
       bankedTotal,
       rescuedNames: rescuedDisplayNames(ending.bankedThisTrip),
       waitingNames: ending.reason === 'carriedHome' ? rescuedDisplayNames(ending.returned) : [],
+      stars,
     });
+    this.showStars(stars);
     this.title.setText(text.title);
     this.bodyOptions = [`${text.body}\n${text.bankedLine}`, `${text.shortBody}\n${text.bankedLine}`];
     this.buildTreasureRow(foundInfos(namedTreasureIds(ending)).map((info) => info.id));
@@ -159,8 +214,9 @@ export class TankArrivalCard {
   }
 
   /**
-   * Centres the panel on a canvas that has room for it. fitCard() sizes it from the head, the body
-   * (full or short wording, clipped only when nothing fits), the treasure icon row and the button:
+   * Centres the panel on a canvas that has room for it. fitCard() sizes it from the head, the star
+   * row (no room unless the area was beaten), the body (full or short wording, clipped only when
+   * nothing fits), the treasure icon row and the button:
    * it tightens the padding on a short screen, shows only the icon rows that fit (hiding the other
    * icons) and keeps the button inside the canvas. The icon row wraps to the text width and takes no
    * room (nor padding) when empty or hidden. Safe to call before show() and after hide().
@@ -175,13 +231,15 @@ export class TankArrivalCard {
     const variants = this.bodyOptions.map((option) => ({ lines: wrappedLineCount(this.body, option), lineH }));
     const headH = Math.max(CARD.headIconPx, this.title.height);
     const availH = cssH - 2 * CARD.margin;
+    const starRow = starRowSize();
     const fit = fitCard(availH, [
       { kind: 'fixed', height: headH },
+      { kind: 'fixed', height: this.showsStars ? starRow.h : 0 },
       { kind: 'body', variants },
       { kind: 'icons', count: this.treasureIcons.length, maxW: textW },
       { kind: 'actions', height: this.button.height },
     ]);
-    const [headSlot, bodySlot, iconsSlot, actionsSlot] = fit.slots;
+    const [headSlot, starRowSlot, bodySlot, iconsSlot, actionsSlot] = fit.slots;
     this.body.setText(this.bodyOptions[fit.bodyVariant]);
     this.body.setVisible(fit.bodyLines > 0);
     this.body.setMaxLines(fit.clipped ? fit.bodyLines : 0);
@@ -189,21 +247,46 @@ export class TankArrivalCard {
     const { width: rowW } = iconRowsSize(fit.iconCount, textW);
     const headW = CARD.headIconPx + CARD.headIconGap + this.title.width;
     const bodyW = fit.bodyLines > 0 ? this.body.width : 0;
+    const starRowW = this.showsStars ? starRow.w : 0;
     const panelW = Math.min(
       cssW - 2 * CARD.margin,
-      Math.max(headW, bodyW, rowW, this.button.width) + 2 * CARD.pad,
+      Math.max(headW, starRowW, bodyW, rowW, this.button.width) + 2 * CARD.pad,
     );
     const panelY = CARD.margin + Math.max(0, (availH - fit.panelH) / 2);
     drawPanel(this.panel, (cssW - panelW) / 2, panelY, panelW, fit.panelH, UI_PANEL);
     const headX = (cssW - headW) / 2;
     const headY = panelY + headSlot.top;
     this.icon.setPosition(headX, headY + (headH - CARD.headIconPx) / 2);
+    this.headStar.setPosition(headX + CARD.headIconPx / 2, headY + headH / 2);
+    this.placeStarRow((cssW - starRow.w) / 2, panelY + starRowSlot.top);
     this.title.setPosition(headX + CARD.headIconPx + CARD.headIconGap, headY + (headH - this.title.height) / 2);
     this.body.setPosition((cssW - this.body.width) / 2, panelY + bodySlot.top);
     if (fit.iconCount > 0) {
       placeIconRows(this.treasureIcons.slice(0, fit.iconCount), cssW / 2, panelY + iconsSlot.top, textW);
     }
     this.button.container.setPosition((cssW - this.button.width) / 2, panelY + actionsSlot.top);
+  }
+
+  /**
+   * Shows the earned Area star as the head icon and the star row, each star earned or missing, when
+   * `stars` is set; otherwise the house icon and no star row.
+   */
+  private showStars(stars: ArrivalStars | undefined): void {
+    this.showsStars = stars !== undefined;
+    this.icon.setVisible(!this.showsStars);
+    this.headStar.setVisible(this.showsStars);
+    const earned = starFlags(stars?.earned ?? NO_STARS);
+    this.starRow.forEach((star, index) => {
+      showAreaStar(star, this.starTextures, earned[index], STAR_ROW.starPx);
+      star.setVisible(this.showsStars);
+    });
+  }
+
+  /** Places the star row's 40 px stars, 12 px apart, from the row's top-left corner. */
+  private placeStarRow(left: number, top: number): void {
+    this.starRow.forEach((star, index) =>
+      star.setPosition(left + index * (STAR_ROW.starPx + STAR_ROW.gap) + STAR_ROW.starPx / 2, top + STAR_ROW.starPx / 2),
+    );
   }
 
   /** Replaces the treasure icon row with one 32 px icon per id. */

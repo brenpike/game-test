@@ -52,9 +52,11 @@ export function goExploring(scene: Phaser.Scene, assets: GameAssets): void {
 }
 
 /**
- * The single way back from a trip (#31): takes the ended trip and its snacks into the session,
- * stops the HUD and opens the Home Tank with the tank arrival card for the trip's ending. Throws
- * when the trip has not ended.
+ * The single way back from a trip, whether the player went home, was carried home or beat the area
+ * (#31): takes the ended trip, its snacks and, when the area was beaten, the stars earned in the
+ * zone's area into the session (PRD H7), stops the HUD and opens the Home Tank with the tank arrival
+ * card for the trip's ending, its stars included. Throws when the trip has not ended, or beat the
+ * area with no stars.
  */
 export function returnToHomeTank(
   scene: Phaser.Scene,
@@ -62,7 +64,7 @@ export function returnToHomeTank(
   trip: TripState,
   snacks: readonly Collectible[],
 ): void {
-  const record = tripEndRecord(trip, snacks);
+  const record = tripEndRecord(trip, snacks, assets.zone.areaId);
   const ending = trip.ending;
   if (ending === null) throw new Error('returnToHomeTank: the ended trip has no ending');
   writeSession(scene.registry, recordTripEnd(readSession(scene.registry), record));
@@ -70,6 +72,7 @@ export function returnToHomeTank(
     reason: ending.reason,
     returned: [...ending.returned],
     bankedThisTrip: [...ending.bankedThisTrip],
+    ...(ending.stars === undefined ? {} : { stars: { ...ending.stars } }),
   };
   const start: HomeTankStart = { assets, arrival };
   scene.scene.stop(SCENE_KEYS.hud);

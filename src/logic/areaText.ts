@@ -24,7 +24,7 @@ function snacksPhrase(count: number): string {
 
 /** Said when the axolotl reaches the closed exit, with the snacks still left (PRD H2). */
 export function exitClosedText(left: number): string {
-  return `The exit is closed. Eat every snack to open it! ${snacksPhrase(left)} left.`;
+  return `Eat every snack to open the exit! ${snacksPhrase(left)} left.`;
 }
 
 /**

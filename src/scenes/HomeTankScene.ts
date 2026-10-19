@@ -12,11 +12,14 @@ import {
 } from '../art/palette';
 import type { IconKind } from '../art/drawUi';
 import { createAxolotlTexture, type AxolotlTexture, type TexInfo } from '../art/textures';
+import { areaLabel } from '../logic/areaText';
+import { areaById, type AreaData } from '../logic/areas';
 import { GAME_EVENTS, REGISTRY_KEYS, type ReducedMotionPayload } from '../logic/gameEvents';
 import type { Size } from '../logic/hudLayout';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { NO_REPAINT, pickSecondaryRepaint } from '../logic/repaintBudget';
-import { setTankLayout, type Session } from '../logic/session';
+import { bestStars, setTankLayout, type Session } from '../logic/session';
+import { hubStarsBadgeRect } from '../logic/starsUi';
 import { TANK, tankFrame, tankToCss, type TankFrame, type TankLayout } from '../logic/tank';
 import { tankSwimPose } from '../logic/tankSwim';
 import { HOME_TANK_NAME } from '../logic/tankText';
@@ -47,10 +50,11 @@ import {
   type SceneView,
   type UiButton,
 } from './BootScene';
+import { AreaStarsBadge } from './AreaStarsBadge';
 import { CollectionBookView } from './CollectionBookView';
 import { settleMotionTweens } from './motionTweens';
 import { goExploring, readSession, writeSession, type HomeTankStart } from './sceneFlow';
-import { TankArrivalCard } from './TankArrivalCard';
+import { TankArrivalCard, type ArrivalAreaStars } from './TankArrivalCard';
 import { TankDecorator } from './TankDecorator';
 import { TreasureChestView } from './TreasureChestView';
 
@@ -128,6 +132,13 @@ function hubFocusStep(action: TankKey): number {
   return 0;
 }
 
+/** The area of the zone with id `areaId`. Throws when there is no such area. */
+function zoneArea(areaId: string): Readonly<AreaData> {
+  const area = areaById(areaId);
+  if (area === undefined) throw new Error(`HomeTankScene: no area ${areaId}`);
+  return area;
+}
+
 /** Places a full-frame tank layer (480 x 360, origin top-left) on the tank frame. */
 function placeTankLayer(image: Phaser.GameObjects.Image, info: TexInfo, frame: TankFrame): void {
   image.setPosition(frame.x, frame.y).setScale(frame.scale / info.scale);
@@ -135,14 +146,17 @@ function placeTankLayer(image: Phaser.GameObjects.Image, info: TexInfo, frame: T
 
 /**
  * The Home Tank hub (PRD C7, C8): the tank on the wall, every owned axolotl swimming on its own
- * in its morph's colours (still poses under reduced motion), the animated surface line, and the hub
- * actions Go exploring, Decorate, Treasure Chest and Collection Book, by touch and by keyboard.
- * After a trip the tank arrival card shows first and takes every key and press until it closes.
+ * in its morph's colours (still poses under reduced motion), the animated surface line, the hub
+ * actions Go exploring, Decorate, Treasure Chest and Collection Book, by touch and by keyboard, and
+ * the best-stars badge of the area (H7). After a trip the tank arrival card shows first and takes
+ * every key and press until it closes; after beating the area it is the "Area beaten" card, and
+ * closing it leaves the player in the hub.
  */
 export class HomeTankScene extends Phaser.Scene {
   private assets!: GameAssets;
   private arrival: TripEnding | null = null;
   private session!: Session;
+  private area!: Readonly<AreaData>;
   private motion!: MotionProfile;
   private view!: SceneView;
   private frame!: TankFrame;
@@ -164,6 +178,7 @@ export class HomeTankScene extends Phaser.Scene {
   private titleText!: Phaser.GameObjects.Text;
   private hubButtons: HubButton[] = [];
   private titleFits = false;
+  private starsBadge!: AreaStarsBadge;
   private decorator!: TankDecorator;
   private chest!: TreasureChestView;
   private book!: CollectionBookView;
@@ -189,6 +204,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.view = readSceneView(this.scale);
     this.motion = motionProfile(this.registry.get(REGISTRY_KEYS.reducedMotion) === true);
     this.session = readSession(this.registry);
+    this.area = zoneArea(this.assets.zone.areaId);
     this.frame = tankFrame(this.view.cssW, this.view.cssH);
     useCssCamera(this.cameras.main, this.view.fit.dpr);
     this.cameras.main.setBackgroundColor(HOME_TANK_WALL);
@@ -197,6 +213,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.buildDecorator();
     this.buildSwimmers();
     this.buildHub();
+    this.buildStarsBadge();
     this.chest = new TreasureChestView(
       this,
       { baked: this.assets.baked, treasure: this.assets.treasure },
@@ -287,6 +304,23 @@ export class HomeTankScene extends Phaser.Scene {
     this.hubButtons = HUB_BUTTONS.map((spec) => this.addHubButton(spec));
   }
 
+  /** The best-stars badge of the area, under the hub, showing the best stars this session (H7). */
+  private buildStarsBadge(): void {
+    this.starsBadge = new AreaStarsBadge(
+      this,
+      this.assets.area.stars,
+      areaLabel(this.area.number),
+      TANK_DEPTH.hub,
+      this.view.fit.dpr,
+    );
+    this.refreshStarsBadge();
+  }
+
+  /** Shows the area's best stars from the session on the badge. */
+  private refreshStarsBadge(): void {
+    this.starsBadge.setStars(bestStars(this.session, this.area.id));
+  }
+
   /** A hub button in the shape and size-1 body width hubButtonLook() gives, to hold its icon and label. */
   private addHubButton(spec: HubButtonSpec): HubButton {
     const { id, label, primary } = spec;
@@ -316,9 +350,13 @@ export class HomeTankScene extends Phaser.Scene {
 
   // ---- modes ---------------------------------------------------------------
 
+  /** Shows the arrival card for the trip that ended; after beating the area, with its best stars. */
   private showArrival(ending: TripEnding): void {
     this.mode = 'arrival';
-    this.arrivalCard.show(ending, this.session.hub.banked.length);
+    this.refreshStarsBadge();
+    const areaStars: ArrivalAreaStars | undefined =
+      ending.reason === 'areaBeaten' ? { area: this.area, best: bestStars(this.session, this.area.id) } : undefined;
+    this.arrivalCard.show(ending, this.session.hub.banked.length, areaStars);
     this.refreshHubFocus();
   }
 
@@ -481,6 +519,7 @@ export class HomeTankScene extends Phaser.Scene {
     const dpr = this.view.fit.dpr;
     useCssCamera(this.cameras.main, dpr);
     this.titleText.setResolution(dpr);
+    this.starsBadge.setResolution(dpr);
     for (const hubButton of this.hubButtons) {
       hubButton.button.setResolution(dpr);
     }
@@ -538,19 +577,23 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * Shows the hub buttons unless the Treasure Chest, the Collection Book or decorate mode is up, and
-   * the name panel only when it fits.
+   * Shows the hub buttons and the best-stars badge unless the Treasure Chest, the Collection Book or
+   * decorate mode is up, and the name panel only when it fits.
    */
   private applyHubVisibility(): void {
     const shown = this.mode === 'hub' || this.mode === 'arrival';
     for (const hubButton of this.hubButtons) {
       hubButton.button.container.setVisible(shown);
     }
+    this.starsBadge.setVisible(shown);
     this.titlePanel.setVisible(shown && this.titleFits);
     this.titleText.setVisible(shown && this.titleFits);
   }
 
-  /** Places the hub buttons through hubLayout(), and the name panel only when it fits. */
+  /**
+   * Places the hub buttons through hubLayout(), the best-stars badge under them (or in the corner)
+   * through hubStarsBadgeRect(), and the name panel only when it fits.
+   */
   private layoutHub(): void {
     const actions = this.hubButtons.map((hubButton) => ({
       id: hubButton.id,
@@ -562,6 +605,7 @@ export class HomeTankScene extends Phaser.Scene {
     hub.actions.forEach((placement, index) => {
       this.hubButtons[index].button.container.setPosition(placement.rect.x, placement.rect.y);
     });
+    this.starsBadge.layout(hubStarsBadgeRect(this.view, this.frame, hub, this.starsBadge.measure()));
     const title = hub.title;
     this.titleFits = title !== null;
     this.applyHubVisibility();

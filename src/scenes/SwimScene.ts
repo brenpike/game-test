@@ -11,12 +11,17 @@ import {
   type MorphPalette,
 } from '../art/palette';
 import { BUBBLE_RADII, type TexInfo } from '../art/textures';
+import { areaById, atExit, exitContact, exitOpen, type AreaData } from '../logic/areas';
 import { BUBBLE_MAX_ALIVE, bubblePos, createBubbles, updateBubbles, type BubbleSystem } from '../logic/bubbles';
 import {
   DEFAULT_COLLECT_RADIUS,
+  SPARKLE_SNACKS_LEFT,
   allCollected,
   collectNear,
   countCollected,
+  driftSnacks,
+  snacksLeft,
+  sparklingSnackIds,
   type Collectible,
 } from '../logic/collectibles';
 import { createEncounterContext } from '../logic/encounter';
@@ -28,10 +33,12 @@ import {
   type AllCollectedPayload,
   type CollectedPayload,
   type DashStatePayload,
+  type ExitClosedPayload,
   type ReducedMotionPayload,
   type SnackBoostPayload,
   type SteerPayload,
 } from '../logic/gameEvents';
+import { hintSparkleRadius } from '../logic/hints';
 import { legSwimTuning, legWobble } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { mulberry32 } from '../logic/rng';
@@ -41,6 +48,7 @@ import { steerFromKeys, type KeyState } from '../logic/steering';
 import { startDashVelocity, stepSwim, swimIntensity, type SwimBounds, type SwimState } from '../logic/swimPhysics';
 import { createDash, dashCharge, tryStartDash, updateDash, type DashState } from '../logic/tailDash';
 import {
+  beatArea,
   createTrip,
   createTripContext,
   eatSnacks,
@@ -70,6 +78,7 @@ import {
   type GameAssets,
   type SceneView,
 } from './BootScene';
+import { ExitView } from './ExitView';
 import { HomeSpotView } from './HomeSpotView';
 import { HUD_EVENTS, type FactCardSeenPayload } from './HudScene';
 import { addMotionTween, settleMotionTweens } from './motionTweens';
@@ -102,6 +111,13 @@ const REED_NUDGE_RATE = 6;
 const SNACK_BOB_PX = 2.5;
 const SNACK_BOB_PERIOD = 2.4;
 const SNACK_POP_MS = 200;
+/** Last-snack hint star (PRD H3, guide 7e and 9): the Common star, 16 px above the snack. */
+const SNACK_STAR_OFFSET_Y = -16;
+const SNACK_STAR_GROW_FROM = 0.6;
+const SNACK_STAR_GROW_S = 0.4;
+const SNACK_STAR_BOB_PX = 2;
+const SNACK_STAR_SPIN_RAD = 0.15;
+const SNACK_STAR_PERIOD = 2.4;
 const STREAKS_PER_CURRENT = 6;
 const STREAK_EDGE_FADE = 40;
 const SURFACE_STEP = 8;
@@ -162,6 +178,13 @@ export class SwimScene extends Phaser.Scene {
   private items: Collectible[] = [];
   private bubbles!: BubbleSystem;
   private allDone = false;
+  private area!: Readonly<AreaData>;
+  /** Snack drift time in seconds; advances only while swimming. */
+  private driftClock = 0;
+  /** Whether the axolotl centre was at the exit on the latest swimming step. */
+  private wasAtExit = false;
+  /** Whether this trip has ended at the open exit; once per trip. */
+  private areaBeaten = false;
   private trip!: TripState;
   private tripCtx!: TripContext;
   private snapshot!: TripSnapshot;
@@ -183,10 +206,15 @@ export class SwimScene extends Phaser.Scene {
   private strandedView!: StrandedView;
   /** The explorer's morph colours, fixed for the trip. */
   private explorerPalette!: MorphPalette;
+  private exitView!: ExitView;
   private reeds: Phaser.GameObjects.Image[] = [];
   private reedNudge: number[] = [];
   private pads: Phaser.GameObjects.Image[] = [];
   private snacks = new Map<string, Phaser.GameObjects.Image>();
+  private snackStars: Phaser.GameObjects.Image[] = [];
+  private snackStarBaseScale = 1;
+  /** Seconds each sparkling snack's star has shown, by snack id. */
+  private snackStarAges = new Map<string, number>();
   private streaks: Streak[] = [];
   private bubbleImages: Phaser.GameObjects.Image[] = [];
   private sparkles: Sparkle[] = [];
@@ -213,6 +241,9 @@ export class SwimScene extends Phaser.Scene {
     this.clock = 0;
     this.allDone = false;
     this.leaving = false;
+    this.driftClock = 0;
+    this.wasAtExit = false;
+    this.areaBeaten = false;
     this.dashKeyLatched = false;
     this.dashingThisFrame = false;
     this.padSteer = { x: 0, y: 0 };
@@ -220,6 +251,7 @@ export class SwimScene extends Phaser.Scene {
     this.keys = { left: [], right: [], up: [], down: [] };
     this.dashKeys = [];
     this.snacks = new Map();
+    this.snackStarAges = new Map();
     this.sparkleCursor = 0;
     this.sparkleAcc = 0;
     this.sparkleLevel = 0;
@@ -232,6 +264,11 @@ export class SwimScene extends Phaser.Scene {
 
   create(): void {
     const zone = this.assets.zone;
+    const area = areaById(zone.areaId);
+    if (!area) {
+      throw new Error(`SwimScene: no area data for area "${zone.areaId}"`);
+    }
+    this.area = area;
     this.view = readSceneView(this.scale);
     this.motion = motionProfile(this.registry.get(REGISTRY_KEYS.reducedMotion) === true);
     this.bounds = swimBounds();
@@ -245,7 +282,7 @@ export class SwimScene extends Phaser.Scene {
     const session = readSession(this.registry);
     const start = tripStart(session, Math.floor(Math.random() * 0x100000000) >>> 0);
     this.explorerPalette = MORPH_PALETTES[explorerMorph(session)];
-    this.items = restoreSnacks(zone.collectibles, start.eatenSnacks);
+    this.items = this.driftedSnacks(restoreSnacks(zone.collectibles, start.eatenSnacks));
     this.allDone = allCollected(this.items);
     const stranding = pickStranding(start.ownedMorphs, start.waitingStranded, zone.strandingPlaces, start.tripSeed);
     this.trip = createTrip(zone, LEGS, start.banked, start.tripSeed, {
@@ -313,7 +350,14 @@ export class SwimScene extends Phaser.Scene {
     if (this.dash.phase !== previousPhase || this.dash.phase === 'cooldown') {
       this.emitDashState();
     }
+    this.driftClock += dt;
+    this.items = this.driftedSnacks(this.items);
     this.collectSnacks();
+  }
+
+  /** The snacks moved to where their drift puts them at the current drift time (PRD H4). */
+  private driftedSnacks(items: readonly Collectible[]): Collectible[] {
+    return driftSnacks(items, this.assets.zone.collectibles, this.driftClock, this.area.snackDrift, this.bounds);
   }
 
   // ---- setup ---------------------------------------------------------------
@@ -336,6 +380,7 @@ export class SwimScene extends Phaser.Scene {
     this.streaks = zone.currents.flatMap((current) => this.buildStreaks(current));
 
     this.homeSpotView = new HomeSpotView(this, this.assets, this.trip.homeSpot);
+    this.exitView = new ExitView(this, this.assets, this.area.exit, exitOpen(snacksLeft(this.items)));
     this.treasureView = new TreasureView(this, this.assets, zone, this.trip.placed);
 
     this.snacks.clear();
@@ -347,6 +392,11 @@ export class SwimScene extends Phaser.Scene {
         placeBaked(this.add.image(item.x, item.y, info.key), info).setDepth(DEPTH.collectibles),
       );
     }
+    const starInfo = this.snackStarInfo();
+    this.snackStarBaseScale = 1 / starInfo.scale;
+    this.snackStars = Array.from({ length: SPARKLE_SNACKS_LEFT }, () =>
+      placeBaked(this.add.image(0, 0, starInfo.key), starInfo).setVisible(false).setDepth(DEPTH.hint),
+    );
 
     const axoInfo = this.assets.axolotl.info;
     this.axolotl = this.add
@@ -371,6 +421,15 @@ export class SwimScene extends Phaser.Scene {
         .setDepth(DEPTH.fx),
       age: SPARKLE_LIFE_S,
     }));
+  }
+
+  /** The Common hint star, the one the last snacks share (PRD H3). */
+  private snackStarInfo(): TexInfo {
+    const info: TexInfo | undefined = this.assets.baked.hiding.hintStars[hintSparkleRadius('common')];
+    if (!info) {
+      throw new Error('SwimScene: no Common hint star for the last snacks');
+    }
+    return info;
   }
 
   private buildStreaks(current: CurrentZone): Streak[] {
@@ -541,6 +600,42 @@ export class SwimScene extends Phaser.Scene {
     }
     this.dispatchTripEvents(result.events);
     this.syncSnapshot();
+    this.checkExit();
+  }
+
+  /**
+   * Exit contact while swimming (PRD H2, H5): swimming into the closed exit sends EXIT_CLOSED once
+   * per entry, and the open exit ends the trip. A trip that banked or started the carry this step
+   * is not swimming, so the carry wins over the exit.
+   */
+  private checkExit(): void {
+    if (this.trip.phase !== 'swimming') return;
+    const left = snacksLeft(this.items);
+    const atExitNow = atExit({ x: this.swim.x, y: this.swim.y }, this.area.exit);
+    const contact = exitContact(this.wasAtExit, atExitNow, left);
+    this.wasAtExit = atExitNow;
+    if (contact === 'closed') {
+      const payload: ExitClosedPayload = { left };
+      this.game.events.emit(GAME_EVENTS.EXIT_CLOSED, payload);
+    }
+    if (contact === 'beat') this.endAtExit();
+  }
+
+  /**
+   * Ends the trip at the open exit, once per trip: banks the Trip Bag and leaves for the Home Tank
+   * the same way Go home does. `rescued` is false because there are no stranded axolotls until #13
+   * wires the rescue in.
+   */
+  private endAtExit(): void {
+    if (this.areaBeaten) return;
+    const result = beatArea(this.trip, { specialTreasureId: this.area.specialTreasureId, rescued: false });
+    if (result.state === this.trip) return;
+    this.areaBeaten = true;
+    this.trip = result.state;
+    this.padSteer = { x: 0, y: 0 };
+    this.placeCarried();
+    this.dispatchTripEvents(result.events);
+    this.publishSnapshot(tripSnapshot(this.trip));
   }
 
   private dispatchTripEvents(events: readonly TripEvent[]): void {
@@ -578,7 +673,10 @@ export class SwimScene extends Phaser.Scene {
     this.publishSnapshot(snapshot);
   }
 
-  /** Publishes the trip snapshot to the HUD; an ended trip (Go home or the end of the carry) leaves for the Home Tank. */
+  /**
+   * Publishes the trip snapshot to the HUD; an ended trip (Go home, the open exit or the end of the
+   * carry) leaves for the Home Tank.
+   */
   private publishSnapshot(snapshot: TripSnapshot): void {
     this.snapshot = snapshot;
     this.registry.set(TRIP_REGISTRY_KEYS.state, snapshot);
@@ -672,6 +770,7 @@ export class SwimScene extends Phaser.Scene {
     this.renderAxolotl(dt);
     this.strandedView.render({ trip: this.trip, motion: this.motion, dt, time: this.clock });
     this.homeSpotView.render({ motion: this.motion, dt, time: this.clock });
+    this.exitView.render({ open: exitOpen(snacksLeft(this.items)), motion: this.motion, dt });
     this.treasureView.render({
       placed: this.trip.placed,
       holdings: this.trip.holdings,
@@ -689,6 +788,7 @@ export class SwimScene extends Phaser.Scene {
     });
     this.renderReeds(dt, t);
     this.renderSnacks(t);
+    this.renderSnackStars(dt, t);
     this.renderStreaks(dt);
     this.renderBubbles(dt);
     this.renderSparkles(dt);
@@ -781,8 +881,60 @@ export class SwimScene extends Phaser.Scene {
       const sprite = this.snacks.get(item.id);
       if (!sprite) return;
       const bob = this.motion.collectBob ? SNACK_BOB_PX * Math.sin((TAU * t) / SNACK_BOB_PERIOD + i) : 0;
-      sprite.y = item.y + bob;
+      sprite.setPosition(item.x, item.y + bob);
     });
+  }
+
+  /**
+   * The hint star over each of the last snacks (PRD H3), always on while 1 to 3 are left, following
+   * its snack. Full motion: it grows in, bobs and spins like a treasure hint star. Reduced motion:
+   * still at full size. It hides at once when its snack is eaten.
+   */
+  private renderSnackStars(dt: number, t: number): void {
+    const sparkling = new Set(sparklingSnackIds(this.items));
+    for (const id of this.snackStarAges.keys()) {
+      if (!sparkling.has(id)) this.snackStarAges.delete(id);
+    }
+    let slot = 0;
+    for (const [index, item] of this.items.entries()) {
+      if (!sparkling.has(item.id)) continue;
+      const star = this.snackStars[slot];
+      if (!star) {
+        throw new Error(`SwimScene: more sparkling snacks than the ${this.snackStars.length} snack stars`);
+      }
+      const age = this.snackStarAges.get(item.id);
+      const shownAge = age === undefined ? 0 : age + dt;
+      this.snackStarAges.set(item.id, shownAge);
+      this.placeSnackStar(star, this.snackSprite(item.id), index, shownAge, t);
+      slot += 1;
+    }
+    for (const star of this.snackStars.slice(slot)) star.setVisible(false);
+  }
+
+  private placeSnackStar(
+    star: Phaser.GameObjects.Image,
+    sprite: Phaser.GameObjects.Image,
+    index: number,
+    shownAge: number,
+    t: number,
+  ): void {
+    const ambient = this.motion.ambient;
+    const grow = Math.min(1, shownAge / SNACK_STAR_GROW_S);
+    const growScale = ambient ? SNACK_STAR_GROW_FROM + (1 - SNACK_STAR_GROW_FROM) * grow : 1;
+    const wave = (TAU * t) / SNACK_STAR_PERIOD + index;
+    star
+      .setVisible(true)
+      .setPosition(sprite.x, sprite.y + SNACK_STAR_OFFSET_Y + (ambient ? SNACK_STAR_BOB_PX * Math.sin(wave) : 0))
+      .setRotation(ambient ? SNACK_STAR_SPIN_RAD * Math.cos(wave) : 0)
+      .setScale(growScale * this.snackStarBaseScale);
+  }
+
+  private snackSprite(id: string): Phaser.GameObjects.Image {
+    const sprite = this.snacks.get(id);
+    if (!sprite) {
+      throw new Error(`SwimScene: no sprite for collectible "${id}"`);
+    }
+    return sprite;
   }
 
   private renderStreaks(dt: number): void {

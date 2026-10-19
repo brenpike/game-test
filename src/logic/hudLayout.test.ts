@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { exitClosedText } from './areaText';
 import {
   FIND_POPUP,
   HUD,
@@ -18,6 +19,7 @@ import {
   type Rect,
   type Size,
 } from './hudLayout';
+import { ALL_SNACKS_BANNER } from './tripText';
 
 const SIZES: HudControlSizes = {
   pause: { w: 160, h: 51.2 },
@@ -49,7 +51,11 @@ interface OverlayTexts {
 }
 
 const SMALL_TEXTS: OverlayTexts = { hint: 10, snackBanner: 8, name: 6 };
-const REAL_TEXTS: OverlayTexts = { hint: 47, snackBanner: 27, name: 16 };
+const REAL_TEXTS: OverlayTexts = {
+  hint: 47,
+  snackBanner: Math.max(exitClosedText(16).length, ALL_SNACKS_BANNER.length),
+  name: 16,
+};
 const LARGE_TEXTS: OverlayTexts = { hint: 140, snackBanner: 90, name: 60 };
 
 /** Builds a fake find pop-up text measure from fake text lengths. */

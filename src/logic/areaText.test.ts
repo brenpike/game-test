@@ -38,6 +38,8 @@ const OLD_COMPACT_COUNTER = '16 / 16';
 
 const SHORT_LINE_MAX = 34;
 
+const EXIT_CLOSED_MAX = 49;
+
 const SNACKS_LEFT_SAMPLES = [0, 1, 2, 3, 5, 16, 99];
 
 const SPECIAL_NAMES = CANAL_TREASURES.map((treasure) => treasure.name);
@@ -90,9 +92,13 @@ describe('area text', () => {
   });
 
   it('says why the exit is closed, with singular and plural snacks', () => {
-    expect(exitClosedText(5)).toBe('The exit is closed. Eat every snack to open it! 5 snacks left.');
-    expect(exitClosedText(1)).toBe('The exit is closed. Eat every snack to open it! 1 snack left.');
+    expect(exitClosedText(5)).toBe('Eat every snack to open the exit! 5 snacks left.');
+    expect(exitClosedText(1)).toBe('Eat every snack to open the exit! 1 snack left.');
     expect(exitClosedText(0)).toContain('0 snacks left.');
+  });
+
+  it('keeps the closed-exit text within 49 characters at 16 snacks left', () => {
+    expect(exitClosedText(16).length).toBeLessThanOrEqual(EXIT_CLOSED_MAX);
   });
 });
 
