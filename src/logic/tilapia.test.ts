@@ -400,19 +400,21 @@ describe('tilapia', () => {
     expect(cooled.state.phase).toBe('patrol');
   });
 
+  // Issue #37: 600-step simulation is slow under parallel suite load and exceeded the 5000 ms default.
   it('keeps every rule over a long canal simulation', () => {
     const random = vi.spyOn(Math, 'random');
     const stats = simulate(canalRoute, canalCtx, 0x5eed, 600);
     expect(stats.lunges).toBeGreaterThan(5);
     expect(stats.hits).toBeGreaterThan(0);
     expect(random).not.toHaveBeenCalled();
-  });
+  }, 30_000);
 
+  // Issue #37: 600-step simulation is slow under parallel suite load and exceeded the 5000 ms default.
   it('keeps clear of the safe area on a route hugging its edge', () => {
     const stats = simulate(crampedRoute, canalCtx, 0xc0ffee, 600);
     expect(stats.lunges).toBeGreaterThan(5);
     expect(stats.cancels).toBeGreaterThan(0);
-  });
+  }, 30_000);
 
   it('is deterministic', () => {
     const runOnce = () => {
