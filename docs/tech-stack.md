@@ -20,7 +20,7 @@ Current milestone: **swim test** (one canal zone, swim controls, Tail Dash).
 | Art pipeline | Procedural Canvas 2D baked into Phaser textures | n/a | Reuses the approved cartoon prototype code; vector-sourced sprite atlases later. | [0004](adr/0004-art-pipeline.md) |
 | Kid-safety posture | No ads, chat, IAP, analytics, accounts, or third-party requests; the only request beyond loading the game is one first-party update check | n/a | Players are 8 to 12; the game must be safe and private by design. | [0007](adr/0007-kid-safety-and-privacy.md), [0009](adr/0009-update-check.md) |
 | Updates | First-party `version.json` check on the title screen; one-tap reload to the new build; version shown in small text | n/a | Play-testers get the new build right after a deploy, never mid-trip, with no player data sent. | [0009](adr/0009-update-check.md) |
-| Fail state | Gentle: a predator hit costs one leg that regrows; losing all four legs sends you home and loses only unbanked trip finds | n/a | Gives exploring real stakes without punishing players aged 8 to 12; banked progress is never lost. | [0008](adr/0008-gentle-fail-state.md) |
+| Fail state | Gentle: a predator hit costs one leg that regrows; losing all four legs sends you home, loses only unbanked trip finds, and starts the snacks over | n/a | Gives exploring real stakes without punishing players aged 8 to 12; banked progress is never lost. | [0008](adr/0008-gentle-fail-state.md), [0010](adr/0010-carried-home-full-reset.md) |
 
 Live build: <https://brenpike.github.io/glam-gills/>
 
