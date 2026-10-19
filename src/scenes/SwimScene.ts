@@ -891,13 +891,18 @@ export class SwimScene extends Phaser.Scene {
    * still at full size. It hides at once when its snack is eaten.
    */
   private renderSnackStars(dt: number, t: number): void {
-    const sparkling = new Set(sparklingSnackIds(this.items));
-    for (const id of this.snackStarAges.keys()) {
-      if (!sparkling.has(id)) this.snackStarAges.delete(id);
+    // Runs every frame. At most SPARKLE_SNACKS_LEFT ids, so plain array lookups and index loops
+    // replace a Set and slices: nothing is allocated here while no snack sparkles.
+    const sparkling = sparklingSnackIds(this.items);
+    if (this.snackStarAges.size > 0) {
+      for (const id of this.snackStarAges.keys()) {
+        if (!sparkling.includes(id)) this.snackStarAges.delete(id);
+      }
     }
     let slot = 0;
-    for (const [index, item] of this.items.entries()) {
-      if (!sparkling.has(item.id)) continue;
+    for (let index = 0; index < this.items.length; index++) {
+      const item = this.items[index];
+      if (!sparkling.includes(item.id)) continue;
       const star = this.snackStars[slot];
       if (!star) {
         throw new Error(`SwimScene: more sparkling snacks than the ${this.snackStars.length} snack stars`);
@@ -908,7 +913,7 @@ export class SwimScene extends Phaser.Scene {
       this.placeSnackStar(star, this.snackSprite(item.id), index, shownAge, t);
       slot += 1;
     }
-    for (const star of this.snackStars.slice(slot)) star.setVisible(false);
+    for (let i = slot; i < this.snackStars.length; i++) this.snackStars[i].setVisible(false);
   }
 
   private placeSnackStar(

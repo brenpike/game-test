@@ -65,21 +65,40 @@ export interface SnackDrift {
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
-/** Number of uncollected items. */
+/** Shared empty result, so the per-frame "nothing sparkles" answer allocates nothing. */
+const NO_IDS: readonly string[] = Object.freeze([]);
+
+/** Number of uncollected items. Counts in place: the scene asks every frame. */
 export function snacksLeft(items: readonly Collectible[]): number {
-  return items.length - countCollected(items);
+  let left = 0;
+  for (const item of items) {
+    if (!item.collected) left += 1;
+  }
+  return left;
 }
 
 /** Ids of the uncollected items when 1 to `threshold` are left; otherwise an empty list. */
 export function sparklingSnackIds(
   items: readonly Collectible[],
   threshold: number = SPARKLE_SNACKS_LEFT,
-): string[] {
+): readonly string[] {
   const left = snacksLeft(items);
   if (left < 1 || left > threshold) {
-    return [];
+    return NO_IDS;
   }
-  return items.filter((item) => !item.collected).map((item) => item.id);
+  const ids: string[] = [];
+  for (const item of items) {
+    if (!item.collected) ids.push(item.id);
+  }
+  return ids;
+}
+
+function driftX(phase: number, t: number, drift: SnackDrift): number {
+  return drift.amplitudeX * Math.sin((2 * Math.PI * t) / drift.periodX + phase);
+}
+
+function driftY(phase: number, t: number, drift: SnackDrift): number {
+  return drift.amplitudeY * Math.cos((2 * Math.PI * t) / drift.periodY + phase);
 }
 
 /**
@@ -88,10 +107,7 @@ export function sparklingSnackIds(
  */
 export function snackDriftOffset(index: number, t: number, drift: SnackDrift): Point {
   const phase = index * GOLDEN_ANGLE;
-  return {
-    x: drift.amplitudeX * Math.sin((2 * Math.PI * t) / drift.periodX + phase),
-    y: drift.amplitudeY * Math.cos((2 * Math.PI * t) / drift.periodY + phase),
-  };
+  return { x: driftX(phase, t, drift), y: driftY(phase, t, drift) };
 }
 
 /** Upper bound in px/s on the speed of a drifting snack. */
@@ -102,11 +118,8 @@ export function snackDriftMaxSpeed(drift: SnackDrift): number {
   );
 }
 
-function clampToBounds(pos: Point, bounds: SwimBounds): Point {
-  return {
-    x: Math.min(bounds.maxX, Math.max(bounds.minX, pos.x)),
-    y: Math.min(bounds.maxY, Math.max(bounds.minY, pos.y)),
-  };
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 /**
@@ -141,7 +154,11 @@ function driftSnack(
   if (item.collected) {
     return item;
   }
-  const offset = snackDriftOffset(index, t, drift);
-  const pos = clampToBounds({ x: spawn.x + offset.x, y: spawn.y + offset.y }, bounds);
-  return { ...item, x: pos.x, y: pos.y };
+  // Runs every frame for every snack: compute each axis inline so the moved item is the only allocation.
+  const phase = index * GOLDEN_ANGLE;
+  return {
+    ...item,
+    x: clamp(spawn.x + driftX(phase, t, drift), bounds.minX, bounds.maxX),
+    y: clamp(spawn.y + driftY(phase, t, drift), bounds.minY, bounds.maxY),
+  };
 }
