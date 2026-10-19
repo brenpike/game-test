@@ -13,6 +13,12 @@ Version 0.9.0 is playable in one canal zone:
 - Dodge three tilapia. A hit costs a leg, and legs regrow. If you lose all four, you are carried home, you lose the finds you had not banked, and the snacks start over.
 - Find hidden treasures: Decorations, Wearables, and Paint shells for Dream colours. Each has a rarity badge, and hint sparkles help you look.
 - The hiding spots shuffle each trip.
+- The snack counter shows how many snacks are left. The last 3 snacks sparkle, and snacks drift slowly.
+- The exit opens when every snack is eaten. While it is closed, it shows a padlock sign and a message.
+- Swim into the open exit at the far end of the canal to beat Area 1 and bank the Trip Bag.
+- Earn up to 3 stars: reach the exit, find the Castle tower, and keep all four legs.
+- Your best stars show on the "Area beaten" card and in the Home Tank. They are kept for the session, not saved.
+- Eaten snacks come back after you are carried home or beat the area. They stay eaten after Go home.
 - Bank your finds at the Home Spot to keep them safe.
 - Rescue a stranded axolotl in the canal. Each trip, one real morph you do not have yet (Wild, Golden albino, or Melanoid) waits looking a little lost. Swim to it and it follows you; bring it to the Home Spot and it moves into your Home Tank.
 - Meet the tilapia: the first time you swim near one, a fact card tells you about it.
@@ -25,7 +31,7 @@ Version 0.9.0 is playable in one canal zone:
 ## Coming next
 
 The Axolotl MVP is in progress ([epic #6](https://github.com/brenpike/glam-gills/issues/6)).
-Next up: a character creator, saving, outfits with 8 wearable slots, Dream colours, and beating Area 1 by eating every snack to open its exit.
+Next up: a character creator, saving, outfits with 8 wearable slots, and Dream colours.
 The [PRD](docs/prds/axolotl-mvp.md) is the source of truth.
 
 After the MVP: the Tank Top Model fashion show, more real freshwater areas, and building a safe refuge for axolotls.
@@ -66,7 +72,8 @@ npm install
 | Keep exploring or Go home | Keep exploring or Go home button | Left/Right or Tab to choose, Enter or Space to press, H for Go home |
 | Go home from the Home Spot | Go home button (top-right, at the Home Spot) | H |
 | Go exploring (from the Home Tank) | Go exploring button | Tab/Shift+Tab or arrow keys to choose a hub button, Enter or Space to press |
-| Close the trip-end message | OK button | Enter or Space |
+| Beat Area 1 | Swim into the open exit at the far end of the canal | Swim into the open exit at the far end of the canal |
+| Close the trip-end message (also the "Area beaten" message) | OK button | Enter or Space |
 | Close the tilapia fact card | OK button | Enter, Space, P, or Esc |
 | Treasure Chest | Back, Next, and Close buttons | Left/Right to turn pages, Tab/Shift+Tab to move focus, Enter or Space to press, Esc to close |
 | Collection Book | Back, Next, and Close buttons | Left/Right to turn pages, Tab/Shift+Tab to move focus, Enter or Space to press, Esc to close |

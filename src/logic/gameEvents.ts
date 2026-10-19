@@ -12,6 +12,7 @@ export const GAME_EVENTS = Object.freeze({
   RESUMED: 'resumed',
   REDUCED_MOTION: 'reduced-motion',
   STEER: 'steer',
+  EXIT_CLOSED: 'exit-closed',
 } as const);
 
 export type GameEventName = (typeof GAME_EVENTS)[keyof typeof GAME_EVENTS];
@@ -47,6 +48,11 @@ export interface SteerPayload {
   y: number;
 }
 
+/** Sent when the axolotl swims into the closed exit; `left` is the snacks still to eat. */
+export interface ExitClosedPayload {
+  left: number;
+}
+
 /** Payload type for each event; `undefined` marks payload-less events. */
 export interface GameEventPayloads {
   [GAME_EVENTS.COLLECTED]: CollectedPayload;
@@ -59,6 +65,7 @@ export interface GameEventPayloads {
   [GAME_EVENTS.RESUMED]: undefined;
   [GAME_EVENTS.REDUCED_MOTION]: ReducedMotionPayload;
   [GAME_EVENTS.STEER]: SteerPayload;
+  [GAME_EVENTS.EXIT_CLOSED]: ExitClosedPayload;
 }
 
 /** Keys for values stored in the shared game registry. */
