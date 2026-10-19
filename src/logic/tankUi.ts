@@ -5,7 +5,14 @@
  */
 import type { HudView, Rect, Size } from './hudLayout';
 import { decorationBandTop, type TankFrame } from './tank';
-import { DECORATE_LABEL, GO_EXPLORING_LABEL, TREASURE_CHEST_LABEL } from './tankText';
+import {
+  CLOSE_LABEL,
+  DECORATE_LABEL,
+  GO_EXPLORING_LABEL,
+  NEXT_PAGE_LABEL,
+  PREVIOUS_PAGE_LABEL,
+  TREASURE_CHEST_LABEL,
+} from './tankText';
 
 /** A Home Tank keyboard action. */
 export type TankKey = 'left' | 'right' | 'up' | 'down' | 'next' | 'previous' | 'confirm' | 'cancel' | 'putAway';
@@ -26,11 +33,39 @@ export const WIDE_BUTTON = Object.freeze({ w: 200, h: 64, iconPx: 32, iconGap: 8
 /** Bold label advance per em used to size buttons; errs wide (the cardCopyFit text estimate). */
 export const LABEL_BOLD_EM = 0.6;
 
-/** Least room between a hub button's icon-and-label row and each side of its body, in CSS px. */
-export const HUB_LABEL_PAD = 6;
+/**
+ * A square tile button at size 1, in CSS px, as createButton (src/scenes/BootScene.ts) builds it: the
+ * BUTTON_SQUARE body of src/art/drawUi.ts and the SQUARE_LABEL_PX label, drawn under the icon.
+ * src/logic must not import art or scenes, so these are copies.
+ */
+export const TILE_BUTTON = Object.freeze({ w: 64, h: 64, labelPx: 22 });
 
-/** Smallest hub button size multipliers: the primary keeps its 64 px height, the others stay over 48 px. */
-const HUB_MIN_SIZE = Object.freeze({ primary: 1, secondary: 0.8 });
+/** Least room between a label-sized button's content row and each side of its body, in CSS px. */
+export const BUTTON_LABEL_PAD = 6;
+
+/** `px` rounded up to a whole CSS px, ignoring float noise just over a whole number. */
+function wholePxUp(px: number): number {
+  return Math.ceil(px - 1e-6);
+}
+
+/**
+ * Body width of a size-1 wide button labelled `label`: at least WIDE_BUTTON.w, and enough for the
+ * icon, the gap and the label (estimated wide) with BUTTON_LABEL_PAD each side, in whole CSS px.
+ */
+export function wideButtonWidth(label: string): number {
+  const labelW = label.length * LABEL_BOLD_EM * WIDE_BUTTON.labelPx;
+  const contentW = WIDE_BUTTON.iconPx + WIDE_BUTTON.iconGap + labelW + 2 * BUTTON_LABEL_PAD;
+  return wholePxUp(Math.max(WIDE_BUTTON.w, contentW));
+}
+
+/**
+ * Body width of a size-1 square tile labelled `label`: at least TILE_BUTTON.w, and enough for the
+ * label (estimated wide; the icon sits above it) with BUTTON_LABEL_PAD each side, in whole CSS px.
+ */
+export function tileButtonWidth(label: string): number {
+  const labelW = label.length * LABEL_BOLD_EM * TILE_BUTTON.labelPx;
+  return wholePxUp(Math.max(TILE_BUTTON.w, labelW + 2 * BUTTON_LABEL_PAD));
+}
 
 /** A Home Tank hub action id. */
 export type HubActionId = 'goExploring' | 'decorate' | 'treasureChest';
@@ -49,16 +84,27 @@ export const HUB_BUTTONS: readonly HubButtonSpec[] = Object.freeze([
   Object.freeze({ id: 'treasureChest', label: TREASURE_CHEST_LABEL, primary: false }),
 ]);
 
-/**
- * The size multiplier for a wide hub button labelled `label`: the smallest one, at least the primary
- * or secondary floor, whose body holds the icon, the gap and the label (estimated wide at 24 px) with
- * HUB_LABEL_PAD each side. Below size 1 createButton draws the label at 22 px, so the estimate holds.
- */
-export function hubButtonSize(label: string, primary: boolean): number {
-  const labelW = label.length * LABEL_BOLD_EM * WIDE_BUTTON.labelPx;
-  const fit = (WIDE_BUTTON.iconGap + labelW + 2 * HUB_LABEL_PAD) / (WIDE_BUTTON.w - WIDE_BUTTON.iconPx);
-  return Math.max(primary ? HUB_MIN_SIZE.primary : HUB_MIN_SIZE.secondary, fit);
+/** How a hub button is drawn: its createButton shape and its size-1 body in CSS px. */
+export interface HubButtonLook {
+  shape: 'wide' | 'square';
+  w: number;
+  h: number;
 }
+
+/**
+ * The look of a hub button: the primary is a wide button and the others square tiles, each a
+ * size-1 body widened to hold its label (PRD X5: the primary stays 64 px tall).
+ */
+export function hubButtonLook(spec: Pick<HubButtonSpec, 'label' | 'primary'>): HubButtonLook {
+  if (spec.primary) return { shape: 'wide', w: wideButtonWidth(spec.label), h: WIDE_BUTTON.h };
+  return { shape: 'square', w: tileButtonWidth(spec.label), h: TILE_BUTTON.h };
+}
+
+/** Size of every Treasure Chest button: square tiles wide enough for the widest of Back, Close and Next. */
+export const CHEST_BUTTON: Size = Object.freeze({
+  w: Math.max(...[PREVIOUS_PAGE_LABEL, CLOSE_LABEL, NEXT_PAGE_LABEL].map(tileButtonWidth)),
+  h: TILE_BUTTON.h,
+});
 
 /** One hub action button to place: its id and measured size. */
 export interface HubAction {

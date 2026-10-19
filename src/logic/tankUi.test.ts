@@ -2,20 +2,25 @@ import { describe, expect, it } from 'vitest';
 import { isSupportedCanvas } from './cardFit';
 import type { HudView, Rect, Size } from './hudLayout';
 import { decorationBandTop, tankFrame } from './tank';
+import { CLOSE_LABEL, NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL } from './tankText';
 import {
+  BUTTON_LABEL_PAD,
+  CHEST_BUTTON,
   HUB_BUTTONS,
-  HUB_LABEL_PAD,
   LABEL_BOLD_EM,
+  TILE_BUTTON,
   TRAY_PX,
   UI,
   WIDE_BUTTON,
   chestLayout,
   decorateLayout,
-  hubButtonSize,
+  hubButtonLook,
   hubLayout,
   nextFocusIndex,
   rowsPerPage,
   tankKeyFor,
+  tileButtonWidth,
+  wideButtonWidth,
   type ChestMeasure,
   type DecorateSizes,
   type HubAction,
@@ -27,9 +32,8 @@ const REGULAR_EM = 0.55;
 const BOLD_EM = 0.6;
 const LINE_HEIGHT_EM = 1.25;
 
-/** BUTTON_WIDE and BUTTON_SQUARE in src/art/drawUi.ts (logic tests must not import art). */
+/** BUTTON_WIDE in src/art/drawUi.ts (logic tests must not import art). */
 const WIDE: Size = { w: 200, h: 64 };
-const SQUARE: Size = { w: 64, h: 64 };
 
 const MIN_TARGET_PX = 48;
 const PRIMARY_H = 64;
@@ -53,14 +57,22 @@ const CANVAS_HEIGHTS: readonly number[] = [
   320, 340, 360, 375, 414, 440, 480, 568, 600, 667, 740, 768, 844, 932,
 ];
 
-/** A hub button as the scene builds it: a wide button at hubButtonSize() for its label. */
+/** A hub button as the scene builds it: the body of hubButtonLook() for its label. */
 function hubAction(id: string, label: string, primary: boolean): HubAction {
-  const size = hubButtonSize(label, primary);
-  return { id, w: WIDE_BUTTON.w * size, h: WIDE_BUTTON.h * size };
+  const { w, h } = hubButtonLook({ label, primary });
+  return { id, w, h };
 }
 
 /** The hub actions the scene shows: Go exploring (primary), Decorate and Treasure Chest. */
 const HUB_ACTIONS_3: readonly HubAction[] = HUB_BUTTONS.map(({ id, label, primary }) => hubAction(id, label, primary));
+
+/** The hub with the Collection Book entry (#13) added as a fourth, secondary action. */
+const HUB_ACTIONS_4: readonly HubAction[] = [...HUB_ACTIONS_3, hubAction('collectionBook', 'Collection Book', false)];
+
+/** Wide label width estimate of a size-1 tile labelled `label`. */
+function tileLabelW(label: string): number {
+  return label.length * LABEL_BOLD_EM * TILE_BUTTON.labelPx;
+}
 
 /** Lines `text` wraps to at `wrapW`, splitting on '\n' then greedily on ' ', every character `em * px` wide. */
 function estimateLines(text: string, px: number, wrapW: number, em: number): number {
@@ -92,9 +104,9 @@ const CHEST_MEASURE: ChestMeasure = {
   titleAt: (wrapW) => textSize(CHEST_TITLE, CHEST_TITLE_PX, wrapW, BOLD_EM),
   headingAt: (wrapW) => textSize(CHEST_HEADING, HEADING_PX, wrapW, BOLD_EM),
   pageText: textSize(CHEST_PAGE, BODY_PX, Infinity, REGULAR_EM),
-  close: SQUARE,
-  back: SQUARE,
-  next: SQUARE,
+  close: CHEST_BUTTON,
+  back: CHEST_BUTTON,
+  next: CHEST_BUTTON,
 };
 
 /** Supported canvases from the width and height grid (art guide 1). */
@@ -168,6 +180,9 @@ function hubProblems(view: HudView, actions: readonly HubAction[]): string[] {
   ];
   const go = layout.actions.find((placement) => placement.id === 'goExploring');
   if (!go || go.rect.h < PRIMARY_H) problems.push(`${label}: Go exploring under ${PRIMARY_H} px`);
+  for (const { id, rect } of layout.actions) {
+    if (go && id !== 'goExploring' && rect.h > go.rect.h) problems.push(`${label}: ${id} taller than Go exploring`);
+  }
   return problems;
 }
 
@@ -285,25 +300,45 @@ describe('rowsPerPage', () => {
   });
 });
 
-describe('hubButtonSize', () => {
-  it('fits the icon and the wide label estimate with the pad each side', () => {
-    for (const { label, primary } of HUB_BUTTONS) {
-      const size = hubButtonSize(label, primary);
-      const labelW = label.length * LABEL_BOLD_EM * WIDE_BUTTON.labelPx;
-      const rowW = WIDE_BUTTON.iconPx * size + WIDE_BUTTON.iconGap + labelW;
-      expect(WIDE_BUTTON.w * size - rowW).toBeGreaterThanOrEqual(2 * HUB_LABEL_PAD - 1e-9);
+describe('wideButtonWidth and tileButtonWidth', () => {
+  it('sizes the wide and tile labels to whole CSS px', () => {
+    expect(wideButtonWidth('Go exploring')).toBe(225);
+    expect(tileButtonWidth('Decorate')).toBe(118);
+    expect(tileButtonWidth('Treasure Chest')).toBe(197);
+    expect(tileButtonWidth('Collection Book')).toBe(210);
+    expect(tileButtonWidth('Close')).toBe(78);
+  });
+
+  it('keeps the minimum body and fits the wide label estimate with the pad each side', () => {
+    for (const label of ['Go', 'Go exploring', 'Treasure Chest', 'Collection Book']) {
+      const w = wideButtonWidth(label);
+      const rowW = WIDE_BUTTON.iconPx + WIDE_BUTTON.iconGap + label.length * LABEL_BOLD_EM * WIDE_BUTTON.labelPx;
+      expect(Number.isInteger(w)).toBe(true);
+      expect(w).toBeGreaterThanOrEqual(WIDE_BUTTON.w);
+      expect(w).toBeGreaterThanOrEqual(rowW + 2 * BUTTON_LABEL_PAD);
+    }
+    for (const label of ['Go', 'Decorate', 'Treasure Chest', 'Collection Book', 'Close', 'Back', 'Next']) {
+      const w = tileButtonWidth(label);
+      expect(Number.isInteger(w)).toBe(true);
+      expect(w).toBeGreaterThanOrEqual(TILE_BUTTON.w);
+      expect(w).toBeGreaterThanOrEqual(tileLabelW(label) + 2 * BUTTON_LABEL_PAD);
     }
   });
+});
 
-  it('keeps the primary 64 px tall and every button at least 48 px tall', () => {
-    expect(WIDE_BUTTON.h * hubButtonSize('Go', true)).toBe(64);
-    expect(WIDE_BUTTON.h * hubButtonSize('Go', false)).toBeGreaterThanOrEqual(MIN_TARGET_PX);
+describe('hubButtonLook', () => {
+  it('makes Go exploring a 64 px wide button and the others 64 px square tiles', () => {
+    expect(hubButtonLook({ label: 'Go exploring', primary: true })).toEqual({ shape: 'wide', w: 225, h: 64 });
+    expect(hubButtonLook({ label: 'Decorate', primary: false })).toEqual({ shape: 'square', w: 118, h: 64 });
+    expect(hubButtonLook({ label: 'Treasure Chest', primary: false })).toEqual({ shape: 'square', w: 197, h: 64 });
   });
 
-  it('grows Treasure Chest past the 0.8 size its label overflowed', () => {
-    const chest = HUB_BUTTONS.find((spec) => spec.id === 'treasureChest');
-    expect(chest?.label).toBe('Treasure Chest');
-    expect(hubButtonSize(chest?.label ?? '', false)).toBeGreaterThan(0.8);
+  it('never makes a secondary taller than the primary', () => {
+    const primary = HUB_BUTTONS.find((spec) => spec.primary);
+    const primaryH = hubButtonLook({ label: primary?.label ?? '', primary: true }).h;
+    for (const spec of HUB_BUTTONS.filter((button) => !button.primary)) {
+      expect(hubButtonLook(spec).h).toBeLessThanOrEqual(primaryH);
+    }
   });
 
   it('puts Go exploring first and makes it the only primary', () => {
@@ -313,26 +348,29 @@ describe('hubButtonSize', () => {
 });
 
 describe('hubLayout', () => {
-  it('fits the hub actions at their real sizes on every supported canvas', () => {
-    const problems = supportedCanvases().flatMap((view) => hubProblems(view, HUB_ACTIONS_3));
+  it('fits 3 and 4 actions on every supported canvas', () => {
+    const problems = supportedCanvases().flatMap((view) => [
+      ...hubProblems(view, HUB_ACTIONS_3),
+      ...hubProblems(view, HUB_ACTIONS_4),
+    ]);
     expect(problems).toEqual([]);
   });
 
   it('shows the title only when it fits above the Decorations', () => {
     const wide = { cssW: 1024, cssH: 768 };
     const title = textSize(HUB_TITLE, TITLE_PX, wide.cssW - 2 * UI.margin, BOLD_EM);
-    expect(hubLayout(wide, tankFrame(wide.cssW, wide.cssH), HUB_ACTIONS_3, title).title).not.toBeNull();
+    expect(hubLayout(wide, tankFrame(wide.cssW, wide.cssH), HUB_ACTIONS_4, title).title).not.toBeNull();
     const short = { cssW: 460, cssH: 320 };
-    expect(hubLayout(short, tankFrame(short.cssW, short.cssH), HUB_ACTIONS_3, title).title).toBeNull();
-    expect(hubLayout(wide, tankFrame(wide.cssW, wide.cssH), HUB_ACTIONS_3, null).title).toBeNull();
+    expect(hubLayout(short, tankFrame(short.cssW, short.cssH), HUB_ACTIONS_4, title).title).toBeNull();
+    expect(hubLayout(wide, tankFrame(wide.cssW, wide.cssH), HUB_ACTIONS_4, null).title).toBeNull();
   });
 
   it('keeps action order and sizes', () => {
     const view = { cssW: 460, cssH: 320 };
-    const layout = hubLayout(view, tankFrame(view.cssW, view.cssH), HUB_ACTIONS_3, null);
-    expect(layout.actions.map((placement) => placement.id)).toEqual(HUB_ACTIONS_3.map((action) => action.id));
+    const layout = hubLayout(view, tankFrame(view.cssW, view.cssH), HUB_ACTIONS_4, null);
+    expect(layout.actions.map((placement) => placement.id)).toEqual(HUB_ACTIONS_4.map((action) => action.id));
     const sizes = layout.actions.map((placement) => ({ w: placement.rect.w, h: placement.rect.h }));
-    expect(sizes).toEqual(HUB_ACTIONS_3.map((action) => ({ w: action.w, h: action.h })));
+    expect(sizes).toEqual(HUB_ACTIONS_4.map((action) => ({ w: action.w, h: action.h })));
   });
 });
 
@@ -357,6 +395,13 @@ describe('decorateLayout', () => {
 });
 
 describe('chestLayout', () => {
+  it('sizes every chest button to hold each chest label with the pad each side', () => {
+    expect(CHEST_BUTTON).toEqual({ w: 78, h: TILE_BUTTON.h });
+    for (const label of [PREVIOUS_PAGE_LABEL, CLOSE_LABEL, NEXT_PAGE_LABEL]) {
+      expect(CHEST_BUTTON.w).toBeGreaterThanOrEqual(tileLabelW(label) + 2 * BUTTON_LABEL_PAD);
+    }
+  });
+
   it('fits on every supported canvas with at least two rows per page', () => {
     const problems = supportedCanvases().flatMap(chestProblems);
     expect(problems).toEqual([]);

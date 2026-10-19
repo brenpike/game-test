@@ -13,7 +13,7 @@ import {
   type ChestPage,
   type ChestSection,
 } from '../logic/treasureChest';
-import { UI, chestLayout, nextFocusIndex, rowsPerPage, type ChestLayout, type TankKey } from '../logic/tankUi';
+import { CHEST_BUTTON, UI, chestLayout, nextFocusIndex, rowsPerPage, type ChestLayout, type TankKey } from '../logic/tankUi';
 import { createButton, cssColor, drawPanel, uiTextStyle, type SceneView, type UiButton } from './BootScene';
 import { addTreasureIcon } from './FindPopup';
 
@@ -312,6 +312,7 @@ export class TreasureChestView {
       fill: 'secondary',
       shape: 'square',
       size: 1,
+      width: CHEST_BUTTON.w,
       label,
       icon,
       dpr: this.dpr,

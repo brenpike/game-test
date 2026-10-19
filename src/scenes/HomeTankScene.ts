@@ -14,7 +14,7 @@ import { HOME_TANK_NAME } from '../logic/tankText';
 import {
   HUB_BUTTONS,
   UI,
-  hubButtonSize,
+  hubButtonLook,
   hubLayout,
   nextFocusIndex,
   tankKeyFor,
@@ -255,12 +255,15 @@ export class HomeTankScene extends Phaser.Scene {
     this.hubButtons = HUB_BUTTONS.map((spec) => this.addHubButton(spec));
   }
 
-  /** A wide hub button sized by hubButtonSize() to hold its icon and label. */
-  private addHubButton({ id, label, primary }: HubButtonSpec): HubButton {
+  /** A hub button in the shape and size-1 body width hubButtonLook() gives, to hold its icon and label. */
+  private addHubButton(spec: HubButtonSpec): HubButton {
+    const { id, label, primary } = spec;
+    const look = hubButtonLook(spec);
     const button = createButton(this, this.assets.baked, {
       fill: primary ? 'primary' : 'secondary',
-      shape: 'wide',
-      size: hubButtonSize(label, primary),
+      shape: look.shape,
+      size: 1,
+      width: look.w,
       label,
       icon: HUB_ICONS[id],
       dpr: this.view.fit.dpr,
