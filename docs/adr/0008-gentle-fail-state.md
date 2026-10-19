@@ -1,9 +1,8 @@
 # ADR 0008: Gentle fail state: lose a leg, regrow it, never lose banked progress
 
-- Status: Accepted
+- Status: Accepted. The "Losing the fourth leg" rule is amended by [ADR 0010](0010-carried-home-full-reset.md) (being carried home is a full trip reset).
 - Date: 2026-10-18
 - Amends: [ADR 0007](0007-kid-safety-and-privacy.md) (replaces only its "No harsh fail states" play rule; every other ADR 0007 rule stays in force)
-- Updated: 2026-10-18. Being carried home now also starts the area's snacks over (product owner decision, issue #31; [PRD](../prds/axolotl-mvp.md) A12 and A19). Snacks are not trip finds and not banked progress, so the guarantee that banked progress is never lost is unchanged.
 
 ## Context
 
@@ -22,7 +21,7 @@ The product owner asked for this: hits lose limbs that slowly regrow; losing all
 - After a hit there is brief protected time with no second hit. Its cue is steady and non-flashing (see [`docs/art-style-guide.md`](../art-style-guide.md)).
 - Fewer legs means slower, wobblier swimming, but the axolotl can always beat currents and swim home.
 - Every lunge is telegraphed (glint and wind-up) and followed by a cooldown, so hits are avoidable.
-- Losing the fourth leg: the axolotl is carried home to the Home Tank in a gentle transition and arrives with four legs. Only unbanked trip finds (treasures and any rescue made this trip) are lost, and they return to the canal to be found again. Every snack eaten comes back too, so the snacks start over. Snacks are not trip finds or banked progress.
+- Losing the fourth leg: the axolotl is carried home to the Home Tank in a gentle transition and arrives with four legs. Only unbanked trip finds (treasures and any rescue made this trip) are lost, and they return to their hiding spots to be found again. Amended by [ADR 0010](0010-carried-home-full-reset.md).
 - Banked treasures, rescued axolotls already home, tank layout, outfits and Collection Book unlocks are never lost to gameplay. Only an explicit, confirmed "Start over" erases them.
 - No lives counter, no game over, no punishing timers. The UI never says die, dead, killed or game over.
 - Retained from ADR 0007: challenges stay optional and missing one never costs progress; reduced motion is respected; content is never scary or gory; regeneration is shown with sparkles.
