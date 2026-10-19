@@ -44,7 +44,8 @@ export type IconKind =
   | 'left'
   | 'right'
   | 'check'
-  | 'putAway';
+  | 'putAway'
+  | 'book';
 
 /**
  * House icon (guide 7d), shared by the Home Spot flag and every "go home" UI.
@@ -353,6 +354,33 @@ export function paintIcon(ctx: CanvasRenderingContext2D, kind: IconKind, size: n
       arrow.lineTo(16, 20.5);
       arrow.lineTo(22, 14);
       ctx.stroke(arrow);
+      break;
+    }
+    case 'book': {
+      // Collection Book: an open book, two rounded pages from a centre spine
+      // at x 16, tops curving from y 8 (spine) to y 10 (outer), one text line each. Ink only.
+      ctx.lineWidth = 3;
+      const book = new Path2D();
+      // left page
+      book.moveTo(16, 8);
+      book.quadraticCurveTo(10, 6.5, 5.5, 10);
+      book.lineTo(5.5, 23);
+      book.quadraticCurveTo(5.5, 25, 7.5, 25);
+      book.lineTo(16, 25);
+      book.closePath();
+      // right page, mirrored about the spine
+      book.moveTo(16, 8);
+      book.quadraticCurveTo(22, 6.5, 26.5, 10);
+      book.lineTo(26.5, 23);
+      book.quadraticCurveTo(26.5, 25, 24.5, 25);
+      book.lineTo(16, 25);
+      book.closePath();
+      // one text line per page
+      book.moveTo(9.5, 15.5);
+      book.lineTo(12.5, 15.5);
+      book.moveTo(19.5, 15.5);
+      book.lineTo(22.5, 15.5);
+      ctx.stroke(book);
       break;
     }
   }

@@ -63,11 +63,8 @@ function hubAction(id: string, label: string, primary: boolean): HubAction {
   return { id, w, h };
 }
 
-/** The hub actions the scene shows: Go exploring (primary), Decorate and Treasure Chest. */
-const HUB_ACTIONS_3: readonly HubAction[] = HUB_BUTTONS.map(({ id, label, primary }) => hubAction(id, label, primary));
-
-/** The hub with the Collection Book entry (#13) added as a fourth, secondary action. */
-const HUB_ACTIONS_4: readonly HubAction[] = [...HUB_ACTIONS_3, hubAction('collectionBook', 'Collection Book', false)];
+/** The hub actions the scene shows: Go exploring (primary), Decorate, Treasure Chest and Collection Book. */
+const HUB_ACTIONS: readonly HubAction[] = HUB_BUTTONS.map(({ id, label, primary }) => hubAction(id, label, primary));
 
 /** Wide label width estimate of a size-1 tile labelled `label`. */
 function tileLabelW(label: string): number {
@@ -331,6 +328,13 @@ describe('hubButtonLook', () => {
     expect(hubButtonLook({ label: 'Go exploring', primary: true })).toEqual({ shape: 'wide', w: 225, h: 64 });
     expect(hubButtonLook({ label: 'Decorate', primary: false })).toEqual({ shape: 'square', w: 118, h: 64 });
     expect(hubButtonLook({ label: 'Treasure Chest', primary: false })).toEqual({ shape: 'square', w: 197, h: 64 });
+    expect(hubButtonLook({ label: 'Collection Book', primary: false })).toEqual({ shape: 'square', w: 210, h: 64 });
+  });
+
+  it('makes the Collection Book hub entry a 210 x 64 secondary tile', () => {
+    const book = HUB_BUTTONS.find((spec) => spec.id === 'collectionBook');
+    expect(book).toEqual({ id: 'collectionBook', label: 'Collection Book', primary: false });
+    expect(hubButtonLook(book ?? { label: '', primary: true })).toEqual({ shape: 'square', w: 210, h: 64 });
   });
 
   it('never makes a secondary taller than the primary', () => {
@@ -342,35 +346,33 @@ describe('hubButtonLook', () => {
   });
 
   it('puts Go exploring first and makes it the only primary', () => {
-    expect(HUB_BUTTONS.map((spec) => spec.id)).toEqual(['goExploring', 'decorate', 'treasureChest']);
+    expect(HUB_BUTTONS.map((spec) => spec.id)).toEqual(['goExploring', 'decorate', 'treasureChest', 'collectionBook']);
     expect(HUB_BUTTONS.filter((spec) => spec.primary).map((spec) => spec.id)).toEqual(['goExploring']);
   });
 });
 
 describe('hubLayout', () => {
-  it('fits 3 and 4 actions on every supported canvas', () => {
-    const problems = supportedCanvases().flatMap((view) => [
-      ...hubProblems(view, HUB_ACTIONS_3),
-      ...hubProblems(view, HUB_ACTIONS_4),
-    ]);
+  it('fits every hub action on every supported canvas', () => {
+    expect(HUB_ACTIONS).toHaveLength(4);
+    const problems = supportedCanvases().flatMap((view) => hubProblems(view, HUB_ACTIONS));
     expect(problems).toEqual([]);
   });
 
   it('shows the title only when it fits above the Decorations', () => {
     const wide = { cssW: 1024, cssH: 768 };
     const title = textSize(HUB_TITLE, TITLE_PX, wide.cssW - 2 * UI.margin, BOLD_EM);
-    expect(hubLayout(wide, tankFrame(wide.cssW, wide.cssH), HUB_ACTIONS_4, title).title).not.toBeNull();
+    expect(hubLayout(wide, tankFrame(wide.cssW, wide.cssH), HUB_ACTIONS, title).title).not.toBeNull();
     const short = { cssW: 460, cssH: 320 };
-    expect(hubLayout(short, tankFrame(short.cssW, short.cssH), HUB_ACTIONS_4, title).title).toBeNull();
-    expect(hubLayout(wide, tankFrame(wide.cssW, wide.cssH), HUB_ACTIONS_4, null).title).toBeNull();
+    expect(hubLayout(short, tankFrame(short.cssW, short.cssH), HUB_ACTIONS, title).title).toBeNull();
+    expect(hubLayout(wide, tankFrame(wide.cssW, wide.cssH), HUB_ACTIONS, null).title).toBeNull();
   });
 
   it('keeps action order and sizes', () => {
     const view = { cssW: 460, cssH: 320 };
-    const layout = hubLayout(view, tankFrame(view.cssW, view.cssH), HUB_ACTIONS_4, null);
-    expect(layout.actions.map((placement) => placement.id)).toEqual(HUB_ACTIONS_4.map((action) => action.id));
+    const layout = hubLayout(view, tankFrame(view.cssW, view.cssH), HUB_ACTIONS, null);
+    expect(layout.actions.map((placement) => placement.id)).toEqual(HUB_ACTIONS.map((action) => action.id));
     const sizes = layout.actions.map((placement) => ({ w: placement.rect.w, h: placement.rect.h }));
-    expect(sizes).toEqual(HUB_ACTIONS_4.map((action) => ({ w: action.w, h: action.h })));
+    expect(sizes).toEqual(HUB_ACTIONS.map((action) => ({ w: action.w, h: action.h })));
   });
 });
 

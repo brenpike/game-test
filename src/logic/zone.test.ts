@@ -7,6 +7,7 @@ import {
   BED_TOP,
   CANAL_AREA_ID,
   SPOT_MIN_SPACING,
+  STRANDING_PLACES,
   SURF,
   WORLD_H,
   ZONE_SCREENS,
@@ -19,6 +20,7 @@ import {
   type HidingSpot,
   type Point,
   type SafeArea,
+  type StrandingPlace,
   type TilapiaRoute,
   type ZoneLayout,
 } from './zone';
@@ -39,6 +41,13 @@ const FIXED_SPOTS: readonly HidingSpot[] = [
   { id: 'canal/spot-current-5', cover: 'pastCurrent', rarity: 'epic', container: false, x: 1190, y: 278 },
   { id: 'canal/spot-current-6', cover: 'pastCurrent', rarity: 'legendary', container: true, x: 1260, y: 278 },
 ];
+const STRANDING_SNAPSHOT: readonly StrandingPlace[] = [
+  { id: 'canal/strand-1', x: 320, y: 110 },
+  { id: 'canal/strand-2', x: 880, y: 292 },
+  { id: 'canal/strand-3', x: 1440, y: 140 },
+  { id: 'canal/strand-4', x: 1860, y: 260 },
+];
+const STRANDING_ROUTE_CLEARANCE = 80;
 
 function expectZoneInvariants(zone: ZoneLayout): void {
   const bounds = swimBounds();
@@ -477,5 +486,69 @@ describe('hiding spots', () => {
     ]);
     expect(SPOT_MIN_SPACING).toBe(56);
     expect(zone.spots.slice(0, 12)).toEqual(FIXED_SPOTS);
+  });
+});
+
+describe('stranding places', () => {
+  it.each(ALL_SEEDS)('uses unique canal/strand- ids that equal the fixed snapshot for seed %i', (seed) => {
+    const places = buildCanalZone(seed).strandingPlaces;
+    const ids = places.map((place) => place.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) {
+      expect(id.startsWith('canal/strand-')).toBe(true);
+    }
+    expect(places).toEqual(STRANDING_SNAPSHOT);
+  });
+
+  it('is fixed area data: seed 7 equals the default seed and the constant', () => {
+    expect(buildCanalZone(7).strandingPlaces).toEqual(buildCanalZone().strandingPlaces);
+    expect(STRANDING_PLACES).toEqual(STRANDING_SNAPSHOT);
+    expect(Object.isFrozen(STRANDING_PLACES)).toBe(true);
+  });
+
+  it('returns a copy, so editing a layout never changes the constant', () => {
+    const zone = buildCanalZone();
+    zone.strandingPlaces[0].x = 0;
+    expect(buildCanalZone().strandingPlaces).toEqual(STRANDING_SNAPSHOT);
+  });
+
+  // Reachability with 1 to 4 legs (A9) is covered by the legs.test current tests: every place is
+  // outside every current zone, and those tests show any leg count beats every canal current.
+  it('keeps every place in the water, out of the safe area, clear of the ring, currents and cave', () => {
+    const zone = buildCanalZone();
+    const bounds = swimBounds();
+    const home = zone.homeSpot;
+    for (const place of zone.strandingPlaces) {
+      expect(place.x).toBeGreaterThanOrEqual(bounds.minX);
+      expect(place.x).toBeLessThanOrEqual(bounds.maxX);
+      expect(place.y).toBeGreaterThanOrEqual(bounds.minY);
+      expect(place.y).toBeLessThanOrEqual(bounds.maxY);
+      expect(inSafeArea(place, zone.safeArea)).toBe(false);
+      expect(Math.hypot(place.x - home.x, place.y - home.y)).toBeGreaterThanOrEqual(home.radius + FINDS.pickupRadius + 8);
+      for (const current of zone.currents) {
+        expect(isInsideCurrent(place, current)).toBe(false);
+      }
+      expect(distanceToArea(place, zone.cave)).toBeGreaterThan(0);
+    }
+  });
+
+  it('keeps every place at least SPOT_MIN_SPACING from every hiding spot of the default seed', () => {
+    const zone = buildCanalZone();
+    for (const place of zone.strandingPlaces) {
+      for (const spot of zone.spots) {
+        expect(Math.hypot(place.x - spot.x, place.y - spot.y)).toBeGreaterThanOrEqual(SPOT_MIN_SPACING);
+      }
+    }
+  });
+
+  it('keeps every place at least 80 px from every tilapia route segment', () => {
+    const zone = buildCanalZone();
+    for (const place of zone.strandingPlaces) {
+      for (const route of zone.tilapiaRoutes) {
+        for (const [a, b] of loopSegments(route.waypoints)) {
+          expect(distanceToSegment(place, a, b)).toBeGreaterThanOrEqual(STRANDING_ROUTE_CLEARANCE);
+        }
+      }
+    }
   });
 });

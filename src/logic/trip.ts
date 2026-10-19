@@ -9,8 +9,20 @@ import {
   type EncounterSource,
   type EncounterState,
 } from './encounter';
+import { meetsTilapia } from './factCards';
 import { createLegs, isProtected, presentCount, quantizeProgress, type LegsState } from './legs';
+import { isAxolotlFindId, type RealMorphId } from './morphs';
 import { DEFAULT_TRIP_SEED, nextTripSeed, placeTreasures, type PlacedFind } from './placement';
+import {
+  createRescue,
+  reachesRescue,
+  rescueStatus,
+  sendRescueBack,
+  stepFollower,
+  stepToRest,
+  type RescueState,
+  type Stranding,
+} from './rescue';
 import {
   bankAll,
   createHoldings,
@@ -20,7 +32,7 @@ import {
   type FindId,
   type Holdings,
 } from './tripBag';
-import type { FoundInfo, LegsSnapshot, TripEnding, TripPhase, TripSnapshot } from './tripEvents';
+import type { FoundInfo, LegsSnapshot, RescueSnapshot, TripEnding, TripPhase, TripSnapshot } from './tripEvents';
 import { CARRY, FINDS, LEGS, SWIM, type CarryTuning, type FindTuning, type LegTuning } from './tuning';
 import type { Vec2 } from './vec';
 import {
@@ -66,7 +78,9 @@ export interface CarryState {
  * inside the Home Spot ring on the latest swimming step. `bankedThisTrip` is every find id banked
  * during this trip and `justBanked` the ids of the latest banking (empty once the player keeps
  * exploring). `heldAt` is where the axolotl is held while 'banked', else null. `ending` is set only
- * in 'ended'.
+ * in 'ended'. `rescue` is this trip's stranded axolotl, or null when there is none; once reached its
+ * id is a Trip Bag find like any other. `tilapiaCardSeen` is whether the tilapia fact card was
+ * already seen before this trip, and `metTilapia` whether the axolotl met a tilapia this trip.
  */
 export interface TripState {
   phase: TripPhase;
@@ -86,6 +100,18 @@ export interface TripState {
   justBanked: FindId[];
   heldAt: Point | null;
   ending: TripEnding | null;
+  rescue: RescueState | null;
+  tilapiaCardSeen: boolean;
+  metTilapia: boolean;
+}
+
+/**
+ * Optional trip start data: this trip's stranded axolotl (none by default) and whether the tilapia
+ * fact card was already seen (false by default).
+ */
+export interface TripOptions {
+  stranding?: Stranding | null;
+  tilapiaCardSeen?: boolean;
 }
 
 /** Encounter context, carry tuning and find tuning for a trip step. */
@@ -110,14 +136,16 @@ export interface TripInput {
  * except `carriedHome`, which the trip replaces with `carryStart` and `arrivedHome`.
  * `containerBroken` is a Tail Dash breaking the Dash pot at `spotId`; `dashNeeded` is the axolotl
  * starting to touch a sealed pot without dashing. `pickedUp` is one treasure going into the Trip
- * Bag, with its pop-up data. `at` is the spot position. `banked` is the ids moved from the bag to
- * banked, in bag order. `arrivedHome.returned` is the Trip Bag ids sent back to the world.
+ * Bag, with its pop-up data. `at` is the spot position. `rescued` is the stranded axolotl going into
+ * the Trip Bag, with `at` its position; it carries no pop-up data. `banked` is the ids moved from the
+ * bag to banked, in bag order. `arrivedHome.returned` is the Trip Bag ids sent back to the world.
  */
 export type TripEvent =
   | Exclude<EncounterEvent, { type: 'carriedHome' }>
   | { type: 'containerBroken'; id: FindId; spotId: string; at: Point }
   | { type: 'dashNeeded'; id: FindId; spotId: string; at: Point }
   | { type: 'pickedUp'; id: FindId; spotId: string; at: Point; found: FoundInfo }
+  | { type: 'rescued'; id: FindId; morph: RealMorphId; at: Point }
   | { type: 'banked'; ids: FindId[] }
   | { type: 'carryStart'; from: Point; still: boolean }
   | { type: 'arrivedHome'; still: boolean; returned: FindId[] };
@@ -142,13 +170,15 @@ export function createTripContext(overrides: Partial<TripContext> = {}): TripCon
 /**
  * Starts a trip: swimming from the Home Spot with a fresh encounter, an empty Trip Bag and the
  * given `banked` find ids (de-duplicated). Every unbanked find is placed in a spot from its pool
- * picked by `tripSeed`, with every Dash pot sealed. Throws when a pool cannot be placed.
+ * picked by `tripSeed`, with every Dash pot sealed. `options.stranding` sets this trip's stranded
+ * axolotl, waiting at its place; it never changes the placement. Throws when a pool cannot be placed.
  */
 export function createTrip(
   source: TripSource,
   legTuning: Pick<LegTuning, 'count'> = LEGS,
   banked: readonly FindId[] = [],
   tripSeed: number = DEFAULT_TRIP_SEED,
+  options: TripOptions = {},
 ): TripState {
   const holdings = createHoldings(banked);
   return {
@@ -169,6 +199,9 @@ export function createTrip(
     justBanked: [],
     heldAt: null,
     ending: null,
+    rescue: options.stranding ? createRescue(options.stranding) : null,
+    tilapiaCardSeen: options.tilapiaCardSeen ?? false,
+    metTilapia: false,
   };
 }
 
@@ -176,8 +209,9 @@ export function createTrip(
  * Starts the next trip from an ended one, with the same Home Spot, routes, finds, spots, leg count
  * and banked finds, an empty Trip Bag and nothing found. Every unbanked treasure, including ones
  * returned when carried home, gets a fresh pick from its pool by `tripSeed` (default: the seed
- * after this trip's), and every Dash pot is sealed again. Any other phase returns the input state
- * unchanged.
+ * after this trip's), and every Dash pot is sealed again. It passes no trip options, so the new
+ * trip has no stranded axolotl and the tilapia card counts as unseen. Any other phase returns the
+ * input state unchanged.
  */
 export function newTrip(state: TripState, tripSeed: number = nextTripSeed(state.tripSeed)): TripState {
   if (state.phase !== 'ended') return state;
@@ -196,6 +230,15 @@ export function newTrip(state: TripState, tripSeed: number = nextTripSeed(state.
 export function keepExploring(state: TripState): TripState {
   if (state.phase !== 'banked') return state;
   return { ...state, phase: 'swimming', justBanked: [], heldAt: null };
+}
+
+/**
+ * The trip with the tilapia fact card seen, so it is no longer due (the player closed it). Every
+ * other field is unchanged; an already-seen trip is returned as is.
+ */
+export function markTilapiaCardSeen(state: TripState): TripState {
+  if (state.tilapiaCardSeen) return state;
+  return { ...state, tilapiaCardSeen: true };
 }
 
 /**
@@ -252,6 +295,11 @@ export function eatSnacks(
  * break and its pickup can happen in one step. Then `inHomeSpot` updates, and inside the ring with
  * a non-empty bag the whole bag banks: `banked` is emitted, the phase becomes 'banked', the
  * axolotl is held where it is and any bump impulse is dropped.
+ * Before the banking check, a waiting stranded axolotl within reach goes into the Trip Bag and
+ * onto `found` (`rescued`); a following one swims behind the axolotl and a safe one swims to its
+ * rest point by the Home Spot. It is never part of the encounter, so it cannot be hit. The first
+ * step where the axolotl meets a tilapia sets `metTilapia`. When the carry starts, a following
+ * stranded axolotl goes back to its place.
  * Carrying: the encounter is not stepped, so legs stay frozen, and nothing is picked up; on
  * arrival `arrivedHome` is emitted and the phase becomes 'ended'.
  */
@@ -301,17 +349,23 @@ export function foundInfos(ids: readonly FindId[]): FoundInfo[] {
   return ids.flatMap((id) => (treasureById(id) === undefined ? [] : [foundInfo(id)]));
 }
 
-/** Trip display state: the phase, the quantized legs display state, the finds and the ending. */
+/**
+ * Trip display state: the phase, the quantized legs display state, the finds, the ending, the
+ * stranded axolotl and whether the tilapia fact card is due. `banked` counts banked treasures only,
+ * not rescued axolotls; `bag` includes a following axolotl.
+ */
 export function tripSnapshot(state: TripState): TripSnapshot {
   return {
     phase: state.phase,
     legs: legsSnapshot(state.encounter.legs),
     bag: [...state.holdings.bag],
-    banked: state.holdings.banked.length,
+    banked: state.holdings.banked.filter((id) => !isAxolotlFindId(id)).length,
     inHomeSpot: state.inHomeSpot,
     justBanked: [...state.justBanked],
     found: foundInfos(state.found),
     ending: state.ending ? copyEnding(state.ending) : null,
+    rescue: state.rescue ? rescueSnapshot(state.rescue, state) : null,
+    tilapiaCardDue: state.metTilapia && !state.tilapiaCardSeen,
   };
 }
 
@@ -329,6 +383,8 @@ export function idleTripSnapshot(): TripSnapshot {
     justBanked: [],
     found: [],
     ending: null,
+    rescue: null,
+    tilapiaCardDue: false,
   };
 }
 
@@ -342,8 +398,19 @@ export function sameTripSnapshot(a: TripSnapshot, b: TripSnapshot): boolean {
     a.inHomeSpot === b.inHomeSpot &&
     sameIds(a.justBanked, b.justBanked) &&
     sameIds(foundIds(a.found), foundIds(b.found)) &&
-    sameEnding(a.ending, b.ending)
+    sameEnding(a.ending, b.ending) &&
+    sameRescue(a.rescue, b.rescue) &&
+    a.tilapiaCardDue === b.tilapiaCardDue
   );
+}
+
+function sameRescue(a: RescueSnapshot | null, b: RescueSnapshot | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.id === b.id && a.morph === b.morph && a.status === b.status;
+}
+
+function rescueSnapshot(rescue: RescueState, state: TripState): RescueSnapshot {
+  return { id: rescue.id, morph: rescue.morph, status: rescueStatus(rescue, state.holdings, state.phase) };
 }
 
 function sameIds(a: readonly string[], b: readonly string[]): boolean {
@@ -382,12 +449,23 @@ function stepSwimming(state: TripState, input: TripInput, step: number, ctx: Tri
   if (result.state.tripOver) {
     const carry = startCarry(input.axolotlPos, state.home, input.reduced, ctx.carry);
     events.push({ type: 'carryStart', from: { x: carry.from.x, y: carry.from.y }, still: carry.still });
-    return { state: { ...state, phase: 'carrying', encounter: result.state, carry }, events };
+    const rescue = rescueAtCarryStart(state);
+    return { state: { ...state, phase: 'carrying', encounter: result.state, carry, rescue }, events };
   }
   const pots = touchPots(state, input, ctx.finds, events);
   const pickup = pickUpNearby({ ...state, ...pots }, input.axolotlPos, ctx.finds, events);
+  const rescued = stepRescue({ ...state, ...pickup }, input.axolotlPos, step, events);
+  const metTilapia =
+    state.metTilapia || meetsTilapia(input.axolotlPos, result.state.tilapias, result.state.safeArea);
   const inside = isInHomeSpot(input.axolotlPos, state.homeSpot);
-  const next: TripState = { ...state, ...pots, ...pickup, encounter: result.state, inHomeSpot: inside };
+  const next: TripState = {
+    ...state,
+    ...pots,
+    ...rescued,
+    encounter: result.state,
+    inHomeSpot: inside,
+    metTilapia,
+  };
   if (inside && next.holdings.bag.length > 0) return bankAtHomeSpot(next, input.axolotlPos, events);
   if (result.impulse) return { state: next, events, impulse: result.impulse };
   return { state: next, events };
@@ -444,6 +522,49 @@ function pickUpNearby(
     events.push({ type: 'pickedUp', id: find.id, spotId: find.spotId, at, found: foundInfo(find.id) });
   }
   return { holdings, found };
+}
+
+/**
+ * Rescues a stranded axolotl within reach of `pos` (`reachRescue`), then moves it: behind `pos`
+ * while following, toward its rest point by the Home Spot centre while safe.
+ */
+function stepRescue(
+  state: TripState,
+  pos: Point,
+  step: number,
+  events: TripEvent[],
+): Pick<TripState, 'holdings' | 'found' | 'rescue'> {
+  const reached = reachRescue(state, pos, events);
+  const { rescue } = reached;
+  if (!rescue) return reached;
+  const status = rescueStatus(rescue, reached.holdings, state.phase);
+  if (status === 'following') return { ...reached, rescue: stepFollower(rescue, pos, step) };
+  if (status === 'safe') return { ...reached, rescue: stepToRest(rescue, state.homeSpot, step) };
+  return reached;
+}
+
+/**
+ * Puts a waiting stranded axolotl within reach of `pos` into the Trip Bag and onto `found`, marked
+ * met, pushing `rescued`. Otherwise returns the state's own holdings, found and rescue.
+ */
+function reachRescue(
+  state: TripState,
+  pos: Point,
+  events: TripEvent[],
+): Pick<TripState, 'holdings' | 'found' | 'rescue'> {
+  const { holdings, found, rescue } = state;
+  if (!rescue || rescueStatus(rescue, holdings, state.phase) !== 'waiting' || !reachesRescue(rescue, pos)) {
+    return { holdings, found, rescue };
+  }
+  events.push({ type: 'rescued', id: rescue.id, morph: rescue.morph, at: { x: rescue.pos.x, y: rescue.pos.y } });
+  return { holdings: pickUp(holdings, rescue.id), found: [...found, rescue.id], rescue: { ...rescue, met: true } };
+}
+
+/** The stranded axolotl as the carry starts: a following one goes back to its place (C5). */
+function rescueAtCarryStart(state: TripState): RescueState | null {
+  const { rescue } = state;
+  if (!rescue || rescueStatus(rescue, state.holdings, state.phase) !== 'following') return rescue;
+  return sendRescueBack(rescue);
 }
 
 function distanceTo(from: Point, to: Point): number {

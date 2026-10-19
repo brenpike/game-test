@@ -1,12 +1,21 @@
 import * as Phaser from 'phaser';
 import { AXO_SCENE_SCALE, type AxolotlPose } from '../art/drawAxolotl';
 import { DEPTH } from '../art/layers';
-import { HOME_TANK_WALL, SURFACE_LINE, SURFACE_LINE_WIDTH, T_STATIC, UI_PANEL } from '../art/palette';
+import {
+  HOME_TANK_WALL,
+  MORPH_PALETTES,
+  SURFACE_LINE,
+  SURFACE_LINE_WIDTH,
+  T_STATIC,
+  UI_PANEL,
+  type MorphPalette,
+} from '../art/palette';
 import type { IconKind } from '../art/drawUi';
 import { createAxolotlTexture, type AxolotlTexture, type TexInfo } from '../art/textures';
 import { GAME_EVENTS, REGISTRY_KEYS, type ReducedMotionPayload } from '../logic/gameEvents';
 import type { Size } from '../logic/hudLayout';
 import { motionProfile, type MotionProfile } from '../logic/motion';
+import { NO_REPAINT, pickSecondaryRepaint } from '../logic/repaintBudget';
 import { setTankLayout, type Session } from '../logic/session';
 import { TANK, tankFrame, tankToCss, type TankFrame, type TankLayout } from '../logic/tank';
 import { tankSwimPose } from '../logic/tankSwim';
@@ -38,6 +47,7 @@ import {
   type SceneView,
   type UiButton,
 } from './BootScene';
+import { CollectionBookView } from './CollectionBookView';
 import { settleMotionTweens } from './motionTweens';
 import { goExploring, readSession, writeSession, type HomeTankStart } from './sceneFlow';
 import { TankArrivalCard } from './TankArrivalCard';
@@ -65,12 +75,13 @@ const HUB_ICONS: Readonly<Record<HubActionId, IconKind>> = Object.freeze({
   goExploring: 'play',
   decorate: 'decorate',
   treasureChest: 'chest',
+  collectionBook: 'book',
 });
 
 /**
  * Home Tank draw order (art guide 7f): back layer (wall to gravel), placed Decorations, glass shine,
  * axolotls, surface line, tank outline and lid front, hub UI and the decorate toolbar, the Treasure
- * Chest, then the tank arrival card on top.
+ * Chest and the Collection Book (never open together), then the tank arrival card on top.
  */
 const TANK_DEPTH = Object.freeze({
   back: DEPTH.bg,
@@ -81,14 +92,15 @@ const TANK_DEPTH = Object.freeze({
   front: DEPTH.fx,
   hub: DEPTH.ui,
   chest: DEPTH.ui + 8,
+  book: DEPTH.ui + 8,
   arrival: DEPTH.ui + 9,
 });
 
 /**
  * What the Home Tank is showing and where keys go, in priority order: the tank arrival card, the
- * Treasure Chest, decorate mode, or the hub.
+ * Treasure Chest, the Collection Book, decorate mode, or the hub.
  */
-type TankMode = 'arrival' | 'chest' | 'decorate' | 'hub';
+type TankMode = 'arrival' | 'chest' | 'book' | 'decorate' | 'hub';
 
 /** One hub action button. */
 interface HubButton {
@@ -96,12 +108,15 @@ interface HubButton {
   button: UiButton;
 }
 
-/** One owned axolotl swimming in the tank, with its own texture and pose cache. */
+/** One owned axolotl swimming in the tank, with its own texture, morph colours and pose cache. */
 interface TankSwimmer {
   id: string;
   texture: AxolotlTexture;
+  palette: MorphPalette;
   image: Phaser.GameObjects.Image;
   lastPose: AxolotlPose | null;
+  /** This frame's pose for an axolotl after the first, painted when the shared repaint budget picks it. */
+  wanted?: AxolotlPose;
   /** Seconds since the last repaint, for the low frame rate repaint cap. */
   redrawAcc: number;
 }
@@ -120,9 +135,9 @@ function placeTankLayer(image: Phaser.GameObjects.Image, info: TexInfo, frame: T
 
 /**
  * The Home Tank hub (PRD C7, C8): the tank on the wall, every owned axolotl swimming on its own
- * (still poses under reduced motion), the animated surface line, and the hub actions Go exploring,
- * Treasure Chest and Decorate, by touch and by keyboard. After a trip the tank arrival card shows
- * first and takes every key and press until it closes.
+ * in its morph's colours (still poses under reduced motion), the animated surface line, and the hub
+ * actions Go exploring, Decorate, Treasure Chest and Collection Book, by touch and by keyboard.
+ * After a trip the tank arrival card shows first and takes every key and press until it closes.
  */
 export class HomeTankScene extends Phaser.Scene {
   private assets!: GameAssets;
@@ -142,6 +157,8 @@ export class HomeTankScene extends Phaser.Scene {
   private surface!: Phaser.GameObjects.Graphics;
   private surfaceLine = { color: 0, alpha: 1 };
   private swimmers: TankSwimmer[] = [];
+  /** Repaint budget waits for the axolotls after the first, one per axolotl; reused every frame. */
+  private readonly rescuedWaits: number[] = [];
 
   private titlePanel!: Phaser.GameObjects.Graphics;
   private titleText!: Phaser.GameObjects.Text;
@@ -149,6 +166,7 @@ export class HomeTankScene extends Phaser.Scene {
   private titleFits = false;
   private decorator!: TankDecorator;
   private chest!: TreasureChestView;
+  private book!: CollectionBookView;
   private arrivalCard!: TankArrivalCard;
 
   constructor() {
@@ -185,6 +203,13 @@ export class HomeTankScene extends Phaser.Scene {
       this.view,
       TANK_DEPTH.chest,
       () => this.closeChest(),
+    );
+    this.book = new CollectionBookView(
+      this,
+      { baked: this.assets.baked, morph: this.assets.morph, treasure: this.assets.treasure },
+      this.view,
+      TANK_DEPTH.book,
+      () => this.closeBook(),
     );
     this.arrivalCard = new TankArrivalCard(
       this,
@@ -238,7 +263,10 @@ export class HomeTankScene extends Phaser.Scene {
     );
   }
 
-  /** One swimmer per owned axolotl, each with its own texture so their poses never share a frame. */
+  /**
+   * One swimmer per owned axolotl in its morph's colours, each with its own texture so their poses
+   * never share a frame.
+   */
   private buildSwimmers(): void {
     const bakeScale = this.assets.axolotl.scale;
     this.swimmers = this.session.hub.axolotls.map((axolotl): TankSwimmer => {
@@ -247,7 +275,7 @@ export class HomeTankScene extends Phaser.Scene {
         .image(0, 0, texture.key)
         .setOrigin(texture.info.originNormX, texture.info.originNormY)
         .setDepth(TANK_DEPTH.axolotls);
-      return { id: axolotl.id, texture, image, lastPose: null, redrawAcc: 0 };
+      return { id: axolotl.id, texture, palette: MORPH_PALETTES[axolotl.morph], image, lastPose: null, redrawAcc: 0 };
     });
   }
 
@@ -307,8 +335,8 @@ export class HomeTankScene extends Phaser.Scene {
     this.refreshHubFocus();
   }
 
-  /** Leaves the hub for the Treasure Chest or decorate mode: its buttons and name panel hide. */
-  private leaveHub(mode: 'chest' | 'decorate'): void {
+  /** Leaves the hub for the Treasure Chest, the Collection Book or decorate mode: its buttons and name panel hide. */
+  private leaveHub(mode: 'chest' | 'book' | 'decorate'): void {
     this.mode = mode;
     this.applyHubVisibility();
     this.refreshHubFocus();
@@ -334,6 +362,9 @@ export class HomeTankScene extends Phaser.Scene {
       case 'decorate':
         this.startDecorating();
         return;
+      case 'collectionBook':
+        this.openBook();
+        return;
     }
   }
 
@@ -353,6 +384,17 @@ export class HomeTankScene extends Phaser.Scene {
   /** The Treasure Chest closed: back to the hub with Treasure Chest focused. */
   private closeChest(): void {
     this.showHub(this.hubIndexOf('treasureChest'));
+  }
+
+  /** Opens the Collection Book over the hub (PRD C12, C14) with the found morphs and the tilapia card. */
+  private openBook(): void {
+    this.leaveHub('book');
+    this.book.open(this.session.hub.book.foundMorphs, this.session.hub.book.tilapiaCard);
+  }
+
+  /** The Collection Book closed: back to the hub with Collection Book focused. */
+  private closeBook(): void {
+    this.showHub(this.hubIndexOf('collectionBook'));
   }
 
   /** Starts decorate mode (PRD C9); the hub hides while the decorate toolbar shows. */
@@ -376,8 +418,8 @@ export class HomeTankScene extends Phaser.Scene {
   // ---- input ---------------------------------------------------------------
 
   /**
-   * Routes a key to what has the input: the arrival card, the Treasure Chest, decorate mode, or the
-   * hub. Unmapped keys are ignored, and so is a held confirm outside the hub.
+   * Routes a key to what has the input: the arrival card, the Treasure Chest, the Collection Book,
+   * decorate mode, or the hub. Unmapped keys are ignored, and so is a held confirm outside the hub.
    */
   private handleKeyDown(event: KeyboardEvent): void {
     const action = tankKeyFor(event.key, event.shiftKey);
@@ -388,6 +430,9 @@ export class HomeTankScene extends Phaser.Scene {
         return;
       case 'chest':
         if (action !== 'confirm' || !event.repeat) this.chest.handleKey(action);
+        return;
+      case 'book':
+        if (action !== 'confirm' || !event.repeat) this.book.handleKey(action);
         return;
       case 'decorate':
         if (action !== 'confirm' || !event.repeat) this.decorator.handleKey(action);
@@ -441,6 +486,7 @@ export class HomeTankScene extends Phaser.Scene {
     }
     this.decorator.setResolution(dpr);
     this.chest.setResolution(dpr);
+    this.book.setResolution(dpr);
     this.arrivalCard.setResolution(dpr);
     this.layout();
     this.animate(0);
@@ -451,15 +497,33 @@ export class HomeTankScene extends Phaser.Scene {
     this.game.events.off(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
     this.decorator.destroy();
     this.chest.destroy();
+    this.book.destroy();
+    this.releaseSwimmers();
     const keyboard = this.input.keyboard;
     if (!keyboard) return;
     keyboard.off(Phaser.Input.Keyboard.Events.ANY_KEY_DOWN, this.handleKeyDown, this);
     keyboard.removeCapture([...CAPTURED_KEYS]);
   }
 
+  /**
+   * Removes each axolotl's sprite and its own texture, which the texture manager would otherwise keep
+   * for the whole canal trip, then forgets the axolotls (scene shutdown).
+   */
+  private releaseSwimmers(): void {
+    for (const swimmer of this.swimmers) {
+      swimmer.image.destroy();
+      this.textures.remove(swimmer.texture.key);
+    }
+    this.swimmers = [];
+    this.rescuedWaits.length = 0;
+  }
+
   // ---- layout --------------------------------------------------------------
 
-  /** Fits the tank to the canvas, then places the Decorations, the hub, the Treasure Chest and the arrival card. */
+  /**
+   * Fits the tank to the canvas, then places the Decorations, the hub, the Treasure Chest, the
+   * Collection Book and the arrival card.
+   */
   private layout(): void {
     this.frame = tankFrame(this.view.cssW, this.view.cssH);
     const tank = this.assets.tank;
@@ -469,10 +533,14 @@ export class HomeTankScene extends Phaser.Scene {
     this.decorator.layout(this.view, this.frame);
     this.layoutHub();
     this.chest.layout(this.view);
+    this.book.layout(this.view);
     this.arrivalCard.layout(this.view);
   }
 
-  /** Shows the hub buttons unless the Treasure Chest or decorate mode is up, and the name panel only when it fits. */
+  /**
+   * Shows the hub buttons unless the Treasure Chest, the Collection Book or decorate mode is up, and
+   * the name panel only when it fits.
+   */
   private applyHubVisibility(): void {
     const shown = this.mode === 'hub' || this.mode === 'arrival';
     for (const hubButton of this.hubButtons) {
@@ -511,6 +579,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.swimmers.forEach((swimmer, index) => this.renderSwimmer(swimmer, index, t, dt));
     this.renderSurface(t);
     this.decorator.update(this.clock, this.motion);
+    this.repaintRescuedSwimmers();
   }
 
   /** Places one axolotl from its tank pose (still under reduced motion) and repaints it when its pose changes. */
@@ -522,7 +591,8 @@ export class HomeTankScene extends Phaser.Scene {
       tailAmp: 1,
       sparkle: 0,
     };
-    this.redrawSwimmer(swimmer, pose, dt);
+    if (index === 0) this.redrawSwimmer(swimmer, pose, dt);
+    else this.askRescuedRepaint(swimmer, index - 1, pose, dt);
     const swim = tankSwimPose(swimmer.id, index, this.clock, !this.motion.ambient);
     const at = tankToCss(this.frame, { x: swim.x, y: swim.y });
     swimmer.image
@@ -533,8 +603,9 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * Repaints one axolotl's texture when its pose changes. While the frame rate is low, repaints are
-   * capped at 30 a second, as in the swim, so each owned axolotl costs less per frame.
+   * Repaints one axolotl's texture in its morph's colours when its pose changes. While the frame
+   * rate is low, repaints are capped at 30 a second, as in the swim, so each owned axolotl costs
+   * less per frame.
    */
   private redrawSwimmer(swimmer: TankSwimmer, pose: AxolotlPose, dt: number): void {
     if (swimmer.lastPose !== null && samePose(pose, swimmer.lastPose)) return;
@@ -543,7 +614,40 @@ export class HomeTankScene extends Phaser.Scene {
       return;
     }
     swimmer.redrawAcc = 0;
-    swimmer.texture.redraw(pose);
+    swimmer.texture.redraw(pose, swimmer.palette);
+    swimmer.lastPose = pose;
+  }
+
+  /**
+   * Records this frame's pose for an axolotl after the first and its repaint budget wait in `slot`.
+   * A first paint, or any pose change under reduced motion, paints at once so the morph colours and
+   * still pose show now (PRD C8).
+   */
+  private askRescuedRepaint(swimmer: TankSwimmer, slot: number, pose: AxolotlPose, dt: number): void {
+    swimmer.wanted = pose;
+    this.rescuedWaits[slot] = NO_REPAINT;
+    if (swimmer.lastPose !== null && samePose(pose, swimmer.lastPose)) return;
+    swimmer.redrawAcc += dt;
+    if (swimmer.lastPose === null || !this.motion.ambient) {
+      this.paintRescued(swimmer, pose);
+      return;
+    }
+    this.rescuedWaits[slot] = swimmer.redrawAcc;
+  }
+
+  /** Repaints at most one axolotl after the first this frame, the one the shared repaint budget picks. */
+  private repaintRescuedSwimmers(): void {
+    this.rescuedWaits.length = Math.max(0, this.swimmers.length - 1);
+    const slot = pickSecondaryRepaint(this.rescuedWaits);
+    if (slot < 0) return;
+    const swimmer = this.swimmers[slot + 1];
+    if (swimmer.wanted) this.paintRescued(swimmer, swimmer.wanted);
+  }
+
+  /** Paints an axolotl after the first in its morph's colours, as redrawSwimmer does. */
+  private paintRescued(swimmer: TankSwimmer, pose: AxolotlPose): void {
+    swimmer.redrawAcc = 0;
+    swimmer.texture.redraw(pose, swimmer.palette);
     swimmer.lastPose = pose;
   }
 

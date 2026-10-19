@@ -11,6 +11,8 @@ import {
   type CardSection,
   type TextFit,
 } from './cardFit';
+import { TILAPIA_FACT } from './factCards';
+import { REAL_MORPHS } from './morphs';
 import {
   BANKED_TITLE,
   bankedBody,
@@ -43,10 +45,35 @@ const SORTED_NAMES: readonly string[] = CANAL_TREASURES.map((treasure) => treasu
   (left, right) => right.length - left.length,
 );
 
+const SORTED_AXOLOTL_NAMES: readonly string[] = REAL_MORPHS.map((morph) => morph.displayName).sort(
+  (left, right) => right.length - left.length,
+);
+
 interface Canvas {
   cssW: number;
   cssH: number;
 }
+
+/** Axolotls on a card: rescued ones banked this trip, and waiting ones returned when carried home. */
+interface AxolotlCase {
+  tag: string;
+  rescued: readonly string[];
+  waiting: readonly string[];
+}
+
+const NO_AXOLOTLS: AxolotlCase = { tag: '', rescued: [], waiting: [] };
+
+/** A trip has at most one stranded axolotl (PRD C2): it is rescued, waiting, or absent. */
+const ARRIVAL_AXOLOTL_CASES: readonly AxolotlCase[] = [
+  NO_AXOLOTLS,
+  { tag: ' rescued=1', rescued: SORTED_AXOLOTL_NAMES.slice(0, 1), waiting: [] },
+  { tag: ' waiting=1', rescued: [], waiting: SORTED_AXOLOTL_NAMES.slice(0, 1) },
+];
+
+const BANKING_AXOLOTL_CASES: readonly AxolotlCase[] = [
+  NO_AXOLOTLS,
+  { tag: ' rescued=1', rescued: SORTED_AXOLOTL_NAMES.slice(0, 1), waiting: [] },
+];
 
 /** One card layout input: which card, its canvas, the treasure count and the sections to fit. */
 interface Combination {
@@ -99,13 +126,21 @@ function supportedCanvases(): Canvas[] {
 }
 
 /** Tank arrival card sections: head, body, icon rows, actions. */
-function arrivalSections(reason: ArrivalReason, names: readonly string[], total: number, cssW: number): CardSection[] {
+function arrivalSections(
+  reason: ArrivalReason,
+  names: readonly string[],
+  total: number,
+  cssW: number,
+  axolotls: AxolotlCase = NO_AXOLOTLS,
+): CardSection[] {
   const textW = cardTextWidth(cssW);
   const text = arrivalText({
     reason,
     returnedNames: reason === 'carriedHome' ? names : [],
     bankedThisTripNames: reason === 'wentHome' ? names : [],
     bankedTotal: total,
+    rescuedNames: axolotls.rescued,
+    waitingNames: axolotls.waiting,
   });
   return [
     { kind: 'fixed', height: Math.max(CARD.headIconPx, titleHeight(text.title, homeTitleWrapWidth(textW))) },
@@ -119,17 +154,31 @@ function arrivalSections(reason: ArrivalReason, names: readonly string[], total:
 }
 
 /** Banking card sections: title, icon rows, body, actions (stacked on narrow canvases). */
-function bankingSections(names: readonly string[], total: number, cssW: number): CardSection[] {
+function bankingSections(
+  names: readonly string[],
+  total: number,
+  cssW: number,
+  axolotls: AxolotlCase = NO_AXOLOTLS,
+): CardSection[] {
   const textW = cardTextWidth(cssW);
   const actionsH = cardButtonsStacked(cssW) ? BUTTON_H + CARD.buttonGap + BUTTON_H : BUTTON_H;
+  const full = bankedBody(names, total, axolotls.rescued);
+  const short = bankedBodyShort(names.length, total, axolotls.rescued.length);
   return [
     { kind: 'fixed', height: titleHeight(BANKED_TITLE, textW) },
     { kind: 'icons', count: names.length, maxW: textW },
-    {
-      kind: 'body',
-      variants: [bodyFit(bankedBody(names, total), textW), bodyFit(bankedBodyShort(names.length, total), textW)],
-    },
+    { kind: 'body', variants: [bodyFit(full, textW), bodyFit(short, textW)] },
     { kind: 'actions', height: actionsH },
+  ];
+}
+
+/** Tilapia fact card sections: bold title, body, one OK button. */
+function factCardSections(cssW: number): CardSection[] {
+  const textW = cardTextWidth(cssW);
+  return [
+    { kind: 'fixed', height: titleHeight(TILAPIA_FACT.title, textW) },
+    { kind: 'body', variants: [bodyFit(TILAPIA_FACT.body, textW)] },
+    { kind: 'actions', height: BUTTON_H },
   ];
 }
 
@@ -138,23 +187,51 @@ function makeCombination(label: string, canvas: Canvas, count: number, sections:
   return { label, canvas, count, availH: canvas.cssH - 2 * CARD.margin, sections };
 }
 
+/** Tank arrival card combinations for one treasure list and total, with and without axolotls. */
+function arrivalCombinations(canvas: Canvas, names: readonly string[], total: number): Combination[] {
+  const size = `${canvas.cssW}x${canvas.cssH}`;
+  return ARRIVAL_REASONS.flatMap((reason) =>
+    ARRIVAL_AXOLOTL_CASES.map((axolotls) =>
+      makeCombination(
+        `arrival ${reason} ${size} n=${names.length} total=${total}${axolotls.tag}`,
+        canvas,
+        names.length,
+        arrivalSections(reason, names, total, canvas.cssW, axolotls),
+      ),
+    ),
+  );
+}
+
+/** Banking card combinations for one treasure list and total, with and without a rescued axolotl. */
+function bankingCombinations(canvas: Canvas, names: readonly string[], total: number): Combination[] {
+  const size = `${canvas.cssW}x${canvas.cssH}`;
+  return BANKING_AXOLOTL_CASES.map((axolotls) =>
+    makeCombination(
+      `banking ${size} n=${names.length} total=${total}${axolotls.tag}`,
+      canvas,
+      names.length,
+      bankingSections(names, total, canvas.cssW, axolotls),
+    ),
+  );
+}
+
 /** Every tank arrival card and banking card combination on one canvas. */
 function canvasCombinations(canvas: Canvas): Combination[] {
   const combinations: Combination[] = [];
-  const size = `${canvas.cssW}x${canvas.cssH}`;
   for (let count = 0; count <= SORTED_NAMES.length; count++) {
     const names = SORTED_NAMES.slice(0, count);
     for (const total of BANKED_TOTALS) {
-      for (const reason of ARRIVAL_REASONS) {
-        const label = `arrival ${reason} ${size} n=${count} total=${total}`;
-        combinations.push(makeCombination(label, canvas, count, arrivalSections(reason, names, total, canvas.cssW)));
-      }
+      combinations.push(...arrivalCombinations(canvas, names, total));
       if (total < count) continue;
-      const label = `banking ${size} n=${count} total=${total}`;
-      combinations.push(makeCombination(label, canvas, count, bankingSections(names, total, canvas.cssW)));
+      combinations.push(...bankingCombinations(canvas, names, total));
     }
   }
   return combinations;
+}
+
+/** The tilapia fact card on one canvas. */
+function factCardCombination(canvas: Canvas): Combination {
+  return makeCombination(`tilapia fact ${canvas.cssW}x${canvas.cssH}`, canvas, 0, factCardSections(canvas.cssW));
 }
 
 /** Every combination on every supported canvas. */
@@ -238,5 +315,25 @@ describe('card copy fit', () => {
       expect(fit.clipped).toBe(false);
       expect(actions.top + actions.height).toBeLessThanOrEqual(combination.availH);
     }
+  });
+});
+
+describe('tilapia fact card copy fit', () => {
+  it('fits on every supported canvas without clipping', () => {
+    const problems = supportedCanvases().flatMap((canvas) => {
+      const combination = factCardCombination(canvas);
+      return fitProblems(combination, fitCard(combination.availH, combination.sections));
+    });
+    expect(problems).toEqual([]);
+  });
+
+  it.each([
+    { cssW: 800, cssH: 600 },
+    { cssW: 1024, cssH: 768 },
+  ])('shows the full body at $cssW x $cssH', (canvas) => {
+    const combination = factCardCombination(canvas);
+    const fit = fitCard(combination.availH, combination.sections);
+    expect(fit.clipped).toBe(false);
+    expect(fit.bodyVariant).toBe(0);
   });
 });

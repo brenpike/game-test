@@ -3,7 +3,9 @@
  * trips. `hub` is the part a save would hold (#15); `canal` is session-only and never saved.
  */
 import { createCollectibles, type Collectible } from './collectibles';
+import { REAL_MORPHS, STARTER_MORPH, axolotlFindId, isAxolotlFindId, rescueMorphsIn, type RealMorphId } from './morphs';
 import { nextTripSeed } from './placement';
+import { waitingAfterTrip, type WaitingStranded } from './rescue';
 import { createTankLayout, sanitizeLayout, type TankLayout } from './tank';
 import type { TripState } from './trip';
 import type { TripEndReason } from './tripEvents';
@@ -15,26 +17,42 @@ export const SESSION_REGISTRY_KEY = 'session';
 /** Id of the axolotl the player starts with. */
 export const STARTER_AXOLOTL_ID = 'starter';
 
-/** One owned axolotl. */
+/** One owned axolotl and its real morph. */
 export interface OwnedAxolotl {
   id: string;
+  morph: RealMorphId;
 }
 
-/** What the hub owns: banked find ids, the owned axolotls and the Home Tank layout. */
+/**
+ * The Collection Book: the found morphs in REAL_MORPHS order, and whether the tilapia fact card has
+ * been unlocked (PRD C1, C4).
+ */
+export interface CollectionBookState {
+  foundMorphs: RealMorphId[];
+  tilapiaCard: boolean;
+}
+
+/**
+ * What the hub owns: banked treasure ids (never an axolotl find id), the owned axolotls, the Home
+ * Tank layout and the Collection Book.
+ */
 export interface HubState {
   banked: string[];
   axolotls: OwnedAxolotl[];
   tank: TankLayout;
+  book: CollectionBookState;
 }
 
 /**
- * What the canal remembers between trips: eaten snack ids and the latest trip seed (null before the
- * first trip). Eaten snacks are kept after going home and cleared after being carried home (PRD A12,
- * A19, ADR 0010).
+ * What the canal remembers between trips: eaten snack ids, the latest trip seed (null before the
+ * first trip) and the stranded axolotl left waiting (null when none). Eaten snacks are kept after
+ * going home and cleared after being carried home (PRD A12, A19, ADR 0010). A stranded axolotl met
+ * but not banked waits at the same place for the next trip (PRD C5).
  */
 export interface CanalState {
   eatenSnacks: string[];
   lastTripSeed: number | null;
+  waitingStranded: WaitingStranded | null;
 }
 
 /** The play session. Plain data. */
@@ -43,34 +61,54 @@ export interface Session {
   canal: CanalState;
 }
 
-/** What a trip starts from: the banked ids, the snacks already eaten and the trip seed. */
+/**
+ * What a trip starts from: the banked ids, the snacks already eaten, the trip seed, the owned
+ * morphs, the stranded axolotl left waiting and whether the tilapia fact card was already seen.
+ */
 export interface TripStart {
   banked: string[];
   eatenSnacks: string[];
   tripSeed: number;
+  ownedMorphs: RealMorphId[];
+  waitingStranded: WaitingStranded | null;
+  tilapiaCardSeen: boolean;
 }
 
 /**
- * What an ended trip hands back: every banked id, the eaten snack ids and the trip's seed. The eaten
- * snack ids are empty after being carried home (PRD A12, A19, ADR 0010).
+ * What an ended trip hands back: every banked treasure id, the morphs of the axolotls banked, the
+ * eaten snack ids, the trip's seed, the stranded axolotl left waiting and whether a tilapia was met.
+ * The eaten snack ids are empty after being carried home (PRD A12, A19, ADR 0010).
  */
 export interface TripEndRecord {
   banked: string[];
+  rescued: RealMorphId[];
   eatenSnacks: string[];
   tripSeed: number;
+  waitingStranded: WaitingStranded | null;
+  metTilapia: boolean;
 }
 
-/** A new session: nothing banked, the starter axolotl, an empty tank, no snacks eaten and no trip yet. */
-export function createSession(): Session {
+/**
+ * A new session: nothing banked, the starter axolotl of `starterMorph` with its morph found in the
+ * Collection Book (PRD C1), an empty tank, no snacks eaten, no trip yet and no axolotl waiting.
+ */
+export function createSession(starterMorph: RealMorphId = STARTER_MORPH): Session {
   return {
-    hub: { banked: [], axolotls: [{ id: STARTER_AXOLOTL_ID }], tank: createTankLayout() },
-    canal: { eatenSnacks: [], lastTripSeed: null },
+    hub: {
+      banked: [],
+      axolotls: [{ id: STARTER_AXOLOTL_ID, morph: starterMorph }],
+      tank: createTankLayout(),
+      book: { foundMorphs: [starterMorph], tilapiaCard: false },
+    },
+    canal: { eatenSnacks: [], lastTripSeed: null, waitingStranded: null },
   };
 }
 
 /**
  * What the next trip starts from. The first trip uses `freshSeed`; every later one uses the seed
- * after the last trip's (`nextTripSeed`), as `newTrip` does.
+ * after the last trip's (`nextTripSeed`), as `newTrip` does. The owned morphs and the waiting
+ * stranded axolotl are what `pickStranding` needs; the tilapia fact card counts as seen once the
+ * Collection Book has it.
  */
 export function tripStart(session: Session, freshSeed: number): TripStart {
   const last = session.canal.lastTripSeed;
@@ -78,6 +116,9 @@ export function tripStart(session: Session, freshSeed: number): TripStart {
     banked: [...session.hub.banked],
     eatenSnacks: [...session.canal.eatenSnacks],
     tripSeed: last === null ? freshSeed : nextTripSeed(last),
+    ownedMorphs: session.hub.axolotls.map((axolotl) => axolotl.morph),
+    waitingStranded: copyWaiting(session.canal.waitingStranded),
+    tilapiaCardSeen: session.hub.book.tilapiaCard,
   };
 }
 
@@ -87,10 +128,11 @@ function keepsEatenSnacks(reason: TripEndReason): boolean {
 }
 
 /**
- * The record of an ended trip: its banked ids, the eaten snack ids and its seed. The ids of the
- * collected snacks are kept after going home; after being carried home every snack comes back, so
- * the eaten snack ids are empty (PRD A12, A19, ADR 0010). Throws when the trip has not ended or has
- * no ending.
+ * The record of an ended trip: its banked treasure ids, the morphs of its banked axolotls, the eaten
+ * snack ids, its seed, the stranded axolotl left waiting and whether a tilapia was met. The ids of
+ * the collected snacks are kept after going home; after being carried home every snack comes back,
+ * so the eaten snack ids are empty (PRD A12, A19, ADR 0010). A stranded axolotl met but not banked
+ * is left waiting at its place (PRD C5). Throws when the trip has not ended or has no ending.
  */
 export function tripEndRecord(trip: TripState, snacks: readonly Collectible[]): TripEndRecord {
   if (trip.phase !== 'ended') {
@@ -100,25 +142,55 @@ export function tripEndRecord(trip: TripState, snacks: readonly Collectible[]): 
     throw new Error('tripEndRecord: the ended trip has no ending');
   }
   return {
-    banked: [...trip.holdings.banked],
+    banked: trip.holdings.banked.filter((id) => !isAxolotlFindId(id)),
+    rescued: rescueMorphsIn(trip.holdings.banked),
     eatenSnacks: keepsEatenSnacks(trip.ending.reason)
       ? snacks.filter((snack) => snack.collected).map((snack) => snack.id)
       : [],
     tripSeed: trip.tripSeed,
+    waitingStranded: waitingAfterTrip(trip.rescue, trip.holdings, trip.phase),
+    metTilapia: trip.metTilapia,
   };
 }
 
 /**
  * Takes an ended trip into the session. Banked becomes the order-preserving, de-duplicated union of
- * the session's and the record's banked ids, so it never shrinks. The eaten snacks and the trip seed
- * are stored, so eaten snacks are kept after going home and cleared after being carried home, whose
- * record has none (PRD A12, A19, ADR 0010). The axolotls and the tank are untouched.
+ * the session's and the record's banked treasure ids, so it never shrinks; axolotl find ids are
+ * never banked. Each rescued morph not already owned becomes an owned axolotl, appended after the
+ * others, and its morph is found in the Collection Book, kept in REAL_MORPHS order (PRD C4). The
+ * tilapia fact card stays unlocked once a tilapia was met. The eaten snacks, the trip seed and the
+ * waiting stranded axolotl are stored, so eaten snacks are kept after going home and cleared after
+ * being carried home, whose record has none (PRD A12, A19, ADR 0010). The tank is untouched.
  */
 export function recordTripEnd(session: Session, record: TripEndRecord): Session {
-  return {
-    hub: { ...session.hub, banked: [...new Set([...session.hub.banked, ...record.banked])] },
-    canal: { eatenSnacks: [...record.eatenSnacks], lastTripSeed: record.tripSeed },
+  const { hub } = session;
+  const banked = [...new Set([...hub.banked, ...record.banked])].filter((id) => !isAxolotlFindId(id));
+  const axolotls = [...hub.axolotls.map((axolotl) => ({ ...axolotl })), ...adoptRescued(hub.axolotls, record.rescued)];
+  const found = new Set<RealMorphId>([...hub.book.foundMorphs, ...record.rescued]);
+  const book: CollectionBookState = {
+    foundMorphs: REAL_MORPHS.map((morph) => morph.id).filter((id) => found.has(id)),
+    tilapiaCard: hub.book.tilapiaCard || record.metTilapia,
   };
+  return {
+    hub: { ...hub, banked, axolotls, book },
+    canal: {
+      eatenSnacks: [...record.eatenSnacks],
+      lastTripSeed: record.tripSeed,
+      waitingStranded: copyWaiting(record.waitingStranded),
+    },
+  };
+}
+
+/** One owned axolotl per morph in `rescued` not owned yet, de-duplicated, in `rescued` order. */
+function adoptRescued(owned: readonly OwnedAxolotl[], rescued: readonly RealMorphId[]): OwnedAxolotl[] {
+  const ownedMorphs = new Set(owned.map((axolotl) => axolotl.morph));
+  return [...new Set(rescued)]
+    .filter((morph) => !ownedMorphs.has(morph))
+    .map((morph) => ({ id: axolotlFindId(morph), morph }));
+}
+
+function copyWaiting(waiting: WaitingStranded | null): WaitingStranded | null {
+  return waiting ? { morph: waiting.morph, placeId: waiting.placeId } : null;
 }
 
 /** Fresh collectibles for `spawns` with every id in `eaten` already collected. Unknown ids are ignored. */
@@ -133,11 +205,20 @@ export function setTankLayout(session: Session, layout: TankLayout): Session {
 }
 
 /**
- * Id of the axolotl that goes exploring: the first owned axolotl, which is the only one while one is
- * owned. Choosing the explorer is #16. Throws when no axolotl is owned.
+ * Id of the axolotl that goes exploring: the first owned axolotl, the starter. Choosing the explorer
+ * is #16. Throws when no axolotl is owned.
  */
 export function explorerId(session: Session): string {
+  return findExplorer(session, 'explorerId').id;
+}
+
+/** Morph of the axolotl that goes exploring (`explorerId`). Throws when no axolotl is owned. */
+export function explorerMorph(session: Session): RealMorphId {
+  return findExplorer(session, 'explorerMorph').morph;
+}
+
+function findExplorer(session: Session, caller: string): OwnedAxolotl {
   const first = session.hub.axolotls[0];
-  if (first === undefined) throw new Error('explorerId: no axolotl is owned');
-  return first.id;
+  if (first === undefined) throw new Error(`${caller}: no axolotl is owned`);
+  return first;
 }

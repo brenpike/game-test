@@ -1,0 +1,131 @@
+import * as Phaser from 'phaser';
+import { INK, UI_PANEL } from '../art/palette';
+import { CARD, cardTextWidth, fitCard } from '../logic/cardFit';
+import { FACT_CARD_OK_LABEL, TILAPIA_FACT } from '../logic/factCards';
+import {
+  createButton,
+  cssColor,
+  drawPanel,
+  uiTextStyle,
+  type GameAssets,
+  type SceneView,
+  type UiButton,
+} from './BootScene';
+
+const DIM_ALPHA = 0.45;
+const DIM_COVER = 8192;
+const MIN_SHOW_MS = 800;
+
+/**
+ * Tilapia fact card over the paused swim scene (PRD A21): an ink dim that swallows every press, a
+ * white panel with the bold title, the centred body and one wide primary OK button that always
+ * shows the focus ring. Appears and leaves at once in both motion modes. OK hides the card and
+ * calls `onClose`; it ignores presses for the first MIN_SHOW_MS the card shows.
+ */
+export class FactCard {
+  private readonly scene: Phaser.Scene;
+  private readonly onClose: () => void;
+  private readonly container: Phaser.GameObjects.Container;
+  private readonly panel: Phaser.GameObjects.Graphics;
+  private readonly title: Phaser.GameObjects.Text;
+  private readonly body: Phaser.GameObjects.Text;
+  private readonly button: UiButton;
+  private view: SceneView;
+  private shownAt = 0;
+
+  constructor(scene: Phaser.Scene, assets: GameAssets, view: SceneView, depth: number, onClose: () => void) {
+    this.scene = scene;
+    this.view = view;
+    this.onClose = onClose;
+    const dpr = view.fit.dpr;
+    const ink = cssColor(INK);
+    const dim = scene.add
+      .rectangle(-DIM_COVER / 2, -DIM_COVER / 2, DIM_COVER, DIM_COVER, ink.color, DIM_ALPHA)
+      .setOrigin(0, 0)
+      .setInteractive();
+    this.panel = scene.add.graphics();
+    this.title = scene.add.text(0, 0, TILAPIA_FACT.title, { ...uiTextStyle(CARD.titlePx, dpr), align: 'center' });
+    this.body = scene.add.text(0, 0, TILAPIA_FACT.body, { ...uiTextStyle(CARD.bodyPx, dpr, false), align: 'center' });
+    this.button = createButton(scene, assets.baked, {
+      fill: 'primary',
+      shape: 'wide',
+      size: 1,
+      label: FACT_CARD_OK_LABEL,
+      icon: 'check',
+      dpr,
+      pressOnDown: false,
+      onPress: () => this.press(),
+    });
+    this.button.setFocused(true);
+    this.container = scene.add
+      .container(0, 0, [dim, this.panel, this.title, this.body, this.button.container])
+      .setDepth(depth)
+      .setVisible(false);
+  }
+
+  /** Whether the card is on screen. */
+  isShowing(): boolean {
+    return this.container.visible;
+  }
+
+  /** Shows the card at once. */
+  show(): void {
+    this.shownAt = this.scene.time.now;
+    this.layout(this.view);
+    this.container.setVisible(true);
+  }
+
+  hide(): void {
+    this.container.setVisible(false);
+  }
+
+  /** OK: once the card has shown for MIN_SHOW_MS, hides it and calls `onClose`. Ignored while hidden. */
+  press(): void {
+    if (!this.container.visible) return;
+    if (this.scene.time.now - this.shownAt < MIN_SHOW_MS) return;
+    this.hide();
+    this.onClose();
+  }
+
+  setResolution(dpr: number): void {
+    for (const text of [this.title, this.body]) {
+      text.setResolution(dpr);
+    }
+    this.button.setResolution(dpr);
+  }
+
+  /**
+   * Centres the panel on a canvas that has room for it. fitCard() sizes it from the title, the body
+   * (clipped to whole lines only when nothing fits) and the button: it tightens the padding on a
+   * short screen and keeps the button inside the canvas. Safe to call before show() and after hide().
+   */
+  layout(view: SceneView): void {
+    this.view = view;
+    const { cssW, cssH } = view;
+    const textW = cardTextWidth(cssW);
+    this.title.setWordWrapWidth(textW, true);
+    this.body.setWordWrapWidth(textW, true);
+    this.body.setMaxLines(0);
+    const lineH = this.body.getTextMetrics().fontSize;
+    const bodyLines = this.body.getWrappedText(TILAPIA_FACT.body).length;
+    const availH = cssH - 2 * CARD.margin;
+    const fit = fitCard(availH, [
+      { kind: 'fixed', height: this.title.height },
+      { kind: 'body', variants: [{ lines: bodyLines, lineH }] },
+      { kind: 'actions', height: this.button.height },
+    ]);
+    const [titleSlot, bodySlot, actionsSlot] = fit.slots;
+    this.body.setVisible(fit.bodyLines > 0);
+    this.body.setMaxLines(fit.clipped ? fit.bodyLines : 0);
+    const bodyW = fit.bodyLines > 0 ? this.body.width : 0;
+    const panelW = Math.min(
+      cssW - 2 * CARD.margin,
+      Math.max(this.title.width, bodyW, this.button.width) + 2 * CARD.pad,
+    );
+    const panelY = CARD.margin + Math.max(0, (availH - fit.panelH) / 2);
+    drawPanel(this.panel, (cssW - panelW) / 2, panelY, panelW, fit.panelH, UI_PANEL);
+    this.title.setPosition((cssW - this.title.width) / 2, panelY + titleSlot.top);
+    this.body.setPosition((cssW - this.body.width) / 2, panelY + bodySlot.top);
+    this.button.container.setPosition((cssW - this.button.width) / 2, panelY + actionsSlot.top);
+  }
+}

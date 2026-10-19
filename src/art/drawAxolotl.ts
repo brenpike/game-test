@@ -17,7 +17,12 @@ import {
   LW,
   SUN,
   WHITE,
+  type MorphEyeRing,
+  type MorphExtras,
+  type MorphMark,
+  type MorphMarkSet,
   type MorphPalette,
+  type MorphRim,
 } from './palette';
 
 /**
@@ -238,7 +243,15 @@ function legProgress(look: LegLook): number {
   return Number.isFinite(p) ? Math.min(1, Math.max(0, p)) : 0;
 }
 
-function eye(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, blink: number, colour: string): void {
+function eye(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+  blink: number,
+  colour: string,
+  ring?: MorphEyeRing,
+): void {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.scale(1, blink);
@@ -246,6 +259,14 @@ function eye(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, b
   ell(bead, 0, 0, r, r);
   ctx.fillStyle = colour;
   ctx.fill(bead);
+  if (ring) {
+    // Morph eye ring (guide 3b): drawn inside the bead edge so the eye keeps its size.
+    const rr = new Path2D();
+    ell(rr, 0, 0, r - ring.width / 2, r - ring.width / 2);
+    ctx.lineWidth = ring.width;
+    ctx.strokeStyle = ring.colour;
+    ctx.stroke(rr);
+  }
   const g1 = new Path2D();
   ell(g1, r * 0.3, -r * 0.35, r * 0.38, r * 0.38);
   ctx.fillStyle = WHITE;
@@ -350,6 +371,164 @@ function paintLegGlints(
   }
 }
 
+// ---- Morph extras (guide 3b, 6h). Derived (provisional). ----------------------
+// Painted only when the palette has extras, so the Leucistic path makes no new
+// draw calls. Every helper clips to the merged silhouette, so nothing can spill
+// onto the ink outline or outside the body.
+
+interface EllSpec {
+  readonly cx: number;
+  readonly cy: number;
+  readonly rx: number;
+  readonly ry: number;
+}
+
+// Same ellipses as the merged silhouette (step 4 in drawAxolotl).
+const HEAD_ELL: EllSpec = { cx: 26, cy: -1, rx: 27, ry: 22 };
+const TORSO_ELL: EllSpec = { cx: -8, cy: 4, rx: 37, ry: 19 };
+
+/** Top edge y of an ellipse at x, or null when x is outside it. */
+function ellTopAt(e: EllSpec, x: number): number | null {
+  const u = (x - e.cx) / e.rx;
+  if (Math.abs(u) > 1) return null;
+  return e.cy - e.ry * Math.sqrt(1 - u * u);
+}
+
+/** Top silhouette edge of the tail polygon at x (linear between its points), or null outside it. */
+function tailTopAt(topF: readonly (readonly [number, number])[], x: number): number | null {
+  for (let i = 0; i < topF.length - 1; i++) {
+    const [x0, y0] = topF[i];
+    const [x1, y1] = topF[i + 1];
+    if (x <= x0 && x >= x1) return x1 === x0 ? Math.min(y0, y1) : y0 + ((y1 - y0) * (x - x0)) / (x1 - x0);
+  }
+  return null;
+}
+
+/**
+ * The upper silhouette edge as a polyline: from the snout tip round the head,
+ * back along the torso and on along the tail's outer top edge (topF) to tail
+ * point `endIndex`. Follows the real outline, so a stroke along it, clipped to
+ * the silhouette, lies just inside the ink.
+ */
+function upperOutline(topF: readonly (readonly [number, number])[], endIndex: number): [number, number][] {
+  const pts: [number, number][] = [];
+  const arcSteps = 10;
+  for (let k = 0; k <= arcSteps; k++) {
+    const a = (k / arcSteps) * (Math.PI / 2);
+    pts.push([HEAD_ELL.cx + HEAD_ELL.rx * Math.cos(a), HEAD_ELL.cy - HEAD_ELL.ry * Math.sin(a)]);
+  }
+  const xEnd = topF[endIndex][0];
+  const xs = new Set<number>();
+  for (let x = HEAD_ELL.cx - 1; x > xEnd; x -= 1) xs.add(x);
+  for (let i = 0; i <= endIndex; i++) if (topF[i][0] < HEAD_ELL.cx) xs.add(topF[i][0]);
+  for (const x of [...xs].sort((a, b) => b - a)) {
+    let y = Infinity;
+    for (const v of [ellTopAt(HEAD_ELL, x), ellTopAt(TORSO_ELL, x), tailTopAt(topF, x)]) {
+      if (v !== null && v < y) y = v;
+    }
+    if (Number.isFinite(y)) pts.push([x, y]);
+  }
+  return pts;
+}
+
+/**
+ * Rim light: a stroke centred on the upper outline, clipped to the silhouette,
+ * so `rim.width` px show just inside the ink. Never touches the lower edge.
+ * `endIndex` is the last tail point: the fin band start, or the tail tip.
+ */
+function paintMorphRim(
+  ctx: CanvasRenderingContext2D,
+  sil: Path2D,
+  topF: readonly (readonly [number, number])[],
+  endIndex: number,
+  rim: MorphRim,
+): void {
+  const pts = upperOutline(topF, endIndex);
+  const path = new Path2D();
+  pts.forEach(([x, y], i) => (i === 0 ? path.moveTo(x, y) : path.lineTo(x, y)));
+  ctx.save();
+  ctx.clip(sil);
+  ctx.lineWidth = rim.width * 2;
+  ctx.strokeStyle = rim.colour;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'butt';
+  ctx.stroke(path);
+  ctx.restore();
+}
+
+/**
+ * Local point of a mark. Tail marks interpolate the drawn tail polyline at `t`
+ * (0 root, 1 tip) and sit `offset` x the local core half-height off the centre
+ * line, so they ride the tail wave.
+ */
+function markPoint(m: MorphMark, tail: readonly TailPoint[]): [number, number] {
+  if (m.space === 'body') return [m.x, m.y];
+  const f = Math.min(1, Math.max(0, m.t)) * TAIL_N;
+  const i = Math.min(Math.floor(f), TAIL_N - 1);
+  const u = f - i;
+  const a = tail[i];
+  const b = tail[i + 1];
+  const cy = a.cy + (b.cy - a.cy) * u;
+  const hc = a.hc + (b.hc - a.hc) * u;
+  return [a.x + (b.x - a.x) * u, cy + m.offset * hc];
+}
+
+/** Round dots (Wild speckles and flecks), clipped to the silhouette. */
+function paintMorphDots(
+  ctx: CanvasRenderingContext2D,
+  sil: Path2D,
+  tail: readonly TailPoint[],
+  set: MorphMarkSet,
+): void {
+  const dots = new Path2D();
+  for (const m of set.marks) {
+    const [x, y] = markPoint(m, tail);
+    ell(dots, x, y, m.r, m.r);
+  }
+  ctx.save();
+  ctx.clip(sil);
+  ctx.fillStyle = set.colour;
+  ctx.fill(dots);
+  ctx.restore();
+}
+
+/**
+ * Four-point glints (guide 4e star: outer R, inner 0.38 R) with no outline,
+ * clipped to the silhouette. Tip rounding (0.15 R) is under half a pixel at the
+ * guide's R of 2, so tips stay sharp.
+ */
+function paintMorphShimmer(
+  ctx: CanvasRenderingContext2D,
+  sil: Path2D,
+  tail: readonly TailPoint[],
+  set: MorphMarkSet,
+): void {
+  const stars = new Path2D();
+  for (const m of set.marks) {
+    const [x, y] = markPoint(m, tail);
+    for (let k = 0; k < 8; k++) {
+      const a = -Math.PI / 2 + (k * Math.PI) / 4;
+      const rad = k % 2 === 0 ? m.r : m.r * 0.38;
+      const px = x + Math.cos(a) * rad;
+      const py = y + Math.sin(a) * rad;
+      if (k === 0) stars.moveTo(px, py);
+      else stars.lineTo(px, py);
+    }
+    stars.closePath();
+  }
+  ctx.save();
+  ctx.clip(sil);
+  ctx.fillStyle = set.colour;
+  ctx.fill(stars);
+  ctx.restore();
+}
+
+/** Body shine colour: the prototype value unless the morph overrides the alpha. */
+function bodyShineColour(extras: MorphExtras | undefined): string {
+  const a = extras?.shineAlpha;
+  return a === undefined ? BODY_SHINE : `rgba(255,255,255,${a})`;
+}
+
 /**
  * Paint the axolotl in local units, facing right, origin at local (0, 0).
  * The caller sets the transform (see AXO_TEX for the frame).
@@ -361,6 +540,7 @@ export function drawAxolotl(
 ): void {
   const swim = pose.swimPhase;
   const tfl = pose.gillPhase;
+  const extras = palette.extras;
 
   // 1. far gills (behind everything)
   for (const g of FAR_GILLS) gill(ctx, g, tfl, palette.gillFarStem, palette.gillFarFilament);
@@ -450,9 +630,11 @@ export function drawAxolotl(
     if (i === i0) rays.moveTo(botC[i][0], botC[i][1]);
     else rays.lineTo(botC[i][0], botC[i][1]);
   }
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = FIN_RAY;
-  ctx.stroke(rays);
+  if (extras?.finRays !== null) {
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = extras?.finRays ?? FIN_RAY;
+    ctx.stroke(rays);
+  }
 
   // 6. belly
   let p = new Path2D();
@@ -460,36 +642,51 @@ export function drawAxolotl(
   ctx.fillStyle = palette.belly;
   ctx.fill(p);
 
-  // 7. shines (body, head)
-  p = new Path2D();
-  ell(p, -16, -9, 12, 3, -0.08);
-  ctx.fillStyle = BODY_SHINE;
-  ctx.fill(p);
-  p = new Path2D();
-  ell(p, 17, -16, 7, 2.8, -0.35);
-  ctx.fill(p);
+  // 6.2 morph rim light and speckles (clipped to the silhouette, under the shines)
+  if (extras?.rim) paintMorphRim(ctx, sil, topF, extras.rim.fin ? N : i0, extras.rim);
+  if (extras?.speckles) paintMorphDots(ctx, sil, tail, extras.speckles);
 
-  // 8. freckles
-  ctx.fillStyle = FRECKLE;
-  for (const [fx, fy, fr] of [
-    [-20, 1, 1.7],
-    [-29, -4, 1.5],
-    [-12, 5, 1.4],
-  ]) {
+  // 7. shines (body, head)
+  if (extras?.shineAlpha !== 0) {
     p = new Path2D();
-    ell(p, fx, fy, fr, fr);
+    ell(p, -16, -9, 12, 3, -0.08);
+    ctx.fillStyle = bodyShineColour(extras);
     ctx.fill(p);
+    p = new Path2D();
+    ell(p, 17, -16, 7, 2.8, -0.35);
+    ctx.fill(p);
+  }
+
+  // 7.5 morph flecks and shimmer glints (over the shines)
+  if (extras?.flecks) paintMorphDots(ctx, sil, tail, extras.flecks);
+  if (extras?.shimmer) paintMorphShimmer(ctx, sil, tail, extras.shimmer);
+
+  // 8. freckles (spot colour per morph, guide 3b)
+  const spot = extras?.spot === undefined ? FRECKLE : extras.spot;
+  if (spot !== null) {
+    ctx.fillStyle = spot;
+    for (const [fx, fy, fr] of [
+      [-20, 1, 1.7],
+      [-29, -4, 1.5],
+      [-12, 5, 1.4],
+    ]) {
+      p = new Path2D();
+      ell(p, fx, fy, fr, fr);
+      ctx.fill(p);
+    }
   }
 
   // 9. near gills (in front of the body, sprouting from the cheek)
   for (const g of NEAR_GILLS) gill(ctx, g, tfl, palette.gillNearStem, palette.gillNearFilament);
 
   // 10. blush
-  p = new Path2D();
-  ell(p, 27, 9, 5, 3.3);
-  ell(p, 44, 8, 4, 2.7);
-  ctx.fillStyle = BLUSH;
-  ctx.fill(p);
+  if (extras?.blush !== false) {
+    p = new Path2D();
+    ell(p, 27, 9, 5, 3.3);
+    ell(p, 44, 8, 4, 2.7);
+    ctx.fillStyle = BLUSH;
+    ctx.fill(p);
+  }
 
   // 11. mouth: fill, outline, corner ticks
   const mouth = new Path2D();
@@ -511,8 +708,8 @@ export function drawAxolotl(
   ctx.stroke(ticks);
 
   // 12. eyes
-  eye(ctx, 28, -6, 6.4, pose.blink, palette.eye);
-  eye(ctx, 42, -7, 5.3, pose.blink, palette.eye);
+  eye(ctx, 28, -6, 6.4, pose.blink, palette.eye, extras?.eyeRing);
+  eye(ctx, 42, -7, 5.3, pose.blink, palette.eye, extras?.eyeRing);
 
   // regeneration glints sit on top of everything
   paintRegenGlints(ctx, tail, pose);

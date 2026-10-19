@@ -96,7 +96,8 @@ export const BUBBLE_STROKE_WIDTH = 2;
 // ---- Morph role slots (guide 3b) ----------------------------------------
 /**
  * A morph swaps colours through these named slots. Shapes, line weights and
- * layer order never change. Only LEUCISTIC is implemented.
+ * layer order never change. LEUCISTIC, WILD, GOLDEN_ALBINO and MELANOID are
+ * implemented; GFP is not in the MVP.
  */
 export interface MorphPalette {
   readonly body: string;
@@ -109,7 +110,66 @@ export interface MorphPalette {
   readonly gillFarFilament: string;
   readonly eye: string;
   readonly mouth: string;
+  /** Non-hue cues and tweaks (guide 3b, 6h). Undefined draws exactly the Leucistic look. */
+  readonly extras?: MorphExtras;
 }
+
+/**
+ * One small mark (speckle, fleck or glint) in the axolotl's local units.
+ * Body marks use local x, y. Tail marks are tail-space: `t` runs 0 at the tail
+ * root to 1 at the tail tip, and `offset` is a fraction of the local core
+ * half-height (negative is toward the top edge, 0 the centre line, so the mark
+ * follows the tail wave). Provisional.
+ */
+export type MorphMark =
+  | { readonly space: 'body'; readonly x: number; readonly y: number; readonly r: number }
+  | { readonly space: 'tail'; readonly t: number; readonly offset: number; readonly r: number };
+
+/** A colour plus the marks painted in it. */
+export interface MorphMarkSet {
+  readonly colour: string;
+  readonly marks: readonly MorphMark[];
+}
+
+/** Rim light along the upper silhouette (guide 3b). `width` is the visible inner width, logical px. */
+export interface MorphRim {
+  readonly colour: string;
+  readonly width: number;
+  /** True: the rim runs on to the tail tip, top fin edge included. False: it stops where the fin band starts. */
+  readonly fin: boolean;
+}
+
+/** Ring just inside the edge of each eye bead. `width` in logical px. */
+export interface MorphEyeRing {
+  readonly colour: string;
+  readonly width: number;
+}
+
+/**
+ * Morph extras (guide 3b non-hue cues, 6h). Every field is optional; omitted
+ * fields keep the Leucistic prototype look. Every value is derived (provisional).
+ */
+export interface MorphExtras {
+  /** Spot colour for the layer 8 freckles (guide 3b spot table). `null` draws no spots. */
+  readonly spot?: string | null;
+  /** Body and head shine alpha. Default is BODY_SHINE (0.75). 0 draws no shine. */
+  readonly shineAlpha?: number;
+  readonly rim?: MorphRim;
+  readonly eyeRing?: MorphEyeRing;
+  /** Dark pattern dots, clipped to the silhouette, under the shines. */
+  readonly speckles?: MorphMarkSet;
+  /** Small bright dots, clipped to the silhouette, over the shines. */
+  readonly flecks?: MorphMarkSet;
+  /** Four-point glints with no outline, clipped to the silhouette, over the shines. */
+  readonly shimmer?: MorphMarkSet;
+  /** Default true. */
+  readonly blush?: boolean;
+  /** Fin ray and core-edge colour. Default FIN_RAY. `null` draws no fin rays. */
+  readonly finRays?: string | null;
+}
+
+const bodyMark = (x: number, y: number, r: number): MorphMark => ({ space: 'body', x, y, r });
+const tailMark = (t: number, offset: number, r: number): MorphMark => ({ space: 'tail', t, offset, r });
 
 /** Leucistic colourway: the approved prototype hero. */
 export const LEUCISTIC: MorphPalette = {
@@ -123,6 +183,134 @@ export const LEUCISTIC: MorphPalette = {
   gillFarFilament: '#f26b92',
   eye: EYE,
   mouth: '#e8567e',
+};
+
+/**
+ * Wild colourway (guide 3b), derived (provisional). Non-hue cue: dark speckles
+ * plus a few gold flecks. All extras below are derived (provisional).
+ */
+export const WILD: MorphPalette = {
+  body: '#b0b86e',
+  farSide: '#939c55',
+  fin: '#cdd398',
+  belly: '#e2e4b8',
+  gillNearStem: '#8a5f8f',
+  gillNearFilament: '#a77aa9',
+  gillFarStem: '#714a77',
+  gillFarFilament: '#8c6490',
+  eye: EYE,
+  mouth: '#c85a74',
+  extras: {
+    // Far gill stem #714a77 at 0.55.
+    spot: 'rgba(113,74,119,0.55)',
+    // Corrective contrast cue (guide 12 "Wild recheck"): a 2 px rim in the Wild
+    // belly colour just inside the ink from snout to tail point 3, not on the
+    // fin. Ink vs rim is 10.98:1 (worst case 3.31:1). It keeps the body, so Wild
+    // luminance stays 0.446, and it differs from Melanoid's fin-inclusive #cec9f0 rim.
+    rim: { colour: '#e2e4b8', width: 2, fin: false },
+    // 8 dots (guide asks 6 to 9). Positions are derived (provisional).
+    speckles: {
+      colour: '#5f6b33',
+      marks: [
+        bodyMark(-12, -10, 1.6),
+        bodyMark(-24, -6, 1.5),
+        bodyMark(-18, 2, 1.4),
+        bodyMark(-34, 0, 1.3),
+        tailMark(0.15, -0.45, 1.5),
+        tailMark(0.35, 0.4, 1.4),
+        tailMark(0.55, -0.35, 1.2),
+        tailMark(0.75, 0.2, 1.0),
+      ],
+    },
+    flecks: {
+      colour: '#ffe14a',
+      marks: [bodyMark(-8, -6, 1.0), bodyMark(-27, 3, 1.0), tailMark(0.45, -0.1, 0.9)],
+    },
+  },
+};
+
+/**
+ * Golden albino colourway (guide 3b), derived (provisional). Non-hue cue: light
+ * eye with an ink ring, plus shimmer glints with no outline.
+ */
+export const GOLDEN_ALBINO: MorphPalette = {
+  body: '#ffd36b',
+  farSide: '#f2b445',
+  fin: '#ffe7a8',
+  belly: '#fff1c9',
+  gillNearStem: '#ff8a65',
+  gillNearFilament: '#ffa585',
+  gillFarStem: '#ef7350',
+  gillFarFilament: '#f78f6c',
+  eye: '#d6336c',
+  mouth: '#e86a5a',
+  extras: {
+    // #ef7350 at 0.55.
+    spot: 'rgba(239,115,80,0.55)',
+    eyeRing: { colour: INK, width: 1.5 },
+    // Three white four-point glints, R 2, no outline. Positions are derived (provisional).
+    shimmer: {
+      colour: 'rgba(255,255,255,0.8)',
+      marks: [bodyMark(-18, -8, 2), bodyMark(-30, 2, 2), tailMark(0.4, -0.2, 2)],
+    },
+  },
+};
+
+/**
+ * Melanoid colourway (guide 3b), derived (provisional). Darkest value, matte,
+ * with a required rim light: ink vs body is only 1.74:1, ink vs rim 9.07:1.
+ * The mouth slot keeps the Leucistic value.
+ */
+export const MELANOID: MorphPalette = {
+  body: '#4f4a6e',
+  farSide: '#3e3a5a',
+  fin: '#6a6590',
+  belly: '#5f5a82',
+  gillNearStem: '#6b4f8f',
+  gillNearFilament: '#8467a8',
+  gillFarStem: '#563f75',
+  gillFarFilament: '#6e558f',
+  eye: EYE,
+  mouth: '#e8567e',
+  extras: {
+    // Rim colour, so spots show on the dark body.
+    spot: 'rgba(206,201,240,0.35)',
+    // Matte: body shine 0.45 instead of 0.75.
+    shineAlpha: 0.45,
+    // Top fin edge included. Width 2 px.
+    rim: { colour: '#cec9f0', width: 2, fin: true },
+    // Width to confirm in a prototype (guide 12); 1.5 px matches golden.
+    eyeRing: { colour: '#cec9f0', width: 1.5 },
+  },
+};
+
+/**
+ * Friendly silhouette base for unfound morphs: one flat pebble A tone in every
+ * slot, ink outline and a dark eye bead. No blush, shine, spots or fin rays.
+ * Derived (provisional).
+ */
+export const SILHOUETTE: MorphPalette = {
+  body: PEBBLE_A,
+  farSide: PEBBLE_A,
+  fin: PEBBLE_A,
+  belly: PEBBLE_A,
+  gillNearStem: PEBBLE_A,
+  gillNearFilament: PEBBLE_A,
+  gillFarStem: PEBBLE_A,
+  gillFarFilament: PEBBLE_A,
+  eye: EYE,
+  mouth: PEBBLE_A,
+  extras: { spot: null, shineAlpha: 0, blush: false, finRays: null },
+};
+
+/** Look ids of the real morphs. Must match the logic layer's RealMorphId. */
+export type MorphLookId = 'leucistic' | 'wild' | 'golden-albino' | 'melanoid';
+
+export const MORPH_PALETTES: Record<MorphLookId, MorphPalette> = {
+  leucistic: LEUCISTIC,
+  wild: WILD,
+  'golden-albino': GOLDEN_ALBINO,
+  melanoid: MELANOID,
 };
 
 // ---- UI roles (guide 3d and section 8) -----------------------------------

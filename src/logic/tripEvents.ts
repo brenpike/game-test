@@ -1,5 +1,7 @@
 import type { Rarity, TreasureCategory } from './catalogue';
 import type { LegStatus } from './legs';
+import type { RealMorphId } from './morphs';
+import type { RescueStatus } from './rescue';
 
 /**
  * Event names for a trip, shared between the game scene and the UI scene. The `TripSnapshot`
@@ -54,11 +56,23 @@ export interface FoundInfo {
 }
 
 /**
- * Trip display state. `bag` is the Trip Bag find ids in pickup order and `banked` the banked
- * find count. `inHomeSpot` is whether the axolotl centre is inside the Home Spot ring.
+ * A stranded axolotl as the HUD shows it: its find id, its morph, and whether it is waiting at its
+ * place, following the player (in the Trip Bag, not safe yet) or safe (banked).
+ */
+export interface RescueSnapshot {
+  id: string;
+  morph: RealMorphId;
+  status: RescueStatus;
+}
+
+/**
+ * Trip display state. `bag` is the Trip Bag find ids in pickup order, including a following
+ * axolotl, and `banked` the banked treasure count, not counting rescued axolotls. `inHomeSpot` is whether the axolotl centre is inside the Home Spot ring.
  * `justBanked` is the find ids of the latest banking, shown on the banked card. `found` is every
  * treasure picked up this trip, in pickup order, including ones banked since; it resets each trip.
- * `ending` is set only once the trip has ended.
+ * `ending` is set only once the trip has ended. `found` never lists rescued axolotls.
+ * `rescue` is this trip's stranded axolotl, or null when there is none. `tilapiaCardDue` is whether
+ * the axolotl met a tilapia this trip and the tilapia fact card was not seen before.
  */
 export interface TripSnapshot {
   phase: TripPhase;
@@ -69,6 +83,8 @@ export interface TripSnapshot {
   justBanked: string[];
   found: FoundInfo[];
   ending: TripEnding | null;
+  rescue: RescueSnapshot | null;
+  tilapiaCardDue: boolean;
 }
 
 /** Payload type for each event; `undefined` marks payload-less events. */

@@ -29,6 +29,8 @@ const BANNED = [
   'checkpoint',
   'loot',
   ' base',
+  'level',
+  'fish tank',
 ];
 
 const exportedStrings = Object.entries(tripText).filter(
@@ -46,6 +48,14 @@ const NAME_SAMPLES: readonly (readonly string[])[] = [
 const SHORT_COUNTS = [0, 1, 2, 5, 20];
 
 const SHORT_TOTALS = [0, 1, 4, 20];
+
+const AXOLOTL_SAMPLES: readonly (readonly string[])[] = [
+  [],
+  ['Golden albino axolotl'],
+  ['Golden albino axolotl', 'Leucistic axolotl'],
+];
+
+const AXOLOTL_COUNTS = [0, 1, 2];
 
 function makeNames(count: number): string[] {
   return Array.from({ length: count }, (_, index) => `Treasure ${index + 1}`);
@@ -83,6 +93,39 @@ function collectHelperOutputs(): string[] {
     for (const reason of ['wentHome', 'carriedHome'] as const) {
       outputs.push(shortBodyFor(reason, count));
     }
+  }
+  outputs.push(...collectAxolotlOutputs());
+  return outputs;
+}
+
+function collectAxolotlArrivalOutputs(names: readonly string[], axolotls: readonly string[]): string[] {
+  const outputs: string[] = [];
+  for (const reason of ['wentHome', 'carriedHome'] as const) {
+    for (const waitingNames of AXOLOTL_SAMPLES) {
+      const text = arrivalText({
+        reason,
+        returnedNames: names,
+        bankedThisTripNames: names,
+        bankedTotal: names.length,
+        rescuedNames: axolotls,
+        waitingNames,
+      });
+      outputs.push(text.title, text.body, text.shortBody, text.bankedLine, text.button);
+    }
+  }
+  return outputs;
+}
+
+function collectAxolotlOutputs(): string[] {
+  const outputs: string[] = [];
+  for (const names of NAME_SAMPLES) {
+    for (const axolotls of AXOLOTL_SAMPLES) {
+      outputs.push(bankedBody(names, names.length, axolotls));
+      outputs.push(...collectAxolotlArrivalOutputs(names, axolotls));
+    }
+  }
+  for (const count of SHORT_COUNTS) {
+    for (const rescuedCount of AXOLOTL_COUNTS) outputs.push(bankedBodyShort(count, count, rescuedCount));
   }
   return outputs;
 }
@@ -370,5 +413,151 @@ describe('arrivalText shortBody', () => {
       const lower = output.toLowerCase();
       for (const treasure of CANAL_TREASURES) expect(lower).not.toContain(treasure.name.toLowerCase());
     }
+  });
+});
+
+describe('rescued and waiting axolotls', () => {
+  const GOLDEN = 'Golden albino axolotl';
+  const LEUCISTIC = 'Leucistic axolotl';
+
+  function arrivalWith(
+    reason: 'wentHome' | 'carriedHome',
+    treasures: readonly string[],
+    rescuedNames: readonly string[],
+    waitingNames: readonly string[],
+  ) {
+    return arrivalText({
+      reason,
+      returnedNames: reason === 'carriedHome' ? treasures : [],
+      bankedThisTripNames: reason === 'wentHome' ? treasures : [],
+      bankedTotal: 2,
+      rescuedNames,
+      waitingNames,
+    });
+  }
+
+  it('bankedBody names a rescued axolotl first and uses "is" for one', () => {
+    expect(bankedBody([], 0, [GOLDEN])).toBe(
+      `${GOLDEN} is safe now! No treasures at the Home Spot yet.`,
+    );
+  });
+
+  it('bankedBody uses "are" for an axolotl with a treasure and counts treasures only', () => {
+    expect(bankedBody(['Sun hat'], 1, [GOLDEN])).toBe(
+      `${GOLDEN} and Sun hat are safe now! You have 1 treasure safe at the Home Spot.`,
+    );
+  });
+
+  it('bankedBodyShort says the axolotl friend is safe with no treasures', () => {
+    expect(bankedBodyShort(0, 3, 1)).toBe(
+      'Your axolotl friend is safe now! You have 3 treasures safe at the Home Spot.',
+    );
+  });
+
+  it('bankedBodyShort pairs the axolotl friend with one treasure', () => {
+    expect(bankedBodyShort(1, 1, 1)).toBe(
+      'Your axolotl friend and your treasure are safe now! You have 1 treasure safe at the Home Spot.',
+    );
+  });
+
+  it('bankedBodyShort pairs the axolotl friend with several treasures', () => {
+    expect(bankedBodyShort(4, 4, 1)).toBe(
+      'Your axolotl friend and 4 treasures are safe! You have 4 treasures safe at the Home Spot.',
+    );
+  });
+
+  it('bankedBodyShort counts more than one axolotl friend', () => {
+    expect(bankedBodyShort(0, 0, 2)).toBe(
+      '2 axolotl friends are safe now! No treasures at the Home Spot yet.',
+    );
+    expect(bankedBodyShort(3, 3, 2)).toBe(
+      '2 axolotl friends and 3 treasures are safe! You have 3 treasures safe at the Home Spot.',
+    );
+  });
+
+  it('went home: the rescued axolotl moved into the Home Tank before the treasures', () => {
+    const text = arrivalWith('wentHome', ['Sun hat'], [GOLDEN], []);
+    expect(text.body).toBe(
+      `You swam home safe and sound. ${GOLDEN} moved into your Home Tank! ` +
+        'This trip you brought home Sun hat.',
+    );
+    expect(text.shortBody).toBe(
+      'You swam home safe and sound. Your axolotl friend moved into your Home Tank!',
+    );
+  });
+
+  it('went home: a rescued axolotl with no treasures leaves out the treasure sentence', () => {
+    const text = arrivalWith('wentHome', [], [GOLDEN], []);
+    expect(text.body).toBe(`You swam home safe and sound. ${GOLDEN} moved into your Home Tank!`);
+    expect(text.shortBody).toBe(
+      'You swam home safe and sound. Your axolotl friend moved into your Home Tank!',
+    );
+  });
+
+  it('carried home: a waiting axolotl is waiting, and "Nothing was lost." is left out', () => {
+    const text = arrivalWith('carriedHome', [], [], [GOLDEN]);
+    expect(text.body).toBe(
+      `${TRIP_END_BODY} ${GOLDEN} swam back to where you found it. It's waiting for you! ` +
+        'Treasures at the Home Spot are always safe.',
+    );
+    expect(text.body).toContain("It's waiting for you");
+    expect(text.body).not.toContain('Nothing was lost.');
+    expect(text.shortBody).toBe(
+      'A big bubble floated you home. You are safe! Your axolotl friend is waiting for you!',
+    );
+    expect(text.shortBody).not.toContain('Nothing was lost.');
+  });
+
+  it('carried home: returned treasures, then the waiting axolotl, then the rescued one; short body tells only of axolotls', () => {
+    const text = arrivalWith('carriedHome', ['Golden bow'], [LEUCISTIC], [GOLDEN]);
+    expect(text.body).toBe(
+      `${TRIP_END_BODY} Golden bow floated off to a new hiding spot. Look for it next trip! ` +
+        `${GOLDEN} swam back to where you found it. It's waiting for you! ` +
+        `${LEUCISTIC} is safe in your Home Tank. Treasures at the Home Spot are always safe.`,
+    );
+    expect(text.shortBody).toBe(
+      'A big bubble floated you home. You are safe! Your axolotl friend is waiting for you! ' +
+        'Your axolotl friend is safe in your Home Tank.',
+    );
+  });
+
+  it('carried home: several waiting axolotls use "them" and "They\'re"', () => {
+    const text = arrivalWith('carriedHome', [], [], [GOLDEN, LEUCISTIC]);
+    expect(text.body).toContain(
+      `${GOLDEN} and ${LEUCISTIC} swam back to where you found them. They're waiting for you!`,
+    );
+    expect(text.shortBody).toContain('2 axolotl friends are waiting for you!');
+  });
+
+  it('carried home: a rescued axolotl alone keeps "Nothing was lost." in the full body and uses "is"', () => {
+    const text = arrivalWith('carriedHome', [], [GOLDEN], []);
+    expect(text.body).toBe(
+      `${TRIP_END_BODY} Nothing was lost. ${GOLDEN} is safe in your Home Tank. ` +
+        'Treasures at the Home Spot are always safe.',
+    );
+    expect(text.shortBody).toBe(
+      'A big bubble floated you home. You are safe! Your axolotl friend is safe in your Home Tank.',
+    );
+  });
+
+  it('carried home: several rescued axolotls use "are"', () => {
+    const text = arrivalWith('carriedHome', [], [GOLDEN, LEUCISTIC], []);
+    expect(text.body).toContain(`${GOLDEN} and ${LEUCISTIC} are safe in your Home Tank.`);
+    expect(text.shortBody).toContain('2 axolotl friends are safe in your Home Tank.');
+  });
+
+  it('matches the old wording when the axolotl lists are empty', () => {
+    for (const reason of ['wentHome', 'carriedHome'] as const) {
+      const withLists = arrivalWith(reason, ['Sun hat'], [], []);
+      const without = arrivalText({
+        reason,
+        returnedNames: reason === 'carriedHome' ? ['Sun hat'] : [],
+        bankedThisTripNames: reason === 'wentHome' ? ['Sun hat'] : [],
+        bankedTotal: 2,
+      });
+      expect(withLists).toEqual(without);
+    }
+    expect(bankedBody(['Sun hat'], 1, [])).toBe(bankedBody(['Sun hat'], 1));
+    expect(bankedBodyShort(2, 2, 0)).toBe(bankedBodyShort(2, 2));
   });
 });

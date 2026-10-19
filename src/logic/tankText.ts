@@ -7,6 +7,9 @@ export const GO_EXPLORING_LABEL = 'Go exploring';
 /** Home Tank button that opens the Treasure Chest. */
 export const TREASURE_CHEST_LABEL = 'Treasure Chest';
 
+/** Home Tank button that opens the Collection Book. */
+export const COLLECTION_BOOK_LABEL = 'Collection Book';
+
 /** Home Tank button that starts placing Decorations. */
 export const DECORATE_LABEL = 'Decorate';
 

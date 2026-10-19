@@ -14,9 +14,11 @@
  * band. `treasure` (Dash pots, and treasures revealed by a crumble) is a cue
  * object: above the haze, below collectibles. `hint` (hint stars) draws above
  * pads and reeds, below fx. The dash-needed bubble and crumble shards use fx.
+ * `friend` (the stranded axolotl, waiting or following) sits between the halo
+ * and the axolotl, so the hero always draws in front; its lost bubble uses fx.
  * Full order: bg < caveBack < hiddenTreasure < reeds < caveFront = currentMarker
  * < haze < homeSpot < homeRing < treasure < collectibles < tilapia < halo
- * < axolotl < bubbles < surface < pads < hint < fx < ui.
+ * < friend < axolotl < bubbles < surface < pads < hint < fx < ui.
  */
 export const DEPTH = {
   bg: 0,
@@ -41,6 +43,8 @@ export const DEPTH = {
   tilapia: 35,
   /** Provisional. Protected halo: behind the axolotl, in front of the tilapia. */
   halo: 38,
+  /** Provisional. Stranded axolotl: behind the axolotl, in front of the halo. */
+  friend: 39,
   axolotl: 40,
   bubbles: 50,
   surface: 60,

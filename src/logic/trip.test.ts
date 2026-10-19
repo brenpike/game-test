@@ -12,6 +12,7 @@ import {
   idleTripSnapshot,
   keepExploring,
   legsSnapshot,
+  markTilapiaCardSeen,
   newTrip,
   sameTripSnapshot,
   stepTrip,
@@ -23,7 +24,9 @@ import {
   type TripState,
   type TripStepResult,
 } from './trip';
+import { axolotlFindId, type RealMorphId } from './morphs';
 import { DEFAULT_TRIP_SEED, nextTripSeed, type PlacedFind } from './placement';
+import { RESCUE, pickStranding, type Stranding } from './rescue';
 import { TRIP_EVENTS, TRIP_REGISTRY_KEYS, type TripSnapshot } from './tripEvents';
 import { CARRY, FINDS, LEGS, SWIM } from './tuning';
 import { buildCanalZone, swimBounds, type HidingSpot, type Point } from './zone';
@@ -748,6 +751,8 @@ describe('snapshots', () => {
       justBanked: [PLANT, HAT],
       found: [foundInfo(PLANT), foundInfo(HAT)],
       ending: null,
+      rescue: null,
+      tilapiaCardDue: false,
     });
     const done = tripSnapshot(goHome(state).state);
     expect(done.ending).toEqual({ reason: 'wentHome', returned: [], bankedThisTrip: [PLANT, HAT] });
@@ -857,5 +862,249 @@ describe('determinism', () => {
     expect(newTrip(goHome(second.state).state)).toEqual(newTrip(goHome(first.state).state));
     expect(createTrip(zone)).toEqual(createTrip(zone));
     expect(random).not.toHaveBeenCalled();
+  });
+});
+
+const WILD = axolotlFindId('wild');
+const strandPlace: Point = { x: 800, y: 200 };
+
+function strandingAt(pos: Point, morph: RealMorphId = 'wild'): Stranding {
+  return { id: axolotlFindId(morph), morph, placeId: 'test/strand', x: pos.x, y: pos.y, met: false };
+}
+
+function rescueTrip(source: TripSource = findZone, place: Point = strandPlace, banked: string[] = []): TripState {
+  return createTrip(source, LEGS, banked, DEFAULT_TRIP_SEED, { stranding: strandingAt(place) });
+}
+
+function gap(a: Point, b: Point): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function stepToward(from: Point, to: Point, distance: number): Point {
+  const span = gap(from, to);
+  if (span <= distance) return { x: to.x, y: to.y };
+  return { x: from.x + ((to.x - from.x) * distance) / span, y: from.y + ((to.y - from.y) * distance) / span };
+}
+
+describe('stranded axolotl rescue (C3 to C5, A11 to A16)', () => {
+  it('starts with no stranded axolotl and the tilapia card unseen by default', () => {
+    const trip = createTrip(zone);
+    expect(trip.rescue).toBeNull();
+    expect(trip.tilapiaCardSeen).toBe(false);
+    expect(trip.metTilapia).toBe(false);
+    const stranded = rescueTrip();
+    expect(stranded.rescue?.pos).toEqual(strandPlace);
+    expect(tripSnapshot(stranded).rescue).toEqual({ id: WILD, morph: 'wild', status: 'waiting' });
+  });
+
+  it('places the same treasures for a seed with and without a stranding (B4)', () => {
+    for (const seed of [1, 7, 42, DEFAULT_TRIP_SEED]) {
+      const stranding = pickStranding([], null, zone.strandingPlaces, seed);
+      expect(stranding).not.toBeNull();
+      expect(createTrip(zone, LEGS, [], seed, { stranding }).placed).toEqual(createTrip(zone, LEGS, [], seed).placed);
+    }
+  });
+
+  it('rescues once on reach: in the bag and found, not in snapshot found, following', () => {
+    const { state, events } = walk(rescueTrip(), [spotA, outside, strandPlace, strandPlace, strandPlace]);
+    expect(events.filter((event) => event.type === 'rescued')).toEqual([
+      { type: 'rescued', id: WILD, morph: 'wild', at: strandPlace },
+    ]);
+    expect(state.holdings.bag).toEqual([PLANT, WILD]);
+    expect(state.found).toEqual([PLANT, WILD]);
+    expect(state.rescue?.met).toBe(true);
+    const snapshot = tripSnapshot(state);
+    expect(snapshot.bag).toEqual([PLANT, WILD]);
+    expect(snapshot.found).toEqual([foundInfo(PLANT)]);
+    expect(snapshot.rescue).toEqual({ id: WILD, morph: 'wild', status: 'following' });
+  });
+
+  it('does not rescue just outside the reach radius', () => {
+    const away: Point = { x: strandPlace.x + RESCUE.reachRadius + 0.5, y: strandPlace.y };
+    const result = stepAt(rescueTrip(), away);
+    expect(result.events).toEqual([]);
+    expect(result.state.holdings.bag).toEqual([]);
+    expect(tripSnapshot(result.state).rescue?.status).toBe('waiting');
+  });
+
+  it('keeps the follower within maxLag of the axolotl on a short walk', () => {
+    let current = walk(rescueTrip(), [strandPlace]).state;
+    for (let i = 1; i <= 90; i++) {
+      const pos: Point = { x: strandPlace.x + i * 4, y: strandPlace.y + i };
+      current = stepAt(current, pos).state;
+      const follower = current.rescue as NonNullable<TripState['rescue']>;
+      expect(gap(follower.pos, pos)).toBeLessThanOrEqual(RESCUE.maxLag + 1e-9);
+    }
+    expect(current.rescue?.pos.x).toBeGreaterThan(strandPlace.x);
+    expect(tripSnapshot(current).rescue?.status).toBe('following');
+  });
+
+  it('banks the axolotl with the bag in the ring, safe, counting only treasures as banked', () => {
+    const following = walk(rescueTrip(findZone, strandPlace, ['canal/pebble-9']), [spotA, strandPlace, outside]).state;
+    const result = stepAt(following, home);
+    expect(result.events).toEqual([{ type: 'banked', ids: [PLANT, WILD] }]);
+    const { state } = result;
+    expect(state.phase).toBe('banked');
+    expect(state.justBanked).toEqual([PLANT, WILD]);
+    expect(state.holdings.banked).toEqual(['canal/pebble-9', PLANT, WILD]);
+    const snapshot = tripSnapshot(state);
+    expect(snapshot.banked).toBe(2);
+    expect(snapshot.rescue?.status).toBe('safe');
+    const resting = walk(keepExploring(state), Array.from({ length: 120 }, () => home));
+    expect(countOf(resting.events, 'rescued')).toBe(0);
+    expect(resting.state.rescue?.pos).toEqual({ x: home.x + RESCUE.restOffset.x, y: home.y + RESCUE.restOffset.y });
+    expect(tripSnapshot(resting.state).rescue?.status).toBe('safe');
+  });
+
+  it('banks a following axolotl when going home', () => {
+    const following = walk(rescueTrip(), [strandPlace]).state;
+    const result = goHome({ ...following, inHomeSpot: true });
+    expect(result.events).toEqual([{ type: 'banked', ids: [WILD] }]);
+    expect(result.state.ending).toEqual({ reason: 'wentHome', returned: [], bankedThisTrip: [WILD] });
+    expect(tripSnapshot(result.state).rescue?.status).toBe('safe');
+  });
+
+  it('sends a following axolotl back to its place when carried home, returned and waiting (C5)', () => {
+    const place: Point = { x: farTarget.x + 80, y: farTarget.y };
+    const path = Array.from({ length: 20 }, (_, i) => ({ x: place.x - (i + 1) * 4, y: place.y }));
+    const walked = walk(rescueTrip(farZone, place), [place, ...path]).state;
+    expect(walked.phase).toBe('swimming');
+    expect(walked.rescue?.pos).not.toEqual(place);
+    const carry = drive(walked, { axolotlPos: farTarget, reduced: false, dashing: false }, 'carryStart');
+    expect(carry.seconds).toBeLessThanOrEqual(20);
+    expect(carry.state.phase).toBe('carrying');
+    expect(carry.state.rescue?.pos).toEqual(place);
+    expect(carry.state.rescue?.trail).toEqual([]);
+    const arrived = drive(carry.state, { axolotlPos: farTarget, reduced: false, dashing: false }, 'arrivedHome').state;
+    expect(arrived.ending?.returned).toContain(WILD);
+    expect(arrived.holdings.bag).toEqual([]);
+    expect(tripSnapshot(arrived).rescue?.status).toBe('waiting');
+  });
+
+  it('keeps a banked axolotl safe and out of returned when carried home', () => {
+    const bankedState = stepAt(walk(rescueTrip(farZone), [strandPlace, outside]).state, home).state;
+    expect(bankedState.phase).toBe('banked');
+    const carry = drive(keepExploring(bankedState), { axolotlPos: farTarget, reduced: false, dashing: false }, 'carryStart');
+    expect(carry.state.phase).toBe('carrying');
+    expect(tripSnapshot(carry.state).rescue?.status).toBe('safe');
+    const arrived = drive(carry.state, { axolotlPos: farTarget, reduced: false, dashing: false }, 'arrivedHome').state;
+    expect(arrived.ending?.returned).not.toContain(WILD);
+    expect(arrived.holdings.banked).toContain(WILD);
+    expect(tripSnapshot(arrived).rescue?.status).toBe('safe');
+  });
+
+  it('cannot be hit: the follower position never changes the encounter or its events', () => {
+    const start = rescueTrip(zone, inRange);
+    const lunging = drive(start, { axolotlPos: inRange, reduced: false, dashing: false }, 'lunge', 20);
+    const lunge = lunging.last.events.find((event) => event.type === 'lunge');
+    expect(lunge).toBeDefined();
+    expect(lunging.state.holdings.bag).toContain(WILD);
+    const rescue = lunging.state.rescue as NonNullable<TripState['rescue']>;
+    const lunger = lunging.state.encounter.tilapias.find((tilapia) => tilapia.routeId === lunge?.tilapiaId);
+    expect(lunger?.phase).toBe('lunge');
+    const onTilapia: TripState = { ...lunging.state, rescue: { ...rescue, pos: { ...(lunger as { pos: Point }).pos } } };
+    const away: TripState = { ...lunging.state, rescue: { ...rescue, pos: { x: home.x, y: home.y } } };
+    const path = Array.from({ length: 60 }, () => inRange);
+    const a = walk(onTilapia, path);
+    const b = walk(away, path);
+    expect(a.state.encounter).toEqual(b.state.encounter);
+    expect(a.events).toEqual(b.events);
+    expect(countOf(a.events, 'hit')).toBeGreaterThan(0);
+    expect(a.last.impulse).toEqual(b.last.impulse);
+  });
+
+  it('starts the next trip with no stranded axolotl', () => {
+    const done = goHome({ ...walk(rescueTrip(), [strandPlace]).state, inHomeSpot: true }).state;
+    const fresh = newTrip(done);
+    expect(fresh.rescue).toBeNull();
+    expect(fresh.tilapiaCardSeen).toBe(false);
+    expect(fresh.metTilapia).toBe(false);
+  });
+});
+
+describe('meeting a tilapia', () => {
+  const meetZone: TripSource = { ...zone, finds: [], spots: [], tilapiaRoutes: [{ id: 'meet', waypoints: [{ x: 400, y: 200 }] }] };
+  const inSafe: Point = { x: zone.safeArea.x1 - 10, y: 200 };
+  const outSafe: Point = { x: zone.safeArea.x1 + 10, y: 200 };
+
+  it('is not met inside the safe area, then met once outside within range', () => {
+    const safe = walk(createTrip(meetZone), [home, inSafe, inSafe]).state;
+    expect(safe.metTilapia).toBe(false);
+    expect(tripSnapshot(safe).tilapiaCardDue).toBe(false);
+    const met = stepAt(safe, outSafe).state;
+    expect(met.metTilapia).toBe(true);
+    expect(tripSnapshot(met).tilapiaCardDue).toBe(true);
+    const back = stepAt(met, inSafe).state;
+    expect(back.metTilapia).toBe(true);
+  });
+
+  it('is not met outside the safe area when every tilapia is out of range', () => {
+    expect(walk(createTrip(findZone), [outside, spotA]).state.metTilapia).toBe(false);
+  });
+
+  it('is never due when the tilapia card was already seen', () => {
+    const seen = createTrip(meetZone, LEGS, [], DEFAULT_TRIP_SEED, { tilapiaCardSeen: true });
+    const met = stepAt(seen, outSafe).state;
+    expect(met.metTilapia).toBe(true);
+    expect(tripSnapshot(met).tilapiaCardDue).toBe(false);
+  });
+
+  it('is no longer due once the card is marked seen, and stays met', () => {
+    const met = stepAt(createTrip(meetZone), outSafe).state;
+    expect(tripSnapshot(met).tilapiaCardDue).toBe(true);
+    const seen = markTilapiaCardSeen(met);
+    expect(seen).not.toBe(met);
+    expect(seen).toEqual({ ...met, tilapiaCardSeen: true });
+    expect(met.tilapiaCardSeen).toBe(false);
+    expect(tripSnapshot(seen).tilapiaCardDue).toBe(false);
+    const later = stepAt(seen, outSafe).state;
+    expect(later.metTilapia).toBe(true);
+    expect(tripSnapshot(later).tilapiaCardDue).toBe(false);
+  });
+
+  it('returns the same object when the card was already seen', () => {
+    const seen = createTrip(meetZone, LEGS, [], DEFAULT_TRIP_SEED, { tilapiaCardSeen: true });
+    expect(markTilapiaCardSeen(seen)).toBe(seen);
+  });
+
+  it('meets a tilapia on a step before any telegraph when swimming toward route 0', () => {
+    let current = createTrip(zone);
+    let pos: Point = { x: home.x, y: home.y };
+    let metStep = -1;
+    let telegraphStep = -1;
+    for (let i = 0; i < 20 * 60 && telegraphStep < 0; i++) {
+      pos = stepToward(pos, current.encounter.tilapias[0].pos, 150 * DT);
+      const result = stepAt(current, pos);
+      current = result.state;
+      if (metStep < 0 && current.metTilapia) metStep = i;
+      if (result.events.some((event) => event.type === 'telegraph')) telegraphStep = i;
+    }
+    expect(metStep).toBeGreaterThanOrEqual(0);
+    expect(telegraphStep).toBeGreaterThan(metStep);
+  });
+});
+
+describe('rescue and tilapia snapshots', () => {
+  it('detects rescue-status and tilapiaCardDue changes', () => {
+    const base: TripSnapshot = { ...idleTripSnapshot(), rescue: { id: WILD, morph: 'wild', status: 'waiting' } };
+    const rescue = base.rescue as NonNullable<TripSnapshot['rescue']>;
+    expect(sameTripSnapshot(base, { ...base, rescue: { ...rescue } })).toBe(true);
+    const changes: TripSnapshot[] = [
+      { ...base, rescue: null },
+      { ...base, rescue: { ...rescue, status: 'following' } },
+      { ...base, rescue: { ...rescue, status: 'safe' } },
+      { ...base, rescue: { id: axolotlFindId('melanoid'), morph: 'melanoid', status: 'waiting' } },
+      { ...base, tilapiaCardDue: true },
+    ];
+    for (const changed of changes) {
+      expect(sameTripSnapshot(base, changed)).toBe(false);
+      expect(sameTripSnapshot(changed, base)).toBe(false);
+    }
+  });
+
+  it('starts idle with no rescue and no tilapia card due', () => {
+    expect(idleTripSnapshot()).toEqual(tripSnapshot(createTrip(zone)));
+    expect(idleTripSnapshot().rescue).toBeNull();
+    expect(idleTripSnapshot().tilapiaCardDue).toBe(false);
   });
 });
