@@ -479,7 +479,7 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | 18 | Is Tank Top Model part of the MVP? | Decided: no. It is the first feature after the MVP (N1). |
 | 19 | Which spot patterns does the creator offer (F2)? | None, Freckles, Dots and Patches ([art style guide](../art-style-guide.md) 6n). Needs confirmation. |
 | 20 | Which suggested names are on the list (F17)? | Bubbles, Gilly, Pebble, Noodle, Sprinkles, Mochi, Lily, Ripple, Puddle, Sunny, Blossom, Peanut, Wiggles, Splash, Pickle and Xochi. Needs confirmation. |
-| 21 | What can a typed name hold (F2)? | 1 to 12 characters: letters of any script, digits, spaces, hyphens and apostrophes. A letter with its accents counts as one character. Anything else is dropped and does not count. Needs confirmation. |
+| 21 | What can a typed name hold (F2)? | 1 to 12 characters: letters of any script, digits, spaces, hyphens and apostrophes. A letter with its accents counts as one character. Anything else is dropped and does not count. It never shows in the name field: it is dropped as it is typed or pasted. Needs confirmation. |
 | 22 | What is the default look? | Happy eyes, Open "D" mouth, Fluffy gills, Freckles spots, Medium size. Needs confirmation. |
 | 23 | What does the character creator start with (F1)? | The default look, a random suggested name, and the Leucistic colour, so Done works at once. Done makes the starter with the chosen colour as its morph, already found in the Collection Book (set by `addStarter` in `src/logic/session.ts`). Needs confirmation. |
 | 24 | What name and look does a rescued axolotl get? | The default look and the first suggested name no owned axolotl uses. The player can restyle it (F6). Needs confirmation. |

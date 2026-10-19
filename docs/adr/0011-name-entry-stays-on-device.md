@@ -22,7 +22,8 @@ But a browser text field can leak what is typed: cloud spellcheck services can b
 - A name is not stored on the device in this build: it lives only in the session, in memory. Saving (issue #15) will keep it on the device only, as ADR 0007 requires for all saved progress.
 - Suggested names make typing optional. The arrows step through 16 suggested names, and the creator starts with a random one, so Done works at once (PRD F17).
 - A name character is a letter with its accents (combining marks, at most 4; any more are dropped), a digit, a space, a hyphen or an apostrophe. A typed name is cleaned to 1 to 12 name characters. Anything else is dropped.
-- The text field counts with the same rule as the cleaning (`fitNameEdit` in `src/logic/axolotlNames.ts`), not with the browser `maxlength`. Typing past 12 does nothing. A longer paste keeps the start that fits. Dropped characters count for nothing. While an IME is composing, the limit applies when the composition ends.
+- The field holds only name characters, through `fitNameEdit` (`src/logic/axolotlNames.ts`), the same rule as the cleaning. Anything a name cannot hold is dropped as it is typed or pasted, with no extra cue. Space runs become one space and a leading space is dropped. A trailing space stays while typing and is trimmed when the name is kept. Typing past 12 does nothing, and a longer paste keeps the start that fits, with the caret after the kept text. During an IME composition the field is left alone; the rule applies when the composition ends, on Enter, or when the field loses focus.
+- The field's `maxlength` is only a raw ceiling (`NAME_FIELD_RAW_MAX`, over four times the longest name the field can hold, in UTF-16 units) so a huge paste or composition cannot grow the field without bound. It is never the name limit.
 - There is no word filter, because names are never shown to anyone else or shared.
 
 ## Alternatives considered
@@ -33,7 +34,10 @@ But a browser text field can leak what is typed: cloud spellcheck services can b
 | Suggested names only, no typing | PRD F2 asks for free text. Suggested names still make typing optional. |
 | A word filter or blocklist | Names are never shared, so a filter protects no one. Any list would also block real names in some languages and need upkeep. |
 | A form field with the browser's defaults | Spellcheck could send the text to a cloud service, and autofill and form history could keep it. |
-| The browser `maxlength` | It counts UTF-16 units before cleaning. Letters outside the BMP count twice, dropped characters use up the limit, and IME text can be cut mid-composition. |
+| The browser `maxlength` as the name limit | It counts UTF-16 units before cleaning. Letters outside the BMP count twice, dropped characters use up the limit, and IME text can be cut mid-composition. |
+| Keep the typed text and count only name characters | Dropped characters would stay in the field, cost nothing, and vanish only when the name is kept. A long paste would stay and be re-read on every edit. |
+| Rewrite the field during an IME composition | It breaks composition on many IMEs. |
+| A cue when characters are dropped | More motion, sound and live-region surface for a kids' UI. The field already shows the result at once. |
 | Counting code points | An accent can be cut from its letter, and scripts with many marks get fewer letters. |
 | Counting graphemes with `Intl.Segmenter` | Not in every browser the build targets (for example Firefox before 125). A fallback would count differently. |
 
@@ -41,7 +45,8 @@ But a browser text field can leak what is typed: cloud spellcheck services can b
 
 - Text entry is browser glue in `src/platform/`. Name rules (cleaning, length, suggested names) stay pure in `src/logic/`.
 - Any field that takes typed text must keep these settings: no form, no `name` attribute, and spellcheck, autocomplete and autocorrect off.
-- The field is never rewritten with the cleaned name, so a trailing space survives while typing. It is rewritten only when an edit goes past 12, and the caret is kept.
-- On keyboards that compose whole words, a word can run past 12 until it is finished. Then it is cut.
+- The field always holds the name as it will be kept, plus at most one trailing space while typing. It is rewritten, with the caret kept, whenever an edit leaves anything else, so field and name cannot disagree.
+- During a composition the field can hold characters the name drops, or run past 12, because rewriting mid-composition breaks IMEs (rejected). The window is bounded by the raw ceiling, stays on the device, and ends when the composition ends, on Enter, or on blur.
+- A paste longer than the raw ceiling is cut by the browser before the rule runs, so name characters after a very long run of dropped characters can be lost. This is bounded and accepted.
 - Saving (issue #15) must keep names on the device, with the rest of the save.
 - Any future feature that shows names to other people, or sends them anywhere (for example cloud saves), needs a new ADR first, and must revisit the word filter decision.

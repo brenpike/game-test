@@ -1,6 +1,8 @@
 /**
  * Axolotl name rules: the suggested names list and the cleaning that keeps a typed or pasted name
- * short and plain (PRD F2, F17). Names never leave the device.
+ * short and plain (PRD F2, F17). Outside IME composition a name field's text is always a name draft
+ * (see nameDraft), so the text shown and the name it counts cannot differ. Names never leave the
+ * device.
  */
 import { nextFocusIndex } from './tankUi';
 
@@ -13,7 +15,17 @@ export const NAME_MAX = 12;
 /** Most combining marks kept on one letter; extra marks are dropped. */
 export const NAME_MARKS_MAX = 4;
 
-/** A name field's text and its caret, as a UTF-16 offset into the text. */
+/**
+ * The name field's raw maxlength ceiling, in UTF-16 units; never the name limit, which is NAME_MAX
+ * name characters. A name character is at most 2 + 2 * NAME_MARKS_MAX units, so this is four times
+ * the longest name draft.
+ */
+export const NAME_FIELD_RAW_MAX = 4 * NAME_MAX * 2 * (1 + NAME_MARKS_MAX);
+
+/**
+ * A name field's text, a name draft (see nameDraft), and its caret, as a UTF-16 offset into the
+ * text on a name character boundary.
+ */
 export interface NameEdit {
   readonly value: string;
   readonly caret: number;
@@ -60,11 +72,24 @@ export function nameLength(raw: string): number {
 }
 
 /**
- * Cleans a typed or pasted name: keeps the first NAME_MAX name characters (see NAME_MAX) and trims
- * the end. May return ''.
+ * The name draft of a typed or pasted name: the first NAME_MAX name characters (see NAME_MAX), as
+ * NFC with no leading space and whitespace runs as one space. A trailing space stays, so the player
+ * can type the next word. May return ''.
+ */
+export function nameDraft(raw: string): string {
+  return splitNameCharacters(raw).slice(0, NAME_MAX).join('');
+}
+
+/** True when `text` is already its own name draft. */
+export function isNameDraft(text: string): boolean {
+  return nameDraft(text) === text;
+}
+
+/**
+ * Cleans a typed or pasted name: its name draft with the end trimmed. May return ''.
  */
 export function cleanName(raw: string): string {
-  return splitNameCharacters(raw).slice(0, NAME_MAX).join('').trimEnd();
+  return nameDraft(raw).trimEnd();
 }
 
 /** True for a non-empty string that is already clean and at most NAME_MAX name characters. */
@@ -118,32 +143,41 @@ function longestFittingCount(head: string, codePoints: readonly string[], tail: 
   return fittingCount;
 }
 
-function longestFittingStart(text: string): NameEdit {
-  const codePoints = Array.from(text);
-  const value = codePoints.slice(0, longestFittingCount('', codePoints, '')).join('');
-  return { value, caret: value.length };
+/** The UTF-16 length of the first `count` name characters of the name draft `draft`. */
+function draftPrefixLength(draft: string, count: number): number {
+  return splitNameCharacters(draft).slice(0, count).join('').length;
 }
 
 /**
- * Fits an edit of a name field to NAME_MAX name characters. `before` and `after` are the field's
- * text around the edit and `caret` is the caret after it, as a UTF-16 offset into `after`. A fitting
- * edit comes back as is, with the caret clamped into `after`. Otherwise the edit region is found
- * from the shared suffix (up to the caret) and the shared prefix (up to the caret, not overlapping
- * the suffix), on code-point boundaries, and the longest start of the inserted text that fits is
- * kept, with the caret after it. When even dropping the whole insertion does not fit, the longest
- * fitting start of `after` comes back with the caret at its end.
+ * Fits an edit of a name field to a name draft (see nameDraft). `before` and `after` are the field's
+ * text around the edit and `caret` is the caret after it, as a UTF-16 offset into `after`. An edit
+ * that is already a draft comes back as is, with the caret clamped into `after`. Otherwise the edit
+ * region is found from the shared suffix (up to the caret) and the shared prefix (up to the caret,
+ * not overlapping the suffix), on code-point boundaries, the longest start of the inserted text that
+ * fits NAME_MAX is kept, and the result is the draft of that text. The caret lands after as many
+ * name characters as the text before it held: the caret given when the whole insertion was kept,
+ * else the end of the kept part. When even dropping the whole insertion does not fit, the draft of
+ * `after` comes back with the caret at its end.
  */
 export function fitNameEdit(before: string, after: string, caret: number): NameEdit {
   const caretIndex = Math.min(Math.max(caret, 0), after.length);
-  if (fitsName(after)) return { value: after, caret: caretIndex };
+  if (isNameDraft(after)) return { value: after, caret: caretIndex };
   const suffixLength = commonSuffixLength(before, after, Math.min(after.length - caretIndex, before.length));
   const prefixLength = commonPrefixLength(before, after, Math.min(caretIndex, before.length - suffixLength));
   const head = after.slice(0, prefixLength);
   const tail = after.slice(after.length - suffixLength);
-  if (!fitsName(head + tail)) return longestFittingStart(after);
+  if (!fitsName(head + tail)) {
+    const value = nameDraft(after);
+    return { value, caret: value.length };
+  }
   const inserted = Array.from(after.slice(prefixLength, after.length - suffixLength));
-  const kept = inserted.slice(0, longestFittingCount(head, inserted, tail)).join('');
-  return { value: head + kept + tail, caret: head.length + kept.length };
+  const keptCount = longestFittingCount(head, inserted, tail);
+  const kept = inserted.slice(0, keptCount).join('');
+  const rawText = head + kept + tail;
+  const value = nameDraft(rawText);
+  const rawCaret = keptCount === inserted.length ? caretIndex : head.length + kept.length;
+  const caretCount = Math.min(nameLength(rawText.slice(0, rawCaret)), nameLength(value));
+  return { value, caret: draftPrefixLength(value, caretCount) };
 }
 
 /** A random suggested name; `rand` yields floats in [0, 1), such as mulberry32. */

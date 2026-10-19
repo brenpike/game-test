@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  NAME_FIELD_RAW_MAX,
   NAME_MARKS_MAX,
   NAME_MAX,
   SUGGESTED_NAMES,
   cleanName,
   fitNameEdit,
+  isNameDraft,
   isValidName,
+  nameDraft,
   nameLength,
   randomSuggestedName,
   stepSuggestedName,
@@ -62,6 +65,9 @@ const MESSY_INPUTS = [
   'a'.repeat(5000),
   '𝒜𝒷𝒸𝒹𝑒𝒻𝑔𝒽𝒾𝒿𝓀𝓁𝓂',
 ];
+
+/** The most UTF-16 units a name draft can hold: NAME_MAX name characters of 2 + 2 * NAME_MARKS_MAX. */
+const NAME_DRAFT_UNITS_MAX = NAME_MAX * 2 * (1 + NAME_MARKS_MAX);
 
 const LONE_SURROGATE_PATTERN = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
@@ -229,6 +235,48 @@ describe('nameLength', () => {
   });
 });
 
+describe('nameDraft', () => {
+  it('keeps a trailing space and drops a leading one', () => {
+    expect(nameDraft('Gil ')).toBe('Gil ');
+    expect(nameDraft('  Gil\t\n')).toBe('Gil ');
+    expect(nameDraft('!!!!Bubbles🐟')).toBe('Bubbles');
+  });
+
+  it('is idempotent', () => {
+    for (const raw of MESSY_INPUTS) {
+      const draft = nameDraft(raw);
+      expect(nameDraft(draft)).toBe(draft);
+    }
+  });
+});
+
+describe('isNameDraft', () => {
+  it('accepts drafts', () => {
+    expect(isNameDraft('')).toBe(true);
+    expect(isNameDraft('Gil ')).toBe(true);
+    for (const name of SUGGESTED_NAMES) expect(isNameDraft(name)).toBe(true);
+    for (const raw of MESSY_INPUTS) {
+      const cleaned = cleanName(raw);
+      if (cleaned.length > 0) expect(isNameDraft(cleaned)).toBe(true);
+    }
+  });
+
+  it('rejects text the draft would change', () => {
+    expect(isNameDraft(' Gil')).toBe(false);
+    expect(isNameDraft('Gil  ')).toBe(false);
+    expect(isNameDraft('Gil\t')).toBe(false);
+    expect(isNameDraft('Bubbles🐟')).toBe(false);
+    expect(isNameDraft('Zoe\u0301')).toBe(false);
+    expect(isNameDraft('a'.repeat(13))).toBe(false);
+  });
+});
+
+describe('NAME_FIELD_RAW_MAX', () => {
+  it('is at least four times the longest name draft', () => {
+    expect(NAME_FIELD_RAW_MAX).toBeGreaterThanOrEqual(4 * NAME_DRAFT_UNITS_MAX);
+  });
+});
+
 describe('isValidName', () => {
   it('accepts clean names', () => {
     expect(isValidName('Bubbles')).toBe(true);
@@ -252,11 +300,39 @@ describe('isValidName', () => {
 });
 
 describe('fitNameEdit', () => {
-  it('keeps a fitting edit, clamping the caret into the text', () => {
+  it('keeps a draft edit, clamping the caret into the text', () => {
     expect(fitNameEdit('Gil', 'Gil ', 4)).toEqual({ value: 'Gil ', caret: 4 });
-    expect(fitNameEdit('', '!!!!!!!!!!!!Bubbles', 19)).toEqual({ value: '!!!!!!!!!!!!Bubbles', caret: 19 });
     expect(fitNameEdit('Gil', 'Gill', 9)).toEqual({ value: 'Gill', caret: 4 });
     expect(fitNameEdit('Gil', 'Gill', -2)).toEqual({ value: 'Gill', caret: 0 });
+  });
+
+  it('turns a fitting edit into its draft, keeping the caret after the same name characters', () => {
+    expect(fitNameEdit('', '!!!!!!!!!!!!Bubbles', 19)).toEqual({ value: 'Bubbles', caret: 7 });
+    expect(fitNameEdit('Bubbles', 'Bubbles🐟', 9)).toEqual({ value: 'Bubbles', caret: 7 });
+    expect(fitNameEdit('Gilly', 'Gil🐟ly', 5)).toEqual({ value: 'Gilly', caret: 3 });
+    expect(fitNameEdit('', '🐟🐟🐟', 6)).toEqual({ value: '', caret: 0 });
+  });
+
+  it('keeps one trailing space and no leading space', () => {
+    expect(fitNameEdit('Gil ', 'Gil  ', 5)).toEqual({ value: 'Gil ', caret: 4 });
+    expect(fitNameEdit('', ' ', 1)).toEqual({ value: '', caret: 0 });
+    expect(fitNameEdit('Gil', ' Gil', 1)).toEqual({ value: 'Gil', caret: 0 });
+    expect(fitNameEdit('Gil', 'Gil\t', 4)).toEqual({ value: 'Gil ', caret: 4 });
+    expect(fitNameEdit('A b c', 'A  c', 2)).toEqual({ value: 'A c', caret: 2 });
+  });
+
+  it('composes marks and Hangul jamo into the draft', () => {
+    expect(fitNameEdit('Zoe', 'Zoe\u0308', 4)).toEqual({ value: 'Zoë', caret: 3 });
+    expect(fitNameEdit('q', 'q' + '\u0301'.repeat(9), 10)).toEqual({
+      value: 'q' + '\u0301'.repeat(NAME_MARKS_MAX),
+      caret: 5,
+    });
+    expect(fitNameEdit('ᄀ', 'ᄀ😀ᅡ', 4)).toEqual({ value: '가', caret: 1 });
+  });
+
+  it('drops a huge paste of dropped characters quickly', () => {
+    const pasted = 'Gil' + '🐟'.repeat(100000);
+    expect(fitNameEdit('Gil', pasted, pasted.length)).toEqual({ value: 'Gil', caret: 3 });
   });
 
   it('drops a typed character that does not fit', () => {
@@ -284,25 +360,31 @@ describe('fitNameEdit', () => {
     expect(LONE_SURROGATE_PATTERN.test(sharedLow.value)).toBe(false);
   });
 
-  it('falls back to the longest fitting start when even the untouched text does not fit', () => {
+  it('falls back to the draft of the text when even the untouched text does not fit', () => {
     expect(fitNameEdit('a'.repeat(20), 'a'.repeat(21), 21)).toEqual({ value: 'a'.repeat(NAME_MAX), caret: NAME_MAX });
   });
 
-  it('fits every messy insertion at the start, middle and end, matching a brute-force search', () => {
+  it('fits every messy insertion at the start, middle and end to a draft, matching a brute-force search', () => {
     for (const before of EDIT_BEFORES) {
       for (const raw of MESSY_INPUTS) {
         for (const insertion of insertionsOf(before, raw)) {
           const after = insertion.head + insertion.inserted + insertion.tail;
-          const fitted = fitNameEdit(before, after, insertion.head.length + insertion.inserted.length);
-          expect(nameLength(fitted.value)).toBeLessThanOrEqual(NAME_MAX);
-          expect(fitted.value.startsWith(insertion.head)).toBe(true);
-          expect(fitted.value.endsWith(insertion.tail)).toBe(true);
-          const kept = fitted.value.slice(insertion.head.length, fitted.value.length - insertion.tail.length);
-          expect(insertion.inserted.startsWith(kept)).toBe(true);
-          expect(fitted.caret).toBe(insertion.head.length + kept.length);
-          expect(nameLength(fitted.value) - nameLength(cleanName(fitted.value))).toBeLessThanOrEqual(1);
+          const { value, caret } = fitNameEdit(before, after, insertion.head.length + insertion.inserted.length);
+          expect(isNameDraft(value)).toBe(true);
+          expect(nameLength(value)).toBeLessThanOrEqual(NAME_MAX);
+          expect(value.length).toBeLessThanOrEqual(NAME_DRAFT_UNITS_MAX);
+          expect(cleanName(value)).toBe(value.trimEnd());
+          const beforeCaret = value.slice(0, caret);
+          expect(isNameDraft(beforeCaret)).toBe(true);
+          expect(LONE_SURROGATE_PATTERN.test(beforeCaret)).toBe(false);
+          expect(fitNameEdit(value, value, caret)).toEqual({ value, caret });
           if (Array.from(raw).length > BRUTE_FORCE_MAX_CODE_POINTS) continue;
-          expect(fitted.value).toBe(keptText(insertion, bruteForceKeptCount(insertion)));
+          const keptCount = bruteForceKeptCount(insertion);
+          expect(value).toBe(nameDraft(keptText(insertion, keptCount)));
+          const keptInsertion = Array.from(insertion.inserted).slice(0, keptCount).join('');
+          expect(nameLength(beforeCaret)).toBe(
+            Math.min(nameLength(insertion.head + keptInsertion), nameLength(value)),
+          );
         }
       }
     }
