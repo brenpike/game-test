@@ -9,7 +9,6 @@ import {
   allCollected,
   collectNear,
   countCollected,
-  createCollectibles,
   type Collectible,
 } from '../logic/collectibles';
 import { createEncounterContext } from '../logic/encounter';
@@ -26,6 +25,7 @@ import {
 import { legSwimTuning, legWobble } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { mulberry32 } from '../logic/rng';
+import { restoreSnacks, tripStart } from '../logic/session';
 import { steerFromKeys, type KeyState } from '../logic/steering';
 import { startDashVelocity, stepSwim, swimIntensity, type SwimBounds, type SwimState } from '../logic/swimPhysics';
 import { createDash, dashCharge, tryStartDash, updateDash, type DashState } from '../logic/tailDash';
@@ -34,7 +34,6 @@ import {
   createTripContext,
   goHome,
   keepExploring,
-  newTrip,
   sameTripSnapshot,
   stepTrip,
   tripAxolotlPos,
@@ -61,6 +60,7 @@ import {
 import { HomeSpotView } from './HomeSpotView';
 import { addMotionTween, settleMotionTweens } from './motionTweens';
 import { PredatorView } from './PredatorView';
+import { readSession, returnToHomeTank } from './sceneFlow';
 import { TreasureView } from './TreasureView';
 
 const TAU = Math.PI * 2;
@@ -130,6 +130,8 @@ function placeBaked(image: Phaser.GameObjects.Image, info: TexInfo): Phaser.Game
 /**
  * The canal zone: swimming, snacks, currents, reeds, bubbles, Tail Dash, the tilapia, the Home
  * Spot and the hidden treasures (hint stars, Dash pots, the cave and the past-the-current marker).
+ * One scene start is one trip: it starts from the session and, once the trip ends, hands the trip
+ * back to the session and opens the Home Tank.
  */
 export class SwimScene extends Phaser.Scene {
   private assets!: GameAssets;
@@ -147,6 +149,8 @@ export class SwimScene extends Phaser.Scene {
   private trip!: TripState;
   private tripCtx!: TripContext;
   private snapshot!: TripSnapshot;
+  /** Whether the ended trip has been handed back and the Home Tank asked for; once per trip. */
+  private leaving = false;
 
   private padSteer: Vec2 = { x: 0, y: 0 };
   private lastSteer: Vec2 = { x: 0, y: 0 };
@@ -189,9 +193,18 @@ export class SwimScene extends Phaser.Scene {
     this.assets = data;
     this.clock = 0;
     this.allDone = false;
+    this.leaving = false;
     this.dashKeyLatched = false;
     this.dashingThisFrame = false;
     this.padSteer = { x: 0, y: 0 };
+    this.lastSteer = { x: 0, y: 0 };
+    this.keys = { left: [], right: [], up: [], down: [] };
+    this.dashKeys = [];
+    this.snacks = new Map();
+    this.sparkleCursor = 0;
+    this.sparkleAcc = 0;
+    this.sparkleLevel = 0;
+    this.redrawAcc = 0;
     this.lastPose = null;
     this.turn = { squash: 1 };
     this.swimPhase = (TAU * T_STATIC) / 1.2;
@@ -207,12 +220,14 @@ export class SwimScene extends Phaser.Scene {
     this.swim = { x: zone.start.x, y: zone.start.y, vx: 0, vy: 0, facing: 1 };
     this.lastFacing = this.swim.facing;
     this.dash = createDash();
-    this.items = createCollectibles(zone.collectibles);
     this.bubbles = createBubbles();
-    // INVARIANT: trip seeds are never saved. The first trip per scene start is random; later
-    // trips use newTrip's default, nextTripSeed.
-    const tripSeed = Math.floor(Math.random() * 0x100000000) >>> 0;
-    this.trip = createTrip(zone, LEGS, [], tripSeed);
+    // INVARIANT: trip seeds are never saved. The first trip of the session is random; later
+    // trips use nextTripSeed of the last trip's seed (tripStart).
+    const start = tripStart(readSession(this.registry), Math.floor(Math.random() * 0x100000000) >>> 0);
+    this.items = restoreSnacks(zone.collectibles, start.eatenSnacks);
+    this.allDone = allCollected(this.items);
+    this.trip = createTrip(zone, LEGS, start.banked, start.tripSeed);
+    this.dashKeyLatched = true;
     this.tripCtx = createTripContext({ encounter: createEncounterContext({ bounds: this.bounds }) });
     this.registry.set(REGISTRY_KEYS.total, this.items.length);
     this.registry.set(REGISTRY_KEYS.collected, countCollected(this.items));
@@ -226,7 +241,6 @@ export class SwimScene extends Phaser.Scene {
     this.game.events.on(GAME_EVENTS.STEER, this.handleSteer, this);
     this.game.events.on(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
     this.game.events.on(Phaser.Core.Events.HIDDEN, this.handleHidden, this);
-    this.game.events.on(TRIP_EVENTS.REQUEST_NEW_TRIP, this.handleRequestNewTrip, this);
     this.game.events.on(TRIP_EVENTS.REQUEST_KEEP_EXPLORING, this.handleRequestKeepExploring, this);
     this.game.events.on(TRIP_EVENTS.REQUEST_GO_HOME, this.handleRequestGoHome, this);
     this.events.on(Phaser.Scenes.Events.RESUME, this.handleResume, this);
@@ -300,6 +314,7 @@ export class SwimScene extends Phaser.Scene {
 
     this.snacks.clear();
     for (const item of this.items) {
+      if (item.collected) continue;
       const info = item.kind === 'worm' ? baked.worm : baked.bug;
       this.snacks.set(
         item.id,
@@ -392,7 +407,7 @@ export class SwimScene extends Phaser.Scene {
     this.requestDash();
   }
 
-  /** After a new trip, a dash key held from confirming the HUD card must be released before it dashes. */
+  /** A dash key held from the Home Tank or from confirming a HUD card must be released before it dashes. */
   private releaseDashLatch(): void {
     if (this.dashKeyLatched && !anyKeyDown(this.dashKeys)) {
       this.dashKeyLatched = false;
@@ -519,39 +534,19 @@ export class SwimScene extends Phaser.Scene {
     this.publishSnapshot(snapshot);
   }
 
+  /** Publishes the trip snapshot to the HUD; an ended trip (Go home or the end of the carry) leaves for the Home Tank. */
   private publishSnapshot(snapshot: TripSnapshot): void {
     this.snapshot = snapshot;
     this.registry.set(TRIP_REGISTRY_KEYS.state, snapshot);
     this.game.events.emit(TRIP_EVENTS.STATE, snapshot);
+    if (snapshot.phase === 'ended') this.leaveForHomeTank();
   }
 
-  /**
-   * Starts a new trip in place once the last one has ended: Home Spot, four legs, fresh tilapia
-   * and Dash, and every unbanked treasure placed again with its Dash pot sealed. Snacks are kept
-   * (PRD A19). Ignored in any other phase.
-   */
-  private handleRequestNewTrip(): void {
-    const next = newTrip(this.trip);
-    if (next === this.trip) return;
-    this.trip = next;
-    this.dashKeyLatched = true;
-    this.swim = { x: next.home.x, y: next.home.y, vx: 0, vy: 0, facing: 1 };
-    this.lastFacing = this.swim.facing;
-    this.tweens.killTweensOf(this.turn);
-    this.turn.squash = 1;
-    this.padSteer = { x: 0, y: 0 };
-    this.lastSteer = { x: 0, y: 0 };
-    this.sparkleLevel = 0;
-    this.dash = createDash();
-    this.dashingThisFrame = false;
-    this.predatorView.reset();
-    this.homeSpotView.reset();
-    this.treasureView.reset(next.placed);
-    this.followPoint.set(this.swim.x, this.swim.y);
-    this.cameras.main.centerOn(this.swim.x, this.swim.y);
-    this.emitDashState();
-    this.publishSnapshot(tripSnapshot(this.trip));
-    this.renderFrame(0);
+  /** Hands the ended trip and its snacks back to the session and opens the Home Tank, once per trip. */
+  private leaveForHomeTank(): void {
+    if (this.leaving) return;
+    this.leaving = true;
+    returnToHomeTank(this, this.assets, this.trip, this.items);
   }
 
   /**
@@ -613,7 +608,6 @@ export class SwimScene extends Phaser.Scene {
     this.game.events.off(GAME_EVENTS.STEER, this.handleSteer, this);
     this.game.events.off(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
     this.game.events.off(Phaser.Core.Events.HIDDEN, this.handleHidden, this);
-    this.game.events.off(TRIP_EVENTS.REQUEST_NEW_TRIP, this.handleRequestNewTrip, this);
     this.game.events.off(TRIP_EVENTS.REQUEST_KEEP_EXPLORING, this.handleRequestKeepExploring, this);
     this.game.events.off(TRIP_EVENTS.REQUEST_GO_HOME, this.handleRequestGoHome, this);
     this.events.off(Phaser.Scenes.Events.RESUME, this.handleResume, this);

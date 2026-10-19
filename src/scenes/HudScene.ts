@@ -52,7 +52,6 @@ import {
   type UiButton,
 } from './BootScene';
 import { FindPopup } from './FindPopup';
-import { HomeScreen } from './HomeScreen';
 import { addMotionTween, settleMotionTweens } from './motionTweens';
 
 const MARGIN = 16;
@@ -88,10 +87,9 @@ const BAG_STATUS_PX = 18;
 const BAG_GAP = 6;
 const HINT_HOLD_MS = 6000;
 const HINT_FADE_MS = 400;
-// INVARIANT: the find pop-up sits above the banners and below the banking card and the home screen.
+// INVARIANT: the find pop-up sits above the banners and below the banking card.
 const FIND_POPUP_DEPTH = DEPTH.ui + 6;
 const BANKING_CARD_DEPTH = DEPTH.ui + 8;
-const HOME_SCREEN_DEPTH = DEPTH.ui + 9;
 const OVERLAY_DEPTH = DEPTH.ui + 10;
 // INVARIANT: the capture zone sits below every HUD button in depth so Pause, Dash and the pause overlay win the press.
 const STICK_ZONE_DEPTH = DEPTH.ui - 1;
@@ -180,7 +178,8 @@ function holdTimer(timer: Phaser.Time.TimerEvent | null, held: boolean): void {
 /**
  * Screen-space UI over the swim scene: snack counter, legs display, Trip Bag display, Pause, Dash,
  * the contextual Go home button, swim pad, pause overlay, the all-snacks and first-trip hint
- * banners, the find pop-up, the banking card and the home screen.
+ * banners, the find pop-up and the banking card. When the trip ends the swim scene stops this
+ * scene and opens the Home Tank, which shows the tank arrival card.
  */
 export class HudScene extends Phaser.Scene {
   private assets!: GameAssets;
@@ -237,7 +236,6 @@ export class HudScene extends Phaser.Scene {
   /** Whether placement found no room for the hint, so it is hidden and its timer paused. */
   private hintHeld = false;
   private bankingCard!: BankingCard;
-  private homeScreen!: HomeScreen;
   private foundPopup!: FindPopup;
   /** How many of the trip's finds the pop-up has been given. */
   private announcedCount = 0;
@@ -288,7 +286,6 @@ export class HudScene extends Phaser.Scene {
       () => this.layoutOverlays(),
     );
     this.bankingCard = new BankingCard(this, this.assets, this.view, BANKING_CARD_DEPTH);
-    this.homeScreen = new HomeScreen(this, this.assets, this.view, HOME_SCREEN_DEPTH);
     this.bindKeys();
 
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this);
@@ -304,7 +301,6 @@ export class HudScene extends Phaser.Scene {
     this.drawLegs();
     this.refreshControls();
     if (this.trip.phase === 'banked') this.showBankingCard();
-    if (this.trip.phase === 'ended') this.homeScreen.show(this.trip, this.motion);
     this.showHintOnce();
   }
 
@@ -498,7 +494,6 @@ export class HudScene extends Phaser.Scene {
     this.layoutControls();
     this.layoutOverlay();
     this.bankingCard.layout(this.view);
-    this.homeScreen.layout(this.view);
     this.layoutOverlays();
   }
 
@@ -744,7 +739,7 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Shows Pause unless paused or a banking card or home screen is up, and Go home only while
+   * Shows Pause unless paused, a banking card is up or the trip has ended, and Go home only while
    * swimming inside the Home Spot ring and not paused. Places the overlays again when Go home
    * shows or hides, since it is a keep-out only while visible.
    */
@@ -859,7 +854,7 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Freezes or thaws every HUD timer and tween (banners, find pop-up, banking card, home screen, swim pad and any added later),
+   * Freezes or thaws every HUD timer and tween (banners, find pop-up, banking card, swim pad and any added later),
    * so pause stops HUD motion as well as the swim scene. The pause overlay and its buttons use neither.
    * Only the scene clock (Clock.paused) changes: a timer an overlay hold paused (TimerEvent.paused)
    * stays paused until its overlay is placed again.
@@ -874,8 +869,8 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Enter or Space: resumes when paused; otherwise presses the focused banking card button or
-   * Swim again on the home screen, ignoring key repeat.
+   * Enter or Space: resumes when paused; otherwise presses the focused banking card button,
+   * ignoring key repeat.
    */
   private handleConfirmKey(event: KeyboardEvent): void {
     if (this.paused) {
@@ -884,7 +879,6 @@ export class HudScene extends Phaser.Scene {
     }
     if (event.repeat) return;
     if (this.trip.phase === 'banked') this.bankingCard.pressFocused();
-    if (this.trip.phase === 'ended') this.homeScreen.press();
   }
 
   /** Left, Right or Tab: moves the banking card focus to the other button, ignoring key repeat. */
@@ -957,8 +951,7 @@ export class HudScene extends Phaser.Scene {
   /**
    * Redraws the legs and Trip Bag from the snapshot, announces new finds, and follows its phase:
    * leaving 'swimming' drops the swim pad and the hint, into 'banked' or 'ended' clears the find
-   * pop-up, into 'banked' shows the banking card, into 'ended' shows the home screen, and leaving
-   * either hides it.
+   * pop-up, into 'banked' shows the banking card, and leaving 'banked' hides it.
    */
   private handleTripState(snapshot: TripSnapshot): void {
     const previousPhase = this.trip.phase;
@@ -969,14 +962,12 @@ export class HudScene extends Phaser.Scene {
     this.announceFinds(snapshot);
     if (snapshot.phase === previousPhase) return;
     if (previousPhase === 'banked') this.hideBankingCard();
-    if (previousPhase === 'ended') this.homeScreen.hide();
     if (snapshot.phase !== 'swimming') {
       this.releaseStick();
       this.hideHint();
     }
     if (snapshot.phase === 'banked' || snapshot.phase === 'ended') this.foundPopup.clear();
     if (snapshot.phase === 'banked') this.showBankingCard();
-    if (snapshot.phase === 'ended') this.homeScreen.show(snapshot, this.motion);
   }
 
   /**
@@ -1048,8 +1039,8 @@ export class HudScene extends Phaser.Scene {
 
   /**
    * Switches the HUD motion profile. When reduced motion turns on, ends every running motion tween
-   * in this scene at its end state: the banners, the hint, the find pop-up, the banking card, the
-   * home screen and the swim pad.
+   * in this scene at its end state: the banners, the hint, the find pop-up, the banking card and
+   * the swim pad.
    */
   private handleReducedMotion(payload: ReducedMotionPayload): void {
     this.motion = motionProfile(payload.reduced);
@@ -1078,7 +1069,6 @@ export class HudScene extends Phaser.Scene {
     }
     this.foundPopup.setResolution(dpr);
     this.bankingCard.setResolution(dpr);
-    this.homeScreen.setResolution(dpr);
     this.layout();
   }
 

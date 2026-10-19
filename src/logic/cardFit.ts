@@ -1,4 +1,4 @@
-/** Layout constants shared by the home screen panel and the banking card, in CSS px. */
+/** Layout constants shared by the tank arrival card and the banking card, in CSS px. */
 export const CARD = Object.freeze({
   margin: 16,
   pad: 24,
@@ -115,7 +115,7 @@ export function cardTextWidth(cssW: number): number {
   return Math.max(CARD.textMinW, Math.min(CARD.textMaxW, cssW - 2 * (CARD.margin + CARD.pad)));
 }
 
-/** Home screen title wrap width beside the house icon, at least half of textMinW. */
+/** Tank arrival card title wrap width beside the house icon, at least half of textMinW. */
 export function homeTitleWrapWidth(textW: number): number {
   return Math.max(CARD.textMinW / 2, textW - CARD.headIconPx - CARD.headIconGap);
 }

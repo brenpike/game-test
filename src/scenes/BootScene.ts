@@ -3,6 +3,7 @@ import { AXO_LEG_ROOTS, type AxolotlPose, type LegLook } from '../art/drawAxolot
 import type { ReedLook } from '../art/drawScenery';
 import { INK, LW, UI_FONT } from '../art/palette';
 import { bakePredatorTextures, type PredatorTextures } from '../art/predatorTextures';
+import { bakeTankTextures, type TankTextures } from '../art/tankTextures';
 import { bakeTreasureTextures, type TreasureTextures } from '../art/treasureTextures';
 import {
   TEX,
@@ -18,6 +19,7 @@ import {
 } from '../art/textures';
 import { BUTTON_PRESS_OFFSET, BUTTON_SQUARE, BUTTON_WIDE, type IconKind } from '../art/drawUi';
 import { mulberry32 } from '../logic/rng';
+import { TANK } from '../logic/tank';
 import { VIEW } from '../logic/tuning';
 import { fitView, type ViewFit } from '../logic/viewport';
 import { DEFAULT_ZONE_SEED, WORLD_H, buildCanalZone, type ReedSpec, type ZoneLayout } from '../logic/zone';
@@ -26,6 +28,7 @@ import { DEFAULT_ZONE_SEED, WORLD_H, buildCanalZone, type ReedSpec, type ZoneLay
 export const SCENE_KEYS = Object.freeze({
   boot: 'Boot',
   title: 'Title',
+  homeTank: 'HomeTank',
   swim: 'Swim',
   hud: 'Hud',
 } as const);
@@ -37,6 +40,7 @@ export interface GameAssets {
   axolotl: AxolotlTexture;
   predator: PredatorTextures;
   treasure: TreasureTextures;
+  tank: TankTextures;
 }
 
 /** CSS viewport size plus the fitted view derived from the Scale Manager. */
@@ -47,6 +51,7 @@ export interface SceneView {
 }
 
 const ART_SEED = DEFAULT_ZONE_SEED ^ 0x5eed;
+const TANK_ART_SEED = ART_SEED ^ 0x7a4c;
 const BLINK_PERIOD = 4.6;
 const BLINK_LENGTH = 0.14;
 const BLINK_CLOSED = 0.12;
@@ -303,7 +308,11 @@ export class BootScene extends Phaser.Scene {
     const axolotl = createAxolotlTexture(this, TEX.axolotl, bakeScale);
     const predator = bakePredatorTextures(this, bakeScale);
     const treasure = bakeTreasureTextures(this, bakeScale);
-    const assets: GameAssets = { zone, baked, axolotl, predator, treasure };
+    const tank = bakeTankTextures(this, bakeScale, {
+      decorationPx: TANK.decorationPx,
+      rand: mulberry32(TANK_ART_SEED),
+    });
+    const assets: GameAssets = { zone, baked, axolotl, predator, treasure, tank };
     this.scene.start(SCENE_KEYS.title, assets);
   }
 }

@@ -7,7 +7,6 @@ import type { LegStatus } from './legs';
  */
 export const TRIP_EVENTS = Object.freeze({
   STATE: 'trip-state',
-  REQUEST_NEW_TRIP: 'request-new-trip',
   REQUEST_KEEP_EXPLORING: 'request-keep-exploring',
   REQUEST_GO_HOME: 'request-go-home',
 } as const);
@@ -75,7 +74,6 @@ export interface TripSnapshot {
 /** Payload type for each event; `undefined` marks payload-less events. */
 export interface TripEventPayloads {
   [TRIP_EVENTS.STATE]: TripSnapshot;
-  [TRIP_EVENTS.REQUEST_NEW_TRIP]: undefined;
   [TRIP_EVENTS.REQUEST_KEEP_EXPLORING]: undefined;
   [TRIP_EVENTS.REQUEST_GO_HOME]: undefined;
 }

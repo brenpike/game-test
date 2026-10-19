@@ -20,6 +20,7 @@ import {
   type SceneView,
   type UiButton,
 } from './BootScene';
+import { openHomeTank } from './sceneFlow';
 
 const TAU = Math.PI * 2;
 const MARGIN = 16;
@@ -116,13 +117,13 @@ export class TitleScene extends Phaser.Scene {
       icon: 'play',
       dpr: this.view.fit.dpr,
       pressOnDown: false,
-      onPress: () => this.startSwim(),
+      onPress: () => this.openTank(),
     });
     this.startButton.container.setDepth(DEPTH.ui);
     this.startButton.setFocused(true);
 
-    this.input.keyboard?.on('keydown-ENTER', this.startSwim, this);
-    this.input.keyboard?.on('keydown-SPACE', this.startSwim, this);
+    this.input.keyboard?.on('keydown-ENTER', this.openTank, this);
+    this.input.keyboard?.on('keydown-SPACE', this.openTank, this);
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.game.events.on(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
@@ -136,10 +137,11 @@ export class TitleScene extends Phaser.Scene {
     this.animateAxolotl(Math.min(deltaMs / 1000, 0.05));
   }
 
-  private startSwim(): void {
+  /** Start: opens the Home Tank hub (PRD C7). */
+  private openTank(): void {
     if (this.starting) return;
     this.starting = true;
-    this.scene.start(SCENE_KEYS.swim, this.assets);
+    openHomeTank(this, this.assets);
   }
 
   /** Shows the update prompt once; later builds only replace the target manifest. */
