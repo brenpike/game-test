@@ -3,7 +3,7 @@
  * trips. `hub` is the part a save would hold (#15); `canal` is session-only and never saved.
  */
 import { createCollectibles, type Collectible } from './collectibles';
-import { REAL_MORPHS, STARTER_MORPH, axolotlFindId, isAxolotlFindId, rescueMorphsIn, type RealMorphId } from './morphs';
+import { REAL_MORPHS, STARTER_MORPH, axolotlFindId, isAxolotlFindId, rescuableMorphs, rescueMorphsIn, type RealMorphId } from './morphs';
 import { nextTripSeed } from './placement';
 import { waitingAfterTrip, type WaitingStranded } from './rescue';
 import { bestStarsFor, withStars, type AreaStars, type AreaStarsRecord } from './stars';
@@ -204,6 +204,11 @@ export function recordTripEnd(session: Session, record: TripEndRecord): Session 
       waitingStranded: copyWaiting(record.waitingStranded),
     },
   };
+}
+
+/** Whether any morph is left to rescue: false once every morph is owned (PRD C6). */
+export function canRescueMore(session: Session): boolean {
+  return rescuableMorphs(session.hub.axolotls.map((axolotl) => axolotl.morph)).length > 0;
 }
 
 /** The best stars earned in area `areaId`, or no stars when it was never beaten (PRD H7). */

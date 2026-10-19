@@ -10,6 +10,7 @@ import {
   SESSION_REGISTRY_KEY,
   STARTER_AXOLOTL_ID,
   bestStars,
+  canRescueMore,
   createSession,
   explorerId,
   explorerMorph,
@@ -158,7 +159,7 @@ function record(banked: string[], tripSeed: number, eatenSnacks: string[] = []):
   return { banked, rescued: [], eatenSnacks, tripSeed, waitingStranded: null, metTilapia: false };
 }
 
-const SPECIAL = { specialTreasureId: CANAL_AREA.specialTreasureId, rescued: false };
+const SPECIAL = { specialTreasureId: CANAL_AREA.specialTreasureId };
 
 /** Picks up an open find, banks it at the Home Spot, swims on and beats the area. Returns the ended trip and the banked id. */
 function beatAfterBanking(trip: TripState): { ended: TripState; id: string } {
@@ -627,5 +628,67 @@ describe('area beaten (H5, H6, H7, A12, open question 14)', () => {
     const beaten = beatArea(holding, SPECIAL).state;
     const after = recordTripEnd(createSession(), tripEndRecord(beaten, []));
     expect(after.hub.banked).toEqual([find.id]);
+  });
+});
+
+describe('rescue at the exit (H5, H6, C4, C6)', () => {
+  it('records a following axolotl banked at the exit as rescued, with star 3 and no snacks or waiting', () => {
+    const trip = startRescueTrip(createSession(), FIRST_SEED);
+    const { morph } = rescueOf(trip);
+    const snacks = eatSnacks(restoreSnacks(zone.collectibles, []), 2);
+    const ended = beatArea(reachRescue(trip), SPECIAL).state;
+    expect(ended.ending?.reason).toBe('areaBeaten');
+    const rec = tripEndRecord(ended, snacks);
+    expect(rec.rescued).toEqual([morph]);
+    expect(rec.banked.filter(isAxolotlFindId)).toEqual([]);
+    expect(rec.waitingStranded).toBeNull();
+    expect(rec.eatenSnacks).toEqual([]);
+    expect(rec.stars?.earned.legsOrRescue).toBe(true);
+  });
+
+  it('owns the rescued axolotl and keeps star 3 even with a leg lost', () => {
+    const trip = startRescueTrip(createSession(), FIRST_SEED);
+    const { morph } = rescueOf(trip);
+    const following = { ...reachRescue(trip), legsLost: 1 };
+    const rec = tripEndRecord(beatArea(following, SPECIAL).state, []);
+    const after = recordTripEnd(createSession(), rec);
+    expect(after.hub.axolotls).toEqual([
+      { id: STARTER_AXOLOTL_ID, morph: STARTER_MORPH },
+      { id: axolotlFindId(morph), morph },
+    ]);
+    expect(after.hub.book.foundMorphs).toEqual(
+      REAL_MORPHS.map((entry) => entry.id).filter((id) => id === STARTER_MORPH || id === morph),
+    );
+    expect(after.hub.banked.filter(isAxolotlFindId)).toEqual([]);
+    expect(after.hub.stars[CANAL_AREA_ID]?.legsOrRescue).toBe(true);
+    expect(after.canal.waitingStranded).toBeNull();
+    expectConsistent(after);
+  });
+
+  it('keeps a met but unreached stranded axolotl waiting after the area is beaten', () => {
+    const first = startRescueTrip(createSession(), FIRST_SEED);
+    const { morph, placeId } = rescueOf(first);
+    const waiting = recordTripEnd(createSession(), tripEndRecord(carriedHomeFrom(reachRescue(first)), []));
+    const next = startRescueTrip(waiting, 0);
+    expect(rescueOf(next)).toMatchObject({ morph, placeId, met: true });
+    const rec = tripEndRecord(beatArea(next, SPECIAL).state, []);
+    expect(rec.rescued).toEqual([]);
+    expect(rec.waitingStranded).toEqual({ morph, placeId });
+    const after = recordTripEnd(waiting, rec);
+    expect(after.canal.waitingStranded).toEqual({ morph, placeId });
+    expect(after.hub.axolotls).toEqual(waiting.hub.axolotls);
+  });
+});
+
+describe('canRescueMore (C6)', () => {
+  it('is true for a new session and false once every morph is owned', () => {
+    expect(canRescueMore(createSession())).toBe(true);
+    let session = createSession();
+    for (let i = 0; i < REAL_MORPHS.length - 1; i++) {
+      expect(canRescueMore(session)).toBe(true);
+      session = rescueAndGoHome(session, FIRST_SEED);
+    }
+    expect(session.hub.axolotls).toHaveLength(REAL_MORPHS.length);
+    expect(canRescueMore(session)).toBe(false);
   });
 });
