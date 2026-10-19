@@ -1,6 +1,7 @@
 import { LEGS, SWIM, type LegTuning, type SwimTuning } from './tuning';
 
 const TAU = Math.PI * 2;
+const FINISH_EPSILON = 1e-9;
 
 /** Per-leg status for leg loss and regrowth. */
 export type LegStatus = 'present' | 'regrowing' | 'lost';
@@ -55,6 +56,13 @@ function copySlots(legs: LegsState): LegSlot[] {
   return legs.slots.map((slot) => ({ status: slot.status, progress: slot.progress }));
 }
 
+/** Marks the queue head as present, removes it from the queue and starts the next queued leg. */
+function finishHead(slots: LegSlot[], regrowQueue: number[]): void {
+  slots[regrowQueue[0]] = { status: 'present', progress: 1 };
+  regrowQueue.shift();
+  if (regrowQueue.length > 0) slots[regrowQueue[0]] = { status: 'regrowing', progress: 0 };
+}
+
 /**
  * Applies a hit. While protected, or with no present leg, nothing changes.
  * Otherwise the present leg with the lowest slot index is lost (fixed order: slot 0, 1, 2, 3),
@@ -96,12 +104,51 @@ export function updateLegs(
       remaining = 0;
     } else {
       remaining -= needed;
-      slots[regrowQueue[0]] = { status: 'present', progress: 1 };
-      regrowQueue.shift();
-      if (regrowQueue.length > 0) slots[regrowQueue[0]] = { status: 'regrowing', progress: 0 };
+      finishHead(slots, regrowQueue);
     }
   }
   return { slots, protectedLeft: Math.max(0, legs.protectedLeft - dt), regrowQueue };
+}
+
+/** Outcome of eating snacks: the new leg state and the slot index each snack helped, in order. */
+export interface RegrowthSpeedUp {
+  state: LegsState;
+  boosted: number[];
+}
+
+/**
+ * Applies `snacks` eaten snacks to regrowth (PRD A19). The trigger is a snack being eaten,
+ * however the snack reached the axolotl. Each snack adds `tuning.snackSpeedUp` of one leg
+ * to the regrowing leg; when that finishes the leg, it is present and the next queued leg
+ * starts regrowing from 0. A leg within 1e-9 of full counts as finished, so float rounding
+ * cannot strand a leg just under 1. Any share left over is dropped, not carried into the next leg.
+ * Snacks eaten with nothing regrowing do nothing. With 0 snacks or an empty queue the input
+ * is returned unchanged. Protected time is not changed.
+ * Throws RangeError unless `snacks` is a non-negative integer and 0 < `snackSpeedUp` <= 1.
+ */
+export function speedUpRegrowth(
+  legs: LegsState,
+  snacks: number,
+  tuning: Pick<LegTuning, 'snackSpeedUp'> = LEGS,
+): RegrowthSpeedUp {
+  if (!Number.isInteger(snacks) || snacks < 0) {
+    throw new RangeError(`speedUpRegrowth: snacks must be a non-negative integer, got ${snacks}`);
+  }
+  if (!(tuning.snackSpeedUp > 0 && tuning.snackSpeedUp <= 1)) {
+    throw new RangeError(`speedUpRegrowth: snackSpeedUp must be in (0, 1], got ${tuning.snackSpeedUp}`);
+  }
+  if (snacks === 0 || legs.regrowQueue.length === 0) return { state: legs, boosted: [] };
+
+  const slots = copySlots(legs);
+  const regrowQueue = [...legs.regrowQueue];
+  const boosted: number[] = [];
+  for (let i = 0; i < snacks && regrowQueue.length > 0; i++) {
+    const head = slots[regrowQueue[0]];
+    boosted.push(regrowQueue[0]);
+    head.progress += tuning.snackSpeedUp;
+    if (head.progress >= 1 - FINISH_EPSILON) finishHead(slots, regrowQueue);
+  }
+  return { state: { slots, protectedLeft: legs.protectedLeft, regrowQueue }, boosted };
 }
 
 /**

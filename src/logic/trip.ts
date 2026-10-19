@@ -2,6 +2,7 @@ import { treasureById } from './catalogue';
 import {
   createEncounter,
   createEncounterContext,
+  feedEncounter,
   stepEncounter,
   type EncounterContext,
   type EncounterEvent,
@@ -255,6 +256,29 @@ export function goHome(state: TripState): TripStepResult {
   const next = banking.state;
   const ending: TripEnding = { reason: 'wentHome', returned: [], bankedThisTrip: [...next.bankedThisTrip] };
   return { state: { ...next, phase: 'ended', heldAt: null, ending }, events };
+}
+
+/**
+ * Applies `snacks` eaten snacks to leg regrowth (PRD A19) with `feedEncounter`. Takes only a
+ * count, so it does not matter how a snack reached the axolotl. Any phase other than 'swimming',
+ * or snacks that change no leg, return the input state unchanged with no events. Otherwise only
+ * the encounter legs change: snacks are not trip finds, so the Trip Bag, finds and banking are
+ * untouched. Regrowth events pass through as in `stepTrip`; `boosted` is the slot each snack
+ * helped, in eating order. Throws RangeError for an invalid `snacks` count while swimming.
+ */
+export function eatSnacks(
+  state: TripState,
+  snacks: number,
+  ctx: TripContext = createTripContext(),
+): TripStepResult & { boosted: number[] } {
+  if (state.phase !== 'swimming') return { state, events: [], boosted: [] };
+  const result = feedEncounter(state.encounter, snacks, ctx.encounter);
+  if (result.state === state.encounter) return { state, events: [], boosted: [] };
+  return {
+    state: { ...state, encounter: result.state },
+    events: result.events.filter(isPassedEvent),
+    boosted: result.boosted,
+  };
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   legWobble,
   presentCount,
   quantizeProgress,
+  speedUpRegrowth,
   tryHit,
   updateLegs,
   type LegsState,
@@ -189,6 +190,155 @@ describe('updateLegs', () => {
     const snapshot = structuredClone(legs);
     updateLegs(legs, LEGS.regrowTime * 2);
     expect(legs).toEqual(snapshot);
+  });
+});
+
+describe('speedUpRegrowth (A19)', () => {
+  const SHORT = { ...LEGS, regrowTime: 13 };
+
+  function withHead(legs: LegsState, progress: number): LegsState {
+    const slots = legs.slots.map((slot, index) => (index === legs.regrowQueue[0] ? { ...slot, progress } : { ...slot }));
+    return { ...legs, slots };
+  }
+
+  function eatOneByOne(legs: LegsState, snacks: number): { state: LegsState; boosted: number[] } {
+    let state = legs;
+    const boosted: number[] = [];
+    for (let i = 0; i < snacks; i++) {
+      const result = speedUpRegrowth(state, 1);
+      state = result.state;
+      boosted.push(...result.boosted);
+    }
+    return { state, boosted };
+  }
+
+  it('does nothing with four legs or with 0 snacks', () => {
+    const whole = createLegs();
+    const wholeResult = speedUpRegrowth(whole, 3);
+    expect(wholeResult.state).toBe(whole);
+    expect(wholeResult.boosted).toEqual([]);
+
+    const lost = hitOnce(createLegs());
+    const noSnack = speedUpRegrowth(lost, 0);
+    expect(noSnack.state).toBe(lost);
+    expect(noSnack.boosted).toEqual([]);
+  });
+
+  it('adds a fixed snackSpeedUp to the regrowing leg only', () => {
+    const legs = updateLegs(hitOnce(loseLegs(1)), 1);
+    const result = speedUpRegrowth(legs, 1);
+    expect(LEGS.snackSpeedUp).toBe(0.2);
+    expect(result.boosted).toEqual([0]);
+    expect(result.state.slots[0]).toEqual({ status: 'regrowing', progress: legs.slots[0].progress + 0.2 });
+    expect(result.state.slots.slice(1)).toEqual(legs.slots.slice(1));
+    expect(result.state.regrowQueue).toEqual(legs.regrowQueue);
+    expect(result.state.protectedLeft).toBe(legs.protectedLeft);
+    expect(result.state.protectedLeft).toBeGreaterThan(0);
+  });
+
+  it('saves about 4 seconds of regrowth per snack at the base time', () => {
+    const boosted = speedUpRegrowth(hitOnce(createLegs()), 1).state;
+    const left = (1 - LEGS.snackSpeedUp) * LEGS.regrowTime;
+    expect(left).toBeCloseTo(16, 9);
+    expect(presentCount(runFrames(boosted, left - 0.5))).toBe(3);
+    expect(presentCount(runFrames(boosted, left + 0.5))).toBe(4);
+  });
+
+  it('never goes past a full leg and never moves regrowth backwards', () => {
+    for (const start of [0, 0.1, 0.35, 0.5, 0.79, 0.81, 0.95, 0.999]) {
+      let legs = withHead(loseLegs(3), start);
+      for (let i = 0; i < 20; i++) {
+        const next = speedUpRegrowth(legs, 1).state;
+        for (let slot = 0; slot < next.slots.length; slot++) {
+          expect(next.slots[slot].progress, `start ${start} snack ${i}`).toBeLessThanOrEqual(1);
+          expect(next.slots[slot].progress, `start ${start} snack ${i}`).toBeGreaterThanOrEqual(
+            legs.slots[slot].progress,
+          );
+        }
+        legs = next;
+      }
+      expect(legs.slots.every((slot) => slot.status === 'present' && slot.progress === 1)).toBe(true);
+    }
+  });
+
+  it('finishes a leg when float rounding sums just under a full leg', () => {
+    const tenth = { snackSpeedUp: 0.1 };
+    let sum = 0;
+    for (let i = 0; i < 10; i++) sum += tenth.snackSpeedUp;
+    expect(sum).toBeLessThan(1);
+
+    const legs = withHead(loseLegs(2), 0);
+    const result = speedUpRegrowth(legs, 10, tenth);
+    expect(result.state.slots[0]).toEqual({ status: 'present', progress: 1 });
+    expect(result.state.slots[1]).toEqual({ status: 'regrowing', progress: 0 });
+    expect(result.state.regrowQueue).toEqual([1]);
+    expect(result.boosted).toEqual(Array(10).fill(0));
+  });
+
+  it('drops any share left over when a snack finishes a leg', () => {
+    const legs = withHead(loseLegs(2), 0.9);
+    const result = speedUpRegrowth(legs, 1);
+    expect(result.state.slots[0]).toEqual({ status: 'present', progress: 1 });
+    expect(result.state.slots[1]).toEqual({ status: 'regrowing', progress: 0 });
+    expect(result.state.regrowQueue).toEqual([1]);
+    expect(result.boosted).toEqual([0]);
+  });
+
+  it('gives the same result for several snacks at once as one at a time', () => {
+    const legs = withHead(loseLegs(3), 0.5);
+    const atOnce = speedUpRegrowth(legs, 9);
+    const oneByOne = eatOneByOne(legs, 9);
+    expect(atOnce.state).toEqual(oneByOne.state);
+    expect(atOnce.boosted).toEqual(oneByOne.boosted);
+    expect(atOnce.boosted).toEqual([0, 0, 0, 1, 1, 1, 1, 1, 2]);
+  });
+
+  it('does not boost with snacks left over after the last leg regrows', () => {
+    const legs = withHead(loseLegs(1), 0.5);
+    const result = speedUpRegrowth(legs, 10);
+    expect(result.boosted).toEqual([0, 0, 0]);
+    expect(result.state.slots).toEqual(createLegs().slots);
+    expect(result.state.regrowQueue).toEqual([]);
+  });
+
+  it('finishes a leg the same way as regrowth over time', () => {
+    for (const progress of [0, 0.3, 0.85]) {
+      const legs = { ...withHead(loseLegs(2), progress), protectedLeft: 0 };
+      const snacks = Math.ceil((1 - progress) / LEGS.snackSpeedUp - 1e-9);
+      const bySnack = speedUpRegrowth(legs, snacks).state;
+      const byTime = updateLegs(legs, (1 - progress) * LEGS.regrowTime);
+      expect(bySnack.slots, `progress ${progress}`).toEqual(byTime.slots);
+      expect(bySnack.regrowQueue, `progress ${progress}`).toEqual(byTime.regrowQueue);
+    }
+  });
+
+  it('still adds 0.2 of a leg with a shorter regrowTime', () => {
+    const lost = hitOnce(createLegs());
+    const boosted = speedUpRegrowth(lost, 1, SHORT).state;
+    expect(boosted.slots[0].progress).toBeCloseTo(0.2, 9);
+    const left = (1 - SHORT.snackSpeedUp) * SHORT.regrowTime;
+    expect(left).toBeCloseTo(0.8 * 13, 9);
+    expect(presentCount(updateLegs(boosted, left - 0.1, SHORT))).toBe(3);
+    expect(presentCount(updateLegs(boosted, left, SHORT))).toBe(4);
+  });
+
+  it('does not mutate its input', () => {
+    const legs = withHead(loseLegs(2), 0.9);
+    const snapshot = structuredClone(legs);
+    speedUpRegrowth(legs, 5);
+    expect(legs).toEqual(snapshot);
+  });
+
+  it('rejects snack counts that are not non-negative integers and out-of-range speed-ups', () => {
+    const legs = hitOnce(createLegs());
+    for (const snacks of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => speedUpRegrowth(legs, snacks)).toThrow(RangeError);
+    }
+    for (const snackSpeedUp of [0, -0.2, 1.01, Number.NaN]) {
+      expect(() => speedUpRegrowth(legs, 1, { snackSpeedUp })).toThrow(RangeError);
+    }
+    expect(() => speedUpRegrowth(createLegs(), 0, { snackSpeedUp: 0 })).toThrow(RangeError);
+    expect(speedUpRegrowth(legs, 1, { snackSpeedUp: 1 }).state.slots[0]).toEqual({ status: 'present', progress: 1 });
   });
 });
 

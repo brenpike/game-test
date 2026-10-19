@@ -4,6 +4,7 @@ import type { DashPhase } from './tailDash';
 export const GAME_EVENTS = Object.freeze({
   COLLECTED: 'collected',
   ALL_COLLECTED: 'all-collected',
+  SNACK_BOOST: 'snack-boost',
   DASH_STATE: 'dash-state',
   REQUEST_DASH: 'request-dash',
   REQUEST_PAUSE: 'request-pause',
@@ -23,6 +24,11 @@ export interface CollectedPayload {
 
 export interface AllCollectedPayload {
   total: number;
+}
+
+/** Leg slots eaten snacks helped regrow, in eating order (PRD A19); never empty. */
+export interface SnackBoostPayload {
+  legs: number[];
 }
 
 export interface DashStatePayload {
@@ -45,6 +51,7 @@ export interface SteerPayload {
 export interface GameEventPayloads {
   [GAME_EVENTS.COLLECTED]: CollectedPayload;
   [GAME_EVENTS.ALL_COLLECTED]: AllCollectedPayload;
+  [GAME_EVENTS.SNACK_BOOST]: SnackBoostPayload;
   [GAME_EVENTS.DASH_STATE]: DashStatePayload;
   [GAME_EVENTS.REQUEST_DASH]: undefined;
   [GAME_EVENTS.REQUEST_PAUSE]: undefined;

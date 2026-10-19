@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.8.0] - 2026-10-19
+## [0.9.0] - 2026-10-19
 
 ### Added
 
@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The banking card and the Home Tank arrival card now name a rescued axolotl.
+
+## [0.8.0] - 2026-10-19
+
+### Added
+
+- Snacks help a lost leg grow back. While a leg is missing, each snack moves the regrowing leg forward by a fifth of a leg (about 4 seconds). It never goes past a full leg, and the extra does not carry over to the next leg.
+- A star appears at the helped leg and a snack badge appears on the legs display when a snack speeds up regrowth. Both read in greyscale and stay still with reduced motion.
 
 ## [0.7.0] - 2026-10-18
 

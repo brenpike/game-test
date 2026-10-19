@@ -29,6 +29,7 @@ import {
   type CollectedPayload,
   type DashStatePayload,
   type ReducedMotionPayload,
+  type SnackBoostPayload,
   type SteerPayload,
 } from '../logic/gameEvents';
 import { legSwimTuning, legWobble } from '../logic/legs';
@@ -42,6 +43,7 @@ import { createDash, dashCharge, tryStartDash, updateDash, type DashState } from
 import {
   createTrip,
   createTripContext,
+  eatSnacks,
   goHome,
   keepExploring,
   markTilapiaCardSeen,
@@ -479,6 +481,7 @@ export class SwimScene extends Phaser.Scene {
       const payload: AllCollectedPayload = { total };
       this.game.events.emit(GAME_EVENTS.ALL_COLLECTED, payload);
     }
+    this.applySnackSpeedUp(result.newly.length);
   }
 
   private popSnack(id: string): void {
@@ -498,6 +501,22 @@ export class SwimScene extends Phaser.Scene {
       ease: 'Sine.easeOut',
       onComplete: () => sprite.destroy(),
     });
+  }
+
+  /**
+   * Speeds up the regrowing leg by the snacks just eaten (PRD A19). Regrowth events take the
+   * timed-regrowth path, the HUD gets the new legs before the speed-up event, and nothing happens
+   * when no leg is missing.
+   */
+  private applySnackSpeedUp(eaten: number): void {
+    const result = eatSnacks(this.trip, eaten, this.tripCtx);
+    if (result.boosted.length === 0) return;
+    this.trip = result.state;
+    this.dispatchTripEvents(result.events);
+    this.predatorView.startSnackBoost(result.boosted);
+    this.syncSnapshot();
+    const payload: SnackBoostPayload = { legs: [...result.boosted] };
+    this.game.events.emit(GAME_EVENTS.SNACK_BOOST, payload);
   }
 
   /**

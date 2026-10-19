@@ -11,6 +11,7 @@ import {
   type CollectedPayload,
   type DashStatePayload,
   type ReducedMotionPayload,
+  type SnackBoostPayload,
   type SteerPayload,
 } from '../logic/gameEvents';
 import {
@@ -84,6 +85,9 @@ const LEGS_ICON_PX = 32;
 const LEGS_ICON_GAP = 4;
 const LEGS_TEXT_PX = 22;
 const LEG_DISPLAY_RANK: Readonly<Record<LegStatus, number>> = { present: 0, regrowing: 1, lost: 2 };
+const BOOST_BADGE_PX = 16;
+const BOOST_HOLD_MS = 1200;
+const BOOST_FADE_MS = 400;
 const BAG_ICON_PX = 32;
 const BAG_TEXT_PX = 22;
 const BAG_STATUS_PX = 18;
@@ -237,6 +241,13 @@ export class HudScene extends Phaser.Scene {
   private legsPanel!: Phaser.GameObjects.Graphics;
   private legsLabel!: Phaser.GameObjects.Text;
   private legIcons: LegIconView[] = [];
+  /** Small snack icon at the corner of the leg icon a snack just helped (PRD A19). */
+  private boostBadge!: Phaser.GameObjects.Image;
+  private boostTimer: Phaser.Time.TimerEvent | null = null;
+  /** Whether the speed-up badge is up, fading included. */
+  private boostActive = false;
+  /** Slot index of the leg the latest snack helped; the badge follows this slot's icon. */
+  private boostLeg: number | null = null;
   private bagPanel!: Phaser.GameObjects.Graphics;
   private bagIcon!: Phaser.GameObjects.Image;
   private bagLabel!: Phaser.GameObjects.Text;
@@ -275,6 +286,9 @@ export class HudScene extends Phaser.Scene {
     this.stickPointer = null;
     this.lastSteer = { x: 0, y: 0 };
     this.trip = createSwimmingTrip();
+    this.boostTimer = null;
+    this.boostActive = false;
+    this.boostLeg = null;
     this.hintTimer = null;
     this.hintActive = false;
     this.hintHeld = false;
@@ -317,6 +331,7 @@ export class HudScene extends Phaser.Scene {
     this.game.events.on(GAME_EVENTS.DASH_STATE, this.handleDashState, this);
     this.game.events.on(GAME_EVENTS.REQUEST_PAUSE, this.pauseSwim, this);
     this.game.events.on(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
+    this.game.events.on(GAME_EVENTS.SNACK_BOOST, this.handleSnackBoost, this);
     this.game.events.on(TRIP_EVENTS.STATE, this.handleTripState, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
 
@@ -358,6 +373,13 @@ export class HudScene extends Phaser.Scene {
         mark: this.addLegImage(regrowMark),
       });
     }
+    const snackInfo = this.assets.baked.icons.snack;
+    this.boostBadge = this.add
+      .image(0, 0, iconKey('snack'))
+      .setOrigin(0, 0)
+      .setScale(BOOST_BADGE_PX / snackInfo.w / snackInfo.scale)
+      .setDepth(DEPTH.ui)
+      .setVisible(false);
   }
 
   /** Adds a top-left anchored legs-display image at the LEGS_ICON_PX scale. */
@@ -593,6 +615,23 @@ export class HudScene extends Phaser.Scene {
       icon.fill.setPosition(iconX, iconY);
       icon.mark.setPosition(iconX + LEGS_ICON_PX - icon.mark.displayWidth, iconY);
     });
+    this.placeBoostBadge();
+  }
+
+  /**
+   * Shows the speed-up badge at the bottom-right of the icon of the leg the latest snack helped,
+   * found by its slot in display order, only while a boost is up and the trip is swimming. A leg a
+   * snack finishes keeps the badge on its now-present icon, not on the next leg it starts. Hides it otherwise.
+   */
+  private placeBoostBadge(): void {
+    const icon = this.boostLeg === null ? undefined : this.legIcons[this.legDisplayOrder().indexOf(this.boostLeg)];
+    if (!this.boostActive || this.trip.phase !== 'swimming' || icon === undefined) {
+      this.boostBadge.setVisible(false);
+      return;
+    }
+    this.boostBadge
+      .setPosition(icon.outline.x + LEGS_ICON_PX - BOOST_BADGE_PX, icon.outline.y + LEGS_ICON_PX - BOOST_BADGE_PX)
+      .setVisible(true);
   }
 
   /**
@@ -704,8 +743,18 @@ export class HudScene extends Phaser.Scene {
 
   /** Shows each leg icon for the current snapshot, sorted present, regrowing, lost. */
   private drawLegs(): void {
-    const slots = [...this.trip.legs.slots].sort((a, b) => LEG_DISPLAY_RANK[a.status] - LEG_DISPLAY_RANK[b.status]);
-    this.legIcons.forEach((icon, index) => this.drawLegIcon(icon, slots[index]));
+    const slots = this.trip.legs.slots;
+    const order = this.legDisplayOrder();
+    this.legIcons.forEach((icon, index) => this.drawLegIcon(icon, slots[order[index]]));
+    this.placeBoostBadge();
+  }
+
+  /** Slot indices in leg-icon order: present, regrowing, lost. The sort is stable, so slot order holds within a status. */
+  private legDisplayOrder(): number[] {
+    const slots = this.trip.legs.slots;
+    return slots
+      .map((_, index) => index)
+      .sort((a, b) => LEG_DISPLAY_RANK[slots[a].status] - LEG_DISPLAY_RANK[slots[b].status]);
   }
 
   /**
@@ -1002,6 +1051,45 @@ export class HudScene extends Phaser.Scene {
     this.layoutOverlays();
   }
 
+  /**
+   * Shows the speed-up badge on the helped leg for BOOST_HOLD_MS on the HUD clock (so pause freezes
+   * it), then fades it over BOOST_FADE_MS. A new boost restarts the hold. Leaves at once under reduced motion.
+   * The helped leg is the last slot in `payload.legs`, the leg the latest snack eaten helped.
+   */
+  private handleSnackBoost(payload: SnackBoostPayload): void {
+    if (this.boostTimer) this.time.removeEvent(this.boostTimer);
+    this.tweens.killTweensOf(this.boostBadge);
+    this.boostBadge.setAlpha(1);
+    this.boostLeg = payload.legs[payload.legs.length - 1] ?? null;
+    this.boostActive = true;
+    this.placeBoostBadge();
+    this.boostTimer = this.time.delayedCall(BOOST_HOLD_MS, this.fadeBoostBadge, [], this);
+  }
+
+  private fadeBoostBadge(): void {
+    this.boostTimer = null;
+    if (!this.motion.ambient) {
+      this.dropBoostBadge();
+      return;
+    }
+    addMotionTween(this, {
+      targets: this.boostBadge,
+      props: { alpha: 0 },
+      duration: BOOST_FADE_MS,
+      onComplete: () => this.dropBoostBadge(),
+    });
+  }
+
+  /** Hides the speed-up badge at once. */
+  private dropBoostBadge(): void {
+    if (this.boostTimer) this.time.removeEvent(this.boostTimer);
+    this.boostTimer = null;
+    this.tweens.killTweensOf(this.boostBadge);
+    this.boostActive = false;
+    this.boostLeg = null;
+    this.boostBadge.setVisible(false).setAlpha(1);
+  }
+
   private handleDashState(payload: DashStatePayload): void {
     this.dashState = payload;
     this.drawDashRing();
@@ -1010,8 +1098,8 @@ export class HudScene extends Phaser.Scene {
   /**
    * Redraws the legs and Trip Bag from the snapshot, announces new finds and a newly following
    * axolotl, shows the tilapia fact card when it is due, and follows its phase: leaving 'swimming'
-   * drops the swim pad and the hint, into 'banked' or 'ended' clears the find pop-up, into 'banked'
-   * shows the banking card, and leaving 'banked' hides it.
+   * drops the swim pad, the hint and the speed-up badge, into 'banked' or 'ended' clears the find
+   * pop-up, into 'banked' shows the banking card, and leaving 'banked' hides it.
    */
   private handleTripState(snapshot: TripSnapshot): void {
     const previousPhase = this.trip.phase;
@@ -1028,6 +1116,7 @@ export class HudScene extends Phaser.Scene {
     if (snapshot.phase !== 'swimming') {
       this.releaseStick();
       this.hideHint();
+      this.dropBoostBadge();
     }
     if (snapshot.phase === 'banked' || snapshot.phase === 'ended') this.foundPopup.clear();
     if (snapshot.phase === 'banked') this.showBankingCard();
@@ -1156,6 +1245,7 @@ export class HudScene extends Phaser.Scene {
     this.game.events.off(GAME_EVENTS.DASH_STATE, this.handleDashState, this);
     this.game.events.off(GAME_EVENTS.REQUEST_PAUSE, this.pauseSwim, this);
     this.game.events.off(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
+    this.game.events.off(GAME_EVENTS.SNACK_BOOST, this.handleSnackBoost, this);
     this.game.events.off(TRIP_EVENTS.STATE, this.handleTripState, this);
   }
 }
