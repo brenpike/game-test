@@ -37,6 +37,7 @@ describe('tank text', () => {
     expect(exportedStrings.map(([name]) => name).sort()).toEqual([
       'ALL_DECORATIONS_PLACED',
       'CLOSE_LABEL',
+      'COLLECTION_BOOK_LABEL',
       'DECORATE_HINT',
       'DECORATE_LABEL',
       'DONE_LABEL',

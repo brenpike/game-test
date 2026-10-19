@@ -12,6 +12,7 @@ import {
   idleTripSnapshot,
   keepExploring,
   legsSnapshot,
+  markTilapiaCardSeen,
   newTrip,
   sameTripSnapshot,
   stepTrip,
@@ -1046,6 +1047,24 @@ describe('meeting a tilapia', () => {
     const met = stepAt(seen, outSafe).state;
     expect(met.metTilapia).toBe(true);
     expect(tripSnapshot(met).tilapiaCardDue).toBe(false);
+  });
+
+  it('is no longer due once the card is marked seen, and stays met', () => {
+    const met = stepAt(createTrip(meetZone), outSafe).state;
+    expect(tripSnapshot(met).tilapiaCardDue).toBe(true);
+    const seen = markTilapiaCardSeen(met);
+    expect(seen).not.toBe(met);
+    expect(seen).toEqual({ ...met, tilapiaCardSeen: true });
+    expect(met.tilapiaCardSeen).toBe(false);
+    expect(tripSnapshot(seen).tilapiaCardDue).toBe(false);
+    const later = stepAt(seen, outSafe).state;
+    expect(later.metTilapia).toBe(true);
+    expect(tripSnapshot(later).tilapiaCardDue).toBe(false);
+  });
+
+  it('returns the same object when the card was already seen', () => {
+    const seen = createTrip(meetZone, LEGS, [], DEFAULT_TRIP_SEED, { tilapiaCardSeen: true });
+    expect(markTilapiaCardSeen(seen)).toBe(seen);
   });
 
   it('meets a tilapia on a step before any telegraph when swimming toward route 0', () => {

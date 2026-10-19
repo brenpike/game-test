@@ -1,7 +1,15 @@
 import * as Phaser from 'phaser';
 import { AXO_MAX_TAIL_AMP, AXO_SCENE_SCALE, type AxolotlPose } from '../art/drawAxolotl';
 import { DEPTH } from '../art/layers';
-import { HAZE, SURFACE_LINE, SURFACE_LINE_WIDTH, T_STATIC, WATER_SHALLOW } from '../art/palette';
+import {
+  HAZE,
+  MORPH_PALETTES,
+  SURFACE_LINE,
+  SURFACE_LINE_WIDTH,
+  T_STATIC,
+  WATER_SHALLOW,
+  type MorphPalette,
+} from '../art/palette';
 import { BUBBLE_RADII, type TexInfo } from '../art/textures';
 import { BUBBLE_MAX_ALIVE, bubblePos, createBubbles, updateBubbles, type BubbleSystem } from '../logic/bubbles';
 import {
@@ -13,6 +21,7 @@ import {
 } from '../logic/collectibles';
 import { createEncounterContext } from '../logic/encounter';
 import { currentAt, reedDragAt, reedsNear } from '../logic/environment';
+import { TILAPIA_FACT } from '../logic/factCards';
 import {
   GAME_EVENTS,
   REGISTRY_KEYS,
@@ -25,7 +34,8 @@ import {
 import { legSwimTuning, legWobble } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { mulberry32 } from '../logic/rng';
-import { restoreSnacks, tripStart } from '../logic/session';
+import { pickStranding } from '../logic/rescue';
+import { explorerMorph, restoreSnacks, tripStart } from '../logic/session';
 import { steerFromKeys, type KeyState } from '../logic/steering';
 import { startDashVelocity, stepSwim, swimIntensity, type SwimBounds, type SwimState } from '../logic/swimPhysics';
 import { createDash, dashCharge, tryStartDash, updateDash, type DashState } from '../logic/tailDash';
@@ -34,6 +44,7 @@ import {
   createTripContext,
   goHome,
   keepExploring,
+  markTilapiaCardSeen,
   sameTripSnapshot,
   stepTrip,
   tripAxolotlPos,
@@ -58,9 +69,11 @@ import {
   type SceneView,
 } from './BootScene';
 import { HomeSpotView } from './HomeSpotView';
+import { HUD_EVENTS, type FactCardSeenPayload } from './HudScene';
 import { addMotionTween, settleMotionTweens } from './motionTweens';
 import { PredatorView } from './PredatorView';
 import { readSession, returnToHomeTank } from './sceneFlow';
+import { StrandedView } from './StrandedView';
 import { TreasureView } from './TreasureView';
 
 const TAU = Math.PI * 2;
@@ -129,7 +142,8 @@ function placeBaked(image: Phaser.GameObjects.Image, info: TexInfo): Phaser.Game
 
 /**
  * The canal zone: swimming, snacks, currents, reeds, bubbles, Tail Dash, the tilapia, the Home
- * Spot and the hidden treasures (hint stars, Dash pots, the cave and the past-the-current marker).
+ * Spot, the hidden treasures (hint stars, Dash pots, the cave and the past-the-current marker) and
+ * the stranded axolotl.
  * One scene start is one trip: it starts from the session and, once the trip ends, hands the trip
  * back to the session and opens the Home Tank.
  */
@@ -164,6 +178,9 @@ export class SwimScene extends Phaser.Scene {
   private predatorView!: PredatorView;
   private homeSpotView!: HomeSpotView;
   private treasureView!: TreasureView;
+  private strandedView!: StrandedView;
+  /** The explorer's morph colours, fixed for the trip. */
+  private explorerPalette!: MorphPalette;
   private reeds: Phaser.GameObjects.Image[] = [];
   private reedNudge: number[] = [];
   private pads: Phaser.GameObjects.Image[] = [];
@@ -223,10 +240,16 @@ export class SwimScene extends Phaser.Scene {
     this.bubbles = createBubbles();
     // INVARIANT: trip seeds are never saved. The first trip of the session is random; later
     // trips use nextTripSeed of the last trip's seed (tripStart).
-    const start = tripStart(readSession(this.registry), Math.floor(Math.random() * 0x100000000) >>> 0);
+    const session = readSession(this.registry);
+    const start = tripStart(session, Math.floor(Math.random() * 0x100000000) >>> 0);
+    this.explorerPalette = MORPH_PALETTES[explorerMorph(session)];
     this.items = restoreSnacks(zone.collectibles, start.eatenSnacks);
     this.allDone = allCollected(this.items);
-    this.trip = createTrip(zone, LEGS, start.banked, start.tripSeed);
+    const stranding = pickStranding(start.ownedMorphs, start.waitingStranded, zone.strandingPlaces, start.tripSeed);
+    this.trip = createTrip(zone, LEGS, start.banked, start.tripSeed, {
+      stranding,
+      tilapiaCardSeen: start.tilapiaCardSeen,
+    });
     this.dashKeyLatched = true;
     this.tripCtx = createTripContext({ encounter: createEncounterContext({ bounds: this.bounds }) });
     this.registry.set(REGISTRY_KEYS.total, this.items.length);
@@ -243,6 +266,7 @@ export class SwimScene extends Phaser.Scene {
     this.game.events.on(Phaser.Core.Events.HIDDEN, this.handleHidden, this);
     this.game.events.on(TRIP_EVENTS.REQUEST_KEEP_EXPLORING, this.handleRequestKeepExploring, this);
     this.game.events.on(TRIP_EVENTS.REQUEST_GO_HOME, this.handleRequestGoHome, this);
+    this.game.events.on(HUD_EVENTS.FACT_CARD_SEEN, this.handleFactCardSeen, this);
     this.events.on(Phaser.Scenes.Events.RESUME, this.handleResume, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
 
@@ -327,6 +351,7 @@ export class SwimScene extends Phaser.Scene {
       .image(this.swim.x, this.swim.y, this.assets.axolotl.key)
       .setOrigin(axoInfo.originNormX, axoInfo.originNormY)
       .setDepth(DEPTH.axolotl);
+    this.strandedView = new StrandedView(this, this.assets);
     this.predatorView = new PredatorView(this, this.assets, this.trip.encounter.tilapias.length);
 
     this.bubbleImages = Array.from({ length: BUBBLE_MAX_ALIVE }, () =>
@@ -573,6 +598,12 @@ export class SwimScene extends Phaser.Scene {
     this.publishSnapshot(tripSnapshot(this.trip));
   }
 
+  /** The player closed the tilapia fact card: it is no longer due this trip. */
+  private handleFactCardSeen(payload: FactCardSeenPayload): void {
+    if (payload.id !== TILAPIA_FACT.id) return;
+    this.trip = markTilapiaCardSeen(this.trip);
+  }
+
   private handleHidden(): void {
     if (this.trip.phase === 'ended') return;
     this.game.events.emit(GAME_EVENTS.REQUEST_PAUSE);
@@ -610,7 +641,9 @@ export class SwimScene extends Phaser.Scene {
     this.game.events.off(Phaser.Core.Events.HIDDEN, this.handleHidden, this);
     this.game.events.off(TRIP_EVENTS.REQUEST_KEEP_EXPLORING, this.handleRequestKeepExploring, this);
     this.game.events.off(TRIP_EVENTS.REQUEST_GO_HOME, this.handleRequestGoHome, this);
+    this.game.events.off(HUD_EVENTS.FACT_CARD_SEEN, this.handleFactCardSeen, this);
     this.events.off(Phaser.Scenes.Events.RESUME, this.handleResume, this);
+    this.strandedView.destroy();
   }
 
   // ---- rendering -----------------------------------------------------------
@@ -618,6 +651,7 @@ export class SwimScene extends Phaser.Scene {
   private renderFrame(dt: number): void {
     const t = this.motion.ambient ? this.clock : T_STATIC;
     this.renderAxolotl(dt);
+    this.strandedView.render({ trip: this.trip, motion: this.motion, dt, time: this.clock });
     this.homeSpotView.render({ motion: this.motion, dt, time: this.clock });
     this.treasureView.render({
       placed: this.trip.placed,
@@ -706,7 +740,7 @@ export class SwimScene extends Phaser.Scene {
       return;
     }
     this.redrawAcc = 0;
-    this.assets.axolotl.redraw(pose);
+    this.assets.axolotl.redraw(pose, this.explorerPalette);
     this.lastPose = pose;
   }
 

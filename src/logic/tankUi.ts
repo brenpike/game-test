@@ -1,12 +1,13 @@
 /**
  * Home Tank UI rules: the keyboard map, focus stepping, and the CSS px layouts of the hub, decorate
- * and Treasure Chest screens (PRD C7, C9, C11, X5). Sizes come in measured; nothing here shrinks a
+ * and Treasure Chest screens (PRD C7, C9, C11, X5); the Collection Book reuses the chest layout (C12). Sizes come in measured; nothing here shrinks a
  * control or its text.
  */
 import type { HudView, Rect, Size } from './hudLayout';
 import { decorationBandTop, type TankFrame } from './tank';
 import {
   CLOSE_LABEL,
+  COLLECTION_BOOK_LABEL,
   DECORATE_LABEL,
   GO_EXPLORING_LABEL,
   NEXT_PAGE_LABEL,
@@ -68,7 +69,7 @@ export function tileButtonWidth(label: string): number {
 }
 
 /** A Home Tank hub action id. */
-export type HubActionId = 'goExploring' | 'decorate' | 'treasureChest';
+export type HubActionId = 'goExploring' | 'decorate' | 'treasureChest' | 'collectionBook';
 
 /** One hub action button: its id, its label, and whether it is the primary action. */
 export interface HubButtonSpec {
@@ -82,6 +83,7 @@ export const HUB_BUTTONS: readonly HubButtonSpec[] = Object.freeze([
   Object.freeze({ id: 'goExploring', label: GO_EXPLORING_LABEL, primary: true }),
   Object.freeze({ id: 'decorate', label: DECORATE_LABEL, primary: false }),
   Object.freeze({ id: 'treasureChest', label: TREASURE_CHEST_LABEL, primary: false }),
+  Object.freeze({ id: 'collectionBook', label: COLLECTION_BOOK_LABEL, primary: false }),
 ]);
 
 /** How a hub button is drawn: its createButton shape and its size-1 body in CSS px. */

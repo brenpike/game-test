@@ -232,6 +232,15 @@ export function keepExploring(state: TripState): TripState {
 }
 
 /**
+ * The trip with the tilapia fact card seen, so it is no longer due (the player closed it). Every
+ * other field is unchanged; an already-seen trip is returned as is.
+ */
+export function markTilapiaCardSeen(state: TripState): TripState {
+  if (state.tilapiaCardSeen) return state;
+  return { ...state, tilapiaCardSeen: true };
+}
+
+/**
  * Ends the trip by choice. Allowed while 'banked', or while swimming inside the Home Spot ring;
  * any other case returns the input state unchanged with no events. Banks the Trip Bag first
  * (emitting `banked` when it was not empty), then ends with reason 'wentHome', nothing returned,

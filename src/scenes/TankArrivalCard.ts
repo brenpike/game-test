@@ -4,6 +4,7 @@ import { iconKey } from '../art/textures';
 import type { TreasureTextures } from '../art/treasureTextures';
 import { CARD, cardTextWidth, fitCard, homeTitleWrapWidth, iconRowsSize } from '../logic/cardFit';
 import type { MotionProfile } from '../logic/motion';
+import { morphById, rescueMorphsIn } from '../logic/morphs';
 import { foundInfos } from '../logic/trip';
 import type { TripEnding } from '../logic/tripEvents';
 import { ARRIVAL_OK_LABEL, arrivalText } from '../logic/tripText';
@@ -30,6 +31,11 @@ function namedTreasureIds(ending: TripEnding): readonly string[] {
   return ending.reason === 'wentHome' ? ending.bankedThisTrip : ending.returned;
 }
 
+/** Display names of the rescued axolotls among find ids, e.g. 'Wild axolotl'; other ids are ignored. */
+function rescuedDisplayNames(ids: readonly string[]): string[] {
+  return rescueMorphsIn(ids).map((morph) => morphById(morph).displayName);
+}
+
 /** Number of wrapped lines `text` would draw for `content` at its current wrap width; 0 for no text. */
 function wrappedLineCount(text: Phaser.GameObjects.Text, content: string): number {
   return content === '' ? 0 : text.getWrappedText(content).length;
@@ -39,8 +45,10 @@ function wrappedLineCount(text: Phaser.GameObjects.Text, content: string): numbe
  * Tank arrival card, shown over the Home Tank after a trip: an ink dim that swallows presses, a white
  * panel with the house icon, title, body (with the banked line as its last line), a wrapping icon row
  * of the treasures the body names, and the OK button. Built only from the trip ending and the banked
- * total through arrivalText(). The body has a full and a short wording; layout() lets fitCard() pick
- * whichever fits the canvas, drop icon rows, or clip the body. OK hides the card and calls `onClose`.
+ * total through arrivalText(); the body also names axolotls rescued into the Home Tank and, when
+ * carried home, those waiting where they were found (PRD C4, C5). The icon row shows treasures
+ * only. The body has a full and a short wording; layout() lets fitCard() pick whichever fits the
+ * canvas, drop icon rows, or clip the body. OK hides the card and calls `onClose`.
  */
 export class TankArrivalCard {
   private readonly scene: Phaser.Scene;
@@ -114,6 +122,8 @@ export class TankArrivalCard {
       returnedNames: foundInfos(ending.returned).map((info) => info.name),
       bankedThisTripNames: foundInfos(ending.bankedThisTrip).map((info) => info.name),
       bankedTotal,
+      rescuedNames: rescuedDisplayNames(ending.bankedThisTrip),
+      waitingNames: ending.reason === 'carriedHome' ? rescuedDisplayNames(ending.returned) : [],
     });
     this.title.setText(text.title);
     this.bodyOptions = [`${text.body}\n${text.bankedLine}`, `${text.shortBody}\n${text.bankedLine}`];
