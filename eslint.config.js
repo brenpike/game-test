@@ -55,4 +55,22 @@ export default defineConfig(
       ],
     },
   },
+  {
+    files: ['src/scenes/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/logic/collectibles'],
+              importNames: ['snacksLeft', 'sparklingSnackIds', 'countCollected', 'allCollected'],
+              message:
+                'Scenes read snack counts from the SnackTally set in setItems when the items change; do not work them out per frame.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 );
