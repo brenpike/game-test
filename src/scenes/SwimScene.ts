@@ -320,6 +320,13 @@ export class SwimScene extends Phaser.Scene {
     this.scene.launch(SCENE_KEYS.hud, this.assets);
   }
 
+  /**
+   * Snack drift, snack collection and the last-3 snack sparkle allocate nothing per frame.
+   * Drift is computed on read from each snack's base point and the drift clock (review finding fb55980d, #31).
+   * The other small per-frame objects on this path come from earlier work on main: step inputs and results,
+   * position literals, render argument objects and the reeds-near Set. They are an accepted, known cost:
+   * a few short-lived objects per frame, not seen to cause stutter. Revisit if profiling shows GC pauses.
+   */
   update(_time: number, deltaMs: number): void {
     const dt = Math.min(Math.max(deltaMs / 1000, 0), SWIM.dtMax);
     this.clock += dt;
