@@ -150,9 +150,9 @@ describe('banked never shrinks', () => {
 
 describe('ids', () => {
   it('works with ids from other areas', () => {
-    const holdings = pickUpAll(createHoldings(['canal/pebble-1']), ['reef/shell-1', 'cave/hat-2']);
+    const holdings = pickUpAll(createHoldings(['canal/pond-plant']), ['reef/shell-1', 'cave/hat-2']);
     const result = bankAll(holdings);
-    expect(result.holdings.banked).toEqual(['canal/pebble-1', 'reef/shell-1', 'cave/hat-2']);
+    expect(result.holdings.banked).toEqual(['canal/pond-plant', 'reef/shell-1', 'cave/hat-2']);
     expect(isHeld(result.holdings, 'reef/shell-1')).toBe(true);
   });
 

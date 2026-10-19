@@ -3,6 +3,7 @@ import { AXO_LEG_ROOTS, type AxolotlPose, type LegLook } from '../art/drawAxolot
 import type { ReedLook } from '../art/drawScenery';
 import { INK, LW, UI_FONT } from '../art/palette';
 import { bakePredatorTextures, type PredatorTextures } from '../art/predatorTextures';
+import { bakeTreasureTextures, type TreasureTextures } from '../art/treasureTextures';
 import {
   TEX,
   bakeTextures,
@@ -35,6 +36,7 @@ export interface GameAssets {
   baked: BakedTextures;
   axolotl: AxolotlTexture;
   predator: PredatorTextures;
+  treasure: TreasureTextures;
 }
 
 /** CSS viewport size plus the fitted view derived from the Scale Manager. */
@@ -300,7 +302,8 @@ export class BootScene extends Phaser.Scene {
     });
     const axolotl = createAxolotlTexture(this, TEX.axolotl, bakeScale);
     const predator = bakePredatorTextures(this, bakeScale);
-    const assets: GameAssets = { zone, baked, axolotl, predator };
+    const treasure = bakeTreasureTextures(this, bakeScale);
+    const assets: GameAssets = { zone, baked, axolotl, predator, treasure };
     this.scene.start(SCENE_KEYS.title, assets);
   }
 }

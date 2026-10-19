@@ -1,3 +1,4 @@
+import { treasureById } from './catalogue';
 import {
   createEncounter,
   createEncounterContext,
@@ -8,6 +9,7 @@ import {
   type EncounterState,
 } from './encounter';
 import { createLegs, isProtected, presentCount, quantizeProgress, type LegsState } from './legs';
+import { DEFAULT_TRIP_SEED, nextTripSeed, placeTreasures, type PlacedFind } from './placement';
 import {
   bankAll,
   createHoldings,
@@ -17,13 +19,13 @@ import {
   type FindId,
   type Holdings,
 } from './tripBag';
-import type { LegsSnapshot, TripEnding, TripPhase, TripSnapshot } from './tripEvents';
+import type { FoundInfo, LegsSnapshot, TripEnding, TripPhase, TripSnapshot } from './tripEvents';
 import { CARRY, FINDS, LEGS, SWIM, type CarryTuning, type FindTuning, type LegTuning } from './tuning';
 import type { Vec2 } from './vec';
 import {
   inHomeSpot as isInHomeSpot,
-  type FindKind,
   type FindSpawn,
+  type HidingSpot,
   type HomeSpot,
   type Point,
   type ZoneLayout,
@@ -32,8 +34,11 @@ import {
 /** Regrow progress levels shown by the legs display. */
 export const LEG_PROGRESS_STEPS = 10;
 
-/** The zone parts a trip is built from: the encounter parts, the Home Spot start point and ring, and the finds. */
-export type TripSource = EncounterSource & Pick<ZoneLayout, 'start' | 'homeSpot' | 'finds'>;
+/**
+ * The zone parts a trip is built from: the encounter parts, the Home Spot start point and ring,
+ * the finds (treasure pools) and the hiding spots.
+ */
+export type TripSource = EncounterSource & Pick<ZoneLayout, 'start' | 'homeSpot' | 'finds' | 'spots'>;
 
 /**
  * The carried-home transition. `pos` is the axolotl centre, moving from `from` to `to`
@@ -52,6 +57,10 @@ export interface CarryState {
 /**
  * One trip. Immutable: `stepTrip` returns a new object.
  * `carry` is null while swimming and set once the carry starts.
+ * `finds` is the treasure pools and `spots` the hiding spots; `tripSeed` picked this trip's
+ * `placed` treasures, one per unbanked find, each with its Dash pot state. `touchingPots` is the
+ * ids of the sealed pots the axolotl touched on the latest swimming step. `found` is every id
+ * picked up this trip, in pickup order, including ones banked since.
  * `holdings` is the Trip Bag and the banked finds. `inHomeSpot` is whether the axolotl centre was
  * inside the Home Spot ring on the latest swimming step. `bankedThisTrip` is every find id banked
  * during this trip and `justBanked` the ids of the latest banking (empty once the player keeps
@@ -65,6 +74,11 @@ export interface TripState {
   carry: CarryState | null;
   homeSpot: HomeSpot;
   finds: FindSpawn[];
+  spots: HidingSpot[];
+  tripSeed: number;
+  placed: PlacedFind[];
+  touchingPots: FindId[];
+  found: FindId[];
   holdings: Holdings;
   inHomeSpot: boolean;
   bankedThisTrip: FindId[];
@@ -80,21 +94,29 @@ export interface TripContext {
   finds: FindTuning;
 }
 
-/** Input for one trip step: the axolotl centre and whether reduced motion is on. */
+/**
+ * Input for one trip step: the axolotl centre, whether reduced motion is on and whether a Tail
+ * Dash is active this step.
+ */
 export interface TripInput {
   axolotlPos: Point;
   reduced: boolean;
+  dashing: boolean;
 }
 
 /**
  * Trip events, in the order they happened within the step. Encounter events pass through,
  * except `carriedHome`, which the trip replaces with `carryStart` and `arrivedHome`.
- * `pickedUp` is one find going into the Trip Bag. `banked` is the ids moved from the bag to banked,
- * in bag order. `arrivedHome.returned` is the Trip Bag ids sent back to the world.
+ * `containerBroken` is a Tail Dash breaking the Dash pot at `spotId`; `dashNeeded` is the axolotl
+ * starting to touch a sealed pot without dashing. `pickedUp` is one treasure going into the Trip
+ * Bag, with its pop-up data. `at` is the spot position. `banked` is the ids moved from the bag to
+ * banked, in bag order. `arrivedHome.returned` is the Trip Bag ids sent back to the world.
  */
 export type TripEvent =
   | Exclude<EncounterEvent, { type: 'carriedHome' }>
-  | { type: 'pickedUp'; id: FindId }
+  | { type: 'containerBroken'; id: FindId; spotId: string; at: Point }
+  | { type: 'dashNeeded'; id: FindId; spotId: string; at: Point }
+  | { type: 'pickedUp'; id: FindId; spotId: string; at: Point; found: FoundInfo }
   | { type: 'banked'; ids: FindId[] }
   | { type: 'carryStart'; from: Point; still: boolean }
   | { type: 'arrivedHome'; still: boolean; returned: FindId[] };
@@ -118,21 +140,29 @@ export function createTripContext(overrides: Partial<TripContext> = {}): TripCon
 
 /**
  * Starts a trip: swimming from the Home Spot with a fresh encounter, an empty Trip Bag and the
- * given `banked` find ids (de-duplicated).
+ * given `banked` find ids (de-duplicated). Every unbanked find is placed in a spot from its pool
+ * picked by `tripSeed`, with every Dash pot sealed. Throws when a pool cannot be placed.
  */
 export function createTrip(
   source: TripSource,
   legTuning: Pick<LegTuning, 'count'> = LEGS,
   banked: readonly FindId[] = [],
+  tripSeed: number = DEFAULT_TRIP_SEED,
 ): TripState {
+  const holdings = createHoldings(banked);
   return {
     phase: 'swimming',
     home: { x: source.start.x, y: source.start.y },
     encounter: createEncounter(source, legTuning),
     carry: null,
     homeSpot: { x: source.homeSpot.x, y: source.homeSpot.y, radius: source.homeSpot.radius },
-    finds: source.finds.map((find) => ({ ...find })),
-    holdings: createHoldings(banked),
+    finds: source.finds.map((find) => ({ id: find.id, pool: [...find.pool] })),
+    spots: source.spots.map((spot) => ({ ...spot })),
+    tripSeed,
+    placed: placeTreasures(source.finds, source.spots, holdings.banked, tripSeed),
+    touchingPots: [],
+    found: [],
+    holdings,
     inHomeSpot: isInHomeSpot(source.start, source.homeSpot),
     bankedThisTrip: [],
     justBanked: [],
@@ -142,15 +172,19 @@ export function createTrip(
 }
 
 /**
- * Starts the next trip from an ended one, with the same Home Spot, routes, finds, leg count and
- * banked finds, and an empty Trip Bag. Any other phase returns the input state unchanged.
+ * Starts the next trip from an ended one, with the same Home Spot, routes, finds, spots, leg count
+ * and banked finds, an empty Trip Bag and nothing found. Every unbanked treasure, including ones
+ * returned when carried home, gets a fresh pick from its pool by `tripSeed` (default: the seed
+ * after this trip's), and every Dash pot is sealed again. Any other phase returns the input state
+ * unchanged.
  */
-export function newTrip(state: TripState): TripState {
+export function newTrip(state: TripState, tripSeed: number = nextTripSeed(state.tripSeed)): TripState {
   if (state.phase !== 'ended') return state;
   return createTrip(
-    { ...state.encounter, start: state.home, homeSpot: state.homeSpot, finds: state.finds },
+    { ...state.encounter, start: state.home, homeSpot: state.homeSpot, finds: state.finds, spots: state.spots },
     { count: state.encounter.legs.slots.length },
     state.holdings.banked,
+    tripSeed,
   );
 }
 
@@ -187,10 +221,13 @@ export function goHome(state: TripState): TripStepResult {
  *
  * Swimming: steps the encounter. When it ends (fourth leg lost) the carry starts in the same
  * step: `carryStart` is emitted, any bump impulse is dropped, and reduced motion is locked.
- * Otherwise every find not held and within the pickup radius goes into the Trip Bag
- * (`pickedUp` each, in find order), `inHomeSpot` updates, and inside the ring with a non-empty
- * bag the whole bag banks: `banked` is emitted, the phase becomes 'banked', the axolotl is held
- * where it is and any bump impulse is dropped.
+ * Otherwise, in placed order, every sealed Dash pot within the container radius breaks when
+ * `input.dashing` (`containerBroken`), or emits `dashNeeded` when the axolotl was not already
+ * touching it; pots never give an impulse. Then every unsealed treasure not held and within the
+ * pickup radius goes into the Trip Bag and onto `found` (`pickedUp` each, in placed order), so a
+ * break and its pickup can happen in one step. Then `inHomeSpot` updates, and inside the ring with
+ * a non-empty bag the whole bag banks: `banked` is emitted, the phase becomes 'banked', the
+ * axolotl is held where it is and any bump impulse is dropped.
  * Carrying: the encounter is not stepped, so legs stay frozen, and nothing is picked up; on
  * arrival `arrivedHome` is emitted and the phase becomes 'ended'.
  */
@@ -228,13 +265,16 @@ export function legsSnapshot(legs: LegsState, steps: number = LEG_PROGRESS_STEPS
   };
 }
 
-/** The kind of each find id, in id order. Ids with no matching find are omitted. */
-export function findKinds(ids: readonly FindId[], finds: readonly FindSpawn[]): FindKind[] {
-  const kindById = new Map(finds.map((find) => [find.id, find.kind]));
-  return ids.flatMap((id) => {
-    const kind = kindById.get(id);
-    return kind === undefined ? [] : [kind];
-  });
+/** The pop-up data for a treasure id. Throws when no catalogue treasure has the id. */
+export function foundInfo(id: FindId): FoundInfo {
+  const treasure = treasureById(id);
+  if (treasure === undefined) throw new Error(`foundInfo: unknown treasure ${id}`);
+  return { id: treasure.id, name: treasure.name, category: treasure.category, rarity: treasure.rarity };
+}
+
+/** The pop-up data for each id, in id order. Ids with no catalogue treasure are omitted. */
+export function foundInfos(ids: readonly FindId[]): FoundInfo[] {
+  return ids.flatMap((id) => (treasureById(id) === undefined ? [] : [foundInfo(id)]));
 }
 
 /** Trip display state: the phase, the quantized legs display state, the finds and the ending. */
@@ -246,6 +286,7 @@ export function tripSnapshot(state: TripState): TripSnapshot {
     banked: state.holdings.banked.length,
     inHomeSpot: state.inHomeSpot,
     justBanked: [...state.justBanked],
+    found: foundInfos(state.found),
     ending: state.ending ? copyEnding(state.ending) : null,
   };
 }
@@ -262,6 +303,7 @@ export function idleTripSnapshot(): TripSnapshot {
     banked: 0,
     inHomeSpot: true,
     justBanked: [],
+    found: [],
     ending: null,
   };
 }
@@ -275,12 +317,17 @@ export function sameTripSnapshot(a: TripSnapshot, b: TripSnapshot): boolean {
     a.banked === b.banked &&
     a.inHomeSpot === b.inHomeSpot &&
     sameIds(a.justBanked, b.justBanked) &&
+    sameIds(foundIds(a.found), foundIds(b.found)) &&
     sameEnding(a.ending, b.ending)
   );
 }
 
 function sameIds(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id, i) => id === b[i]);
+}
+
+function foundIds(found: readonly FoundInfo[]): string[] {
+  return found.map((info) => info.id);
 }
 
 function sameEnding(a: TripEnding | null, b: TripEnding | null): boolean {
@@ -313,24 +360,70 @@ function stepSwimming(state: TripState, input: TripInput, step: number, ctx: Tri
     events.push({ type: 'carryStart', from: { x: carry.from.x, y: carry.from.y }, still: carry.still });
     return { state: { ...state, phase: 'carrying', encounter: result.state, carry }, events };
   }
-  const holdings = pickUpNearby(state, input.axolotlPos, ctx.finds, events);
+  const pots = touchPots(state, input, ctx.finds, events);
+  const pickup = pickUpNearby({ ...state, ...pots }, input.axolotlPos, ctx.finds, events);
   const inside = isInHomeSpot(input.axolotlPos, state.homeSpot);
-  const next: TripState = { ...state, encounter: result.state, holdings, inHomeSpot: inside };
-  if (inside && holdings.bag.length > 0) return bankAtHomeSpot(next, input.axolotlPos, events);
+  const next: TripState = { ...state, ...pots, ...pickup, encounter: result.state, inHomeSpot: inside };
+  if (inside && next.holdings.bag.length > 0) return bankAtHomeSpot(next, input.axolotlPos, events);
   if (result.impulse) return { state: next, events, impulse: result.impulse };
   return { state: next, events };
 }
 
-/** Puts every find not yet held within `tuning.pickupRadius` of `pos` into the Trip Bag, pushing `pickedUp` each. */
-function pickUpNearby(state: TripState, pos: Point, tuning: FindTuning, events: TripEvent[]): Holdings {
+/**
+ * Touches every sealed Dash pot within `tuning.containerRadius` of the axolotl: a dash breaks it
+ * (`containerBroken`), otherwise a pot not touched on the previous step pushes `dashNeeded`.
+ * Returns the placed treasures and the ids of the pots still sealed and touching. Each list is the
+ * state's own array when it did not change, so a step that touches no pot allocates neither.
+ */
+function touchPots(
+  state: TripState,
+  input: TripInput,
+  tuning: FindTuning,
+  events: TripEvent[],
+): Pick<TripState, 'placed' | 'touchingPots'> {
+  let placed = state.placed;
+  const touchingPots: FindId[] = [];
+  state.placed.forEach((find, index) => {
+    if (!find.sealed || distanceTo(find, input.axolotlPos) > tuning.containerRadius) return;
+    if (input.dashing) {
+      events.push({ type: 'containerBroken', id: find.id, spotId: find.spotId, at: { x: find.x, y: find.y } });
+      if (placed === state.placed) placed = [...state.placed];
+      placed[index] = { ...find, sealed: false };
+      return;
+    }
+    if (!state.touchingPots.includes(find.id)) {
+      events.push({ type: 'dashNeeded', id: find.id, spotId: find.spotId, at: { x: find.x, y: find.y } });
+    }
+    touchingPots.push(find.id);
+  });
+  return { placed, touchingPots: sameIds(touchingPots, state.touchingPots) ? state.touchingPots : touchingPots };
+}
+
+/**
+ * Puts every unsealed treasure not yet held within `tuning.pickupRadius` of `pos` into the Trip Bag
+ * and onto `found`, pushing `pickedUp` each. `found` is the state's own array when nothing was picked up.
+ */
+function pickUpNearby(
+  state: TripState,
+  pos: Point,
+  tuning: FindTuning,
+  events: TripEvent[],
+): Pick<TripState, 'holdings' | 'found'> {
   let holdings = state.holdings;
-  for (const find of state.finds) {
-    if (isHeld(holdings, find.id)) continue;
-    if (Math.hypot(find.x - pos.x, find.y - pos.y) > tuning.pickupRadius) continue;
+  let found = state.found;
+  for (const find of state.placed) {
+    if (find.sealed || isHeld(holdings, find.id)) continue;
+    if (distanceTo(find, pos) > tuning.pickupRadius) continue;
     holdings = pickUp(holdings, find.id);
-    events.push({ type: 'pickedUp', id: find.id });
+    found = [...found, find.id];
+    const at = { x: find.x, y: find.y };
+    events.push({ type: 'pickedUp', id: find.id, spotId: find.spotId, at, found: foundInfo(find.id) });
   }
-  return holdings;
+  return { holdings, found };
+}
+
+function distanceTo(from: Point, to: Point): number {
+  return Math.hypot(from.x - to.x, from.y - to.y);
 }
 
 /** Banks the non-empty Trip Bag and freezes the trip on the banked card, held at `pos`, with no impulse. */
@@ -395,8 +488,9 @@ function carryPos(carry: CarryState, progress: number): Point {
 
 /**
  * Ends the carry at the canal Home Spot (`zone.start`) with every leg back: present,
- * not protected, nothing regrowing. Unbanked Trip Bag finds go back to their hiding spots (#10):
- * the bag empties, banked finds stay, and the returned ids ride on `arrivedHome` and the ending.
+ * not protected, nothing regrowing. Unbanked Trip Bag finds go back to the world: the bag empties,
+ * banked finds stay, and the returned ids ride on `arrivedHome` and the ending. They reappear
+ * next trip in freshly picked spots, since `newTrip` places every unbanked treasure again.
  * Slice boundary: landing in the Home Tank is #12. Snacks are not trip finds, so arrival leaves
  * them untouched (PRD A19); resetting snacks here was rejected for that reason.
  */

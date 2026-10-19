@@ -200,14 +200,31 @@ export const HOME_RING_DOT = WHITE;
 /** Home Tank wall (3g), also the interim home screen backdrop. 12.89:1 with ink. */
 export const HOME_TANK_WALL = '#fff1d6';
 
-// ---- Finds (provisional) -------------------------------------------------
+// ---- Hidden treasures and hiding places (guide 3g, 7e, provisional) -------
+// Every value in this section is derived (provisional). Cue objects (Dash pot,
+// dash-needed bubble, hint star) keep opaque ink and opaque partner fills.
+/** Dash pot body, provisional. 9.07:1 with ink, so ink or fill is 3.01:1 or better on any background. */
+export const DASH_POT = '#efc5aa';
+/** Dash pot rim, provisional. 11.45:1 with ink. */
+export const DASH_POT_RIM = '#f9e1d0';
+/** Dash pot cracks, provisional. Internal detail lines, never ink. */
+export const DASH_POT_CRACK = SOIL_DETAIL;
+/** Dash pot shine, provisional. */
+export const DASH_POT_SHINE = 'rgba(255,255,255,0.75)';
+/** Hint star fill, provisional. White with ink: 14.39:1, 3.79:1 or better on any background. */
+export const HINT_STAR_FILL = WHITE;
+/** Dash-needed bubble fill, provisional. White with ink: 14.39:1. Never red. */
+export const DASH_BUBBLE_FILL = WHITE;
+/** Small cave rocks, provisional. Scenery: ink on them is 5.87:1 and 7.62:1. Cool and bigger than the burrow stones. */
+export const CAVE_ROCK_A = PEBBLE_D;
+export const CAVE_ROCK_B = PEBBLE_B;
 /**
- * Shiny pebble placeholder find, provisional. Reuses pebble A: 9.50:1 with
- * ink, so ink or fill is 3.08:1 or better on any background (guide 10).
+ * Small cave interior, provisional. A deep water tone darker than water deep
+ * #0a5c98: 5.29:1 against bed top, 3.08:1 against bed bottom, 2.44:1 against
+ * water deep. Cooler and bluer than the burrow opening, which is the eye colour.
  */
-export const FIND_PEBBLE = PEBBLE_A;
-/** Shiny pebble shine, the pebble shine. */
-export const FIND_PEBBLE_SHINE = PEBBLE_SHINE;
-/** Twinkle (guide 4e): sun-yellow arms, white core. */
-export const TWINKLE_ARM = SUN;
-export const TWINKLE_CORE = WHITE;
+export const CAVE_INTERIOR = '#031d33';
+/** Past-the-current marker stone, provisional. 10.70:1 with ink. */
+export const MARKER_STONE = PEBBLE_C;
+/** Past-the-current marker carving, provisional. Internal detail line, never ink. */
+export const MARKER_CARVE = PEBBLE_E;

@@ -1,3 +1,4 @@
+import type { Rarity, TreasureCategory } from './catalogue';
 import type { LegStatus } from './legs';
 
 /**
@@ -45,11 +46,20 @@ export interface TripEnding {
   bankedThisTrip: string[];
 }
 
+/** A found treasure as the pop-up shows it: its catalogue id, name, category and rarity. */
+export interface FoundInfo {
+  id: string;
+  name: string;
+  category: TreasureCategory;
+  rarity: Rarity;
+}
+
 /**
  * Trip display state. `bag` is the Trip Bag find ids in pickup order and `banked` the banked
  * find count. `inHomeSpot` is whether the axolotl centre is inside the Home Spot ring.
- * `justBanked` is the find ids of the latest banking, shown on the banked card. `ending` is set
- * only once the trip has ended.
+ * `justBanked` is the find ids of the latest banking, shown on the banked card. `found` is every
+ * treasure picked up this trip, in pickup order, including ones banked since; it resets each trip.
+ * `ending` is set only once the trip has ended.
  */
 export interface TripSnapshot {
   phase: TripPhase;
@@ -58,6 +68,7 @@ export interface TripSnapshot {
   banked: number;
   inHomeSpot: boolean;
   justBanked: string[];
+  found: FoundInfo[];
   ending: TripEnding | null;
 }
 

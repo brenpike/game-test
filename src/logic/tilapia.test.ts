@@ -375,6 +375,31 @@ describe('tilapia', () => {
     expect(lungeConnects(fish, fish.pos)).toBe(false);
   });
 
+  it('never telegraphs while blocked, even with the target in range, and does once unblocked', () => {
+    const blockedCtx: TilapiaContext = { ...canalCtx, telegraphBlocked: true };
+    const target = { x: 1060, y: 200 };
+    const blocked = runFor(createTilapia(openRoute), target, 5, blockedCtx);
+    expect(blocked.events).toEqual([]);
+    expect(blocked.state.phase).toBe('patrol');
+    const unblocked = stepTilapia(blocked.state, target, DT, { ...canalCtx, telegraphBlocked: false });
+    expect(eventTypes(unblocked.events)).toEqual(['telegraphStart']);
+    const absent = stepTilapia(blocked.state, target, DT, canalCtx);
+    expect(eventTypes(absent.events)).toEqual(['telegraphStart']);
+  });
+
+  it('lets a block leave a running telegraph, lunge and cooldown alone', () => {
+    const blockedCtx: TilapiaContext = { ...canalCtx, telegraphBlocked: true };
+    const target = { x: 1100, y: 200 };
+    const lunging = stepTilapia(telegraphing(target), target, TILAPIA.windup, blockedCtx);
+    expect(eventTypes(lunging.events)).toEqual(['lungeStart']);
+    const hit = runFor(lunging.state, target, TILAPIA.lungeDuration, blockedCtx);
+    expect(hit.events).toEqual([{ type: 'lungeEnd', connected: true }]);
+    expect(hit.state.phase).toBe('cooldown');
+    const cooled = runFor(hit.state, target, TILAPIA.cooldown + 0.1, blockedCtx);
+    expect(eventTypes(cooled.events)).toEqual(['cooldownEnd']);
+    expect(cooled.state.phase).toBe('patrol');
+  });
+
   it('keeps every rule over a long canal simulation', () => {
     const random = vi.spyOn(Math, 'random');
     const stats = simulate(canalRoute, canalCtx, 0x5eed, 600);

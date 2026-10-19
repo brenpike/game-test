@@ -10,7 +10,23 @@
 import * as Phaser from 'phaser';
 import { beginDraw, clearAll, type TexSize } from './canvasKit';
 import { AXO_REST_POSE, AXO_TEX, drawAxolotl, type AxolotlPose } from './drawAxolotl';
-import { PEBBLE_TEX, paintShinyPebble } from './drawFinds';
+import {
+  CAVE_TEX,
+  CURRENT_MARKER_TEX,
+  DASH_BUBBLE_TEX,
+  DASH_POT_TEX,
+  HINT_STAR_RADII,
+  POT_SHARD_COUNT,
+  POT_SHARD_TEX,
+  hintStarTextureSize,
+  paintCaveBack,
+  paintCaveFront,
+  paintCurrentMarker,
+  paintDashNeededBubble,
+  paintDashPot,
+  paintHintStar,
+  paintPotShard,
+} from './drawFinds';
 import { BURROW_TEX, FLAG_TEX, RING_DOT_TEX, paintBurrow, paintMarkerFlag, paintRingDot } from './drawHomeSpot';
 import {
   BUG_TEX,
@@ -66,7 +82,11 @@ export const TEX = {
   homeBurrow: 'home-burrow',
   homeFlag: 'home-flag',
   homeRingDot: 'home-ring-dot',
-  pebble: 'find-pebble',
+  pot: 'hide-pot',
+  dashBubble: 'hide-dash-bubble',
+  caveBack: 'hide-cave-back',
+  caveFront: 'hide-cave-front',
+  currentMarker: 'hide-current-marker',
 } as const;
 
 /** Bubble radii baked, logical px. */
@@ -94,6 +114,8 @@ export const bubbleKey = (r: number): string => `bubble-${r}`;
 export const buttonKey = (fill: ButtonFill, shape: ButtonShape, visual: ButtonVisual): string =>
   `btn-${fill}-${shape}-${visual}`;
 export const iconKey = (kind: IconKind): string => `icon-${kind}`;
+export const hintStarKey = (r: number): string => `hint-star-${r}`;
+export const potShardKey = (i: number): string => `pot-shard-${i}`;
 
 // ---------------------------------------------------------------------------
 // Sizes
@@ -203,8 +225,23 @@ export interface BakedTextures {
    * sway it around the anchor); ring dot anchor is the dot centre.
    */
   readonly homeSpot: { readonly burrow: TexInfo; readonly flag: TexInfo; readonly ringDot: TexInfo };
-  /** Shiny pebble placeholder find (provisional). Anchor is the pebble centre. */
-  readonly pebble: TexInfo;
+  /**
+   * Hiding-place world art (provisional). Hint stars are keyed by outer radius R
+   * (HINT_STAR_RADII), anchor the star centre. Pot anchor is the pot centre.
+   * Dash bubble anchor is its tail tip. Shards are POT_SHARD_COUNT textures,
+   * anchor the shard centre. Cave back and front share one frame, anchor the base
+   * centre on the bed. Current marker anchor is its base centre. Crumble twinkles
+   * reuse `sparkle`.
+   */
+  readonly hiding: {
+    readonly hintStars: Readonly<Record<number, TexInfo>>;
+    readonly pot: TexInfo;
+    readonly dashBubble: TexInfo;
+    readonly shards: readonly TexInfo[];
+    readonly caveBack: TexInfo;
+    readonly caveFront: TexInfo;
+    readonly currentMarker: TexInfo;
+  };
 }
 
 /** Bake all static textures into the scene's texture manager. */
@@ -294,9 +331,26 @@ export function bakeTextures(scene: Phaser.Scene, opts: BakeOptions): BakedTextu
     flag: add(bake(scene, TEX.homeFlag, FLAG_TEX, bakeScale, paintMarkerFlag)),
     ringDot: add(bake(scene, TEX.homeRingDot, RING_DOT_TEX, bakeScale, paintRingDot)),
   };
-  const pebble = add(bake(scene, TEX.pebble, PEBBLE_TEX, bakeScale, paintShinyPebble));
 
-  return { info, bg, reeds, pads, worm, bug, sparkle, streak, bubbles, icons, stick, homeSpot, pebble };
+  const hintStars: Record<number, TexInfo> = {};
+  for (const r of HINT_STAR_RADII) {
+    hintStars[r] = add(bake(scene, hintStarKey(r), hintStarTextureSize(r), bakeScale, (ctx) => paintHintStar(ctx, r)));
+  }
+  const shards: TexInfo[] = [];
+  for (let i = 0; i < POT_SHARD_COUNT; i++) {
+    shards.push(add(bake(scene, potShardKey(i), POT_SHARD_TEX, bakeScale, (ctx) => paintPotShard(ctx, i))));
+  }
+  const hiding = {
+    hintStars,
+    pot: add(bake(scene, TEX.pot, DASH_POT_TEX, bakeScale, paintDashPot)),
+    dashBubble: add(bake(scene, TEX.dashBubble, DASH_BUBBLE_TEX, bakeScale, paintDashNeededBubble)),
+    shards,
+    caveBack: add(bake(scene, TEX.caveBack, CAVE_TEX, bakeScale, paintCaveBack)),
+    caveFront: add(bake(scene, TEX.caveFront, CAVE_TEX, bakeScale, paintCaveFront)),
+    currentMarker: add(bake(scene, TEX.currentMarker, CURRENT_MARKER_TEX, bakeScale, paintCurrentMarker)),
+  };
+
+  return { info, bg, reeds, pads, worm, bug, sparkle, streak, bubbles, icons, stick, homeSpot, hiding };
 }
 
 // ---------------------------------------------------------------------------

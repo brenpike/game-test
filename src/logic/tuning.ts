@@ -1,3 +1,5 @@
+import type { Rarity } from './catalogue';
+
 /**
  * Provisional tuning constants for the swim test. Values are starting points
  * meant to be adjusted by playtest; units are world pixels and seconds unless noted.
@@ -118,6 +120,16 @@ export interface CarryTuning {
 export interface FindTuning {
   /** Centre distance in px within which the axolotl picks up a find. */
   pickupRadius: number;
+  /** Centre distance in px within which the axolotl touches a Dash pot. */
+  containerRadius: number;
+}
+
+/** Treasure hint sparkle tuning. */
+export interface HintTuning {
+  /** Distance in px within which a treasure's hint sparkle shows; strictly shorter for rarer. */
+  range: Readonly<Record<Rarity, number>>;
+  /** Extra px a shown hint keeps showing beyond its range. */
+  hysteresis: number;
 }
 
 export const SWIM: Readonly<SwimTuning> = Object.freeze({
@@ -186,4 +198,11 @@ export const CARRY: Readonly<CarryTuning> = Object.freeze({
 /** Provisional find values. */
 export const FINDS: Readonly<FindTuning> = Object.freeze({
   pickupRadius: 24,
+  containerRadius: 30,
+});
+
+/** Provisional hint values; rarer treasures get a subtler, shorter-range hint (PRD B7). */
+export const HINTS: Readonly<HintTuning> = Object.freeze({
+  range: Object.freeze({ common: 150, rare: 115, epic: 85, legendary: 60 }),
+  hysteresis: 16,
 });

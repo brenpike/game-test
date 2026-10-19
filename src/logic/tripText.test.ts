@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { CANAL_TREASURES } from './catalogue';
 import * as tripText from './tripText';
 import {
   BANKING_HINT,
   SWIM_AGAIN_LABEL,
   TRIP_END_BODY,
   bankedBody,
-  describeFinds,
-  findName,
+  bankedBodyShort,
+  describeTreasures,
   homeScreenText,
   tripBagStatus,
 } from './tripText';
@@ -34,32 +35,53 @@ const exportedStrings = Object.entries(tripText).filter(
   (entry): entry is [string, string] => typeof entry[1] === 'string',
 );
 
-const KIND_SAMPLES: readonly (readonly string[])[] = [
+const NAME_SAMPLES: readonly (readonly string[])[] = [
   [],
-  ['pebble'],
-  ['pebble', 'pebble', 'pebble'],
-  ['pebble', 'shell', 'pebble'],
-  ['shell'],
+  ['Sun hat'],
+  ['Pond plant', 'Mint Paint shell'],
+  ['Toy boat', 'Castle tower', 'Golden bow'],
+  ['Sun hat', 'Pond plant', 'Toy boat', 'Heart glasses', 'Shell necklace'],
 ];
+
+const SHORT_COUNTS = [0, 1, 2, 5, 20];
+
+const SHORT_TOTALS = [0, 1, 4, 20];
+
+function makeNames(count: number): string[] {
+  return Array.from({ length: count }, (_, index) => `Treasure ${index + 1}`);
+}
+
+function shortBodyFor(reason: 'wentHome' | 'carriedHome', count: number): string {
+  return homeScreenText({
+    reason,
+    returnedNames: makeNames(count),
+    bankedThisTripNames: makeNames(count),
+    bankedTotal: 0,
+  }).shortBody;
+}
 
 function collectHelperOutputs(): string[] {
   const outputs: string[] = [];
-  for (const count of [0, 1, 2, 5]) {
-    outputs.push(findName('pebble', count), findName('shell', count), tripBagStatus(count));
-  }
-  for (const kinds of KIND_SAMPLES) {
-    outputs.push(describeFinds(kinds));
+  for (const count of [0, 1, 2, 5]) outputs.push(tripBagStatus(count));
+  for (const names of NAME_SAMPLES) {
+    outputs.push(describeTreasures(names));
     for (const total of [0, 1, 4]) {
-      outputs.push(bankedBody(kinds, total));
+      outputs.push(bankedBody(names, total));
       for (const reason of ['wentHome', 'carriedHome'] as const) {
         const text = homeScreenText({
           reason,
-          returnedKinds: kinds,
-          bankedThisTripKinds: kinds,
+          returnedNames: names,
+          bankedThisTripNames: names,
           bankedTotal: total,
         });
-        outputs.push(text.title, text.body, text.bankedLine, text.button);
+        outputs.push(text.title, text.body, text.shortBody, text.bankedLine, text.button);
       }
+    }
+  }
+  for (const count of SHORT_COUNTS) {
+    for (const total of SHORT_TOTALS) outputs.push(bankedBodyShort(count, total));
+    for (const reason of ['wentHome', 'carriedHome'] as const) {
+      outputs.push(shortBodyFor(reason, count));
     }
   }
   return outputs;
@@ -68,6 +90,7 @@ function collectHelperOutputs(): string[] {
 describe('trip text', () => {
   it('exports every trip string by name', () => {
     expect(exportedStrings.map(([name]) => name).sort()).toEqual([
+      'ALL_SNACKS_BANNER',
       'BANKED_TITLE',
       'BANKING_HINT',
       'GO_HOME_LABEL',
@@ -85,6 +108,12 @@ describe('trip text', () => {
   it.each(exportedStrings)('%s avoids harsh words', (_name, text) => {
     const lower = text.toLowerCase();
     for (const word of BANNED) expect(lower).not.toContain(word);
+  });
+
+  it('never mentions pebbles in any helper output', () => {
+    for (const output of collectHelperOutputs()) {
+      expect(output.toLowerCase()).not.toContain('pebble');
+    }
   });
 
   it('keeps every helper output free of harsh or gamey words', () => {
@@ -111,35 +140,31 @@ describe('trip text', () => {
   });
 });
 
-describe('findName', () => {
-  it('names one pebble and many pebbles', () => {
-    expect(findName('pebble', 1)).toBe('shiny pebble');
-    expect(findName('pebble', 2)).toBe('shiny pebbles');
-    expect(findName('pebble', 0)).toBe('shiny pebbles');
+describe('describeTreasures', () => {
+  it('says there are no treasures for an empty list', () => {
+    expect(describeTreasures([])).toBe('no treasures');
   });
 
-  it('falls back to "find" for an unknown kind', () => {
-    expect(findName('mystery', 1)).toBe('find');
-    expect(findName('mystery', 3)).toBe('finds');
-  });
-});
-
-describe('describeFinds', () => {
-  it('describes a single find', () => {
-    expect(describeFinds(['pebble'])).toBe('1 shiny pebble');
+  it('names a single treasure', () => {
+    expect(describeTreasures(['Sun hat'])).toBe('Sun hat');
   });
 
-  it('groups a plural kind', () => {
-    expect(describeFinds(['pebble', 'pebble', 'pebble'])).toBe('3 shiny pebbles');
+  it('joins two treasures with "and"', () => {
+    expect(describeTreasures(['Pond plant', 'Mint Paint shell'])).toBe(
+      'Pond plant and Mint Paint shell',
+    );
   });
 
-  it('groups mixed kinds in first-seen order', () => {
-    expect(describeFinds(['pebble', 'mystery', 'pebble'])).toBe('2 shiny pebbles and 1 find');
-    expect(describeFinds(['mystery', 'pebble', 'other'])).toBe('1 find, 1 shiny pebble and 1 find');
+  it('joins three treasures with a comma and "and"', () => {
+    expect(describeTreasures(['Toy boat', 'Castle tower', 'Golden bow'])).toBe(
+      'Toy boat, Castle tower and Golden bow',
+    );
   });
 
-  it('says there are no finds for an empty list', () => {
-    expect(describeFinds([])).toBe('no finds');
+  it('names the first three and counts the rest past three', () => {
+    expect(
+      describeTreasures(['Sun hat', 'Pond plant', 'Toy boat', 'Heart glasses', 'Shell necklace']),
+    ).toBe('Sun hat, Pond plant, Toy boat and 2 more');
   });
 });
 
@@ -155,63 +180,194 @@ describe('tripBagStatus', () => {
 });
 
 describe('bankedBody', () => {
-  it('says what was banked and the Home Spot total', () => {
-    const body = bankedBody(['pebble', 'pebble'], 5);
-    expect(body).toContain('2 shiny pebbles');
-    expect(body).toContain('safe');
-    expect(body).toContain('5 finds');
-    expect(body).toContain('Home Spot');
+  it('names what was banked and gives the Home Spot total', () => {
+    expect(bankedBody(['Sun hat', 'Pond plant'], 5)).toBe(
+      'Sun hat and Pond plant are safe now! You have 5 treasures safe at the Home Spot.',
+    );
   });
 
-  it('uses the singular for one find', () => {
-    const body = bankedBody(['pebble'], 1);
-    expect(body).toContain('1 shiny pebble is safe');
-    expect(body).toContain('1 find safe');
+  it('uses the singular for one treasure', () => {
+    expect(bankedBody(['Sun hat'], 1)).toBe(
+      'Sun hat is safe now! You have 1 treasure safe at the Home Spot.',
+    );
   });
 
   it('handles banking nothing new', () => {
-    expect(bankedBody([], 3)).toContain('3 finds');
+    expect(bankedBody([], 3)).toBe(
+      'Nothing new to bring in. You have 3 treasures safe at the Home Spot.',
+    );
+  });
+
+  it('says the Home Spot is empty when the total is zero', () => {
+    expect(bankedBody([], 0)).toBe('Nothing new to bring in. No treasures at the Home Spot yet.');
   });
 });
 
 describe('homeScreenText', () => {
-  it('carried home: safe, four legs, returned finds, and the banked total', () => {
+  it('carried home: safe, four legs, returned treasures, and the banked total', () => {
     const text = homeScreenText({
       reason: 'carriedHome',
-      returnedKinds: ['pebble', 'pebble', 'pebble'],
-      bankedThisTripKinds: [],
+      returnedNames: ['Sun hat', 'Pond plant', 'Toy boat'],
+      bankedThisTripNames: [],
       bankedTotal: 4,
     });
     const lower = text.body.toLowerCase();
-    expect(text.body.startsWith(TRIP_END_BODY)).toBe(true);
+    expect(text.title).toBe(tripText.TRIP_END_TITLE);
     expect(lower).toContain('safe');
     expect(lower).toContain('four legs');
-    expect(text.body).toContain('3 shiny pebbles went back to where you found them');
-    expect(text.bankedLine).toContain('4 finds');
+    expect(text.body).toBe(
+      `${TRIP_END_BODY} Sun hat, Pond plant and Toy boat floated off to new hiding spots. ` +
+        'Look for them next trip! Treasures at the Home Spot are always safe.',
+    );
+    expect(text.bankedLine).toBe('You have 4 treasures safe at the Home Spot.');
     expect(text.button).toBe(SWIM_AGAIN_LABEL);
+  });
+
+  it('carried home with one treasure says it floated off to a new hiding spot', () => {
+    const text = homeScreenText({
+      reason: 'carriedHome',
+      returnedNames: ['Golden bow'],
+      bankedThisTripNames: [],
+      bankedTotal: 1,
+    });
+    expect(text.body).toBe(
+      `${TRIP_END_BODY} Golden bow floated off to a new hiding spot. Look for it next trip! ` +
+        'Treasures at the Home Spot are always safe.',
+    );
+    expect(text.bankedLine).toBe('You have 1 treasure safe at the Home Spot.');
   });
 
   it('carried home with nothing in the bag says nothing was lost', () => {
     const text = homeScreenText({
       reason: 'carriedHome',
-      returnedKinds: [],
-      bankedThisTripKinds: [],
+      returnedNames: [],
+      bankedThisTripNames: [],
       bankedTotal: 0,
     });
-    expect(text.body.toLowerCase()).toContain('nothing was lost');
+    expect(text.body).toBe(
+      `${TRIP_END_BODY} Nothing was lost. Treasures at the Home Spot are always safe.`,
+    );
+    expect(text.bankedLine).toBe('No treasures at the Home Spot yet.');
     expect(text.button).toBe(SWIM_AGAIN_LABEL);
   });
 
-  it('went home: lists finds banked this trip and the total', () => {
+  it('went home: lists treasures banked this trip and the total', () => {
     const text = homeScreenText({
       reason: 'wentHome',
-      returnedKinds: [],
-      bankedThisTripKinds: ['pebble', 'pebble'],
+      returnedNames: [],
+      bankedThisTripNames: ['Sun hat', 'Mint Paint shell'],
       bankedTotal: 7,
     });
     expect(text.title).toBe(tripText.WENT_HOME_TITLE);
-    expect(text.body).toContain('2 shiny pebbles');
-    expect(text.bankedLine).toContain('7 finds');
+    expect(text.body).toBe(
+      'You swam home safe and sound. This trip you brought home Sun hat and Mint Paint shell.',
+    );
+    expect(text.bankedLine).toBe('You have 7 treasures safe at the Home Spot.');
     expect(text.button).toBe(SWIM_AGAIN_LABEL);
+  });
+
+  it('went home with nothing banked this trip', () => {
+    const text = homeScreenText({
+      reason: 'wentHome',
+      returnedNames: [],
+      bankedThisTripNames: [],
+      bankedTotal: 2,
+    });
+    expect(text.body).toBe('You swam home safe and sound.');
+  });
+});
+
+describe('bankedBodyShort', () => {
+  it('handles banking nothing new', () => {
+    expect(bankedBodyShort(0, 0)).toBe('Nothing new to bring in. No treasures at the Home Spot yet.');
+    expect(bankedBodyShort(0, 3)).toBe(
+      'Nothing new to bring in. You have 3 treasures safe at the Home Spot.',
+    );
+  });
+
+  it('says "Your treasure" for one', () => {
+    expect(bankedBodyShort(1, 1)).toBe(
+      'Your treasure is safe now! You have 1 treasure safe at the Home Spot.',
+    );
+  });
+
+  it('counts two or more', () => {
+    expect(bankedBodyShort(2, 5)).toBe(
+      '2 treasures are safe now! You have 5 treasures safe at the Home Spot.',
+    );
+    expect(bankedBodyShort(20, 20)).toBe(
+      '20 treasures are safe now! You have 20 treasures safe at the Home Spot.',
+    );
+  });
+});
+
+describe('homeScreenText shortBody', () => {
+  const OPENING = 'A big bubble floated you home. You are safe!';
+
+  it('carried home with nothing returned', () => {
+    expect(shortBodyFor('carriedHome', 0)).toBe(`${OPENING} Nothing was lost.`);
+  });
+
+  it('carried home with one returned', () => {
+    expect(shortBodyFor('carriedHome', 1)).toBe(
+      `${OPENING} Your treasure floated off. Look for it next trip!`,
+    );
+  });
+
+  it('carried home with several returned', () => {
+    expect(shortBodyFor('carriedHome', 2)).toBe(
+      `${OPENING} 2 treasures floated off. Look for them next trip!`,
+    );
+    expect(shortBodyFor('carriedHome', 5)).toBe(
+      `${OPENING} 5 treasures floated off. Look for them next trip!`,
+    );
+  });
+
+  it('went home with nothing banked', () => {
+    expect(shortBodyFor('wentHome', 0)).toBe('You swam home safe and sound.');
+  });
+
+  it('went home with one banked', () => {
+    expect(shortBodyFor('wentHome', 1)).toBe(
+      'You swam home safe and sound. You brought home 1 treasure.',
+    );
+  });
+
+  it('went home with several banked', () => {
+    expect(shortBodyFor('wentHome', 2)).toBe(
+      'You swam home safe and sound. You brought home 2 treasures.',
+    );
+    expect(shortBodyFor('wentHome', 20)).toBe(
+      'You swam home safe and sound. You brought home 20 treasures.',
+    );
+  });
+
+  it('uses returnedNames for carried home and bankedThisTripNames for went home', () => {
+    const carried = homeScreenText({
+      reason: 'carriedHome',
+      returnedNames: makeNames(3),
+      bankedThisTripNames: makeNames(1),
+      bankedTotal: 0,
+    });
+    const went = homeScreenText({
+      reason: 'wentHome',
+      returnedNames: makeNames(3),
+      bankedThisTripNames: makeNames(1),
+      bankedTotal: 0,
+    });
+    expect(carried.shortBody).toContain('3 treasures');
+    expect(went.shortBody).toContain('1 treasure.');
+  });
+
+  it('never contains a catalogue treasure name', () => {
+    const outputs: string[] = [];
+    for (const count of SHORT_COUNTS) {
+      for (const total of SHORT_TOTALS) outputs.push(bankedBodyShort(count, total));
+      outputs.push(shortBodyFor('wentHome', count), shortBodyFor('carriedHome', count));
+    }
+    for (const output of outputs) {
+      const lower = output.toLowerCase();
+      for (const treasure of CANAL_TREASURES) expect(lower).not.toContain(treasure.name.toLowerCase());
+    }
   });
 });

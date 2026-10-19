@@ -7,17 +7,35 @@
  * `homeSpot` (burrow and flag) and `homeRing` (safe-ring dots) sit above haze, so
  * these cue objects are never hazed, and below collectibles, so finds and the
  * axolotl draw in front. The ring draws over the burrow so the edge stays whole.
- * Full order: bg < reeds < haze < homeSpot < homeRing < collectibles < tilapia
- * < halo < axolotl < bubbles < surface < pads < fx < ui.
+ * Hiding places (guide 7e, provisional): `caveBack` (cave interior) and
+ * `hiddenTreasure` (treasure icons under cover) sit behind everything hidden, so
+ * reeds, the cave front and pads cover them on purpose and the haze tints them.
+ * `caveFront` (cave rocks) and `currentMarker` share the reeds' hazed scenery
+ * band. `treasure` (Dash pots, and treasures revealed by a crumble) is a cue
+ * object: above the haze, below collectibles. `hint` (hint stars) draws above
+ * pads and reeds, below fx. The dash-needed bubble and crumble shards use fx.
+ * Full order: bg < caveBack < hiddenTreasure < reeds < caveFront = currentMarker
+ * < haze < homeSpot < homeRing < treasure < collectibles < tilapia < halo
+ * < axolotl < bubbles < surface < pads < hint < fx < ui.
  */
 export const DEPTH = {
   bg: 0,
+  /** Provisional. Small cave interior, behind everything hidden. */
+  caveBack: 8,
+  /** Provisional. Treasure icons under cover (reeds, pads, cave front). Deliberately hidden. */
+  hiddenTreasure: 9,
   reeds: 10,
+  /** Provisional. Small cave rocks (hazed scenery). */
+  caveFront: 12,
+  /** Provisional. Past-the-current carved stone marker (hazed scenery). */
+  currentMarker: 12,
   haze: 20,
   /** Provisional. Home Spot burrow and marker flag. */
   homeSpot: 24,
   /** Provisional. Home Spot safe-ring dots. */
   homeRing: 26,
+  /** Provisional. Dash pots and treasures revealed by a crumble: cue objects above the haze. */
+  treasure: 28,
   collectibles: 30,
   /** Provisional. Predator: behind the axolotl, in front of collectibles. */
   tilapia: 35,
@@ -27,6 +45,8 @@ export const DEPTH = {
   bubbles: 50,
   surface: 60,
   pads: 70,
+  /** Provisional. Hint stars: above pads and reeds, below fx. */
+  hint: 75,
   fx: 80,
   ui: 100,
 } as const;

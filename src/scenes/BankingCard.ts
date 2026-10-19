@@ -1,11 +1,18 @@
 import * as Phaser from 'phaser';
 import { INK, UI_PANEL } from '../art/palette';
 import type { TexInfo } from '../art/textures';
+import type { TreasureTextures } from '../art/treasureTextures';
+import { CARD, cardButtonsStacked, cardTextWidth, fitCard, iconRowsSize } from '../logic/cardFit';
 import type { MotionProfile } from '../logic/motion';
-import { findKinds } from '../logic/trip';
+import { foundInfos } from '../logic/trip';
 import { TRIP_EVENTS, type TripSnapshot } from '../logic/tripEvents';
-import { BANKED_TITLE, GO_HOME_LABEL, KEEP_EXPLORING_LABEL, bankedBody } from '../logic/tripText';
-import type { FindKind, FindSpawn } from '../logic/zone';
+import {
+  BANKED_TITLE,
+  GO_HOME_LABEL,
+  KEEP_EXPLORING_LABEL,
+  bankedBody,
+  bankedBodyShort,
+} from '../logic/tripText';
 import {
   createButton,
   cssColor,
@@ -15,18 +22,10 @@ import {
   type SceneView,
   type UiButton,
 } from './BootScene';
+import { addTreasureIcon, placeIconRows } from './FindPopup';
+import { addMotionTween } from './motionTweens';
 
-const MARGIN = 16;
-const PAD = 24;
-const TIGHT_PAD = 12;
-const TITLE_PX = 34;
-const BODY_PX = 20;
-const TEXT_MIN_W = 120;
-const TEXT_MAX_W = 420;
-const ICON_BOX_PX = 32;
-const ICON_GAP = 8;
-const BUTTON_GAP = 12;
-const STACK_BELOW_W = 460;
+const TREASURE_ICON_PX = 32;
 const DIM_ALPHA = 0.45;
 const DIM_COVER = 8192;
 const FADE_MS = 400;
@@ -49,15 +48,21 @@ interface CardTwinkle {
   angle: number;
 }
 
+/** Number of wrapped lines `text` would draw for `content` at its current wrap width; 0 for no text. */
+function wrappedLineCount(text: Phaser.GameObjects.Text, content: string): number {
+  return content === '' ? 0 : text.getWrappedText(content).length;
+}
+
 /**
- * Banking celebration card over the swim scene: dim, white panel, title, a row of the finds just
- * banked, the banked text and the Keep exploring / Go home buttons. Laid out around the screen
- * centre so the fade-in scale grows from the middle. Each button emits its trip request once.
+ * Banking celebration card over the swim scene: dim, white panel, title, the icons of the treasures
+ * just banked in wrapping rows, the banked text naming them (or a short wording that counts them)
+ * and the Keep exploring / Go home buttons. layout() lets fitCard() pick the wording, drop icon rows
+ * or clip the body to fit the canvas. Laid out around the screen centre so the fade-in scale grows
+ * from the middle. Each button emits its trip request once.
  */
 export class BankingCard {
   private readonly scene: Phaser.Scene;
-  private readonly finds: readonly FindSpawn[];
-  private readonly findIcons: Readonly<Record<FindKind, TexInfo>>;
+  private readonly treasure: TreasureTextures;
   private readonly sparkle: TexInfo;
   private readonly container: Phaser.GameObjects.Container;
   private readonly panel: Phaser.GameObjects.Graphics;
@@ -66,6 +71,7 @@ export class BankingCard {
   private readonly buttons: readonly UiButton[];
   private view: SceneView;
   private icons: Phaser.GameObjects.Image[] = [];
+  private bodyOptions: readonly string[] = [''];
   private twinkles: CardTwinkle[] = [];
   private focusIndex = KEEP_EXPLORING_INDEX;
   private shownAt = 0;
@@ -74,8 +80,7 @@ export class BankingCard {
   constructor(scene: Phaser.Scene, assets: GameAssets, view: SceneView, depth: number) {
     this.scene = scene;
     this.view = view;
-    this.finds = assets.zone.finds;
-    this.findIcons = { pebble: assets.baked.pebble };
+    this.treasure = assets.treasure;
     this.sparkle = assets.baked.sparkle;
     const dpr = view.fit.dpr;
     const ink = cssColor(INK);
@@ -84,8 +89,8 @@ export class BankingCard {
       .setOrigin(0, 0)
       .setInteractive();
     this.panel = scene.add.graphics();
-    this.title = scene.add.text(0, 0, BANKED_TITLE, { ...uiTextStyle(TITLE_PX, dpr), align: 'center' });
-    this.body = scene.add.text(0, 0, '', { ...uiTextStyle(BODY_PX, dpr, false), align: 'center' });
+    this.title = scene.add.text(0, 0, BANKED_TITLE, { ...uiTextStyle(CARD.titlePx, dpr), align: 'center' });
+    this.body = scene.add.text(0, 0, '', { ...uiTextStyle(CARD.bodyPx, dpr, false), align: 'center' });
     const keepExploring = createButton(scene, assets.baked, {
       fill: 'primary',
       shape: 'wide',
@@ -124,9 +129,10 @@ export class BankingCard {
     this.requested = false;
     this.shownAt = this.scene.time.now;
     this.setFocus(KEEP_EXPLORING_INDEX);
-    const kinds = findKinds(snapshot.justBanked, this.finds);
-    this.body.setText(bankedBody(kinds, snapshot.banked));
-    this.buildRow(kinds);
+    const infos = foundInfos(snapshot.justBanked);
+    const names = infos.map((info) => info.name);
+    this.bodyOptions = [bankedBody(names, snapshot.banked), bankedBodyShort(names.length, snapshot.banked)];
+    this.buildRow(infos.map((info) => info.id));
     this.layout(this.view);
     this.scene.tweens.killTweensOf(this.container);
     this.container.setVisible(true);
@@ -135,8 +141,15 @@ export class BankingCard {
       return;
     }
     this.container.setAlpha(0).setScale(START_SCALE);
-    this.scene.tweens.add({ targets: this.container, alpha: 1, scale: 1, duration: FADE_MS, ease: 'Sine.easeOut' });
-    this.twinkles.forEach((twinkle) => this.burstTwinkle(twinkle));
+    addMotionTween(this.scene, {
+      targets: this.container,
+      props: { alpha: 1, scale: 1 },
+      duration: FADE_MS,
+      ease: 'Sine.easeOut',
+    });
+    this.twinkles
+      .filter((twinkle) => twinkle.image.visible)
+      .forEach((twinkle) => this.burstTwinkle(twinkle));
   }
 
   hide(): void {
@@ -168,49 +181,59 @@ export class BankingCard {
   }
 
   /**
-   * Centres the card; tightens its padding when a short screen cannot fit the full padding and
-   * stacks the buttons (Keep exploring on top) on a narrow one. Twinkles land at their end points.
+   * Centres the card on a canvas that has room for it. fitCard() sizes it from the title, the icon
+   * rows, the body (full or short wording, clipped only when nothing fits) and the buttons: it
+   * tightens the padding on a short screen, shows only the icon rows that fit (hiding the other
+   * icons, and the twinkles when none show) and keeps the buttons inside the canvas. Stacks the
+   * buttons (Keep exploring on top) on a narrow canvas. Twinkles land at their end points. Safe to
+   * call before show() and after hide().
    */
   layout(view: SceneView): void {
     this.view = view;
     const { cssW, cssH } = view;
     this.container.setPosition(cssW / 2, cssH / 2);
     const [keepExploring, goHome] = this.buttons;
-    const stacked = cssW < STACK_BELOW_W;
-    const textW = Math.max(TEXT_MIN_W, Math.min(TEXT_MAX_W, cssW - 2 * (MARGIN + PAD)));
+    const stacked = cardButtonsStacked(cssW);
+    const textW = cardTextWidth(cssW);
     this.title.setWordWrapWidth(textW, true);
     this.body.setWordWrapWidth(textW, true);
-    const rowW = this.rowWidth();
-    const rowH = this.icons.length > 0 ? ICON_BOX_PX : 0;
-    const buttonsW = stacked ? keepExploring.width : keepExploring.width + BUTTON_GAP + goHome.width;
-    const buttonsH = stacked ? keepExploring.height + BUTTON_GAP + goHome.height : keepExploring.height;
-    const sections = [this.title.height, rowH, this.body.height, buttonsH].filter((height) => height > 0);
-    const contentH = sections.reduce((sum, height) => sum + height, 0);
-    const gaps = sections.length + 1;
-    const pad = contentH + gaps * PAD <= cssH - 2 * MARGIN ? PAD : TIGHT_PAD;
+    const lineH = this.body.getTextMetrics().fontSize;
+    const variants = this.bodyOptions.map((option) => ({ lines: wrappedLineCount(this.body, option), lineH }));
+    const buttonsW = stacked ? keepExploring.width : keepExploring.width + CARD.buttonGap + goHome.width;
+    const buttonsH = stacked
+      ? keepExploring.height + CARD.buttonGap + goHome.height
+      : keepExploring.height;
+    const availH = cssH - 2 * CARD.margin;
+    const fit = fitCard(availH, [
+      { kind: 'fixed', height: this.title.height },
+      { kind: 'icons', count: this.icons.length, maxW: textW },
+      { kind: 'body', variants },
+      { kind: 'actions', height: buttonsH },
+    ]);
+    const [titleSlot, iconsSlot, bodySlot, actionsSlot] = fit.slots;
+    this.body.setText(this.bodyOptions[fit.bodyVariant]);
+    this.body.setVisible(fit.bodyLines > 0);
+    this.body.setMaxLines(fit.clipped ? fit.bodyLines : 0);
+    this.icons.forEach((icon, index) => icon.setVisible(index < fit.iconCount));
+    const { width: rowW, height: rowH } = iconRowsSize(fit.iconCount, textW);
+    const bodyW = fit.bodyLines > 0 ? this.body.width : 0;
     const panelW = Math.min(
-      cssW - 2 * MARGIN,
-      Math.max(buttonsW, rowW, this.title.width, this.body.width) + 2 * PAD,
+      cssW - 2 * CARD.margin,
+      Math.max(buttonsW, rowW, this.title.width, bodyW) + 2 * CARD.pad,
     );
-    const panelH = contentH + gaps * pad;
-    const top = Math.max(MARGIN, (cssH - panelH) / 2) - cssH / 2;
-    drawPanel(this.panel, -panelW / 2, top, panelW, panelH, UI_PANEL);
-    let y = top + pad;
-    this.title.setPosition(-this.title.width / 2, y);
-    y += this.title.height + pad;
-    if (rowH > 0) {
-      this.layoutRow(y);
-      y += rowH + pad;
-    }
-    this.body.setPosition(-this.body.width / 2, y);
-    y += this.body.height + pad;
+    const top = CARD.margin + Math.max(0, (availH - fit.panelH) / 2) - cssH / 2;
+    drawPanel(this.panel, -panelW / 2, top, panelW, fit.panelH, UI_PANEL);
+    this.title.setPosition(-this.title.width / 2, top + titleSlot.top);
+    this.layoutRow(top + iconsSlot.top, textW, fit.iconCount, rowW, rowH);
+    this.body.setPosition(-this.body.width / 2, top + bodySlot.top);
+    const buttonsY = top + actionsSlot.top;
     if (stacked) {
-      keepExploring.container.setPosition(-keepExploring.width / 2, y);
-      goHome.container.setPosition(-goHome.width / 2, y + keepExploring.height + BUTTON_GAP);
+      keepExploring.container.setPosition(-keepExploring.width / 2, buttonsY);
+      goHome.container.setPosition(-goHome.width / 2, buttonsY + keepExploring.height + CARD.buttonGap);
       return;
     }
-    keepExploring.container.setPosition(-buttonsW / 2, y);
-    goHome.container.setPosition(-buttonsW / 2 + keepExploring.width + BUTTON_GAP, y);
+    keepExploring.container.setPosition(-buttonsW / 2, buttonsY);
+    goHome.container.setPosition(-buttonsW / 2 + keepExploring.width + CARD.buttonGap, buttonsY);
   }
 
   private setFocus(index: number): void {
@@ -227,19 +250,14 @@ export class BankingCard {
     this.scene.game.events.emit(BUTTON_REQUESTS[index]);
   }
 
-  /** Replaces the find icons (each fitted to a 32 px box) and the 3 to 5 twinkles around them. */
-  private buildRow(kinds: readonly FindKind[]): void {
+  /** Replaces the treasure icons (one 32 px icon per id) and the 3 to 5 twinkles around them. */
+  private buildRow(ids: readonly string[]): void {
     this.clearRow();
-    for (const kind of kinds) {
-      const info = this.findIcons[kind];
-      const image = this.scene.add
-        .image(0, 0, info.key)
-        .setOrigin(0.5, 0.5)
-        .setScale(ICON_BOX_PX / Math.max(info.w, info.h) / info.scale);
-      this.icons.push(image);
+    for (const id of ids) {
+      this.icons.push(addTreasureIcon(this.scene, this.treasure, TREASURE_ICON_PX, id));
     }
-    if (kinds.length === 0) return;
-    const count = Phaser.Math.Clamp(kinds.length + 2, TWINKLE_MIN, TWINKLE_MAX);
+    if (ids.length === 0) return;
+    const count = Phaser.Math.Clamp(ids.length + 2, TWINKLE_MIN, TWINKLE_MAX);
     for (let i = 0; i < count; i++) {
       const image = this.scene.add
         .image(0, 0, this.sparkle.key)
@@ -262,22 +280,19 @@ export class BankingCard {
     this.twinkles = [];
   }
 
-  private rowWidth(): number {
-    const count = this.icons.length;
-    return count > 0 ? count * ICON_BOX_PX + (count - 1) * ICON_GAP : 0;
-  }
-
-  /** Centres the icon row at `top` and puts each twinkle at its end point, from the left side over the top to the right. */
-  private layoutRow(top: number): void {
-    const rowW = this.rowWidth();
-    const centreY = top + ICON_BOX_PX / 2;
-    this.icons.forEach((icon, index) => {
-      icon.setPosition(-rowW / 2 + index * (ICON_BOX_PX + ICON_GAP) + ICON_BOX_PX / 2, centreY);
-    });
+  /**
+   * Wraps the first `shown` icons into centred rows no wider than `maxW` from `top` down, and puts
+   * each twinkle at its end point around the whole `rowW` by `rowH` block, from the left side over
+   * the top to the right. With no icons shown the twinkles are hidden.
+   */
+  private layoutRow(top: number, maxW: number, shown: number, rowW: number, rowH: number): void {
+    placeIconRows(this.icons.slice(0, shown), 0, top, maxW);
+    const centreY = top + rowH / 2;
     const radiusX = rowW / 2 + TWINKLE_SIDE_PX;
-    const radiusY = ICON_BOX_PX / 2 + TWINKLE_ABOVE_PX;
+    const radiusY = rowH / 2 + TWINKLE_ABOVE_PX;
     for (const twinkle of this.twinkles) {
       this.scene.tweens.killTweensOf(twinkle.image);
+      twinkle.image.setVisible(shown > 0);
       twinkle.image.setPosition(Math.cos(twinkle.angle) * radiusX, centreY + Math.sin(twinkle.angle) * radiusY);
     }
   }
@@ -288,6 +303,11 @@ export class BankingCard {
     const endX = image.x;
     const endY = image.y;
     image.setPosition(endX - Math.cos(angle) * TWINKLE_BURST_PX, endY - Math.sin(angle) * TWINKLE_BURST_PX);
-    this.scene.tweens.add({ targets: image, x: endX, y: endY, duration: TWINKLE_MS, ease: 'Sine.easeOut' });
+    addMotionTween(this.scene, {
+      targets: image,
+      props: { x: endX, y: endY },
+      duration: TWINKLE_MS,
+      ease: 'Sine.easeOut',
+    });
   }
 }

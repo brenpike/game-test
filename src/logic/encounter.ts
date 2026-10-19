@@ -113,6 +113,11 @@ export function resetEncounter(
  * route order, then one bump check. So a leg that finishes regrowing in the same step as a
  * hit emits `regrown` before `hit`.
  *
+ * Stagger: only one tilapia attacks at a time. A tilapia may start a telegraph only while no
+ * other tilapia is telegraphing or lunging (judged on the states already stepped this step,
+ * and the previous states of the rest), so two tilapia never telegraph or lunge at once. A
+ * blocked tilapia keeps patrolling; a telegraph, lunge or cooldown already running goes on.
+ *
  * Within-step timing always favours the axolotl. A lunge contact can happen at any moment
  * inside the step, so a hit is judged against the kindest leg state over the whole step:
  * a leg that finishes regrowing anywhere in the step counts as present, and protected time
@@ -170,7 +175,8 @@ function stepTilapias(
   const events: EncounterEvent[] = [];
   let hit = false;
   for (let i = 0; i < current.tilapias.length && !current.tripOver; i++) {
-    const result = stepTilapia(current.tilapias[i], axolotlPos, dt, tilapiaCtx);
+    const telegraphBlocked = otherTilapiaAttacking(current.tilapias, i);
+    const result = stepTilapia(current.tilapias[i], axolotlPos, dt, { ...tilapiaCtx, telegraphBlocked });
     current.tilapias[i] = result.state;
     const tilapiaId = result.state.routeId;
     for (const event of result.events) {
@@ -185,6 +191,16 @@ function stepTilapias(
     }
   }
   return { state: current, events, hit };
+}
+
+/**
+ * Whether any tilapia other than `tilapias[index]` is telegraphing or lunging. Entries before
+ * `index` already hold this step's state, so a telegraph started earlier in the step counts.
+ */
+function otherTilapiaAttacking(tilapias: readonly TilapiaState[], index: number): boolean {
+  return tilapias.some(
+    (other, otherIndex) => otherIndex !== index && (other.phase === 'telegraph' || other.phase === 'lunge'),
+  );
 }
 
 /** Applies a connected lunge from `tilapia`; a protected or legless axolotl loses nothing. */

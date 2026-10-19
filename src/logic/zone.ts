@@ -1,4 +1,7 @@
+import { CANAL_TREASURES, type Rarity } from './catalogue';
 import { mulberry32 } from './rng';
+import { inSafeArea } from './tilapia';
+import { FINDS } from './tuning';
 
 export const WORLD_H = 360;
 export const SURF = 80;
@@ -25,18 +28,46 @@ const SNACK_MAX_ATTEMPTS = 400;
 const PAD_COUNT = 6;
 const SAFE_AREA: Readonly<SafeArea> = Object.freeze({ x0: 40, x1: 300, y0: SURF, y1: BED_TOP });
 const HOME_SPOT_RADIUS = 72;
-const FIND_POINTS: readonly (readonly [number, number])[] = [
-  [420, 286],
-  [900, 150],
-  [1240, 272],
-  [1560, 118],
-  [1840, 230],
+const REED_SPOT_SHALLOW_Y = 172;
+const REED_SPOT_MID_Y = 228;
+const REED_SPOT_DEEP_Y = 288;
+const PAD_SPOT_Y = 100;
+const SPOT_HOME_CLEARANCE = FINDS.pickupRadius + 8;
+const CAVE_SPOTS: readonly (readonly [number, number, Rarity, boolean])[] = [
+  [1500, 230, 'epic', false],
+  [1558, 230, 'legendary', true],
+  [1616, 230, 'epic', false],
+  [1500, 288, 'legendary', true],
+  [1558, 288, 'epic', false],
+  [1616, 288, 'legendary', true],
 ];
-const TILAPIA_ROUTE_POINTS: readonly (readonly [number, number])[] = [
-  [460, 170],
-  [720, 140],
-  [700, 250],
-  [480, 240],
+const CURRENT_SPOTS: readonly (readonly [number, number, Rarity, boolean])[] = [
+  [1190, 162, 'epic', false],
+  [1260, 162, 'legendary', true],
+  [1190, 220, 'legendary', true],
+  [1260, 220, 'epic', false],
+  [1190, 278, 'epic', false],
+  [1260, 278, 'legendary', true],
+];
+const TILAPIA_ROUTES: readonly (readonly (readonly [number, number])[])[] = [
+  [
+    [460, 170],
+    [720, 140],
+    [700, 250],
+    [480, 240],
+  ],
+  [
+    [1010, 150],
+    [1240, 170],
+    [1230, 260],
+    [1020, 250],
+  ],
+  [
+    [1530, 150],
+    [1760, 170],
+    [1750, 250],
+    [1540, 240],
+  ],
 ];
 
 /** Structural 2D point; matches any `{ x, y }` vector shape. */
@@ -121,14 +152,36 @@ export interface HomeSpot {
   radius: number;
 }
 
-export type FindKind = 'pebble';
-
-/** Fixed find spawn; ids are `${areaId}/<kind>-<n>` and stay stable across seeds. */
+/** A catalogue treasure id plus the ids of every hiding spot it may be placed in. */
 export interface FindSpawn {
   id: string;
-  kind: FindKind;
+  pool: string[];
+}
+
+/** Declared cover label of a hiding spot. */
+export type HidingCover = 'reeds' | 'pad' | 'cave' | 'pastCurrent';
+
+/**
+ * One place a treasure may be hidden. `cover` and `rarity` are declared labels; the hiding rules
+ * in hiding.ts check them against the geometry. `container` means a Dash pot sits here when a
+ * treasure is placed.
+ */
+export interface HidingSpot {
+  id: string;
+  cover: HidingCover;
+  rarity: Rarity;
+  container: boolean;
   x: number;
   y: number;
+}
+
+/** Cave rectangle; inclusive edges. */
+export interface CaveArea {
+  id: string;
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
 }
 
 /** Tilapia patrol loop: visits waypoints in order, then wraps to the first. */
@@ -154,7 +207,21 @@ export interface ZoneLayout {
   tilapiaRoutes: TilapiaRoute[];
   homeSpot: HomeSpot;
   finds: FindSpawn[];
+  spots: HidingSpot[];
+  cave: CaveArea;
+  mainPath: Point[];
 }
+
+export const CAVE: Readonly<CaveArea> = Object.freeze({ id: `${CANAL_AREA_ID}/cave`, x0: 1480, x1: 1640, y0: 200, y1: 318 });
+
+/** The main swim path: the middle of the canal from the Home Spot to the far end. */
+export const MAIN_PATH: readonly Readonly<Point>[] = Object.freeze([
+  Object.freeze({ x: 120, y: 200 }),
+  Object.freeze({ x: 1840, y: 200 }),
+]);
+
+/** Minimum distance between two hiding spots, so one pickup radius never reaches two spots. */
+export const SPOT_MIN_SPACING = 2 * FINDS.pickupRadius + 8;
 
 /** Water surface height at world x and time t (seconds); ported from prototypes/art-styles/cartoon.js. */
 export function waveY(x: number, t: number): number {
@@ -288,12 +355,89 @@ function buildPads(rand: () => number): PadSpec[] {
   return pads;
 }
 
+/**
+ * Three fixed patrol loops, ids `tilapia-0` to `tilapia-2`, left to right along the canal. The
+ * closest two routes are 290.2 px apart, more than twice the lunge range of 140 px.
+ */
 function buildTilapiaRoutes(): TilapiaRoute[] {
-  return [{ id: 'tilapia-0', waypoints: TILAPIA_ROUTE_POINTS.map(([x, y]) => ({ x, y })) }];
+  return TILAPIA_ROUTES.map((points, i) => ({
+    id: `tilapia-${i}`,
+    waypoints: points.map(([x, y]) => ({ x, y })),
+  }));
 }
 
-function buildFinds(): FindSpawn[] {
-  return FIND_POINTS.map(([x, y], i) => ({ id: `${CANAL_AREA_ID}/pebble-${i + 1}`, kind: 'pebble', x, y }));
+function fixedSpots(
+  points: readonly (readonly [number, number, Rarity, boolean])[],
+  prefix: string,
+  cover: HidingCover,
+): HidingSpot[] {
+  return points.map(([x, y, rarity, container], i) => ({
+    id: `${CANAL_AREA_ID}/spot-${prefix}-${i + 1}`,
+    cover,
+    rarity,
+    container,
+    x,
+    y,
+  }));
+}
+
+function derivedSpotCandidates(reedPatches: ReedPatch[], pads: PadSpec[]): HidingSpot[] {
+  const candidates: HidingSpot[] = [];
+  reedPatches.forEach((patch, p) => {
+    const cx = (patch.x0 + patch.x1) / 2;
+    const base = { cover: 'reeds' as const, container: false, x: cx };
+    candidates.push(
+      { ...base, id: `${CANAL_AREA_ID}/spot-reeds-${p}-a`, rarity: 'common', y: REED_SPOT_SHALLOW_Y },
+      { ...base, id: `${CANAL_AREA_ID}/spot-reeds-${p}-b`, rarity: 'common', y: REED_SPOT_MID_Y },
+      { ...base, id: `${CANAL_AREA_ID}/spot-reeds-${p}-deep`, rarity: 'rare', y: REED_SPOT_DEEP_Y },
+    );
+  });
+  for (let i = 1; i < pads.length; i++) {
+    candidates.push({
+      id: `${CANAL_AREA_ID}/spot-pad-${i}`,
+      cover: 'pad',
+      rarity: 'rare',
+      container: false,
+      x: pads[i].x,
+      y: PAD_SPOT_Y,
+    });
+  }
+  return candidates;
+}
+
+function isSpotClear(candidate: HidingSpot, accepted: HidingSpot[], safeArea: SafeArea, homeSpot: HomeSpot): boolean {
+  const bounds = swimBounds();
+  const inBounds =
+    candidate.x >= bounds.minX && candidate.x <= bounds.maxX && candidate.y >= bounds.minY && candidate.y <= bounds.maxY;
+  const clearOfHome =
+    Math.hypot(candidate.x - homeSpot.x, candidate.y - homeSpot.y) >= homeSpot.radius + SPOT_HOME_CLEARANCE;
+  const spaced = accepted.every(
+    (other) => Math.hypot(candidate.x - other.x, candidate.y - other.y) >= SPOT_MIN_SPACING,
+  );
+  return inBounds && !inSafeArea(candidate, safeArea) && clearOfHome && spaced;
+}
+
+/**
+ * Hiding spots: the fixed cave and past-current spots (area data, never dropped), then reed and
+ * pad spots derived from this seed's patches and pads. A derived spot that is out of the water,
+ * in the safe area, near the ring or too close to an accepted spot is dropped.
+ */
+function buildSpots(reedPatches: ReedPatch[], pads: PadSpec[], safeArea: SafeArea, homeSpot: HomeSpot): HidingSpot[] {
+  const spots = [...fixedSpots(CAVE_SPOTS, 'cave', 'cave'), ...fixedSpots(CURRENT_SPOTS, 'current', 'pastCurrent')];
+  for (const candidate of derivedSpotCandidates(reedPatches, pads)) {
+    if (isSpotClear(candidate, spots, safeArea, homeSpot)) {
+      spots.push(candidate);
+    }
+  }
+  return spots;
+}
+
+/** One find per canal treasure, in catalogue order; its pool is every spot of the same rarity. */
+function buildFinds(spots: HidingSpot[]): FindSpawn[] {
+  return CANAL_TREASURES.map((treasure) => ({
+    id: treasure.id,
+    pool: spots.filter((spot) => spot.rarity === treasure.rarity).map((spot) => spot.id),
+  }));
 }
 
 /** Deterministically builds the 4-screen canal zone layout from a mulberry32 seed. */
@@ -313,6 +457,12 @@ export function buildCanalZone(seed: number = DEFAULT_ZONE_SEED): ZoneLayout {
     { id: 'current-0', x0: 760, x1: 1160, y0: 120, y1: 280, force: { x: -70, y: 0 } },
   ];
 
+  const collectibles = buildSnacks(rand, currents[0], start);
+  const pads = buildPads(rand);
+  const safeArea: SafeArea = { ...SAFE_AREA };
+  const homeSpot: HomeSpot = { x: start.x, y: start.y, radius: HOME_SPOT_RADIUS };
+  const spots = buildSpots(reedPatches, pads, safeArea, homeSpot);
+
   return {
     areaId: CANAL_AREA_ID,
     width: ZONE_W,
@@ -322,13 +472,16 @@ export function buildCanalZone(seed: number = DEFAULT_ZONE_SEED): ZoneLayout {
     reeds,
     reedPatches,
     currents,
-    collectibles: buildSnacks(rand, currents[0], start),
-    pads: buildPads(rand),
+    collectibles,
+    pads,
     bankChunks: [1, 3],
     sunChunk: 0,
-    safeArea: { ...SAFE_AREA },
+    safeArea,
     tilapiaRoutes: buildTilapiaRoutes(),
-    homeSpot: { x: start.x, y: start.y, radius: HOME_SPOT_RADIUS },
-    finds: buildFinds(),
+    homeSpot,
+    finds: buildFinds(spots),
+    spots,
+    cave: { ...CAVE },
+    mainPath: MAIN_PATH.map((point) => ({ ...point })),
   };
 }

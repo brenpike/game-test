@@ -34,4 +34,25 @@ export default defineConfig(
       ],
     },
   },
+  {
+    files: ['src/scenes/**/*.ts'],
+    ignores: ['src/scenes/motionTweens.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.object.property.name='tweens'][callee.property.name=/^(add|addCounter|addMultiple|chain)$/]",
+          message:
+            'Create scene tweens with addMotionTween() from src/scenes/motionTweens.ts so reduced motion can settle them.',
+        },
+        {
+          selector:
+            "CallExpression[callee.object.name='tweens'][callee.property.name=/^(add|addCounter|addMultiple|chain)$/]",
+          message:
+            'Create scene tweens with addMotionTween() from src/scenes/motionTweens.ts so reduced motion can settle them.',
+        },
+      ],
+    },
+  },
 );
