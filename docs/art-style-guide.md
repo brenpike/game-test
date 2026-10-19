@@ -894,6 +894,7 @@ PRD A5 to A8, ADR 0008. Always gentle: sparkles and outlines, never gore.
 | Present | Normal leg (6e). | `cartoon.js` |
 | Lost | A ghost outline of the leg-and-toes tube shape: dashed ink rgba(43,35,80,0.55), 1.5 wide, dash 2.5, gap 2.5, no fill. It paddles like a normal leg. Faint on purpose: not a cue object (section 10); the legs display shows leg state. | `derived (provisional)` |
 | Regrowing | The slot fill (body colour for near legs, far side for far legs) grows from the leg root to the toe tips with progress. The regrown part has its normal tube outline. The rest stays ghost. Two twinkles (R 3) sit at the growth front. At 100% there is a short burst of three twinkles. | `derived (provisional)` |
+| Snack speed-up | A 4-point star R 7 (white, ink 1.8) at the helped leg's root, drawn after the axolotl. It is a cue object (section 10): ink at alpha 1.0 while shown, and it never blinks. It is not shown with four legs. It is hidden once the trip leaves swimming. A leg a snack finishes also gets the normal regrown burst. Motion in section 9. | `derived (provisional)` |
 | Never | Blood, a wound, a stump, or a detached limb. The leg never falls off. | `derived (provisional)` |
 
 **Leg-loss puff.** At the lost leg's root (6e roots): three overlapping white circles r 7, 6, and 5, drawn as a `blob` with ink 3.5, plus four twinkles R 4 to 6. The puff covers the switch to the ghost outline. Colours are always white and sun yellow, never red. Source: `derived (provisional)`.
@@ -906,6 +907,7 @@ PRD A5 to A8, ADR 0008. Always gentle: sparkles and outlines, never gore.
 | Icon shape | Leg tube from (14,4) to (14,18), colour width 9, `ol` 2.6. Three toes from (14,18), length 8, width 4.6, `ol` 2.2, splayed -0.6, 0, and +0.6 rad from straight down. | `derived (provisional)` |
 | Present | Solid ink outline, fill #e8567e, one shine | `derived (provisional)` |
 | Regrowing (at most one) | Dashed ink outline (2.0, dash 3, gap 3). Fill #e8567e rises from the root toward the toes in proportion to progress. A 4-point star R 5 (white, ink 1.6) at the top-right of the icon box. | `derived (provisional)` |
+| Snack speed-up badge | Ink-only snack icon, 16 px, at the bottom-right of the icon of the leg the latest snack helped, shown for 1.2 s. A leg a snack finishes keeps the badge on its now-present icon, not on the next leg that starts. It reads in greyscale by shape. It is hidden once the trip leaves swimming. Motion in section 9. | `derived (provisional)` |
 | Lost | Dashed ink outline only, no fill | `derived (provisional)` |
 | Order | Left to right: present, regrowing, lost | `derived (provisional)` |
 
@@ -1298,6 +1300,7 @@ Everything is soft, slow, and looping. Times are periods (one full cycle).
 | Cooldown | Tail at half speed. | Still. |
 | Leg-loss puff | 0.5 s. The puff scales 0.6 to 1.3 while alpha goes 1 to 0. Twinkles drift 10 px out and fade. | Puff at scale 1.0 and alpha 1.0 for 0.5 s, then gone. Twinkles still. |
 | Regrowth | Fill follows progress (about 20 s per leg, tuning). Front twinkles bob +/-1.5 px every 1.2 s. At full, three twinkles burst 6 px out over 0.4 s. | Static twinkles, no burst. |
+| Snack speed-up | Star: grows 0.6 to 1.0 and rises 8 px over 0.3 s, holds, then fades over the last 0.4 s of its 1.2 s life. Badge: holds 1.2 s, then fades 0.4 s. A new boost before the fade extends the hold. During the fade it starts a fresh star. Pause freezes both. | Star at full size and alpha 1.0 for 1.2 s, then gone. Badge hides at once after its hold. |
 | Protected ring | The glint arc travels once around every 2.4 s. Ring alpha is constant. | Glint fixed at the upper-left. |
 | Leg-count wobble (A9) | Extra tilt +0.05 rad per lost leg on the 1.2 s swim cycle: 0 with four legs, +0.05 with three, +0.10 with two, +0.15 with one leg left (three lost). | None. The slowdown stays. |
 | Hint sparkle | On entering range (with 16 px of hysteresis) it grows from scale 0.6 to 1.0 over 0.4 s at full alpha, so a cue object's alpha only ever decreases (section 10). Then bobs +/-2 px over 2.4 s and rotates +/-0.15 rad. Fades out over 0.4 s on leaving range. Hides at once on pickup. The star is drawn 20 px above the spot. | No bob or spin. Appears at full size at once and leaves at once. |
@@ -1454,6 +1457,7 @@ Everything in the table below is `derived (provisional)`. Confirm each in a prot
 | Dream colours | All slot values and the mixing rule, pattern geometry and colours, Dream marker, rim light and eye ring rule, spot colours on Dream colours, swatch tile (3f, 6p, 8), the lightened Lavender, Sunset orange, and Bubblegum bodies, and the 2-unit pattern inset |
 | Tilapia | Geometry, colours, poses, glint, and "!" bubble (7c, 3g), the body #c2d2bb, a touch lighter than the hero body (7c) |
 | Legs | Ghost and regrowth, puff, legs display, protected ring (6q, 3g) |
+| Snack speed-up cue | Star size R 7, place at the leg root, and timing (0.3 s grow, 8 px rise, 1.2 s life, 0.4 s fade); badge size 16 px, corner bottom-right, and 1.2 s hold (6q, 9) |
 | Home Spot and treasures | Home Spot burrow (stones in pebbles A and C, opening #1b1535, opaque ring dots), Dash pot (#efc5aa, rim #f9e1d0), hint sparkle sizes (opaque at every rarity), revealed treasure, Paint shell (7d, 7e) |
 | Home Tank kit | Layout, tank frame (contain-fit, bottom-aligned, wall fill), layer order as built, decoration rules, the 80 px base-anchored decoration bake, floor band and keyboard steps, axolotl tank swim, placement states (7f), placement ghost inside the focus ring and the "no" icon, the whole-item 0.5 alpha ghost (a deviation from the opaque-ink ghost, 7f); hub buttons and the Button width rule, Treasure Chest layout, decorate controls, Home Tank icons (8); Dream swatch tile bake (7e) |
 | Home Spot ring and burrow layout | Ring radius 72 inside the keep-out rectangle, dot count rule (one per 16 px), burrow below the ring centre, stone arch geometry, house icon fit on the flag (about 0.6 px clear of the flag ink at top and bottom), layer order (7d) |

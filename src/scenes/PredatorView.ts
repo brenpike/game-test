@@ -32,6 +32,13 @@ const REGROW_PER_LEG = 3;
 const REGROW_LIFE_S = 0.7;
 const REGROW_SPREAD_PX = 12;
 const REGROW_RISE_PX = 10;
+const BOOST_POOL = 3;
+const BOOST_STAR_R = 7;
+const BOOST_LIFE_S = 1.2;
+const BOOST_GROW_S = 0.3;
+const BOOST_FADE_S = 0.4;
+const BOOST_GROW_FROM = 0.6;
+const BOOST_RISE_PX = 8;
 
 /** One frame of predator rendering input. `phase` is the trip phase for this frame. */
 export interface PredatorFrame {
@@ -86,8 +93,8 @@ function legRootWorld(axolotl: Phaser.GameObjects.Image, leg: number): Vec2 {
 }
 
 /**
- * Draws the tilapia, its telegraph, the leg-loss poof, regrow sparkles, the protected halo
- * and the carry-home bubble. Visual only: every timer here is driven by the frame `dt`, so it
+ * Draws the tilapia, its telegraph, the leg-loss poof, regrow sparkles, the snack speed-up
+ * star, the protected halo and the carry-home bubble. Visual only: every timer here is driven by the frame `dt`, so it
  * freezes with the scene, and nothing here changes game state.
  */
 export class PredatorView {
@@ -96,6 +103,8 @@ export class PredatorView {
   private readonly tilapias: TilapiaSprites[];
   private readonly poofs: LegEffect[];
   private readonly regrowSparkles: LegEffect[];
+  private readonly boostStars: LegEffect[];
+  private readonly boostStarInfo: TexInfo;
   private readonly halo: Phaser.GameObjects.Image;
   private readonly carryBubble: Phaser.GameObjects.Image;
   private poofCursor = 0;
@@ -114,6 +123,14 @@ export class PredatorView {
     this.regrowSparkles = Array.from({ length: REGROW_POOL }, () =>
       createLegEffect(bakedImage(scene, assets.baked.sparkle, DEPTH.fx), REGROW_LIFE_S),
     );
+    const starInfo: TexInfo | undefined = assets.baked.hiding.hintStars[BOOST_STAR_R];
+    if (!starInfo) {
+      throw new Error(`PredatorView: no hint star of radius ${BOOST_STAR_R} for the snack speed-up`);
+    }
+    this.boostStarInfo = starInfo;
+    this.boostStars = Array.from({ length: BOOST_POOL }, () =>
+      createLegEffect(bakedImage(scene, starInfo, DEPTH.fx), BOOST_LIFE_S),
+    );
   }
 
   /** Starts the effects for this step's trip events: a poof on a hit, sparkles on a regrown leg. */
@@ -122,6 +139,14 @@ export class PredatorView {
       if (event.type === 'hit') this.startPoof(event.leg);
       if (event.type === 'regrown') this.startRegrowSparkles(event.leg);
     }
+  }
+
+  /**
+   * Shows a speed-up star at each leg a snack helped regrow (PRD A19); a leg listed twice gets one
+   * star. A star still holding is kept on longer; a fading one is left to fade under a fresh star.
+   */
+  startSnackBoost(legs: readonly number[]): void {
+    for (const leg of new Set(legs)) this.startBoostStar(leg);
   }
 
   /** Draws one frame. Call after the axolotl sprite has its final transform for the frame. */
@@ -133,11 +158,12 @@ export class PredatorView {
     this.renderCarryBubble(frame);
     this.renderPoofs(frame);
     this.renderRegrowSparkles(frame);
+    this.renderBoostStars(frame);
   }
 
   /** Hides every short-lived effect, the halo and the carry bubble (new trip). */
   reset(): void {
-    for (const effect of [...this.poofs, ...this.regrowSparkles]) {
+    for (const effect of [...this.poofs, ...this.regrowSparkles, ...this.boostStars]) {
       effect.age = effect.life;
       effect.image.setVisible(false);
     }
@@ -215,6 +241,21 @@ export class PredatorView {
     }
   }
 
+  /**
+   * Re-boosting a holding star sets it back to the start of its hold (a growing star is left
+   * growing), so it never regrows or jumps. Otherwise the oldest pooled star starts fresh.
+   */
+  private startBoostStar(leg: number): void {
+    const holding = this.boostStars.find((star) => star.leg === leg && star.age < BOOST_LIFE_S - BOOST_FADE_S);
+    if (holding) {
+      holding.age = Math.min(holding.age, BOOST_GROW_S);
+      return;
+    }
+    const star = this.boostStars.reduce((oldest, candidate) => (candidate.age > oldest.age ? candidate : oldest));
+    star.leg = leg;
+    star.age = 0;
+  }
+
   private renderPoofs(frame: PredatorFrame): void {
     const info = this.assets.predator.poof;
     for (const poof of this.poofs) {
@@ -237,6 +278,37 @@ export class PredatorView {
         .setY(sparkle.image.y - (ambient ? REGROW_RISE_PX * life : 0))
         .setAlpha(ambient ? 1 - life : 1)
         .setScale(1 / info.scale);
+    }
+  }
+
+  /**
+   * Stars show only while swimming: any other phase ends them at once, as the HUD badge is hidden,
+   * so they never resume after the banked card. Full motion: the star grows and rises over
+   * BOOST_GROW_S, holds, then fades over the last BOOST_FADE_S. Reduced motion: full size at the
+   * leg root, fully opaque, until it is hidden.
+   */
+  private renderBoostStars(frame: PredatorFrame): void {
+    if (frame.phase !== 'swimming') {
+      for (const star of this.boostStars) {
+        star.age = star.life;
+        star.image.setVisible(false);
+      }
+      return;
+    }
+    const baseScale = 1 / this.boostStarInfo.scale;
+    for (const star of this.boostStars) {
+      if (this.advanceEffect(star, frame) === null) continue;
+      if (!frame.motion.ambient) {
+        star.image.setScale(baseScale).setAlpha(1);
+        continue;
+      }
+      const grow = Math.min(1, star.age / BOOST_GROW_S);
+      const fadeAge = star.age - (BOOST_LIFE_S - BOOST_FADE_S);
+      const fade = fadeAge > 0 ? 1 - fadeAge / BOOST_FADE_S : 1;
+      star.image
+        .setY(star.image.y - BOOST_RISE_PX * grow)
+        .setScale((BOOST_GROW_FROM + (1 - BOOST_GROW_FROM) * grow) * baseScale)
+        .setAlpha(fade);
     }
   }
 

@@ -1,4 +1,4 @@
-import { createLegs, isProtected, tryHit, updateLegs, type LegsState } from './legs';
+import { createLegs, isProtected, speedUpRegrowth, tryHit, updateLegs, type LegsState } from './legs';
 import {
   bumpImpulse,
   createTilapia,
@@ -160,6 +160,37 @@ export function stepEncounter(
     return { state: pass.state, events };
   }
   return applyBump(pass.state, axolotlPos, events, ctx);
+}
+
+/** Outcome of eating snacks: the new encounter, its regrowth events and the leg slot each snack helped. */
+export interface EncounterFeedResult {
+  state: EncounterState;
+  events: EncounterEvent[];
+  boosted: number[];
+}
+
+/**
+ * Applies `snacks` eaten snacks to leg regrowth (PRD A19) with `speedUpRegrowth` and
+ * `ctx.legs`. A finished trip, or snacks that change no leg (0 snacks, nothing regrowing),
+ * return the input state unchanged with no events. Otherwise only `legs` changes; tilapia,
+ * bump cooldown and protected time stay as they were. A leg a snack finishes emits the same
+ * `regrown` then `regrowStart` events that `stepEncounter` emits when time finishes it.
+ * `boosted` is the slot each snack helped, in eating order.
+ * Throws RangeError, as `speedUpRegrowth` does, for an invalid `snacks` count on a running trip.
+ */
+export function feedEncounter(
+  state: EncounterState,
+  snacks: number,
+  ctx: EncounterContext = createEncounterContext(),
+): EncounterFeedResult {
+  if (state.tripOver) return { state, events: [], boosted: [] };
+  const result = speedUpRegrowth(state.legs, snacks, ctx.legs);
+  if (result.state === state.legs) return { state, events: [], boosted: [] };
+  return {
+    state: { ...state, legs: result.state },
+    events: regrowEvents(state.legs, result.state),
+    boosted: result.boosted,
+  };
 }
 
 /** Steps every tilapia; `canHit` false means protected time was running at the step start. */

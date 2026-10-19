@@ -63,6 +63,12 @@ export interface LegTuning {
   count: number;
   /** Seconds for one lost leg to regrow; legs regrow one at a time. */
   regrowTime: number;
+  /**
+   * Share of one leg's regrowth each snack eaten adds to the regrowing leg (PRD Tuning
+   * "Snack regrowth speed-up"). It is a share, so a shorter `regrowTime` (Regrowth perk)
+   * keeps it the same fraction of a leg.
+   */
+  snackSpeedUp: number;
   /** Seconds after a hit during which no further hit can land. */
   protectedTime: number;
   /** Top speed multiplier indexed by legs present minus one (1, 2, 3, 4 legs). */
@@ -165,6 +171,7 @@ export const STICK: Readonly<StickTuning> = Object.freeze({
 export const LEGS: Readonly<LegTuning> = Object.freeze({
   count: 4,
   regrowTime: 20,
+  snackSpeedUp: 0.2,
   protectedTime: 2,
   speedByLegs: Object.freeze([0.6, 0.75, 0.9, 1]),
   wobbleAmp: 0.06,
