@@ -48,6 +48,8 @@ const TAU = Math.PI * 2;
 const TITLE_PX = 34;
 const SURFACE_STEP = 8;
 const GO_EXPLORING_INDEX = 0;
+const LOW_FPS = 45;
+const LOW_FPS_REDRAW_S = 1 / 30;
 const CAPTURED_KEYS: readonly number[] = [
   Phaser.Input.Keyboard.KeyCodes.TAB,
   Phaser.Input.Keyboard.KeyCodes.LEFT,
@@ -100,6 +102,8 @@ interface TankSwimmer {
   texture: AxolotlTexture;
   image: Phaser.GameObjects.Image;
   lastPose: AxolotlPose | null;
+  /** Seconds since the last repaint, for the low frame rate repaint cap. */
+  redrawAcc: number;
 }
 
 /** Focus step for a hub key: next, right and down step forward; previous, left and up step back; else 0. */
@@ -243,7 +247,7 @@ export class HomeTankScene extends Phaser.Scene {
         .image(0, 0, texture.key)
         .setOrigin(texture.info.originNormX, texture.info.originNormY)
         .setDepth(TANK_DEPTH.axolotls);
-      return { id: axolotl.id, texture, image, lastPose: null };
+      return { id: axolotl.id, texture, image, lastPose: null, redrawAcc: 0 };
     });
   }
 
@@ -504,13 +508,13 @@ export class HomeTankScene extends Phaser.Scene {
   private animate(dt: number): void {
     this.clock += dt;
     const t = this.motion.ambient ? this.clock : T_STATIC;
-    this.swimmers.forEach((swimmer, index) => this.renderSwimmer(swimmer, index, t));
+    this.swimmers.forEach((swimmer, index) => this.renderSwimmer(swimmer, index, t, dt));
     this.renderSurface(t);
     this.decorator.update(this.clock, this.motion);
   }
 
   /** Places one axolotl from its tank pose (still under reduced motion) and repaints it when its pose changes. */
-  private renderSwimmer(swimmer: TankSwimmer, index: number, t: number): void {
+  private renderSwimmer(swimmer: TankSwimmer, index: number, t: number, dt: number): void {
     const pose: AxolotlPose = {
       swimPhase: (TAU * t) / 1.2,
       gillPhase: this.motion.gillFlutter ? (TAU * t) / 0.8 : (TAU * T_STATIC) / 0.8,
@@ -518,10 +522,7 @@ export class HomeTankScene extends Phaser.Scene {
       tailAmp: 1,
       sparkle: 0,
     };
-    if (swimmer.lastPose === null || !samePose(pose, swimmer.lastPose)) {
-      swimmer.texture.redraw(pose);
-      swimmer.lastPose = pose;
-    }
+    this.redrawSwimmer(swimmer, pose, dt);
     const swim = tankSwimPose(swimmer.id, index, this.clock, !this.motion.ambient);
     const at = tankToCss(this.frame, { x: swim.x, y: swim.y });
     swimmer.image
@@ -529,6 +530,21 @@ export class HomeTankScene extends Phaser.Scene {
       .setFlipX(swim.facing < 0)
       .setScale((AXO_SCENE_SCALE * this.frame.scale) / swimmer.texture.scale)
       .setRotation(swim.tilt);
+  }
+
+  /**
+   * Repaints one axolotl's texture when its pose changes. While the frame rate is low, repaints are
+   * capped at 30 a second, as in the swim, so each owned axolotl costs less per frame.
+   */
+  private redrawSwimmer(swimmer: TankSwimmer, pose: AxolotlPose, dt: number): void {
+    if (swimmer.lastPose !== null && samePose(pose, swimmer.lastPose)) return;
+    swimmer.redrawAcc += dt;
+    if (swimmer.lastPose !== null && this.game.loop.actualFps < LOW_FPS && swimmer.redrawAcc < LOW_FPS_REDRAW_S) {
+      return;
+    }
+    swimmer.redrawAcc = 0;
+    swimmer.texture.redraw(pose);
+    swimmer.lastPose = pose;
   }
 
   /** The surface line across the glass at the tank water top, with the canal wave (still under reduced motion). */
