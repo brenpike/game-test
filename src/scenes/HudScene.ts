@@ -12,9 +12,22 @@ import {
   type ReducedMotionPayload,
   type SteerPayload,
 } from '../logic/gameEvents';
+import {
+  HUD,
+  bannerBox,
+  controlKeepOuts,
+  hudControls,
+  placeHudOverlays,
+  type HudControlSizes,
+  type HudControls,
+  type HudOverlayId,
+  type HudOverlayRequest,
+  type Rect,
+  type Size,
+} from '../logic/hudLayout';
 import type { LegStatus } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
-import { stickLayout, stickSteer, type StickLayout } from '../logic/stick';
+import { stickSteer } from '../logic/stick';
 import { idleTripSnapshot } from '../logic/trip';
 import {
   TRIP_EVENTS,
@@ -22,7 +35,7 @@ import {
   type LegSlotSnapshot,
   type TripSnapshot,
 } from '../logic/tripEvents';
-import { BANKING_HINT, GO_HOME_LABEL, LEGS_LABEL, TRIP_BAG_LABEL, tripBagStatus } from '../logic/tripText';
+import { ALL_SNACKS_BANNER, BANKING_HINT, GO_HOME_LABEL, LEGS_LABEL, TRIP_BAG_LABEL, tripBagStatus } from '../logic/tripText';
 import { LEGS } from '../logic/tuning';
 import { add, clampLen } from '../logic/vec';
 import { BankingCard } from './BankingCard';
@@ -51,7 +64,6 @@ const COMPACT_WIDTH = 460;
 const PAUSE_BUTTON_SIZE = 0.8;
 const DASH_BUTTON_SIZE = 1.25;
 const RESUME_BUTTON_SIZE = 1.3;
-const RING_GAP = 8;
 const RING_TRACK_PX = 9;
 const RING_ARC_PX = 6;
 const NOT_READY_ALPHA = 0.6;
@@ -62,7 +74,6 @@ const OVERLAY_TITLE_PX = 34;
 const BANNER_TEXT_PX = 24;
 const BANNER_MS = 3000;
 const BANNER_FADE_MS = 250;
-const BANNER_TEXT = 'Yum! You found every snack!';
 const STICK_IDLE_ALPHA = 0.8;
 const STICK_ACTIVE_ALPHA = 1;
 const STICK_RECENTER_MS = 90;
@@ -106,6 +117,66 @@ function widestText(text: Phaser.GameObjects.Text, values: readonly string[]): n
   return widest;
 }
 
+/** A pink banner panel size and the text wrap width that produced it. */
+interface WrappedBox {
+  size: Size;
+  wrapW: number;
+}
+
+/** Sets `text` to wrap at `wrapW` and returns its size. */
+function measureWrapped(text: Phaser.GameObjects.Text, wrapW: number): Size {
+  text.setWordWrapWidth(wrapW, true);
+  return { w: text.width, h: text.height };
+}
+
+/** Returns the bannerBox() size of `text` for `maxW` and records it in `boxes` with its wrap width. */
+function measureBanner(text: Phaser.GameObjects.Text, maxW: number, boxes: WrappedBox[]): Size {
+  let wrapW: number = HUD.bannerMinWrap;
+  const textAt = (atW: number): Size => {
+    wrapW = atW;
+    return measureWrapped(text, atW);
+  };
+  const size = bannerBox(maxW, textAt);
+  boxes.push({ size, wrapW });
+  return size;
+}
+
+/** Overlay request for the pink banner `id` showing `text`; every size it measures lands in `boxes`. */
+function bannerRequest(id: HudOverlayId, text: Phaser.GameObjects.Text, boxes: WrappedBox[]): HudOverlayRequest {
+  return { id, boxAt: (maxW) => measureBanner(text, maxW, boxes) };
+}
+
+/**
+ * Shows a pink banner with its panel drawn to `rect` and its text centred inside, wrapped as it was
+ * when measured at that size; hides it when `rect` is null. Throws when `rect` is not a size in `boxes`.
+ */
+function placeTopBanner(
+  container: Phaser.GameObjects.Container,
+  panel: Phaser.GameObjects.Graphics,
+  text: Phaser.GameObjects.Text,
+  rect: Rect | null,
+  boxes: readonly WrappedBox[],
+): void {
+  if (rect === null) {
+    container.setVisible(false);
+    return;
+  }
+  const match = boxes.find((box) => box.size.w === rect.w && box.size.h === rect.h);
+  if (match === undefined) throw new Error('placeTopBanner: rect is not a measured banner size');
+  measureWrapped(text, match.wrapW);
+  drawPanel(panel, rect.x, rect.y, rect.w, rect.h, UI_PANEL_PINK);
+  text.setPosition(rect.x + (rect.w - text.width) / 2, rect.y + HUD.bannerPad);
+  container.setVisible(true);
+}
+
+/**
+ * Pauses `timer` (TimerEvent.paused) while its overlay is held for want of room. Separate from the
+ * HUD clock pause (Clock.paused), so either one alone stops the timer.
+ */
+function holdTimer(timer: Phaser.Time.TimerEvent | null, held: boolean): void {
+  if (timer) timer.paused = held;
+}
+
 /**
  * Screen-space UI over the swim scene: snack counter, legs display, Trip Bag display, Pause, Dash,
  * the contextual Go home button, swim pad, pause overlay, the all-snacks and first-trip hint
@@ -134,12 +205,14 @@ export class HudScene extends Phaser.Scene {
   private bannerPanel!: Phaser.GameObjects.Graphics;
   private bannerText!: Phaser.GameObjects.Text;
   private bannerTimer: Phaser.Time.TimerEvent | null = null;
-  private counterPanelH = 0;
-  private counterPanelW = 0;
+  /** Whether the all-snacks banner is up, fading included, whether or not it has room. */
+  private bannerActive = false;
+  /** Whether placement found no room for the banner, so it is hidden and its timer paused. */
+  private bannerHeld = false;
   private stickBase!: Phaser.GameObjects.Image;
   private stickKnob!: Phaser.GameObjects.Image;
   private stickZone!: Phaser.GameObjects.Zone;
-  private stick!: StickLayout;
+  private controls!: HudControls;
   private stickPointer: Phaser.Input.Pointer | null = null;
   private stickDownTime = 0;
   private lastSteer: SteerPayload = { x: 0, y: 0 };
@@ -147,20 +220,22 @@ export class HudScene extends Phaser.Scene {
   private legsPanel!: Phaser.GameObjects.Graphics;
   private legsLabel!: Phaser.GameObjects.Text;
   private legIcons: LegIconView[] = [];
-  private legsPanelBottom = 0;
-  private legsPanelW = 0;
   private bagPanel!: Phaser.GameObjects.Graphics;
   private bagIcon!: Phaser.GameObjects.Image;
   private bagLabel!: Phaser.GameObjects.Text;
   private bagCount!: Phaser.GameObjects.Text;
   private bagStatus!: Phaser.GameObjects.Text;
-  private bagPanelBottom = 0;
-  private bagPanelW = 0;
+  /** Width of the Trip Bag count slot, sized for its widest value. */
+  private bagCountW = 0;
   private goHomeButton!: UiButton;
   private hint!: Phaser.GameObjects.Container;
   private hintPanel!: Phaser.GameObjects.Graphics;
   private hintText!: Phaser.GameObjects.Text;
   private hintTimer: Phaser.Time.TimerEvent | null = null;
+  /** Whether the first-trip hint is up, fading included, whether or not it has room. */
+  private hintActive = false;
+  /** Whether placement found no room for the hint, so it is hidden and its timer paused. */
+  private hintHeld = false;
   private bankingCard!: BankingCard;
   private homeScreen!: HomeScreen;
   private foundPopup!: FindPopup;
@@ -175,11 +250,15 @@ export class HudScene extends Phaser.Scene {
     this.assets = data;
     this.paused = false;
     this.bannerTimer = null;
+    this.bannerActive = false;
+    this.bannerHeld = false;
     this.dashState = { phase: 'ready', charge: 1 };
     this.stickPointer = null;
     this.lastSteer = { x: 0, y: 0 };
     this.trip = createSwimmingTrip();
     this.hintTimer = null;
+    this.hintActive = false;
+    this.hintHeld = false;
     this.announcedCount = 0;
   }
 
@@ -200,7 +279,14 @@ export class HudScene extends Phaser.Scene {
     this.buildOverlay();
     this.buildBanner();
     this.buildHint();
-    this.foundPopup = new FindPopup(this, this.assets, this.view, FIND_POPUP_DEPTH, () => this.motion);
+    this.foundPopup = new FindPopup(
+      this,
+      this.assets,
+      this.view,
+      FIND_POPUP_DEPTH,
+      () => this.motion,
+      () => this.layoutOverlays(),
+    );
     this.bankingCard = new BankingCard(this, this.assets, this.view, BANKING_CARD_DEPTH);
     this.homeScreen = new HomeScreen(this, this.assets, this.view, HOME_SCREEN_DEPTH);
     this.bindKeys();
@@ -369,7 +455,7 @@ export class HudScene extends Phaser.Scene {
 
   private buildBanner(): void {
     this.bannerPanel = this.add.graphics();
-    this.bannerText = this.add.text(0, 0, BANNER_TEXT, {
+    this.bannerText = this.add.text(0, 0, ALL_SNACKS_BANNER, {
       ...uiTextStyle(BANNER_TEXT_PX, this.view.fit.dpr),
       align: 'center',
     });
@@ -379,7 +465,7 @@ export class HudScene extends Phaser.Scene {
       .setVisible(false);
   }
 
-  /** First-trip hint banner: pink panel and the banking hint, stacked with the all-snacks banner. */
+  /** First-trip hint banner: pink panel and the banking hint, placed with the other overlays by layoutOverlays(). */
   private buildHint(): void {
     this.hintPanel = this.add.graphics();
     this.hintText = this.add.text(0, 0, BANKING_HINT, {
@@ -407,18 +493,37 @@ export class HudScene extends Phaser.Scene {
 
   // ---- layout --------------------------------------------------------------
 
+  // INVARIANT: every HUD control is positioned from hudControls() and every HUD overlay from placeHudOverlays().
   private layout(): void {
-    this.layoutCounter();
-    this.layoutLegs();
-    this.layoutTripBag();
-    this.layoutButtons();
-    this.layoutGoHome();
-    this.layoutStick();
+    this.layoutControls();
     this.layoutOverlay();
-    this.layoutBanners();
     this.bankingCard.layout(this.view);
     this.homeScreen.layout(this.view);
+    this.layoutOverlays();
+  }
+
+  /** Measures the status panels and buttons, lays them out through hudControls() and positions every control. */
+  private layoutControls(): void {
+    this.controls = hudControls(this.view, this.measureControls());
+    this.placeCounter(this.controls.counter);
+    this.placeLegs(this.controls.legs);
+    this.placeTripBag(this.controls.bag);
+    this.placeButtons();
+    this.layoutStick();
     this.drawDashRing();
+  }
+
+  /** Measured sizes of the status panels and buttons, for hudControls(). */
+  private measureControls(): HudControlSizes {
+    return {
+      pause: { w: this.pauseButton.width, h: this.pauseButton.height },
+      goHome: { w: this.goHomeButton.width, h: this.goHomeButton.height },
+      dash: { w: this.dashButton.width, h: this.dashButton.height },
+      dashCornerR: buttonRadius(BUTTON_SQUARE.h) * DASH_BUTTON_SIZE,
+      counter: this.measureCounter(),
+      legs: this.measureLegs(),
+      bag: this.measureTripBag(),
+    };
   }
 
   private counterLabel(): string {
@@ -426,35 +531,43 @@ export class HudScene extends Phaser.Scene {
     return this.view.cssW < COMPACT_WIDTH ? count : `Snacks ${count}`;
   }
 
-  private layoutCounter(): void {
+  /** Sets the snack counter text and returns the counter panel size. */
+  private measureCounter(): Size {
     this.counterText.setText(this.counterLabel());
     const contentH = Math.max(COUNTER_ICON_PX, this.counterText.height);
-    const panelW = PANEL_PAD + COUNTER_ICON_PX + GAP / 2 + this.counterText.width + PANEL_PAD;
-    const panelH = contentH + 2 * PANEL_PAD;
-    this.counterPanelH = panelH;
-    this.counterPanelW = panelW;
-    drawPanel(this.counterPanel, MARGIN, MARGIN, panelW, panelH, UI_PANEL);
-    this.counterIcon.setPosition(MARGIN + PANEL_PAD, MARGIN + PANEL_PAD + (contentH - COUNTER_ICON_PX) / 2);
+    return {
+      w: PANEL_PAD + COUNTER_ICON_PX + GAP / 2 + this.counterText.width + PANEL_PAD,
+      h: contentH + 2 * PANEL_PAD,
+    };
+  }
+
+  /** Draws the snack counter panel at `rect`: icon, then the count. */
+  private placeCounter(rect: Rect): void {
+    const contentH = rect.h - 2 * PANEL_PAD;
+    drawPanel(this.counterPanel, rect.x, rect.y, rect.w, rect.h, UI_PANEL);
+    this.counterIcon.setPosition(rect.x + PANEL_PAD, rect.y + PANEL_PAD + (contentH - COUNTER_ICON_PX) / 2);
     this.counterText.setPosition(
-      MARGIN + PANEL_PAD + COUNTER_ICON_PX + GAP / 2,
-      MARGIN + PANEL_PAD + (contentH - this.counterText.height) / 2,
+      rect.x + PANEL_PAD + COUNTER_ICON_PX + GAP / 2,
+      rect.y + PANEL_PAD + (contentH - this.counterText.height) / 2,
     );
   }
 
-  /** Places the legs panel under the snack counter: label, then the icons in display order. */
-  private layoutLegs(): void {
-    const top = MARGIN + this.counterPanelH + GAP;
+  /** Returns the legs panel size: label, then the icons. */
+  private measureLegs(): Size {
     const label = this.legsLabel;
     const contentH = Math.max(LEGS_ICON_PX, label.height);
     const iconsW = LEGS.count * LEGS_ICON_PX + (LEGS.count - 1) * LEGS_ICON_GAP;
-    const panelW = PANEL_PAD + label.width + GAP / 2 + iconsW + PANEL_PAD;
-    const panelH = contentH + 2 * PANEL_PAD;
-    this.legsPanelBottom = top + panelH;
-    this.legsPanelW = panelW;
-    drawPanel(this.legsPanel, MARGIN, top, panelW, panelH, UI_PANEL);
-    label.setPosition(MARGIN + PANEL_PAD, top + PANEL_PAD + (contentH - label.height) / 2);
-    const iconsX = MARGIN + PANEL_PAD + label.width + GAP / 2;
-    const iconY = top + PANEL_PAD + (contentH - LEGS_ICON_PX) / 2;
+    return { w: PANEL_PAD + label.width + GAP / 2 + iconsW + PANEL_PAD, h: contentH + 2 * PANEL_PAD };
+  }
+
+  /** Draws the legs panel at `rect`: label, then the icons in display order. */
+  private placeLegs(rect: Rect): void {
+    const label = this.legsLabel;
+    const contentH = rect.h - 2 * PANEL_PAD;
+    drawPanel(this.legsPanel, rect.x, rect.y, rect.w, rect.h, UI_PANEL);
+    label.setPosition(rect.x + PANEL_PAD, rect.y + PANEL_PAD + (contentH - label.height) / 2);
+    const iconsX = rect.x + PANEL_PAD + label.width + GAP / 2;
+    const iconY = rect.y + PANEL_PAD + (contentH - LEGS_ICON_PX) / 2;
     this.legIcons.forEach((icon, index) => {
       const iconX = iconsX + index * (LEGS_ICON_PX + LEGS_ICON_GAP);
       icon.outline.setPosition(iconX, iconY);
@@ -464,31 +577,32 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Places the Trip Bag panel under the legs panel: icon, label, count, status. The count and status
-   * slots are sized for their widest values, so the panel never changes width as the bag fills.
+   * Returns the Trip Bag panel size: icon, label, count, status. The count and status slots are
+   * sized for their widest values, so the panel never changes width as the bag fills.
    */
-  private layoutTripBag(): void {
-    const top = this.legsPanelBottom + GAP;
-    const countW = widestText(
+  private measureTripBag(): Size {
+    this.bagCountW = widestText(
       this.bagCount,
       Array.from({ length: this.assets.zone.finds.length + 1 }, (_, count) => String(count)),
     );
     const statusW = widestText(this.bagStatus, [tripBagStatus(0), tripBagStatus(1)]);
+    this.drawTripBag();
     const contentH = Math.max(BAG_ICON_PX, this.bagLabel.height, this.bagCount.height, this.bagStatus.height);
-    const labelX = MARGIN + PANEL_PAD + BAG_ICON_PX + BAG_GAP;
+    const contentW = BAG_ICON_PX + BAG_GAP + this.bagLabel.width + BAG_GAP + this.bagCountW + BAG_GAP + statusW;
+    return { w: PANEL_PAD + contentW + PANEL_PAD, h: contentH + 2 * PANEL_PAD };
+  }
+
+  /** Draws the Trip Bag panel at `rect`: icon, label, count, status. */
+  private placeTripBag(rect: Rect): void {
+    const labelX = rect.x + PANEL_PAD + BAG_ICON_PX + BAG_GAP;
     const countX = labelX + this.bagLabel.width + BAG_GAP;
-    const statusX = countX + countW + BAG_GAP;
-    const panelW = statusX + statusW + PANEL_PAD - MARGIN;
-    const panelH = contentH + 2 * PANEL_PAD;
-    this.bagPanelBottom = top + panelH;
-    this.bagPanelW = panelW;
-    drawPanel(this.bagPanel, MARGIN, top, panelW, panelH, UI_PANEL);
-    const middleY = top + PANEL_PAD + contentH / 2;
-    this.bagIcon.setPosition(MARGIN + PANEL_PAD, middleY - BAG_ICON_PX / 2);
+    const statusX = countX + this.bagCountW + BAG_GAP;
+    drawPanel(this.bagPanel, rect.x, rect.y, rect.w, rect.h, UI_PANEL);
+    const middleY = rect.y + rect.h / 2;
+    this.bagIcon.setPosition(rect.x + PANEL_PAD, middleY - BAG_ICON_PX / 2);
     this.bagLabel.setPosition(labelX, middleY - this.bagLabel.height / 2);
     this.bagCount.setPosition(countX, middleY - this.bagCount.height / 2);
     this.bagStatus.setPosition(statusX, middleY - this.bagStatus.height / 2);
-    this.drawTripBag();
   }
 
   /** Shows the Trip Bag count and status for the current snapshot. */
@@ -498,74 +612,17 @@ export class HudScene extends Phaser.Scene {
     this.bagStatus.setText(tripBagStatus(count));
   }
 
-  /** Right edge of the widest top-left panel (snack counter, legs, Trip Bag). */
-  private leftPanelsRight(): number {
-    return MARGIN + Math.max(this.counterPanelW, this.legsPanelW, this.bagPanelW);
+  /** Positions Pause, Dash and Go home from the control layout. */
+  private placeButtons(): void {
+    const { pause, dash, goHome } = this.controls;
+    this.pauseButton.container.setPosition(pause.x, pause.y);
+    this.dashButton.container.setPosition(dash.button.x, dash.button.y);
+    this.goHomeButton.container.setPosition(goHome.x, goHome.y);
   }
 
-  /** Top edge of the Dash ring track. */
-  private dashRingTop(): number {
-    const centreY = this.dashButton.container.y + this.dashButton.height / 2;
-    return centreY - this.ringRadius() - RING_TRACK_PX / 2;
-  }
-
-  /**
-   * Places Go home under Pause, dropped below the top-left panels when they would meet it. When
-   * that would reach the Dash ring (a very short screen), it sits left of Pause on the top row instead.
-   * When the top row has no room beside the snack counter either (a screen both narrow and short),
-   * it stacks right under Pause, so the whole button always stays on screen.
-   */
-  private layoutGoHome(): void {
-    const { cssW } = this.view;
-    const button = this.goHomeButton;
-    const x = cssW - MARGIN - button.width;
-    const underPause = MARGIN + this.pauseButton.height + GAP;
-    const y = x < this.leftPanelsRight() + GAP ? Math.max(underPause, this.bagPanelBottom + GAP) : underPause;
-    if (y + button.height + GAP <= this.dashRingTop()) {
-      button.container.setPosition(x, y);
-      return;
-    }
-    const topRowX = this.pauseButton.container.x - GAP - button.width;
-    if (topRowX >= MARGIN + this.counterPanelW + GAP) {
-      button.container.setPosition(topRowX, MARGIN);
-      return;
-    }
-    button.container.setPosition(Math.max(MARGIN, x), underPause);
-  }
-
-  private goHomeBottom(): number {
-    return this.goHomeButton.container.y + this.goHomeButton.height;
-  }
-
-  /** Ring radius clearing the rounded corners of the square Dash button. */
-  private ringRadius(): number {
-    const half = this.dashButton.width / 2;
-    const corner = buttonRadius(BUTTON_SQUARE.h) * DASH_BUTTON_SIZE;
-    return (half - corner) * Math.SQRT2 + corner + RING_GAP;
-  }
-
-  private layoutButtons(): void {
-    const { cssW, cssH } = this.view;
-    this.pauseButton.container.setPosition(cssW - MARGIN - this.pauseButton.width, MARGIN);
-    const outer = this.ringRadius() + RING_TRACK_PX / 2;
-    const centreX = cssW - MARGIN - outer;
-    const centreY = cssH - MARGIN - outer;
-    this.dashButton.container.setPosition(
-      centreX - this.dashButton.width / 2,
-      centreY - this.dashButton.height / 2,
-    );
-  }
-
-  /**
-   * Places the swim pad bottom-left, clear of the top-left panels, the Go home button and the Dash
-   * ring. Keeps any capture.
-   */
+  /** Places the swim pad from the control layout. Keeps any capture. */
   private layoutStick(): void {
-    const { cssW, cssH } = this.view;
-    const reserveTop = Math.max(this.bagPanelBottom, this.goHomeBottom());
-    const reserveRight = MARGIN + 2 * (this.ringRadius() + RING_TRACK_PX / 2);
-    this.stick = stickLayout({ cssW, cssH }, { top: reserveTop, right: reserveRight });
-    const { centre, baseR, knobR, zone } = this.stick;
+    const { centre, baseR, knobR, zone } = this.controls.stick;
     const { base, knob } = this.assets.baked.stick;
     this.stickBase.setPosition(centre.x, centre.y).setScale(baseR / STICK_BASE_R / base.scale);
     this.stickKnob.setScale(knobR / STICK_KNOB_R / knob.scale);
@@ -590,39 +647,39 @@ export class HudScene extends Phaser.Scene {
     );
   }
 
-  /** Top edge for the banners: clear of Pause, the top-left panels and Go home. */
-  private bannerTop(): number {
-    return Math.max(
-      MARGIN + this.pauseButton.height + GAP + 8,
-      this.bagPanelBottom + GAP,
-      this.goHomeBottom() + GAP,
-    );
-  }
-
   /**
-   * Stacks the banners: the hint first while it shows, then the all-snacks banner, then the find
-   * pop-up under the visible ones.
+   * Places the active overlays through placeHudOverlays(), clear of the visible controls: the hint
+   * while active, the all-snacks banner while active and the find pop-up while it has a find. An
+   * overlay with no room is held: hidden, with its timer paused, until a later call places it.
    */
-  private layoutBanners(): void {
-    const top = this.bannerTop();
-    const hintBottom = this.layoutTopBanner(this.hintPanel, this.hintText, top);
-    const bannerY = this.hint.visible ? hintBottom + GAP : top;
-    const bannerBottom = this.layoutTopBanner(this.bannerPanel, this.bannerText, bannerY);
-    let stackBottom = top;
-    if (this.hint.visible) stackBottom = hintBottom;
-    if (this.banner.visible) stackBottom = bannerBottom;
-    this.foundPopup.layout(this.view, stackBottom + GAP);
+  private layoutOverlays(): void {
+    const hintBoxes: WrappedBox[] = [];
+    const bannerBoxes: WrappedBox[] = [];
+    const requests: HudOverlayRequest[] = [];
+    if (this.hintActive) requests.push(bannerRequest('hint', this.hintText, hintBoxes));
+    if (this.bannerActive) requests.push(bannerRequest('snackBanner', this.bannerText, bannerBoxes));
+    if (this.foundPopup.hasFind()) requests.push({ id: 'findPopup', boxAt: (maxW) => this.foundPopup.box(maxW) });
+    const keepOuts = controlKeepOuts(this.controls, { goHomeVisible: this.goHomeButton.container.visible });
+    for (const { id, rect } of placeHudOverlays(this.view, this.controls, keepOuts, requests)) {
+      this.placeOverlay(id, rect, id === 'hint' ? hintBoxes : bannerBoxes);
+    }
   }
 
-  /** Draws one centred pink banner panel at `top` around its text and returns its bottom edge. */
-  private layoutTopBanner(panel: Phaser.GameObjects.Graphics, text: Phaser.GameObjects.Text, top: number): number {
-    const { cssW } = this.view;
-    text.setWordWrapWidth(Math.max(120, cssW - 2 * (MARGIN + PANEL_PAD)), true);
-    const panelW = text.width + 2 * PANEL_PAD;
-    const panelH = text.height + 2 * PANEL_PAD;
-    drawPanel(panel, (cssW - panelW) / 2, top, panelW, panelH, UI_PANEL_PINK);
-    text.setPosition((cssW - text.width) / 2, top + PANEL_PAD);
-    return top + panelH;
+  /** Draws overlay `id` at `rect`, or holds it when `rect` is null; `boxes` are a banner's measured sizes. */
+  private placeOverlay(id: HudOverlayId, rect: Rect | null, boxes: readonly WrappedBox[]): void {
+    if (id === 'findPopup') {
+      this.foundPopup.place(rect);
+      return;
+    }
+    if (id === 'hint') {
+      this.hintHeld = rect === null;
+      placeTopBanner(this.hint, this.hintPanel, this.hintText, rect, boxes);
+      holdTimer(this.hintTimer, this.hintHeld);
+      return;
+    }
+    this.bannerHeld = rect === null;
+    placeTopBanner(this.banner, this.bannerPanel, this.bannerText, rect, boxes);
+    holdTimer(this.bannerTimer, this.bannerHeld);
   }
 
   /** Shows each leg icon for the current snapshot, sorted present, regrowing, lost. */
@@ -655,9 +712,8 @@ export class HudScene extends Phaser.Scene {
   private drawDashRing(): void {
     const ring = this.dashRing;
     const button = this.dashButton;
-    const centreX = button.container.x + button.width / 2;
-    const centreY = button.container.y + button.height / 2;
-    const radius = this.ringRadius();
+    const { x: centreX, y: centreY } = this.controls.dash.centre;
+    const radius = this.controls.dash.ringR;
     const ready = this.dashState.phase === 'ready';
     const start = -Math.PI / 2;
     ring.clear();
@@ -689,13 +745,17 @@ export class HudScene extends Phaser.Scene {
 
   /**
    * Shows Pause unless paused or a banking card or home screen is up, and Go home only while
-   * swimming inside the Home Spot ring and not paused.
+   * swimming inside the Home Spot ring and not paused. Places the overlays again when Go home
+   * shows or hides, since it is a keep-out only while visible.
    */
   private refreshControls(): void {
     const phase = this.trip.phase;
     const modal = phase === 'banked' || phase === 'ended';
+    const goHomeWasVisible = this.goHomeButton.container.visible;
+    const goHomeVisible = !this.paused && phase === 'swimming' && this.trip.inHomeSpot;
     this.pauseButton.container.setVisible(!this.paused && !modal);
-    this.goHomeButton.container.setVisible(!this.paused && phase === 'swimming' && this.trip.inHomeSpot);
+    this.goHomeButton.container.setVisible(goHomeVisible);
+    if (goHomeVisible !== goHomeWasVisible) this.layoutOverlays();
   }
 
   private togglePause(): void {
@@ -724,7 +784,7 @@ export class HudScene extends Phaser.Scene {
       this.releaseStick();
       return;
     }
-    const { centre, travel } = this.stick;
+    const { centre, travel } = this.controls.stick;
     const point = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
     const offset = { x: point.x - centre.x, y: point.y - centre.y };
     const knobAt = add(centre, clampLen(offset, travel));
@@ -739,7 +799,7 @@ export class HudScene extends Phaser.Scene {
     this.stickBase.setAlpha(STICK_IDLE_ALPHA);
     this.stickKnob.setAlpha(STICK_IDLE_ALPHA);
     this.tweens.killTweensOf(this.stickKnob);
-    const { centre } = this.stick;
+    const { centre } = this.controls.stick;
     if (!animate) {
       this.stickKnob.setPosition(centre.x, centre.y);
       return;
@@ -801,6 +861,8 @@ export class HudScene extends Phaser.Scene {
   /**
    * Freezes or thaws every HUD timer and tween (banners, find pop-up, banking card, home screen, swim pad and any added later),
    * so pause stops HUD motion as well as the swim scene. The pause overlay and its buttons use neither.
+   * Only the scene clock (Clock.paused) changes: a timer an overlay hold paused (TimerEvent.paused)
+   * stays paused until its overlay is placed again.
    */
   private setHudClockPaused(paused: boolean): void {
     this.time.paused = paused;
@@ -843,21 +905,26 @@ export class HudScene extends Phaser.Scene {
 
   // ---- game events ---------------------------------------------------------
 
+  /** Updates the snack count; its width can move the controls and the overlays. */
   private handleCollected(payload: CollectedPayload): void {
     this.collected = payload.collected;
     this.total = payload.total;
-    this.layoutCounter();
+    this.layoutControls();
+    this.layoutOverlays();
   }
 
+  /** Shows the all-snacks banner, fading in unless motion is reduced, for BANNER_MS on the HUD clock. */
   private handleAllCollected(): void {
-    this.bannerTimer?.remove(false);
+    if (this.bannerTimer) this.time.removeEvent(this.bannerTimer);
     this.tweens.killTweensOf(this.banner);
-    this.banner.setVisible(true).setAlpha(this.motion.ambient ? 0 : 1);
-    this.layoutBanners();
+    this.bannerActive = true;
+    this.banner.setAlpha(this.motion.ambient ? 0 : 1);
+    this.layoutOverlays();
     if (this.motion.ambient) {
       addMotionTween(this, { targets: this.banner, props: { alpha: 1 }, duration: BANNER_FADE_MS });
     }
     this.bannerTimer = this.time.delayedCall(BANNER_MS, this.hideBanner, [], this);
+    holdTimer(this.bannerTimer, this.bannerHeld);
   }
 
   private hideBanner(): void {
@@ -874,10 +941,12 @@ export class HudScene extends Phaser.Scene {
     });
   }
 
-  /** Hides the all-snacks banner and lets the find pop-up move up. */
+  /** Hides the all-snacks banner and places the other overlays again. */
   private dropBanner(): void {
+    this.bannerActive = false;
+    this.bannerHeld = false;
     this.banner.setVisible(false);
-    this.layoutBanners();
+    this.layoutOverlays();
   }
 
   private handleDashState(payload: DashStatePayload): void {
@@ -935,18 +1004,20 @@ export class HudScene extends Phaser.Scene {
 
   /**
    * Shows the banking hint once per session, at the start of the first trip: fades in, holds for
-   * HINT_HOLD_MS on the HUD clock (so pause freezes it), then fades out. Appears and leaves at once
-   * under reduced motion.
+   * HINT_HOLD_MS on the HUD clock (so pause freezes it, as does a hold for want of room), then fades
+   * out. Appears and leaves at once under reduced motion.
    */
   private showHintOnce(): void {
     if (this.registry.get(TRIP_REGISTRY_KEYS.bankingHintShown) === true || this.trip.phase !== 'swimming') return;
     this.registry.set(TRIP_REGISTRY_KEYS.bankingHintShown, true);
-    this.hint.setVisible(true).setAlpha(this.motion.ambient ? 0 : 1);
-    this.layoutBanners();
+    this.hintActive = true;
+    this.hint.setAlpha(this.motion.ambient ? 0 : 1);
+    this.layoutOverlays();
     if (this.motion.ambient) {
       addMotionTween(this, { targets: this.hint, props: { alpha: 1 }, duration: HINT_FADE_MS });
     }
     this.hintTimer = this.time.delayedCall(HINT_FADE_MS + HINT_HOLD_MS, this.fadeOutHint, [], this);
+    holdTimer(this.hintTimer, this.hintHeld);
   }
 
   private fadeOutHint(): void {
@@ -963,14 +1034,16 @@ export class HudScene extends Phaser.Scene {
     });
   }
 
-  /** Hides the hint at once and lets the all-snacks banner take the top slot. */
+  /** Hides the hint at once and places the other overlays again. */
   private hideHint(): void {
-    this.hintTimer?.remove(false);
+    if (this.hintTimer) this.time.removeEvent(this.hintTimer);
     this.hintTimer = null;
-    if (!this.hint.visible) return;
+    if (!this.hintActive) return;
+    this.hintActive = false;
+    this.hintHeld = false;
     this.tweens.killTweensOf(this.hint);
     this.hint.setVisible(false).setAlpha(1);
-    this.layoutBanners();
+    this.layoutOverlays();
   }
 
   /**
