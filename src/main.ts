@@ -5,6 +5,7 @@ import { VIEW } from './logic/tuning';
 import { fitView, type ViewFit } from './logic/viewport';
 import { WORLD_H } from './logic/zone';
 import { BootScene } from './scenes/BootScene';
+import { HomeTankScene } from './scenes/HomeTankScene';
 import { HudScene } from './scenes/HudScene';
 import { SwimScene } from './scenes/SwimScene';
 import { TitleScene } from './scenes/TitleScene';
@@ -79,7 +80,7 @@ const game = new Phaser.Game({
     zoom: 1 / initialView.dpr,
   },
   input: { activePointers: 3 },
-  scene: [BootScene, TitleScene, SwimScene, HudScene],
+  scene: [BootScene, TitleScene, HomeTankScene, SwimScene, HudScene],
 });
 
 watchReducedMotion(game);

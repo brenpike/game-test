@@ -491,8 +491,9 @@ function carryPos(carry: CarryState, progress: number): Point {
  * not protected, nothing regrowing. Unbanked Trip Bag finds go back to the world: the bag empties,
  * banked finds stay, and the returned ids ride on `arrivedHome` and the ending. They reappear
  * next trip in freshly picked spots, since `newTrip` places every unbanked treasure again.
- * Slice boundary: landing in the Home Tank is #12. Snacks are not trip finds, so arrival leaves
- * them untouched (PRD A19); resetting snacks here was rejected for that reason.
+ * Arrival now leads to the Home Tank through the scene flow. Snacks are not trip finds and are not
+ * in trip state, so arrival leaves them; the session clears every eaten snack when it records a
+ * carried-home ending (`tripEndRecord`, PRD A12, ADR 0010).
  */
 function arriveHome(state: TripState, carry: CarryState): TripStepResult {
   const legs = createLegs({ count: state.encounter.legs.slots.length });

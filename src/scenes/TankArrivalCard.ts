@@ -1,12 +1,12 @@
 import * as Phaser from 'phaser';
-import { HOME_TANK_WALL, UI_PANEL } from '../art/palette';
+import { INK, UI_PANEL } from '../art/palette';
 import { iconKey } from '../art/textures';
 import type { TreasureTextures } from '../art/treasureTextures';
 import { CARD, cardTextWidth, fitCard, homeTitleWrapWidth, iconRowsSize } from '../logic/cardFit';
 import type { MotionProfile } from '../logic/motion';
 import { foundInfos } from '../logic/trip';
-import { TRIP_EVENTS, type TripEnding, type TripSnapshot } from '../logic/tripEvents';
-import { SWIM_AGAIN_LABEL, homeScreenText } from '../logic/tripText';
+import type { TripEnding } from '../logic/tripEvents';
+import { ARRIVAL_OK_LABEL, arrivalText } from '../logic/tripText';
 import {
   createButton,
   cssColor,
@@ -20,11 +20,12 @@ import { addTreasureIcon, placeIconRows } from './FindPopup';
 import { addMotionTween } from './motionTweens';
 
 const TREASURE_ICON_PX = 32;
-const BACKDROP_COVER = 8192;
+const DIM_ALPHA = 0.45;
+const DIM_COVER = 8192;
 const FADE_MS = 400;
 const MIN_SHOW_MS = 800;
 
-/** The treasure ids the home screen body names: banked this trip when going home, returned when carried home. */
+/** The treasure ids the card body names: banked this trip when going home, returned when carried home. */
 function namedTreasureIds(ending: TripEnding): readonly string[] {
   return ending.reason === 'wentHome' ? ending.bankedThisTrip : ending.returned;
 }
@@ -35,17 +36,17 @@ function wrappedLineCount(text: Phaser.GameObjects.Text, content: string): numbe
 }
 
 /**
- * Interim end-of-trip home screen: an opaque Home Tank wall backdrop that swallows presses, a white
+ * Tank arrival card, shown over the Home Tank after a trip: an ink dim that swallows presses, a white
  * panel with the house icon, title, body (with the banked line as its last line), a wrapping icon row
- * of the treasures the body names, and the Swim again button. Built only from the trip snapshot's
- * ending and banked count through homeScreenText(). The body has a full and a short wording; layout()
- * lets fitCard() pick whichever fits the canvas, drop icon rows, or clip the body. This is a thin
- * seam: the Home Tank (#12) replaces this view behind the same show, hide, layout, press and
- * setResolution calls.
+ * of the treasures the body names, and the OK button. Built only from the trip ending and the banked
+ * total through arrivalText(). The body has a full and a short wording; layout() lets fitCard() pick
+ * whichever fits the canvas, drop icon rows, or clip the body. OK hides the card and calls `onClose`.
  */
-export class HomeScreen {
+export class TankArrivalCard {
   private readonly scene: Phaser.Scene;
   private readonly treasure: TreasureTextures;
+  private readonly motion: () => MotionProfile;
+  private readonly onClose: () => void;
   private readonly container: Phaser.GameObjects.Container;
   private readonly panel: Phaser.GameObjects.Graphics;
   private readonly icon: Phaser.GameObjects.Image;
@@ -56,22 +57,24 @@ export class HomeScreen {
   private treasureIcons: Phaser.GameObjects.Image[] = [];
   private bodyOptions: readonly string[] = [''];
   private shownAt = 0;
-  private requested = false;
 
-  constructor(scene: Phaser.Scene, assets: GameAssets, view: SceneView, depth: number) {
+  constructor(
+    scene: Phaser.Scene,
+    assets: GameAssets,
+    view: SceneView,
+    depth: number,
+    motion: () => MotionProfile,
+    onClose: () => void,
+  ) {
     this.scene = scene;
     this.view = view;
     this.treasure = assets.treasure;
+    this.motion = motion;
+    this.onClose = onClose;
     const dpr = view.fit.dpr;
-    const backdrop = scene.add
-      .rectangle(
-        -BACKDROP_COVER / 2,
-        -BACKDROP_COVER / 2,
-        BACKDROP_COVER,
-        BACKDROP_COVER,
-        cssColor(HOME_TANK_WALL).color,
-        1,
-      )
+    const ink = cssColor(INK);
+    const dim = scene.add
+      .rectangle(-DIM_COVER / 2, -DIM_COVER / 2, DIM_COVER, DIM_COVER, ink.color, DIM_ALPHA)
       .setOrigin(0, 0)
       .setInteractive();
     this.panel = scene.add.graphics();
@@ -86,59 +89,56 @@ export class HomeScreen {
       fill: 'primary',
       shape: 'wide',
       size: 1,
-      label: SWIM_AGAIN_LABEL,
-      icon: 'play',
+      label: ARRIVAL_OK_LABEL,
+      icon: 'check',
       dpr,
       pressOnDown: false,
       onPress: () => this.press(),
     });
     this.button.setFocused(true);
     this.container = scene.add
-      .container(0, 0, [backdrop, this.panel, this.icon, this.title, this.body, this.button.container])
+      .container(0, 0, [dim, this.panel, this.icon, this.title, this.body, this.button.container])
       .setDepth(depth)
       .setVisible(false);
   }
 
-  /** Whether the home screen is on screen. */
+  /** Whether the card is on screen. */
   isShowing(): boolean {
     return this.container.visible;
   }
 
-  /** Shows the home screen for an ended trip, faded in unless motion is reduced. Throws if the trip has no ending. */
-  show(snapshot: TripSnapshot, motion: MotionProfile): void {
-    const ending = snapshot.ending;
-    if (!ending) throw new Error(`HomeScreen: trip phase "${snapshot.phase}" has no ending`);
-    const text = homeScreenText({
+  /** Shows the card for a trip ending and the banked total, faded in unless motion is reduced. */
+  show(ending: TripEnding, bankedTotal: number): void {
+    const text = arrivalText({
       reason: ending.reason,
       returnedNames: foundInfos(ending.returned).map((info) => info.name),
       bankedThisTripNames: foundInfos(ending.bankedThisTrip).map((info) => info.name),
-      bankedTotal: snapshot.banked,
+      bankedTotal,
     });
     this.title.setText(text.title);
     this.bodyOptions = [`${text.body}\n${text.bankedLine}`, `${text.shortBody}\n${text.bankedLine}`];
     this.buildTreasureRow(foundInfos(namedTreasureIds(ending)).map((info) => info.id));
-    this.requested = false;
     this.shownAt = this.scene.time.now;
     this.layout(this.view);
     this.scene.tweens.killTweensOf(this.container);
-    this.container.setVisible(true).setAlpha(motion.ambient ? 0 : 1);
-    if (motion.ambient) {
+    const ambient = this.motion().ambient;
+    this.container.setVisible(true).setAlpha(ambient ? 0 : 1);
+    if (ambient) {
       addMotionTween(this.scene, { targets: this.container, props: { alpha: 1 }, duration: FADE_MS });
     }
   }
 
   hide(): void {
-    this.requested = false;
     this.scene.tweens.killTweensOf(this.container);
     this.container.setVisible(false).setAlpha(1);
   }
 
-  /** Asks for a new trip once per showing, after the screen has shown for MIN_SHOW_MS. */
+  /** OK: once the card has shown for MIN_SHOW_MS, hides it and calls `onClose`. Ignored while hidden. */
   press(): void {
-    if (!this.container.visible || this.requested) return;
+    if (!this.container.visible) return;
     if (this.scene.time.now - this.shownAt < MIN_SHOW_MS) return;
-    this.requested = true;
-    this.scene.game.events.emit(TRIP_EVENTS.REQUEST_NEW_TRIP);
+    this.hide();
+    this.onClose();
   }
 
   setResolution(dpr: number): void {

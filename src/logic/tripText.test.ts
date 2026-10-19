@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { CANAL_TREASURES } from './catalogue';
 import * as tripText from './tripText';
 import {
+  ARRIVAL_OK_LABEL,
   BANKING_HINT,
-  SWIM_AGAIN_LABEL,
   TRIP_END_BODY,
   bankedBody,
   bankedBodyShort,
+  arrivalText,
   describeTreasures,
-  homeScreenText,
   tripBagStatus,
 } from './tripText';
 
@@ -52,7 +52,7 @@ function makeNames(count: number): string[] {
 }
 
 function shortBodyFor(reason: 'wentHome' | 'carriedHome', count: number): string {
-  return homeScreenText({
+  return arrivalText({
     reason,
     returnedNames: makeNames(count),
     bankedThisTripNames: makeNames(count),
@@ -68,7 +68,7 @@ function collectHelperOutputs(): string[] {
     for (const total of [0, 1, 4]) {
       outputs.push(bankedBody(names, total));
       for (const reason of ['wentHome', 'carriedHome'] as const) {
-        const text = homeScreenText({
+        const text = arrivalText({
           reason,
           returnedNames: names,
           bankedThisTripNames: names,
@@ -91,13 +91,13 @@ describe('trip text', () => {
   it('exports every trip string by name', () => {
     expect(exportedStrings.map(([name]) => name).sort()).toEqual([
       'ALL_SNACKS_BANNER',
+      'ARRIVAL_OK_LABEL',
       'BANKED_TITLE',
       'BANKING_HINT',
       'GO_HOME_LABEL',
       'KEEP_EXPLORING_LABEL',
       'LEGS_LABEL',
       'NOT_SAFE_YET',
-      'SWIM_AGAIN_LABEL',
       'TRIP_BAG_LABEL',
       'TRIP_END_BODY',
       'TRIP_END_TITLE',
@@ -123,15 +123,16 @@ describe('trip text', () => {
     }
   });
 
-  it('says the axolotl is safe with four legs and kept its snacks', () => {
+  it('says the axolotl is safe with four legs and the snacks are back', () => {
     const lower = TRIP_END_BODY.toLowerCase();
     expect(lower).toContain('safe');
     expect(lower).toContain('four legs');
-    expect(lower).toMatch(/kept every snack/);
+    expect(lower).toMatch(/snacks are back/);
+    expect(lower).not.toMatch(/kept every snack/);
   });
 
-  it('labels the button "Swim again"', () => {
-    expect(SWIM_AGAIN_LABEL).toBe('Swim again');
+  it('labels the arrival card button "OK"', () => {
+    expect(ARRIVAL_OK_LABEL).toBe('OK');
   });
 
   it('teaches that the Home Spot keeps finds safe', () => {
@@ -203,9 +204,9 @@ describe('bankedBody', () => {
   });
 });
 
-describe('homeScreenText', () => {
+describe('arrivalText', () => {
   it('carried home: safe, four legs, returned treasures, and the banked total', () => {
-    const text = homeScreenText({
+    const text = arrivalText({
       reason: 'carriedHome',
       returnedNames: ['Sun hat', 'Pond plant', 'Toy boat'],
       bankedThisTripNames: [],
@@ -220,11 +221,11 @@ describe('homeScreenText', () => {
         'Look for them next trip! Treasures at the Home Spot are always safe.',
     );
     expect(text.bankedLine).toBe('You have 4 treasures safe at the Home Spot.');
-    expect(text.button).toBe(SWIM_AGAIN_LABEL);
+    expect(text.button).toBe(ARRIVAL_OK_LABEL);
   });
 
   it('carried home with one treasure says it floated off to a new hiding spot', () => {
-    const text = homeScreenText({
+    const text = arrivalText({
       reason: 'carriedHome',
       returnedNames: ['Golden bow'],
       bankedThisTripNames: [],
@@ -238,7 +239,7 @@ describe('homeScreenText', () => {
   });
 
   it('carried home with nothing in the bag says nothing was lost', () => {
-    const text = homeScreenText({
+    const text = arrivalText({
       reason: 'carriedHome',
       returnedNames: [],
       bankedThisTripNames: [],
@@ -248,11 +249,11 @@ describe('homeScreenText', () => {
       `${TRIP_END_BODY} Nothing was lost. Treasures at the Home Spot are always safe.`,
     );
     expect(text.bankedLine).toBe('No treasures at the Home Spot yet.');
-    expect(text.button).toBe(SWIM_AGAIN_LABEL);
+    expect(text.button).toBe(ARRIVAL_OK_LABEL);
   });
 
   it('went home: lists treasures banked this trip and the total', () => {
-    const text = homeScreenText({
+    const text = arrivalText({
       reason: 'wentHome',
       returnedNames: [],
       bankedThisTripNames: ['Sun hat', 'Mint Paint shell'],
@@ -263,11 +264,11 @@ describe('homeScreenText', () => {
       'You swam home safe and sound. This trip you brought home Sun hat and Mint Paint shell.',
     );
     expect(text.bankedLine).toBe('You have 7 treasures safe at the Home Spot.');
-    expect(text.button).toBe(SWIM_AGAIN_LABEL);
+    expect(text.button).toBe(ARRIVAL_OK_LABEL);
   });
 
   it('went home with nothing banked this trip', () => {
-    const text = homeScreenText({
+    const text = arrivalText({
       reason: 'wentHome',
       returnedNames: [],
       bankedThisTripNames: [],
@@ -301,7 +302,7 @@ describe('bankedBodyShort', () => {
   });
 });
 
-describe('homeScreenText shortBody', () => {
+describe('arrivalText shortBody', () => {
   const OPENING = 'A big bubble floated you home. You are safe!';
 
   it('carried home with nothing returned', () => {
@@ -343,13 +344,13 @@ describe('homeScreenText shortBody', () => {
   });
 
   it('uses returnedNames for carried home and bankedThisTripNames for went home', () => {
-    const carried = homeScreenText({
+    const carried = arrivalText({
       reason: 'carriedHome',
       returnedNames: makeNames(3),
       bankedThisTripNames: makeNames(1),
       bankedTotal: 0,
     });
-    const went = homeScreenText({
+    const went = arrivalText({
       reason: 'wentHome',
       returnedNames: makeNames(3),
       bankedThisTripNames: makeNames(1),

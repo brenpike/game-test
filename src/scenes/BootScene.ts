@@ -3,9 +3,11 @@ import { AXO_LEG_ROOTS, type AxolotlPose, type LegLook } from '../art/drawAxolot
 import type { ReedLook } from '../art/drawScenery';
 import { INK, LW, UI_FONT } from '../art/palette';
 import { bakePredatorTextures, type PredatorTextures } from '../art/predatorTextures';
+import { bakeTankTextures, type TankTextures } from '../art/tankTextures';
 import { bakeTreasureTextures, type TreasureTextures } from '../art/treasureTextures';
 import {
   TEX,
+  bakeSizedButton,
   bakeTextures,
   buttonKey,
   createAxolotlTexture,
@@ -15,9 +17,11 @@ import {
   type ButtonFill,
   type ButtonShape,
   type ButtonVisual,
+  type TexInfo,
 } from '../art/textures';
 import { BUTTON_PRESS_OFFSET, BUTTON_SQUARE, BUTTON_WIDE, type IconKind } from '../art/drawUi';
 import { mulberry32 } from '../logic/rng';
+import { TANK } from '../logic/tank';
 import { VIEW } from '../logic/tuning';
 import { fitView, type ViewFit } from '../logic/viewport';
 import { DEFAULT_ZONE_SEED, WORLD_H, buildCanalZone, type ReedSpec, type ZoneLayout } from '../logic/zone';
@@ -26,6 +30,7 @@ import { DEFAULT_ZONE_SEED, WORLD_H, buildCanalZone, type ReedSpec, type ZoneLay
 export const SCENE_KEYS = Object.freeze({
   boot: 'Boot',
   title: 'Title',
+  homeTank: 'HomeTank',
   swim: 'Swim',
   hud: 'Hud',
 } as const);
@@ -37,6 +42,7 @@ export interface GameAssets {
   axolotl: AxolotlTexture;
   predator: PredatorTextures;
   treasure: TreasureTextures;
+  tank: TankTextures;
 }
 
 /** CSS viewport size plus the fitted view derived from the Scale Manager. */
@@ -47,6 +53,7 @@ export interface SceneView {
 }
 
 const ART_SEED = DEFAULT_ZONE_SEED ^ 0x5eed;
+const TANK_ART_SEED = ART_SEED ^ 0x7a4c;
 const BLINK_PERIOD = 4.6;
 const BLINK_LENGTH = 0.14;
 const BLINK_CLOSED = 0.12;
@@ -163,8 +170,16 @@ export function drawPanel(
 export interface ButtonOptions {
   fill: ButtonFill;
   shape: ButtonShape;
-  /** Uniform size multiplier on the 1x button (wide 200 x 64, square 64 x 64 CSS px). */
+  /**
+   * Uniform size multiplier on the 1x button (wide 200 x 64, square 64 x 64 CSS px).
+   * Sets the body height, icon, label size and press offset; sets the body width too unless `width` is given.
+   */
   size: number;
+  /**
+   * Body width in CSS px, used instead of the 1x width times `size`. Height, icon,
+   * label size and press offset still follow `size`. Omit for the standard baked body.
+   */
+  width?: number;
   label: string;
   icon: IconKind;
   dpr: number;
@@ -204,15 +219,34 @@ function placeButtonContent(
   label.setPosition(width / 2 - label.width / 2, top + icon.displayHeight + offsetY);
 }
 
+/**
+ * Bakes (or reuses) the custom-width body visuals at the standard body's bake scale.
+ * Returns undefined when `opts.width` is omitted, so the standard baked body is used.
+ */
+function bakeCustomWidthBodies(
+  scene: Phaser.Scene,
+  baked: BakedTextures,
+  opts: ButtonOptions,
+  logicalH: number,
+): Readonly<Record<ButtonVisual, TexInfo>> | undefined {
+  if (opts.width === undefined) return undefined;
+  if (!Number.isFinite(opts.width) || opts.width <= 0) {
+    throw new RangeError('createButton: width must be a positive finite number');
+  }
+  const stdInfo = baked.info[buttonKey(opts.fill, opts.shape, 'normal')];
+  return bakeSizedButton(scene, opts.fill, opts.width / opts.size, logicalH, stdInfo.scale);
+}
+
 /** Builds a baked button (body texture + icon + label) inside a container at (0, 0). */
 export function createButton(scene: Phaser.Scene, baked: BakedTextures, opts: ButtonOptions): UiButton {
   const dims = opts.shape === 'wide' ? BUTTON_WIDE : BUTTON_SQUARE;
-  const width = dims.w * opts.size;
+  const width = opts.width ?? dims.w * opts.size;
   const height = dims.h * opts.size;
   let focused = false;
   let pressed = false;
 
-  const bodyInfo = baked.info[buttonKey(opts.fill, opts.shape, 'normal')];
+  const bodies = bakeCustomWidthBodies(scene, baked, opts, dims.h);
+  const bodyInfo = bodies?.normal ?? baked.info[buttonKey(opts.fill, opts.shape, 'normal')];
   const body = scene.add
     .image(0, 0, bodyInfo.key)
     .setOrigin(bodyInfo.originNormX, bodyInfo.originNormY)
@@ -229,7 +263,7 @@ export function createButton(scene: Phaser.Scene, baked: BakedTextures, opts: Bu
 
   const refresh = (): void => {
     const visual: ButtonVisual = pressed ? 'pressed' : focused ? 'focused' : 'normal';
-    body.setTexture(buttonKey(opts.fill, opts.shape, visual));
+    body.setTexture(bodies ? bodies[visual].key : buttonKey(opts.fill, opts.shape, visual));
     placeButtonContent(icon, label, opts.shape, width, height, pressed ? BUTTON_PRESS_OFFSET * opts.size : 0);
   };
   const release = (): void => {
@@ -303,7 +337,11 @@ export class BootScene extends Phaser.Scene {
     const axolotl = createAxolotlTexture(this, TEX.axolotl, bakeScale);
     const predator = bakePredatorTextures(this, bakeScale);
     const treasure = bakeTreasureTextures(this, bakeScale);
-    const assets: GameAssets = { zone, baked, axolotl, predator, treasure };
+    const tank = bakeTankTextures(this, bakeScale, {
+      decorationPx: TANK.decorationPx,
+      rand: mulberry32(TANK_ART_SEED),
+    });
+    const assets: GameAssets = { zone, baked, axolotl, predator, treasure, tank };
     this.scene.start(SCENE_KEYS.title, assets);
   }
 }

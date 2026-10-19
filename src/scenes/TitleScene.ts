@@ -20,6 +20,7 @@ import {
   type SceneView,
   type UiButton,
 } from './BootScene';
+import { openHomeTank } from './sceneFlow';
 
 const TAU = Math.PI * 2;
 const MARGIN = 16;
@@ -32,6 +33,8 @@ const BODY_PX = 18;
 const VERSION_PX = 14;
 const VERSION_GAP = 4;
 const BUTTON_GAP = 12;
+const LOW_FPS = 45;
+const LOW_FPS_REDRAW_S = 1 / 30;
 const AXO_WORLD_Y = 210;
 const TITLE_TEXT = 'Glam Gills';
 const SUBTITLE_TEXT = 'Find Your Flair';
@@ -57,6 +60,7 @@ export class TitleScene extends Phaser.Scene {
   private axoBaseY = 0;
   private starting = false;
   private lastPose: AxolotlPose | null = null;
+  private redrawAcc = 0;
   private backgrounds: Phaser.GameObjects.Image[] = [];
   private axolotl!: Phaser.GameObjects.Image;
   private panel!: Phaser.GameObjects.Graphics;
@@ -79,6 +83,7 @@ export class TitleScene extends Phaser.Scene {
     this.clock = 0;
     this.starting = false;
     this.lastPose = null;
+    this.redrawAcc = 0;
     this.updating = false;
     this.updateManifest = null;
     this.updatePrompt = null;
@@ -116,13 +121,13 @@ export class TitleScene extends Phaser.Scene {
       icon: 'play',
       dpr: this.view.fit.dpr,
       pressOnDown: false,
-      onPress: () => this.startSwim(),
+      onPress: () => this.openTank(),
     });
     this.startButton.container.setDepth(DEPTH.ui);
     this.startButton.setFocused(true);
 
-    this.input.keyboard?.on('keydown-ENTER', this.startSwim, this);
-    this.input.keyboard?.on('keydown-SPACE', this.startSwim, this);
+    this.input.keyboard?.on('keydown-ENTER', this.openTank, this);
+    this.input.keyboard?.on('keydown-SPACE', this.openTank, this);
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.game.events.on(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
@@ -136,10 +141,11 @@ export class TitleScene extends Phaser.Scene {
     this.animateAxolotl(Math.min(deltaMs / 1000, 0.05));
   }
 
-  private startSwim(): void {
+  /** Start: opens the Home Tank hub (PRD C7). */
+  private openTank(): void {
     if (this.starting) return;
     this.starting = true;
-    this.scene.start(SCENE_KEYS.swim, this.assets);
+    openHomeTank(this, this.assets);
   }
 
   /** Shows the update prompt once; later builds only replace the target manifest. */
@@ -307,12 +313,21 @@ export class TitleScene extends Phaser.Scene {
       tailAmp: 1,
       sparkle: 0,
     };
-    if (this.lastPose === null || !samePose(pose, this.lastPose)) {
-      this.assets.axolotl.redraw(pose);
-      this.lastPose = pose;
-    }
+    this.redrawAxolotl(pose, dt);
     const zoom = this.worldScale();
     this.axolotl.y = this.axoBaseY + this.motion.bob * Math.sin((TAU * t) / 3) * zoom;
     this.axolotl.rotation = this.motion.ambient ? 0.12 * Math.cos((TAU * t) / 3) : 0;
+  }
+
+  /** Repaints the axolotl when its pose changes; while the frame rate is low, at most 30 times a second, as in the swim. */
+  private redrawAxolotl(pose: AxolotlPose, dt: number): void {
+    if (this.lastPose !== null && samePose(pose, this.lastPose)) return;
+    this.redrawAcc += dt;
+    if (this.lastPose !== null && this.game.loop.actualFps < LOW_FPS && this.redrawAcc < LOW_FPS_REDRAW_S) {
+      return;
+    }
+    this.redrawAcc = 0;
+    this.assets.axolotl.redraw(pose);
+    this.lastPose = pose;
   }
 }

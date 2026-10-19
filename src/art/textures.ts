@@ -105,7 +105,21 @@ export type ButtonVisual = 'normal' | 'pressed' | 'focused';
 const FILL_NAMES = Object.keys(BUTTON_FILLS) as ButtonFill[];
 const SHAPES: readonly ButtonShape[] = ['wide', 'square'];
 const VISUALS: readonly ButtonVisual[] = ['normal', 'pressed', 'focused'];
-const ICON_KINDS: readonly IconKind[] = ['dash', 'pause', 'play', 'snack', 'home', 'bag'];
+const ICON_KINDS: readonly IconKind[] = [
+  'dash',
+  'pause',
+  'play',
+  'snack',
+  'home',
+  'bag',
+  'chest',
+  'decorate',
+  'close',
+  'left',
+  'right',
+  'check',
+  'putAway',
+];
 
 export const bgKey = (i: number): string => `bg-${i}`;
 export const reedKey = (i: number): string => `reed-${i}`;
@@ -113,6 +127,9 @@ export const padKey = (i: number): string => `pad-${i}`;
 export const bubbleKey = (r: number): string => `bubble-${r}`;
 export const buttonKey = (fill: ButtonFill, shape: ButtonShape, visual: ButtonVisual): string =>
   `btn-${fill}-${shape}-${visual}`;
+/** Key for a button body of any logical size; the `WxH` segment never matches a ButtonShape. */
+export const sizedButtonKey = (fill: ButtonFill, w: number, h: number, visual: ButtonVisual): string =>
+  `btn-${fill}-${w}x${h}-${visual}`;
 export const iconKey = (kind: IconKind): string => `icon-${kind}`;
 export const hintStarKey = (r: number): string => `hint-star-${r}`;
 export const potShardKey = (i: number): string => `pot-shard-${i}`;
@@ -351,6 +368,35 @@ export function bakeTextures(scene: Phaser.Scene, opts: BakeOptions): BakedTextu
   };
 
   return { info, bg, reeds, pads, worm, bug, sparkle, streak, bubbles, icons, stick, homeSpot, hiding };
+}
+
+/**
+ * Bake (or reuse) the three button body visuals at a custom logical size
+ * w x h. Textures live in the game's texture manager, so every scene shares
+ * them. `scale` must be the boot bake scale: the cache is keyed by fill, size
+ * and visual only, so a body already baked at that size is reused as is.
+ */
+export function bakeSizedButton(
+  scene: Phaser.Scene,
+  fill: ButtonFill,
+  w: number,
+  h: number,
+  scale: number,
+): Readonly<Record<ButtonVisual, TexInfo>> {
+  const size = buttonTextureSize(w, h);
+  const bodies = {} as Record<ButtonVisual, TexInfo>;
+  for (const visual of VISUALS) {
+    const key = sizedButtonKey(fill, w, h, visual);
+    bodies[visual] = scene.textures.exists(key)
+      ? makeInfo(key, scale, size)
+      : bake(scene, key, size, scale, (ctx) =>
+          paintButton(ctx, w, h, BUTTON_FILLS[fill], {
+            pressed: visual === 'pressed',
+            focused: visual === 'focused',
+          }),
+        );
+  }
+  return bodies;
 }
 
 // ---------------------------------------------------------------------------

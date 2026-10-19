@@ -7,10 +7,10 @@ export const TRIP_END_TITLE = 'Carried home!';
 /** Body of the carried-home card: kind, short, and readable by an 8-year-old. */
 export const TRIP_END_BODY =
   'A big bubble floated you home. You are safe, and all four legs grew back. ' +
-  'You kept every snack you ate.';
+  'All the snacks are back, too.';
 
-/** Button on the carried-home card that starts a new trip. */
-export const SWIM_AGAIN_LABEL = 'Swim again';
+/** Button on the tank arrival card that closes it and shows the Home Tank. */
+export const ARRIVAL_OK_LABEL = 'OK';
 
 /** Label on the HUD Trip Bag display. */
 export const TRIP_BAG_LABEL = 'Trip Bag';
@@ -40,19 +40,19 @@ const EMPTY_BAG_STATUS = 'empty';
 
 const MAX_LISTED_NAMES = 3;
 
-/** Why the home screen is showing: the player chose to go home, or a bubble carried them. */
-export type HomeScreenReason = 'wentHome' | 'carriedHome';
+/** Why the tank arrival card is showing: the player chose to go home, or a bubble carried them. */
+export type ArrivalReason = 'wentHome' | 'carriedHome';
 
-/** Everything the home screen needs to describe how the trip ended. */
-export interface HomeScreenInput {
-  reason: HomeScreenReason;
+/** Everything the tank arrival card needs to describe how the trip ended. */
+export interface ArrivalInput {
+  reason: ArrivalReason;
   returnedNames: readonly string[];
   bankedThisTripNames: readonly string[];
   bankedTotal: number;
 }
 
-/** Text for the end-of-trip home screen. */
-export interface HomeScreenText {
+/** Text for the tank arrival card shown in the Home Tank after a trip. */
+export interface ArrivalText {
   title: string;
   body: string;
   shortBody: string;
@@ -137,8 +137,8 @@ function wentHomeShortBody(bankedCount: number): string {
   return `${WENT_HOME_SHORT_OPENING} You brought home ${bankedCount} treasures.`;
 }
 
-/** Builds the end-of-trip home screen text for going home or being carried home. */
-export function homeScreenText(input: HomeScreenInput): HomeScreenText {
+/** Builds the tank arrival card text for going home or being carried home. */
+export function arrivalText(input: ArrivalInput): ArrivalText {
   const isCarried = input.reason === 'carriedHome';
   return {
     title: isCarried ? TRIP_END_TITLE : WENT_HOME_TITLE,
@@ -149,6 +149,6 @@ export function homeScreenText(input: HomeScreenInput): HomeScreenText {
       ? carriedHomeShortBody(input.returnedNames.length)
       : wentHomeShortBody(input.bankedThisTripNames.length),
     bankedLine: bankedTotalLine(input.bankedTotal),
-    button: SWIM_AGAIN_LABEL,
+    button: ARRIVAL_OK_LABEL,
   };
 }

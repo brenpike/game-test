@@ -15,8 +15,8 @@ import {
   BANKED_TITLE,
   bankedBody,
   bankedBodyShort,
-  homeScreenText,
-  type HomeScreenReason,
+  arrivalText,
+  type ArrivalReason,
 } from './tripText';
 
 /**
@@ -37,7 +37,7 @@ const CANVAS_HEIGHTS: readonly number[] = [
   320, 340, 360, 375, 414, 440, 480, 568, 600, 667, 740, 768, 844, 932,
 ];
 const BANKED_TOTALS: readonly number[] = [0, 1, 9, 20];
-const HOME_REASONS: readonly HomeScreenReason[] = ['carriedHome', 'wentHome'];
+const ARRIVAL_REASONS: readonly ArrivalReason[] = ['carriedHome', 'wentHome'];
 
 const SORTED_NAMES: readonly string[] = CANAL_TREASURES.map((treasure) => treasure.name).sort(
   (left, right) => right.length - left.length,
@@ -98,10 +98,10 @@ function supportedCanvases(): Canvas[] {
   return canvases;
 }
 
-/** Home screen sections: head, body, icon rows, actions. */
-function homeSections(reason: HomeScreenReason, names: readonly string[], total: number, cssW: number): CardSection[] {
+/** Tank arrival card sections: head, body, icon rows, actions. */
+function arrivalSections(reason: ArrivalReason, names: readonly string[], total: number, cssW: number): CardSection[] {
   const textW = cardTextWidth(cssW);
-  const text = homeScreenText({
+  const text = arrivalText({
     reason,
     returnedNames: reason === 'carriedHome' ? names : [],
     bankedThisTripNames: reason === 'wentHome' ? names : [],
@@ -138,16 +138,16 @@ function makeCombination(label: string, canvas: Canvas, count: number, sections:
   return { label, canvas, count, availH: canvas.cssH - 2 * CARD.margin, sections };
 }
 
-/** Every home screen and banking card combination on one canvas. */
+/** Every tank arrival card and banking card combination on one canvas. */
 function canvasCombinations(canvas: Canvas): Combination[] {
   const combinations: Combination[] = [];
   const size = `${canvas.cssW}x${canvas.cssH}`;
   for (let count = 0; count <= SORTED_NAMES.length; count++) {
     const names = SORTED_NAMES.slice(0, count);
     for (const total of BANKED_TOTALS) {
-      for (const reason of HOME_REASONS) {
-        const label = `home ${reason} ${size} n=${count} total=${total}`;
-        combinations.push(makeCombination(label, canvas, count, homeSections(reason, names, total, canvas.cssW)));
+      for (const reason of ARRIVAL_REASONS) {
+        const label = `arrival ${reason} ${size} n=${count} total=${total}`;
+        combinations.push(makeCombination(label, canvas, count, arrivalSections(reason, names, total, canvas.cssW)));
       }
       if (total < count) continue;
       const label = `banking ${size} n=${count} total=${total}`;
@@ -223,15 +223,15 @@ describe('card copy fit', () => {
     FIT_TIMEOUT_MS,
   );
 
-  it('fits the carried home screen with 20 returned treasures at 480x360 (PR #35 r4309314686)', () => {
+  it('fits the carried-home arrival card with 20 returned treasures at 480x360 (PR #35 r4309314686)', () => {
     const canvas = { cssW: 480, cssH: 360 };
     const names = SORTED_NAMES.slice(0, 20);
     for (const total of BANKED_TOTALS) {
       const combination = makeCombination(
-        `home carriedHome 480x360 n=20 total=${total}`,
+        `arrival carriedHome 480x360 n=20 total=${total}`,
         canvas,
         names.length,
-        homeSections('carriedHome', names, total, canvas.cssW),
+        arrivalSections('carriedHome', names, total, canvas.cssW),
       );
       const fit = fitCard(combination.availH, combination.sections);
       const actions = fit.slots[fit.slots.length - 1];

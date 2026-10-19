@@ -7,11 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-18
+
 ### Added
+
+- Home Tank hub with Go exploring, Decorate and Treasure Chest. Works with touch and keyboard.
+- Your axolotl swims around the Home Tank. With reduced motion it stays still.
+- Decorating the Home Tank by touch and keyboard: place a banked Decoration, move it, or put it away. Decorations always stay inside the tank and are kept for the session.
+- Treasure Chest listing your banked Decorations, Wearables and Dream colours with rarity badges. Wearables show their slot and perk, Dream colours show a swatch with the "Dream colour — not found in nature" label, and each category shows "X of Y found".
 
 ### Changed
 
-### Fixed
+- Every trip now ends in the Home Tank with a trip-end message.
+- Go exploring replaces Swim again. The interim home screen is gone.
+- Being carried home now brings every snack back, so the snacks start over on the next trip. Going home from the Home Spot still keeps the snacks you ate.
 
 ## [0.6.0] - 2026-10-18
 
