@@ -52,6 +52,7 @@ export interface HomeScreenInput {
 export interface HomeScreenText {
   title: string;
   body: string;
+  shortBody: string;
   bankedLine: string;
   button: string;
 }
@@ -87,6 +88,14 @@ export function bankedBody(names: readonly string[], total: number): string {
   return `${describeTreasures(names)} ${verb} safe now! ${totalLine}`;
 }
 
+/** Short body of the banking card: counts treasures instead of naming them. */
+export function bankedBodyShort(count: number, total: number): string {
+  const totalLine = bankedTotalLine(total);
+  if (count === 0) return `Nothing new to bring in. ${totalLine}`;
+  if (count === 1) return `Your treasure is safe now! ${totalLine}`;
+  return `${count} treasures are safe now! ${totalLine}`;
+}
+
 function returnedSentence(returnedNames: readonly string[]): string {
   if (returnedNames.length === 0) return 'Nothing was lost.';
   if (returnedNames.length === 1) {
@@ -107,6 +116,24 @@ function wentHomeBody(bankedThisTripNames: readonly string[]): string {
   return `You swam home safe and sound. This trip you brought home ${describeTreasures(bankedThisTripNames)}.`;
 }
 
+const CARRIED_HOME_SHORT_OPENING = 'A big bubble floated you home. You are safe!';
+
+const WENT_HOME_SHORT_OPENING = 'You swam home safe and sound.';
+
+function carriedHomeShortBody(returnedCount: number): string {
+  if (returnedCount === 0) return `${CARRIED_HOME_SHORT_OPENING} Nothing was lost.`;
+  if (returnedCount === 1) {
+    return `${CARRIED_HOME_SHORT_OPENING} Your treasure floated off. Look for it next trip!`;
+  }
+  return `${CARRIED_HOME_SHORT_OPENING} ${returnedCount} treasures floated off. Look for them next trip!`;
+}
+
+function wentHomeShortBody(bankedCount: number): string {
+  if (bankedCount === 0) return WENT_HOME_SHORT_OPENING;
+  if (bankedCount === 1) return `${WENT_HOME_SHORT_OPENING} You brought home 1 treasure.`;
+  return `${WENT_HOME_SHORT_OPENING} You brought home ${bankedCount} treasures.`;
+}
+
 /** Builds the end-of-trip home screen text for going home or being carried home. */
 export function homeScreenText(input: HomeScreenInput): HomeScreenText {
   const isCarried = input.reason === 'carriedHome';
@@ -115,6 +142,9 @@ export function homeScreenText(input: HomeScreenInput): HomeScreenText {
     body: isCarried
       ? carriedHomeBody(input.returnedNames)
       : wentHomeBody(input.bankedThisTripNames),
+    shortBody: isCarried
+      ? carriedHomeShortBody(input.returnedNames.length)
+      : wentHomeShortBody(input.bankedThisTripNames.length),
     bankedLine: bankedTotalLine(input.bankedTotal),
     button: SWIM_AGAIN_LABEL,
   };

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { CANAL_TREASURES } from './catalogue';
 import * as tripText from './tripText';
 import {
   BANKING_HINT,
   SWIM_AGAIN_LABEL,
   TRIP_END_BODY,
   bankedBody,
+  bankedBodyShort,
   describeTreasures,
   homeScreenText,
   tripBagStatus,
@@ -41,6 +43,23 @@ const NAME_SAMPLES: readonly (readonly string[])[] = [
   ['Sun hat', 'Pond plant', 'Toy boat', 'Heart glasses', 'Shell necklace'],
 ];
 
+const SHORT_COUNTS = [0, 1, 2, 5, 20];
+
+const SHORT_TOTALS = [0, 1, 4, 20];
+
+function makeNames(count: number): string[] {
+  return Array.from({ length: count }, (_, index) => `Treasure ${index + 1}`);
+}
+
+function shortBodyFor(reason: 'wentHome' | 'carriedHome', count: number): string {
+  return homeScreenText({
+    reason,
+    returnedNames: makeNames(count),
+    bankedThisTripNames: makeNames(count),
+    bankedTotal: 0,
+  }).shortBody;
+}
+
 function collectHelperOutputs(): string[] {
   const outputs: string[] = [];
   for (const count of [0, 1, 2, 5]) outputs.push(tripBagStatus(count));
@@ -55,8 +74,14 @@ function collectHelperOutputs(): string[] {
           bankedThisTripNames: names,
           bankedTotal: total,
         });
-        outputs.push(text.title, text.body, text.bankedLine, text.button);
+        outputs.push(text.title, text.body, text.shortBody, text.bankedLine, text.button);
       }
+    }
+  }
+  for (const count of SHORT_COUNTS) {
+    for (const total of SHORT_TOTALS) outputs.push(bankedBodyShort(count, total));
+    for (const reason of ['wentHome', 'carriedHome'] as const) {
+      outputs.push(shortBodyFor(reason, count));
     }
   }
   return outputs;
@@ -248,5 +273,100 @@ describe('homeScreenText', () => {
       bankedTotal: 2,
     });
     expect(text.body).toBe('You swam home safe and sound.');
+  });
+});
+
+describe('bankedBodyShort', () => {
+  it('handles banking nothing new', () => {
+    expect(bankedBodyShort(0, 0)).toBe('Nothing new to bring in. No treasures at the Home Spot yet.');
+    expect(bankedBodyShort(0, 3)).toBe(
+      'Nothing new to bring in. You have 3 treasures safe at the Home Spot.',
+    );
+  });
+
+  it('says "Your treasure" for one', () => {
+    expect(bankedBodyShort(1, 1)).toBe(
+      'Your treasure is safe now! You have 1 treasure safe at the Home Spot.',
+    );
+  });
+
+  it('counts two or more', () => {
+    expect(bankedBodyShort(2, 5)).toBe(
+      '2 treasures are safe now! You have 5 treasures safe at the Home Spot.',
+    );
+    expect(bankedBodyShort(20, 20)).toBe(
+      '20 treasures are safe now! You have 20 treasures safe at the Home Spot.',
+    );
+  });
+});
+
+describe('homeScreenText shortBody', () => {
+  const OPENING = 'A big bubble floated you home. You are safe!';
+
+  it('carried home with nothing returned', () => {
+    expect(shortBodyFor('carriedHome', 0)).toBe(`${OPENING} Nothing was lost.`);
+  });
+
+  it('carried home with one returned', () => {
+    expect(shortBodyFor('carriedHome', 1)).toBe(
+      `${OPENING} Your treasure floated off. Look for it next trip!`,
+    );
+  });
+
+  it('carried home with several returned', () => {
+    expect(shortBodyFor('carriedHome', 2)).toBe(
+      `${OPENING} 2 treasures floated off. Look for them next trip!`,
+    );
+    expect(shortBodyFor('carriedHome', 5)).toBe(
+      `${OPENING} 5 treasures floated off. Look for them next trip!`,
+    );
+  });
+
+  it('went home with nothing banked', () => {
+    expect(shortBodyFor('wentHome', 0)).toBe('You swam home safe and sound.');
+  });
+
+  it('went home with one banked', () => {
+    expect(shortBodyFor('wentHome', 1)).toBe(
+      'You swam home safe and sound. You brought home 1 treasure.',
+    );
+  });
+
+  it('went home with several banked', () => {
+    expect(shortBodyFor('wentHome', 2)).toBe(
+      'You swam home safe and sound. You brought home 2 treasures.',
+    );
+    expect(shortBodyFor('wentHome', 20)).toBe(
+      'You swam home safe and sound. You brought home 20 treasures.',
+    );
+  });
+
+  it('uses returnedNames for carried home and bankedThisTripNames for went home', () => {
+    const carried = homeScreenText({
+      reason: 'carriedHome',
+      returnedNames: makeNames(3),
+      bankedThisTripNames: makeNames(1),
+      bankedTotal: 0,
+    });
+    const went = homeScreenText({
+      reason: 'wentHome',
+      returnedNames: makeNames(3),
+      bankedThisTripNames: makeNames(1),
+      bankedTotal: 0,
+    });
+    expect(carried.shortBody).toContain('3 treasures');
+    expect(went.shortBody).toContain('1 treasure.');
+  });
+
+  it('never contains a catalogue treasure name', () => {
+    const outputs: string[] = [];
+    for (const count of SHORT_COUNTS) {
+      for (const total of SHORT_TOTALS) outputs.push(bankedBodyShort(count, total));
+      outputs.push(shortBodyFor('wentHome', count), shortBodyFor('carriedHome', count));
+    }
+    for (const output of outputs) {
+      const lower = output.toLowerCase();
+      for (const treasure of CANAL_TREASURES) expect(lower).not.toContain(treasure.name.toLowerCase());
+    }
   });
 });
