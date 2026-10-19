@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-19
+
+### Added
+
+- Area 1 exit at the far end of the canal (#31). It stays closed until every snack is eaten: a padlock sign and gate slats show it is closed, and an arrow sign shows it is open.
+- The snack counter now shows how many snacks are left.
+- The last 3 snacks sparkle so they are easy to find. With reduced motion the sparkle stays still.
+- Snacks drift slowly through the water.
+- Reaching the open exit banks the Trip Bag, including a rescued axolotl following you, who moves into your Home Tank, and shows a kind "Area beaten" card with the stars you earned and your best.
+- Up to 3 stars per area: reach the exit, own the Castle tower, and rescue the stranded axolotl or keep all four legs. Your best is kept for the session.
+- Home Tank badge showing the best stars for Area 1.
+- Area data is now keyed by area id.
+
+### Changed
+
+- Eaten snacks also come back after you beat the area. They are still kept after Go home and reset after being carried home.
+- The snack banner now tells you whether the exit is open or closed.
+
+### Docs
+
+- Art style guide rows for the exit, stars and snack sparkle.
+
 ## [0.9.0] - 2026-10-19
 
 ### Added

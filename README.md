@@ -6,7 +6,7 @@ It is mostly fun, with real axolotl facts along the way.
 
 ## What you can do now
 
-Version 0.9.0 is playable in one canal zone:
+Version 0.10.0 is playable in one canal zone:
 
 - Swim with the on-screen swim pad, or the arrow keys or WASD.
 - Use Tail Dash, ride the current, and eat snacks.
