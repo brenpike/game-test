@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-19
+
 ### Added
 
 - Character creator on first play: pick your axolotl's name, eyes, mouth, gills, spots, size and colour, with a live preview, Surprise me and Done. The colour is one of the four real colours, shown with its name and badge, and Surprise me picks one too. It starts with a suggested name and the Leucistic colour, so Done works at once. Works with touch and keyboard, and the preview stays still with reduced motion.

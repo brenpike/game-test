@@ -6,7 +6,7 @@ It is mostly fun, with real axolotl facts along the way.
 
 ## What you can do now
 
-Version 0.10.0 is playable in one canal zone:
+Version 0.11.0 is playable in one canal zone:
 
 - Make your own axolotl the first time you play. Pick its name, eyes, mouth, gills, spots, size, and colour (one of four real morphs), and watch the preview change. Surprise me picks everything at random. The other three colours are the ones you rescue.
 - Type a name, or use the arrows to pick a suggested one, so typing is optional. Names stay on your device.
