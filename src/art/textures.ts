@@ -105,7 +105,21 @@ export type ButtonVisual = 'normal' | 'pressed' | 'focused';
 const FILL_NAMES = Object.keys(BUTTON_FILLS) as ButtonFill[];
 const SHAPES: readonly ButtonShape[] = ['wide', 'square'];
 const VISUALS: readonly ButtonVisual[] = ['normal', 'pressed', 'focused'];
-const ICON_KINDS: readonly IconKind[] = ['dash', 'pause', 'play', 'snack', 'home', 'bag'];
+const ICON_KINDS: readonly IconKind[] = [
+  'dash',
+  'pause',
+  'play',
+  'snack',
+  'home',
+  'bag',
+  'chest',
+  'decorate',
+  'close',
+  'left',
+  'right',
+  'check',
+  'putAway',
+];
 
 export const bgKey = (i: number): string => `bg-${i}`;
 export const reedKey = (i: number): string => `reed-${i}`;

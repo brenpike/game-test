@@ -31,7 +31,20 @@ const STICK_CHEVRON_FRAC = 0.78;
 /** Chevron half-width, logical px. */
 const STICK_CHEVRON_S = 8;
 
-export type IconKind = 'dash' | 'pause' | 'play' | 'snack' | 'home' | 'bag';
+export type IconKind =
+  | 'dash'
+  | 'pause'
+  | 'play'
+  | 'snack'
+  | 'home'
+  | 'bag'
+  | 'chest'
+  | 'decorate'
+  | 'close'
+  | 'left'
+  | 'right'
+  | 'check'
+  | 'putAway';
 
 /**
  * House icon (guide 7d), shared by the Home Spot flag and every "go home" UI.
@@ -236,6 +249,110 @@ export function paintIcon(ctx: CanvasRenderingContext2D, kind: IconKind, size: n
       pouch.moveTo(19.5, 12);
       pouch.quadraticCurveTo(24, 13, 24.5, 17);
       ctx.stroke(pouch);
+      break;
+    }
+    case 'chest': {
+      // Treasure Chest: a rounded chest, domed lid over a body, a lock dot. Ink only.
+      ctx.lineWidth = 3;
+      const chest = new Path2D();
+      // body
+      chest.moveTo(5.5, 15);
+      chest.lineTo(5.5, 24.5);
+      chest.quadraticCurveTo(5.5, 27, 8, 27);
+      chest.lineTo(24, 27);
+      chest.quadraticCurveTo(26.5, 27, 26.5, 24.5);
+      chest.lineTo(26.5, 15);
+      // domed lid, closed along the seam
+      chest.moveTo(5.5, 15);
+      chest.lineTo(5.5, 12);
+      chest.quadraticCurveTo(5.5, 6.5, 11, 6.5);
+      chest.lineTo(21, 6.5);
+      chest.quadraticCurveTo(26.5, 6.5, 26.5, 12);
+      chest.lineTo(26.5, 15);
+      chest.closePath();
+      ctx.stroke(chest);
+      // lock
+      const lock = new Path2D();
+      lock.arc(16, 17.5, 2.2, 0, TAU);
+      ctx.fill(lock);
+      break;
+    }
+    case 'decorate': {
+      // a small leafy sprig: stem with two leaves, not the snack worm
+      ctx.lineWidth = 2.8;
+      const sprig = new Path2D();
+      sprig.moveTo(16, 27.5);
+      sprig.lineTo(16, 6.5);
+      // lower left leaf
+      sprig.moveTo(16, 23);
+      sprig.quadraticCurveTo(5.5, 23, 6, 13.5);
+      sprig.quadraticCurveTo(16, 13.5, 16, 23);
+      // upper right leaf
+      sprig.moveTo(16, 16.5);
+      sprig.quadraticCurveTo(26.5, 16.5, 26, 7.5);
+      sprig.quadraticCurveTo(16, 7.5, 16, 16.5);
+      ctx.stroke(sprig);
+      break;
+    }
+    case 'close': {
+      // rounded X
+      ctx.lineWidth = 4.5;
+      const x = new Path2D();
+      x.moveTo(9, 9);
+      x.lineTo(23, 23);
+      x.moveTo(23, 9);
+      x.lineTo(9, 23);
+      ctx.stroke(x);
+      break;
+    }
+    case 'left': {
+      // single chevron pointing left
+      ctx.lineWidth = 4.5;
+      const c = new Path2D();
+      c.moveTo(20, 7);
+      c.lineTo(11, 16);
+      c.lineTo(20, 25);
+      ctx.stroke(c);
+      break;
+    }
+    case 'right': {
+      // single chevron pointing right
+      ctx.lineWidth = 4.5;
+      const c = new Path2D();
+      c.moveTo(12, 7);
+      c.lineTo(21, 16);
+      c.lineTo(12, 25);
+      ctx.stroke(c);
+      break;
+    }
+    case 'check': {
+      // tick
+      ctx.lineWidth = 4.5;
+      const t = new Path2D();
+      t.moveTo(7, 17);
+      t.lineTo(13.5, 23.5);
+      t.lineTo(25, 9);
+      ctx.stroke(t);
+      break;
+    }
+    case 'putAway': {
+      // down arrow into an open tray
+      ctx.lineWidth = 3.2;
+      const tray = new Path2D();
+      tray.moveTo(5.5, 18);
+      tray.lineTo(5.5, 24.5);
+      tray.quadraticCurveTo(5.5, 27, 8, 27);
+      tray.lineTo(24, 27);
+      tray.quadraticCurveTo(26.5, 27, 26.5, 24.5);
+      tray.lineTo(26.5, 18);
+      ctx.stroke(tray);
+      const arrow = new Path2D();
+      arrow.moveTo(16, 5.5);
+      arrow.lineTo(16, 20);
+      arrow.moveTo(10, 14);
+      arrow.lineTo(16, 20.5);
+      arrow.lineTo(22, 14);
+      ctx.stroke(arrow);
       break;
     }
   }

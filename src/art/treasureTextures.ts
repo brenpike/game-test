@@ -11,9 +11,13 @@
 import * as Phaser from 'phaser';
 import { BADGE_SHAPES, badgeTextureSize, paintRarityBadge, type BadgeShape } from './drawBadges';
 import {
+  DREAM_SWATCH_IDS,
   TREASURE_ICON_SLUGS,
+  dreamSwatchTextureSize,
+  paintDreamSwatch,
   paintTreasureIcon,
   treasureIconTextureSize,
+  type DreamSwatchId,
   type TreasureIconSlug,
 } from './drawTreasures';
 import { bake, type TexInfo } from './textures';
@@ -32,6 +36,10 @@ export type BadgeSize = (typeof BADGE_SIZES)[number];
 
 export const treasureIconKey = (slug: TreasureIconSlug, size: TreasureIconSize): string =>
   `treasure-${slug}-${size}`;
+/** Dream swatch tile size baked, logical px (guide 8: a rounded square 32 x 32). */
+export const DREAM_SWATCH_SIZE = 32;
+export const dreamSwatchKey = (id: DreamSwatchId, size: number = DREAM_SWATCH_SIZE): string =>
+  `dream-swatch-${id}-${size}`;
 export const badgeKey = (shape: BadgeShape, size: BadgeSize): string => `badge-${shape}-${size}`;
 
 // ---------------------------------------------------------------------------
@@ -45,9 +53,11 @@ export interface TreasureTextures {
   readonly icons: Readonly<Record<TreasureIconSize, Readonly<Record<TreasureIconSlug, TexInfo>>>>;
   /** Rarity badges by size, then shape. Anchor is the badge centre. */
   readonly badges: Readonly<Record<BadgeSize, Readonly<Record<BadgeShape, TexInfo>>>>;
+  /** Dream swatch tiles at 32, by Dream colour id. Key `dream-swatch-${id}-32`. Anchor is the tile centre. */
+  readonly swatches: Readonly<Record<DreamSwatchId, TexInfo>>;
 }
 
-/** Bake every treasure icon and rarity badge, one texture per size, into the scene's texture manager. */
+/** Bake every treasure icon, rarity badge and Dream swatch tile, one texture per size, into the scene's texture manager. */
 export function bakeTreasureTextures(scene: Phaser.Scene, bakeScale: number): TreasureTextures {
   const info: Record<string, TexInfo> = {};
   const add = (t: TexInfo): TexInfo => {
@@ -79,5 +89,13 @@ export function bakeTreasureTextures(scene: Phaser.Scene, bakeScale: number): Tr
     badges[size] = byShape;
   }
 
-  return { info, icons, badges };
+  const swatches = {} as Record<DreamSwatchId, TexInfo>;
+  const swatchFrame = dreamSwatchTextureSize(DREAM_SWATCH_SIZE);
+  for (const id of DREAM_SWATCH_IDS) {
+    swatches[id] = add(
+      bake(scene, dreamSwatchKey(id), swatchFrame, bakeScale, (ctx) => paintDreamSwatch(ctx, id, DREAM_SWATCH_SIZE)),
+    );
+  }
+
+  return { info, icons, badges, swatches };
 }

@@ -157,6 +157,29 @@ export function treasureIconTextureSize(size: number): TexSize {
 }
 
 /**
+ * Lowest fill edge below the icon centre, design units, for the Decorations that
+ * stand on a surface (guide 7e): the root ellipse of the Pond plant, the hull of
+ * the Toy boat, the Castle tower and the Sun pyramid.
+ */
+const DECORATION_FILL_BOTTOM: Readonly<Partial<Record<TreasureIconSlug, number>>> = {
+  'pond-plant': 12.3,
+  'toy-boat': 11.2,
+  'castle-tower': 12.4,
+  'sun-pyramid': 11.8,
+};
+
+/**
+ * Distance from the icon centre (0, 0) down to the lowest ink edge, logical px,
+ * for a Decoration of `size`, so a scene can seat it on a floor (base anchor). Other
+ * icons return half the size, the bottom of the icon box.
+ */
+export function decorationBaseOffset(slug: TreasureIconSlug, size: number): number {
+  const bottom = DECORATION_FILL_BOTTOM[slug];
+  if (bottom === undefined) return size / 2;
+  return bottom * fitScale(size, INK_OUT_SHAPE) + INK_OUT_SHAPE;
+}
+
+/**
  * Uniform scale that makes the longest side `size` with ink included, given
  * that the 28-unit design box also includes its ink (`inkOut` per side).
  */
@@ -172,6 +195,8 @@ interface Pen {
   readonly ctx: CanvasRenderingContext2D;
   /** Geometry scale. Ink widths are never multiplied by it. */
   readonly k: number;
+  /** Multiplies the width of pattern marks (spiral bands). Default 1. Never applies to ink. */
+  readonly markScale?: number;
 }
 
 /** Copy of `p` placed at (x, y) design units, rotated by `rot`, scaled by `k * scale`. */
@@ -586,7 +611,7 @@ function paintDreamPattern(pen: Pen, id: DreamSwatchId, cx: number, cy: number):
       ctx.fill(place(heartPath(0, 0.3, 6.8, 6.2), k, cx, cy));
       break;
     case 'spiral':
-      strokeSpiral(ctx, k, cx, cy, 4.3, 2, m, 1.5);
+      strokeSpiral(ctx, k, cx, cy, 4.3, 2, m, 1.5 * (pen.markScale ?? 1));
       break;
     case 'stripes':
       ctx.save();
@@ -618,7 +643,7 @@ function paintDreamPattern(pen: Pen, id: DreamSwatchId, cx: number, cy: number):
       dreamStar(pen, cx - 0.4, cy + 2.7, 1.3);
       break;
     case 'spiral-stars':
-      strokeSpiral(ctx, k, cx, cy, 3.4, 2, m, 1.5);
+      strokeSpiral(ctx, k, cx, cy, 3.4, 2, m, 1.5 * (pen.markScale ?? 1));
       dreamStar(pen, cx - 2.9, cy - 2.3, 1.4);
       dreamStar(pen, cx + 2.8, cy + 2.6, 1.2);
       break;
@@ -661,6 +686,102 @@ function paintPaintShell(pen: Pen, id: DreamSwatchId): void {
     ctx.beginPath();
     ctx.arc(cx * k, cy * k, rr, -Math.PI * 0.85, -Math.PI * 0.15);
     ctx.stroke();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Dream swatch tile (guide 8)
+// ---------------------------------------------------------------------------
+
+/** Swatch tile design side, logical px (guide 8: rounded square 32 x 32). */
+const SWATCH_BOX = 32;
+/** Swatch corner radius at the outer ink edge (guide 8). */
+const SWATCH_RADIUS = 8;
+/** Swatch outline (guide 8), constant at every size. */
+const SWATCH_LW = 2.6;
+/** Dark-tile rim arc width (guide 3g). */
+const SWATCH_RIM_LW = 1.2;
+/** Blob patterns are authored for a radius-6 blob; the tile fills about 2.1 times that. */
+const SWATCH_PATTERN_K = 2.1;
+
+/** Texture frame for a Dream swatch tile of side `size`. Anchor is the tile centre. */
+export function dreamSwatchTextureSize(size: number): TexSize {
+  const half = size / 2;
+  return frameFromBounds(-half, -half, half, half, FRAME_PAD);
+}
+
+/** Rounded square centred on (0, 0): half side `half`, corner radius `r`. */
+function swatchTilePath(half: number, r: number): Path2D {
+  const p = new Path2D();
+  p.moveTo(-half + r, -half);
+  p.arcTo(half, -half, half, half, r);
+  p.arcTo(half, half, -half, half, r);
+  p.arcTo(-half, half, -half, -half, r);
+  p.arcTo(-half, -half, half, -half, r);
+  p.closePath();
+  return p;
+}
+
+/**
+ * Paint the Dream swatch tile for `id` centred at local (0, 0): a rounded
+ * square `size` px on a side to the outer ink edge (corner radius 8 and outline
+ * 2.6 at size 32), the body colour, and a simplified pattern clipped to the
+ * tile (guide 8). Hearts: one heart about 14 px. Tie-dye: a two-turn spiral.
+ * Iridescent: the stripe pair. Rainbow: six vertical bands with dividers.
+ * Galaxy: nebula and three stars. Tie-dye galaxy: a spiral and two stars. Solid
+ * tiles are plain with one shine. Dark colours get the DREAM_RIM arc along the
+ * top, just inside the ink. The name label always sits beside the tile (the
+ * scene's job), so this is never colour alone. The geometry scales with `size`;
+ * the ink does not. Still frame, so also the reduced-motion version.
+ */
+export function paintDreamSwatch(ctx: CanvasRenderingContext2D, id: DreamSwatchId, size: number): void {
+  const look = DREAM_SWATCH[id];
+  const s = size / SWATCH_BOX;
+  const half = size / 2 - SWATCH_LW / 2;
+  const tile = swatchTilePath(half, Math.max(1, SWATCH_RADIUS * s - SWATCH_LW / 2));
+
+  ctx.fillStyle = look.body;
+  ctx.fill(tile);
+
+  ctx.save();
+  ctx.clip(tile);
+  if (look.pattern === 'bands') {
+    const m = look.marks;
+    const w = size / m.length;
+    for (let i = 0; i < m.length; i++) {
+      ctx.fillStyle = m[i];
+      ctx.fillRect(-size / 2 + i * w, -size / 2, w + 0.5, size);
+    }
+    ctx.fillStyle = DREAM_DIVIDER;
+    const dw = 1.6;
+    for (let i = 1; i < m.length; i++) {
+      ctx.fillRect(-size / 2 + i * w - dw / 2, -size / 2, dw, size);
+    }
+  } else {
+    const k = SWATCH_PATTERN_K * s;
+    paintDreamPattern({ ctx, k, markScale: SWATCH_PATTERN_K * s }, id, 0, 0);
+  }
+  ctx.restore();
+
+  ctx.lineWidth = SWATCH_LW;
+  ctx.strokeStyle = INK;
+  ctx.stroke(tile);
+
+  if (look.dark) {
+    // Rim light along the top, just inside the ink: a thin arc over the top edge and corners.
+    const hi = size / 2 - SWATCH_LW - SWATCH_RIM_LW / 2;
+    const rr = Math.max(1, SWATCH_RADIUS * s - SWATCH_LW - SWATCH_RIM_LW / 2);
+    const drop = rr * 0.9;
+    const rim = new Path2D();
+    rim.moveTo(-hi, -hi + rr + drop);
+    rim.lineTo(-hi, -hi + rr);
+    rim.arcTo(-hi, -hi, -hi + rr, -hi, rr);
+    rim.lineTo(hi - rr, -hi);
+    rim.arcTo(hi, -hi, hi, -hi + rr, rr);
+    rim.lineTo(hi, -hi + rr + drop);
+    ctx.lineWidth = SWATCH_RIM_LW;
+    ctx.strokeStyle = DREAM_RIM;
+    ctx.stroke(rim);
   }
 }
 

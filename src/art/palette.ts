@@ -197,8 +197,22 @@ export const HOME_POST = WILLOW_TRUNK;
 export const HOME_FLAG = SUN;
 /** Safe-ring dot fill. Opaque, with an opaque ink 2.0 stroke: 14.39:1. */
 export const HOME_RING_DOT = WHITE;
-/** Home Tank wall (3g), also the interim home screen backdrop. 12.89:1 with ink. */
+/**
+ * Home Tank wall (3g). Home Tank scene backdrop and the Treasure Chest backdrop
+ * (it was the interim home screen backdrop before the Home Tank). 12.89:1 with ink.
+ */
 export const HOME_TANK_WALL = '#fff1d6';
+
+// ---- Home Tank kit (guide 3g and 7f, provisional) --------------------------
+// Every value in this section is derived (provisional).
+/** Home Tank stand band, the willow trunk brown (#a56a3b), as the Home Spot post. */
+export const HOME_TANK_STAND = WILLOW_TRUNK;
+/** Home Tank lid, pebble A (#d4cfe6). 9.5:1 with ink. */
+export const HOME_TANK_LID = PEBBLE_A;
+/** Home Tank air gap under the lid, the sky horizon tone (#c4f1ff). 11.91:1 with ink. */
+export const HOME_TANK_AIR_GAP = SKY_HORIZON;
+/** Home Tank glass shine stripes. Inside the glass, so alpha is allowed. */
+export const HOME_TANK_GLASS_SHINE = 'rgba(255,255,255,0.25)';
 
 // ---- Hidden treasures and hiding places (guide 3g, 7e, provisional) -------
 // Every value in this section is derived (provisional). Cue objects (Dash pot,
