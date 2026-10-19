@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createEncounter, createEncounterContext } from './encounter';
 import { GAME_EVENTS, REGISTRY_KEYS } from './gameEvents';
 import { createLegs, isProtected, presentCount, tryHit, type LegsState } from './legs';
+import { CANAL_AREA } from './areas';
 import {
   LEG_PROGRESS_STEPS,
+  beatArea,
   createTrip,
   createTripContext,
   foundInfo,
@@ -21,6 +23,7 @@ import {
   type TripEvent,
   type TripInput,
   type TripSource,
+  type StarContext,
   type TripState,
   type TripStepResult,
 } from './trip';
@@ -1106,5 +1109,143 @@ describe('rescue and tilapia snapshots', () => {
     expect(idleTripSnapshot()).toEqual(tripSnapshot(createTrip(zone)));
     expect(idleTripSnapshot().rescue).toBeNull();
     expect(idleTripSnapshot().tilapiaCardDue).toBe(false);
+  });
+});
+
+describe('legsLost', () => {
+  it('starts at 0 and counts every hit, including the one that ends the trip', () => {
+    expect(createTrip(zone).legsLost).toBe(0);
+    const input: TripInput = { axolotlPos: inRange, reduced: false, dashing: false };
+    const firstHit = drive(createTrip(zone), input, 'hit');
+    expect(countOf(firstHit.events, 'hit')).toBe(1);
+    expect(firstHit.state.phase).toBe('swimming');
+    expect(firstHit.state.legsLost).toBe(1);
+    const carry = drive(firstHit.state, input, 'carryStart');
+    expect(carry.state.phase).toBe('carrying');
+    expect(carry.state.legsLost).toBe(LEGS.count);
+  });
+
+  it('keeps counting a leg that grew back', () => {
+    const regrowCtx = createTripContext();
+    const hitInput: TripInput = { axolotlPos: farTarget, reduced: false, dashing: false };
+    let state = drive(createTrip(farZone), hitInput, 'hit').state;
+    expect(state.legsLost).toBe(1);
+    let regrown = false;
+    for (let seconds = 0; seconds < 60 && !regrown; seconds += DT) {
+      const result = stepTrip(state, { axolotlPos: outside, reduced: false, dashing: false }, DT, regrowCtx);
+      state = result.state;
+      regrown = result.events.some((event) => event.type === 'regrown');
+    }
+    expect(regrown).toBe(true);
+    expect(presentCount(state.encounter.legs)).toBe(LEGS.count);
+    expect(state.legsLost).toBe(1);
+  });
+});
+
+describe('beatArea (H5, H6)', () => {
+  const plantSpecial: StarContext = { specialTreasureId: PLANT, rescued: false };
+
+  function hitOnce(source: TripSource, target: Point): TripState {
+    return drive(createTrip(source), { axolotlPos: target, reduced: false, dashing: false }, 'hit').state;
+  }
+
+  it('banks the bag like the Home Spot and ends areaBeaten with every id banked this trip', () => {
+    const state = walk(createTrip(findZone, LEGS, ['canal/pebble-9']), [spotA, spotB, outside]).state;
+    expect(state.holdings.bag).toEqual([PLANT, HAT]);
+    const result = beatArea(state, plantSpecial);
+    expect(result.events).toEqual([{ type: 'banked', ids: [PLANT, HAT] }]);
+    expect(result.state.phase).toBe('ended');
+    expect(result.state.holdings).toEqual({ bag: [], banked: ['canal/pebble-9', PLANT, HAT] });
+    expect(result.state.holdings.banked.length - state.holdings.banked.length).toBe(state.holdings.bag.length);
+    expect(result.state.heldAt).toBeNull();
+    expect(result.state.ending).toEqual({
+      reason: 'areaBeaten',
+      returned: [],
+      bankedThisTrip: [PLANT, HAT],
+      stars: { exit: true, special: true, legsOrRescue: true },
+    });
+    expect(tripAxolotlPos(result.state)).toEqual(state.home);
+  });
+
+  it('emits no banked event with an empty bag and keeps earlier bankings this trip', () => {
+    const state = keepExploring(banked().state);
+    const result = beatArea(state, plantSpecial);
+    expect(result.events).toEqual([]);
+    expect(result.state.holdings).toBe(state.holdings);
+    expect(result.state.ending?.bankedThisTrip).toEqual([PLANT, HAT]);
+  });
+
+  it('earns the special star when banked on an earlier trip, earlier this trip, or in the bag', () => {
+    const earlierTrip = createTrip(findZone, LEGS, [PLANT]);
+    const earlierThisTrip = keepExploring(banked().state);
+    const inBag = walk(createTrip(findZone), [spotA, outside]).state;
+    expect(inBag.holdings.bag).toEqual([PLANT]);
+    for (const state of [earlierTrip, earlierThisTrip, inBag]) {
+      expect(beatArea(state, plantSpecial).state.ending?.stars?.special).toBe(true);
+    }
+    const canal = createTrip(zone, LEGS, [CANAL_AREA.specialTreasureId]);
+    const canalCtx: StarContext = { specialTreasureId: CANAL_AREA.specialTreasureId, rescued: false };
+    expect(beatArea(canal, canalCtx).state.ending?.stars?.special).toBe(true);
+  });
+
+  it('misses the special star when the special is not owned', () => {
+    const notOwned = walk(createTrip(findZone), [spotB, outside]).state;
+    expect(beatArea(notOwned, plantSpecial).state.ending?.stars).toEqual({
+      exit: true,
+      special: false,
+      legsOrRescue: true,
+    });
+  });
+
+  it('misses the legs star after a leg is lost, even grown back, unless rescued', () => {
+    const hit = hitOnce(farZone, farTarget);
+    expect(hit.phase).toBe('swimming');
+    expect(beatArea(hit, plantSpecial).state.ending?.stars?.legsOrRescue).toBe(false);
+    const regrown: TripState = { ...hit, encounter: { ...hit.encounter, legs: createLegs() } };
+    expect(beatArea(regrown, plantSpecial).state.ending?.stars?.legsOrRescue).toBe(false);
+    const rescued: StarContext = { ...plantSpecial, rescued: true };
+    expect(beatArea(hit, rescued).state.ending?.stars?.legsOrRescue).toBe(true);
+    expect(beatArea(createTrip(findZone), plantSpecial).state.ending?.stars?.legsOrRescue).toBe(true);
+  });
+
+  it('is a no-op while banked, carrying or ended', () => {
+    const bankedState = banked().state;
+    const carry = carrying(zone, inRange, false).state;
+    const done = ended();
+    const beaten = beatArea(createTrip(findZone), plantSpecial).state;
+    for (const state of [bankedState, carry, done, beaten]) {
+      const result = beatArea(state, plantSpecial);
+      expect(result.state).toBe(state);
+      expect(result.events).toEqual([]);
+    }
+  });
+
+  it('carries the stars on the snapshot and compares them', () => {
+    const beaten = beatArea(walk(createTrip(findZone), [spotA, outside]).state, plantSpecial).state;
+    const snapshot = tripSnapshot(beaten);
+    expect(snapshot.ending).toEqual(beaten.ending);
+    expect(snapshot.ending?.stars).not.toBe(beaten.ending?.stars);
+    const ending = snapshot.ending as NonNullable<TripSnapshot['ending']>;
+    const stars = ending.stars as NonNullable<typeof ending.stars>;
+    expect(sameTripSnapshot(snapshot, tripSnapshot(beaten))).toBe(true);
+    const changes: TripSnapshot[] = [
+      { ...snapshot, ending: { ...ending, stars: undefined } },
+      { ...snapshot, ending: { ...ending, stars: { ...stars, exit: false } } },
+      { ...snapshot, ending: { ...ending, stars: { ...stars, special: false } } },
+      { ...snapshot, ending: { ...ending, stars: { ...stars, legsOrRescue: false } } },
+    ];
+    for (const changed of changes) {
+      expect(sameTripSnapshot(snapshot, changed)).toBe(false);
+      expect(sameTripSnapshot(changed, snapshot)).toBe(false);
+    }
+  });
+
+  it('starts the next trip with no legs lost and a fresh placement seed (B4)', () => {
+    const beaten = beatArea(hitOnce(farZone, farTarget), plantSpecial).state;
+    const next = newTrip(beaten);
+    expect(next.phase).toBe('swimming');
+    expect(next.legsLost).toBe(0);
+    expect(next.tripSeed).toBe(nextTripSeed(beaten.tripSeed));
+    expect(next.holdings.banked).toEqual(beaten.holdings.banked);
   });
 });

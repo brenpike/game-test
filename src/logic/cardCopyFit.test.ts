@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { CANAL_TREASURES } from './catalogue';
+import { areaLabel } from './areaText';
+import { CANAL_AREA } from './areas';
+import { CANAL_TREASURES, treasureById } from './catalogue';
 import {
   CARD,
   cardButtonsStacked,
@@ -19,7 +21,10 @@ import {
   bankedBodyShort,
   arrivalText,
   type ArrivalReason,
+  type ArrivalStars,
 } from './tripText';
+import { NO_STARS } from './stars';
+import { starRowSize } from './starsUi';
 
 /**
  * Text size estimate that errs wide. Measured with Phaser's wrap rule against Segoe UI, Verdana and
@@ -39,7 +44,25 @@ const CANVAS_HEIGHTS: readonly number[] = [
   320, 340, 360, 375, 414, 440, 480, 568, 600, 667, 740, 768, 844, 932,
 ];
 const BANKED_TOTALS: readonly number[] = [0, 1, 9, 20];
-const ARRIVAL_REASONS: readonly ArrivalReason[] = ['carriedHome', 'wentHome'];
+const ARRIVAL_REASONS: readonly ArrivalReason[] = ['carriedHome', 'wentHome', 'areaBeaten'];
+
+/** Catalogue name of the canal special treasure. Throws when the catalogue has no such treasure. */
+function canalSpecialName(): string {
+  const special = treasureById(CANAL_AREA.specialTreasureId);
+  if (special === undefined) throw new Error(`no catalogue treasure ${CANAL_AREA.specialTreasureId}`);
+  return special.name;
+}
+
+/**
+ * Worst-case stars for the "Area beaten" card: every star missing gives the longest star lines, with
+ * the Area 1 label and the canal special treasure name from the catalogue.
+ */
+const WORST_STARS: ArrivalStars = {
+  areaLabel: areaLabel(CANAL_AREA.number),
+  specialName: canalSpecialName(),
+  earned: NO_STARS,
+  best: NO_STARS,
+};
 
 const SORTED_NAMES: readonly string[] = CANAL_TREASURES.map((treasure) => treasure.name).sort(
   (left, right) => right.length - left.length,
@@ -125,7 +148,10 @@ function supportedCanvases(): Canvas[] {
   return canvases;
 }
 
-/** Tank arrival card sections: head, body, icon rows, actions. */
+/**
+ * Tank arrival card sections: head, body, icon rows, actions. The "Area beaten" card adds a fixed
+ * star row (starRowSize) after the head and names the treasures banked this trip.
+ */
 function arrivalSections(
   reason: ArrivalReason,
   names: readonly string[],
@@ -134,16 +160,20 @@ function arrivalSections(
   axolotls: AxolotlCase = NO_AXOLOTLS,
 ): CardSection[] {
   const textW = cardTextWidth(cssW);
+  const isBeaten = reason === 'areaBeaten';
   const text = arrivalText({
     reason,
     returnedNames: reason === 'carriedHome' ? names : [],
-    bankedThisTripNames: reason === 'wentHome' ? names : [],
+    bankedThisTripNames: reason === 'wentHome' || isBeaten ? names : [],
     bankedTotal: total,
     rescuedNames: axolotls.rescued,
     waitingNames: axolotls.waiting,
+    stars: isBeaten ? WORST_STARS : undefined,
   });
+  const starRow: CardSection[] = isBeaten ? [{ kind: 'fixed', height: starRowSize().h }] : [];
   return [
     { kind: 'fixed', height: Math.max(CARD.headIconPx, titleHeight(text.title, homeTitleWrapWidth(textW))) },
+    ...starRow,
     {
       kind: 'body',
       variants: [bodyFit(`${text.body}\n${text.bankedLine}`, textW), bodyFit(`${text.shortBody}\n${text.bankedLine}`, textW)],
@@ -335,5 +365,27 @@ describe('tilapia fact card copy fit', () => {
     const fit = fitCard(combination.availH, combination.sections);
     expect(fit.clipped).toBe(false);
     expect(fit.bodyVariant).toBe(0);
+  });
+});
+
+describe('area beaten card copy fit (H5, H8)', () => {
+  it('names the canal special treasure and keeps the short body one line at 460x320', () => {
+    expect(WORST_STARS.specialName).toBe('Castle tower');
+    const canvas = { cssW: 460, cssH: 320 };
+    const text = arrivalText({
+      reason: 'areaBeaten',
+      returnedNames: [],
+      bankedThisTripNames: SORTED_NAMES,
+      bankedTotal: 20,
+      stars: WORST_STARS,
+    });
+    expect(text.shortBody.length).toBeLessThanOrEqual(34);
+    expect(estimateLines(text.shortBody, CARD.bodyPx, cardTextWidth(canvas.cssW), REGULAR_EM)).toBe(1);
+  });
+
+  it('places the star row right after the head', () => {
+    const sections = arrivalSections('areaBeaten', SORTED_NAMES.slice(0, 2), 2, 800);
+    expect(sections.map((section) => section.kind)).toEqual(['fixed', 'fixed', 'body', 'icons', 'actions']);
+    expect(sections[1]).toEqual({ kind: 'fixed', height: starRowSize().h });
   });
 });

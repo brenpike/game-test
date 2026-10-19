@@ -1,3 +1,6 @@
+import { AREA_BEATEN_TITLE, bestStarsLine, starLines, starsShortLine } from './areaText';
+import type { AreaStars } from './stars';
+
 /** Label next to the four leg icons in the legs display. */
 export const LEGS_LABEL = 'Legs';
 
@@ -30,8 +33,8 @@ export const GO_HOME_LABEL = 'Go home';
 /** Hint that teaches how banking works. */
 export const BANKING_HINT = 'Bring finds to the Home Spot to keep them safe.';
 
-/** HUD banner shown once every snack in the pond has been eaten. */
-export const ALL_SNACKS_BANNER = 'Yum! You found every snack!';
+/** HUD banner shown once every snack in the area has been eaten, so the exit is open (PRD H2). */
+export const ALL_SNACKS_BANNER = 'Yum! That was the last snack. The exit is open!';
 
 /** Title of the card shown after choosing to go home. */
 export const WENT_HOME_TITLE = 'Welcome home!';
@@ -40,10 +43,27 @@ const EMPTY_BAG_STATUS = 'empty';
 
 const MAX_LISTED_NAMES = 3;
 
-/** Why the tank arrival card is showing: the player chose to go home, or a bubble carried them. */
-export type ArrivalReason = 'wentHome' | 'carriedHome';
+/**
+ * Why the tank arrival card is showing: the player chose to go home, a bubble carried them, or they
+ * reached the open exit and beat the area.
+ */
+export type ArrivalReason = 'wentHome' | 'carriedHome' | 'areaBeaten';
 
-/** Everything the tank arrival card needs to describe how the trip ended. */
+/**
+ * The stars on the "Area beaten" card: the area's UI label (such as "Area 1"), its special treasure
+ * name, the stars earned this trip and the best stars so far (PRD H5 to H7).
+ */
+export interface ArrivalStars {
+  areaLabel: string;
+  specialName: string;
+  earned: AreaStars;
+  best: AreaStars;
+}
+
+/**
+ * Everything the tank arrival card needs to describe how the trip ended. `stars` is read only when
+ * the area was beaten.
+ */
 export interface ArrivalInput {
   reason: ArrivalReason;
   returnedNames: readonly string[];
@@ -53,6 +73,7 @@ export interface ArrivalInput {
   rescuedNames?: readonly string[];
   /** Axolotls carried in the Trip Bag that swam back to where they were found. */
   waitingNames?: readonly string[];
+  stars?: ArrivalStars;
 }
 
 /** Text for the tank arrival card shown in the Home Tank after a trip. */
@@ -208,8 +229,37 @@ function wentHomeShortBody(input: ArrivalInput): string {
   return `${WENT_HOME_SHORT_OPENING} You brought home ${bankedCount} treasures.`;
 }
 
-/** Builds the tank arrival card text for going home or being carried home. */
+const AREA_BEATEN_OPENING = 'You swam through the open exit!';
+
+/** Body of the "Area beaten" card: the exit, what was brought home, then one line per star and the best stars. */
+function areaBeatenBody(bankedThisTripNames: readonly string[], stars: ArrivalStars | undefined): string {
+  const brought =
+    bankedThisTripNames.length === 0
+      ? AREA_BEATEN_OPENING
+      : `${AREA_BEATEN_OPENING} This trip you brought home ${describeTreasures(bankedThisTripNames)}.`;
+  if (stars === undefined) return brought;
+  const lines = [...starLines(stars.earned, stars.specialName), bestStarsLine(stars.areaLabel, stars.best)];
+  return [brought, ...lines].join('\n');
+}
+
+/** Text for the "Area beaten" card (PRD H5): the short body is one line of stars earned and best. */
+function areaBeatenText(input: ArrivalInput): ArrivalText {
+  const { stars } = input;
+  return {
+    title: AREA_BEATEN_TITLE,
+    body: areaBeatenBody(input.bankedThisTripNames, stars),
+    shortBody: stars === undefined ? AREA_BEATEN_OPENING : starsShortLine(stars.earned, stars.best),
+    bankedLine: bankedTotalLine(input.bankedTotal),
+    button: ARRIVAL_OK_LABEL,
+  };
+}
+
+/**
+ * Builds the tank arrival card text for going home, being carried home or beating the area. A beaten
+ * area names the treasures banked this trip, as going home does.
+ */
 export function arrivalText(input: ArrivalInput): ArrivalText {
+  if (input.reason === 'areaBeaten') return areaBeatenText(input);
   const isCarried = input.reason === 'carriedHome';
   return {
     title: isCarried ? TRIP_END_TITLE : WENT_HOME_TITLE,

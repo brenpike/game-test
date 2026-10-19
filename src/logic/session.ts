@@ -6,10 +6,11 @@ import { createCollectibles, type Collectible } from './collectibles';
 import { REAL_MORPHS, STARTER_MORPH, axolotlFindId, isAxolotlFindId, rescueMorphsIn, type RealMorphId } from './morphs';
 import { nextTripSeed } from './placement';
 import { waitingAfterTrip, type WaitingStranded } from './rescue';
+import { bestStarsFor, withStars, type AreaStars, type AreaStarsRecord } from './stars';
 import { createTankLayout, sanitizeLayout, type TankLayout } from './tank';
 import type { TripState } from './trip';
 import type { TripEndReason } from './tripEvents';
-import type { CollectibleSpawn } from './zone';
+import { CANAL_AREA_ID, type CollectibleSpawn } from './zone';
 
 /** Registry key for the session. Never equals a `REGISTRY_KEYS` or `TRIP_REGISTRY_KEYS` value. */
 export const SESSION_REGISTRY_KEY = 'session';
@@ -34,20 +35,22 @@ export interface CollectionBookState {
 
 /**
  * What the hub owns: banked treasure ids (never an axolotl find id), the owned axolotls, the Home
- * Tank layout and the Collection Book.
+ * Tank layout, the Collection Book and the best stars per area (PRD H7, D2).
  */
 export interface HubState {
   banked: string[];
   axolotls: OwnedAxolotl[];
   tank: TankLayout;
   book: CollectionBookState;
+  stars: AreaStarsRecord;
 }
 
 /**
  * What the canal remembers between trips: eaten snack ids, the latest trip seed (null before the
  * first trip) and the stranded axolotl left waiting (null when none). Eaten snacks are kept after
- * going home and cleared after being carried home (PRD A12, A19, ADR 0010). A stranded axolotl met
- * but not banked waits at the same place for the next trip (PRD C5).
+ * going home and cleared after being carried home or beating the area (PRD A12, A19, open question
+ * 14, ADR 0010). A stranded axolotl met but not banked waits at the same place for the next trip
+ * (PRD C5).
  */
 export interface CanalState {
   eatenSnacks: string[];
@@ -77,7 +80,9 @@ export interface TripStart {
 /**
  * What an ended trip hands back: every banked treasure id, the morphs of the axolotls banked, the
  * eaten snack ids, the trip's seed, the stranded axolotl left waiting and whether a tilapia was met.
- * The eaten snack ids are empty after being carried home (PRD A12, A19, ADR 0010).
+ * The eaten snack ids are empty after being carried home or beating the area (PRD A12, A19, open
+ * question 14, ADR 0010). `stars` is the area beaten and the stars earned, set only when the area
+ * was beaten (H6).
  */
 export interface TripEndRecord {
   banked: string[];
@@ -86,11 +91,13 @@ export interface TripEndRecord {
   tripSeed: number;
   waitingStranded: WaitingStranded | null;
   metTilapia: boolean;
+  stars?: { areaId: string; earned: AreaStars };
 }
 
 /**
  * A new session: nothing banked, the starter axolotl of `starterMorph` with its morph found in the
- * Collection Book (PRD C1), an empty tank, no snacks eaten, no trip yet and no axolotl waiting.
+ * Collection Book (PRD C1), an empty tank, no stars, no snacks eaten, no trip yet and no axolotl
+ * waiting.
  */
 export function createSession(starterMorph: RealMorphId = STARTER_MORPH): Session {
   return {
@@ -99,6 +106,7 @@ export function createSession(starterMorph: RealMorphId = STARTER_MORPH): Sessio
       axolotls: [{ id: STARTER_AXOLOTL_ID, morph: starterMorph }],
       tank: createTankLayout(),
       book: { foundMorphs: [starterMorph], tilapiaCard: false },
+      stars: {},
     },
     canal: { eatenSnacks: [], lastTripSeed: null, waitingStranded: null },
   };
@@ -122,26 +130,35 @@ export function tripStart(session: Session, freshSeed: number): TripStart {
   };
 }
 
-/** Whether eaten snacks stay eaten after a trip that ended for `reason`: only after going home (PRD A12, A19, ADR 0010). */
+/**
+ * Whether eaten snacks stay eaten after a trip that ended for `reason`: only after going home. Being
+ * carried home and beating the area both start the snacks over (PRD A12, A19, open question 14, ADR 0010).
+ */
 function keepsEatenSnacks(reason: TripEndReason): boolean {
   return reason === 'wentHome';
 }
 
 /**
- * The record of an ended trip: its banked treasure ids, the morphs of its banked axolotls, the eaten
- * snack ids, its seed, the stranded axolotl left waiting and whether a tilapia was met. The ids of
- * the collected snacks are kept after going home; after being carried home every snack comes back,
- * so the eaten snack ids are empty (PRD A12, A19, ADR 0010). A stranded axolotl met but not banked
- * is left waiting at its place (PRD C5). Throws when the trip has not ended or has no ending.
+ * The record of an ended trip in area `areaId`: its banked treasure ids, the morphs of its banked
+ * axolotls, the eaten snack ids, its seed, the stranded axolotl left waiting and whether a tilapia
+ * was met. The ids of the collected snacks are kept after going home; after being carried home or
+ * beating the area every snack comes back, so the eaten snack ids are empty (PRD A12, A19, open
+ * question 14, ADR 0010). A stranded axolotl met but not banked is left waiting at its place (PRD
+ * C5). A beaten area also records `areaId` and the stars earned (H6). Throws when the trip has not
+ * ended, has no ending, or beat the area with no stars.
  */
-export function tripEndRecord(trip: TripState, snacks: readonly Collectible[]): TripEndRecord {
+export function tripEndRecord(
+  trip: TripState,
+  snacks: readonly Collectible[],
+  areaId: string = CANAL_AREA_ID,
+): TripEndRecord {
   if (trip.phase !== 'ended') {
     throw new Error(`tripEndRecord: trip phase is ${trip.phase}, not ended`);
   }
   if (trip.ending === null) {
     throw new Error('tripEndRecord: the ended trip has no ending');
   }
-  return {
+  const record: TripEndRecord = {
     banked: trip.holdings.banked.filter((id) => !isAxolotlFindId(id)),
     rescued: rescueMorphsIn(trip.holdings.banked),
     eatenSnacks: keepsEatenSnacks(trip.ending.reason)
@@ -151,6 +168,11 @@ export function tripEndRecord(trip: TripState, snacks: readonly Collectible[]): 
     waitingStranded: waitingAfterTrip(trip.rescue, trip.holdings, trip.phase),
     metTilapia: trip.metTilapia,
   };
+  if (trip.ending.reason !== 'areaBeaten') return record;
+  if (trip.ending.stars === undefined) {
+    throw new Error('tripEndRecord: the area was beaten with no stars');
+  }
+  return { ...record, stars: { areaId, earned: { ...trip.ending.stars } } };
 }
 
 /**
@@ -158,9 +180,11 @@ export function tripEndRecord(trip: TripState, snacks: readonly Collectible[]): 
  * the session's and the record's banked treasure ids, so it never shrinks; axolotl find ids are
  * never banked. Each rescued morph not already owned becomes an owned axolotl, appended after the
  * others, and its morph is found in the Collection Book, kept in REAL_MORPHS order (PRD C4). The
- * tilapia fact card stays unlocked once a tilapia was met. The eaten snacks, the trip seed and the
- * waiting stranded axolotl are stored, so eaten snacks are kept after going home and cleared after
- * being carried home, whose record has none (PRD A12, A19, ADR 0010). The tank is untouched.
+ * tilapia fact card stays unlocked once a tilapia was met. Stars earned merge into the best stars
+ * for their area, so they never go down (PRD H7). The eaten snacks, the trip seed and the waiting
+ * stranded axolotl are stored, so eaten snacks are kept after going home and cleared after being
+ * carried home or beating the area, whose records have none (PRD A12, A19, open question 14, ADR
+ * 0010). The tank is untouched.
  */
 export function recordTripEnd(session: Session, record: TripEndRecord): Session {
   const { hub } = session;
@@ -171,14 +195,20 @@ export function recordTripEnd(session: Session, record: TripEndRecord): Session 
     foundMorphs: REAL_MORPHS.map((morph) => morph.id).filter((id) => found.has(id)),
     tilapiaCard: hub.book.tilapiaCard || record.metTilapia,
   };
+  const stars = record.stars ? withStars(hub.stars, record.stars.areaId, record.stars.earned) : hub.stars;
   return {
-    hub: { ...hub, banked, axolotls, book },
+    hub: { ...hub, banked, axolotls, book, stars },
     canal: {
       eatenSnacks: [...record.eatenSnacks],
       lastTripSeed: record.tripSeed,
       waitingStranded: copyWaiting(record.waitingStranded),
     },
   };
+}
+
+/** The best stars earned in area `areaId`, or no stars when it was never beaten (PRD H7). */
+export function bestStars(session: Session, areaId: string): AreaStars {
+  return bestStarsFor(session.hub.stars, areaId);
 }
 
 /** One owned axolotl per morph in `rescued` not owned yet, de-duplicated, in `rescued` order. */
