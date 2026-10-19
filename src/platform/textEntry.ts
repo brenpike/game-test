@@ -2,10 +2,11 @@
  * Browser glue for typing an axolotl name: one real `<input>` over the game canvas, so the
  * on-screen keyboard, IME composition, paste and screen readers all work.
  *
- * The field sets no length attribute: the caller's `fitEdit` rule decides how much text fits, so the
- * limit counts what the caller counts (not UTF-16 units). Each edit is fitted as it lands; while an
- * IME composition is in progress the field is left alone and the fit applies when it ends. The
- * field only ever shows what was typed, trimmed to fit; it is never rewritten to the cleaned name.
+ * The field holds only what the caller's `fitEdit` keeps: which characters stay and how many. When
+ * an edit leaves anything else in the field, the field is rewritten to the kept text with the caret
+ * kept where `fitEdit` puts it. While an IME composition is in progress the field is left alone and
+ * the fit applies when it ends. The field's `maxlength` is only a raw ceiling in UTF-16 units, so a
+ * huge paste or composition cannot grow the field without bound; it is never the length rule.
  *
  * Names stay on the device (ADR 0007): this module makes no network request, never touches
  * storage, and puts the field in no form and gives it no `name`, so the browser offers no
@@ -22,13 +23,18 @@ export interface TextEntryRect {
 }
 
 export interface TextEntryOptions {
-  /** Starting text. */
+  /** Starting text, before fitting: the field opens with `fitEdit(value, value, value.length).value`. */
   readonly value: string;
   /**
-   * Fits an edit to the caller's length rule. `before` is the last accepted text, `after` the
-   * field's text after the edit and `caret` the caret after it, as UTF-16 offsets into `after`.
-   * Returns the text to keep and where its caret goes. Runs after each edit outside an IME
-   * composition, when a composition ends, and on commit.
+   * The field's raw `maxlength` ceiling, in UTF-16 units. A ceiling only, never the length rule:
+   * set it well above anything `fitEdit` keeps, so it only stops a huge paste or composition.
+   */
+  readonly maxRawLength: number;
+  /**
+   * Maps an edit to the text the field keeps (which characters stay and how many) and where its
+   * caret goes. `before` is the last accepted text, `after` the field's text after the edit and
+   * `caret` the caret after it, as UTF-16 offsets into `after`. Runs on open for the starting text,
+   * after each edit outside an IME composition, when a composition ends, and on commit.
    */
   readonly fitEdit: (
     before: string,
@@ -39,9 +45,15 @@ export interface TextEntryOptions {
   readonly ariaLabel: string;
   /** CSS font-family. Defaults to the rounded system stack (art guide 8); never a webfont. */
   readonly font?: string;
-  /** The fitted text, after each edit that changes it; held back while an IME composition is in progress. */
+  /**
+   * The text the field keeps (`fitEdit`'s value), after each edit that changes it; held back while
+   * an IME composition is in progress. Not called for the starting text.
+   */
   readonly onInput: (value: string) => void;
-  /** The final fitted text, on Enter or when the field loses focus. The entry is already closed. */
+  /**
+   * The text the field keeps (`fitEdit`'s value) at the end, on Enter or when the field loses
+   * focus. The entry is already closed.
+   */
   readonly onCommit: (value: string) => void;
   /** Escape was pressed. The entry is already closed. */
   readonly onCancel: () => void;
@@ -89,7 +101,7 @@ interface TextEntrySession {
   readonly options: TextEntryOptions;
   rect: TextEntryRect | undefined;
   composing: boolean;
-  /** The last fitted text; starts at `options.value`. */
+  /** The last fitted text; starts at the fitted starting text. */
   accepted: string;
   closed: boolean;
   readonly handlers: SessionHandlers;
@@ -150,11 +162,17 @@ function placeSession(session: TextEntrySession): void {
   style.height = `${box.height}px`;
 }
 
+/** The starting text as `fitEdit` keeps it, with the caret at its end. */
+function fittedStartingText(options: TextEntryOptions): string {
+  return options.fitEdit(options.value, options.value, options.value.length).value;
+}
+
 /** Builds the unattached field: attributes for a private, uncorrected name, and the UI look. */
-function createInput(options: TextEntryOptions): HTMLInputElement {
+function createInput(options: TextEntryOptions, startingText: string): HTMLInputElement {
   const input = document.createElement('input');
   input.type = 'text';
-  input.value = options.value;
+  input.value = startingText;
+  input.maxLength = options.maxRawLength;
   input.setAttribute('autocomplete', 'off');
   input.setAttribute('autocorrect', 'off');
   input.setAttribute('autocapitalize', 'words');
@@ -332,13 +350,14 @@ function closeSession(session: TextEntrySession): void {
  */
 export function openTextEntry(options: TextEntryOptions): TextEntry {
   if (openSession !== null) closeSession(openSession);
-  const input = createInput(options);
+  const startingText = fittedStartingText(options);
+  const input = createInput(options, startingText);
   const session: TextEntrySession = {
     input,
     options,
     rect: undefined,
     composing: false,
-    accepted: options.value,
+    accepted: startingText,
     closed: false,
     handlers: createHandlers(() => session),
   };

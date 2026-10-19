@@ -23,7 +23,7 @@ But a browser text field can leak what is typed: cloud spellcheck services can b
 - Suggested names make typing optional. The arrows step through 16 suggested names, and the creator starts with a random one, so Done works at once (PRD F17).
 - A name character is a letter with its accents (combining marks, at most 4; any more are dropped), a digit, a space, a hyphen or an apostrophe. A typed name is cleaned to 1 to 12 name characters. Anything else is dropped.
 - The field holds only name characters, through `fitNameEdit` (`src/logic/axolotlNames.ts`), the same rule as the cleaning. Anything a name cannot hold is dropped as it is typed or pasted, with no extra cue. Space runs become one space and a leading space is dropped. A trailing space stays while typing and is trimmed when the name is kept. Typing past 12 does nothing, and a longer paste keeps the start that fits, with the caret after the kept text. During an IME composition the field is left alone; the rule applies when the composition ends, on Enter, or when the field loses focus.
-- The field's `maxlength` is only a raw ceiling (`NAME_FIELD_RAW_MAX`, over four times the longest name the field can hold, in UTF-16 units) so a huge paste or composition cannot grow the field without bound. It is never the name limit.
+- The field's `maxlength` is only a raw ceiling (`NAME_FIELD_RAW_MAX`, four times the longest name the field can hold, in UTF-16 units) so a huge paste or composition cannot grow the field without bound. It is never the name limit.
 - There is no word filter, because names are never shown to anyone else or shared.
 
 ## Alternatives considered

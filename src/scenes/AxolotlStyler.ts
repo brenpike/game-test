@@ -15,7 +15,7 @@ import {
   type TexInfo,
 } from '../art/textures';
 import type { AxolotlLook } from '../logic/axolotlLook';
-import { fitNameEdit } from '../logic/axolotlNames';
+import { NAME_FIELD_RAW_MAX, fitNameEdit } from '../logic/axolotlNames';
 import type { Rect, Size } from '../logic/hudLayout';
 import type { RealMorphId } from '../logic/morphs';
 import type { MotionProfile } from '../logic/motion';
@@ -503,6 +503,7 @@ export class AxolotlStyler {
     this.nameBeforeTyping = this.state.name;
     this.entry = openTextEntry({
       value: this.state.name,
+      maxRawLength: NAME_FIELD_RAW_MAX,
       fitEdit: fitNameEdit,
       ariaLabel: NAME_FIELD_LABEL,
       onInput: (raw) => this.showTypedName(raw),
