@@ -1143,10 +1143,22 @@ describe('legsLost', () => {
 });
 
 describe('beatArea (H5, H6)', () => {
-  const plantSpecial: StarContext = { specialTreasureId: PLANT, rescued: false };
+  const plantSpecial: StarContext = { specialTreasureId: PLANT };
 
   function hitOnce(source: TripSource, target: Point): TripState {
-    return drive(createTrip(source), { axolotlPos: target, reduced: false, dashing: false }, 'hit').state;
+    return hitOnceFrom(createTrip(source), target);
+  }
+
+  function hitOnceFrom(state: TripState, target: Point): TripState {
+    return drive(state, { axolotlPos: target, reduced: false, dashing: false }, 'hit').state;
+  }
+
+  function hitWithFollowingRescue(): TripState {
+    const following = walk(hitOnceFrom(rescueTrip(farZone), farTarget), [strandPlace]).state;
+    expect(following.phase).toBe('swimming');
+    expect(following.legsLost).toBeGreaterThan(0);
+    expect(tripSnapshot(following).rescue?.status).toBe('following');
+    return following;
   }
 
   it('banks the bag like the Home Spot and ends areaBeaten with every id banked this trip', () => {
@@ -1184,7 +1196,7 @@ describe('beatArea (H5, H6)', () => {
       expect(beatArea(state, plantSpecial).state.ending?.stars?.special).toBe(true);
     }
     const canal = createTrip(zone, LEGS, [CANAL_AREA.specialTreasureId]);
-    const canalCtx: StarContext = { specialTreasureId: CANAL_AREA.specialTreasureId, rescued: false };
+    const canalCtx: StarContext = { specialTreasureId: CANAL_AREA.specialTreasureId };
     expect(beatArea(canal, canalCtx).state.ending?.stars?.special).toBe(true);
   });
 
@@ -1197,15 +1209,56 @@ describe('beatArea (H5, H6)', () => {
     });
   });
 
-  it('misses the legs star after a leg is lost, even grown back, unless rescued', () => {
+  it('misses the legs star after a leg is lost, even grown back, with no stranding', () => {
     const hit = hitOnce(farZone, farTarget);
     expect(hit.phase).toBe('swimming');
     expect(beatArea(hit, plantSpecial).state.ending?.stars?.legsOrRescue).toBe(false);
     const regrown: TripState = { ...hit, encounter: { ...hit.encounter, legs: createLegs() } };
     expect(beatArea(regrown, plantSpecial).state.ending?.stars?.legsOrRescue).toBe(false);
-    const rescued: StarContext = { ...plantSpecial, rescued: true };
-    expect(beatArea(hit, rescued).state.ending?.stars?.legsOrRescue).toBe(true);
     expect(beatArea(createTrip(findZone), plantSpecial).state.ending?.stars?.legsOrRescue).toBe(true);
+  });
+
+  it('banks a following rescue at the exit: banked, safe, counting only treasures as banked', () => {
+    const following = hitWithFollowingRescue();
+    expect(following.holdings.bag).toEqual([WILD]);
+    const result = beatArea(following, plantSpecial);
+    expect(result.events).toEqual([{ type: 'banked', ids: [WILD] }]);
+    const { state } = result;
+    expect(state.ending?.bankedThisTrip).toEqual([WILD]);
+    expect(state.holdings.bag).toEqual([]);
+    expect(state.holdings.banked).toContain(WILD);
+    const snapshot = tripSnapshot(state);
+    expect(snapshot.rescue?.status).toBe('safe');
+    expect(snapshot.banked).toBe(0);
+  });
+
+  it('earns the legs star after a leg is lost when the rescue is banked at the exit', () => {
+    const following = hitWithFollowingRescue();
+    expect(beatArea(following, plantSpecial).state.ending?.stars?.legsOrRescue).toBe(true);
+  });
+
+  it('earns the legs star after a leg is lost when the rescue was banked at the Home Spot earlier this trip', () => {
+    const bankedState = walk(hitWithFollowingRescue(), [outside, home]).state;
+    expect(bankedState.phase).toBe('banked');
+    expect(bankedState.holdings.banked).toContain(WILD);
+    const resumed = keepExploring(bankedState);
+    const result = beatArea(resumed, plantSpecial);
+    expect(result.events).toEqual([]);
+    expect(result.state.legsLost).toBeGreaterThan(0);
+    expect(result.state.ending?.stars?.legsOrRescue).toBe(true);
+  });
+
+  it('misses the legs star after a leg is lost when the rescue is still waiting', () => {
+    const waiting = hitOnceFrom(rescueTrip(farZone), farTarget);
+    expect(waiting.legsLost).toBeGreaterThan(0);
+    expect(tripSnapshot(waiting).rescue?.status).toBe('waiting');
+    const result = beatArea(waiting, plantSpecial);
+    expect(result.state.ending?.stars?.legsOrRescue).toBe(false);
+    expect(tripSnapshot(result.state).rescue?.status).toBe('waiting');
+  });
+
+  it('earns the legs star with no leg lost and the rescue never reached', () => {
+    expect(beatArea(rescueTrip(farZone), plantSpecial).state.ending?.stars?.legsOrRescue).toBe(true);
   });
 
   it('is a no-op while banked, carrying or ended', () => {

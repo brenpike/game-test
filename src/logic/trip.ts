@@ -118,12 +118,12 @@ export interface TripOptions {
 }
 
 /**
- * What the stars of a beaten area depend on beyond the trip: the area's special treasure id and
- * whether the stranded axolotl was rescued this trip (PRD H6).
+ * What the stars of a beaten area depend on beyond the trip: the area's special treasure id. The
+ * rescue part of star 3 comes from the trip itself: a rescue banked this trip, at the Home Spot or
+ * the exit, or no leg lost this trip (PRD H6).
  */
 export interface StarContext {
   specialTreasureId: string;
-  rescued: boolean;
 }
 
 /** Encounter context, carry tuning and find tuning for a trip step. */
@@ -299,7 +299,8 @@ export function eatSnacks(
  * input state unchanged with no events. Banks the Trip Bag first, as at the Home Spot (A14), emitting
  * `banked` when it was not empty, then ends with reason 'areaBeaten', nothing returned, every id
  * banked this trip and the stars earned (H6): the exit, the special treasure when banked now or on
- * an earlier trip, and a rescue or no leg lost this trip.
+ * an earlier trip, and a rescue banked this trip (at the Home Spot or the exit) or no leg lost this
+ * trip. Banking comes first so a following axolotl banked at the exit counts as rescued.
  */
 export function beatArea(state: TripState, ctx: StarContext): TripStepResult {
   if (state.phase !== 'swimming') return { state, events: [] };
@@ -310,7 +311,7 @@ export function beatArea(state: TripState, ctx: StarContext): TripStepResult {
   const stars = earnStars({
     reachedExit: true,
     specialOwned: next.holdings.banked.includes(ctx.specialTreasureId),
-    rescued: ctx.rescued,
+    rescued: next.bankedThisTrip.some(isAxolotlFindId),
     legLost: next.legsLost > 0,
   });
   const ending: TripEnding = {

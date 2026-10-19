@@ -654,12 +654,11 @@ export class SwimScene extends Phaser.Scene {
 
   /**
    * Ends the trip at the open exit, once per trip: banks the Trip Bag and leaves for the Home Tank
-   * the same way Go home does. `rescued` is false because there are no stranded axolotls until #13
-   * wires the rescue in.
+   * the same way Go home does.
    */
   private endAtExit(): void {
     if (this.areaBeaten) return;
-    const result = beatArea(this.trip, { specialTreasureId: this.area.specialTreasureId, rescued: false });
+    const result = beatArea(this.trip, { specialTreasureId: this.area.specialTreasureId });
     if (result.state === this.trip) return;
     this.areaBeaten = true;
     this.trip = result.state;
