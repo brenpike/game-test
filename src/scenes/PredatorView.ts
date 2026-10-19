@@ -282,10 +282,19 @@ export class PredatorView {
   }
 
   /**
-   * Full motion: the star grows and rises over BOOST_GROW_S, holds, then fades over the last
-   * BOOST_FADE_S. Reduced motion: full size at the leg root, fully opaque, until it is hidden.
+   * Stars show only while swimming: any other phase ends them at once, as the HUD badge is hidden,
+   * so they never resume after the banked card. Full motion: the star grows and rises over
+   * BOOST_GROW_S, holds, then fades over the last BOOST_FADE_S. Reduced motion: full size at the
+   * leg root, fully opaque, until it is hidden.
    */
   private renderBoostStars(frame: PredatorFrame): void {
+    if (frame.phase !== 'swimming') {
+      for (const star of this.boostStars) {
+        star.age = star.life;
+        star.image.setVisible(false);
+      }
+      return;
+    }
     const baseScale = 1 / this.boostStarInfo.scale;
     for (const star of this.boostStars) {
       if (this.advanceEffect(star, frame) === null) continue;
