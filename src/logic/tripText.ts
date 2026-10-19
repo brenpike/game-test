@@ -7,7 +7,7 @@ export const TRIP_END_TITLE = 'Carried home!';
 /** Body of the carried-home card: kind, short, and readable by an 8-year-old. */
 export const TRIP_END_BODY =
   'A big bubble floated you home. You are safe, and all four legs grew back. ' +
-  'You kept every snack you ate.';
+  'All the snacks are back, too.';
 
 /** Button on the tank arrival card that closes it and shows the Home Tank. */
 export const ARRIVAL_OK_LABEL = 'OK';

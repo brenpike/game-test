@@ -10,7 +10,7 @@ Version 0.7.0 is playable in one canal zone:
 
 - Swim with the on-screen swim pad, or the arrow keys or WASD.
 - Use Tail Dash, ride the current, and eat snacks.
-- Dodge three tilapia. A hit costs a leg, and legs regrow. If you lose all four, you are carried home and you lose the finds you had not banked.
+- Dodge three tilapia. A hit costs a leg, and legs regrow. If you lose all four, you are carried home, you lose the finds you had not banked, and the snacks start over.
 - Find hidden treasures: Decorations, Wearables, and Paint shells for Dream colours. Each has a rarity badge, and hint sparkles help you look.
 - The hiding spots shuffle each trip.
 - Bank your finds at the Home Spot to keep them safe.

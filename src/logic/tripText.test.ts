@@ -123,11 +123,12 @@ describe('trip text', () => {
     }
   });
 
-  it('says the axolotl is safe with four legs and kept its snacks', () => {
+  it('says the axolotl is safe with four legs and the snacks are back', () => {
     const lower = TRIP_END_BODY.toLowerCase();
     expect(lower).toContain('safe');
     expect(lower).toContain('four legs');
-    expect(lower).toMatch(/kept every snack/);
+    expect(lower).toMatch(/snacks are back/);
+    expect(lower).not.toMatch(/kept every snack/);
   });
 
   it('labels the arrival card button "OK"', () => {

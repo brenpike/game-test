@@ -6,6 +6,7 @@ import { createCollectibles, type Collectible } from './collectibles';
 import { nextTripSeed } from './placement';
 import { createTankLayout, sanitizeLayout, type TankLayout } from './tank';
 import type { TripState } from './trip';
+import type { TripEndReason } from './tripEvents';
 import type { CollectibleSpawn } from './zone';
 
 /** Registry key for the session. Never equals a `REGISTRY_KEYS` or `TRIP_REGISTRY_KEYS` value. */
@@ -26,7 +27,11 @@ export interface HubState {
   tank: TankLayout;
 }
 
-/** What the canal remembers between trips: eaten snack ids and the latest trip seed (null before the first trip). */
+/**
+ * What the canal remembers between trips: eaten snack ids and the latest trip seed (null before the
+ * first trip). Eaten snacks are kept after going home and cleared after being carried home (PRD A12,
+ * A19, ADR 0010).
+ */
 export interface CanalState {
   eatenSnacks: string[];
   lastTripSeed: number | null;
@@ -45,7 +50,10 @@ export interface TripStart {
   tripSeed: number;
 }
 
-/** What an ended trip hands back: every banked id, the eaten snack ids and the trip's seed. */
+/**
+ * What an ended trip hands back: every banked id, the eaten snack ids and the trip's seed. The eaten
+ * snack ids are empty after being carried home (PRD A12, A19, ADR 0010).
+ */
 export interface TripEndRecord {
   banked: string[];
   eatenSnacks: string[];
@@ -73,17 +81,29 @@ export function tripStart(session: Session, freshSeed: number): TripStart {
   };
 }
 
+/** Whether eaten snacks stay eaten after a trip that ended for `reason`: only after going home (PRD A12, A19, ADR 0010). */
+function keepsEatenSnacks(reason: TripEndReason): boolean {
+  return reason === 'wentHome';
+}
+
 /**
- * The record of an ended trip: its banked ids, the ids of the collected snacks and its seed.
- * Throws when the trip has not ended.
+ * The record of an ended trip: its banked ids, the eaten snack ids and its seed. The ids of the
+ * collected snacks are kept after going home; after being carried home every snack comes back, so
+ * the eaten snack ids are empty (PRD A12, A19, ADR 0010). Throws when the trip has not ended or has
+ * no ending.
  */
 export function tripEndRecord(trip: TripState, snacks: readonly Collectible[]): TripEndRecord {
   if (trip.phase !== 'ended') {
     throw new Error(`tripEndRecord: trip phase is ${trip.phase}, not ended`);
   }
+  if (trip.ending === null) {
+    throw new Error('tripEndRecord: the ended trip has no ending');
+  }
   return {
     banked: [...trip.holdings.banked],
-    eatenSnacks: snacks.filter((snack) => snack.collected).map((snack) => snack.id),
+    eatenSnacks: keepsEatenSnacks(trip.ending.reason)
+      ? snacks.filter((snack) => snack.collected).map((snack) => snack.id)
+      : [],
     tripSeed: trip.tripSeed,
   };
 }
@@ -91,7 +111,8 @@ export function tripEndRecord(trip: TripState, snacks: readonly Collectible[]): 
 /**
  * Takes an ended trip into the session. Banked becomes the order-preserving, de-duplicated union of
  * the session's and the record's banked ids, so it never shrinks. The eaten snacks and the trip seed
- * are stored. The axolotls and the tank are untouched.
+ * are stored, so eaten snacks are kept after going home and cleared after being carried home, whose
+ * record has none (PRD A12, A19, ADR 0010). The axolotls and the tank are untouched.
  */
 export function recordTripEnd(session: Session, record: TripEndRecord): Session {
   return {

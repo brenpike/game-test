@@ -148,6 +148,12 @@ describe('tripEndRecord', () => {
     expect(() => tripEndRecord(swimming, [])).toThrow(/swimming/);
   });
 
+  it('throws when an ended trip has no ending', () => {
+    const swimming = createTrip(zone, LEGS, [], FIRST_SEED);
+    const endless: TripState = { ...swimming, phase: 'ended', ending: null };
+    expect(() => tripEndRecord(endless, [])).toThrow(/no ending/);
+  });
+
   it('records a went-home trip: the new find banked, the eaten snacks and the seed', () => {
     const trip = startTrip(createSession(), FIRST_SEED);
     const { ended, id } = wentHome(trip);
@@ -160,14 +166,16 @@ describe('tripEndRecord', () => {
     });
   });
 
-  it('records a carried-home trip: the lost find is not owned, banked finds are kept (A11, A12, B9)', () => {
+  it('records a carried-home trip: the lost find is not owned, banked finds are kept, no snacks stay eaten (A11, A12, A19, B9)', () => {
     const first = wentHome(startTrip(createSession(), FIRST_SEED));
     const session = recordTripEnd(createSession(), tripEndRecord(first.ended, []));
     const lost = carriedHome(startTrip(session, 0), [first.id]);
-    const rec = tripEndRecord(lost.ended, []);
+    const snacks = eatSnacks(restoreSnacks(zone.collectibles, []), 2);
+    const rec = tripEndRecord(lost.ended, snacks);
     expect(lost.ended.ending?.returned).toEqual([lost.id]);
     expect(rec.banked).toEqual([first.id]);
     expect(rec.banked).not.toContain(lost.id);
+    expect(rec.eatenSnacks).toEqual([]);
     const after = recordTripEnd(session, rec);
     expect(after.hub.banked).toEqual([first.id]);
     expect(after.canal.lastTripSeed).toBe(nextTripSeed(FIRST_SEED));
@@ -201,7 +209,7 @@ describe('recordTripEnd', () => {
   });
 });
 
-describe('restoreSnacks (A19 as today)', () => {
+describe('restoreSnacks (A12, A19)', () => {
   it('marks eaten ids collected and ignores unknown ids', () => {
     const eaten = [zone.collectibles[1].id, 'snack-unknown'];
     const snacks = restoreSnacks(zone.collectibles, eaten);
@@ -209,7 +217,7 @@ describe('restoreSnacks (A19 as today)', () => {
     expect(snacks.filter((snack) => snack.collected).map((snack) => snack.id)).toEqual([zone.collectibles[1].id]);
   });
 
-  it('brings eaten snacks back as eaten on the next trip, after going home or being carried home', () => {
+  it('keeps eaten snacks after going home and brings every snack back after being carried home', () => {
     const snacks = eatSnacks(restoreSnacks(zone.collectibles, []), 3);
     const went = wentHome(startTrip(createSession(), FIRST_SEED));
     const session = recordTripEnd(createSession(), tripEndRecord(went.ended, snacks));
@@ -217,7 +225,10 @@ describe('restoreSnacks (A19 as today)', () => {
     expect(restored).toEqual(snacks);
     const lost = carriedHome(startTrip(session, 0), [went.id]);
     const after = recordTripEnd(session, tripEndRecord(lost.ended, restored));
-    expect(restoreSnacks(zone.collectibles, tripStart(after, 0).eatenSnacks)).toEqual(snacks);
+    expect(tripStart(after, 0).eatenSnacks).toEqual([]);
+    expect(restoreSnacks(zone.collectibles, tripStart(after, 0).eatenSnacks)).toEqual(
+      restoreSnacks(zone.collectibles, []),
+    );
   });
 });
 
