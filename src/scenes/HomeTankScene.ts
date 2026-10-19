@@ -1,13 +1,16 @@
 import * as Phaser from 'phaser';
-import { AXO_SCENE_SCALE, type AxolotlPose } from '../art/drawAxolotl';
+import type { AxolotlPose } from '../art/drawAxolotl';
 import { DEPTH } from '../art/layers';
 import {
   HOME_TANK_WALL,
+  INK,
+  LW,
   MORPH_PALETTES,
   SURFACE_LINE,
   SURFACE_LINE_WIDTH,
   T_STATIC,
   UI_PANEL,
+  WHITE,
   type MorphPalette,
 } from '../art/palette';
 import type { IconKind } from '../art/drawUi';
@@ -15,12 +18,28 @@ import { createAxolotlTexture, type AxolotlTexture, type TexInfo } from '../art/
 import { areaLabel } from '../logic/areaText';
 import { areaById, type AreaData } from '../logic/areas';
 import { GAME_EVENTS, REGISTRY_KEYS, type ReducedMotionPayload } from '../logic/gameEvents';
-import type { Size } from '../logic/hudLayout';
+import type { Rect, Size } from '../logic/hudLayout';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { NO_REPAINT, pickSecondaryRepaint } from '../logic/repaintBudget';
-import { bestStars, canRescueMore, setTankLayout, type Session } from '../logic/session';
+import {
+  bestStars,
+  canRescueMore,
+  restyleAxolotl,
+  setTankLayout,
+  type OwnedAxolotl,
+  type Session,
+} from '../logic/session';
 import { hubStarsBadgeRect } from '../logic/starsUi';
+import type { StylerAxolotl } from '../logic/styler';
 import { TANK, tankFrame, tankToCss, type TankFrame, type TankLayout } from '../logic/tank';
+import {
+  axolotlFocusIndex,
+  nameTagRect,
+  stepTankFocus,
+  tankFocusTarget,
+  touchHitRect,
+  type TankFocusTarget,
+} from '../logic/tankPick';
 import { tankSwimPose } from '../logic/tankSwim';
 import { HOME_TANK_NAME } from '../logic/tankText';
 import {
@@ -28,7 +47,6 @@ import {
   UI,
   hubButtonLook,
   hubLayout,
-  nextFocusIndex,
   tankKeyFor,
   type HubActionId,
   type HubButtonSpec,
@@ -36,6 +54,7 @@ import {
 } from '../logic/tankUi';
 import type { TripEnding } from '../logic/tripEvents';
 import { SURF, waveY } from '../logic/zone';
+import { AxolotlStyler } from './AxolotlStyler';
 import {
   SCENE_KEYS,
   blinkAt,
@@ -73,6 +92,12 @@ const CAPTURED_KEYS: readonly number[] = [
   Phaser.Input.Keyboard.KeyCodes.SPACE,
   Phaser.Input.Keyboard.KeyCodes.BACKSPACE,
 ];
+const NAME_TAG_PX = 18;
+/** Double focus ring round a focused axolotl, as on the decorate footprints (art guide 7f, 8). */
+const RING_RADIUS_PX = 18;
+const RING_LINE_PX = 3;
+const RING_INNER_PX = LW / 2 + 1.5;
+const RING_OUTER_PX = LW / 2 + 4.5;
 
 /** The icon on each hub action button. */
 const HUB_ICONS: Readonly<Record<HubActionId, IconKind>> = Object.freeze({
@@ -84,8 +109,9 @@ const HUB_ICONS: Readonly<Record<HubActionId, IconKind>> = Object.freeze({
 
 /**
  * Home Tank draw order (art guide 7f): back layer (wall to gravel), placed Decorations, glass shine,
- * axolotls, surface line, tank outline and lid front, hub UI and the decorate toolbar, the Treasure
- * Chest and the Collection Book (never open together), then the tank arrival card on top.
+ * axolotls, surface line, tank outline and lid front, hub UI (with a focused axolotl's ring and name
+ * tag) and the decorate toolbar, the Treasure Chest, the Collection Book or the restyle screen (never
+ * open together), then the tank arrival card on top.
  */
 const TANK_DEPTH = Object.freeze({
   back: DEPTH.bg,
@@ -98,13 +124,14 @@ const TANK_DEPTH = Object.freeze({
   chest: DEPTH.ui + 8,
   book: DEPTH.ui + 8,
   arrival: DEPTH.ui + 9,
+  restyle: DEPTH.ui + 8,
 });
 
 /**
  * What the Home Tank is showing and where keys go, in priority order: the tank arrival card, the
- * Treasure Chest, the Collection Book, decorate mode, or the hub.
+ * Treasure Chest, the Collection Book, decorate mode, restyling an axolotl (PRD F6), or the hub.
  */
-type TankMode = 'arrival' | 'chest' | 'book' | 'decorate' | 'hub';
+type TankMode = 'arrival' | 'chest' | 'book' | 'decorate' | 'restyle' | 'hub';
 
 /** One hub action button. */
 interface HubButton {
@@ -112,7 +139,7 @@ interface HubButton {
   button: UiButton;
 }
 
-/** One owned axolotl swimming in the tank, with its own texture, morph colours and pose cache. */
+/** One owned axolotl swimming in the tank, with its own texture, morph colours, pose cache and tap area. */
 interface TankSwimmer {
   id: string;
   texture: AxolotlTexture;
@@ -123,6 +150,27 @@ interface TankSwimmer {
   wanted?: AxolotlPose;
   /** Seconds since the last repaint, for the low frame rate repaint cap. */
   redrawAcc: number;
+  /** Tap area in texture px, kept at least the touch target size (touchHitRect). */
+  hitArea: Phaser.Geom.Rectangle;
+  /** Whether a press began on this axolotl, so only a press and release on it picks it. */
+  pressed: boolean;
+}
+
+/** The double focus ring (art guide 8) round `rect`: inner white, outer ink, both opaque. */
+function strokeAxolotlRing(graphics: Phaser.GameObjects.Graphics, rect: Rect): void {
+  for (const [outset, colour] of [
+    [RING_INNER_PX, WHITE],
+    [RING_OUTER_PX, INK],
+  ] as const) {
+    graphics.lineStyle(RING_LINE_PX, cssColor(colour).color, 1);
+    graphics.strokeRoundedRect(
+      rect.x - outset,
+      rect.y - outset,
+      rect.w + 2 * outset,
+      rect.h + 2 * outset,
+      RING_RADIUS_PX + outset,
+    );
+  }
 }
 
 /** Focus step for a hub key: next, right and down step forward; previous, left and up step back; else 0. */
@@ -146,11 +194,13 @@ function placeTankLayer(image: Phaser.GameObjects.Image, info: TexInfo, frame: T
 
 /**
  * The Home Tank hub (PRD C7, C8): the tank on the wall, every owned axolotl swimming on its own
- * in its morph's colours (still poses under reduced motion), the animated surface line, the hub
- * actions Go exploring, Decorate, Treasure Chest and Collection Book, by touch and by keyboard, and
- * the best-stars badge of the area (H7). After a trip the tank arrival card shows first and takes
- * every key and press until it closes; after beating the area it is the "Area beaten" card, and
- * closing it leaves the player in the hub.
+ * in its morph's colours and its own look (still poses under reduced motion), the animated surface
+ * line, the hub actions Go exploring, Decorate, Treasure Chest and Collection Book, by touch and by
+ * keyboard, and the best-stars badge of the area (H7). After a trip the tank arrival card shows first
+ * and takes every key and press until it closes; after beating the area it is the "Area beaten" card,
+ * and closing it leaves the player in the hub. The hub focus runs over the hub buttons and then the
+ * axolotls, and a tap on an axolotl, or Enter on a focused one, opens the restyle screen for it (PRD
+ * F6).
  */
 export class HomeTankScene extends Phaser.Scene {
   private assets!: GameAssets;
@@ -183,6 +233,10 @@ export class HomeTankScene extends Phaser.Scene {
   private chest!: TreasureChestView;
   private book!: CollectionBookView;
   private arrivalCard!: TankArrivalCard;
+  private pickRing!: Phaser.GameObjects.Graphics;
+  private nameTagPanel!: Phaser.GameObjects.Graphics;
+  private nameTagText!: Phaser.GameObjects.Text;
+  private restyler: AxolotlStyler | null = null;
 
   constructor() {
     super(SCENE_KEYS.homeTank);
@@ -198,6 +252,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.swimmers = [];
     this.hubButtons = [];
     this.titleFits = false;
+    this.restyler = null;
   }
 
   create(): void {
@@ -214,6 +269,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.buildSwimmers();
     this.buildHub();
     this.buildStarsBadge();
+    this.buildPickFocus();
     this.chest = new TreasureChestView(
       this,
       { baked: this.assets.baked, treasure: this.assets.treasure },
@@ -248,8 +304,9 @@ export class HomeTankScene extends Phaser.Scene {
     this.refreshHubFocus();
   }
 
-  update(_time: number, deltaMs: number): void {
+  update(time: number, deltaMs: number): void {
     this.animate(Math.min(Math.max(deltaMs / 1000, 0), 0.05));
+    this.restyler?.update(time, deltaMs);
   }
 
   // ---- build ---------------------------------------------------------------
@@ -281,19 +338,56 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * One swimmer per owned axolotl in its morph's colours, each with its own texture so their poses
-   * never share a frame.
+   * One swimmer per owned axolotl in its morph's colours and its own look, each with its own texture
+   * so their poses never share a frame. Baked at the boot bake scale; the look's size factor is
+   * applied by the texture.
    */
   private buildSwimmers(): void {
-    const bakeScale = this.assets.axolotl.scale;
-    this.swimmers = this.session.hub.axolotls.map((axolotl): TankSwimmer => {
-      const texture = createAxolotlTexture(this, `tank-axolotl-${axolotl.id}`, bakeScale);
+    const bakeScale = this.assets.axolotl.bakeScale;
+    this.swimmers = this.session.hub.axolotls.map((axolotl, index): TankSwimmer => {
+      const texture = createAxolotlTexture(this, `tank-axolotl-${axolotl.id}`, bakeScale, axolotl.look);
       const image = this.add
         .image(0, 0, texture.key)
         .setOrigin(texture.info.originNormX, texture.info.originNormY)
         .setDepth(TANK_DEPTH.axolotls);
-      return { id: axolotl.id, texture, palette: MORPH_PALETTES[axolotl.morph], image, lastPose: null, redrawAcc: 0 };
+      const hitArea = new Phaser.Geom.Rectangle(0, 0, texture.info.pxW, texture.info.pxH);
+      const swimmer: TankSwimmer = {
+        id: axolotl.id,
+        texture,
+        palette: MORPH_PALETTES[axolotl.morph],
+        image,
+        lastPose: null,
+        redrawAcc: 0,
+        hitArea,
+        pressed: false,
+      };
+      this.bindSwimmerTap(swimmer, index);
+      return swimmer;
     });
+  }
+
+  /** A press and release on an axolotl, in the hub, picks it; leaving it first cancels the press. */
+  private bindSwimmerTap(swimmer: TankSwimmer, index: number): void {
+    const { image } = swimmer;
+    image.setInteractive({
+      hitArea: swimmer.hitArea,
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
+    image.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
+      swimmer.pressed = this.mode === 'hub';
+    });
+    image.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
+      swimmer.pressed = false;
+    });
+    image.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.releaseSwimmer(swimmer, index));
+  }
+
+  /** The focused axolotl's double focus ring and its name tag (a white panel with the name in bold ink 18 px). */
+  private buildPickFocus(): void {
+    this.pickRing = this.add.graphics().setDepth(TANK_DEPTH.hub);
+    this.nameTagPanel = this.add.graphics().setDepth(TANK_DEPTH.hub);
+    this.nameTagText = this.add.text(0, 0, '', uiTextStyle(NAME_TAG_PX, this.view.fit.dpr)).setDepth(TANK_DEPTH.hub);
   }
 
   /** The hub actions in focus order (Go exploring first) and the Home Tank name panel. */
@@ -375,8 +469,11 @@ export class HomeTankScene extends Phaser.Scene {
     this.refreshHubFocus();
   }
 
-  /** Leaves the hub for the Treasure Chest, the Collection Book or decorate mode: its buttons and name panel hide. */
-  private leaveHub(mode: 'chest' | 'book' | 'decorate'): void {
+  /**
+   * Leaves the hub for the Treasure Chest, the Collection Book, decorate mode or restyle: its buttons
+   * and name panel hide.
+   */
+  private leaveHub(mode: 'chest' | 'book' | 'decorate' | 'restyle'): void {
     this.mode = mode;
     this.applyHubVisibility();
     this.refreshHubFocus();
@@ -455,13 +552,91 @@ export class HomeTankScene extends Phaser.Scene {
     writeSession(this.registry, this.session);
   }
 
+  /** Picks the axolotl when the press began on it and the hub still has the input. */
+  private releaseSwimmer(swimmer: TankSwimmer, index: number): void {
+    const wasPressed = swimmer.pressed;
+    swimmer.pressed = false;
+    if (wasPressed && this.mode === 'hub') this.openRestyle(index);
+  }
+
+  /** The owned axolotl the swimmer at `index` shows. Throws when the session does not own it. */
+  private swimmerAxolotl(index: number): OwnedAxolotl {
+    const id = this.swimmers[index]?.id;
+    const axolotl = this.session.hub.axolotls.find((owned) => owned.id === id);
+    if (axolotl === undefined) throw new Error(`HomeTankScene: no owned axolotl for swimmer ${index}`);
+    return axolotl;
+  }
+
+  /**
+   * Opens the restyle screen (PRD F6) for the axolotl at `index`, starting from its name, look and
+   * morph (shown read-only).
+   * The hub hides and every key goes to the styler until Done or Cancel.
+   */
+  private openRestyle(index: number): void {
+    const axolotl = this.swimmerAxolotl(index);
+    this.leaveHub('restyle');
+    this.restyler = new AxolotlStyler(this, this.assets, this.view, TANK_DEPTH.restyle, {
+      mode: 'restyle',
+      motion: () => this.motion,
+      initial: { name: axolotl.name, look: axolotl.look, morph: axolotl.morph },
+      onDone: (styled) => this.finishRestyle(index, styled),
+      onCancel: () => this.closeRestyle(index),
+    });
+  }
+
+  /**
+   * Done in restyle: stores the new name and look (the morph and every other field stay), shows the
+   * look on that axolotl's swimmer, and goes back to the hub with that axolotl focused.
+   */
+  private finishRestyle(index: number, styled: StylerAxolotl): void {
+    const { id } = this.swimmerAxolotl(index);
+    this.session = restyleAxolotl(readSession(this.registry), id, { name: styled.name, look: styled.look });
+    writeSession(this.registry, this.session);
+    const swimmer = this.swimmers[index];
+    swimmer.texture.setLook(this.swimmerAxolotl(index).look);
+    this.applySwimmerTexture(swimmer);
+    this.closeRestyle(index);
+  }
+
+  /** Done or Cancel in restyle: removes the styler and goes back to the hub with the axolotl at `index` focused. */
+  private closeRestyle(index: number): void {
+    this.restyler?.destroy();
+    this.restyler = null;
+    this.showHub(axolotlFocusIndex(index, this.hubButtons.length));
+  }
+
+  /**
+   * Shows a swimmer's texture after its look changed. A size change re-bakes the texture, so the
+   * texture, origin, tap area and scale are applied again.
+   */
+  private applySwimmerTexture(swimmer: TankSwimmer): void {
+    const { texture } = swimmer;
+    swimmer.image
+      .setTexture(texture.key)
+      .setOrigin(texture.info.originNormX, texture.info.originNormY)
+      .setScale(texture.displayScale(this.frame.scale));
+    this.fitSwimmerHitArea(swimmer);
+  }
+
+  /** Sizes a swimmer's tap area to its texture, at least the touch target size at the current tank scale. */
+  private fitSwimmerHitArea(swimmer: TankSwimmer): void {
+    const { info } = swimmer.texture;
+    const area = touchHitRect({ w: info.pxW, h: info.pxH }, swimmer.texture.displayScale(this.frame.scale));
+    swimmer.hitArea.setTo(area.x, area.y, area.w, area.h);
+  }
+
   // ---- input ---------------------------------------------------------------
 
   /**
-   * Routes a key to what has the input: the arrival card, the Treasure Chest, the Collection Book,
-   * decorate mode, or the hub. Unmapped keys are ignored, and so is a held confirm outside the hub.
+   * Routes a key to what has the input: the restyle screen (every key, as is), the arrival card, the
+   * Treasure Chest, the Collection Book, decorate mode, or the hub. Unmapped keys are ignored, and so
+   * is a held confirm outside the hub.
    */
   private handleKeyDown(event: KeyboardEvent): void {
+    if (this.mode === 'restyle') {
+      this.restyler?.handleKey(event);
+      return;
+    }
     const action = tankKeyFor(event.key, event.shiftKey);
     if (action === null) return;
     switch (this.mode) {
@@ -488,23 +663,63 @@ export class HomeTankScene extends Phaser.Scene {
     if (action === 'confirm' && !event.repeat) this.arrivalCard.press();
   }
 
-  /** Confirm presses the focused hub button, ignoring key repeat; the arrows and Tab move the focus. */
+  /**
+   * Confirm presses the focused hub button or opens restyle for the focused axolotl, ignoring key
+   * repeat; the arrows and Tab move the focus over the hub buttons, then the axolotls.
+   */
   private handleHubKey(action: TankKey, event: KeyboardEvent): void {
     if (action === 'confirm') {
-      if (!event.repeat) this.runHubAction(this.hubButtons[this.focusIndex].id);
+      if (!event.repeat) this.pressFocused();
       return;
     }
     const step = hubFocusStep(action);
     if (step === 0) return;
-    this.focusIndex = nextFocusIndex(this.focusIndex, this.hubButtons.length, step);
+    this.focusIndex = stepTankFocus(this.focusIndex, this.hubButtons.length, this.swimmers.length, step);
     this.refreshHubFocus();
   }
 
-  /** Shows the focus ring on the focused hub button, only while the hub has the input. */
+  /** What the hub focus is on: a hub button or an axolotl, or null when nothing is focused. */
+  private focusTarget(): TankFocusTarget | null {
+    return tankFocusTarget(this.focusIndex, this.hubButtons.length, this.swimmers.length);
+  }
+
+  /** Presses the focused hub button, or opens restyle for the focused axolotl. */
+  private pressFocused(): void {
+    const target = this.focusTarget();
+    if (target === null) return;
+    if (target.kind === 'hub') {
+      this.runHubAction(this.hubButtons[target.i].id);
+      return;
+    }
+    this.openRestyle(target.i);
+  }
+
+  /**
+   * Shows the focus ring on the focused hub button, only while the hub has the input, and lets the
+   * axolotls take taps only then.
+   */
   private refreshHubFocus(): void {
     this.hubButtons.forEach((hubButton, index) =>
       hubButton.button.setFocused(this.mode === 'hub' && index === this.focusIndex),
     );
+    this.applySwimmerInput();
+    this.renderPickFocus();
+  }
+
+  /**
+   * Axolotls take taps only in the hub, so they never block a Decoration press in decorate mode;
+   * a press in progress is dropped when the hub loses the input.
+   */
+  private applySwimmerInput(): void {
+    const enabled = this.mode === 'hub';
+    for (const swimmer of this.swimmers) {
+      if (enabled) {
+        swimmer.image.setInteractive();
+      } else {
+        swimmer.image.disableInteractive();
+        swimmer.pressed = false;
+      }
+    }
   }
 
   // ---- events --------------------------------------------------------------
@@ -529,6 +744,8 @@ export class HomeTankScene extends Phaser.Scene {
     this.chest.setResolution(dpr);
     this.book.setResolution(dpr);
     this.arrivalCard.setResolution(dpr);
+    this.nameTagText.setResolution(dpr);
+    this.restyler?.setResolution(dpr);
     this.layout();
     this.animate(0);
   }
@@ -539,6 +756,8 @@ export class HomeTankScene extends Phaser.Scene {
     this.decorator.destroy();
     this.chest.destroy();
     this.book.destroy();
+    this.restyler?.destroy();
+    this.restyler = null;
     this.releaseSwimmers();
     const keyboard = this.input.keyboard;
     if (!keyboard) return;
@@ -562,8 +781,8 @@ export class HomeTankScene extends Phaser.Scene {
   // ---- layout --------------------------------------------------------------
 
   /**
-   * Fits the tank to the canvas, then places the Decorations, the hub, the Treasure Chest, the
-   * Collection Book and the arrival card.
+   * Fits the tank to the canvas, sizes the axolotl tap areas, then places the Decorations, the hub,
+   * the Treasure Chest, the Collection Book, the arrival card and an open restyle screen.
    */
   private layout(): void {
     this.frame = tankFrame(this.view.cssW, this.view.cssH);
@@ -571,16 +790,20 @@ export class HomeTankScene extends Phaser.Scene {
     placeTankLayer(this.back, tank.back, this.frame);
     placeTankLayer(this.glass, tank.glass, this.frame);
     placeTankLayer(this.front, tank.front, this.frame);
+    for (const swimmer of this.swimmers) {
+      this.fitSwimmerHitArea(swimmer);
+    }
     this.decorator.layout(this.view, this.frame);
     this.layoutHub();
     this.chest.layout(this.view);
     this.book.layout(this.view);
     this.arrivalCard.layout(this.view);
+    this.restyler?.layout(this.view);
   }
 
   /**
-   * Shows the hub buttons and the best-stars badge unless the Treasure Chest, the Collection Book or
-   * decorate mode is up, and the name panel only when it fits.
+   * Shows the hub buttons and the best-stars badge unless the Treasure Chest, the Collection Book,
+   * decorate mode or restyle is up, and the name panel only when it fits.
    */
   private applyHubVisibility(): void {
     const shown = this.mode === 'hub' || this.mode === 'arrival';
@@ -618,14 +841,37 @@ export class HomeTankScene extends Phaser.Scene {
 
   // ---- rendering -----------------------------------------------------------
 
-  /** Advances the clock and draws the swimmers, the surface line and the plant sway. */
+  /** Advances the clock and draws the swimmers, the focused axolotl's ring and tag, the surface and plant sway. */
   private animate(dt: number): void {
     this.clock += dt;
     const t = this.motion.ambient ? this.clock : T_STATIC;
     this.swimmers.forEach((swimmer, index) => this.renderSwimmer(swimmer, index, t, dt));
+    this.renderPickFocus();
     this.renderSurface(t);
     this.decorator.update(this.clock, this.motion);
     this.repaintRescuedSwimmers();
+  }
+
+  /**
+   * Draws the double focus ring round the focused axolotl's sprite bounds and its name tag, kept on
+   * the canvas by nameTagRect(), so both follow it every frame. Both hide unless the hub has the
+   * input and the focus is on an axolotl.
+   */
+  private renderPickFocus(): void {
+    const target = this.mode === 'hub' ? this.focusTarget() : null;
+    const swimmer = target?.kind === 'axolotl' ? this.swimmers[target.i] : undefined;
+    this.pickRing.clear();
+    this.nameTagPanel.setVisible(swimmer !== undefined);
+    this.nameTagText.setVisible(swimmer !== undefined);
+    if (target === null || swimmer === undefined) return;
+    const bounds = swimmer.image.getBounds();
+    const rect: Rect = { x: bounds.x, y: bounds.y, w: bounds.width, h: bounds.height };
+    strokeAxolotlRing(this.pickRing, rect);
+    this.nameTagText.setText(this.swimmerAxolotl(target.i).name);
+    const tagSize: Size = { w: this.nameTagText.width + 2 * UI.pad, h: this.nameTagText.height + 2 * UI.pad };
+    const tag = nameTagRect(rect, tagSize, this.view);
+    drawPanel(this.nameTagPanel, tag.x, tag.y, tag.w, tag.h, UI_PANEL);
+    this.nameTagText.setPosition(tag.x + UI.pad, tag.y + UI.pad);
   }
 
   /** Places one axolotl from its tank pose (still under reduced motion) and repaints it when its pose changes. */
@@ -644,7 +890,7 @@ export class HomeTankScene extends Phaser.Scene {
     swimmer.image
       .setPosition(at.x, at.y)
       .setFlipX(swim.facing < 0)
-      .setScale((AXO_SCENE_SCALE * this.frame.scale) / swimmer.texture.scale)
+      .setScale(swimmer.texture.displayScale(this.frame.scale))
       .setRotation(swim.tilt);
   }
 

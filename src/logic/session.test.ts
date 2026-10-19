@@ -1,24 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { CANAL_AREA } from './areas';
+import { DEFAULT_LOOK, type AxolotlLook } from './axolotlLook';
+import { NAME_MAX, SUGGESTED_NAMES, nameLength } from './axolotlNames';
 import { collectNear, type Collectible } from './collectibles';
 import { createEncounterContext } from './encounter';
 import { REGISTRY_KEYS } from './gameEvents';
-import { REAL_MORPHS, STARTER_MORPH, axolotlFindId, isAxolotlFindId } from './morphs';
+import { REAL_MORPHS, STARTER_MORPH, axolotlFindId, isAxolotlFindId, type RealMorphId } from './morphs';
 import { nextTripSeed, type PlacedFind } from './placement';
 import { pickStranding } from './rescue';
 import {
   SESSION_REGISTRY_KEY,
   STARTER_AXOLOTL_ID,
+  addStarter,
   bestStars,
   canRescueMore,
   createSession,
+  explorerAxolotl,
   explorerId,
   explorerMorph,
+  needsStarter,
+  newOwnedAxolotl,
   recordTripEnd,
   restoreSnacks,
+  restyleAxolotl,
   setTankLayout,
   tripEndRecord,
   tripStart,
+  type OwnedAxolotl,
   type Session,
   type TripEndRecord,
 } from './session';
@@ -176,14 +184,34 @@ function beatenRecord(earned: AreaStars, tripSeed: number): TripEndRecord {
   return { ...record([], tripSeed), stars: { areaId: CANAL_AREA_ID, earned } };
 }
 
+const STYLED: AxolotlLook = { eyes: 'grumpy', mouth: 'smallO', gills: 'long', spots: 'patches', size: 'large' };
+
+/**
+ * A new session with a starter named `name`, of real morph `morph` and the default look, as the
+ * character creator makes it.
+ */
+function withStarter(name = 'Gilly', morph: RealMorphId = STARTER_MORPH): Session {
+  return addStarter(createSession(), { name, look: DEFAULT_LOOK }, morph);
+}
+
+/** The starter `withStarter` makes. */
+function starterOf(morph: RealMorphId = STARTER_MORPH, name = 'Gilly'): OwnedAxolotl {
+  return { id: STARTER_AXOLOTL_ID, morph, name, look: DEFAULT_LOOK };
+}
+
+/** A rescued axolotl of `morph` as `recordTripEnd` adopts it: a suggested `name` and the default look. */
+function rescuedOf(morph: RealMorphId, name: string): OwnedAxolotl {
+  return { id: axolotlFindId(morph), morph, name, look: DEFAULT_LOOK };
+}
+
 describe('createSession', () => {
-  it('starts with the starter axolotl, its morph found, nothing banked, an empty tank and no trip (C1)', () => {
+  it('starts with no axolotl, an empty Collection Book, nothing banked, an empty tank and no trip', () => {
     expect(createSession()).toEqual({
       hub: {
         banked: [],
-        axolotls: [{ id: STARTER_AXOLOTL_ID, morph: STARTER_MORPH }],
+        axolotls: [],
         tank: { placed: [] },
-        book: { foundMorphs: [STARTER_MORPH], tilapiaCard: false },
+        book: { foundMorphs: [], tilapiaCard: false },
         stars: {},
       },
       canal: { eatenSnacks: [], lastTripSeed: null, waitingStranded: null },
@@ -191,18 +219,10 @@ describe('createSession', () => {
     expect(STARTER_AXOLOTL_ID).toBe('starter');
   });
 
-  it('starts with the chosen morph as the starter, which is the explorer (C1)', () => {
-    const session = createSession('golden-albino');
-    expect(session.hub.axolotls).toEqual([{ id: STARTER_AXOLOTL_ID, morph: 'golden-albino' }]);
-    expect(session.hub.book.foundMorphs).toEqual(['golden-albino']);
-    expect(explorerId(session)).toBe(STARTER_AXOLOTL_ID);
-    expect(explorerMorph(session)).toBe('golden-albino');
-  });
-
   it('survives a JSON round trip, before and after a trip', () => {
     const fresh = createSession();
     expect(JSON.parse(JSON.stringify(fresh))).toEqual(fresh);
-    const played = setTankLayout(recordTripEnd(fresh, record([PLANT, HAT], 7, ['snack-1'])), {
+    const played = setTankLayout(recordTripEnd(withStarter(), record([PLANT, HAT], 7, ['snack-1'])), {
       placed: [{ id: PLANT, x: 240, y: 318 }],
     });
     expect(JSON.parse(JSON.stringify(played))).toEqual(played);
@@ -222,7 +242,7 @@ describe('createSession', () => {
 
 describe('tripStart seeds (B4)', () => {
   it('uses the fresh seed for the first trip', () => {
-    expect(tripStart(createSession(), FIRST_SEED)).toEqual({
+    expect(tripStart(withStarter(), FIRST_SEED)).toEqual({
       banked: [],
       eatenSnacks: [],
       tripSeed: FIRST_SEED,
@@ -233,7 +253,7 @@ describe('tripStart seeds (B4)', () => {
   });
 
   it('uses the seed after the last trip for every later trip, ignoring the fresh seed', () => {
-    const session = recordTripEnd(createSession(), record([PLANT], FIRST_SEED, ['snack-1']));
+    const session = recordTripEnd(withStarter(), record([PLANT], FIRST_SEED, ['snack-1']));
     const start = tripStart(session, 99);
     expect(start).toEqual({
       banked: [PLANT],
@@ -247,7 +267,7 @@ describe('tripStart seeds (B4)', () => {
   });
 
   it('hands out copies, so changing them leaves the session alone', () => {
-    const session = recordTripEnd(createSession(), record([PLANT], 1, ['snack-1']));
+    const session = recordTripEnd(withStarter(), record([PLANT], 1, ['snack-1']));
     const waiting = recordTripEnd(session, { ...record([], 2), waitingStranded: { morph: 'wild', placeId: 'p' } });
     const start = tripStart(waiting, 2);
     start.banked.push(HAT);
@@ -256,7 +276,7 @@ describe('tripStart seeds (B4)', () => {
     if (start.waitingStranded) start.waitingStranded.placeId = 'q';
     expect(waiting.hub.banked).toEqual([PLANT]);
     expect(waiting.canal.eatenSnacks).toEqual([]);
-    expect(waiting.hub.axolotls).toEqual([{ id: STARTER_AXOLOTL_ID, morph: STARTER_MORPH }]);
+    expect(waiting.hub.axolotls).toEqual([starterOf()]);
     expect(waiting.canal.waitingStranded).toEqual({ morph: 'wild', placeId: 'p' });
   });
 });
@@ -274,7 +294,7 @@ describe('tripEndRecord', () => {
   });
 
   it('records a went-home trip: the new find banked, the eaten snacks and the seed', () => {
-    const trip = startTrip(createSession(), FIRST_SEED);
+    const trip = startTrip(withStarter(), FIRST_SEED);
     const { ended, id } = wentHome(trip);
     const snacks = eatSnacks(restoreSnacks(zone.collectibles, []), 2);
     const rec = tripEndRecord(ended, snacks);
@@ -289,8 +309,8 @@ describe('tripEndRecord', () => {
   });
 
   it('records a carried-home trip: the lost find is not owned, banked finds are kept, no snacks stay eaten (A11, A12, A19, B9)', () => {
-    const first = wentHome(startTrip(createSession(), FIRST_SEED));
-    const session = recordTripEnd(createSession(), tripEndRecord(first.ended, []));
+    const first = wentHome(startTrip(withStarter(), FIRST_SEED));
+    const session = recordTripEnd(withStarter(), tripEndRecord(first.ended, []));
     const lost = carriedHome(startTrip(session, 0), [first.id]);
     const snacks = eatSnacks(restoreSnacks(zone.collectibles, []), 2);
     const rec = tripEndRecord(lost.ended, snacks);
@@ -306,7 +326,7 @@ describe('tripEndRecord', () => {
 
 describe('recordTripEnd', () => {
   it('keeps banked an order-preserving union that never shrinks', () => {
-    const once = recordTripEnd(createSession(), record([PLANT, HAT], 1));
+    const once = recordTripEnd(withStarter(), record([PLANT, HAT], 1));
     const twice = recordTripEnd(once, record([BOAT, PLANT], 2));
     expect(twice.hub.banked).toEqual([PLANT, HAT, BOAT]);
     const shorter = recordTripEnd(twice, record([], 3));
@@ -314,35 +334,33 @@ describe('recordTripEnd', () => {
   });
 
   it('stores the eaten snacks and the trip seed, and leaves the input session alone', () => {
-    const session = createSession();
+    const session = withStarter();
     const next = recordTripEnd(session, record([PLANT], 42, ['snack-1', 'snack-2']));
     expect(next.canal).toEqual({ eatenSnacks: ['snack-1', 'snack-2'], lastTripSeed: 42, waitingStranded: null });
-    expect(session).toEqual(createSession());
+    expect(session).toEqual(withStarter());
   });
 
   it('never banks an axolotl find id', () => {
-    const next = recordTripEnd(createSession(), record([PLANT, axolotlFindId('wild'), HAT], 1));
+    const next = recordTripEnd(withStarter(), record([PLANT, axolotlFindId('wild'), HAT], 1));
     expect(next.hub.banked).toEqual([PLANT, HAT]);
     expect(next.hub.axolotls.map((axolotl) => axolotl.morph)).toEqual([STARTER_MORPH]);
   });
 
   it('owns each rescued morph once, after the starter, with found morphs in REAL_MORPHS order (C4)', () => {
-    const session = createSession('melanoid');
+    const session = withStarter('Gilly', 'melanoid');
     const once = recordTripEnd(session, { ...record([], 1), rescued: ['wild', 'melanoid', 'wild'] });
-    expect(once.hub.axolotls).toEqual([
-      { id: STARTER_AXOLOTL_ID, morph: 'melanoid' },
-      { id: axolotlFindId('wild'), morph: 'wild' },
-    ]);
+    expect(once.hub.axolotls).toEqual([starterOf('melanoid'), rescuedOf('wild', 'Bubbles')]);
     expect(once.hub.book.foundMorphs).toEqual(['wild', 'melanoid']);
     const twice = recordTripEnd(once, { ...record([], 2), rescued: ['wild', 'leucistic'] });
     expect(twice.hub.axolotls.map((axolotl) => axolotl.morph)).toEqual(['melanoid', 'wild', 'leucistic']);
+    expect(twice.hub.axolotls.map((axolotl) => axolotl.name)).toEqual(['Gilly', 'Bubbles', 'Pebble']);
     expect(twice.hub.book.foundMorphs).toEqual(['leucistic', 'wild', 'melanoid']);
     expect(explorerMorph(twice)).toBe('melanoid');
     expectConsistent(twice);
   });
 
   it('unlocks the tilapia card once a tilapia is met and keeps it unlocked', () => {
-    const met = recordTripEnd(createSession(), { ...record([], 1), metTilapia: true });
+    const met = recordTripEnd(withStarter(), { ...record([], 1), metTilapia: true });
     expect(met.hub.book.tilapiaCard).toBe(true);
     expect(tripStart(met, 0).tilapiaCardSeen).toBe(true);
     const later = recordTripEnd(met, record([], 2));
@@ -351,12 +369,12 @@ describe('recordTripEnd', () => {
 
   it('keeps the tank and the axolotls across records', () => {
     const banked = [PLANT, BOAT];
-    const base = recordTripEnd(createSession(), record(banked, 1));
+    const base = recordTripEnd(withStarter(), record(banked, 1));
     const layout = placeDecoration(createTankLayout(), banked, PLANT, suggestSpot(createTankLayout())).layout;
     const decorated = setTankLayout(base, layout);
     const next = recordTripEnd(decorated, record([HAT], 2));
     expect(next.hub.tank).toEqual(layout);
-    expect(next.hub.axolotls).toEqual([{ id: STARTER_AXOLOTL_ID, morph: STARTER_MORPH }]);
+    expect(next.hub.axolotls).toEqual([starterOf()]);
   });
 });
 
@@ -370,8 +388,8 @@ describe('restoreSnacks (A12, A19)', () => {
 
   it('keeps eaten snacks after going home and brings every snack back after being carried home', () => {
     const snacks = eatSnacks(restoreSnacks(zone.collectibles, []), 3);
-    const went = wentHome(startTrip(createSession(), FIRST_SEED));
-    const session = recordTripEnd(createSession(), tripEndRecord(went.ended, snacks));
+    const went = wentHome(startTrip(withStarter(), FIRST_SEED));
+    const session = recordTripEnd(withStarter(), tripEndRecord(went.ended, snacks));
     const restored = restoreSnacks(zone.collectibles, tripStart(session, 0).eatenSnacks);
     expect(restored).toEqual(snacks);
     const lost = carriedHome(startTrip(session, 0), [went.id]);
@@ -385,7 +403,7 @@ describe('restoreSnacks (A12, A19)', () => {
 
 describe('session trips match the in-place newTrip flow (regression)', () => {
   it('builds the same next trip as newTrip after going home and after being carried home', () => {
-    let session = createSession();
+    let session = withStarter();
     const firstTrip = startTrip(session, FIRST_SEED);
     expect(firstTrip).toEqual(createTrip(zone, LEGS, [], FIRST_SEED));
 
@@ -411,7 +429,7 @@ describe('session trips match the in-place newTrip flow (regression)', () => {
 
 describe('setTankLayout', () => {
   it('sanitizes the layout against the banked ids', () => {
-    const session = recordTripEnd(createSession(), record([PLANT], 1));
+    const session = recordTripEnd(withStarter(), record([PLANT], 1));
     const next = setTankLayout(session, {
       placed: [
         { id: PLANT, x: 240, y: 318 },
@@ -424,33 +442,17 @@ describe('setTankLayout', () => {
   });
 });
 
-describe('explorerId and explorerMorph', () => {
-  it('is the only owned axolotl', () => {
-    expect(explorerId(createSession())).toBe(STARTER_AXOLOTL_ID);
-    expect(explorerMorph(createSession())).toBe(STARTER_MORPH);
-  });
-
-  it('throws when no axolotl is owned', () => {
-    const empty: Session = { ...createSession(), hub: { ...createSession().hub, axolotls: [] } };
-    expect(() => explorerId(empty)).toThrow(/explorerId: no axolotl/);
-    expect(() => explorerMorph(empty)).toThrow(/explorerMorph: no axolotl/);
-  });
-});
-
 describe('stranded axolotl rescue across trips (C1, C4 to C6, A11, A12)', () => {
   it('owns a rescued axolotl after banking it and going home (C4)', () => {
-    const trip = startRescueTrip(createSession(), FIRST_SEED);
+    const trip = startRescueTrip(withStarter(), FIRST_SEED);
     const { morph } = rescueOf(trip);
     const ended = goHome(bankAtHome(reachRescue(trip))).state;
     const rec = tripEndRecord(ended, []);
     expect(rec.rescued).toEqual([morph]);
     expect(rec.banked).toEqual([]);
     expect(rec.waitingStranded).toBeNull();
-    const after = recordTripEnd(createSession(), rec);
-    expect(after.hub.axolotls).toEqual([
-      { id: STARTER_AXOLOTL_ID, morph: STARTER_MORPH },
-      { id: axolotlFindId(morph), morph },
-    ]);
+    const after = recordTripEnd(withStarter(), rec);
+    expect(after.hub.axolotls).toEqual([starterOf(), rescuedOf(morph, 'Bubbles')]);
     expect(after.hub.book.foundMorphs).toContain(morph);
     expect(after.canal.waitingStranded).toBeNull();
     expect(explorerId(after)).toBe(STARTER_AXOLOTL_ID);
@@ -458,20 +460,20 @@ describe('stranded axolotl rescue across trips (C1, C4 to C6, A11, A12)', () => 
   });
 
   it('owns a rescued axolotl banked before being carried home (C4, A12)', () => {
-    const trip = startRescueTrip(createSession(), FIRST_SEED);
+    const trip = startRescueTrip(withStarter(), FIRST_SEED);
     const { morph } = rescueOf(trip);
     const ended = carriedHomeFrom(keepExploring(bankAtHome(reachRescue(trip))));
     const rec = tripEndRecord(ended, []);
     expect(rec.rescued).toEqual([morph]);
     expect(rec.eatenSnacks).toEqual([]);
     expect(rec.waitingStranded).toBeNull();
-    const after = recordTripEnd(createSession(), rec);
+    const after = recordTripEnd(withStarter(), rec);
     expect(after.hub.axolotls.map((axolotl) => axolotl.morph)).toEqual([STARTER_MORPH, morph]);
     expectConsistent(after);
   });
 
   it('leaves a following axolotl waiting at the same place when carried home, and brings it back there (C5)', () => {
-    const session = createSession();
+    const session = withStarter();
     const trip = startRescueTrip(session, FIRST_SEED);
     const { morph, placeId } = rescueOf(trip);
     const ended = carriedHomeFrom(reachRescue(trip));
@@ -493,9 +495,9 @@ describe('stranded axolotl rescue across trips (C1, C4 to C6, A11, A12)', () => 
   });
 
   it('keeps a waiting axolotl waiting after a Go-home trip that did not reach it', () => {
-    const trip = startRescueTrip(createSession(), FIRST_SEED);
+    const trip = startRescueTrip(withStarter(), FIRST_SEED);
     const { morph, placeId } = rescueOf(trip);
-    const waiting = recordTripEnd(createSession(), tripEndRecord(carriedHomeFrom(reachRescue(trip)), []));
+    const waiting = recordTripEnd(withStarter(), tripEndRecord(carriedHomeFrom(reachRescue(trip)), []));
     const next = startRescueTrip(waiting, 0);
     expect(next.inHomeSpot).toBe(true);
     const ended = goHome(next).state;
@@ -506,20 +508,21 @@ describe('stranded axolotl rescue across trips (C1, C4 to C6, A11, A12)', () => 
   });
 
   it('leaves nothing waiting after a trip that never met its stranded axolotl', () => {
-    const trip = startRescueTrip(createSession(), FIRST_SEED);
+    const trip = startRescueTrip(withStarter(), FIRST_SEED);
     expect(rescueOf(trip).met).toBe(false);
-    const after = recordTripEnd(createSession(), tripEndRecord(goHome(trip).state, []));
+    const after = recordTripEnd(withStarter(), tripEndRecord(goHome(trip).state, []));
     expect(after.canal.waitingStranded).toBeNull();
   });
 
   it('owns every morph after three rescues, and no stranded axolotl appears after that (C6)', () => {
-    let session = createSession();
+    let session = withStarter();
     for (let i = 0; i < 3; i++) {
       session = rescueAndGoHome(session, FIRST_SEED);
       expectConsistent(session);
     }
     expect(session.hub.axolotls).toHaveLength(REAL_MORPHS.length);
-    expect(session.hub.axolotls[0]).toEqual({ id: STARTER_AXOLOTL_ID, morph: STARTER_MORPH });
+    expect(session.hub.axolotls[0]).toEqual(starterOf());
+    expect(new Set(session.hub.axolotls.map((axolotl) => axolotl.name)).size).toBe(REAL_MORPHS.length);
     expect(new Set(session.hub.axolotls.map((axolotl) => axolotl.id)).size).toBe(REAL_MORPHS.length);
     expect(session.hub.book.foundMorphs).toEqual(REAL_MORPHS.map((morph) => morph.id));
     expect(session.hub.banked).toEqual([]);
@@ -529,17 +532,17 @@ describe('stranded axolotl rescue across trips (C1, C4 to C6, A11, A12)', () => 
   });
 
   it('keeps treasure banking alongside a rescue, never banking the axolotl id', () => {
-    const trip = startRescueTrip(createSession(), FIRST_SEED);
+    const trip = startRescueTrip(withStarter(), FIRST_SEED);
     const find = openFind(trip);
     const ended = goHome(bankAtHome(reachRescue(stepAt(trip, find)))).state;
-    const after = recordTripEnd(createSession(), tripEndRecord(ended, []));
+    const after = recordTripEnd(withStarter(), tripEndRecord(ended, []));
     expect(after.hub.banked).toEqual([find.id]);
     expect(after.hub.axolotls).toHaveLength(2);
     expectConsistent(after);
   });
 
   it('unlocks the tilapia card after a trip that met a tilapia, then starts trips with it seen', () => {
-    const trip = startRescueTrip(createSession(), FIRST_SEED);
+    const trip = startRescueTrip(withStarter(), FIRST_SEED);
     expect(trip.tilapiaCardSeen).toBe(false);
     const met = stepAt(trip, inRange);
     expect(met.metTilapia).toBe(true);
@@ -547,7 +550,7 @@ describe('stranded axolotl rescue across trips (C1, C4 to C6, A11, A12)', () => 
     expect(ended.phase).toBe('ended');
     const rec = tripEndRecord(ended, []);
     expect(rec.metTilapia).toBe(true);
-    const after = recordTripEnd(createSession(), rec);
+    const after = recordTripEnd(withStarter(), rec);
     expect(after.hub.book.tilapiaCard).toBe(true);
     expect(tripStart(after, 0).tilapiaCardSeen).toBe(true);
     expect(startRescueTrip(after, 0).tilapiaCardSeen).toBe(true);
@@ -556,7 +559,7 @@ describe('stranded axolotl rescue across trips (C1, C4 to C6, A11, A12)', () => 
 
 describe('area beaten (H5, H6, H7, A12, open question 14)', () => {
   it('records the banked finds, the stars earned in Area 1, no eaten snacks and the seed', () => {
-    const { ended, id } = beatAfterBanking(startTrip(createSession(), FIRST_SEED));
+    const { ended, id } = beatAfterBanking(startTrip(withStarter(), FIRST_SEED));
     const snacks = eatSnacks(restoreSnacks(zone.collectibles, []), 2);
     const rec = tripEndRecord(ended, snacks);
     expect(rec).toEqual({
@@ -573,7 +576,7 @@ describe('area beaten (H5, H6, H7, A12, open question 14)', () => {
   });
 
   it('throws when an area-beaten ending has no stars', () => {
-    const { ended } = beatAfterBanking(startTrip(createSession(), FIRST_SEED));
+    const { ended } = beatAfterBanking(startTrip(withStarter(), FIRST_SEED));
     const ending = ended.ending as NonNullable<TripState['ending']>;
     const starless: TripState = { ...ended, ending: { ...ending, stars: undefined } };
     expect(() => tripEndRecord(starless, [])).toThrow(/no stars/);
@@ -581,8 +584,8 @@ describe('area beaten (H5, H6, H7, A12, open question 14)', () => {
 
   it('clears eaten snacks and records the seed so the next trip reshuffles (B4)', () => {
     const snacks = eatSnacks(restoreSnacks(zone.collectibles, []), 3);
-    const went = wentHome(startTrip(createSession(), FIRST_SEED));
-    const session = recordTripEnd(createSession(), tripEndRecord(went.ended, snacks));
+    const went = wentHome(startTrip(withStarter(), FIRST_SEED));
+    const session = recordTripEnd(withStarter(), tripEndRecord(went.ended, snacks));
     expect(tripStart(session, 0).eatenSnacks.length).toBe(3);
     const second = startTrip(session, 0);
     const beaten = beatArea(second, SPECIAL).state;
@@ -594,7 +597,7 @@ describe('area beaten (H5, H6, H7, A12, open question 14)', () => {
   });
 
   it('merges stars so the best never goes down across replays', () => {
-    const first = recordTripEnd(createSession(), beatenRecord({ exit: true, special: true, legsOrRescue: false }, 1));
+    const first = recordTripEnd(withStarter(), beatenRecord({ exit: true, special: true, legsOrRescue: false }, 1));
     expect(bestStars(first, CANAL_AREA_ID)).toEqual({ exit: true, special: true, legsOrRescue: false });
     const worse = recordTripEnd(first, beatenRecord({ exit: true, special: false, legsOrRescue: false }, 2));
     expect(bestStars(worse, CANAL_AREA_ID)).toEqual({ exit: true, special: true, legsOrRescue: false });
@@ -608,7 +611,7 @@ describe('area beaten (H5, H6, H7, A12, open question 14)', () => {
   });
 
   it('leaves stars untouched after going home and after being carried home (A12)', () => {
-    const starred = recordTripEnd(createSession(), beatenRecord({ exit: true, special: false, legsOrRescue: true }, 1));
+    const starred = recordTripEnd(withStarter(), beatenRecord({ exit: true, special: false, legsOrRescue: true }, 1));
     const went = wentHome(startTrip(starred, 0));
     const wentRecord = tripEndRecord(went.ended, []);
     expect(wentRecord.stars).toBeUndefined();
@@ -621,19 +624,19 @@ describe('area beaten (H5, H6, H7, A12, open question 14)', () => {
   });
 
   it('keeps the banked total rising by the bag size when the area is beaten with finds in the bag', () => {
-    const trip = startTrip(createSession(), FIRST_SEED);
+    const trip = startTrip(withStarter(), FIRST_SEED);
     const find = openFind(trip);
     const holding = stepAt(trip, find);
     expect(holding.holdings.bag).toEqual([find.id]);
     const beaten = beatArea(holding, SPECIAL).state;
-    const after = recordTripEnd(createSession(), tripEndRecord(beaten, []));
+    const after = recordTripEnd(withStarter(), tripEndRecord(beaten, []));
     expect(after.hub.banked).toEqual([find.id]);
   });
 });
 
 describe('rescue at the exit (H5, H6, C4, C6)', () => {
   it('records a following axolotl banked at the exit as rescued, with star 3 and no snacks or waiting', () => {
-    const trip = startRescueTrip(createSession(), FIRST_SEED);
+    const trip = startRescueTrip(withStarter(), FIRST_SEED);
     const { morph } = rescueOf(trip);
     const snacks = eatSnacks(restoreSnacks(zone.collectibles, []), 2);
     const ended = beatArea(reachRescue(trip), SPECIAL).state;
@@ -647,15 +650,12 @@ describe('rescue at the exit (H5, H6, C4, C6)', () => {
   });
 
   it('owns the rescued axolotl and keeps star 3 even with a leg lost', () => {
-    const trip = startRescueTrip(createSession(), FIRST_SEED);
+    const trip = startRescueTrip(withStarter(), FIRST_SEED);
     const { morph } = rescueOf(trip);
     const following = { ...reachRescue(trip), legsLost: 1 };
     const rec = tripEndRecord(beatArea(following, SPECIAL).state, []);
-    const after = recordTripEnd(createSession(), rec);
-    expect(after.hub.axolotls).toEqual([
-      { id: STARTER_AXOLOTL_ID, morph: STARTER_MORPH },
-      { id: axolotlFindId(morph), morph },
-    ]);
+    const after = recordTripEnd(withStarter(), rec);
+    expect(after.hub.axolotls).toEqual([starterOf(), rescuedOf(morph, 'Bubbles')]);
     expect(after.hub.book.foundMorphs).toEqual(
       REAL_MORPHS.map((entry) => entry.id).filter((id) => id === STARTER_MORPH || id === morph),
     );
@@ -666,9 +666,9 @@ describe('rescue at the exit (H5, H6, C4, C6)', () => {
   });
 
   it('keeps a met but unreached stranded axolotl waiting after the area is beaten', () => {
-    const first = startRescueTrip(createSession(), FIRST_SEED);
+    const first = startRescueTrip(withStarter(), FIRST_SEED);
     const { morph, placeId } = rescueOf(first);
-    const waiting = recordTripEnd(createSession(), tripEndRecord(carriedHomeFrom(reachRescue(first)), []));
+    const waiting = recordTripEnd(withStarter(), tripEndRecord(carriedHomeFrom(reachRescue(first)), []));
     const next = startRescueTrip(waiting, 0);
     expect(rescueOf(next)).toMatchObject({ morph, placeId, met: true });
     const rec = tripEndRecord(beatArea(next, SPECIAL).state, []);
@@ -682,13 +682,193 @@ describe('rescue at the exit (H5, H6, C4, C6)', () => {
 
 describe('canRescueMore (C6)', () => {
   it('is true for a new session and false once every morph is owned', () => {
-    expect(canRescueMore(createSession())).toBe(true);
-    let session = createSession();
+    expect(canRescueMore(withStarter())).toBe(true);
+    let session = withStarter();
     for (let i = 0; i < REAL_MORPHS.length - 1; i++) {
       expect(canRescueMore(session)).toBe(true);
       session = rescueAndGoHome(session, FIRST_SEED);
     }
     expect(session.hub.axolotls).toHaveLength(REAL_MORPHS.length);
     expect(canRescueMore(session)).toBe(false);
+  });
+});
+
+describe.each(REAL_MORPHS.map((morph) => morph.id))('starter %s: the other three morphs are rescuable (C1, C2, C6, F5)', (starter) => {
+  const others = REAL_MORPHS.map((morph) => morph.id).filter((id) => id !== starter);
+  const SEED_COUNT = 200;
+
+  it('owns only the starter, found in the Collection Book (C1)', () => {
+    const session = withStarter('Gilly', starter);
+    expect(session.hub.axolotls).toEqual([starterOf(starter)]);
+    expect(session.hub.book.foundMorphs).toEqual([starter]);
+  });
+
+  it('never strands the starter morph, and strands each other morph over many seeds (C2, F5)', () => {
+    const session = withStarter('Gilly', starter);
+    const seen = new Set<RealMorphId>();
+    for (let seed = 0; seed < SEED_COUNT; seed++) {
+      const { morph } = rescueOf(startRescueTrip(session, seed));
+      expect(morph).not.toBe(starter);
+      seen.add(morph);
+    }
+    expect([...seen].sort()).toEqual([...others].sort());
+  });
+
+  it('rescues each other morph in three trips, then strands no more (C2, C6)', () => {
+    let session = withStarter('Gilly', starter);
+    for (let cycle = 0; cycle < others.length; cycle++) {
+      const owned = session.hub.axolotls.map((axolotl) => axolotl.morph);
+      const { morph } = rescueOf(startRescueTrip(session, FIRST_SEED + cycle));
+      expect(morph).not.toBe(starter);
+      expect(owned).not.toContain(morph);
+      session = rescueAndGoHome(session, FIRST_SEED + cycle);
+      expect(session.hub.axolotls.map((axolotl) => axolotl.morph)).toContain(morph);
+      expectConsistent(session);
+    }
+    expect(session.hub.axolotls).toHaveLength(REAL_MORPHS.length);
+    expect(new Set(session.hub.axolotls.map((axolotl) => axolotl.morph))).toEqual(new Set(REAL_MORPHS.map((morph) => morph.id)));
+    expect(session.hub.book.foundMorphs).toEqual(REAL_MORPHS.map((morph) => morph.id));
+    for (let seed = 0; seed < SEED_COUNT; seed++) expect(startRescueTrip(session, seed).rescue).toBeNull();
+  });
+});
+
+describe('needsStarter (F1)', () => {
+  it('is true while no axolotl is owned and false once the starter is added', () => {
+    expect(needsStarter(createSession())).toBe(true);
+    expect(needsStarter(withStarter())).toBe(false);
+  });
+});
+
+describe('addStarter (F1)', () => {
+  it('adds the starter with the cleaned name and a copy of the look, leaving the input session alone', () => {
+    const fresh = createSession();
+    const look = { ...STYLED };
+    const session = addStarter(fresh, { name: '  Mochi  ', look });
+    expect(session.hub.axolotls).toEqual([{ id: STARTER_AXOLOTL_ID, morph: STARTER_MORPH, name: 'Mochi', look: STYLED }]);
+    expect(session.hub.axolotls[0].look).not.toBe(look);
+    expect(session.hub.book).toEqual({ foundMorphs: [STARTER_MORPH], tilapiaCard: false });
+    expect(session.hub.banked).toBe(fresh.hub.banked);
+    expect(session.hub.tank).toBe(fresh.hub.tank);
+    expect(session.canal).toBe(fresh.canal);
+    expect(fresh).toEqual(createSession());
+  });
+
+  it('clips a long name to NAME_MAX name characters', () => {
+    const session = addStarter(createSession(), { name: 'Sprinklesprinkle', look: DEFAULT_LOOK });
+    expect(nameLength(explorerAxolotl(session).name)).toBe(NAME_MAX);
+  });
+
+  it('copies only the five look fields', () => {
+    const look = { ...STYLED, morph: 'golden-albino' } as AxolotlLook;
+    const session = addStarter(createSession(), { name: 'Gilly', look });
+    expect(explorerAxolotl(session).look).toEqual(STYLED);
+    expect(explorerMorph(session)).toBe(STARTER_MORPH);
+  });
+
+  it('makes the chosen morph the starter, found in the Collection Book, which is the explorer (C1)', () => {
+    const session = withStarter('Gilly', 'golden-albino');
+    expect(session.hub.axolotls).toEqual([starterOf('golden-albino')]);
+    expect(session.hub.book.foundMorphs).toEqual(['golden-albino']);
+    expect(explorerId(session)).toBe(STARTER_AXOLOTL_ID);
+    expect(explorerMorph(session)).toBe('golden-albino');
+  });
+
+  it('throws when the cleaned name is empty', () => {
+    expect(() => addStarter(createSession(), { name: '', look: DEFAULT_LOOK })).toThrow(/invalid name/);
+    expect(() => addStarter(createSession(), { name: '  !!  ', look: DEFAULT_LOOK })).toThrow(/invalid name/);
+  });
+
+  it('throws on an invalid look', () => {
+    const look = { ...DEFAULT_LOOK, size: 'huge' } as unknown as AxolotlLook;
+    expect(() => addStarter(createSession(), { name: 'Gilly', look })).toThrow(/invalid look/);
+  });
+
+  it('throws when an axolotl is already owned', () => {
+    expect(() => addStarter(withStarter(), { name: 'Pebble', look: DEFAULT_LOOK })).toThrow(/already owned/);
+  });
+});
+
+describe('restyleAxolotl (F6)', () => {
+  it('replaces the name and the look, and leaves the input session and other axolotls alone', () => {
+    const before = withStarter();
+    const other = newOwnedAxolotl('rescued-wild', 'wild', before.hub.axolotls);
+    const session: Session = { ...before, hub: { ...before.hub, axolotls: [...before.hub.axolotls, other] } };
+    const next = restyleAxolotl(session, STARTER_AXOLOTL_ID, { name: ' Noodle ', look: STYLED });
+    expect(next.hub.axolotls).toEqual([{ ...starterOf(), name: 'Noodle', look: STYLED }, other]);
+    expect(next.hub.axolotls[1]).toBe(other);
+    expect(next.hub.banked).toBe(session.hub.banked);
+    expect(next.canal).toBe(session.canal);
+    expect(session.hub.axolotls[0]).toEqual(starterOf());
+  });
+
+  it('keeps every other field of the axolotl, such as its morph', () => {
+    const session = withStarter('Gilly', 'golden-albino');
+    const next = restyleAxolotl(session, STARTER_AXOLOTL_ID, { name: 'Noodle', look: STYLED });
+    expect(next.hub.axolotls[0]).toEqual({
+      id: STARTER_AXOLOTL_ID,
+      morph: 'golden-albino',
+      name: 'Noodle',
+      look: STYLED,
+    });
+    expect(next.hub.book).toBe(session.hub.book);
+  });
+
+  it('never takes a field other than the name and the look from the change', () => {
+    const change = { name: 'Noodle', look: STYLED, id: 'other', morph: 'wild' } as { name: string; look: AxolotlLook };
+    const next = restyleAxolotl(withStarter(), STARTER_AXOLOTL_ID, change);
+    expect(next.hub.axolotls[0]).toEqual({ ...starterOf(), name: 'Noodle', look: STYLED });
+  });
+
+  it('throws on an unknown id', () => {
+    expect(() => restyleAxolotl(withStarter(), 'nobody', { name: 'Noodle', look: STYLED })).toThrow(/nobody/);
+    expect(() => restyleAxolotl(createSession(), STARTER_AXOLOTL_ID, { name: 'Noodle', look: STYLED })).toThrow(
+      /no owned axolotl/,
+    );
+  });
+
+  it('throws on an invalid name or look', () => {
+    const look = { ...STYLED, eyes: 'wink' } as unknown as AxolotlLook;
+    expect(() => restyleAxolotl(withStarter(), STARTER_AXOLOTL_ID, { name: '***', look: STYLED })).toThrow(
+      /invalid name/,
+    );
+    expect(() => restyleAxolotl(withStarter(), STARTER_AXOLOTL_ID, { name: 'Noodle', look })).toThrow(/invalid look/);
+  });
+});
+
+describe('newOwnedAxolotl', () => {
+  it('takes its morph, the first suggested name no owned axolotl uses, ignoring case, and a copy of the default look', () => {
+    const owned = withStarter('bubbles').hub.axolotls;
+    const rescued = newOwnedAxolotl('rescued-wild', 'wild', owned);
+    expect(rescued).toEqual({ id: 'rescued-wild', morph: 'wild', name: SUGGESTED_NAMES[1], look: DEFAULT_LOOK });
+    expect(rescued.look).not.toBe(DEFAULT_LOOK);
+    expect(Object.isFrozen(rescued.look)).toBe(false);
+  });
+
+  it('takes the first suggested name when nothing is owned', () => {
+    expect(newOwnedAxolotl('rescued-wild', 'wild', []).name).toBe(SUGGESTED_NAMES[0]);
+  });
+});
+
+describe('explorerAxolotl, explorerId and explorerMorph', () => {
+  it('is the only owned axolotl', () => {
+    const session = withStarter();
+    expect(explorerAxolotl(session)).toBe(session.hub.axolotls[0]);
+    expect(explorerId(session)).toBe(STARTER_AXOLOTL_ID);
+    expect(explorerMorph(session)).toBe(STARTER_MORPH);
+  });
+
+  it('is the first owned axolotl when more are owned', () => {
+    const before = withStarter();
+    const rescued = newOwnedAxolotl('rescued-wild', 'wild', before.hub.axolotls);
+    const session: Session = { ...before, hub: { ...before.hub, axolotls: [...before.hub.axolotls, rescued] } };
+    expect(explorerAxolotl(session).id).toBe(STARTER_AXOLOTL_ID);
+    expect(explorerId(session)).toBe(STARTER_AXOLOTL_ID);
+    expect(explorerMorph(session)).toBe(STARTER_MORPH);
+  });
+
+  it('throws when no axolotl is owned', () => {
+    expect(() => explorerAxolotl(createSession())).toThrow(/explorerAxolotl: no axolotl/);
+    expect(() => explorerId(createSession())).toThrow(/explorerId: no axolotl/);
+    expect(() => explorerMorph(createSession())).toThrow(/explorerMorph: no axolotl/);
   });
 });

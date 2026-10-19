@@ -9,7 +9,8 @@
  */
 import * as Phaser from 'phaser';
 import { beginDraw, clearAll, type TexSize } from './canvasKit';
-import { AXO_REST_POSE, AXO_TEX, drawAxolotl, type AxolotlPose } from './drawAxolotl';
+import { AXO_REST_POSE, AXO_SCENE_SCALE, AXO_TEX, drawAxolotl, type AxolotlPose } from './drawAxolotl';
+import { AXO_SIZE_SCALE, DEFAULT_ART_LOOK, type AxolotlArtLook } from './drawAxolotlParts';
 import {
   CAVE_TEX,
   CURRENT_MARKER_TEX,
@@ -120,6 +121,7 @@ const ICON_KINDS: readonly IconKind[] = [
   'check',
   'putAway',
   'book',
+  'surprise',
 ];
 
 export const bgKey = (i: number): string => `bg-${i}`;
@@ -406,30 +408,94 @@ export function bakeSizedButton(
 
 export interface AxolotlTexture {
   readonly key: string;
-  /** Bake scale: texture pixels per logical unit. */
+  /** Base bake scale passed at creation, before the size factor. */
+  readonly bakeScale: number;
+  /**
+   * Current bake scale: texture pixels per local unit, bakeScale x the size
+   * factor (AXO_SIZE_SCALE). Equals bakeScale at Medium.
+   */
   readonly scale: number;
   /** Size and anchor. Use originNormX/Y for sprite.setOrigin(). Local x = 0 is the anchor. */
   readonly info: TexInfo;
+  /** Creator look currently painted. */
+  readonly look: AxolotlArtLook;
   /** Clear, repaint in the given pose (and morph) and refresh the texture. */
   redraw(pose: AxolotlPose, palette?: MorphPalette): void;
+  /**
+   * Swap the creator look and repaint with the last pose and morph. A size
+   * change re-bakes the texture under the same key at the new scale, so `scale`
+   * and `info` change: callers must then re-apply the texture
+   * (setTexture(key)), the origin (info.originNormX/Y) and the scale
+   * (displayScale) on every sprite showing it.
+   */
+  setLook(look: AxolotlArtLook): void;
+  /**
+   * Sprite scale that shows the axolotl at its size: AXO_SCENE_SCALE x size
+   * factor x viewScale / scale. `viewScale` is any extra scene zoom (1 for none).
+   */
+  displayScale(viewScale: number): number;
 }
 
 /**
  * Create the axolotl texture and paint it once in AXO_REST_POSE. Local units
- * are drawn at `bakeScale`; the scene applies AXO_SCENE_SCALE / bakeScale to the sprite.
+ * are drawn at `bakeScale` x the size factor of `look`, so a large axolotl is
+ * baked big rather than upscaled. Size the sprite with displayScale().
  */
-export function createAxolotlTexture(scene: Phaser.Scene, key: string, bakeScale: number): AxolotlTexture {
-  const info = makeInfo(key, bakeScale, AXO_TEX);
-  const tex = createCanvas(scene, info);
-  const ctx = tex.context;
+export function createAxolotlTexture(
+  scene: Phaser.Scene,
+  key: string,
+  bakeScale: number,
+  look: AxolotlArtLook = DEFAULT_ART_LOOK,
+): AxolotlTexture {
+  let currentLook = look;
+  let scale = bakeScale * AXO_SIZE_SCALE[look.size];
+  let info = makeInfo(key, scale, AXO_TEX);
+  let tex = createCanvas(scene, info);
+  let lastPose: AxolotlPose = AXO_REST_POSE;
+  let lastPalette: MorphPalette = LEUCISTIC;
 
-  const redraw = (pose: AxolotlPose, palette: MorphPalette = LEUCISTIC): void => {
+  const paint = (): void => {
+    const ctx = tex.context;
     clearAll(ctx);
-    beginDraw(ctx, bakeScale, AXO_TEX.originX, AXO_TEX.originY);
-    drawAxolotl(ctx, pose, palette);
+    beginDraw(ctx, scale, AXO_TEX.originX, AXO_TEX.originY);
+    drawAxolotl(ctx, lastPose, lastPalette, currentLook);
     tex.refresh();
   };
-  redraw(AXO_REST_POSE);
 
-  return { key, scale: bakeScale, info, redraw };
+  const redraw = (pose: AxolotlPose, palette: MorphPalette = LEUCISTIC): void => {
+    lastPose = pose;
+    lastPalette = palette;
+    paint();
+  };
+
+  const setLook = (next: AxolotlArtLook): void => {
+    const nextScale = bakeScale * AXO_SIZE_SCALE[next.size];
+    currentLook = next;
+    if (nextScale !== scale) {
+      scale = nextScale;
+      info = makeInfo(key, scale, AXO_TEX);
+      tex = createCanvas(scene, info);
+    }
+    paint();
+  };
+
+  paint();
+
+  return {
+    key,
+    bakeScale,
+    get scale() {
+      return scale;
+    },
+    get info() {
+      return info;
+    },
+    get look() {
+      return currentLook;
+    },
+    redraw,
+    setLook,
+    displayScale: (viewScale: number): number =>
+      (AXO_SCENE_SCALE * AXO_SIZE_SCALE[currentLook.size] * viewScale) / scale,
+  };
 }

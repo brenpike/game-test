@@ -1,11 +1,15 @@
 import * as Phaser from 'phaser';
 import type { Collectible } from '../logic/collectibles';
+import type { RealMorphId } from '../logic/morphs';
 import {
   SESSION_REGISTRY_KEY,
+  addStarter,
   createSession,
   explorerId,
+  needsStarter,
   recordTripEnd,
   tripEndRecord,
+  type AxolotlStyle,
   type Session,
 } from '../logic/session';
 import type { TripState } from '../logic/trip';
@@ -33,12 +37,40 @@ export function writeSession(registry: Phaser.Data.DataManager, session: Session
 }
 
 /**
- * Opens the Home Tank from the title screen (PRD C7), with no arrival card. The first-launch
- * character creator slot (F1, #14) goes here, before the Home Tank.
+ * Opens the Home Tank from the title screen (PRD C7), with no arrival card. While no axolotl is
+ * owned, the first-launch character creator opens first instead (PRD F1).
  */
 export function openHomeTank(scene: Phaser.Scene, assets: GameAssets): void {
+  if (needsStarter(readSession(scene.registry))) {
+    openCreator(scene, assets);
+    return;
+  }
   const start: HomeTankStart = { assets, arrival: null };
   scene.scene.start(SCENE_KEYS.homeTank, start);
+}
+
+/**
+ * The single way into the character creator (PRD F1). Start over (#15) will call it too, after
+ * clearing the session.
+ */
+export function openCreator(scene: Phaser.Scene, assets: GameAssets): void {
+  scene.scene.start(SCENE_KEYS.creator, assets);
+}
+
+/**
+ * Done in the character creator: makes `style` the starter axolotl of real morph `starterMorph` in
+ * the session, found in the Collection Book from the start (session only, nothing is saved to the
+ * device), and opens the Home Tank with no arrival card. Throws when an axolotl is already owned,
+ * or when the cleaned name or the look is invalid.
+ */
+export function finishCreator(
+  scene: Phaser.Scene,
+  assets: GameAssets,
+  style: AxolotlStyle,
+  starterMorph: RealMorphId,
+): void {
+  writeSession(scene.registry, addStarter(readSession(scene.registry), style, starterMorph));
+  openHomeTank(scene, assets);
 }
 
 /**

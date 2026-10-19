@@ -356,6 +356,7 @@ Everything stays calm, never scary, readable without colour, and usable with red
   - outfit and slot rules: one Wearable per slot, each Wearable in one slot only, and on at most one axolotl at a time;
   - perks applying only from the explorer's outfit, and only on trips;
   - save round-trip of every axolotl's look, name, and outfit, owned Dream colours, and the chosen explorer;
+  - the starter's chosen morph being owned and found in the Collection Book from the start, and only the other three morphs ever being stranded (C1, C2, F5);
   - putting on and taking off a Dream colour, returning the axolotl to its real morph;
   - the snack speed-up: no effect with four legs, a fixed amount on the regrowing leg, never past a full leg, and working together with the Regrowth perk;
   - the exit staying closed until every snack is eaten, the snacks-left count, and the last-3 sparkle threshold;
@@ -476,6 +477,16 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | 16 | Do the last 3 snacks sparkle all the time, or only when near, like treasure hints? | All the time. Needs confirmation. |
 | 17 | Where does the player go after the "Area beaten" screen? | The Home Tank. Needs confirmation. |
 | 18 | Is Tank Top Model part of the MVP? | Decided: no. It is the first feature after the MVP (N1). |
+| 19 | Which spot patterns does the creator offer (F2)? | None, Freckles, Dots and Patches ([art style guide](../art-style-guide.md) 6n). Needs confirmation. |
+| 20 | Which suggested names are on the list (F17)? | Bubbles, Gilly, Pebble, Noodle, Sprinkles, Mochi, Lily, Ripple, Puddle, Sunny, Blossom, Peanut, Wiggles, Splash, Pickle and Xochi. Needs confirmation. |
+| 21 | What can a typed name hold (F2)? | 1 to 12 characters: letters of any script, digits, spaces, hyphens and apostrophes. A letter with its accents counts as one character. Anything else is dropped and does not count. Needs confirmation. |
+| 22 | What is the default look? | Happy eyes, Open "D" mouth, Fluffy gills, Freckles spots, Medium size. Needs confirmation. |
+| 23 | What does the character creator start with (F1)? | The default look, a random suggested name, and the Leucistic colour, so Done works at once. Done makes the starter with the chosen colour as its morph, already found in the Collection Book (set by `addStarter` in `src/logic/session.ts`). Needs confirmation. |
+| 24 | What name and look does a rescued axolotl get? | The default look and the first suggested name no owned axolotl uses. The player can restyle it (F6). Needs confirmation. |
+| 25 | How does the player reach renaming and restyling (F6)? | Tap an axolotl in the Home Tank, or move the hub focus to it and press Enter or Space. A fifth hub tile does not fit the smallest canvas (460 x 320). Needs confirmation. |
+| 26 | What do Cancel and Escape do on the restyle screen (F6)? | Leave without keeping any change. Needs confirmation. |
+| 27 | Which colour does the creator start on (F1, F2)? | Leucistic, the first real morph. Needs confirmation. |
+| 28 | How does restyling show the real morph (F6)? | The Colour part shows the morph name and its badge with no arrows; it cannot be changed. Needs confirmation. |
 
 ### Tuning values (starting points)
 
