@@ -907,7 +907,7 @@ PRD A5 to A8, ADR 0008. Always gentle: sparkles and outlines, never gore.
 | Icon shape | Leg tube from (14,4) to (14,18), colour width 9, `ol` 2.6. Three toes from (14,18), length 8, width 4.6, `ol` 2.2, splayed -0.6, 0, and +0.6 rad from straight down. | `derived (provisional)` |
 | Present | Solid ink outline, fill #e8567e, one shine | `derived (provisional)` |
 | Regrowing (at most one) | Dashed ink outline (2.0, dash 3, gap 3). Fill #e8567e rises from the root toward the toes in proportion to progress. A 4-point star R 5 (white, ink 1.6) at the top-right of the icon box. | `derived (provisional)` |
-| Snack speed-up badge | Ink-only snack icon, 16 px, at the bottom-right of the right-most filled leg icon (present or regrowing), shown for 1.2 s. It reads in greyscale by shape. It is hidden once the trip leaves swimming. Motion in section 9. | `derived (provisional)` |
+| Snack speed-up badge | Ink-only snack icon, 16 px, at the bottom-right of the icon of the leg the latest snack helped, shown for 1.2 s. A leg a snack finishes keeps the badge on its now-present icon, not on the next leg that starts. It reads in greyscale by shape. It is hidden once the trip leaves swimming. Motion in section 9. | `derived (provisional)` |
 | Lost | Dashed ink outline only, no fill | `derived (provisional)` |
 | Order | Left to right: present, regrowing, lost | `derived (provisional)` |
 

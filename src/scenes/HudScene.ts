@@ -10,6 +10,7 @@ import {
   type CollectedPayload,
   type DashStatePayload,
   type ReducedMotionPayload,
+  type SnackBoostPayload,
   type SteerPayload,
 } from '../logic/gameEvents';
 import {
@@ -227,6 +228,8 @@ export class HudScene extends Phaser.Scene {
   private boostTimer: Phaser.Time.TimerEvent | null = null;
   /** Whether the speed-up badge is up, fading included. */
   private boostActive = false;
+  /** Slot index of the leg the latest snack helped; the badge follows this slot's icon. */
+  private boostLeg: number | null = null;
   private bagPanel!: Phaser.GameObjects.Graphics;
   private bagIcon!: Phaser.GameObjects.Image;
   private bagLabel!: Phaser.GameObjects.Text;
@@ -264,6 +267,7 @@ export class HudScene extends Phaser.Scene {
     this.trip = createSwimmingTrip();
     this.boostTimer = null;
     this.boostActive = false;
+    this.boostLeg = null;
     this.hintTimer = null;
     this.hintActive = false;
     this.hintHeld = false;
@@ -591,12 +595,12 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Shows the speed-up badge at the bottom-right of the right-most filled (present or regrowing)
-   * leg icon, the leg a snack helped, only while a boost is up and the trip is swimming. Hides it otherwise.
+   * Shows the speed-up badge at the bottom-right of the icon of the leg the latest snack helped,
+   * found by its slot in display order, only while a boost is up and the trip is swimming. A leg a
+   * snack finishes keeps the badge on its now-present icon, not on the next leg it starts. Hides it otherwise.
    */
   private placeBoostBadge(): void {
-    const filled = this.trip.legs.slots.filter((slot) => slot.status !== 'lost').length;
-    const icon = this.legIcons[filled - 1];
+    const icon = this.boostLeg === null ? undefined : this.legIcons[this.legDisplayOrder().indexOf(this.boostLeg)];
     if (!this.boostActive || this.trip.phase !== 'swimming' || icon === undefined) {
       this.boostBadge.setVisible(false);
       return;
@@ -714,9 +718,18 @@ export class HudScene extends Phaser.Scene {
 
   /** Shows each leg icon for the current snapshot, sorted present, regrowing, lost. */
   private drawLegs(): void {
-    const slots = [...this.trip.legs.slots].sort((a, b) => LEG_DISPLAY_RANK[a.status] - LEG_DISPLAY_RANK[b.status]);
-    this.legIcons.forEach((icon, index) => this.drawLegIcon(icon, slots[index]));
+    const slots = this.trip.legs.slots;
+    const order = this.legDisplayOrder();
+    this.legIcons.forEach((icon, index) => this.drawLegIcon(icon, slots[order[index]]));
     this.placeBoostBadge();
+  }
+
+  /** Slot indices in leg-icon order: present, regrowing, lost. The sort is stable, so slot order holds within a status. */
+  private legDisplayOrder(): number[] {
+    const slots = this.trip.legs.slots;
+    return slots
+      .map((_, index) => index)
+      .sort((a, b) => LEG_DISPLAY_RANK[slots[a].status] - LEG_DISPLAY_RANK[slots[b].status]);
   }
 
   /**
@@ -982,11 +995,13 @@ export class HudScene extends Phaser.Scene {
   /**
    * Shows the speed-up badge on the helped leg for BOOST_HOLD_MS on the HUD clock (so pause freezes
    * it), then fades it over BOOST_FADE_MS. A new boost restarts the hold. Leaves at once under reduced motion.
+   * The helped leg is the last slot in `payload.legs`, the leg the latest snack eaten helped.
    */
-  private handleSnackBoost(): void {
+  private handleSnackBoost(payload: SnackBoostPayload): void {
     if (this.boostTimer) this.time.removeEvent(this.boostTimer);
     this.tweens.killTweensOf(this.boostBadge);
     this.boostBadge.setAlpha(1);
+    this.boostLeg = payload.legs[payload.legs.length - 1] ?? null;
     this.boostActive = true;
     this.placeBoostBadge();
     this.boostTimer = this.time.delayedCall(BOOST_HOLD_MS, this.fadeBoostBadge, [], this);
@@ -1012,6 +1027,7 @@ export class HudScene extends Phaser.Scene {
     this.boostTimer = null;
     this.tweens.killTweensOf(this.boostBadge);
     this.boostActive = false;
+    this.boostLeg = null;
     this.boostBadge.setVisible(false).setAlpha(1);
   }
 
