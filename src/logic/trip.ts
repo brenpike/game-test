@@ -500,9 +500,13 @@ function isPassedEvent(event: EncounterEvent): event is PassedEncounterEvent {
   return event.type !== 'carriedHome';
 }
 
-/** How many `hit` events, each a leg lost, are in `events`. */
+/** How many `hit` events, each a leg lost, are in `events`. Runs every swimming frame, so it allocates nothing. */
 function countHits(events: readonly EncounterEvent[]): number {
-  return events.filter((event) => event.type === 'hit').length;
+  let hitCount = 0;
+  for (const event of events) {
+    if (event.type === 'hit') hitCount += 1;
+  }
+  return hitCount;
 }
 
 function stepSwimming(state: TripState, input: TripInput, step: number, ctx: TripContext): TripStepResult {

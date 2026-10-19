@@ -9,6 +9,7 @@ import {
   createCollectibles,
   snackDriftMaxSpeed,
   snackDriftOffset,
+  snackTally,
   snackX,
   snackY,
   snacksLeft,
@@ -138,6 +139,34 @@ describe('sparklingSnackIds', () => {
 
   it('honours a custom threshold', () => {
     expect(sparklingSnackIds(eatFirst(1), 4)).toEqual(['b', 'c', 'd', 'e']);
+  });
+});
+
+describe('snackTally', () => {
+  it('reports left, collected and sparkling ids for 0 to 5 eaten', () => {
+    for (let eaten = 0; eaten <= 5; eaten++) {
+      const items = eatFirst(eaten);
+      const tally = snackTally(items);
+      expect(tally.left).toBe(5 - eaten);
+      expect(tally.collected).toBe(eaten);
+      expect(tally.sparklingIds).toEqual(sparklingSnackIds(items));
+    }
+  });
+
+  it('gives 0, 0 and no ids for an empty list', () => {
+    expect(snackTally([])).toEqual({ left: 0, collected: 0, sparklingIds: [] });
+  });
+
+  it('honours a custom threshold', () => {
+    const items = eatFirst(1);
+    expect(snackTally(items, 4).sparklingIds).toEqual(['b', 'c', 'd', 'e']);
+    expect(snackTally(items, 4).sparklingIds).toEqual(sparklingSnackIds(items, 4));
+    expect(snackTally(items).sparklingIds).toEqual([]);
+  });
+
+  it('shares one empty array when nothing sparkles', () => {
+    expect(snackTally(eatFirst(1)).sparklingIds).toBe(snackTally(eatFirst(5)).sparklingIds);
+    expect(snackTally([]).sparklingIds).toBe(snackTally(eatFirst(0)).sparklingIds);
   });
 });
 

@@ -97,6 +97,22 @@ export function sparklingSnackIds(
   return ids;
 }
 
+export interface SnackTally {
+  left: number;
+  collected: number;
+  sparklingIds: readonly string[];
+}
+
+/**
+ * Snacks left, snacks collected and the sparkling ids of `items`. Computed once per items
+ * change, not per frame: callers cache the result until the items array changes.
+ * `sparklingIds` equals `sparklingSnackIds(items, threshold)`.
+ */
+export function snackTally(items: readonly Collectible[], threshold: number = SPARKLE_SNACKS_LEFT): SnackTally {
+  const left = snacksLeft(items);
+  return { left, collected: items.length - left, sparklingIds: sparklingSnackIds(items, threshold) };
+}
+
 function driftX(phase: number, t: number, drift: SnackDrift): number {
   return drift.amplitudeX * Math.sin((2 * Math.PI * t) / drift.periodX + phase);
 }
