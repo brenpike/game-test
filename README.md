@@ -1,9 +1,27 @@
 # Glam Gills: Find Your Flair
 
-A cozy 2D web game for kids aged 8 to 12. You play an axolotl exploring the Xochimilco canals.
-Planned features include regeneration powers, collectible morphs, a home tank, breeding, restoring the lake, and light learning about real axolotls.
+Glam Gills is a cozy 2D web game for kids aged 8 to 12. You play an axolotl exploring the canals of Xochimilco.
+Find hidden treasures and wearables of different rarities, dodge the tilapia, and make your Home Tank and your axolotl your own.
+It is mostly fun, with real axolotl facts along the way.
 
-**Current milestone: swim test.** One canal zone where you can swim, eat snacks, ride the current, weave through reeds, pop bubbles, and try the first power, Tail Dash.
+## What you can do now
+
+Version 0.6.0 is playable in one canal zone:
+
+- Swim with the on-screen swim pad, or the arrow keys or WASD.
+- Use Tail Dash, ride the current, and eat snacks.
+- Dodge three tilapia. A hit costs a leg, and legs regrow. If you lose all four, you are carried home and you lose the finds you had not banked.
+- Find hidden treasures: Decorations, Wearables, and Paint shells for Dream colours. Each has a rarity badge, and hint sparkles help you look.
+- The hiding spots shuffle each trip.
+- Bank your finds at the Home Spot to keep them safe.
+
+## Coming next
+
+The Axolotl MVP is in progress ([epic #6](https://github.com/brenpike/glam-gills/issues/6)).
+Next up: the Home Tank hub and Treasure Chest, rescuing real axolotl morphs and the Collection Book, a character creator, saving, outfits with 8 wearable slots, Dream colours, and beating Area 1 by eating every snack to open its exit.
+The [PRD](docs/prds/axolotl-mvp.md) is the source of truth.
+
+After the MVP: the Tank Top Model fashion show, more real freshwater areas, and building a safe refuge for axolotls.
 
 Play it: <https://brenpike.github.io/glam-gills/>
 
@@ -68,6 +86,7 @@ On WSL2 this needs Windows port forwarding to the WSL VM, so the Pages build is 
 - [Tech stack](docs/tech-stack.md)
 - [Architecture Decision Records](docs/adr/)
 - [MVP product requirements (PRD)](docs/prds/axolotl-mvp.md)
+- [Glossary](CONTEXT.md)
 - [Art style guide](docs/art-style-guide.md)
 - [Art-style prototypes](prototypes/art-styles/)
 - [Changelog](CHANGELOG.md)
