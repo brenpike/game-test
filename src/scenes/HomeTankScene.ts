@@ -15,6 +15,7 @@ import { createAxolotlTexture, type AxolotlTexture, type TexInfo } from '../art/
 import { GAME_EVENTS, REGISTRY_KEYS, type ReducedMotionPayload } from '../logic/gameEvents';
 import type { Size } from '../logic/hudLayout';
 import { motionProfile, type MotionProfile } from '../logic/motion';
+import { NO_REPAINT, pickSecondaryRepaint } from '../logic/repaintBudget';
 import { setTankLayout, type Session } from '../logic/session';
 import { TANK, tankFrame, tankToCss, type TankFrame, type TankLayout } from '../logic/tank';
 import { tankSwimPose } from '../logic/tankSwim';
@@ -114,6 +115,8 @@ interface TankSwimmer {
   palette: MorphPalette;
   image: Phaser.GameObjects.Image;
   lastPose: AxolotlPose | null;
+  /** This frame's pose for an axolotl after the first, painted when the shared repaint budget picks it. */
+  wanted?: AxolotlPose;
   /** Seconds since the last repaint, for the low frame rate repaint cap. */
   redrawAcc: number;
 }
@@ -154,6 +157,8 @@ export class HomeTankScene extends Phaser.Scene {
   private surface!: Phaser.GameObjects.Graphics;
   private surfaceLine = { color: 0, alpha: 1 };
   private swimmers: TankSwimmer[] = [];
+  /** Repaint budget waits for the axolotls after the first, one per axolotl; reused every frame. */
+  private readonly rescuedWaits: number[] = [];
 
   private titlePanel!: Phaser.GameObjects.Graphics;
   private titleText!: Phaser.GameObjects.Text;
@@ -560,6 +565,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.swimmers.forEach((swimmer, index) => this.renderSwimmer(swimmer, index, t, dt));
     this.renderSurface(t);
     this.decorator.update(this.clock, this.motion);
+    this.repaintRescuedSwimmers();
   }
 
   /** Places one axolotl from its tank pose (still under reduced motion) and repaints it when its pose changes. */
@@ -571,7 +577,8 @@ export class HomeTankScene extends Phaser.Scene {
       tailAmp: 1,
       sparkle: 0,
     };
-    this.redrawSwimmer(swimmer, pose, dt);
+    if (index === 0) this.redrawSwimmer(swimmer, pose, dt);
+    else this.askRescuedRepaint(swimmer, index - 1, pose, dt);
     const swim = tankSwimPose(swimmer.id, index, this.clock, !this.motion.ambient);
     const at = tankToCss(this.frame, { x: swim.x, y: swim.y });
     swimmer.image
@@ -592,6 +599,39 @@ export class HomeTankScene extends Phaser.Scene {
     if (swimmer.lastPose !== null && this.game.loop.actualFps < LOW_FPS && swimmer.redrawAcc < LOW_FPS_REDRAW_S) {
       return;
     }
+    swimmer.redrawAcc = 0;
+    swimmer.texture.redraw(pose, swimmer.palette);
+    swimmer.lastPose = pose;
+  }
+
+  /**
+   * Records this frame's pose for an axolotl after the first and its repaint budget wait in `slot`.
+   * A first paint, or any pose change under reduced motion, paints at once so the morph colours and
+   * still pose show now (PRD C8).
+   */
+  private askRescuedRepaint(swimmer: TankSwimmer, slot: number, pose: AxolotlPose, dt: number): void {
+    swimmer.wanted = pose;
+    this.rescuedWaits[slot] = NO_REPAINT;
+    if (swimmer.lastPose !== null && samePose(pose, swimmer.lastPose)) return;
+    swimmer.redrawAcc += dt;
+    if (swimmer.lastPose === null || !this.motion.ambient) {
+      this.paintRescued(swimmer, pose);
+      return;
+    }
+    this.rescuedWaits[slot] = swimmer.redrawAcc;
+  }
+
+  /** Repaints at most one axolotl after the first this frame, the one the shared repaint budget picks. */
+  private repaintRescuedSwimmers(): void {
+    this.rescuedWaits.length = Math.max(0, this.swimmers.length - 1);
+    const slot = pickSecondaryRepaint(this.rescuedWaits);
+    if (slot < 0) return;
+    const swimmer = this.swimmers[slot + 1];
+    if (swimmer.wanted) this.paintRescued(swimmer, swimmer.wanted);
+  }
+
+  /** Paints an axolotl after the first in its morph's colours, as redrawSwimmer does. */
+  private paintRescued(swimmer: TankSwimmer, pose: AxolotlPose): void {
     swimmer.redrawAcc = 0;
     swimmer.texture.redraw(pose, swimmer.palette);
     swimmer.lastPose = pose;

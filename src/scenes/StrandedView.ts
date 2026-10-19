@@ -5,6 +5,7 @@ import { MORPH_PALETTES, T_STATIC } from '../art/palette';
 import { createAxolotlTexture, type AxolotlTexture } from '../art/textures';
 import type { RealMorphId } from '../logic/morphs';
 import type { MotionProfile } from '../logic/motion';
+import { NO_REPAINT, pickSecondaryRepaint } from '../logic/repaintBudget';
 import { rescueStatus, type RescueState, type RescueStatus } from '../logic/rescue';
 import type { TripState } from '../logic/trip';
 import { blinkAt, samePose, type GameAssets } from './BootScene';
@@ -21,8 +22,6 @@ const LOOK_AROUND_PERIOD = 2.4;
 const BLINK_OFFSET_S = 2.3;
 const BUBBLE_RISE_PX = 52;
 const BUBBLE_HEAD_SHIFT_PX = 18;
-const LOW_FPS = 45;
-const LOW_FPS_REDRAW_S = 1 / 30;
 
 /** One frame of stranded-axolotl rendering input. `time` is the scene clock in seconds (frozen while paused). */
 export interface StrandedFrame {
@@ -55,6 +54,7 @@ export class StrandedView {
   private lastPose: AxolotlPose | null = null;
   private paintedMorph: RealMorphId | null = null;
   private redrawAcc = 0;
+  private readonly waits: number[] = [NO_REPAINT];
 
   constructor(scene: Phaser.Scene, assets: GameAssets) {
     this.scene = scene;
@@ -85,7 +85,7 @@ export class StrandedView {
     }
     const status = rescueStatus(rescue, frame.trip.holdings, frame.trip.phase);
     this.advancePhases(status, frame);
-    this.redraw(rescue.morph, this.poseFor(frame), frame.dt);
+    this.redraw(rescue.morph, this.poseFor(frame), frame.dt, frame.motion.ambient);
 
     const look = this.lookFor(rescue, status, frame);
     const x = rescue.pos.x;
@@ -141,22 +141,20 @@ export class StrandedView {
   }
 
   /**
-   * Repaints the texture when the pose or morph changes. While the frame rate is low, repaints are
-   * capped at 30 a second, as for the explorer.
-   *
-   * Known trade-off: with normal motion the pose changes almost every frame, so this is one more
-   * live texture repaint per frame, on top of the explorer's. It uses the same reactive low-FPS cap
-   * as the explorer, the title axolotl and the Home Tank axolotls, and costs about the same as a
-   * second axolotl in the tank. Caching or quantizing poses ahead of time was considered and not
-   * done here: doing it for one view would split the axolotl rendering pattern, and the planned
-   * move to pre-baked sprite atlases (ADR 0004) is where that change belongs for every axolotl.
+   * Repaints the texture when the pose or morph changes, through the shared repaint budget for
+   * secondary axolotls (src/logic/repaintBudget.ts): at most one repaint per frame and about 30 a
+   * second, so the stranded axolotl adds at most one repaint every other frame at 60 fps on top of
+   * the explorer. A first paint, a new morph and the still pose under reduced motion paint
+   * immediately. The explorer's own every-frame repaint is unchanged; pre-baked frames for every
+   * axolotl are planned in ADR 0004.
    */
-  private redraw(morph: RealMorphId, pose: AxolotlPose, dt: number): void {
+  private redraw(morph: RealMorphId, pose: AxolotlPose, dt: number, ambient: boolean): void {
     const lastPose = this.paintedMorph === morph ? this.lastPose : null;
     if (lastPose !== null && samePose(pose, lastPose)) return;
     this.redrawAcc += dt;
-    if (lastPose !== null && this.scene.game.loop.actualFps < LOW_FPS && this.redrawAcc < LOW_FPS_REDRAW_S) {
-      return;
+    if (lastPose !== null && ambient) {
+      this.waits[0] = this.redrawAcc;
+      if (pickSecondaryRepaint(this.waits) < 0) return;
     }
     this.redrawAcc = 0;
     this.texture.redraw(pose, MORPH_PALETTES[morph]);
