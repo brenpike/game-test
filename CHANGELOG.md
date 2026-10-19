@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-18
+
 ### Added
 
 - Home Tank hub with Go exploring, Decorate and Treasure Chest. Works with touch and keyboard.
@@ -18,8 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Every trip now ends in the Home Tank with a trip-end message.
 - Go exploring replaces Swim again. The interim home screen is gone.
-
-### Fixed
 
 ## [0.6.0] - 2026-10-18
 
