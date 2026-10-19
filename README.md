@@ -15,12 +15,12 @@ Version 0.9.0 is playable in one canal zone:
 - The hiding spots shuffle each trip.
 - The snack counter shows how many snacks are left. The last 3 snacks sparkle, and snacks drift slowly.
 - The exit opens when every snack is eaten. While it is closed, it shows a padlock sign and a message.
-- Swim into the open exit at the far end of the canal to beat Area 1 and bank the Trip Bag.
-- Earn up to 3 stars: reach the exit, find the Castle tower, and keep all four legs.
+- Swim into the open exit at the far end of the canal to beat Area 1 and bank the Trip Bag. A rescued axolotl following you moves into your Home Tank.
+- Earn up to 3 stars: reach the exit, find the Castle tower, and rescue the stranded axolotl or keep all four legs.
 - Your best stars show on the "Area beaten" card and in the Home Tank. They are kept for the session, not saved.
 - Eaten snacks come back after you are carried home or beat the area. They stay eaten after Go home.
 - Bank your finds at the Home Spot to keep them safe.
-- Rescue a stranded axolotl in the canal. Each trip, one real morph you do not have yet (Wild, Golden albino, or Melanoid) waits looking a little lost. Swim to it and it follows you; bring it to the Home Spot and it moves into your Home Tank.
+- Rescue a stranded axolotl in the canal. Each trip, one real morph you do not have yet (Wild, Golden albino, or Melanoid) waits looking a little lost. Swim to it and it follows you; bring it to the Home Spot or the open exit and it moves into your Home Tank.
 - Meet the tilapia: the first time you swim near one, a fact card tells you about it.
 - Visit your Home Tank after the title and after every trip. A trip-end message tells you how the trip went.
 - Watch your axolotl swim around the Home Tank. With reduced motion it stays still.
