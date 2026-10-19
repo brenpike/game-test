@@ -42,6 +42,7 @@ Design language for the axolotl kids game (ages 8-12, web first, then mobile). T
 | An "invulnerability flash" after a hit | No flashing. Protected time is a steady bubble ring (6q). The flashing rule is in section 10. |
 | Art style guide: accessories "never cover the eyes", but glasses are a planned Wearable | Face slot with eye zones. Face items draw below the eyes (6a layer 11.5, 6i). |
 | Section 7b had no rarity colours, badge shapes, Home Tank kit, collectibles, or hazard art | Rarity colours 3e and badge shapes 8. Tilapia 7c. Home Spot 7d. Treasures, Dash pot, hint sparkle, and Paint shells 7e. Home Tank kit 7f. 7b updated. |
+| Section 7e says the hint star is the cue for a hidden treasure; PRD H3 also gives the hint sparkle to the last 3 snacks | The last 3 snacks each show the Common hint star (7e, Last-snack hint star), always on (PRD open question 16). The Area exit, its sign and the Area stars are in 7g. Follow-up: rename "hint star" to "hint sparkle" across the guide; this guide keeps "hint star" for now. |
 | No Wearable slot anchors, no face, gill, or spot variants, and no Dream colour patterns | Slot anchors 6i. Face, gill, and spot variants 6l, 6m, 6n, 6o. Dream colours 3f and patterns 6p. |
 | Non-art rows: ADR 0007 "No harsh fail states" (now amended by ADR 0008), and "no network requests" | No guide change. Leg-loss art stays gentle (6q). |
 | PRD open question 4: Home Spot, burrow or buoy | Burrow (7d). |
@@ -405,6 +406,14 @@ Each colour is two picks (body and gill) plus fixed sRGB mixes:
 | Home Tank glass shine | Highlight | rgba(255,255,255,0.25) | - | `derived (provisional)` |
 | Home Tank water | Gradient | Clean water gradient (3c) | - | `derived (provisional)` |
 | Home Tank gravel | Fill | Bed and pebble colours (3a) | - | `derived (provisional)` |
+| Area exit gate frame | Fill | Pebble A #d4cfe6 (3a), ink outline | 9.50:1 with ink; 3.08:1 or better on any background (10). Same colour closed and open. | `derived (provisional)` |
+| Area exit gate slats, keystone, folded leaves | Fill | Pebble C #efdcba (3a), ink outline | 10.70:1 with ink; 3.27:1 or better on any background (10) | `derived (provisional)` |
+| Area exit gate crown seams | Internal detail lines | #e0b095 (pebble E, 3a, as the past-the-current marker carve) | Quiet stone joints, not ink | `derived (provisional)` |
+| Area exit gate shine | Highlight | rgba(255,255,255,0.8) (the pebble shine, 3a) | - | `derived (provisional)` |
+| Area exit sign | Disc fill, with an ink padlock or right arrow | #ffffff, ink 3.5 outline | 14.39:1 (ink icon); 3.79:1 or better on any background (10). Both opaque. | `derived (provisional)` |
+| Area star, earned | Star fill and outline | UI primary / sun #ffe14a, ink outline | 11.05:1 with ink; 3.32:1 or better on any background (10) | `derived (provisional)` |
+| Area star bubble | Ring band, inner disc | Band #ffffff with ink outline. Inner disc #c4f1ff (sky horizon, 3a) with a soft ring line #a9bfd6 (pebble B) and one shine rgba(255,255,255,0.8). | Band 14.39:1 with ink. Disc 11.91:1 with ink (the dashed missing star sits on it). | `derived (provisional)` |
+| Area star, missing | Dashed outline, no fill | Ink | 11.91:1 on the inner disc. The earned fill #ffe14a against the disc is only 1.08:1, so the dashed outline, not the fill, marks missing (10). | `derived (provisional)` |
 | Hint star | Fill and outline | White fill and ink outline, both opaque at every rarity | 14.39:1; 3.79:1 or better on any background (10) | `derived (provisional)` |
 
 ---
@@ -459,6 +468,11 @@ Each colour is two picks (body and gill) plus fixed sRGB mixes:
 | Dash pot cracks | 1.6, internal line (not ink) | `derived (provisional)` |
 | Dash pot shards | 2.6 | `derived (provisional)` |
 | Hint star outline | 1.8 for R 7 and 6 (Common, Rare); 1.6 for R 5 and 4 (Epic, Legendary) | `derived (provisional)` |
+| Area exit gate | 2.8 (`shape`), as the Home Spot flag. Keystone 2.6. Slat and folded-leaf tubes: see the tube table. | `derived (provisional)` |
+| Area exit gate crown seams | 1.6, internal line (not ink) | `derived (provisional)` |
+| Area exit sign | 3.5 (`shape`). Padlock shackle 2.6, right arrow 3.2, ink. | `derived (provisional)` |
+| Area star bubble | 2.6 (`shape`); inner ring 1.2, internal line (not ink) | `derived (provisional)` |
+| Area star outline | 2.0 (`shape`) when earned; the missing star is a dashed ink outline, 2.0, dash 3, gap 3, as the legs display | `derived (provisional)` |
 | Dash-needed bubble | 3.5 (`shape`) | `derived (provisional)` |
 | Lost thought bubble | 3.5 (`shape`) round bubble, radius 12; 2.0 (`shape`) trailing dots, r 3.2 and 2; the "?" inside is a 3.0 tube | `derived (provisional)` |
 | Unfound-morph silhouette "?" | 3.0 tube at the 112 px silhouette, scaled with the silhouette at smaller sizes (4d) | `derived (provisional)` |
@@ -497,6 +511,8 @@ Each colour is two picks (body and gill) plus fixed sRGB mixes:
 | Heart glasses frame band (treasure icon) | 1.5 | 1.0 (3.5 total) | `derived (provisional)` |
 | Twinkle arms | 3 | 1.6 | `derived (provisional)` |
 | Home Spot post | 3.6 | 2.5 | `derived (provisional)` |
+| Area exit gate slat | 5 | 2.2 | `derived (provisional)` |
+| Area exit gate folded leaf | 5.5 | 2.2 | `derived (provisional)` |
 
 **Internal detail lines are not ink.** They are soft tinted lines drawn inside a shape, never in outline colour:
 
@@ -960,7 +976,7 @@ In greyscale, fill against empty is 3.46:1, solid and dashed outlines differ, an
 
 ### 7b. Still to design
 
-Designed in this guide: tilapia (7c), Home Spot (7d), hidden treasures, Dash pot, hint sparkle, the small cave and past-the-current hiding places, each catalogue Decoration and Wearable (as a treasure icon), and Paint shells (7e), Home Tank kit (7f), rarity badges (3e, 8), the banking celebration card and the Trip Bag icon and display (8), the tank arrival card, the Home Tank hub, the decorate controls and the Treasure Chest (8), the Collection Book pages and unfound-morph silhouettes (3g, 8), the morph badge shapes (8), and the stranded axolotl's "a little lost" pose with its lost thought bubble (3g, 9).
+Designed in this guide: tilapia (7c), Home Spot (7d), hidden treasures, Dash pot, hint sparkle, the small cave and past-the-current hiding places, each catalogue Decoration and Wearable (as a treasure icon), and Paint shells (7e), Home Tank kit (7f), rarity badges (3e, 8), the banking celebration card and the Trip Bag icon and display (8), the tank arrival card, the Home Tank hub, the decorate controls and the Treasure Chest (8), the Collection Book pages and unfound-morph silhouettes (3g, 8), the morph badge shapes (8), the stranded axolotl's "a little lost" pose with its lost thought bubble (3g, 9), and the Area exit and Area stars (7g, 8).
 
 Still to design:
 
@@ -1053,7 +1069,7 @@ PRD B1, B5 to B8. Colours are in 3g. All values below are `derived (provisional)
 | `reeds` | 10 | Reeds | `derived (provisional)` |
 | `caveFront`, `currentMarker` | 12 | Cave rocks, past-the-current marker (hazed scenery) | `derived (provisional)` |
 | `haze` | 20 | Water haze | `derived (provisional)` |
-| `homeSpot`, `homeRing` | 24, 26 | Home Spot burrow and flag, safe-ring dots | `derived (provisional)` |
+| `homeSpot`, `homeRing` | 24, 26 | Home Spot burrow and flag, safe-ring dots; Area exit gate (24) and sign (26), 7g | `derived (provisional)` |
 | `treasure` | 28 | Dash pots, treasures revealed by a crumble (cue objects) | `derived (provisional)` |
 | `collectibles` | 30 | Collectibles | `derived (provisional)` |
 | `pads` | 70 | Lily pads | `derived (provisional)` |
@@ -1070,6 +1086,10 @@ PRD B1, B5 to B8. Colours are in 3g. All values below are `derived (provisional)
 | Legendary | 4 | 1.6 | `derived (provisional)` |
 
 The hint star is the 4e shape: inner radius 0.38R, sharp inner corners. Each tip is rounded by a quadratic corner cut of 0.15R along both edges, so the apex sits near 0.93R. Anchor is the star centre. Source: `derived (provisional)`.
+
+**Last-snack hint star.** PRD H3, open question 16. When 1 to 3 snacks are left, each uncollected snack carries the Common hint star (R 7, ink 1.8, the same baked art), 16 px above the snack, at depth 75. It is always on (not range-based, so no hysteresis) and follows its snack as it drifts and bobs. It hides at once when its snack is eaten. Ink and fill stay opaque and alpha stays 1.0 (section 10). Motion in section 9. Source: `derived (provisional)`.
+
+**Snack drift.** PRD H4. In Area 1 each snack wanders around its spawn point: x +/-16 px over 10 s (sine), y +/-8 px over 8 s (cosine), with a golden-angle phase per snack (about 2.4 rad times its index) so neighbours stay out of step. Peak speed is about 11.9 px/s. Drift is gameplay and runs under reduced motion (section 9). Source: `derived (provisional)`.
 
 **Dash pot.** Local units, anchor the pot centre. Drawn at depth 28, above the haze, as a cue object.
 
@@ -1219,6 +1239,38 @@ PRD C7 to C9. UI text says "Home Tank", never "fish tank". Layout at the 480 x 3
 
 Never colour alone.
 
+### 7g. Area exit and Area stars
+
+PRD H1 to H8. Colours are in 3g. All values below are `derived (provisional)`. Every painter is a still frame, so it is also the reduced-motion version.
+
+**Area exit.** The exit is a stone gate standing on the bed with a round sign above it. Closed and open differ by shape and icon, never by colour.
+
+| Part | Construction | Source |
+|---|---|---|
+| World position | Exit circle centre (1850,200), radius 40 (gameplay, inclusive edge; PRD H1). The gate base-centre is on the bed under it at (1850,318), the bed top. | `derived (provisional)` |
+| Gate frame | One U-shaped band of two posts and a round crown, fill pebble A, `shape` ink 2.8, no line across the opening. Clear opening 96 wide x 158 tall to the inner ink edge (y 160 to 318 at the exit). Outer width to the ink edge about 114.8; height to the keystone top about 186.3. Outer crown vertical radius 70. | `derived (provisional)` |
+| Keystone | Rounded block 20 x 22, corner radius 5, pebble C, ink 2.6, at the crown top | `derived (provisional)` |
+| Crown seams, shines | Four radial soft seam lines across the crown (1.6, internal, not ink). One pebble shine on the crown and one on the left post. | `derived (provisional)` |
+| Closed | Six rounded vertical slats across the opening, evenly spaced, tube 5 wide with `ol` 2.2, pebble C, clipped to the opening. Each bottom end sits 5 above the base, so its round cap shows. The frame outline is drawn over the slat ends. | `derived (provisional)` |
+| Open | The opening is clear. Each leaf is folded into a pleated zigzag tube over its post (seven pleats, each 14 tall, reaching x 53.5 to 58 from the centre), tube 5.5 wide with `ol` 2.2, pebble C. The open frame is about 126 wide with the leaves. | `derived (provisional)` |
+| Texture frame | Both states share one frame (the open width), anchored at the base centre. | `derived (provisional)` |
+| Sign | A round white disc, 32 px to the ink edge, ink 3.5 (`shape`). Centre (1850, about 107.7): 8 px of clear water above the keystone top. Closed: an ink padlock (shackle 2.6, filled body 11 x 9 with a white keyhole dot). Open: an ink right arrow (3.2). Anchor is the disc centre. | `derived (provisional)` |
+| Layers | Gate at `homeSpot` (24), sign at `homeRing` (26). Above the haze and below the collectibles: both are cue objects and never hazed (10). | `derived (provisional)` |
+| Opening burst | When the exit opens (the last snack is eaten), the gate and sign swap to open art at once, and three twinkles (4e, the baked twinkle at 0.46 scale, about 12 px) sit evenly round the sign, the first straight up. They start at the sign's rim, move 6 px out, and fade over 0.6 s, once. At depth 80 (`fx`). An exit already open when the area loads shows open with no burst. Motion in section 9. | `derived (provisional)` |
+| Greyscale cues | Slats across the opening against a clear opening with folded leaves; padlock against right arrow. | `derived (provisional)` |
+
+**Area star.** Each area has three stars (PRD H5, H6): reach the exit, own the special treasure, keep or rescue the legs. A star is a five-point rounded star inside a white bubble ring. Painted in a 24 box and scaled uniformly by size / 24; the ink widths never scale (4b).
+
+| Part | Construction | Source |
+|---|---|---|
+| Sizes | 24 px on the Home Tank stars badge, 32 px as the "Area beaten" card head icon, 40 px in the card's star row (gap 12, row 144 wide). Each size is baked on its own, earned and missing. Anchor is the bubble centre. | `derived (provisional)` |
+| Bubble | White band, radius 10.7, `shape` ink 2.6. Inner disc radius 8.9 in #c4f1ff with a soft ring line #a9bfd6 at 1.2 (internal, not ink). One shine ellipse rgba(255,255,255,0.8) at the upper left, radii 1.9 x 0.9, tilted -0.8 rad. | `derived (provisional)` |
+| Star | Five points, one up: outer radius 8.6, inner radius 4.1, tip rounding 1.3, notch rounding 0.6, centre 0.8 below the bubble centre so the star sits visually in the middle. | `derived (provisional)` |
+| Earned | Fill #ffe14a, ink 2.0 (`shape`) | `derived (provisional)` |
+| Missing | No fill; a dashed ink outline, 2.0, dash 3, gap 3, butt caps (as the legs display). The bubble stays. | `derived (provisional)` |
+| Not the Legendary badge | The Legendary rarity badge (3e, 8) is a lone #ffc12e rounded five-point star with no bubble ring, always beside the word "Legendary". The Area star is always in the white bubble ring, is #ffe14a when earned, and has a missing state. Different hue is the weakest cue; the bubble ring and the dashed missing state are the cues. | `derived (provisional)` |
+| Greyscale cues | Filled star against dashed outline. The earned fill and the inner disc are only 1.08:1, so the dashed outline, not the fill, carries missing. | `derived (provisional)` |
+
 ---
 
 ## 8. UI direction
@@ -1247,6 +1299,10 @@ All values in this section are `derived (provisional)` unless the row says other
 | Find pop-up, rescue variant (C3) | Shown when a stranded axolotl starts following, queued with the finds, same panel, layout, and motion. The axolotl portrait (rest pose, in its morph colours) 48 px wide in place of the treasure icon. The name "<Morph> axolotl" (for example "Wild axolotl") in bold ink 22 px. The detail "Following you!" in place of the category, 18 px. The morph badge 32 px with the morph name beside it ("Wild"), bold ink 18 px, in place of the rarity. | `derived (provisional)` |
 | Wearable display | The slot name as text with every Wearable. The perk is shown as icon plus text and value (PRD F10). Perk icons are still to design (7b). | `derived (provisional)` |
 | Legs display | See 6q. | `derived (provisional)` |
+| Snack counter (H3) | White panel (panel style), padding 12, at top-left above the legs display. The 32 px snack icon, 6 px, then the snacks left as "N left" in bold ink 22 px. Icon and number carry the meaning. | `derived (provisional)` |
+| Snack banner (H2) | Soft pink #ffd9e6 panel (as the First-trip hint banner), ink text 24 px, placed per HUD overlay fit. It fades in over 0.25 s, holds until 3 s after it shows, then fades out over 0.25 s (at once under reduced motion). Exit open (the last snack eaten): "Yum! That was the last snack. The exit is open!". Exit closed (the axolotl touches the closed exit): "Eat every snack to open the exit! N snacks left." ("1 snack left." for one). | `derived (provisional)` |
+| "Area beaten" card (H5) | The tank arrival card (below) after the open exit is reached. Title "Area beaten!" (bold ink 34 px). The head icon is the earned Area star at 32 px, in place of the house icon. Under the head, a row of three 40 px Area stars, gap 12 (144 wide), centred, each earned or missing this trip. The body opens "You swam through the open exit!" and names the treasures banked this trip, then has one line per star in star order (earned: "You reached the exit!"; missing: "Reach the exit next time."), then the best so far ("Area 1: 2 of 3 stars"). The short wording is the one line "2 of 3 stars! Best: 3 of 3.". The star row is a fixed-height slot in Card fit and never shrinks. Motion as the tank arrival card (9). | `derived (provisional)` |
+| Home Tank stars badge (H7) | White panel (panel style), padding 12: the area label ("Area 1") in bold ink 18 px, 8 px, then three 24 px Area stars, 4 px apart, earned or missing as the best so far. Centred 12 px under the hub title and buttons when it fits across and ends 12 px above the Decoration band; otherwise in the bottom-right corner inside the 16 px margins. Shown in the hub and while the tank arrival card is up; hidden in the Treasure Chest, in the Collection Book and in decorate mode. Not interactive, and not a focus stop. | `derived (provisional)` |
 | World bubbles ("!" and "dash needed") | White, ink 3.5, always upright, never mirrored. | `derived (provisional)` |
 | Trip Bag icon | A drawstring pouch in the 32 icon box: rounded body from (12.5,12) down to y 27.5, a gathered top flaring to y 6, and one loose drawstring end. Ink 3.0 only, round joins and caps, no fill. | `derived (provisional)` |
 | Home Tank icons | In the 32 icon box, ink only, round joins and caps, always with a label. Chest (Treasure Chest): a domed lid over a rounded body, x 5.5 to 26.5 and y 6.5 to 27, seam at y 15, a filled lock dot r 2.2 at (16,17.5), ink 3.0. Book (Collection Book): an open book, two rounded pages from a centre spine at x 16, x 5.5 to 26.5, their tops curving from y 8 at the spine to y 10 at the outer edge and their bottoms at y 25 with rounded outer corners, one short text line per page at y 15.5 (x 9.5 to 12.5 and 19.5 to 22.5), ink 3.0. Decorate: a sprig, an upright stem from y 27.5 to 6.5 at x 16 with a lower-left and an upper-right leaf, ink 2.8. Close: a rounded X from (9,9) to (23,23), ink 4.5. Left and right (Back and Next): one chevron 9 wide and 18 tall, ink 4.5. Check (OK and Done): a tick (7,17) to (13.5,23.5) to (25,9), ink 4.5. Put away: a down arrow from y 5.5 into an open tray (x 5.5 to 26.5, y 18 to 27), ink 3.2. | `derived (provisional)` |
@@ -1326,6 +1382,8 @@ Everything is soft, slow, and looping. Times are periods (one full cycle).
 | Protected ring | The glint arc travels once around every 2.4 s. Ring alpha is constant. | Glint fixed at the upper-left. |
 | Leg-count wobble (A9) | Extra tilt +0.05 rad per lost leg on the 1.2 s swim cycle: 0 with four legs, +0.05 with three, +0.10 with two, +0.15 with one leg left (three lost). | None. The slowdown stays. |
 | Hint sparkle | On entering range (with 16 px of hysteresis) it grows from scale 0.6 to 1.0 over 0.4 s at full alpha, so a cue object's alpha only ever decreases (section 10). Then bobs +/-2 px over 2.4 s and rotates +/-0.15 rad. Fades out over 0.4 s on leaving range. Hides at once on pickup. The star is drawn 20 px above the spot. | No bob or spin. Appears at full size at once and leaves at once. |
+| Last-snack hint star (7e) | On appearing it grows from scale 0.6 to 1.0 over 0.4 s at full alpha. Then it bobs +/-2 px and rotates +/-0.15 rad over 2.4 s, 16 px above its snack. Always on while 1 to 3 snacks are left; hides at once when its snack is eaten. | Static at full size from the first frame, no bob or spin. |
+| Snack drift (7e, H4) | Each snack: x +/-16 px over 10 s, y +/-8 px over 8 s, golden-angle phase per snack. The star follows. | Keeps drifting: it is gameplay, like the tilapia's position. The snack's own bob goes still. |
 | Dash-needed bubble | Scales 0.6 to 1.0 over 0.15 s, then holds for 1.5 s. Tail tip 14 px above the pot centre. | Appears at full size at once and holds for 1.5 s. |
 | Dash pot wobble | +/-0.08 rad, two swings over 0.4 s. Full motion only. | None. |
 | Crumble | Five shards move 6 to 10 px out and sink 16 px while alpha goes 1 to 0 over 0.6 s. Three twinkles burst 6 px out and fade over 0.6 s. | Three still shards for 0.6 s. |
@@ -1333,6 +1391,7 @@ Everything is soft, slow, and looping. Times are periods (one full cycle).
 | Iridescent sheen | Glides head to tail every 4 s. | Still at x -10. |
 | Home Spot flag and ring | Flag sway +/-0.1 rad over 2 s, turning around the post base. Ring dots bob +/-1 px over 3 s, each dot's phase set by its angle around the ring. | Flag upright, dots on the circle. |
 | Flag twinkle burst (banking) | Three twinkles (4e) burst 6 px out from the flag over 0.6 s, once per banking, then fade out. | Three still twinkles beside the flag for 0.6 s, then gone. |
+| Exit opening burst (7g) | The gate and sign swap to open art at once. Three twinkles (4e, 0.46 scale) move 6 px out from the sign's rim while alpha goes 1 to 0, over 0.6 s, once, on the frame the exit opens. None when the area loads already open. | The twinkles sit 6 px out at full alpha for 0.6 s, then are gone. |
 | Banking card | Fades in over 0.4 s while scaling 0.92 to 1.0, once. | Appears at full size and alpha at once. |
 | Banking card twinkles | Three to five twinkles burst 6 px out around the treasure icons over 0.6 s, once. | Still twinkles at their end positions. |
 | Pickup pop | The treasure icon scales 1.0 to 1.3 while alpha goes 1 to 0, over 0.4 s, once. | Hidden at once; the Trip Bag number shows the pickup. |
@@ -1367,7 +1426,7 @@ Target: WCAG 2.1 AA. Values below are `derived (provisional)` unless noted.
 
 **Contrast: the pair rule.** On any background, every cue object must get at least 3:1 from its ink outline or from its edge partner. Haze is never applied to the hero.
 
-**Cue objects.** The axolotl, the stranded axolotl (waiting or following, never hazed) and its lost thought bubble, tilapia, protected ring, hint sparkle, telegraph glint and "!" bubble, Dash-needed bubble, Dream marker, leg-loss puff and twinkles, Dash pot, Paint shell, Home Spot (arch, flag, safe-ring dots), revealed treasure icons (depth 28, including revealed Paint shells), and the Home Tank focus ring. A hidden treasure icon (depth 9, under reeds, pads, the cave front, or past the current) is deliberately hidden and is not a cue object while hidden; its cue object is the hint star. Once revealed, it is a cue object and is never hazed. Prototype scenery (sky, bank, water, light rays, bed, pebbles, reeds, pads, bubbles), the small cave (rocks and interior), the past-the-current marker, and Home Tank decorations are background. The lost-leg ghost (6q) is faint on purpose; the legs display carries leg state.
+**Cue objects.** The axolotl, the stranded axolotl (waiting or following, never hazed) and its lost thought bubble, tilapia, protected ring, hint sparkle, telegraph glint and "!" bubble, Dash-needed bubble, Dream marker, leg-loss puff and twinkles, Dash pot, Paint shell, Home Spot (arch, flag, safe-ring dots), Area exit gate and sign, Area stars, the last-snack hint star, revealed treasure icons (depth 28, including revealed Paint shells), and the Home Tank focus ring. A hidden treasure icon (depth 9, under reeds, pads, the cave front, or past the current) is deliberately hidden and is not a cue object while hidden; its cue object is the hint star. Once revealed, it is a cue object and is never hazed. Prototype scenery (sky, bank, water, light rays, bed, pebbles, reeds, pads, bubbles), the small cave (rocks and interior), the past-the-current marker, and Home Tank decorations are background. The lost-leg ghost (6q) is faint on purpose; the legs display carries leg state.
 
 **Edge partner.** The opaque fill just inside the ink along the outer silhouette, meaning the body (merged silhouette) and the fins on the outer edge. NOT edge partners: depth details behind the body (far legs, far gills, tilapia far fin), tube details (gills, legs, Home Spot post), and wearables. Pattern overlays never touch the edge on bodies that pass alone (6p). On a rim-lit body the rim light is the edge partner along the upper silhouette, top fin edge included. The lower edge is not required to pass: light comes from above, and a full-outline rim would read as a second outline colour (section 2). See section 12.
 
@@ -1397,11 +1456,11 @@ The worst background is the middle one and gets exactly the square root of P.
 | Dream colours | See 3f | - | - | `derived (provisional)` |
 | Ink vs tilapia body #c2d2bb | 9.07 | 3.01 | Passes | `derived (provisional)` |
 | Ink vs tilapia fin #d4e0d0 | 10.54 | 3.25 | Passes | `derived (provisional)` |
-| Ink vs white #ffffff | 14.39 | 3.79 | Passes: protected ring, hint star, telegraph glint and "!" bubble, lost thought bubble, Dash-needed bubble, Dream marker, leg-loss puff, Home Spot ring dots, focus ring | `derived (provisional)` |
-| Ink vs sun yellow #ffe14a | 11.05 | 3.32 | Passes: twinkles, Home Spot flag | `derived (provisional)` |
+| Ink vs white #ffffff | 14.39 | 3.79 | Passes: protected ring, hint star (including the last-snack star), telegraph glint and "!" bubble, lost thought bubble, Dash-needed bubble, Dream marker, leg-loss puff, Home Spot ring dots, exit sign, Area star bubble band, focus ring | `derived (provisional)` |
+| Ink vs sun yellow #ffe14a | 11.05 | 3.32 | Passes: twinkles, Home Spot flag, earned Area star | `derived (provisional)` |
 | Ink vs Dash pot #efc5aa and rim #f9e1d0 | 9.07, 11.45 | 3.01, 3.38 | Passes | `derived (provisional)` |
 | Ink vs Paint shell #efdcba | 10.70 | 3.27 | Passes | `derived (provisional)` |
-| Ink vs Home Spot stones, pebble A #d4cfe6 and pebble C #efdcba | 9.50, 10.70 | 3.08, 3.27 | Passes | `derived (provisional)` |
+| Ink vs Home Spot stones and Area exit gate, pebble A #d4cfe6 and pebble C #efdcba | 9.50, 10.70 | 3.08, 3.27 | Passes | `derived (provisional)` |
 | Home Spot opening #1b1535 vs bed #b78552 to #8c5e3a | 5.38 to 3.13 | - | Passes against every bed colour | `derived (provisional)` |
 | Ink vs treasure icon outer fills: leaf #86e660, hull and cord and frame and bow #ffd9e6, canopy and castle stone #d4cfe6, pyramid and shells #efdcba, hat #ffe14a | 9.25, 11.19, 9.50, 10.70, 11.05 | 3.04, 3.34, 3.08, 3.27, 3.32 | Passes (every outer fill is 9:1 or more) | `derived (provisional)` |
 | Ink vs Home Tank wall / Treasure Chest backdrop #fff1d6 | 12.89 | - | UI on an opaque backdrop | `derived (provisional)` |
@@ -1424,6 +1483,9 @@ Golden albino and GFP pass on any background. Melanoid passes with its rim light
 | Wearable slots | Slot name text | `derived (provisional)` |
 | Hint sparkle | Star shape, sized by rarity | `derived (provisional)` |
 | Home Spot | Arch silhouette, flag with house icon, dotted ring | `derived (provisional)` |
+| Area exit | Closed: slats across the opening. Open: a clear opening with folded leaves. The sign shows a padlock when closed and a right arrow when open. The frame colour is the same in both states. Messages are text (8). | `derived (provisional)` |
+| Area stars | Earned: a filled star. Missing: a dashed outline with no fill. Both sit in the bubble ring. The earned fill and the inner disc are 1.08:1, so the dashed outline carries missing. Ink outlines are opaque. The card also says each star in a text line and the best as text ("Area 1: 2 of 3 stars"). | `derived (provisional)` |
+| Snack counter and last-snack star | Snack icon plus "N left" as text. The star shape (R 7 Common hint star) on each of the last 3 snacks, static under reduced motion. | `derived (provisional)` |
 | Treasure | Icon shape (each of the eight items and the Paint shell has its own outline) plus the name as text | `derived (provisional)` |
 | Find pop-up | Badge shape plus the rarity name as text, with the item icon and name | `derived (provisional)` |
 | Trip Bag | Bag icon, the number, and the "not safe yet" text | `derived (provisional)` |
@@ -1493,6 +1555,7 @@ Everything in the table below is `derived (provisional)`. Confirm each in a prot
 | Home Spot ring and burrow layout | Ring radius 72 inside the keep-out rectangle, dot count rule (one per 16 px), burrow below the ring centre, stone arch geometry, house icon fit on the flag (about 0.6 px clear of the flag ink at top and bottom), layer order (7d) |
 | Treasure icons, small cave, past-the-current marker, find pop-up (7e, 8, 9) | Icon silhouettes, fills, trims and gems, the 28, 32 and 48 px sizes, Paint shell blob patterns; cave size, rocks, interior #031d33 and world position; marker stone, carving and position; find pop-up layout and timing; hint star grow-in (instead of fade-in), 16 px hysteresis and 20 px offset; Dash-needed bubble placement; crumble shards; depth order (5, 7e) |
 | Trip Bag and banking UI | Trip Bag icon and display, banking card layout and buttons, Go home button position, tank arrival card, first-trip hint banner, the 32-box house icon (8), card fit order and the smallest supported canvas (1, 8), HUD overlay fit order (1, 8) |
+| Area exit and Area stars | Exit position (1850,200) radius 40 and the gate base at (1850,318); gate geometry (96 x 158 opening, six slats, folded leaves, keystone), the 8 px sign gap; opening burst (0.46 scale, 6 px, 0.6 s); Area star construction and the 24, 32 and 40 px sizes; stars badge, snack counter, snack banner and "Area beaten" card layout (7g, 8); last-snack hint star (16 px above, Common star) and snack drift (+/-16 px over 10 s, +/-8 px over 8 s) (7e, 9) |
 | New motion, sparkles, and widths | New motion rows (9); sparkle shapes (4e); new widths (4b) |
 | Wild rim | Chosen cue: the Wild rim, 2 px #e2e4b8 (the Wild belly colour) just inside the ink along the upper outline, from the snout to tail point 3, not on the fin (3b, 6h). Ink vs rim is 10.98:1, so the worst case on any background is 3.31:1 (section 10); the Wild body alone is 6.80:1 (worst case 2.61:1). The body stays #b0b86e, so Wild keeps relative luminance 0.446 and the luminance order (3b). It is distinct from Melanoid's fin-inclusive #cec9f0 rim. Confirm in a render on deep water. |
 | Rescue and Collection Book | Stranded axolotl motion and the lost thought bubble (3g, 4b, 9); morph badge shapes and fills (8); morph portraits at 48, 64 and 112 px and the unfound-morph silhouette with its "?" (3g, 4b); Collection Book layout, featured-page layout and Dream colours rows (8); tilapia fact card and the rescue variant of the find pop-up (8); Book icon (8); freckles in the morph spot colour until the Spots option (6h) |
