@@ -510,7 +510,7 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | [Art style guide](../art-style-guide.md) has no Wearable slot anchors, no face, gill, or spot variants, and no Dream colour patterns. | The character creator, outfits, and Dream colours need all of these. | Art style guide follow-up: Wearable slot anchors (head, neck, face, and tail), face, gill, and spot variants, and Dream colour patterns. |
 | AGENTS.md: "no network requests". [ADR 0007](../adr/0007-kid-safety-and-privacy.md): "no third-party requests". | An update check may make a request. | First-party only (E5), plus an ADR (open question 8). |
 | [Art style guide](../art-style-guide.md) (6i) has four Wearable slots and layers 8.5 to 11.5. Its Wearable test pose (6k) checks four slots. | F8 now has eight slots, layering, and the feet rule. | Art style guide follow-up with issue #16: anchors, footprints, layers, and keep-clear zones for Shirt, Back, Socks, and Feet, plus how socks and shoes hide on a lost leg. |
-| [ADR 0008](../adr/0008-gentle-fail-state.md) says only unbanked trip finds are lost when carried home. | A12 also starts the snacks over. | Snacks are not banked progress, so ADR 0008's guarantee holds. Update ADR 0008's wording with issue #31. |
+| [ADR 0008](../adr/0008-gentle-fail-state.md) says only unbanked trip finds are lost when carried home. | A12 also starts the snacks over. | Snacks are not banked progress, so ADR 0008's guarantee holds. ADR 0008 is updated to say being carried home also starts the snacks over (issue #31). |
 | [Art style guide](../art-style-guide.md) (7e) says the hint star is the cue for a hidden treasure. | H3 also uses it on the last 3 snacks. | Art style guide follow-up with issue #31. |
 
 ### Feature priority order
