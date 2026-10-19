@@ -27,9 +27,7 @@ function hubAction(id: string, label: string, primary: boolean): HubAction {
   return { id, w, h };
 }
 
-const HUB_ACTIONS_3: readonly HubAction[] = HUB_BUTTONS.map(({ id, label, primary }) => hubAction(id, label, primary));
-
-const HUB_ACTIONS_4: readonly HubAction[] = [...HUB_ACTIONS_3, hubAction('collectionBook', 'Collection Book', false)];
+const HUB_ACTIONS: readonly HubAction[] = HUB_BUTTONS.map(({ id, label, primary }) => hubAction(id, label, primary));
 
 /** One line of bold text at `px`, estimated wide. */
 function lineSize(text: string, px: number): Size {
@@ -125,14 +123,13 @@ describe('starRowSize', () => {
 });
 
 describe('hubStarsBadgeRect', () => {
-  it('places the badge on every supported canvas with 3 and 4 hub actions, with and without the title', () => {
+  it('places the badge on every supported canvas with the 4 hub actions, with and without the title', () => {
+    expect(HUB_ACTIONS).toHaveLength(4);
     const problems: string[] = [];
     for (const view of supportedCanvases()) {
-      for (const actions of [HUB_ACTIONS_3, HUB_ACTIONS_4]) {
-        for (const [badgeName, badge] of BADGES) {
-          problems.push(...badgeProblems(view, actions, badgeName, badge, true));
-          problems.push(...badgeProblems(view, actions, badgeName, badge, false));
-        }
+      for (const [badgeName, badge] of BADGES) {
+        problems.push(...badgeProblems(view, HUB_ACTIONS, badgeName, badge, true));
+        problems.push(...badgeProblems(view, HUB_ACTIONS, badgeName, badge, false));
       }
     }
     expect(problems).toEqual([]);
@@ -141,7 +138,7 @@ describe('hubStarsBadgeRect', () => {
   it('centres the badge a gap under the hub when it ends a gap above the Decorations', () => {
     const view = { cssW: 1024, cssH: 768 };
     const frame = tankFrame(view.cssW, view.cssH);
-    const hub = hubLayout(view, frame, HUB_ACTIONS_3, titleSize(view));
+    const hub = hubLayout(view, frame, HUB_ACTIONS, titleSize(view));
     const badge = besideBadge();
     const lowest = Math.max(...hubRects(hub).map(([, rect]) => rect.y + rect.h));
     const rect = hubStarsBadgeRect(view, frame, hub, badge);
@@ -152,7 +149,7 @@ describe('hubStarsBadgeRect', () => {
   it('falls back to the bottom-right corner when there is no room under the hub', () => {
     const view = { cssW: 460, cssH: 320 };
     const frame = tankFrame(view.cssW, view.cssH);
-    const hub = hubLayout(view, frame, HUB_ACTIONS_4, null);
+    const hub = hubLayout(view, frame, HUB_ACTIONS, null);
     const badge = stackedBadge();
     const rect = hubStarsBadgeRect(view, frame, hub, badge);
     expect(rect).toEqual({
