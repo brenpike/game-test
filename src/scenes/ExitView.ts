@@ -17,13 +17,6 @@ const BURST_SPREAD_PX = 6;
 /** Opening twinkles at about 12 px, like the crumble twinkles: the sparkle art is about 26 px across. */
 const BURST_SCALE = 0.46;
 
-/** One frame of exit rendering input: whether the exit is open now. */
-export interface ExitFrame {
-  open: boolean;
-  motion: MotionProfile;
-  dt: number;
-}
-
 interface Twinkle {
   image: Phaser.GameObjects.Image;
   offset: Vec2;
@@ -83,9 +76,9 @@ export class ExitView {
   }
 
   /** Draws one frame; the frame the exit opens swaps the art and starts the burst. */
-  render(frame: ExitFrame): void {
-    if (frame.open !== this.open) this.showState(frame.open);
-    this.renderBurst(frame);
+  render(open: boolean, motion: MotionProfile, dt: number): void {
+    if (open !== this.open) this.showState(open);
+    this.renderBurst(motion, dt);
   }
 
   private showState(open: boolean): void {
@@ -100,11 +93,11 @@ export class ExitView {
    * Full motion: the twinkles move 6 px out from the sign's rim while fading. Still: they hold at
    * their end positions at full alpha. Either way they are gone after the burst life.
    */
-  private renderBurst(frame: ExitFrame): void {
-    this.burstAge = Math.min(this.burstAge + frame.dt, BURST_LIFE_S);
+  private renderBurst(motion: MotionProfile, dt: number): void {
+    this.burstAge = Math.min(this.burstAge + dt, BURST_LIFE_S);
     const life = this.burstAge / BURST_LIFE_S;
     const active = life < 1;
-    const ambient = frame.motion.ambient;
+    const ambient = motion.ambient;
     const reach = SIGN_SIZE / 2 + BURST_SPREAD_PX * (ambient ? life : 1);
     const scale = BURST_SCALE / this.assets.baked.sparkle.scale;
     for (const twinkle of this.twinkles) {

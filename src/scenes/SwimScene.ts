@@ -16,14 +16,12 @@ import { BUBBLE_MAX_ALIVE, bubblePos, createBubbles, updateBubbles, type BubbleS
 import {
   DEFAULT_COLLECT_RADIUS,
   SPARKLE_SNACKS_LEFT,
-  allCollected,
   collectDriftingNear,
-  countCollected,
+  snackTally,
   snackX,
   snackY,
-  snacksLeft,
-  sparklingSnackIds,
   type Collectible,
+  type SnackTally,
 } from '../logic/collectibles';
 import { createEncounterContext } from '../logic/encounter';
 import { currentAt, reedDragAt, reedsNear } from '../logic/environment';
@@ -125,6 +123,8 @@ const SURFACE_STEP = 8;
 const SURFACE_BAND_BOTTOM = SURF + 3;
 const LOW_FPS = 45;
 const LOW_FPS_REDRAW_S = 1 / 30;
+/** The tally of no snacks, held until setItems first runs. */
+const EMPTY_SNACK_TALLY: SnackTally = Object.freeze({ left: 0, collected: 0, sparklingIds: Object.freeze([]) });
 
 interface SteerKeys {
   left: Phaser.Input.Keyboard.Key[];
@@ -177,6 +177,8 @@ export class SwimScene extends Phaser.Scene {
   private swim!: SwimState;
   private dash!: DashState;
   private items: Collectible[] = [];
+  /** Tally of `items`; written only by setItems, alongside `items`. */
+  private snackTally: SnackTally = EMPTY_SNACK_TALLY;
   private bubbles!: BubbleSystem;
   private allDone = false;
   private area!: Readonly<AreaData>;
@@ -216,9 +218,6 @@ export class SwimScene extends Phaser.Scene {
   private snackStarBaseScale = 1;
   /** Seconds each sparkling snack's star has shown, by snack id. */
   private snackStarAges = new Map<string, number>();
-  /** The items array `sparklingIds` was worked out for; it changes only when a snack is eaten. */
-  private sparklingFor: readonly Collectible[] | null = null;
-  private sparklingIds: readonly string[] = [];
   private streaks: Streak[] = [];
   private bubbleImages: Phaser.GameObjects.Image[] = [];
   private sparkles: Sparkle[] = [];
@@ -256,8 +255,7 @@ export class SwimScene extends Phaser.Scene {
     this.dashKeys = [];
     this.snacks = new Map();
     this.snackStarAges = new Map();
-    this.sparklingFor = null;
-    this.sparklingIds = [];
+    this.snackTally = EMPTY_SNACK_TALLY;
     this.sparkleCursor = 0;
     this.sparkleAcc = 0;
     this.sparkleLevel = 0;
@@ -288,8 +286,8 @@ export class SwimScene extends Phaser.Scene {
     const session = readSession(this.registry);
     const start = tripStart(session, Math.floor(Math.random() * 0x100000000) >>> 0);
     this.explorerPalette = MORPH_PALETTES[explorerMorph(session)];
-    this.items = restoreSnacks(zone.collectibles, start.eatenSnacks);
-    this.allDone = allCollected(this.items);
+    this.setItems(restoreSnacks(zone.collectibles, start.eatenSnacks));
+    this.allDone = this.snackTally.left === 0;
     const stranding = pickStranding(start.ownedMorphs, start.waitingStranded, zone.strandingPlaces, start.tripSeed);
     this.trip = createTrip(zone, LEGS, start.banked, start.tripSeed, {
       stranding,
@@ -298,7 +296,7 @@ export class SwimScene extends Phaser.Scene {
     this.dashKeyLatched = true;
     this.tripCtx = createTripContext({ encounter: createEncounterContext({ bounds: this.bounds }) });
     this.registry.set(REGISTRY_KEYS.total, this.items.length);
-    this.registry.set(REGISTRY_KEYS.collected, countCollected(this.items));
+    this.registry.set(REGISTRY_KEYS.collected, this.snackTally.collected);
 
     this.buildWorld();
     this.setupCamera();
@@ -321,11 +319,18 @@ export class SwimScene extends Phaser.Scene {
   }
 
   /**
-   * Snack drift, snack collection and the last-3 snack sparkle allocate nothing per frame.
-   * Drift is computed on read from each snack's base point and the drift clock (review finding fb55980d, #31).
-   * The other small per-frame objects on this path come from earlier work on main: step inputs and results,
-   * position literals, render argument objects and the reeds-near Set. They are an accepted, known cost:
-   * a few short-lived objects per frame, not seen to cause stutter. Revisit if profiling shows GC pauses.
+   * Per-frame cost (#31 review findings ac16b4b1, fb55980d, 18472eb6).
+   * Snack drift is computed on read from each snack's base point and the drift clock. The snack
+   * tally (left, collected, sparkling ids) is worked out only in setItems, when the items change,
+   * and frame code reads it. Snacks, the exit and the last-3 stars create no objects per frame.
+   * Recorded residual, inherited from main: stepSwim and stepTrip return new immutable state and
+   * event lists each frame, syncSnapshot builds a trip snapshot to compare, the views take a render
+   * argument object, and the reeds-near Set, bubble views and surface x list are rebuilt each frame.
+   * Impact is bounded: a fixed number of small, short-lived objects per frame that does not grow
+   * with play time, and not seen to cause stutter. Pooling or mutating them in place was considered
+   * and rejected: the src/logic step functions are immutable by design (trip.ts, encounter.ts,
+   * tilapia.ts) and tested that way (ADR 0006), so the change would cut across shared modules for a
+   * cost nobody has measured. If profiling shows GC pauses, file an issue with this scope.
    */
   update(_time: number, deltaMs: number): void {
     const dt = Math.min(Math.max(deltaMs / 1000, 0), SWIM.dtMax);
@@ -387,7 +392,7 @@ export class SwimScene extends Phaser.Scene {
     this.streaks = zone.currents.flatMap((current) => this.buildStreaks(current));
 
     this.homeSpotView = new HomeSpotView(this, this.assets, this.trip.homeSpot);
-    this.exitView = new ExitView(this, this.assets, this.area.exit, exitOpen(snacksLeft(this.items)));
+    this.exitView = new ExitView(this, this.assets, this.area.exit, exitOpen(this.snackTally.left));
     this.treasureView = new TreasureView(this, this.assets, zone, this.trip.placed);
 
     this.snacks.clear();
@@ -530,8 +535,20 @@ export class SwimScene extends Phaser.Scene {
 
   // ---- game events ---------------------------------------------------------
 
+  /**
+   * The only writer of `items` and its tally: works the tally out once per items change, so frame
+   * code reads it instead. Stars of snacks that stopped sparkling lose their age here.
+   */
+  private setItems(items: Collectible[]): void {
+    this.items = items;
+    this.snackTally = snackTally(items);
+    for (const id of this.snackStarAges.keys()) {
+      if (!this.snackTally.sparklingIds.includes(id)) this.snackStarAges.delete(id);
+    }
+  }
+
   private collectSnacks(): void {
-    const before = countCollected(this.items);
+    const before = this.snackTally.collected;
     const result = collectDriftingNear(
       this.items,
       this.swim,
@@ -541,15 +558,15 @@ export class SwimScene extends Phaser.Scene {
       this.bounds,
     );
     if (!result) return;
-    this.items = result.items;
+    this.setItems(result.items);
     const total = this.items.length;
-    this.registry.set(REGISTRY_KEYS.collected, countCollected(this.items));
+    this.registry.set(REGISTRY_KEYS.collected, this.snackTally.collected);
     result.newly.forEach((item, i) => {
       this.popSnack(item.id);
       const payload: CollectedPayload = { id: item.id, collected: before + i + 1, total };
       this.game.events.emit(GAME_EVENTS.COLLECTED, payload);
     });
-    if (!this.allDone && allCollected(this.items)) {
+    if (!this.allDone && this.snackTally.left === 0) {
       this.allDone = true;
       const payload: AllCollectedPayload = { total };
       this.game.events.emit(GAME_EVENTS.ALL_COLLECTED, payload);
@@ -624,8 +641,8 @@ export class SwimScene extends Phaser.Scene {
    */
   private checkExit(): void {
     if (this.trip.phase !== 'swimming') return;
-    const left = snacksLeft(this.items);
-    const atExitNow = atExit({ x: this.swim.x, y: this.swim.y }, this.area.exit);
+    const left = this.snackTally.left;
+    const atExitNow = atExit(this.swim, this.area.exit);
     const contact = exitContact(this.wasAtExit, atExitNow, left);
     this.wasAtExit = atExitNow;
     if (contact === 'closed') {
@@ -784,7 +801,7 @@ export class SwimScene extends Phaser.Scene {
     this.renderAxolotl(dt);
     this.strandedView.render({ trip: this.trip, motion: this.motion, dt, time: this.clock });
     this.homeSpotView.render({ motion: this.motion, dt, time: this.clock });
-    this.exitView.render({ open: exitOpen(snacksLeft(this.items)), motion: this.motion, dt });
+    this.exitView.render(exitOpen(this.snackTally.left), this.motion, dt);
     this.treasureView.render({
       placed: this.trip.placed,
       holdings: this.trip.holdings,
@@ -913,7 +930,7 @@ export class SwimScene extends Phaser.Scene {
   private renderSnackStars(dt: number, t: number): void {
     // Runs every frame. At most SPARKLE_SNACKS_LEFT ids, so plain array lookups and index loops
     // replace a Set and slices: nothing is allocated here between snacks being eaten.
-    const sparkling = this.currentSparklingIds();
+    const sparkling = this.snackTally.sparklingIds;
     let slot = 0;
     for (let index = 0; index < this.items.length; index++) {
       const item = this.items[index];
@@ -929,20 +946,6 @@ export class SwimScene extends Phaser.Scene {
       slot += 1;
     }
     for (let i = slot; i < this.snackStars.length; i++) this.snackStars[i].setVisible(false);
-  }
-
-  /**
-   * The sparkling snack ids, worked out again only when the items array changes (a snack is eaten);
-   * stars of snacks that stopped sparkling lose their age then.
-   */
-  private currentSparklingIds(): readonly string[] {
-    if (this.sparklingFor === this.items) return this.sparklingIds;
-    this.sparklingFor = this.items;
-    this.sparklingIds = sparklingSnackIds(this.items);
-    for (const id of this.snackStarAges.keys()) {
-      if (!this.sparklingIds.includes(id)) this.snackStarAges.delete(id);
-    }
-    return this.sparklingIds;
   }
 
   private placeSnackStar(
