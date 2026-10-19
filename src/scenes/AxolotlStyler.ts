@@ -72,6 +72,9 @@ const TAU = Math.PI * 2;
 const TITLE_PX = 28;
 const BACKDROP_COVER = 8192;
 const MAX_STEP_S = 0.05;
+/** Repaint budget (art guide 9): while the frame rate is under LOW_FPS, the preview repaints at most 30 a second. */
+const LOW_FPS = 45;
+const LOW_FPS_REDRAW_S = 1 / 30;
 const SWIM_PERIOD_S = 1.2;
 const GILL_PERIOD_S = 0.8;
 const VALUE_BOX_RADIUS = 18;
@@ -280,6 +283,7 @@ export class AxolotlStyler {
   private shownLook: AxolotlLook;
   private lastPose: AxolotlPose | null = null;
   private paintedMorph: RealMorphId | null = null;
+  private redrawAcc = 0;
   private state: StylerState;
   private view: SceneView;
   private dpr: number;
@@ -370,8 +374,9 @@ export class AxolotlStyler {
 
   /** Advances the preview idle by `deltaMs`; under reduced motion it holds the still pose. Call every frame. */
   update(_time: number, deltaMs: number): void {
-    this.clock += Math.min(Math.max(deltaMs / 1000, 0), MAX_STEP_S);
-    this.renderPreview();
+    const dt = Math.min(Math.max(deltaMs / 1000, 0), MAX_STEP_S);
+    this.clock += dt;
+    this.renderPreview(dt);
   }
 
   /**
@@ -632,9 +637,11 @@ export class AxolotlStyler {
 
   /**
    * Paints the preview in the chosen morph's palette when the pose or the morph changed: the idle, or
-   * under reduced motion the still frame (t = 1.0 s, eyes open).
+   * under reduced motion the still frame (t = 1.0 s, eyes open). Per-frame idle repaints (`dt` given)
+   * keep the repaint budget, at most 30 a second while the frame rate is under 45; a first paint, a
+   * new morph, the still pose and any call without `dt` paint at once.
    */
-  private renderPreview(): void {
+  private renderPreview(dt?: number): void {
     const motion = this.motion();
     const t = motion.ambient ? this.clock : T_STATIC;
     const pose: AxolotlPose = {
@@ -645,7 +652,14 @@ export class AxolotlStyler {
       sparkle: 0,
     };
     const morph = this.state.morph;
-    if (this.lastPose !== null && this.paintedMorph === morph && samePose(pose, this.lastPose)) return;
+    if (this.lastPose !== null && this.paintedMorph === morph) {
+      if (samePose(pose, this.lastPose)) return;
+      if (dt !== undefined && motion.ambient) {
+        this.redrawAcc += dt;
+        if (this.scene.game.loop.actualFps < LOW_FPS && this.redrawAcc < LOW_FPS_REDRAW_S) return;
+      }
+    }
+    this.redrawAcc = 0;
     this.preview.redraw(pose, MORPH_PALETTES[morph]);
     this.lastPose = pose;
     this.paintedMorph = morph;

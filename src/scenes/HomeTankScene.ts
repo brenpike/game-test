@@ -304,9 +304,16 @@ export class HomeTankScene extends Phaser.Scene {
     this.refreshHubFocus();
   }
 
+  /**
+   * Animates the tank, or only the styler while the restyle screen's opaque backdrop covers the tank,
+   * so hidden axolotls do not repaint (art guide 9, repaint budget). The tank picks up where it left off.
+   */
   update(time: number, deltaMs: number): void {
+    if (this.restyler !== null) {
+      this.restyler.update(time, deltaMs);
+      return;
+    }
     this.animate(Math.min(Math.max(deltaMs / 1000, 0), 0.05));
-    this.restyler?.update(time, deltaMs);
   }
 
   // ---- build ---------------------------------------------------------------
