@@ -2,6 +2,7 @@ import * as Phaser from 'phaser';
 import { UI_PANEL } from '../art/palette';
 import type { TexInfo } from '../art/textures';
 import type { TreasureIconSize, TreasureTextures } from '../art/treasureTextures';
+import { ICON_ROW_BOX_PX, ICON_ROW_GAP_PX, iconsPerRow } from '../logic/cardFit';
 import { categoryName, treasureSlug } from '../logic/catalogue';
 import { badgeShape, rarityName } from '../logic/hints';
 import type { MotionProfile } from '../logic/motion';
@@ -21,14 +22,6 @@ const NAME_WRAP_W = 260;
 const NAME_MIN_W = 120;
 const FADE_MS = 400;
 const HOLD_MS = 2000;
-const ROW_ICON_PX = 32;
-const ROW_ICON_GAP = 8;
-
-/** Width and height of a block of wrapped icon rows. */
-export interface IconRowsSize {
-  width: number;
-  height: number;
-}
 
 /** Adds a centre-anchored image showing `info` at its logical size. */
 function addCentredImage(scene: Phaser.Scene, info: TexInfo): Phaser.GameObjects.Image {
@@ -51,26 +44,9 @@ export function addTreasureIcon(
   return addCentredImage(scene, info);
 }
 
-/** How many 32 px icon boxes (gap 8) fit in a row `maxW` wide, at least one. */
-function iconsPerRow(maxW: number): number {
-  return Math.max(1, Math.floor((maxW + ROW_ICON_GAP) / (ROW_ICON_PX + ROW_ICON_GAP)));
-}
-
-/** Size of `count` 32 px icon boxes with gap 8, wrapped into rows no wider than `maxW`. Zero when `count` is 0. */
-export function iconRowsSize(count: number, maxW: number): IconRowsSize {
-  if (count === 0) return { width: 0, height: 0 };
-  const perRow = iconsPerRow(maxW);
-  const columns = Math.min(count, perRow);
-  const rows = Math.ceil(count / perRow);
-  return {
-    width: columns * ROW_ICON_PX + (columns - 1) * ROW_ICON_GAP,
-    height: rows * ROW_ICON_PX + (rows - 1) * ROW_ICON_GAP,
-  };
-}
-
 /**
  * Places centre-anchored icons in 32 px boxes with gap 8, in rows no wider than `maxW` from `top`
- * down, each row centred on `centreX` (iconRowsSize() gives the block size).
+ * down, each row centred on `centreX` (iconRowsSize() in logic/cardFit gives the block size).
  */
 export function placeIconRows(
   icons: readonly Phaser.GameObjects.Image[],
@@ -83,10 +59,10 @@ export function placeIconRows(
     const row = Math.floor(index / perRow);
     const column = index % perRow;
     const inRow = Math.min(perRow, icons.length - row * perRow);
-    const rowW = inRow * ROW_ICON_PX + (inRow - 1) * ROW_ICON_GAP;
+    const rowW = inRow * ICON_ROW_BOX_PX + (inRow - 1) * ICON_ROW_GAP_PX;
     icon.setPosition(
-      centreX - rowW / 2 + column * (ROW_ICON_PX + ROW_ICON_GAP) + ROW_ICON_PX / 2,
-      top + row * (ROW_ICON_PX + ROW_ICON_GAP) + ROW_ICON_PX / 2,
+      centreX - rowW / 2 + column * (ICON_ROW_BOX_PX + ICON_ROW_GAP_PX) + ICON_ROW_BOX_PX / 2,
+      top + row * (ICON_ROW_BOX_PX + ICON_ROW_GAP_PX) + ICON_ROW_BOX_PX / 2,
     );
   });
 }
