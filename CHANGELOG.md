@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-19
+
+### Added
+
+- Rescue stranded axolotls in the canal. On each trip, an axolotl of a colour you don't have yet may be waiting, looking a little lost. Swim to it and it follows you. Bring it to the Home Spot or choose Go home and it moves into your Home Tank.
+- If you are carried home before reaching the Home Spot, the axolotl swims back to where you found it and waits for you on your next trip.
+- Four real axolotl colours: Leucistic, Wild, Golden albino and Melanoid, each with its own badge shape. Your Home Tank axolotls swim in their own colours.
+- Collection Book in the Home Tank. It shows the four real colours with a picture, badge and true fun fact once found, or a friendly silhouette and a hint before that. Dream colours are listed in their own section, labelled "Dream colour — not found in nature". Works with touch and keyboard.
+- The first time you meet the tilapia, a short fact card pauses play and explains why it doesn't belong in Xochimilco. You can read it again in the Collection Book.
+
+### Changed
+
+- The banking card and the Home Tank arrival card now name a rescued axolotl.
+
 ## [0.7.0] - 2026-10-18
 
 ### Added
