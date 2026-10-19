@@ -14,11 +14,15 @@ Version 0.6.0 is playable in one canal zone:
 - Find hidden treasures: Decorations, Wearables, and Paint shells for Dream colours. Each has a rarity badge, and hint sparkles help you look.
 - The hiding spots shuffle each trip.
 - Bank your finds at the Home Spot to keep them safe.
+- Visit your Home Tank after the title and after every trip. A trip-end message tells you how the trip went.
+- Watch your axolotl swim around the Home Tank. With reduced motion it stays still.
+- Decorate your Home Tank with the Decorations you banked, by touch or keyboard.
+- Open the Treasure Chest to see the Decorations, Wearables, and Dream colours you banked.
 
 ## Coming next
 
 The Axolotl MVP is in progress ([epic #6](https://github.com/brenpike/glam-gills/issues/6)).
-Next up: the Home Tank hub and Treasure Chest, rescuing real axolotl morphs and the Collection Book, a character creator, saving, outfits with 8 wearable slots, Dream colours, and beating Area 1 by eating every snack to open its exit.
+Next up: rescuing real axolotl morphs and the Collection Book, a character creator, saving, outfits with 8 wearable slots, Dream colours, and beating Area 1 by eating every snack to open its exit.
 The [PRD](docs/prds/axolotl-mvp.md) is the source of truth.
 
 After the MVP: the Tank Top Model fashion show, more real freshwater areas, and building a safe refuge for axolotls.
@@ -51,14 +55,17 @@ npm install
 
 | Action | Touch | Keyboard |
 |---|---|---|
-| Start | Tap | Enter |
+| Start (opens the Home Tank) | Tap | Enter or Space |
 | Swim | Drag the swim pad in the bottom-left corner | Arrow keys or WASD |
 | Tail Dash | Dash button (bottom-right) | Space or Shift |
 | Pause | Pause button | P or Esc |
 | Keep your finds safe | Swim into the Home Spot ring | Swim into the Home Spot ring |
 | Keep exploring or Go home | Keep exploring or Go home button | Left/Right or Tab to choose, Enter or Space to press, H for Go home |
 | Go home from the Home Spot | Go home button (top-right, at the Home Spot) | H |
-| Swim again from home | Swim again button | Enter or Space |
+| Go exploring (from the Home Tank) | Go exploring button | Tab/Shift+Tab or arrow keys to choose a hub button, Enter or Space to press |
+| Close the trip-end message | OK button | Enter or Space |
+| Treasure Chest | Back, Next, and Close buttons | Left/Right to turn pages, Tab/Shift+Tab to move focus, Enter or Space to press, Esc to close |
+| Decorate | Tap a Decoration in the tray to place it, drag it to move it, Put away button, Done button | Tab/Shift+Tab to pick, Enter or Space to place or select, arrow keys to move, Delete or Backspace to put it away, Esc for Done |
 
 The game respects your device's reduced-motion setting.
 

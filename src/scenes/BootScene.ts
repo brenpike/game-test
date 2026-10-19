@@ -7,6 +7,7 @@ import { bakeTankTextures, type TankTextures } from '../art/tankTextures';
 import { bakeTreasureTextures, type TreasureTextures } from '../art/treasureTextures';
 import {
   TEX,
+  bakeSizedButton,
   bakeTextures,
   buttonKey,
   createAxolotlTexture,
@@ -16,6 +17,7 @@ import {
   type ButtonFill,
   type ButtonShape,
   type ButtonVisual,
+  type TexInfo,
 } from '../art/textures';
 import { BUTTON_PRESS_OFFSET, BUTTON_SQUARE, BUTTON_WIDE, type IconKind } from '../art/drawUi';
 import { mulberry32 } from '../logic/rng';
@@ -168,8 +170,16 @@ export function drawPanel(
 export interface ButtonOptions {
   fill: ButtonFill;
   shape: ButtonShape;
-  /** Uniform size multiplier on the 1x button (wide 200 x 64, square 64 x 64 CSS px). */
+  /**
+   * Uniform size multiplier on the 1x button (wide 200 x 64, square 64 x 64 CSS px).
+   * Sets the body height, icon, label size and press offset; sets the body width too unless `width` is given.
+   */
   size: number;
+  /**
+   * Body width in CSS px, used instead of the 1x width times `size`. Height, icon,
+   * label size and press offset still follow `size`. Omit for the standard baked body.
+   */
+  width?: number;
   label: string;
   icon: IconKind;
   dpr: number;
@@ -209,15 +219,34 @@ function placeButtonContent(
   label.setPosition(width / 2 - label.width / 2, top + icon.displayHeight + offsetY);
 }
 
+/**
+ * Bakes (or reuses) the custom-width body visuals at the standard body's bake scale.
+ * Returns undefined when `opts.width` is omitted, so the standard baked body is used.
+ */
+function bakeCustomWidthBodies(
+  scene: Phaser.Scene,
+  baked: BakedTextures,
+  opts: ButtonOptions,
+  logicalH: number,
+): Readonly<Record<ButtonVisual, TexInfo>> | undefined {
+  if (opts.width === undefined) return undefined;
+  if (!Number.isFinite(opts.width) || opts.width <= 0) {
+    throw new RangeError('createButton: width must be a positive finite number');
+  }
+  const stdInfo = baked.info[buttonKey(opts.fill, opts.shape, 'normal')];
+  return bakeSizedButton(scene, opts.fill, opts.width / opts.size, logicalH, stdInfo.scale);
+}
+
 /** Builds a baked button (body texture + icon + label) inside a container at (0, 0). */
 export function createButton(scene: Phaser.Scene, baked: BakedTextures, opts: ButtonOptions): UiButton {
   const dims = opts.shape === 'wide' ? BUTTON_WIDE : BUTTON_SQUARE;
-  const width = dims.w * opts.size;
+  const width = opts.width ?? dims.w * opts.size;
   const height = dims.h * opts.size;
   let focused = false;
   let pressed = false;
 
-  const bodyInfo = baked.info[buttonKey(opts.fill, opts.shape, 'normal')];
+  const bodies = bakeCustomWidthBodies(scene, baked, opts, dims.h);
+  const bodyInfo = bodies?.normal ?? baked.info[buttonKey(opts.fill, opts.shape, 'normal')];
   const body = scene.add
     .image(0, 0, bodyInfo.key)
     .setOrigin(bodyInfo.originNormX, bodyInfo.originNormY)
@@ -234,7 +263,7 @@ export function createButton(scene: Phaser.Scene, baked: BakedTextures, opts: Bu
 
   const refresh = (): void => {
     const visual: ButtonVisual = pressed ? 'pressed' : focused ? 'focused' : 'normal';
-    body.setTexture(buttonKey(opts.fill, opts.shape, visual));
+    body.setTexture(bodies ? bodies[visual].key : buttonKey(opts.fill, opts.shape, visual));
     placeButtonContent(icon, label, opts.shape, width, height, pressed ? BUTTON_PRESS_OFFSET * opts.size : 0);
   };
   const release = (): void => {
