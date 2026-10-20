@@ -103,7 +103,13 @@ export const SURPRISE_BUTTON: Size = Object.freeze(labelTileButton(SURPRISE_ME_L
 /** Cancel (restyle only): a secondary tile. */
 export const CANCEL_BUTTON: Size = Object.freeze(labelTileButton(CANCEL_LABEL));
 
-/** The name box on the Name step: a NAME_MAX-character name with UI.pad each side. */
+/**
+ * The name box on the Name step: a NAME_MAX-character name with UI.pad each side.
+ * The box is sized from the 0.6 em bold estimate (12 name characters at bold 20 px plus padding), so a
+ * name of wide letters (full-width or CJK, or many W's) can wrap to two lines inside the box width, and
+ * stacked combining marks (up to NAME_MARKS_MAX) can reach above or below the box. See the recorded
+ * residual "Wide or heavily accented names in the Name box" in docs/art-style-guide.md section 12.
+ */
 export const NAME_BOX: Size = Object.freeze({
   w: wholePxUp(boldTextW(NAME_MAX, NAME_TEXT_PX) + 2 * UI.pad),
   h: MIN_TARGET_PX,
