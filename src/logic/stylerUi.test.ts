@@ -60,7 +60,7 @@ const CAPTION_PX = 18;
 const OPTION_LABEL_PX = 18;
 
 /** The axolotl texture frame, mirroring AXO_TEX (src/art/drawAxolotl.ts). */
-const PREVIEW_FRAME = Object.freeze({ w: 166, h: 139, originX: 102, originY: 79 });
+const PREVIEW_FRAME = Object.freeze({ w: 166, h: 142, originX: 102, originY: 79 });
 
 /** The largest size scale, mirroring AXO_SIZE_SCALE.large (src/art/drawAxolotlParts.ts); sizes are 0.72, 0.85 and 1. */
 const PREVIEW_LARGEST_SIZE = 1;

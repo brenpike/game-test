@@ -27,6 +27,7 @@ import {
   GILL_STYLES,
   GILL_STYLE_IDS,
   HEAD_ELLIPSE,
+  LASH_REACH,
   MOUTH_VARIANTS,
   NEAR_EYE,
   NEAR_GILL_ROOTS,
@@ -35,7 +36,6 @@ import {
   PROTOTYPE_TORSO,
   SPOTS_OPTIONS,
   SPOT_SETS,
-  TAIL_FIN_START,
   TAIL_SEGMENTS,
   TAIL_SLOT_POINT,
   axolotlBodyGeometry,
@@ -119,7 +119,15 @@ const LASH_BLINKS = [1, 0.5, 0.12] as const;
 /** Both lash strokes: the white under-stroke and the ink. */
 const LASH_WIDTHS = [EYELASH_UNDER, EYELASH_INK] as const;
 /** Lash readability floor: centre-line length clear of the bead. */
-const MIN_LASH_INK_PAST_BEAD = 0.9;
+const MIN_LASH_INK_PAST_BEAD = 2.5;
+/** Lash ends sit on the lash reach circle, this far inside r + LASH_REACH. */
+const LASH_REACH_INSET = 0.05;
+/** Lash corners stay right of this x, clear of the gill stems (stem ink ends at x 15.5). */
+const LASH_MIN_X = 16.5;
+/** Lash corners stay below this y: the Head slot's lowest painted point (guide 6i). */
+const LASH_MIN_Y = -19.5;
+/** Smallest drawn scale, in CSS px per local unit: Small (0.72) in the shrunk creator preview (0.6, PREVIEW_SCALE). */
+const SMALLEST_PX_PER_UNIT = 0.72 * 0.6;
 
 /**
  * Corners of a lash's butt-capped stroke `width` wide (its ends offset by half
@@ -138,16 +146,36 @@ function lashStrokeCorners(lash: EyeLash, width: number, blink: number): LocalPo
   ];
 }
 
-/** Whether every corner of both lash strokes lies inside the circle of radius `zoneR` about the eye centre, at every blink. */
-function lashPaintInZone(lash: EyeLash, zoneR: number): boolean {
-  for (const blink of LASH_BLINKS) {
-    for (const width of LASH_WIDTHS) {
-      for (const corner of lashStrokeCorners(lash, width, blink)) {
-        if (Math.hypot(corner.x, corner.y) > zoneR) return false;
-      }
-    }
-  }
-  return true;
+/** Every corner of both lash strokes at every blink, relative to the eye centre. */
+function allLashCorners(lash: EyeLash): LocalPoint[] {
+  return LASH_BLINKS.flatMap((blink) => LASH_WIDTHS.flatMap((width) => lashStrokeCorners(lash, width, blink)));
+}
+
+/** Radius of the lash reach circle about an eye centre: every lash corner stays inside it. */
+function lashReachR(spot: EyeSpot): number {
+  return spot.r + LASH_REACH - LASH_REACH_INSET;
+}
+
+/** Whether a local point lies inside an axis-aligned ellipse. */
+function isInEllipse(p: LocalPoint, e: BodyEllipse): boolean {
+  return ((p.x - e.cx) / e.rx) ** 2 + ((p.y - e.cy) / e.ry) ** 2 <= 1;
+}
+
+/**
+ * Whether every corner of both lash strokes, at every blink, lies inside the
+ * lash reach circle and the head, right of LASH_MIN_X and below LASH_MIN_Y.
+ */
+function lashPaintHolds(lash: EyeLash, spot: EyeSpot): boolean {
+  const reachR = lashReachR(spot) + 1e-9;
+  return allLashCorners(lash).every((corner) => {
+    const local = { x: spot.x + corner.x, y: spot.y + corner.y };
+    return (
+      Math.hypot(corner.x, corner.y) <= reachR &&
+      isInEllipse(local, HEAD_ELLIPSE) &&
+      local.x >= LASH_MIN_X &&
+      local.y >= LASH_MIN_Y
+    );
+  });
 }
 
 /** Length of a lash's centre line outside the bead circle: ink the bead never paints over. */
@@ -268,16 +296,39 @@ describe('sizes (guide 6o)', () => {
   });
 });
 
+/** Neighbouring Bodies: depth differs by at least this, and the deeper is at least this share deeper. */
+const MIN_BODY_DEPTH_GAP = 8;
+const MIN_BODY_DEPTH_SHARE = 0.2;
+/** Same Body and Age: a Girl is at least this much deeper, her belly y radius at least this much bigger. */
+const MIN_GIRL_DEPTH_GAIN = 6;
+const MIN_GIRL_BELLY_GAIN = 3;
+/** A Boy's peak fin reach over a Girl's, top and bottom. */
+const MIN_BOY_FIN_RATIO = 1.45;
+
+/** Body depth: the torso's full height, 2 x its y radius. */
+function bodyDepth(look: AxolotlArtLook): number {
+  return 2 * axolotlBodyGeometry(look).torso.ry;
+}
+
+/** Peak fin reach beyond the core (2-unit fin base plus fin x the largest rise), top and bottom, over the painted tail points. */
+function peakFinReach(look: AxolotlArtLook): { top: number; bottom: number } {
+  const samples = tailSamples(axolotlBodyGeometry(look).tail, 0, 1);
+  return {
+    top: Math.max(...samples.map((tp) => tp.finTop)),
+    bottom: Math.max(...samples.map((tp) => tp.finBottom)),
+  };
+}
+
 describe('body proportions (Boy or girl, Tail, Body, Age)', () => {
   const look = (over: Partial<AxolotlArtLook>): AxolotlArtLook => ({ ...DEFAULT_ART_LOOK, sex: 'girl', ...over });
 
   it('paint the prototype torso, belly and tail for a Young Regular Medium-tail Girl, bar the Girl cue', () => {
     const geo = axolotlBodyGeometry(look({}));
-    expect(geo.torso).toEqual({ ...PROTOTYPE_TORSO, ry: PROTOTYPE_TORSO.ry + 1.5 });
-    expect(geo.belly.rx).toBe(PROTOTYPE_BELLY.rx);
-    expect(geo.belly.ry).toBeCloseTo(PROTOTYPE_BELLY.ry + 1.5, 9);
+    expect(geo.torso).toEqual({ ...PROTOTYPE_TORSO, ry: PROTOTYPE_TORSO.ry + 3 });
+    expect(geo.belly.rx).toBe(PROTOTYPE_BELLY.rx + 2);
+    expect(geo.belly.ry).toBeCloseTo(PROTOTYPE_BELLY.ry + 3, 9);
     expect(geo.tail.length).toBe(PROTOTYPE_TAIL.length);
-    expect([geo.tail.rootX, geo.tail.finTop, geo.tail.finBottom]).toEqual([-30, 9, 7]);
+    expect([geo.tail.rootX, geo.tail.finTop, geo.tail.finBottom, geo.tail.finStart]).toEqual([-30, 9, 7, 3]);
     expect(geo.gillLength).toBe(1);
     expect(geo.legLengths).toEqual([14, 14, 15, 15]);
     expect(geo.toeLength).toBe(8.5);
@@ -287,7 +338,7 @@ describe('body proportions (Boy or girl, Tail, Body, Age)', () => {
     const geo = axolotlBodyGeometry(DEFAULT_ART_LOOK);
     expect(geo.torso).toEqual(PROTOTYPE_TORSO);
     expect(geo.belly).toEqual(PROTOTYPE_BELLY);
-    expect(geo.tail).toEqual({ ...PROTOTYPE_TAIL, length: 48, finTop: 9 * 1.2, finBottom: 7 * 1.2 });
+    expect(geo.tail).toEqual({ ...PROTOTYPE_TAIL, length: 48, finTop: 9 * 1.6, finBottom: 7 * 1.6, finStart: 1 });
   });
 
   it('set the tail core length by Tail, plus 4 for a Boy, x0.85 for a Baby', () => {
@@ -304,9 +355,9 @@ describe('body proportions (Boy or girl, Tail, Body, Age)', () => {
 
   it('set torso and belly by Body', () => {
     const slim = axolotlBodyGeometry(look({ sex: 'boy', body: 'slim' }));
-    expect([slim.torso.rx, slim.torso.ry, slim.belly.rx, slim.belly.ry]).toEqual([37, 16.5, 26, 5.2]);
+    expect([slim.torso.rx, slim.torso.ry, slim.belly.rx, slim.belly.ry]).toEqual([37, 15, 26, 4.2]);
     const chubby = axolotlBodyGeometry(look({ sex: 'boy', body: 'chubby' }));
-    expect([chubby.torso.rx, chubby.torso.ry, chubby.belly.rx, chubby.belly.ry]).toEqual([39, 22, 28, 8]);
+    expect([chubby.torso.rx, chubby.torso.ry, chubby.belly.rx, chubby.belly.ry]).toEqual([39, 24, 28, 9.5]);
   });
 
   it('change only proportions by Age, keeping the head joint', () => {
@@ -327,13 +378,82 @@ describe('body proportions (Boy or girl, Tail, Body, Age)', () => {
     expect(baby.legRoots[2]).toEqual(young.legRoots[2]);
   });
 
-  it('give a Boy taller fins and a Girl a rounder torso and belly', () => {
+  it('give a Boy taller fins starting nearer the body, and a Girl a rounder torso and a rounder, wider belly', () => {
     const boy = axolotlBodyGeometry(look({ sex: 'boy' }));
     const girl = axolotlBodyGeometry(look({}));
-    expect(boy.tail.finTop).toBeCloseTo(girl.tail.finTop * 1.2, 9);
-    expect(boy.tail.finBottom).toBeCloseTo(girl.tail.finBottom * 1.2, 9);
-    expect(girl.torso.ry - boy.torso.ry).toBeCloseTo(1.5, 9);
-    expect(girl.belly.ry - boy.belly.ry).toBeCloseTo(1.5, 9);
+    expect(boy.tail.finTop).toBeCloseTo(girl.tail.finTop * 1.6, 9);
+    expect(boy.tail.finBottom).toBeCloseTo(girl.tail.finBottom * 1.6, 9);
+    expect([boy.tail.finStart, girl.tail.finStart]).toEqual([1, 3]);
+    expect(girl.torso.ry - boy.torso.ry).toBeCloseTo(3, 9);
+    expect(girl.belly.ry - boy.belly.ry).toBeCloseTo(3, 9);
+    expect(girl.belly.rx - boy.belly.rx).toBeCloseTo(2, 9);
+  });
+
+  it('make each Body clearly deeper than the last: 8 or more and 20% or more, as a Boy or a Girl, at every Age', () => {
+    for (const sex of AXO_SEXES) {
+      for (const age of AXO_AGES) {
+        const depths = AXO_BODIES.map((body) => bodyDepth(look({ sex, body, age })));
+        for (let i = 1; i < depths.length; i++) {
+          expect(depths[i] - depths[i - 1]).toBeGreaterThanOrEqual(MIN_BODY_DEPTH_GAP);
+          expect(depths[i] / depths[i - 1]).toBeGreaterThanOrEqual(1 + MIN_BODY_DEPTH_SHARE);
+        }
+      }
+    }
+  });
+
+  it('make a Girl clearly rounder than a Boy: 6 or more deeper, belly y radius 3 or more bigger, same Body and Age', () => {
+    for (const body of AXO_BODIES) {
+      for (const age of AXO_AGES) {
+        const boy = axolotlBodyGeometry(look({ sex: 'boy', body, age }));
+        const girl = axolotlBodyGeometry(look({ body, age }));
+        expect(2 * girl.torso.ry).toBeGreaterThanOrEqual(2 * boy.torso.ry + MIN_GIRL_DEPTH_GAIN);
+        expect(girl.belly.ry).toBeGreaterThanOrEqual(boy.belly.ry + MIN_GIRL_BELLY_GAIN);
+      }
+    }
+  });
+
+  it('give a Boy at least 1.45x the peak fin reach of a Girl, top and bottom, and an earlier fin start, at every Tail, Body and Age', () => {
+    for (const tail of AXO_TAILS) {
+      for (const body of AXO_BODIES) {
+        for (const age of AXO_AGES) {
+          const boy = peakFinReach(look({ sex: 'boy', tail, body, age }));
+          const girl = peakFinReach(look({ tail, body, age }));
+          expect(boy.top).toBeGreaterThanOrEqual(MIN_BOY_FIN_RATIO * girl.top);
+          expect(boy.bottom).toBeGreaterThanOrEqual(MIN_BOY_FIN_RATIO * girl.bottom);
+          const boyStart = axolotlBodyGeometry(look({ sex: 'boy', tail, body, age })).tail.finStart;
+          expect(boyStart).toBeLessThan(axolotlBodyGeometry(look({ tail, body, age })).tail.finStart);
+        }
+      }
+    }
+  });
+
+  it('read at the smallest drawn scale (Small in the shrunk preview, 0.432 px per unit)', () => {
+    const px = (units: number): number => units * SMALLEST_PX_PER_UNIT;
+    expect(SMALLEST_PX_PER_UNIT).toBeCloseTo(0.432, 9);
+    for (const tail of AXO_TAILS) {
+      for (const body of AXO_BODIES) {
+        for (const age of AXO_AGES) {
+          const boy = peakFinReach(look({ sex: 'boy', tail, body, age }));
+          const girl = peakFinReach(look({ tail, body, age }));
+          expect(px(boy.top - girl.top)).toBeGreaterThanOrEqual(2);
+          expect(px(boy.top + boy.bottom - girl.top - girl.bottom)).toBeGreaterThanOrEqual(2);
+          const boyDepth = bodyDepth(look({ sex: 'boy', tail, body, age }));
+          expect(px(bodyDepth(look({ tail, body, age })) - boyDepth)).toBeGreaterThanOrEqual(2);
+        }
+      }
+    }
+    for (const sex of AXO_SEXES) {
+      for (const age of AXO_AGES) {
+        const depths = AXO_BODIES.map((body) => bodyDepth(look({ sex, body, age })));
+        for (let i = 1; i < depths.length; i++) expect(px(depths[i] - depths[i - 1])).toBeGreaterThanOrEqual(3);
+      }
+    }
+    for (const variant of EYE_VARIANTS) {
+      for (const spot of [NEAR_EYE, FAR_EYE]) {
+        const beadR = eyeMarks(variant, spot.r).beadR;
+        for (const lash of eyelashMarks(variant, spot.r)) expect(px(inkPastBead(lash, beadR))).toBeGreaterThanOrEqual(1);
+      }
+    }
   });
 
   it('never move the head', () => {
@@ -1024,24 +1144,48 @@ describe('spots (guide 6n)', () => {
 });
 
 describe('eyelashes (Girl cue)', () => {
-  const eyes: readonly [EyeSpot, { x: number; y: number; r: number }][] = [
-    [NEAR_EYE, NEAR_EYE_ZONE],
-    [FAR_EYE, FAR_EYE_ZONE],
-  ];
+  const eyes = [NEAR_EYE, FAR_EYE] as const;
 
-  it('are three lashes per eye, every corner of both butt-capped strokes inside the eye zone at every blink', () => {
+  it('are ink 2.0 over a white 3.6 under-stroke, reaching 4 past the bead radius', () => {
+    expect([EYELASH_INK, EYELASH_UNDER, LASH_REACH]).toEqual([2, 3.6, 4]);
+  });
+
+  it('are three lashes per eye, every corner of both butt-capped strokes inside the lash reach circle at every blink', () => {
     for (const variant of EYE_VARIANTS) {
-      for (const [spot, zone] of eyes) {
+      for (const spot of eyes) {
         const lashes = eyelashMarks(variant, spot.r);
         expect(lashes).toHaveLength(3);
         for (const lash of lashes) {
           expect(Math.hypot(lash.x2 - lash.x1, lash.y2 - lash.y1)).toBeGreaterThan(1.2);
-          for (const blink of LASH_BLINKS) {
-            for (const width of LASH_WIDTHS) {
-              for (const corner of lashStrokeCorners(lash, width, blink)) {
-                expect(Math.hypot(corner.x, corner.y)).toBeLessThanOrEqual(zone.r);
-              }
-            }
+          for (const corner of allLashCorners(lash)) {
+            expect(Math.hypot(corner.x, corner.y)).toBeLessThanOrEqual(lashReachR(spot) + 1e-9);
+          }
+        }
+      }
+    }
+  });
+
+  it('end on the lash reach circle at the same three angles on every variant', () => {
+    for (const variant of EYE_VARIANTS) {
+      for (const spot of eyes) {
+        const lashes = eyelashMarks(variant, spot.r);
+        const firstCornerOut = lashes.map((lash) =>
+          Math.max(...lashStrokeCorners(lash, EYELASH_UNDER, 1).map((c) => Math.hypot(c.x, c.y))),
+        );
+        for (const reach of firstCornerOut) expect(reach).toBeCloseTo(lashReachR(spot), 6);
+      }
+    }
+  });
+
+  it('keep every corner inside the head, right of x 16.5 (clear of the gill stems) and below y -19.5 (the Head slot)', () => {
+    for (const variant of EYE_VARIANTS) {
+      for (const spot of eyes) {
+        for (const lash of eyelashMarks(variant, spot.r)) {
+          for (const corner of allLashCorners(lash)) {
+            const local = { x: spot.x + corner.x, y: spot.y + corner.y };
+            expect(isInEllipse(local, HEAD_ELLIPSE)).toBe(true);
+            expect(local.x).toBeGreaterThanOrEqual(LASH_MIN_X);
+            expect(local.y).toBeGreaterThanOrEqual(LASH_MIN_Y);
           }
         }
       }
@@ -1050,7 +1194,7 @@ describe('eyelashes (Girl cue)', () => {
 
   it('sit at the upper back of the bead, past its edge', () => {
     for (const variant of EYE_VARIANTS) {
-      for (const [spot] of eyes) {
+      for (const spot of eyes) {
         const beadR = eyeMarks(variant, spot.r).beadR;
         for (const lash of eyelashMarks(variant, spot.r)) {
           expect(lash.x2).toBeLessThan(0);
@@ -1061,9 +1205,9 @@ describe('eyelashes (Girl cue)', () => {
     }
   });
 
-  it('show at least 0.9 of ink past the bead on every variant', () => {
+  it('show at least 2.5 of ink past the bead on every variant and both eyes', () => {
     for (const variant of EYE_VARIANTS) {
-      for (const [spot] of eyes) {
+      for (const spot of eyes) {
         const beadR = eyeMarks(variant, spot.r).beadR;
         for (const lash of eyelashMarks(variant, spot.r)) {
           expect(inkPastBead(lash, beadR)).toBeGreaterThanOrEqual(MIN_LASH_INK_PAST_BEAD);
@@ -1074,7 +1218,7 @@ describe('eyelashes (Girl cue)', () => {
 
   it('keep both root corners inside the bead, so the bead covers every root below the lid', () => {
     for (const variant of EYE_VARIANTS) {
-      for (const [spot] of eyes) {
+      for (const spot of eyes) {
         const beadR = eyeMarks(variant, spot.r).beadR;
         for (const lash of eyelashMarks(variant, spot.r)) {
           for (const corner of lashStrokeCorners(lash, EYELASH_UNDER, 1).slice(0, 2)) {
@@ -1087,7 +1231,7 @@ describe('eyelashes (Girl cue)', () => {
 
   it('root on the back half of the lid line inside the bead and rise above it on lidded eyes', () => {
     for (const variant of ['sleepy', 'determined', 'grumpy'] as const) {
-      for (const [spot] of eyes) {
+      for (const spot of eyes) {
         const marks = eyeMarks(variant, spot.r);
         const lid = marks.lid!;
         for (const lash of eyelashMarks(variant, spot.r)) {
@@ -1152,6 +1296,38 @@ describe('eyelashes (Girl cue)', () => {
     expect(state.lineCap).toBe('round');
     expect(saved).toEqual([]);
   });
+
+  it('paint on layer 12, after every layer 11 mouth stroke, so no Wearable (layers 8.5 to 11.5) can cover them', () => {
+    class StubPath2D {
+      moveTo(): void {}
+      lineTo(): void {}
+      quadraticCurveTo(): void {}
+      closePath(): void {}
+      ellipse(): void {}
+      arc(): void {}
+    }
+    vi.stubGlobal('Path2D', StubPath2D);
+    const state: Record<string, unknown> = { lineWidth: 0, strokeStyle: '', lineCap: '' };
+    const strokes: Record<string, unknown>[] = [];
+    const ctx = new Proxy(
+      {},
+      {
+        get: (_target, key) => (key === 'stroke' ? () => strokes.push({ ...state }) : () => {}),
+        set: (_target, key, value: unknown) => {
+          if (typeof key === 'string' && key in state) state[key] = value;
+          return true;
+        },
+      },
+    ) as CanvasRenderingContext2D;
+    drawAxolotl(ctx, AXO_REST_POSE, LEUCISTIC, { ...DEFAULT_ART_LOOK, sex: 'girl' });
+    vi.unstubAllGlobals();
+    const isLash = (stroke: Record<string, unknown>): boolean =>
+      stroke.lineCap === 'butt' && (stroke.lineWidth === EYELASH_UNDER || stroke.lineWidth === EYELASH_INK);
+    const lastMouth = strokes.map((stroke) => stroke.lineWidth).lastIndexOf(MOUTH_INK);
+    expect(strokes.filter(isLash)).toHaveLength(4);
+    expect(lastMouth).toBeGreaterThanOrEqual(0);
+    expect(strokes.findIndex(isLash)).toBeGreaterThan(lastMouth);
+  });
 });
 
 describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)', () => {
@@ -1180,19 +1356,22 @@ describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)',
     expect(failingLooks(fits)).toEqual([]);
   }, ENUMERATION_TIMEOUT_MS);
 
-  it('keeps eye marks and lashes inside the eye zones', () => {
+  it('keeps eye marks inside the eye zones, and lashes inside the lash reach circle and the head, clear of the gill stems and Head slot', () => {
     const zones = [
       [NEAR_EYE, NEAR_EYE_ZONE],
       [FAR_EYE, FAR_EYE_ZONE],
     ] as const;
-    const eyesHold = (look: AxolotlArtLook): boolean =>
-      zones.every(([spot, zone]) => {
-        const marks = eyeMarks(look.eyes, spot.r);
-        const glintsIn = marks.glints.every((g) => Math.hypot(g.x, g.y) + g.r <= marks.beadR + 1e-9);
-        const lashes = look.sex === 'girl' ? eyelashMarks(look.eyes, spot.r) : [];
-        const lashesIn = lashes.every((lash) => lashPaintInZone(lash, zone.r));
-        return marks.beadR <= zone.r && glintsIn && lashesIn;
-      });
+    const eyesHold = memoBy(
+      (look) => `${look.eyes}|${look.sex}`,
+      (look) =>
+        zones.every(([spot, zone]) => {
+          const marks = eyeMarks(look.eyes, spot.r);
+          const glintsIn = marks.glints.every((g) => Math.hypot(g.x, g.y) + g.r <= marks.beadR + 1e-9);
+          const lashes = look.sex === 'girl' ? eyelashMarks(look.eyes, spot.r) : [];
+          const lashesIn = lashes.every((lash) => lashPaintHolds(lash, spot));
+          return marks.beadR <= zone.r && glintsIn && lashesIn;
+        }),
+    );
     expect(failingLooks(eyesHold)).toEqual([]);
   });
 
@@ -1276,7 +1455,7 @@ describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)',
       },
     );
     expect(TAIL_SLOT_POINT).toBe(4);
-    expect(TAIL_SLOT_POINT).toBeGreaterThan(TAIL_FIN_START);
+    expect(failingLooks((look) => TAIL_SLOT_POINT > axolotlBodyGeometry(look).tail.finStart)).toEqual([]);
     expect(failingLooks(anchorHolds)).toEqual([]);
   });
 });

@@ -204,15 +204,16 @@ export const WILD: MorphPalette = {
     // Far gill stem #714a77 at 0.55.
     spot: 'rgba(113,74,119,0.55)',
     // Corrective contrast cue (guide 12 "Wild rim"): a 2 px rim in the Wild
-    // belly colour just inside the ink from snout to tail point 3, not on the
-    // fin. Ink vs rim is 10.98:1 (worst case 3.31:1). It keeps the body, so Wild
-    // luminance stays 0.446, and it differs from Melanoid's fin-inclusive #cec9f0 rim.
+    // belly colour just inside the ink from snout to the fin band start (tail
+    // point 3, or 1 on a Boy), not on the fin. Ink vs rim is 10.98:1 (worst
+    // case 3.31:1). It keeps the body, so Wild luminance stays 0.446, and it
+    // differs from Melanoid's fin-inclusive #cec9f0 rim.
     rim: { colour: '#e2e4b8', width: 2, fin: false },
     // 8 dots (guide asks 6 to 9). Positions are derived (provisional).
     speckles: {
       colour: '#5f6b33',
       marks: [
-        bodyMark(-12, -10, 1.6),
+        bodyMark(-12, -9.75, 1.6),
         bodyMark(-24, -6, 1.5),
         bodyMark(-18, 2, 1.4),
         bodyMark(-34, 0, 1.3),
@@ -372,7 +373,8 @@ export const AXANTHIC: MorphPalette = {
     spot: 'rgba(228,230,235,0.4)',
     // The Axanthic rim is required: ink vs body is only 3.18:1, ink vs rim
     // 11.53:1. The fin #cfd1d8 is 9.43:1 with ink and passes alone, so the rim
-    // stops at tail point 3. It differs from Melanoid's fin-inclusive #cec9f0 rim.
+    // stops at the fin band start (tail point 3, or 1 on a Boy). It differs from
+    // Melanoid's fin-inclusive #cec9f0 rim.
     rim: { colour: '#e4e6eb', width: 2, fin: false },
     finRays: 'rgba(94,96,106,0.65)',
   },

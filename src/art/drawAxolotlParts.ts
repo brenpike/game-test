@@ -162,10 +162,19 @@ export interface TailGeometry {
   readonly finTop: number;
   /** Peak bottom fin reach beyond the core, on top of the 2-unit fin base. */
   readonly finBottom: number;
+  /** Tail point where the fin bands and core-edge lines start, and where a fin-free morph rim ends (guide 6b). */
+  readonly finStart: number;
 }
 
 /** Prototype tail (guide 6b, 6f): Medium, with no Boy cue. */
-export const PROTOTYPE_TAIL: TailGeometry = { rootX: -30, length: 44, rootHalfHeight: 13, finTop: 9, finBottom: 7 };
+export const PROTOTYPE_TAIL: TailGeometry = {
+  rootX: -30,
+  length: 44,
+  rootHalfHeight: 13,
+  finTop: 9,
+  finBottom: 7,
+  finStart: 3,
+};
 
 /** Everything the body painter reads from the Boy or girl, Tail, Body and Age options. */
 export interface AxolotlBodyGeometry {
@@ -188,10 +197,15 @@ interface BodyBuild {
   readonly bellyRy: number;
 }
 
+/**
+ * Body depth (2 x torso ry) differs by 8 or more, and by 20% or more, between
+ * neighbouring Bodies. Belly x radii leave room for the Girl's wider belly
+ * inside the torso (Chubby stays 28).
+ */
 const BODY_BUILDS: Readonly<Record<AxoBody, BodyBuild>> = {
-  slim: { torsoRx: 37, torsoRy: 16.5, bellyRx: 26, bellyRy: 5.2 },
+  slim: { torsoRx: 37, torsoRy: 15, bellyRx: 26, bellyRy: 4.2 },
   regular: { torsoRx: 37, torsoRy: 19, bellyRx: 26, bellyRy: 6.2 },
-  chubby: { torsoRx: 39, torsoRy: 22, bellyRx: 28, bellyRy: 8 },
+  chubby: { torsoRx: 39, torsoRy: 24, bellyRx: 28, bellyRy: 9.5 },
 };
 
 interface AgeBuild {
@@ -209,9 +223,14 @@ const AGE_BUILDS: Readonly<Record<AxoAge, AgeBuild>> = {
 
 const TAIL_CORE_LENGTHS: Readonly<Record<AxoTail, number>> = { short: 36, medium: 44, long: 52 };
 const BOY_TAIL_EXTRA = 4;
-const BOY_FIN_SCALE = 1.2;
-/** Girl cue: torso and belly a little rounder. */
-const GIRL_ROUND_EXTRA = 1.5;
+/** Boy cue: clearly taller fins. */
+const BOY_FIN_SCALE = 1.6;
+/** Boy cue: the fin bands start nearer the body, so the fin reads longer. */
+const BOY_FIN_START = 1;
+/** Girl cue: torso and belly clearly rounder (added to both y radii). */
+const GIRL_ROUND_EXTRA = 3;
+/** Girl cue: a wider belly (added to its x radius). */
+const GIRL_BELLY_WIDTH_EXTRA = 2;
 
 /** INVARIANT: the torso's front end (the head joint) stays here for every option. */
 const TORSO_FRONT_X = PROTOTYPE_TORSO.cx + PROTOTYPE_TORSO.rx;
@@ -255,9 +274,11 @@ export function torsoPoint(torso: BodyEllipse, x: number, y: number): LocalPoint
 export function axolotlBodyGeometry(look: AxolotlArtLook): AxolotlBodyGeometry {
   const build = BODY_BUILDS[look.body];
   const age = AGE_BUILDS[look.age];
-  const girlExtra = look.sex === 'girl' ? GIRL_ROUND_EXTRA : 0;
-  const finScale = look.sex === 'boy' ? BOY_FIN_SCALE : 1;
-  const boyTail = look.sex === 'boy' ? BOY_TAIL_EXTRA : 0;
+  const isBoy = look.sex === 'boy';
+  const girlExtra = isBoy ? 0 : GIRL_ROUND_EXTRA;
+  const girlBellyWidth = isBoy ? 0 : GIRL_BELLY_WIDTH_EXTRA;
+  const finScale = isBoy ? BOY_FIN_SCALE : 1;
+  const boyTail = isBoy ? BOY_TAIL_EXTRA : 0;
 
   const torsoRx = build.torsoRx + age.torsoRxChange;
   const torso: BodyEllipse = {
@@ -271,7 +292,7 @@ export function axolotlBodyGeometry(look: AxolotlArtLook): AxolotlBodyGeometry {
   const belly: BodyEllipse = {
     cx: torso.cx + (PROTOTYPE_BELLY.cx - PROTOTYPE_TORSO.cx) * ageStretch,
     cy: torso.cy + torso.ry - BELLY_DROP - (bellyRy - PROTOTYPE_BELLY.ry),
-    rx: build.bellyRx * ageStretch,
+    rx: build.bellyRx * ageStretch + girlBellyWidth,
     ry: bellyRy,
   };
   const tail: TailGeometry = {
@@ -280,6 +301,7 @@ export function axolotlBodyGeometry(look: AxolotlArtLook): AxolotlBodyGeometry {
     rootHalfHeight: PROTOTYPE_TAIL.rootHalfHeight * (torso.ry / PROTOTYPE_TORSO.ry),
     finTop: PROTOTYPE_TAIL.finTop * finScale,
     finBottom: PROTOTYPE_TAIL.finBottom * finScale,
+    finStart: isBoy ? BOY_FIN_START : PROTOTYPE_TAIL.finStart,
   };
   return {
     torso,
@@ -382,8 +404,14 @@ export function eyeMarks(variant: EyeVariant, r: number): EyeMarks {
 /** Eye keep-clear zone radius beyond the prototype bead radius (guide 6i). */
 export const EYE_ZONE_MARGIN = 1.8;
 /** Girl cue lashes: ink over a white under-stroke, so they read on Melanoid and in greyscale. */
-export const EYELASH_INK = 1.4;
-export const EYELASH_UNDER = 3;
+export const EYELASH_INK = 2;
+export const EYELASH_UNDER = 3.6;
+/**
+ * Girl cue lashes reach a circle this far past the prototype bead radius
+ * (less LASH_REACH_INSET), beyond the eye zone, so they read at Small. They
+ * paint on the eye layer (12), above every Wearable layer.
+ */
+export const LASH_REACH = 4;
 
 /** One lash line relative to the eye centre, before the blink squash. */
 export interface EyeLash {
@@ -393,11 +421,11 @@ export interface EyeLash {
   readonly y2: number;
 }
 
-/** Lash corners stay this far inside the eye zone edge. */
-const LASH_ZONE_INSET = 0.05;
+/** Lash corners stay this far inside the lash reach circle. */
+const LASH_REACH_INSET = 0.05;
 /** Open eyes: lash roots sit this far inside the bead edge, so the bead covers them. */
 const LASH_ROOT_INSET = 1;
-/** Every variant: each lash aims at the eye zone edge at these angles (the upper back, facing right, y down). */
+/** Every variant: each lash aims at the lash reach circle at these angles (the upper back, facing right, y down). */
 const LASH_END_ANGLES: readonly number[] = [Math.PI + 0.5, Math.PI + 0.85, Math.PI + 1.2];
 /** Lidded eyes: lash roots along the lid, as fractions of the way from its back bead-edge end to its middle. */
 const LID_LASH_ROOTS: readonly number[] = [0.3, 0.42, 0.55];
@@ -449,14 +477,14 @@ function lidBackParam(lid: EyeLid, beadR: number): number {
 
 /**
  * Girl cue lashes for one eye at prototype bead radius r: three lashes aimed
- * at the upper back of the eye zone edge. Open eyes root them 1 inside the
- * bead edge on the same radial lines; lidded eyes root them on the back half
- * of the lid line, so they rise into the space above the lid. Every corner of
- * every butt-capped stroke stays inside the eye zone (guide 6i).
+ * at the upper back of the lash reach circle (r + LASH_REACH). Open eyes root
+ * them 1 inside the bead edge on the same radial lines; lidded eyes root them
+ * on the back half of the lid line, so they rise into the space above the lid.
+ * Every corner of every butt-capped stroke stays inside that circle.
  */
 export function eyelashMarks(variant: EyeVariant, r: number): EyeLash[] {
   const marks = eyeMarks(variant, r);
-  const reach = r + EYE_ZONE_MARGIN - LASH_ZONE_INSET;
+  const reach = r + LASH_REACH - LASH_REACH_INSET;
   const lid = marks.lid;
   if (lid) {
     const back = lidBackParam(lid, marks.beadR);
@@ -470,7 +498,7 @@ export function eyelashMarks(variant: EyeVariant, r: number): EyeLash[] {
   );
 }
 
-/** Lashes use butt caps, so no paint reaches past a lash end (the eye zone stays clear). */
+/** Lashes use butt caps, so no paint reaches past a lash end (the lash reach circle holds every corner). */
 function paintEyelashes(ctx: CanvasRenderingContext2D, lashes: readonly EyeLash[]): void {
   const path = new Path2D();
   for (const lash of lashes) {
@@ -1061,8 +1089,6 @@ export function tailAngleAt(s: number, swim: number, tailAmp: number, tail: Tail
 
 /** Tail points painted from root to tip (guide 6f: 14 segments). */
 export const TAIL_SEGMENTS = 14;
-/** The fin bands start at this tail point (guide 6b). */
-export const TAIL_FIN_START = 3;
 /** The Tail slot anchor sits on the core top at this tail point (guide 6i). */
 export const TAIL_SLOT_POINT = 4;
 
