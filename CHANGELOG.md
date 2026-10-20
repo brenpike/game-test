@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Finds and rescues now show in a short toast at the top or bottom edge of the screen, or over the status panels on the smallest screens, instead of over the middle of the water. A newer find replaces the one showing, so toasts no longer pile up. The snack banner and the first-trip hint follow the same rule (#59).
+- Finds and rescues now show in a short toast at the top or bottom edge of the screen, or over the status panels on small screens, instead of over the middle of the water. A newer find replaces the one showing, so toasts no longer pile up. The snack banner and the first-trip hint follow the same rule (#59).
 
 ## [0.13.0] - 2026-10-19
 
