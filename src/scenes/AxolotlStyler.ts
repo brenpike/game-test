@@ -207,7 +207,7 @@ const OUTFIT_SLOT_CROPS: Readonly<Record<WearableSlot, Bounds>> = Object.freeze(
   socks: LEGS_SLOT_CROP,
   feet: LEGS_SLOT_CROP,
 });
-/** What the preview wears off the Outfit step: nothing. */
+/** What the preview and the pictures wear in the creator: nothing. */
 const NO_PREVIEW_OUTFIT = Object.freeze({ art: NO_OUTFIT, key: outfitKey(NO_OUTFIT) });
 /** Steps along each half of the Shirt cue's ellipse edge. */
 const SHIRT_CUE_STEPS = 32;
@@ -801,13 +801,13 @@ function placeBadge(badge: Phaser.GameObjects.Image, info: TexInfo | null, rect:
  * box, the suggested names and More names), then Back, Next or Done, Surprise me, and Cancel in
  * restyle. Every press and key goes through reduceStyler(); changes show at once, with no tweens.
  * Each picture button is a still bake of the look so far with its option applied, repainted only
- * when the look or morph changes. Each step keeps its pictures until the styler is destroyed, so
+ * when the look, morph or draft outfit changes. Each step keeps its pictures until the styler is destroyed, so
  * going back to a step re-bakes only the pictures that changed. The chosen option has a thick ink ring and a tick; the focused
  * control the double focus ring (PRD F16). The preview idles, and is a still pose under reduced
  * motion. After Done or Cancel the styler ignores further input; the owner destroys it.
  * The restyle Outfit tab (PRD C10, F8 to F11; art guide 8) shows the axolotl in its draft outfit, in
- * the preview and in every picture of its slots view and choices view, and no other step shows the
- * outfit. Each slot picture is the slot's crop wearing the whole outfit, with the worn item's perk
+ * the preview and in every picture of its slots view and choices view; every other restyle step's
+ * preview and pictures wear the draft outfit too, and the creator draws none. Each slot picture is the slot's crop wearing the whole outfit, with the worn item's perk
  * badge or, when empty, the dashed footprint and the plus badge; each choice picture wears that
  * choice, with its label block (name, perk line, "On <name>" mark) under or beside it. The slots view
  * shows the outfit summary, or a caption in its place, and More slots; the choices view More
@@ -1895,8 +1895,8 @@ export class AxolotlStyler {
   /**
    * The texture key of the picture of `option` on the current step, baked first when it would show
    * something new: the look so far with the option applied, in the applied Dream colour (on Colour,
-   * in that morph's palette; on Dream colour, in that option's colour over the real morph), at the
-   * still pose, cropped for the step and sized to fill the button inside its outline at the device
+   * in that morph's palette; on Dream colour, in that option's colour over the real morph), wearing
+   * the draft outfit in restyle (previewOutfit), at the still pose, cropped for the step and sized to fill the button inside its outline at the device
    * pixel ratio. Whole-axolotl pictures are drawn at their size factor, so Size options look
    * different. Each step and option id has its own key, kept until destroy(), so going back to a step
    * or a Dream colour page bakes nothing that did not change; there is at most one key per option of
@@ -1913,7 +1913,8 @@ export class AxolotlStyler {
     const crop = AXO_PREVIEW_CROPS[cropName];
     const scale = pictureScaleOf(crop, rect, this.dpr);
     const sizeFactor = cropName === 'whole' ? AXO_SIZE_SCALE[pictureLook.size] : 1;
-    const sig = JSON.stringify([pictureLook, pictureMorph, pictureDream, cropName, scale]);
+    const outfit = this.previewOutfit();
+    const sig = JSON.stringify([pictureLook, pictureMorph, pictureDream, cropName, scale, outfit.key]);
     if (this.pictureSigs.get(key) === sig) return key;
     bakeAxolotlStill(this.scene, key, {
       look: pictureLook,
@@ -1922,6 +1923,7 @@ export class AxolotlStyler {
       crop,
       scale,
       sizeFactor,
+      outfit: outfit.art,
     });
     this.pictureSigs.set(key, sig);
     return key;
@@ -2036,11 +2038,12 @@ export class AxolotlStyler {
   }
 
   /**
-   * What the preview wears: the draft outfit on the Outfit step, else nothing, so every other step's
-   * options show plainly (art guide 8), with its outfitKey. Made again only when the draft outfit changes.
+   * What the owned axolotl wears in the preview and the picture buttons, with its outfitKey: in
+   * restyle the draft outfit on every step, so it shows everywhere the axolotl is drawn; in the
+   * creator nothing. Made again only when the draft outfit changes.
    */
   private previewOutfit(): { art: ArtOutfit; key: string } {
-    if (this.state.step !== 'outfit') return NO_PREVIEW_OUTFIT;
+    if (this.state.mode !== 'restyle') return NO_PREVIEW_OUTFIT;
     if (this.shownOutfit.source !== this.state.outfit) {
       const art = artOutfit(this.state.outfit);
       this.shownOutfit = { source: this.state.outfit, art, key: outfitKey(art) };

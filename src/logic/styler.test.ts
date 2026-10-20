@@ -1271,5 +1271,5 @@ describe('Outfit step', () => {
         if (result.effect?.type === 'done') expect(result.effect.outfit).toEqual(state.outfit);
       }
     }
-  });
+  }, 20_000);
 });

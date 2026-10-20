@@ -11,11 +11,13 @@ import {
   type EncounterState,
 } from './encounter';
 import { presentCount } from './legs';
+import { emptyOutfit, type Outfit } from './outfit';
 import {
   NO_PERKS_TEXT,
   PERK_CAPS,
   PERK_ORDER,
   SNACK_MAGNET_PULL_SPEED,
+  outfitPerks,
   outfitSummary,
   perkTotals,
   perkTripContext,
@@ -68,6 +70,41 @@ function eventTypes(events: readonly EncounterEvent[]): string[] {
 function countOf(events: readonly EncounterEvent[], type: EncounterEvent['type']): number {
   return events.filter((event) => event.type === type).length;
 }
+
+const CANAL_WEARABLES = CANAL_TREASURES.filter((treasure): treasure is Wearable => treasure.category === 'wearable');
+
+describe('outfitPerks', () => {
+  it('gives nothing for an empty outfit', () => {
+    expect(outfitPerks(emptyOutfit())).toEqual([]);
+  });
+
+  it('gives each worn catalogue Wearable, with its slot and perk, in slot order', () => {
+    const outfit: Outfit = emptyOutfit();
+    for (const wearable of [...CANAL_WEARABLES].reverse()) outfit[wearable.slot] = wearable.id;
+    const expected = WEARABLE_SLOTS.flatMap((slot) => CANAL_WEARABLES.filter((wearable) => wearable.id === outfit[slot]));
+    const worn = outfitPerks(outfit);
+    expect(worn).toEqual(expected);
+    expect(worn.map((item) => item.slot)).toEqual(WEARABLE_SLOTS.filter((slot) => outfit[slot] !== null));
+  });
+
+  it('skips empty slots, unknown ids and treasures that are not Wearables', () => {
+    const wearable = CANAL_WEARABLES[0];
+    const decoration = CANAL_TREASURES.find((treasure) => treasure.category === 'decoration');
+    if (decoration === undefined) throw new Error('no canal Decoration');
+    const otherSlot = WEARABLE_SLOTS.find((slot) => slot !== wearable.slot) ?? wearable.slot;
+    const outfit: Outfit = { ...emptyOutfit(), [wearable.slot]: wearable.id };
+    const withJunk: Outfit = { ...outfit, [otherSlot]: 'canal/no-such-thing' };
+    expect(outfitPerks(withJunk)).toEqual([wearable]);
+    expect(outfitPerks({ ...outfit, [otherSlot]: decoration.id })).toEqual([wearable]);
+  });
+
+  it('gives the same summary as the worn Wearables themselves', () => {
+    const outfit: Outfit = emptyOutfit();
+    for (const wearable of CANAL_WEARABLES) outfit[wearable.slot] = wearable.id;
+    const wornWearables = CANAL_WEARABLES.filter((wearable) => outfit[wearable.slot] === wearable.id);
+    expect(outfitSummary(outfitPerks(outfit))).toEqual(outfitSummary(wornWearables));
+  });
+});
 
 describe('PERK_CAPS', () => {
   it('matches the PRD Tuning values for every perk type', () => {

@@ -10,7 +10,7 @@ Version 0.17.0 is playable in one canal zone:
 
 - Make your own axolotl the first time you play, one step at a time in 11 steps: colour (one of eight real morphs), boy or girl (with a boy or girl sign), eyes, mouth (eight to choose from), gills, spots, tail, body, age, size, and name. Every choice is a big picture button that shows it on your axolotl, and the preview changes as you pick. Surprise me picks everything at random, with a name that fits. The other seven colours are the ones you rescue.
 - Type a name, or pick a suggested one that fits a boy or a girl, so typing is optional. Names stay on your device.
-- On trips you swim as your own axolotl, with its own look. Size (Small, Medium, or Large), boy or girl, tail, body, and age are for looks only: every axolotl swims the same and has the same hit area.
+- On trips you swim as the axolotl you pick, in its own look and outfit. Size (Small, Medium, or Large), boy or girl, tail, body, and age are for looks only: every axolotl swims the same and has the same hit area.
 - Swim with the on-screen swim pad, or the arrow keys or WASD.
 - Use Tail Dash, ride the current, and eat snacks.
 - Dodge three tilapia. A hit costs a leg, and legs regrow. If you lose all four, you are carried home, you lose the finds you had not banked, and the snacks start over.
@@ -27,10 +27,12 @@ Version 0.17.0 is playable in one canal zone:
 - Meet the tilapia: the first time you swim near one, a fact card tells you about it.
 - Visit your Home Tank after the title and after every trip. A trip-end message tells you how the trip went.
 - Watch your axolotl swim around the Home Tank. With reduced motion it stays still.
-- Rename and restyle your axolotl from the Home Tank: tap it, or move the focus to it (its name shows) and press Enter. Restyling starts on Eyes and uses the same step screens, with tabs to jump between steps, plus a Dream colour tab. Its colour and boy or girl show but cannot change. Cancel leaves without keeping the changes.
+- Rename and restyle your axolotl from the Home Tank: tap it, or move the focus to it (its name shows) and press Enter. Restyling starts on Eyes and uses the same step screens, with tabs to jump between steps, plus a Dream colour tab and an Outfit tab. Every step shows the outfit you are choosing. Its colour and boy or girl show but cannot change. Cancel leaves without keeping the changes.
 - Give your axolotls Dream colours: on the restyle screen's Dream colour tab, put any Dream colour you banked on any axolotl, or pick Real colour to take it off. One Dream colour can be on lots of axolotls at once, and spots show on top of it. Dream colours are not found in nature.
+- Dress your axolotls in outfits on the restyle screen's Outfit tab: eight slots (Head, Neck, Face, Shirt, Back, Tail, Socks, and Feet), one Wearable you banked in each. Each Wearable gives one small perk on trips: Speed, Regrowth, Dash (a longer Tail Dash), Shell (blocks one hit per trip), Treasure sense (hint sparkles from further away), or Snack magnet (pulls nearby snacks to you). Each perk shows with an icon and words, and each perk type has a cap. Only the axolotl you take exploring uses its perks. A lost leg's sock and shoe come back when the leg has fully regrown.
+- Press Go exploring to pick which axolotl goes on the trip. The card shows each axolotl in its outfit and the chosen one's perks, and Change outfit takes you to its Outfit tab first. The game remembers your pick.
 - Decorate your Home Tank with the Decorations you banked, by touch or keyboard.
-- Open the Treasure Chest to see the Decorations, Wearables, and Dream colours you banked.
+- Open the Treasure Chest to see the Decorations, Wearables, and Dream colours you banked. Each Wearable shows its slot and its perk, with the perk's icon.
 - Open the Collection Book to see the morphs you rescued, with a fun fact for each, the Dream colours, and the fact cards: the tilapia card and the "Boy or girl?" card.
 - Your progress saves on your device by itself: your axolotls, treasures, Home Tank and stars. There is no save button.
 - Start over from the title screen to erase everything and make a new axolotl. It asks twice before it erases anything.
@@ -39,7 +41,6 @@ Version 0.17.0 is playable in one canal zone:
 ## Coming next
 
 The Axolotl MVP is in progress ([epic #6](https://github.com/brenpike/glam-gills/issues/6)).
-Next up: outfits with 8 wearable slots.
 The [PRD](docs/prds/axolotl-mvp.md) is the source of truth.
 
 After the MVP: the Tank Top Model fashion show, more real freshwater areas, and building a safe refuge for axolotls.
@@ -82,10 +83,10 @@ npm install
 | Keep your finds safe | Swim into the Home Spot ring | Swim into the Home Spot ring |
 | Keep exploring or Go home | Keep exploring or Go home button | Left/Right or Tab to choose, Enter or Space to press, H for Go home |
 | Go home from the Home Spot | Go home button (top-right, at the Home Spot) | H |
-| Go exploring (from the Home Tank) | Go exploring button | Tab/Shift+Tab or arrow keys to choose a hub button, Enter or Space to press |
+| Go exploring (from the Home Tank) | Go exploring button, then on the card tap an axolotl to pick it, More axolotls to see more, and Go!, Change outfit, or Back | Tab/Shift+Tab or arrow keys to choose a hub button, Enter or Space to press; on the card, arrow keys to move between axolotls, Enter or Space to pick one or press a button, Tab/Shift+Tab to reach the axolotls, More axolotls, Go!, Change outfit, and Back, Esc for Back |
 | Beat Area 1 | Swim into the open exit at the far end of the canal | Swim into the open exit at the far end of the canal |
 | Pick an axolotl (Home Tank) | Tap the axolotl | Tab/Shift+Tab or arrow keys past the hub buttons to focus it and show its name, Enter or Space to restyle it |
-| Rename and restyle | Tap a tab to jump to a step (arrow buttons page the tabs when they do not all fit), tap a picture button to pick it, More colours button on the Dream colour tab to see more, Surprise me, Done, and Cancel buttons | Same as making your axolotl, with Tab/Shift+Tab also reaching the tabs, More colours, and Cancel, plus Esc to cancel |
+| Rename and restyle | Tap a tab to jump to a step (arrow buttons page the tabs when they do not all fit), tap a picture button to pick it, More colours button on the Dream colour tab to see more, Surprise me, Done, and Cancel buttons. On the Outfit tab, tap a slot, then tap a Wearable or None; Back to slots goes back, and More slots or More wearables shows more | Same as making your axolotl, with Tab/Shift+Tab also reaching the tabs, More colours, More slots, More wearables, Back to slots, and Cancel, plus Esc to cancel (on an Outfit slot's Wearables, Esc goes back to the slots) |
 | Close the trip-end message (also the "Area beaten" message) | OK button | Enter or Space |
 | Close the tilapia fact card | OK button | Enter, Space, P, or Esc |
 | Treasure Chest | Back, Next, and Close buttons | Left/Right to turn pages, Tab/Shift+Tab to move focus, Enter or Space to press, Esc to close |

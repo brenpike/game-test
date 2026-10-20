@@ -6,8 +6,9 @@
  * takes exactly one outfit, and only the trip consumes `perkTuning` and `perkTripContext`. The hub
  * (Home Tank, styler, Treasure Chest) shows `outfitSummary` but never applies these overrides.
  */
-import type { PerkType, Wearable, WearableSlot } from './catalogue';
+import { WEARABLE_SLOTS, treasureById, type PerkType, type Wearable, type WearableSlot } from './catalogue';
 import { createEncounterContext } from './encounter';
+import type { Outfit } from './outfit';
 import { perkText } from './treasureChest';
 import { createTripContext, type TripContext } from './trip';
 import { LEGS, SWIM, type LegTuning, type SwimTuning } from './tuning';
@@ -167,6 +168,21 @@ export function perkTripContext(tuning: PerkTuning, bounds: SwimBounds = swimBou
   return createTripContext({
     encounter: createEncounterContext({ bounds, legs: tuning.legs, shell: tuning.shell }),
   });
+}
+
+/**
+ * The perks worn in `outfit`, one per worn slot in WEARABLE_SLOTS order, each the catalogue Wearable
+ * with its slot and perk. An empty slot, and an id that is not a catalogue Wearable, gives nothing.
+ */
+export function outfitPerks(outfit: Readonly<Outfit>): WornPerk[] {
+  const worn: WornPerk[] = [];
+  for (const slot of WEARABLE_SLOTS) {
+    const id = outfit[slot];
+    if (id === null) continue;
+    const treasure = treasureById(id);
+    if (treasure?.category === 'wearable') worn.push(treasure);
+  }
+  return worn;
 }
 
 /** Plain sum per perk type of the perks that count with `legsPresent` legs. */

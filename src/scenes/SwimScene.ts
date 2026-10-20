@@ -16,7 +16,6 @@ import {
 import { BUBBLE_RADII, type TexInfo } from '../art/textures';
 import { areaById, atExit, exitContact, exitOpen, type AreaData } from '../logic/areas';
 import { BUBBLE_MAX_ALIVE, bubblePos, createBubbles, updateBubbles, type BubbleSystem } from '../logic/bubbles';
-import { treasureById, type Wearable } from '../logic/catalogue';
 import {
   SPARKLE_SNACKS_LEFT,
   collectSnacksAtHead,
@@ -46,8 +45,7 @@ import {
 import { hintSparkleRadius } from '../logic/hints';
 import { legSwimTuning } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
-import { wornIds, type Outfit } from '../logic/outfit';
-import { perkTripContext, perkTuning, type PerkTuning } from '../logic/perks';
+import { outfitPerks, perkTripContext, perkTuning, type PerkTuning } from '../logic/perks';
 import { mulberry32 } from '../logic/rng';
 import { pickStranding } from '../logic/rescue';
 import { explorerAxolotl, restoreSnacks, tripStart } from '../logic/session';
@@ -169,15 +167,6 @@ function wrapInto(value: number, min: number, max: number): number {
 
 function placeBaked(image: Phaser.GameObjects.Image, info: TexInfo): Phaser.GameObjects.Image {
   return image.setOrigin(info.originNormX, info.originNormY).setScale(1 / info.scale);
-}
-
-/** The catalogue Wearables worn in `outfit`, each with its slot and perk; throws on an id that is not a Wearable. */
-function wornWearables(outfit: Readonly<Outfit>): Wearable[] {
-  return wornIds(outfit).map((id) => {
-    const treasure = treasureById(id);
-    if (treasure?.category !== 'wearable') throw new Error(`SwimScene: worn id "${id}" is not a Wearable`);
-    return treasure;
-  });
 }
 
 /**
@@ -320,7 +309,7 @@ export class SwimScene extends Phaser.Scene {
     // INVARIANT: perks are worked out once, with every leg present. The feet rule (Socks and Feet
     // count only with a leg present) never changes them in play: the hit that takes the last leg
     // starts the carry home in that step, and only swimming reads them.
-    this.perks = perkTuning(wornWearables(explorer.outfit));
+    this.perks = perkTuning(outfitPerks(explorer.outfit));
     this.assets.axolotl.setLook(explorer.look);
     this.setItems(restoreSnacks(zone.collectibles, start.eatenSnacks));
     this.allDone = this.snackTally.left === 0;

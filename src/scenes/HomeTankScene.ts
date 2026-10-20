@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import type { AxolotlPose } from '../art/drawAxolotl';
 import { dreamSheenAt } from '../art/drawDreamOverlay';
+import { artOutfit, outfitKey, type ArtOutfit } from '../art/drawWearables';
 import { DEPTH } from '../art/layers';
 import {
   axolotlPalette,
@@ -22,19 +23,23 @@ import { ownedDreamColours } from '../logic/catalogue';
 import { GAME_EVENTS, REGISTRY_KEYS, type ReducedMotionPayload } from '../logic/gameEvents';
 import type { Rect, Size } from '../logic/hudLayout';
 import { motionProfile, type MotionProfile } from '../logic/motion';
+import { wornIds } from '../logic/outfit';
+import { outfitPerks } from '../logic/perks';
 import { NO_REPAINT, pickSecondaryRepaint } from '../logic/repaintBudget';
 import { spriteFrameBounds } from '../logic/spriteAnchor';
 import {
   bestStars,
   canRescueMore,
+  chooseExplorer,
   restyleAxolotl,
   setDreamColour,
+  setOutfit,
   setTankLayout,
   type OwnedAxolotl,
   type Session,
 } from '../logic/session';
 import { hubStarsBadgeRect } from '../logic/starsUi';
-import { restyleStart, type StylerAxolotl } from '../logic/styler';
+import { restyleStart, type RestyleOptions, type StylerWearer } from '../logic/styler';
 import { TANK, tankFrame, tankToCss, type TankFrame, type TankLayout } from '../logic/tank';
 import {
   axolotlFocusIndex,
@@ -58,7 +63,7 @@ import {
 } from '../logic/tankUi';
 import type { TripEnding } from '../logic/tripEvents';
 import { SURF, waveY } from '../logic/zone';
-import { AxolotlStyler } from './AxolotlStyler';
+import { AxolotlStyler, type StyledAxolotl } from './AxolotlStyler';
 import {
   SCENE_KEYS,
   blinkAt,
@@ -75,6 +80,7 @@ import {
 } from './BootScene';
 import { AreaStarsBadge } from './AreaStarsBadge';
 import { CollectionBookView } from './CollectionBookView';
+import { ExplorerCard, type ExplorerCardAxolotl } from './ExplorerCard';
 import { settleMotionTweens } from './motionTweens';
 import { goExploring, readSession, writeSession, type HomeTankStart } from './sceneFlow';
 import { faceSprite } from './spriteFacing';
@@ -115,8 +121,8 @@ const HUB_ICONS: Readonly<Record<HubActionId, IconKind>> = Object.freeze({
 /**
  * Home Tank draw order (art guide 7f): back layer (wall to gravel), placed Decorations, glass shine,
  * axolotls, surface line, tank outline and lid front, hub UI (with a focused axolotl's ring and name
- * tag) and the decorate toolbar, the Treasure Chest, the Collection Book or the restyle screen (never
- * open together), then the tank arrival card on top.
+ * tag) and the decorate toolbar, the Treasure Chest, the Collection Book, the explorer card or the
+ * restyle screen (never open together), then the tank arrival card on top.
  */
 const TANK_DEPTH = Object.freeze({
   back: DEPTH.bg,
@@ -130,13 +136,18 @@ const TANK_DEPTH = Object.freeze({
   book: DEPTH.ui + 8,
   arrival: DEPTH.ui + 9,
   restyle: DEPTH.ui + 8,
+  explorer: DEPTH.ui + 8,
 });
 
 /**
  * What the Home Tank is showing and where keys go, in priority order: the tank arrival card, the
- * Treasure Chest, the Collection Book, decorate mode, restyling an axolotl (PRD F6), or the hub.
+ * Treasure Chest, the Collection Book, decorate mode, restyling an axolotl (PRD F6), the explorer
+ * card (PRD F7), or the hub.
  */
-type TankMode = 'arrival' | 'chest' | 'book' | 'decorate' | 'restyle' | 'hub';
+type TankMode = 'arrival' | 'chest' | 'book' | 'decorate' | 'restyle' | 'explorer' | 'hub';
+
+/** Where a restyle was opened from, and so where Done or Cancel goes back to: the hub, or the explorer card's Change outfit. */
+type RestyleFrom = 'hub' | 'explorer';
 
 /** One hub action button. */
 interface HubButton {
@@ -150,6 +161,11 @@ interface TankSwimmer {
   texture: AxolotlTexture;
   /** Its morph's colours, or its Dream colour's over its morph (axolotlPalette). */
   palette: MorphPalette;
+  /** What it wears (artOutfit of its outfit) and that outfit's outfitKey. */
+  outfit: ArtOutfit;
+  outfitKey: string;
+  /** The outfitKey last painted, or null before the first paint; a change repaints it. */
+  paintedOutfitKey: string | null;
   image: Phaser.GameObjects.Image;
   lastPose: AxolotlPose | null;
   /** This frame's pose for an axolotl after the first, painted when the shared repaint budget picks it. */
@@ -193,6 +209,37 @@ function zoneArea(areaId: string): Readonly<AreaData> {
   return area;
 }
 
+/** The explorer card entry of an owned axolotl: its id, name, worn perks (outfitPerks) and what its picture shows. */
+function explorerCardAxolotl(axolotl: OwnedAxolotl): ExplorerCardAxolotl {
+  const { id, name, morph, look, dreamColour, outfit } = axolotl;
+  return { id, name, worn: outfitPerks(outfit), morph, look, dreamColour, outfit };
+}
+
+/** Who wears each Wearable among the owned axolotls other than `axolotlId`, by Wearable id, for the restyle Outfit tab. */
+function wearersBesides(axolotls: readonly OwnedAxolotl[], axolotlId: string): Map<string, StylerWearer> {
+  const wearers = new Map<string, StylerWearer>();
+  for (const other of axolotls) {
+    if (other.id === axolotlId) continue;
+    for (const wearableId of wornIds(other.outfit)) wearers.set(wearableId, { axolotlId: other.id, name: other.name });
+  }
+  return wearers;
+}
+
+/** Whether `swimmer` already shows `pose` in its current outfit, so it need not repaint. */
+function swimmerPainted(swimmer: TankSwimmer, pose: AxolotlPose): boolean {
+  return (
+    swimmer.lastPose !== null && samePose(pose, swimmer.lastPose) && swimmer.paintedOutfitKey === swimmer.outfitKey
+  );
+}
+
+/** Repaints `swimmer` in `pose`, its colours and its outfit, and records what it painted. */
+function paintSwimmer(swimmer: TankSwimmer, pose: AxolotlPose): void {
+  swimmer.redrawAcc = 0;
+  swimmer.texture.redraw(pose, swimmer.palette, swimmer.outfit);
+  swimmer.lastPose = pose;
+  swimmer.paintedOutfitKey = swimmer.outfitKey;
+}
+
 /** Places a full-frame tank layer (480 x 360, origin top-left) on the tank frame. */
 function placeTankLayer(image: Phaser.GameObjects.Image, info: TexInfo, frame: TankFrame): void {
   image.setPosition(frame.x, frame.y).setScale(frame.scale / info.scale);
@@ -202,11 +249,13 @@ function placeTankLayer(image: Phaser.GameObjects.Image, info: TexInfo, frame: T
  * The Home Tank hub (PRD C7, C8): the tank on the wall, every owned axolotl swimming on its own
  * in its morph's colours and its own look (still poses under reduced motion), the animated surface
  * line, the hub actions Go exploring, Decorate, Treasure Chest and Collection Book, by touch and by
- * keyboard, and the best-stars badge of the area (H7). After a trip the tank arrival card shows first
- * and takes every key and press until it closes; after beating the area it is the "Area beaten" card,
- * and closing it leaves the player in the hub. The hub focus runs over the hub buttons and then the
- * axolotls, and a tap on an axolotl, or Enter on a focused one, opens the restyle screen for it (PRD
- * F6).
+ * keyboard, and the best-stars badge of the area (H7). Every axolotl wears its outfit (PRD C10, F8).
+ * Go exploring opens the explorer card (PRD F7), even with one axolotl, and Go! there starts the
+ * trip; its Change outfit opens the restyle Outfit tab and comes back to the card. After a trip
+ * the tank arrival card shows first and takes every key and press until it closes; after beating
+ * the area it is the "Area beaten" card, and closing it leaves the player in the hub. The hub focus
+ * runs over the hub buttons and then the axolotls, and a tap on an axolotl, or Enter on a focused
+ * one, opens the restyle screen for it (PRD F6).
  */
 export class HomeTankScene extends Phaser.Scene {
   private assets!: GameAssets;
@@ -243,6 +292,7 @@ export class HomeTankScene extends Phaser.Scene {
   private nameTagPanel!: Phaser.GameObjects.Graphics;
   private nameTagText!: Phaser.GameObjects.Text;
   private restyler: AxolotlStyler | null = null;
+  private explorerCard: ExplorerCard | null = null;
 
   constructor() {
     super(SCENE_KEYS.homeTank);
@@ -259,6 +309,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.hubButtons = [];
     this.titleFits = false;
     this.restyler = null;
+    this.explorerCard = null;
   }
 
   create(): void {
@@ -313,12 +364,14 @@ export class HomeTankScene extends Phaser.Scene {
   /**
    * Animates the tank, or only the styler while the restyle screen's opaque backdrop covers the tank,
    * so hidden axolotls do not repaint (art guide 9, repaint budget). The tank picks up where it left off.
+   * An open explorer card counts its Go! wait while the tank animates behind its dim.
    */
   update(time: number, deltaMs: number): void {
     if (this.restyler !== null) {
       this.restyler.update(time, deltaMs);
       return;
     }
+    this.explorerCard?.update(time, deltaMs);
     this.animate(Math.min(Math.max(deltaMs / 1000, 0), 0.05));
   }
 
@@ -351,9 +404,9 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * One swimmer per owned axolotl in its morph's colours (or its Dream colour) and its own look, each with its own texture
-   * so their poses never share a frame. Baked at the boot bake scale; the look's size factor is
-   * applied by the texture.
+   * One swimmer per owned axolotl in its morph's colours (or its Dream colour), its own look and its
+   * outfit, each with its own texture so their poses never share a frame. Baked at the boot bake
+   * scale; the look's size factor is applied by the texture.
    */
   private buildSwimmers(): void {
     const bakeScale = this.assets.axolotl.bakeScale;
@@ -364,10 +417,14 @@ export class HomeTankScene extends Phaser.Scene {
         .setOrigin(texture.info.originNormX, texture.info.originNormY)
         .setDepth(TANK_DEPTH.axolotls);
       const hitArea = new Phaser.Geom.Rectangle(0, 0, texture.info.pxW, texture.info.pxH);
+      const outfit = artOutfit(axolotl.outfit);
       const swimmer: TankSwimmer = {
         id: axolotl.id,
         texture,
         palette: axolotlPalette(axolotl.morph, axolotl.dreamColour),
+        outfit,
+        outfitKey: outfitKey(outfit),
+        paintedOutfitKey: null,
         image,
         lastPose: null,
         redrawAcc: 0,
@@ -483,10 +540,10 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * Leaves the hub for the Treasure Chest, the Collection Book, decorate mode or restyle: its buttons
-   * and name panel hide.
+   * Leaves the hub for the Treasure Chest, the Collection Book, decorate mode, restyle or the explorer
+   * card: its buttons and name panel hide.
    */
-  private leaveHub(mode: 'chest' | 'book' | 'decorate' | 'restyle'): void {
+  private leaveHub(mode: 'chest' | 'book' | 'decorate' | 'restyle' | 'explorer'): void {
     this.mode = mode;
     this.applyHubVisibility();
     this.refreshHubFocus();
@@ -504,7 +561,7 @@ export class HomeTankScene extends Phaser.Scene {
     if (this.mode !== 'hub') return;
     switch (id) {
       case 'goExploring':
-        this.startExploring();
+        this.openExplorerCard('go', this.session.hub.explorerId);
         return;
       case 'treasureChest':
         this.openChest();
@@ -518,11 +575,56 @@ export class HomeTankScene extends Phaser.Scene {
     }
   }
 
-  /** Go exploring, once: starts the trip through the scene flow. */
-  private startExploring(): void {
+  /**
+   * Opens the explorer card (PRD F7) over the hub with every owned axolotl, its worn perks and its
+   * outfit, `explorerId` chosen (the first axolotl when null or not owned) and `focus` focused. Every
+   * key goes to the card until Go!, Change outfit or Back.
+   */
+  private openExplorerCard(focus: 'go' | 'changeOutfit', explorerId: string | null): void {
+    this.leaveHub('explorer');
+    this.explorerCard = new ExplorerCard(this, this.assets, this.view, TANK_DEPTH.explorer, {
+      axolotls: this.session.hub.axolotls.map(explorerCardAxolotl),
+      explorerId,
+      focus,
+      onChoose: (id) => this.saveExplorer(id),
+      onGo: (id) => this.startExploring(id),
+      onChangeOutfit: (id) => this.changeOutfit(id),
+      onBack: () => this.closeExplorerCard(),
+    });
+  }
+
+  /** Removes the explorer card, if open. */
+  private destroyExplorerCard(): void {
+    this.explorerCard?.destroy();
+    this.explorerCard = null;
+  }
+
+  /** A new axolotl chosen on the explorer card: remembers it as the explorer and saves it (PRD F7, D1). */
+  private saveExplorer(id: string): void {
+    this.session = chooseExplorer(readSession(this.registry), id);
+    writeSession(this.registry, this.session);
+  }
+
+  /** Go! on the explorer card, once: removes the card and starts the trip with `id` through the scene flow. */
+  private startExploring(id: string): void {
     if (this.exploring) return;
     this.exploring = true;
-    goExploring(this, this.assets);
+    this.destroyExplorerCard();
+    goExploring(this, this.assets, id);
+  }
+
+  /** Change outfit on the explorer card: removes the card and opens the restyle Outfit tab for `id`. */
+  private changeOutfit(id: string): void {
+    this.destroyExplorerCard();
+    const index = this.swimmers.findIndex((swimmer) => swimmer.id === id);
+    if (index === -1) throw new Error(`HomeTankScene: no swimmer for axolotl ${id}`);
+    this.openRestyle(index, 'explorer');
+  }
+
+  /** Back or Escape on the explorer card: removes it and goes back to the hub with Go exploring focused. */
+  private closeExplorerCard(): void {
+    this.destroyExplorerCard();
+    this.showHub(GO_EXPLORING_INDEX);
   }
 
   /** Opens the Treasure Chest over the hub (PRD C11) with the treasures banked so far. */
@@ -582,33 +684,49 @@ export class HomeTankScene extends Phaser.Scene {
 
   /**
    * Opens the restyle screen (PRD F6) for the axolotl at `index`, starting from its name, look,
-   * morph (shown read-only) and Dream colour, offering the Dream colours the hub owns.
-   * The hub hides and every key goes to the styler until Done or Cancel.
+   * morph (shown read-only), Dream colour and outfit, offering the Dream colours the hub owns and,
+   * on the Outfit tab, the banked Wearables with who else wears each (PRD C10). From the explorer
+   * card it opens on the Outfit tab. The hub hides and every key goes to the styler until Done or Cancel.
    */
-  private openRestyle(index: number): void {
+  private openRestyle(index: number, from: RestyleFrom = 'hub'): void {
     const axolotl = this.swimmerAxolotl(index);
+    const banked = this.session.hub.banked;
+    const options: RestyleOptions = {
+      banked,
+      wearers: wearersBesides(this.session.hub.axolotls, axolotl.id),
+      ...(from === 'explorer' ? { startStep: 'outfit' as const } : {}),
+    };
     this.leaveHub('restyle');
     this.restyler = new AxolotlStyler(this, this.assets, this.view, TANK_DEPTH.restyle, {
       mode: 'restyle',
       motion: () => this.motion,
       initial: restyleStart(
-        { name: axolotl.name, look: axolotl.look, morph: axolotl.morph, dreamColour: axolotl.dreamColour },
-        ownedDreamColours(this.session.hub.banked),
+        {
+          name: axolotl.name,
+          look: axolotl.look,
+          morph: axolotl.morph,
+          dreamColour: axolotl.dreamColour,
+          outfit: axolotl.outfit,
+        },
+        ownedDreamColours(banked),
+        options,
       ),
-      onDone: (styled) => this.finishRestyle(index, styled),
-      onCancel: () => this.closeRestyle(index),
+      onDone: (styled) => this.finishRestyle(index, styled, from),
+      onCancel: () => this.closeRestyle(index, from),
     });
   }
 
   /**
-   * Done in restyle: stores the new name, look and Dream colour (the morph and every other field
-   * stay), repaints that axolotl's swimmer in them from a first paint, and goes back to the hub
-   * with that axolotl focused.
+   * Done in restyle: stores the new name, look, Dream colour and outfit (the morph and every other
+   * field stay; a Wearable put on comes off any other axolotl), saving once (D1). Repaints that
+   * axolotl's swimmer in them from a first paint, and any other swimmer whose outfit changed, then
+   * goes back to where the restyle was opened from.
    */
-  private finishRestyle(index: number, styled: StylerAxolotl): void {
+  private finishRestyle(index: number, styled: StyledAxolotl, from: RestyleFrom): void {
     const { id } = this.swimmerAxolotl(index);
     let next = restyleAxolotl(readSession(this.registry), id, { name: styled.name, look: styled.look });
-    if (styled.dreamColour !== undefined) next = setDreamColour(next, id, styled.dreamColour);
+    next = setDreamColour(next, id, styled.dreamColour);
+    next = setOutfit(next, id, styled.outfit);
     this.session = next;
     writeSession(this.registry, this.session);
     const axolotl = this.swimmerAxolotl(index);
@@ -617,14 +735,37 @@ export class HomeTankScene extends Phaser.Scene {
     swimmer.palette = axolotlPalette(axolotl.morph, axolotl.dreamColour);
     swimmer.lastPose = null;
     this.applySwimmerTexture(swimmer);
-    this.closeRestyle(index);
+    this.refreshSwimmerOutfits();
+    this.closeRestyle(index, from);
   }
 
-  /** Done or Cancel in restyle: removes the styler and goes back to the hub with the axolotl at `index` focused. */
-  private closeRestyle(index: number): void {
+  /**
+   * Done or Cancel in restyle: removes the styler, then goes back to the hub with the axolotl at
+   * `index` focused, or from Change outfit to a new explorer card with that axolotl chosen and
+   * Change outfit focused.
+   */
+  private closeRestyle(index: number, from: RestyleFrom): void {
     this.restyler?.destroy();
     this.restyler = null;
+    if (from === 'explorer') {
+      this.openExplorerCard('changeOutfit', this.swimmerAxolotl(index).id);
+      return;
+    }
     this.showHub(axolotlFocusIndex(index, this.hubButtons.length));
+  }
+
+  /**
+   * Gives every swimmer the outfit its owned axolotl wears now. A swimmer whose outfitKey changed
+   * repaints on its next frame, an axolotl after the first within the shared repaint budget.
+   */
+  private refreshSwimmerOutfits(): void {
+    for (const [index, swimmer] of this.swimmers.entries()) {
+      const outfit = artOutfit(this.swimmerAxolotl(index).outfit);
+      const key = outfitKey(outfit);
+      if (key === swimmer.outfitKey) continue;
+      swimmer.outfit = outfit;
+      swimmer.outfitKey = key;
+    }
   }
 
   /**
@@ -650,13 +791,17 @@ export class HomeTankScene extends Phaser.Scene {
   // ---- input ---------------------------------------------------------------
 
   /**
-   * Routes a key to what has the input: the restyle screen (every key, as is), the arrival card, the
-   * Treasure Chest, the Collection Book, decorate mode, or the hub. Unmapped keys are ignored, and so
-   * is a held confirm outside the hub.
+   * Routes a key to what has the input: the restyle screen (every key, as is), the explorer card
+   * (every key; it reads its own), the arrival card, the Treasure Chest, the Collection Book,
+   * decorate mode, or the hub. Unmapped keys are ignored, and so is a held confirm outside the hub.
    */
   private handleKeyDown(event: KeyboardEvent): void {
     if (this.mode === 'restyle') {
       this.restyler?.handleKey(event);
+      return;
+    }
+    if (this.mode === 'explorer') {
+      this.explorerCard?.handleKey(event);
       return;
     }
     const action = tankKeyFor(event.key, event.shiftKey);
@@ -768,6 +913,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.arrivalCard.setResolution(dpr);
     this.nameTagText.setResolution(dpr);
     this.restyler?.setResolution(dpr);
+    this.explorerCard?.setResolution(dpr);
     this.layout();
     this.animate(0);
   }
@@ -780,6 +926,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.book.destroy();
     this.restyler?.destroy();
     this.restyler = null;
+    this.destroyExplorerCard();
     this.releaseSwimmers();
     const keyboard = this.input.keyboard;
     if (!keyboard) return;
@@ -804,7 +951,8 @@ export class HomeTankScene extends Phaser.Scene {
 
   /**
    * Fits the tank to the canvas, sizes the axolotl tap areas, then places the Decorations, the hub,
-   * the Treasure Chest, the Collection Book, the arrival card and an open restyle screen.
+   * the Treasure Chest, the Collection Book, the arrival card, an open restyle screen and an open
+   * explorer card.
    */
   private layout(): void {
     this.frame = tankFrame(this.view.cssW, this.view.cssH);
@@ -821,11 +969,12 @@ export class HomeTankScene extends Phaser.Scene {
     this.book.layout(this.view);
     this.arrivalCard.layout(this.view);
     this.restyler?.layout(this.view);
+    this.explorerCard?.layout(this.view);
   }
 
   /**
    * Shows the hub buttons and the best-stars badge unless the Treasure Chest, the Collection Book,
-   * decorate mode or restyle is up, and the name panel only when it fits.
+   * decorate mode, restyle or the explorer card is up, and the name panel only when it fits.
    */
   private applyHubVisibility(): void {
     const shown = this.mode === 'hub' || this.mode === 'arrival';
@@ -917,33 +1066,31 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * Repaints one axolotl's texture in its morph's colours when its pose changes. While the frame
-   * rate is low, repaints are capped at 30 a second, as in the swim, so each owned axolotl costs
-   * less per frame.
+   * Repaints one axolotl's texture in its morph's colours and its outfit when its pose or outfit
+   * changes. While the frame rate is low, repaints are capped at 30 a second, as in the swim, so each
+   * owned axolotl costs less per frame.
    */
   private redrawSwimmer(swimmer: TankSwimmer, pose: AxolotlPose, dt: number): void {
-    if (swimmer.lastPose !== null && samePose(pose, swimmer.lastPose)) return;
+    if (swimmerPainted(swimmer, pose)) return;
     swimmer.redrawAcc += dt;
     if (swimmer.lastPose !== null && this.game.loop.actualFps < LOW_FPS && swimmer.redrawAcc < LOW_FPS_REDRAW_S) {
       return;
     }
-    swimmer.redrawAcc = 0;
-    swimmer.texture.redraw(pose, swimmer.palette);
-    swimmer.lastPose = pose;
+    paintSwimmer(swimmer, pose);
   }
 
   /**
    * Records this frame's pose for an axolotl after the first and its repaint budget wait in `slot`.
-   * A first paint, or any pose change under reduced motion, paints at once so the morph colours and
-   * still pose show now (PRD C8).
+   * An outfit change waits for the budget like a pose change. A first paint, or any change under
+   * reduced motion, paints at once so the morph colours and still pose show now (PRD C8).
    */
   private askRescuedRepaint(swimmer: TankSwimmer, slot: number, pose: AxolotlPose, dt: number): void {
     swimmer.wanted = pose;
     this.rescuedWaits[slot] = NO_REPAINT;
-    if (swimmer.lastPose !== null && samePose(pose, swimmer.lastPose)) return;
+    if (swimmerPainted(swimmer, pose)) return;
     swimmer.redrawAcc += dt;
     if (swimmer.lastPose === null || !this.motion.ambient) {
-      this.paintRescued(swimmer, pose);
+      paintSwimmer(swimmer, pose);
       return;
     }
     this.rescuedWaits[slot] = swimmer.redrawAcc;
@@ -955,14 +1102,7 @@ export class HomeTankScene extends Phaser.Scene {
     const slot = pickSecondaryRepaint(this.rescuedWaits);
     if (slot < 0) return;
     const swimmer = this.swimmers[slot + 1];
-    if (swimmer.wanted) this.paintRescued(swimmer, swimmer.wanted);
-  }
-
-  /** Paints an axolotl after the first in its morph's colours, as redrawSwimmer does. */
-  private paintRescued(swimmer: TankSwimmer, pose: AxolotlPose): void {
-    swimmer.redrawAcc = 0;
-    swimmer.texture.redraw(pose, swimmer.palette);
-    swimmer.lastPose = pose;
+    if (swimmer.wanted) paintSwimmer(swimmer, swimmer.wanted);
   }
 
   /** The surface line across the glass at the tank water top, with the canal wave (still under reduced motion). */

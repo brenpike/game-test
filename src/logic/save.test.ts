@@ -544,6 +544,7 @@ function dressedSession(): Session {
     tripSeed: 78,
     waitingStranded: null,
     metTilapia: false,
+    returnedFinds: [],
   });
   return chooseExplorer(setOutfit(withWearables, WILD, fullOutfit()), WILD);
 }

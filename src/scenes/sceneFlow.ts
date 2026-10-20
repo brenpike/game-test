@@ -12,8 +12,8 @@ import {
 import {
   SESSION_REGISTRY_KEY,
   addStarter,
+  chooseExplorer,
   createSession,
-  explorerId,
   needsStarter,
   recordTripEnd,
   tripEndRecord,
@@ -141,12 +141,16 @@ export function finishCreator(
 }
 
 /**
- * Starts a trip from the Home Tank. With one owned axolotl (explorerId) the swim starts straight
- * away. The Go exploring flow (F7, #16), choosing the explorer and its outfit, goes here. Throws
- * when no axolotl is owned.
+ * Starts a trip from Go! on the explorer card (PRD F7), which opens from Go exploring in the Home
+ * Tank even with one owned axolotl: remembers `id` as the explorer, saving it to the device by
+ * writeSession when it changed (D1), then starts the swim, which takes the remembered explorer
+ * (explorerAxolotl) in its own look, Dream colour and outfit, with that outfit's perks (F12).
+ * Throws when no owned axolotl has `id`.
  */
-export function goExploring(scene: Phaser.Scene, assets: GameAssets): void {
-  explorerId(readSession(scene.registry));
+export function goExploring(scene: Phaser.Scene, assets: GameAssets, id: string): void {
+  const current = readSession(scene.registry);
+  const next = chooseExplorer(current, id);
+  if (next.hub.explorerId !== current.hub.explorerId) writeSession(scene.registry, next);
   scene.scene.start(SCENE_KEYS.swim, assets);
 }
 

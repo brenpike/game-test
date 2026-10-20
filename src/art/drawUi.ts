@@ -69,7 +69,8 @@ export type IconKind =
   | 'surprise'
   | 'boy'
   | 'girl'
-  | 'pencil';
+  | 'pencil'
+  | 'shirt';
 
 /**
  * House icon (guide 7d), shared by the Home Spot flag and every "go home" UI.
@@ -505,8 +506,40 @@ export function paintIcon(ctx: CanvasRenderingContext2D, kind: IconKind, size: n
       ctx.stroke(pencil);
       break;
     }
+    case 'shirt': {
+      // Shirt (guide 8, Change outfit): a sleeveless top. Outline only, ink 3.0.
+      ctx.lineWidth = 3;
+      ctx.stroke(shirtIconPath());
+      break;
+    }
   }
   ctx.restore();
+}
+
+/**
+ * The Shirt icon (art guide 8) in the 32 box: straps (11.5, 4.5) to (11.5, 10) and (20.5, 4.5) to
+ * (20.5, 10), the neck scoop arc from (11.5, 4.5) through (16, 9.5) to (20.5, 4.5), and the body
+ * from (11.5, 10) curving out to (6.5, 12.5), down to (7.5, 27.5), across with rounded corners to
+ * (24.5, 27.5), up to (25.5, 12.5) and back in to (20.5, 10).
+ */
+function shirtIconPath(): Path2D {
+  const path = new Path2D();
+  path.moveTo(11.5, 4.5);
+  path.lineTo(11.5, 10);
+  path.moveTo(20.5, 4.5);
+  path.lineTo(20.5, 10);
+  const scoopCy = (9.5 * 9.5 - 4.5 * 4.5 - 4.5 * 4.5) / (2 * (9.5 - 4.5));
+  const scoopR = 9.5 - scoopCy;
+  const scoopSide = Math.atan2(4.5 - scoopCy, 4.5);
+  path.moveTo(11.5, 4.5);
+  path.arc(16, scoopCy, scoopR, Math.PI - scoopSide, scoopSide, true);
+  path.moveTo(11.5, 10);
+  path.quadraticCurveTo(8.5, 10.5, 6.5, 12.5);
+  path.arcTo(7.5, 27.5, 24.5, 27.5, 3);
+  path.arcTo(24.5, 27.5, 25.5, 12.5, 3);
+  path.lineTo(25.5, 12.5);
+  path.quadraticCurveTo(23.5, 10.5, 20.5, 10);
+  return path;
 }
 
 // ---------------------------------------------------------------------------

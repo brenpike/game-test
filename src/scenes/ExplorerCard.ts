@@ -78,8 +78,8 @@ const STILL_POSE: AxolotlPose = Object.freeze({
   tailAmp: 1,
   sparkle: 0,
 });
-/** Change outfit's icon. Stand-in: the art guide's Shirt icon (8) is not an IconKind yet. */
-const CHANGE_OUTFIT_ICON: IconKind = 'pencil';
+/** Change outfit's icon: the art guide's Shirt icon (8). */
+const CHANGE_OUTFIT_ICON: IconKind = 'shirt';
 
 let explorerCardCount = 0;
 
