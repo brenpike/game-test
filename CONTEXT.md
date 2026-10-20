@@ -146,7 +146,7 @@ A big button on a creator or restyle step that shows one option as a small previ
 The field on the Name step where the player types the axolotl's name; it looks typeable, with a light inset field, a pencil, the "Type a name" placeholder, and a blinking cursor while focused.
 
 **Restyle**:
-Changing an owned axolotl's look and name in the Home Tank, on the creator's step screens with tabs; Colour and **Boy or girl** cannot change.
+Changing an owned axolotl's look and name in the Home Tank, on the creator's step screens with tabs, and putting on or taking off its **Dream colour** on its own tab; Colour and **Boy or girl** cannot change.
 
 **Boy or girl**:
 Whether an axolotl is a boy or a girl; exactly one, always set, and fixed after creation.
@@ -233,7 +233,7 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - An **Outfit** holds at most one **Wearable** per **Slot**; each **Perk** type in it is limited by its **Perk cap**
 - Each axolotl has exactly one **Real morph**; a **Dream colour** draws on top of it and never changes it
 - Each axolotl has exactly one **Boy or girl**, fixed after creation; text about one axolotl says he or she, never they or it
-- **Restyle** can change **Tail**, **Body**, **Age**, **Size**, face, gills, spots, and name, but never the **Real morph** or **Boy or girl**; none of these looks changes the hit area or speed
+- **Restyle** can change **Tail**, **Body**, **Age**, **Size**, face, gills, spots, and name, and can put on or take off the applied **Dream colour**, but never the **Real morph** or **Boy or girl**; none of these looks changes the hit area or speed
 - The starter axolotl's **Real morph**, chosen in the **Character creator**, decides which seven **Real morphs** can be **Stranded axolotls**
 - Each **Trip** has at most one **Stranded axolotl**; a **Rescue** moves it into the **Home Tank** and unlocks its **Morph** in the **Collection Book**
 - The **Treasure Chest** lists owned **Decorations**, **Wearables**, and **Dream colours**; placed **Decorations** live in the **Home Tank**
