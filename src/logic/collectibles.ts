@@ -177,12 +177,14 @@ export interface SnackFrame {
   bounds: SwimBounds;
 }
 
-/** Drawn axolotl body: sprite position, facing and sprite rotation in radians. */
+/** Drawn axolotl body: sprite position, facing, sprite rotation in radians and turn squash. */
 export interface DrawnBody {
   x: number;
   y: number;
   facing: 1 | -1;
   rotation: number;
+  /** Body x squash along its axis during a turn; omitted means 1. */
+  squash?: number;
 }
 
 /** Bob offset in px of the snack at `index` at bob time `bobT` (s); 0 when snacks do not bob. */
@@ -201,14 +203,16 @@ export function drawnSnackY(item: Collectible, index: number, frame: SnackFrame)
 }
 
 /**
- * The reach centre at the drawn head: `reach.headAhead` px along the body's facing, turned by its
- * rotation. Matches a sprite drawn with scale (facing x s, s) then rotated: local (lx, 0) lands at
- * (x + facing lx cos(rotation), y + facing lx sin(rotation)).
+ * The reach centre at the drawn head: `reach.headAhead` px along the body's facing, shortened by
+ * its turn squash, turned by its rotation. Matches a sprite drawn with scale
+ * (facing x squash x s, s) then rotated: local (lx, 0) lands at
+ * (x + facing squash lx cos(rotation), y + facing squash lx sin(rotation)).
  */
 export function headPoint(body: DrawnBody, reach: Readonly<SnackReachTuning> = SNACK_REACH): Point {
+  const ahead = body.facing * (body.squash ?? 1) * reach.headAhead;
   return {
-    x: body.x + body.facing * reach.headAhead * Math.cos(body.rotation),
-    y: body.y + body.facing * reach.headAhead * Math.sin(body.rotation),
+    x: body.x + ahead * Math.cos(body.rotation),
+    y: body.y + ahead * Math.sin(body.rotation),
   };
 }
 

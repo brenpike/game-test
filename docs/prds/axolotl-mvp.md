@@ -501,7 +501,7 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | Tilapia in the canal | At least 3 |
 | Treasures | 12 or more Decorations and Wearables (at least 4 Decorations and 8 Wearables), plus 12 Paint shells |
 | Snack regrowth speed-up | Each snack adds 20% of one leg's regrowth to the leg that is regrowing (about 4 seconds at the base time). Never past a full leg. |
-| Snack eat reach | A circle of 36 pixels radius, centred 28 pixels ahead of the axolotl's middle along its body, turning with its tilt. The same at every size. It covers the whole head of the largest size; smaller sizes reach a little in front of the snout. |
+| Snack eat reach | A circle of 36 pixels radius, centred 28 pixels ahead of the axolotl's middle along its body, turning with its tilt. While the body squashes in a turn, the centre moves in with it. The same at every size. It covers the whole head of the largest size; smaller sizes reach a little in front of the snout. |
 | Treasure hint range (Common / Rare / Epic / Legendary) | 150 / 115 / 85 / 60 pixels. Rarer is shorter. |
 | Dash pot touch distance | 30 pixels |
 | Dream colours by rarity | Common: Mint, Sky blue, Lavender (solid). Rare: Sunset orange, Bubblegum, Midnight blue (solid). Epic: Hearts, Tie-dye, Iridescent (patterned or sheen). Legendary: Rainbow, Galaxy, Tie-dye galaxy (patterned). |
