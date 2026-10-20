@@ -1,5 +1,6 @@
 import * as Phaser from 'phaser';
 import { AXO_PREVIEW_CROPS, type AxolotlPose } from '../art/drawAxolotl';
+import { AXO_SIZE_SCALE } from '../art/drawAxolotlParts';
 import { ICON_SIZE, type IconKind } from '../art/drawUi';
 import { artOutfit, outfitKey } from '../art/drawWearables';
 import { INK, LW, T_STATIC, UI_PANEL, WHITE, axolotlPalette } from '../art/palette';
@@ -734,8 +735,9 @@ export class ExplorerCard {
 
   /**
    * The texture key of the picture of the axolotl at `index`, baked first when it would show something
-   * new: the whole axolotl in its look, morph, Dream colour and outfit at the still pose, at x1.00,
-   * sized to fill the button inside its outline at the device pixel ratio. One key per axolotl, kept
+   * new: the whole axolotl in its look, morph, Dream colour and outfit at the still pose,
+   * sized to fill the button inside its outline at the device pixel ratio, drawn at its size factor
+   * (AXO_SIZE_SCALE) so axolotls of different Sizes look different. One key per axolotl, kept
    * until destroy(), so a page turn or a choice bakes nothing.
    */
   private bakePicture(index: number, rect: Rect): string {
@@ -753,7 +755,7 @@ export class ExplorerCard {
       pose: STILL_POSE,
       crop,
       scale,
-      sizeFactor: 1,
+      sizeFactor: AXO_SIZE_SCALE[axolotl.look.size],
       outfit,
     });
     this.pictureSigs.set(key, sig);
