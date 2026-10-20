@@ -43,7 +43,7 @@ The game is hosted on GitHub Pages at `brenpike.github.io/glam-gills/` ([ADR 000
 **Unreadable and newer saves.**
 
 - A damaged save starts the game fresh, with no message. Its text is copied to `glam-gills:save-unreadable` first. If a backup is already kept, the first one stays. The backup is removed on the next "Start over".
-- A save from a newer version starts the game fresh, with no message, and is left untouched. Saving is turned off (the save gate is closed) for that page session, so this build never overwrites it. "Start over" erases it and turns saving back on.
+- A save from a newer version starts the game fresh, with no message, and is left untouched. Saving is turned off (the save gate is closed) for that page session, so this build never overwrites it. This build cannot erase it either: the game starts with no axolotl owned, so "Start over" does not show (PRD D7), and there is no way back to the title. The newer save stays until a build that can read it runs, or browser data is cleared. Whether an older build should offer a way to erase it is open (PRD open question 48).
 - Storage that cannot be used at all also closes the save gate: the game plays, and saves nothing.
 
 **Seam for coming fields.** Sibling issue #17 adds a Dream colour per axolotl (`dreamColour`), and #16 adds outfits and the explorer. Both come in under the additive rule, with no version bump: an older save loads them with their defaults. The encoder copies each saved type through an allowlist checked with `satisfies`, so a new field on the hub or on an owned axolotl fails the build until it is saved.
@@ -72,6 +72,6 @@ Known limits:
 - Safari may erase script-written storage, the save included, after 7 days without a visit to the site.
 - The origin is shared: another project on `brenpike.github.io` could read or erase these keys. Only this game's own keys are ever touched by this game.
 - Only the first unreadable save is kept. A later damaged save is not backed up while one is kept.
-- A build older than the save cannot save: the newer save is kept, and progress made on the older build is lost when the page closes.
+- A build older than the save cannot save: the newer save is kept, and progress made on the older build is lost when the page closes. That build shows no "Start over", so it cannot erase the newer save (PRD open question 48).
 - A rescue banked mid-trip, and the tilapia fact card, save when the trip ends. Closing the game mid-trip loses them.
 - A damaged boy or girl in a saved look falls back to boy, the default look's value, because the repair cannot know the original.
