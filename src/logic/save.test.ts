@@ -27,6 +27,7 @@ import {
   createSession,
   recordTripEnd,
   restyleAxolotl,
+  setDreamColour,
   setTankLayout,
   tripStart,
   type HubState,
@@ -59,9 +60,10 @@ const STYLED: AxolotlLook = {
 };
 
 /**
- * A session built through the session API: a starter and a rescued wild axolotl, both restyled, a
- * Paint shell, a Decoration placed in the tank and a Wearable banked, the tilapia card, canal stars,
- * and canal memory (eaten snacks, a trip seed, a waiting axolotl) that must never be saved.
+ * A session built through the session API: a starter and a rescued wild axolotl, both restyled, the
+ * wild one wearing the mint Dream colour, a Paint shell, a Decoration placed in the tank and a
+ * Wearable banked, the tilapia card, canal stars, and canal memory (eaten snacks, a trip seed, a
+ * waiting axolotl) that must never be saved.
  */
 function playedSession(): Session {
   const started = addStarter(createSession(), { name: 'Bubbles', look: { ...STYLED, sex: 'boy' } });
@@ -74,7 +76,7 @@ function playedSession(): Session {
     metTilapia: true,
     stars: { areaId: CANAL_AREA_ID, earned: { exit: true, special: false, legsOrRescue: true } },
   });
-  const restyled = restyleAxolotl(afterTrip, WILD, { name: 'Gilly Mae', look: STYLED });
+  const restyled = setDreamColour(restyleAxolotl(afterTrip, WILD, { name: 'Gilly Mae', look: STYLED }), WILD, 'mint');
   const placed = placeDecoration(restyled.hub.tank, restyled.hub.banked, PLANT, suggestSpot(restyled.hub.tank));
   expect(placed.result).toBe('placed');
   return setTankLayout(restyled, placed.layout);
@@ -107,12 +109,13 @@ describe('save round trip', () => {
     expect(read).toEqual({ kind: 'loaded', hub: session.hub });
   });
 
-  it('keeps owned Dream colours, both axolotls, their looks, the tank, the book and the stars', () => {
+  it('keeps owned and worn Dream colours, both axolotls, their looks, the tank, the book and the stars', () => {
     const session = playedSession();
     const hub = loadedHub(JSON.parse(encodeSave(session.hub)));
     expect(ownedDreamColours(hub.banked)).toEqual(['mint']);
     expect(hub.axolotls.map((axolotl) => axolotl.id)).toEqual([STARTER_AXOLOTL_ID, WILD]);
-    expect(hub.axolotls[1]).toEqual({ id: WILD, morph: 'wild', name: 'Gilly Mae', look: STYLED });
+    expect(hub.axolotls[0].dreamColour).toBeNull();
+    expect(hub.axolotls[1]).toEqual({ id: WILD, morph: 'wild', name: 'Gilly Mae', look: STYLED, dreamColour: 'mint' });
     expect(hub.tank.placed.map((placement) => placement.id)).toEqual([PLANT]);
     expect(hub.book).toEqual({ foundMorphs: [STARTER_MORPH, 'wild'], tilapiaCard: true });
     expect(hub.stars).toEqual({ [CANAL_AREA_ID]: { exit: true, special: false, legsOrRescue: true } });
@@ -211,11 +214,11 @@ describe('field-by-field repair', () => {
     expect(hub.axolotls).toEqual(playedSession().hub.axolotls);
   });
 
-  it('banks nothing when banked is not an array, and drops tank pieces no longer owned', () => {
+  it('banks nothing when banked is not an array, and drops tank pieces and worn Dream colours no longer owned', () => {
     const hub = hubWith('banked', 'canal/pond-plant');
     expect(hub.banked).toEqual([]);
     expect(hub.tank.placed).toEqual([]);
-    expect(hub.axolotls).toEqual(playedSession().hub.axolotls);
+    expect(hub.axolotls).toEqual(playedSession().hub.axolotls.map((axolotl) => ({ ...axolotl, dreamColour: null })));
     expect(hub.book).toEqual(playedSession().hub.book);
   });
 
@@ -284,6 +287,26 @@ describe('field-by-field repair', () => {
     ]);
     expect(hub.axolotls[0].look).toEqual({ ...STYLED, eyes: DEFAULT_LOOK.eyes, sex: DEFAULT_LOOK.sex });
     expect(hub.axolotls[1].look).toEqual(DEFAULT_LOOK);
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['null', null],
+    ['not a string', 7],
+    ['an unknown id', 'glitter'],
+    ['an id not owned', 'galaxy'],
+    ['a prototype key', '__proto__'],
+    ['an inherited key', 'constructor'],
+  ])('loads a worn Dream colour that is %s as none, keeping the axolotl (additive rule)', (_label, dreamColour) => {
+    const [starter, wild] = playedSession().hub.axolotls;
+    const hub = hubWith('axolotls', [starter, { ...wild, dreamColour }]);
+    expect(hub.axolotls).toEqual([starter, { ...wild, dreamColour: null }]);
+  });
+
+  it('keeps an owned worn Dream colour on each axolotl that wears it', () => {
+    const [starter, wild] = playedSession().hub.axolotls;
+    const hub = hubWith('axolotls', [{ ...starter, dreamColour: 'mint' }, wild]);
+    expect(hub.axolotls.map((axolotl) => axolotl.dreamColour)).toEqual(['mint', 'mint']);
   });
 
   it('keeps tank placements with an id and numeric x and y, owned, once, at valid points', () => {

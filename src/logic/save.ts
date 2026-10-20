@@ -3,7 +3,7 @@
  * the text back as a hub. Pure; reading and writing browser storage lives in `src/platform/`.
  *
  * Only the hub is saved: banked treasure ids (so owned Dream colours), the owned axolotls with their
- * names and looks, the Home Tank layout, the Collection Book and the best stars per area. Never
+ * names, looks and worn Dream colours, the Home Tank layout, the Collection Book and the best stars per area. Never
  * saved: the Trip Bag, any trip state, legs, Shell blocks used this trip, the trip seed, the eaten
  * snacks and the stranded axolotl left waiting. The canal stays session-only, so a loaded game
  * opens in the Home Tank and unbanked finds reappear on the next trip in fresh spots (D3).
@@ -19,7 +19,8 @@
 import { DEFAULT_LOOK, LOOK_FIELDS, LOOK_FIELD_OPTIONS, copyLook, type AxolotlLook, type LookField } from './axolotlLook';
 import { cleanName, isValidName, unusedSuggestedName } from './axolotlNames';
 import { areaById } from './areas';
-import { treasureById } from './catalogue';
+import { ownedDreamColours, treasureById, type DreamColourId } from './catalogue';
+import { wornDreamOrNone } from './dreamPaint';
 import { REAL_MORPHS, axolotlFindId, isAxolotlFindId, type RealMorphId } from './morphs';
 import {
   STARTER_AXOLOTL_ID,
@@ -98,6 +99,7 @@ function savedAxolotl(axolotl: OwnedAxolotl): OwnedAxolotl {
     morph: axolotl.morph,
     name: axolotl.name,
     look: copyLook(axolotl.look),
+    dreamColour: axolotl.dreamColour,
   } satisfies { [Key in keyof OwnedAxolotl]-?: unknown };
 }
 
@@ -163,7 +165,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** A whole HubState from a saved hub, each field repaired on its own. */
 function repairedHub(saved: Record<string, unknown>): HubState {
   const banked = repairedBanked(saved.banked);
-  const axolotls = repairedAxolotls(saved.axolotls);
+  const axolotls = repairedAxolotls(saved.axolotls, ownedDreamColours(banked));
   return {
     banked,
     axolotls,
@@ -195,7 +197,11 @@ function isAxolotlEntry(value: unknown): value is AxolotlEntry {
   return isRecord(value) && isRealMorphId(value.morph);
 }
 
-/** Whether `entry` needs no repair: the starter's id or its morph's find id, a valid name and every look field a valid option. */
+/**
+ * Whether `entry` needs no repair: the starter's id or its morph's find id, a valid name and every
+ * look field a valid option. Its Dream colour is not checked: a Dream colour that loads as none
+ * never lets a duplicate take this entry's id or morph.
+ */
 function isIntactAxolotl(entry: AxolotlEntry): boolean {
   const look = entry.look;
   return (
@@ -211,8 +217,9 @@ function isIntactAxolotl(entry: AxolotlEntry): boolean {
  * their id and morph first, so an entry needing repair never displaces an intact one; among entries
  * alike, the first in saved order is kept. An id that is neither the starter's nor the morph's find
  * id becomes the find id. A bad name becomes the first suggested name no axolotl kept before it uses.
+ * A Dream colour that is missing, unknown or not in `owned` loads as none (additive rule).
  */
-function repairedAxolotls(saved: unknown): OwnedAxolotl[] {
+function repairedAxolotls(saved: unknown, owned: readonly DreamColourId[]): OwnedAxolotl[] {
   if (!Array.isArray(saved)) return [];
   const entries = saved.filter(isAxolotlEntry);
   const indices = [...entries.keys()];
@@ -226,7 +233,8 @@ function repairedAxolotls(saved: unknown): OwnedAxolotl[] {
     const claimed = [...kept.values()];
     if (claimed.some((axolotl) => axolotl.id === id || axolotl.morph === morph)) continue;
     const look = repairedLook(entry.look);
-    kept.set(index, { id, morph, name: repairedName(entry.name, claimed, look), look });
+    const dreamColour = wornDreamOrNone(entry.dreamColour, owned);
+    kept.set(index, { id, morph, name: repairedName(entry.name, claimed, look), look, dreamColour });
   }
   return indices.flatMap((index) => kept.get(index) ?? []);
 }
