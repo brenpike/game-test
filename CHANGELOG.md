@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-10-20
+
+### Fixed
+
+- On the smallest sideways screens, the snack banner and the first-trip hint now show with slightly smaller text when there is no room for them, instead of waiting hidden. The text is still big enough to read (#61).
+- Turning reduced motion on or off while your axolotl is being carried home now switches straight away. With it on, your axolotl stays still in its bubble; with it off, it floats home from where it is (#34).
+
 ## [0.16.0] - 2026-10-20
 
 ### Added
