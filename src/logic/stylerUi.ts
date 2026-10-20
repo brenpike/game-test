@@ -1,22 +1,28 @@
 /**
  * Styler layout: the CSS px layout of one step screen of the step-by-step character creator (PRD F1
  * to F3) and the restyle screen (PRD F6), for 1 to MAX_STEP_OPTIONS picture buttons, the Dream colour
- * step (pages of up to MAX_STEP_OPTIONS of its MAX_DREAM_OPTIONS options, with More colours) or the
- * Name step.
+ * step (pages of up to MAX_STEP_OPTIONS of its MAX_DREAM_OPTIONS options, with More colours), the
+ * Outfit step (PRD C10, F8, F10: its slots view and choices view, paged the same way) or the Name step.
  * Text sizes come in measured from the scene; button sizes are estimated wide here. Nothing here
  * shrinks text or a touch target: when a step does not fit, it makes room in the PRD F1 order
- * (FIT_LEVELS), and the picture buttons grow from PICTURE_PX.min only when there is room.
+ * (FIT_LEVELS), and the picture buttons grow from PICTURE_PX.min only when there is room. The Outfit
+ * choices view has two more ways to make room, taken last (see stylerLayout): it hides the tab row,
+ * moving Back to slots into the body, and then sets each label beside its picture.
  */
 import { NAME_MAX, SUGGESTED_NAMES } from './axolotlNames';
+import { CANAL_TREASURES, WEARABLE_SLOTS } from './catalogue';
 import { MAX_DREAM_OPTIONS } from './dreamPaint';
 import type { HudView, Rect, Size } from './hudLayout';
-import { MAX_STEP_OPTIONS, RESTYLE_STEPS, STYLER_STEPS, type StylerStep } from './stylerSteps';
+import { MAX_STEP_OPTIONS, RESTYLE_ONLY_STEPS, RESTYLE_STEPS, STYLER_STEPS, type StylerStep } from './stylerSteps';
 import {
   BACK_LABEL,
+  BACK_TO_SLOTS_LABEL,
   CANCEL_LABEL,
   DONE_LABEL,
   MORE_COLOURS_LABEL,
   MORE_NAMES_LABEL,
+  MORE_SLOTS_LABEL,
+  MORE_WEARABLES_LABEL,
   NEXT_LABEL,
   SURPRISE_ME_LABEL,
   stepTabLabel,
@@ -26,6 +32,27 @@ import type { Vec2 } from './vec';
 
 /** Which screen the styler is: the character creator or the restyle screen (the same union as styler.ts). */
 export type StylerMode = 'creator' | 'restyle';
+
+/** Which view the Outfit step shows: the eight slots, or one slot's choices. */
+export type OutfitView = 'slots' | 'choices';
+
+/** How many picture buttons the Outfit slots view has: one per Wearable slot. */
+export const OUTFIT_SLOT_COUNT = WEARABLE_SLOTS.length;
+
+/**
+ * The most choices one Outfit slot offers: None, then every catalogue Wearable of the slot with the
+ * most Wearables. It grows with the catalogue.
+ */
+export const MAX_OUTFIT_CHOICES =
+  1 +
+  Math.max(
+    ...WEARABLE_SLOTS.map(
+      (slot) => CANAL_TREASURES.filter((treasure) => treasure.category === 'wearable' && treasure.slot === slot).length,
+    ),
+  );
+
+/** Widest an Outfit choices view label block wraps to, in CSS px (art guide 8). */
+export const OUTFIT_LABEL_MAX_PX = 168;
 
 /** Least side of any touch target, in CSS px (art guide 10). */
 export const MIN_TARGET_PX = 48;
@@ -107,6 +134,9 @@ export const SURPRISE_BUTTON: Size = Object.freeze(labelTileButton(SURPRISE_ME_L
 /** Cancel (restyle only): a secondary tile. */
 export const CANCEL_BUTTON: Size = Object.freeze(labelTileButton(CANCEL_LABEL));
 
+/** Back to slots (Outfit choices view only): a secondary tile, first among the step buttons. */
+export const BACK_TO_SLOTS_BUTTON: Size = Object.freeze(labelTileButton(BACK_TO_SLOTS_LABEL));
+
 /** Side of the square pencil icon at the right end of the name box, in CSS px. */
 export const NAME_PENCIL_PX = 20;
 
@@ -180,6 +210,18 @@ export const MORE_COLOURS_BUTTON: Size = Object.freeze({
   h: MIN_TARGET_PX,
 });
 
+/** More slots (Outfit slots view): a text button that shows the next page of slots. */
+export const MORE_SLOTS_BUTTON: Size = Object.freeze({
+  w: textButtonWidth(MORE_SLOTS_LABEL.length, NAME_TEXT_PX),
+  h: MIN_TARGET_PX,
+});
+
+/** More wearables (Outfit choices view): a text button that shows the next page of choices. */
+export const MORE_WEARABLES_BUTTON: Size = Object.freeze({
+  w: textButtonWidth(MORE_WEARABLES_LABEL.length, NAME_TEXT_PX),
+  h: MIN_TARGET_PX,
+});
+
 /** Width of the restyle tab for `step`: its label with BUTTON_LABEL_PAD each side. */
 export function tabWidth(step: StylerStep): number {
   return textButtonWidth(stepTabLabel(step).length, TAB_TEXT_PX);
@@ -187,15 +229,18 @@ export function tabWidth(step: StylerStep): number {
 
 /**
  * The step screen to lay out: the mode, the step, how many option buttons it has (1 to
- * MAX_STEP_OPTIONS; on the restyle-only Dream colour step 1 to MAX_DREAM_OPTIONS; on Name, how many
- * suggested names fit the axolotl's boy or girl), and in restyle the tab page to show (null for the
- * page holding `step`; any other whole number wraps).
+ * MAX_STEP_OPTIONS; on the restyle-only Dream colour step 1 to MAX_DREAM_OPTIONS; on the restyle-only
+ * Outfit step OUTFIT_SLOT_COUNT in the slots view and 1 to MAX_OUTFIT_CHOICES in the choices view; on
+ * Name, how many suggested names fit the axolotl's boy or girl), and in restyle the tab page to show
+ * (null for the page holding `step`; any other whole number wraps). `outfitView` is the Outfit step's
+ * view, and is only set on that step.
  */
 export interface StylerScreen {
   mode: StylerMode;
   step: StylerStep;
   optionCount: number;
   tabPage: number | null;
+  outfitView?: OutfitView;
 }
 
 /**
@@ -206,6 +251,10 @@ export interface StylerScreen {
  * the longest word of any option label, the narrowest a label wraps without cutting a word. The
  * preview frame is the axolotl texture frame in local units (local (0,0) sits originX from the left
  * and originY from the top) and `previewLargestSize` the largest size scale (art guide 6o, 11).
+ * On the Outfit step the option labels are the slot names (slots view) or the whole label blocks
+ * (choices view: name, perk line and any "On <name>" mark), and the caption is the longest slot
+ * caption. `outfitSummaryAt` is the outfit summary wrapped at a wrap width, its rows stacked or, when
+ * `flowed`, side by side in whole rows; the Outfit slots view needs it.
  */
 export interface StylerMeasure {
   headingAt: (wrapW: number, full: boolean) => Size;
@@ -215,6 +264,7 @@ export interface StylerMeasure {
   optionLabelMinW: number;
   previewFrame: Readonly<{ w: number; h: number; originX: number; originY: number }>;
   previewLargestSize: number;
+  outfitSummaryAt?: (wrapW: number, flowed: boolean) => Size;
 }
 
 /** The live preview: its box, the scale (CSS px per local unit, times each size scale) and where local (0,0) goes. */
@@ -262,6 +312,26 @@ export interface StylerDreamLayout {
   moreColours: Rect | null;
 }
 
+/**
+ * The Outfit step controls: the view, how many picture buttons show on one page (the `options` of the
+ * layout), the More button under them (More slots or More wearables; null when every button fits on
+ * one page), in the slots view the outfit summary under them (null when it does not fit: the layout
+ * `caption` then shows in its place when that fits) and whether its rows flow side by side, and in
+ * the choices view Back to slots (null in the slots view): first among the step buttons, or, once the
+ * choices view has hidden the tab row (the layout `tabs` is then null), the first part of the body,
+ * above the pictures. `labelsBeside` is true when each choice's label block sits to the right of its
+ * picture instead of under it (the choices view only, taken after the tab row hides).
+ */
+export interface StylerOutfitLayout {
+  view: OutfitView;
+  perPage: number;
+  more: Rect | null;
+  summary: Rect | null;
+  summaryFlowed: boolean;
+  backToSlots: Rect | null;
+  labelsBeside: boolean;
+}
+
 /** The step buttons. Creator: Back (null on step 1), Next or Done, Surprise me. Restyle: Done, Surprise me, Cancel. */
 export interface StylerNav {
   back: Rect | null;
@@ -276,9 +346,12 @@ export interface StylerNav {
  * last fit step taken (1 helper hidden, 2 labels hidden and caption shown, 3 preview at 0.6, 4
  * creator heading without "Step N of 11:", 5 preview hidden: the chosen picture button is the
  * preview, 6 restyle only: heading hidden (null), the bold current tab names the step). `options` are the square picture buttons in order, `columns` per row (0 on Name), and
- * `optionLabels` their labels under them while `labelsShown`; the Dream colour step never hides its
- * labels (fit step 2 does not apply) and `dream` holds its page size and More colours (null on every
- * other step). `cancelInTabRow` is true when restyle Cancel sits at the end of the tab row.
+ * `optionLabels` their labels under them while `labelsShown`; the Dream colour and Outfit steps never
+ * hide their labels (fit step 2 does not apply) and `dream` holds the Dream colour page size and More
+ * colours, `outfit` the Outfit controls (each null on every other step). On the Outfit slots view the
+ * outfit summary, then the caption in its place, hide before fit step 1 (`fitStep` stays 0).
+ * `cancelInTabRow` is true when restyle Cancel sits at the end of the tab row. `tabs` is null in the
+ * creator, and in restyle only on the Outfit choices view once it has hidden the tab row to fit.
  */
 export interface StylerLayout {
   panel: Rect;
@@ -296,34 +369,52 @@ export interface StylerLayout {
   optionLabels: Rect[];
   name: StylerNameLayout | null;
   dream: StylerDreamLayout | null;
+  outfit: StylerOutfitLayout | null;
   nav: StylerNav;
   cancelInTabRow: boolean;
 }
 
-/** What one fit level shows: the helper, the labels, the preview scale (null: hidden), the full heading and the heading. */
+/** What shows under the Outfit slot buttons: the summary stacked or flowed, the caption in its place, or nothing. */
+type SummaryShown = 'stacked' | 'flowed' | 'caption' | 'none';
+
+/** The Outfit slots view summary tries, in fit order: the summary hides first, then the caption. */
+const SUMMARY_TRIES: readonly SummaryShown[] = Object.freeze(['stacked', 'flowed', 'caption', 'none'] as const);
+
+/**
+ * What one fit level shows: the helper, the labels, the preview scale (null: hidden), the full
+ * heading, the heading, and what shows under the Outfit slot buttons.
+ */
 interface FitLevel {
   helper: boolean;
   labels: boolean;
   previewScale: number | null;
   headingFull: boolean;
   heading: boolean;
+  summary: SummaryShown;
 }
 
 /** The PRD F1 fit order: level N has taken fit steps 1 to N. Step 6 (heading hidden) is restyle only (PRD F6). */
 const FIT_LEVELS: readonly FitLevel[] = Object.freeze([
-  { helper: true, labels: true, previewScale: PREVIEW_SCALE.full, headingFull: true, heading: true },
-  { helper: false, labels: true, previewScale: PREVIEW_SCALE.full, headingFull: true, heading: true },
-  { helper: false, labels: false, previewScale: PREVIEW_SCALE.full, headingFull: true, heading: true },
-  { helper: false, labels: false, previewScale: PREVIEW_SCALE.shrunk, headingFull: true, heading: true },
-  { helper: false, labels: false, previewScale: PREVIEW_SCALE.shrunk, headingFull: false, heading: true },
-  { helper: false, labels: false, previewScale: null, headingFull: false, heading: true },
-  { helper: false, labels: false, previewScale: null, headingFull: false, heading: false },
+  { helper: true, labels: true, previewScale: PREVIEW_SCALE.full, headingFull: true, heading: true, summary: 'none' },
+  { helper: false, labels: true, previewScale: PREVIEW_SCALE.full, headingFull: true, heading: true, summary: 'none' },
+  { helper: false, labels: false, previewScale: PREVIEW_SCALE.full, headingFull: true, heading: true, summary: 'none' },
+  { helper: false, labels: false, previewScale: PREVIEW_SCALE.shrunk, headingFull: true, heading: true, summary: 'none' },
+  { helper: false, labels: false, previewScale: PREVIEW_SCALE.shrunk, headingFull: false, heading: true, summary: 'none' },
+  { helper: false, labels: false, previewScale: null, headingFull: false, heading: true, summary: 'none' },
+  { helper: false, labels: false, previewScale: null, headingFull: false, heading: false, summary: 'none' },
 ]);
 
-/** Where the step buttons go: a centred row at the bottom, or a right column under the tab row (restyle landscape). */
+/**
+ * Where the step buttons go: a centred row at the bottom, or a right column under the tab row (restyle
+ * landscape). `cancelInStrip` puts restyle Cancel at the end of the tab row. The Outfit choices view
+ * also has frames that hide the tab row (`tabsHidden`: Back to slots is then the first part of the
+ * body, not a step button) and set each label beside its picture (`labelsBeside`).
+ */
 interface StylerFrame {
   nav: 'row' | 'column';
   cancelInStrip: boolean;
+  tabsHidden: boolean;
+  labelsBeside: boolean;
 }
 
 /** What borders a layout part, for the gap rule: a touch target, other content, or the panel padding. */
@@ -339,7 +430,10 @@ type PieceName =
   | 'nameBox'
   | 'nameTile'
   | 'moreNames'
-  | 'moreColours';
+  | 'moreColours'
+  | 'moreOutfit'
+  | 'summary'
+  | 'backToSlots';
 
 /** One placed part of a block, relative to the block's top left. */
 interface Piece {
@@ -360,12 +454,16 @@ interface Block {
   children: { block: Block; dx: number; dy: number }[];
 }
 
-/** The heading (null when hidden), the dots or tab row, the step buttons, and the band left for the helper and the body. */
+/**
+ * The heading (null when hidden), the dots or tab row, the step buttons (with Back to slots on the
+ * Outfit choices view), and the band left for the helper and the body.
+ */
 interface Chrome {
   heading: Rect | null;
   dots: Rect[] | null;
   tabs: StylerTabStrip | null;
   nav: StylerNav;
+  backToSlots: Rect | null;
   band: Rect;
   bandTop: EdgeKind;
   bandBottom: EdgeKind;
@@ -378,19 +476,28 @@ function gapBetween(first: EdgeKind, second: EdgeKind): number {
   return first === 'target' && second === 'target' ? UI.gap : TEXT_GAP;
 }
 
-/** The most options `step` may have: any number on Name, MAX_DREAM_OPTIONS on Dream colour, else MAX_STEP_OPTIONS. */
-function maxOptionsOf(step: StylerStep): number {
-  if (step === 'name') return Infinity;
-  return step === 'dream' ? MAX_DREAM_OPTIONS : MAX_STEP_OPTIONS;
+/** The fewest and most options `screen` may have (the Outfit slots view has exactly one per slot). */
+function optionRangeOf(screen: StylerScreen): { least: number; most: number } {
+  if (screen.step === 'name') return { least: 1, most: Infinity };
+  if (screen.step === 'dream') return { least: 1, most: MAX_DREAM_OPTIONS };
+  if (screen.step !== 'outfit') return { least: 1, most: MAX_STEP_OPTIONS };
+  if (screen.outfitView === 'slots') return { least: OUTFIT_SLOT_COUNT, most: OUTFIT_SLOT_COUNT };
+  return { least: 1, most: MAX_OUTFIT_CHOICES };
 }
 
-/** Throws a RangeError when `screen` has no valid option count or tab page, or is Dream colour outside restyle. */
+/**
+ * Throws a RangeError when `screen` has no valid option count or tab page, is Dream colour or Outfit
+ * outside restyle, or has an Outfit view on any step but Outfit or none on Outfit.
+ */
 function checkScreen(screen: StylerScreen): void {
-  if (screen.step === 'dream' && screen.mode !== 'restyle') {
-    throw new RangeError(`stylerLayout: the dream step is restyle only, not ${screen.mode}`);
+  if (RESTYLE_ONLY_STEPS.includes(screen.step) && screen.mode !== 'restyle') {
+    throw new RangeError(`stylerLayout: the ${screen.step} step is restyle only, not ${screen.mode}`);
   }
-  const maxOptions = maxOptionsOf(screen.step);
-  if (!Number.isInteger(screen.optionCount) || screen.optionCount < 1 || screen.optionCount > maxOptions) {
+  if ((screen.step === 'outfit') !== (screen.outfitView !== undefined)) {
+    throw new RangeError(`stylerLayout: outfit view ${screen.outfitView} on the ${screen.step} step`);
+  }
+  const { least, most } = optionRangeOf(screen);
+  if (!Number.isInteger(screen.optionCount) || screen.optionCount < least || screen.optionCount > most) {
     throw new RangeError(`stylerLayout: ${screen.optionCount} options on the ${screen.step} step`);
   }
   if (screen.tabPage !== null && !Number.isInteger(screen.tabPage)) {
@@ -398,35 +505,79 @@ function checkScreen(screen: StylerScreen): void {
   }
 }
 
-/** The frames to try, in order: restyle tries Cancel in the tab row only when nothing else fits. */
-function framesFor(view: HudView, mode: StylerMode): StylerFrame[] {
-  if (mode === 'creator') return [{ nav: 'row', cancelInStrip: false }];
+/** True when `screen` is the Outfit step's slots view. */
+function isOutfitSlots(screen: StylerScreen): boolean {
+  return screen.step === 'outfit' && screen.outfitView === 'slots';
+}
+
+/** True when `screen` is the Outfit step's choices view. */
+function isOutfitChoices(screen: StylerScreen): boolean {
+  return screen.step === 'outfit' && screen.outfitView === 'choices';
+}
+
+/** True when `step` pages its picture buttons and never hides their labels (Dream colour, Outfit). */
+function isPagedPictureStep(step: StylerStep): boolean {
+  return step === 'dream' || step === 'outfit';
+}
+
+/**
+ * The frames to try, in stages: restyle tries Cancel in the tab row only when nothing else fits. The
+ * Outfit choices view adds two stages, each tried only once the stages before it have failed at every
+ * picture count down to 1: hide the tab row (Back to slots joins the body), then also set each label
+ * beside its picture.
+ */
+function frameStagesFor(view: HudView, screen: StylerScreen): StylerFrame[][] {
+  if (screen.mode === 'creator') {
+    return [[{ nav: 'row', cancelInStrip: false, tabsHidden: false, labelsBeside: false }]];
+  }
   const nav = view.cssW > view.cssH ? 'column' : 'row';
-  return [
-    { nav, cancelInStrip: false },
-    { nav, cancelInStrip: true },
+  const stages: StylerFrame[][] = [
+    [
+      { nav, cancelInStrip: false, tabsHidden: false, labelsBeside: false },
+      { nav, cancelInStrip: true, tabsHidden: false, labelsBeside: false },
+    ],
   ];
+  if (isOutfitChoices(screen)) {
+    stages.push([{ nav, cancelInStrip: false, tabsHidden: true, labelsBeside: false }]);
+    stages.push([{ nav, cancelInStrip: false, tabsHidden: true, labelsBeside: true }]);
+  }
+  return stages;
 }
 
 /**
  * The fit levels that change something on `screen`, with their PRD F1 fit step numbers. The creator
- * never hides its heading, and the Dream colour step never hides its labels.
+ * never hides its heading, the Dream colour and Outfit steps never hide their labels, and the Outfit
+ * slots view first tries its summary stacked, then flowed, then the caption, then neither, all before
+ * fit step 1.
  */
 function levelsFor(screen: StylerScreen): { fitStep: number; level: FitLevel }[] {
   const levels: { fitStep: number; level: FitLevel }[] = [];
   let previous: FitLevel | null = null;
-  FIT_LEVELS.forEach((raw, fitStep) => {
-    const level: FitLevel = {
-      helper: raw.helper,
-      labels: screen.step === 'dream' || (screen.step !== 'name' && raw.labels),
-      previewScale: raw.previewScale,
-      headingFull: screen.mode === 'creator' && raw.headingFull,
-      heading: screen.mode === 'creator' || raw.heading,
-    };
-    if (previous === null || !sameLevel(previous, level)) levels.push({ fitStep, level });
-    previous = level;
-  });
+  for (let fitStep = 0; fitStep < FIT_LEVELS.length; fitStep++) {
+    for (const summary of summaryTriesAt(screen, fitStep)) {
+      const level = screenLevel(screen, FIT_LEVELS[fitStep], summary);
+      if (previous === null || !sameLevel(previous, level)) levels.push({ fitStep, level });
+      previous = level;
+    }
+  }
   return levels;
+}
+
+/** What may show under the picture buttons at `fitStep`: the summary tries on the Outfit slots view before fit step 1, else nothing. */
+function summaryTriesAt(screen: StylerScreen, fitStep: number): readonly SummaryShown[] {
+  return isOutfitSlots(screen) && fitStep === 0 ? SUMMARY_TRIES : ['none'];
+}
+
+/** The fit level `raw` as it applies to `screen`, showing `summary` under the picture buttons. */
+function screenLevel(screen: StylerScreen, raw: FitLevel, summary: SummaryShown): FitLevel {
+  return {
+    helper: raw.helper,
+    labels: isPagedPictureStep(screen.step) || (screen.step !== 'name' && raw.labels),
+    previewScale: raw.previewScale,
+    headingFull: screen.mode === 'creator' && raw.headingFull,
+    heading: screen.mode === 'creator' || raw.heading,
+    summary,
+  };
 }
 
 /** True when two fit levels show the same things. */
@@ -436,7 +587,8 @@ function sameLevel(first: FitLevel, second: FitLevel): boolean {
     first.labels === second.labels &&
     first.previewScale === second.previewScale &&
     first.headingFull === second.headingFull &&
-    first.heading === second.heading
+    first.heading === second.heading &&
+    first.summary === second.summary
   );
 }
 
@@ -449,10 +601,22 @@ function sameLevel(first: FitLevel, second: FitLevel): boolean {
  * preview above or beside the picture buttons, whichever fits. When a step does not fit it takes the
  * PRD F1 fit steps in order (restyle adds step 6: the heading hides); restyle then tries Cancel at the end of the tab row. The Dream colour
  * step shows fewer options per page (with More colours under them) only when nothing else fits. Below
- * the smallest canvases it returns the last try, which may overflow.
+ * the smallest canvases it returns the last try, which may overflow. The Outfit step lays out like
+ * Dream colour (More slots or More wearables under its pages), its choices view adds Back to slots
+ * first among the step buttons, and its slots view shows the outfit summary, or else the caption,
+ * under the slot buttons while either fits. Throws an Error when the Outfit slots view has no
+ * `outfitSummaryAt` measure. The Outfit choices view takes two more steps, each only when no picture
+ * count down to 1 fits before it, and each starting the fit steps again from the first: it hides the
+ * tab row (`tabs` null) and Back to slots joins the body above the pictures, with Surprise me, Cancel
+ * and Done still step buttons; then it sets each label beside its picture (`labelsBeside`). With the
+ * tab row hidden, fit step 6 leaves no heading and no bold tab, so Back to slots is what shows where
+ * the player is.
  */
 export function stylerLayout(view: HudView, screen: StylerScreen, measure: StylerMeasure): StylerLayout {
   checkScreen(screen);
+  if (isOutfitSlots(screen) && measure.outfitSummaryAt === undefined) {
+    throw new Error('stylerLayout: the outfit slots view needs outfitSummaryAt');
+  }
   const panel: Rect = {
     x: UI.margin,
     y: UI.margin,
@@ -466,28 +630,31 @@ export function stylerLayout(view: HudView, screen: StylerScreen, measure: Style
     h: Math.max(0, panel.h - 2 * UI.pad),
   };
   let lastTry: StylerLayout | null = null;
-  for (const perPage of pageSizesFor(screen)) {
-    const tried = firstFittingTry(view, inner, panel, screen, measure, perPage);
-    if (tried.fits) return tried.layout;
-    lastTry = tried.layout;
+  for (const frames of frameStagesFor(view, screen)) {
+    for (const perPage of pageSizesFor(screen)) {
+      const tried = firstFittingTry(frames, inner, panel, screen, measure, perPage);
+      if (tried.fits) return tried.layout;
+      lastTry = tried.layout;
+    }
   }
   if (lastTry === null) throw new Error('stylerLayout: no page sizes to try');
   return lastTry;
 }
 
 /**
- * The picture buttons per page to try, most first: on Dream colour from the fewer of MAX_STEP_OPTIONS
- * and the option count down to 1, else only the option count (Name pages its names itself).
+ * The picture buttons per page to try, most first: on Dream colour and Outfit from the fewer of
+ * MAX_STEP_OPTIONS and the option count down to 1, else only the option count (Name pages its names
+ * itself).
  */
 function pageSizesFor(screen: StylerScreen): number[] {
-  if (screen.step !== 'dream') return [screen.optionCount];
+  if (!isPagedPictureStep(screen.step)) return [screen.optionCount];
   const most = Math.min(MAX_STEP_OPTIONS, screen.optionCount);
   return Array.from({ length: most }, (_unused, index) => most - index);
 }
 
-/** The first try over every frame and fit level, in order, that fits with `perPage` buttons, else the last try. */
+/** The first try over every one of `frames` and fit level, in order, that fits with `perPage` buttons, else the last try. */
 function firstFittingTry(
-  view: HudView,
+  frames: readonly StylerFrame[],
   inner: Rect,
   panel: Rect,
   screen: StylerScreen,
@@ -495,7 +662,7 @@ function firstFittingTry(
   perPage: number,
 ): { layout: StylerLayout; fits: boolean } {
   let lastTry: { layout: StylerLayout; fits: boolean } | null = null;
-  for (const frame of framesFor(view, screen.mode)) {
+  for (const frame of frames) {
     for (const { fitStep, level } of levelsFor(screen)) {
       lastTry = arrangeScreen(inner, panel, screen, measure, frame, level, fitStep, perPage);
       if (lastTry.fits) return lastTry;
@@ -520,7 +687,7 @@ function arrangeScreen(
   const body =
     screen.step === 'name'
       ? bestNameBody(chrome, screen.optionCount, measure, level)
-      : bestPictureBody(chrome, perPage, screen.optionCount > perPage, measure, level);
+      : bestPictureBody(chrome, pictureSpecOf(screen, perPage, measure, frame), measure, level);
   const layout: StylerLayout = {
     panel,
     fitStep,
@@ -528,7 +695,7 @@ function arrangeScreen(
     headingFull: level.headingFull,
     dots: chrome.dots,
     tabs: chrome.tabs,
-    ...collectBody(body.pieces, measure, level, body.columns, screen),
+    ...collectBody(body.pieces, measure, level, body.columns, screen, chrome.backToSlots, frame.labelsBeside),
     nav: chrome.nav,
     cancelInTabRow: frame.cancelInStrip,
   };
@@ -563,6 +730,8 @@ function placeChrome(
     dots = dotSlots(inner, top);
     top += PROGRESS_DOT.px;
     bandTop = 'other';
+  } else if (frame.tabsHidden) {
+    bandTop = aboveKind;
   } else {
     top += gapBetween(aboveKind, 'target');
     const strip = placeTabStrip(inner, top, screen, frame.cancelInStrip);
@@ -572,14 +741,15 @@ function placeChrome(
     top += strip.h;
     bandTop = 'target';
   }
-  const navSizes = navButtonSizes(screen, frame.cancelInStrip);
+  const navSizes = navButtonSizes(screen, frame);
   const placed =
     frame.nav === 'row' ? placeNavRow(inner, top, navSizes) : placeNavColumn(inner, top, bandTop, navSizes);
   return {
     heading,
     dots,
     tabs,
-    nav: namedNav(screen, placed.rects, stripCancel),
+    nav: namedNav(screen, placed.rects, stripCancel, hasLeadButton(screen, frame)),
+    backToSlots: hasLeadButton(screen, frame) ? placed.rects[0] : null,
     band: placed.band,
     bandTop,
     bandBottom: placed.bandBottom,
@@ -666,17 +836,29 @@ function placeTabStrip(
   };
 }
 
-/** The step button sizes in visual order. Creator Back keeps its place on step 1 so nothing moves. */
-function navButtonSizes(screen: StylerScreen, cancelInStrip: boolean): Size[] {
+/** True when Back to slots is the first step button of `screen` in `frame`: the choices view, with the tab row shown. */
+function hasLeadButton(screen: StylerScreen, frame: StylerFrame): boolean {
+  return isOutfitChoices(screen) && !frame.tabsHidden;
+}
+
+/**
+ * The step button sizes in visual order. Creator Back keeps its place on step 1 so nothing moves; the
+ * Outfit choices view puts Back to slots first, unless `frame` hides the tab row (Back to slots then
+ * joins the body).
+ */
+function navButtonSizes(screen: StylerScreen, frame: StylerFrame): Size[] {
   if (screen.mode === 'creator') {
     const isLast = STYLER_STEPS.indexOf(screen.step) === STYLER_STEPS.length - 1;
     return [BACK_BUTTON, SURPRISE_BUTTON, isLast ? DONE_BUTTON : NEXT_BUTTON];
   }
-  return cancelInStrip ? [SURPRISE_BUTTON, DONE_BUTTON] : [SURPRISE_BUTTON, CANCEL_BUTTON, DONE_BUTTON];
+  const lead = hasLeadButton(screen, frame) ? [BACK_TO_SLOTS_BUTTON] : [];
+  return frame.cancelInStrip
+    ? [...lead, SURPRISE_BUTTON, DONE_BUTTON]
+    : [...lead, SURPRISE_BUTTON, CANCEL_BUTTON, DONE_BUTTON];
 }
 
-/** The placed step buttons by name, from rects in navButtonSizes order. */
-function namedNav(screen: StylerScreen, rects: Rect[], stripCancel: Rect | null): StylerNav {
+/** The placed step buttons by name, from rects in navButtonSizes order (a `hasLead` Back to slots, first, is not among them). */
+function namedNav(screen: StylerScreen, rects: Rect[], stripCancel: Rect | null, hasLead: boolean): StylerNav {
   if (screen.mode === 'creator') {
     const index = STYLER_STEPS.indexOf(screen.step);
     const isLast = index === STYLER_STEPS.length - 1;
@@ -688,12 +870,13 @@ function namedNav(screen: StylerScreen, rects: Rect[], stripCancel: Rect | null)
       cancel: null,
     };
   }
+  const lead = hasLead ? 1 : 0;
   return {
     back: null,
     next: null,
     done: rects[rects.length - 1],
-    surprise: rects[0],
-    cancel: stripCancel ?? rects[1],
+    surprise: rects[lead],
+    cancel: stripCancel ?? rects[lead + 1],
   };
 }
 
@@ -842,10 +1025,17 @@ function gridRowStarts(count: number, columns: number, itemW: number, gridW: num
 /**
  * `count` square picture buttons of side `side` in the fewest rows that fit `maxW`, balanced across
  * the rows; with `labels`, each label sits TEXT_GAP under its button in a cell as wide as the button
- * or the longest label word, and the next row TEXT_GAP under the labels.
+ * or `labelMinW`, and the next row TEXT_GAP under the labels.
  */
-function pictureGrid(count: number, side: number, labels: boolean, maxW: number, measure: StylerMeasure): { block: Block; columns: number } {
-  const cellW = labels ? Math.max(side, measure.optionLabelMinW) : side;
+function pictureGrid(
+  count: number,
+  side: number,
+  labels: boolean,
+  maxW: number,
+  measure: StylerMeasure,
+  labelMinW: number,
+): { block: Block; columns: number } {
+  const cellW = labels ? Math.max(side, labelMinW) : side;
   const maxColumns = Math.max(1, Math.floor((maxW + UI.gap) / (cellW + UI.gap)));
   const rows = Math.ceil(count / maxColumns);
   const columns = Math.ceil(count / rows);
@@ -876,30 +1066,134 @@ function pictureGrid(count: number, side: number, labels: boolean, maxW: number,
   return { block, columns };
 }
 
+/**
+ * `count` square picture buttons of side `side` with each label block to the right of its button,
+ * UI.gap away, in a cell as wide as the button, the gap and `labelMinW`. Cells fill the fewest rows
+ * that fit `maxW`, balanced across the rows. A row is as tall as the button or the label block, and
+ * the button and the label block are centred down it; rows are TEXT_GAP apart, more when the button
+ * and the next one would be closer than UI.gap. The label blocks border the block's top and bottom
+ * edges when they stand out from the buttons by UI.gap less TEXT_GAP or more each side, else the
+ * buttons do (so a button is always UI.gap from the parts above and below).
+ */
+function besidePictureGrid(
+  count: number,
+  side: number,
+  maxW: number,
+  measure: StylerMeasure,
+  labelMinW: number,
+): { block: Block; columns: number } {
+  const cellW = side + UI.gap + labelMinW;
+  const maxColumns = Math.max(1, Math.floor((maxW + UI.gap) / (cellW + UI.gap)));
+  const rows = Math.ceil(count / maxColumns);
+  const columns = Math.ceil(count / rows);
+  const labelSize = measure.optionLabelAt(labelMinW);
+  const rowH = Math.max(side, labelSize.h);
+  const rowGap = Math.max(TEXT_GAP, UI.gap - (rowH - side));
+  const gridW = columns * cellW + (columns - 1) * UI.gap;
+  const starts = gridRowStarts(count, columns, cellW, gridW);
+  const pieces: Piece[] = [];
+  for (let index = 0; index < count; index++) {
+    const row = Math.floor(index / columns);
+    const cellX = starts[row] + (index % columns) * (cellW + UI.gap);
+    const rowY = row * (rowH + rowGap);
+    pieces.push({ name: 'option', rect: { x: cellX, y: rowY + (rowH - side) / 2, w: side, h: side } });
+    const labelX = cellX + side + UI.gap + (labelMinW - labelSize.w) / 2;
+    pieces.push({ name: 'optionLabel', rect: { x: labelX, y: rowY + (rowH - labelSize.h) / 2, ...labelSize } });
+  }
+  const edge: EdgeKind = (rowH - side) / 2 >= UI.gap - TEXT_GAP - 1e-9 ? 'other' : 'target';
+  const block: Block = { w: gridW, h: rows * rowH + (rows - 1) * rowGap, top: edge, bottom: edge, pieces, children: [] };
+  return { block, columns };
+}
+
 /** The helper line block across `wrapW`, or null when the level hides it. */
 function helperBlock(level: FitLevel, measure: StylerMeasure, wrapW: number): Block | null {
   return level.helper ? pieceBlock('helper', measure.helperAt(wrapW), 'other') : null;
 }
 
+/** A More button under the picture buttons: its piece name and size. */
+interface MorePiece {
+  name: PieceName;
+  size: Size;
+}
+
 /**
- * `grid` with what goes under it: the caption wrapped at `gridW` once the level hides the labels, then
- * the More colours row when `more`.
+ * The picture buttons of one try: how many show on the page, the More button under them (null when
+ * every option shows), the least cell width for their labels, whether each label sits beside its
+ * button, and whether Back to slots leads the body.
  */
-function gridWithFooter(grid: Block, gridW: number, more: boolean, measure: StylerMeasure, level: FitLevel): Block {
+interface PictureSpec {
+  count: number;
+  more: MorePiece | null;
+  labelMinW: number;
+  labelsBeside: boolean;
+  backToSlots: boolean;
+}
+
+/** The More button of `screen` when its options take more than `perPage`: More colours or More slots or wearables. */
+function moreOf(screen: StylerScreen, perPage: number): MorePiece | null {
+  if (screen.optionCount <= perPage) return null;
+  if (screen.step !== 'outfit') return { name: 'moreColours', size: MORE_COLOURS_BUTTON };
+  return { name: 'moreOutfit', size: screen.outfitView === 'slots' ? MORE_SLOTS_BUTTON : MORE_WEARABLES_BUTTON };
+}
+
+/**
+ * The least label cell width of `screen`: the longest label word, and on the Outfit choices view the
+ * label blocks' widest line wrapped at OUTFIT_LABEL_MAX_PX (art guide 8), so they take fewer lines.
+ */
+function labelMinWOf(screen: StylerScreen, measure: StylerMeasure): number {
+  if (!isOutfitChoices(screen)) return measure.optionLabelMinW;
+  const wrapW = Math.max(OUTFIT_LABEL_MAX_PX, measure.optionLabelMinW);
+  return Math.max(measure.optionLabelMinW, measure.optionLabelAt(wrapW).w);
+}
+
+/** The picture buttons of `screen` with `perPage` to a page, in `frame`. */
+function pictureSpecOf(screen: StylerScreen, perPage: number, measure: StylerMeasure, frame: StylerFrame): PictureSpec {
+  return {
+    count: perPage,
+    more: moreOf(screen, perPage),
+    labelMinW: labelMinWOf(screen, measure),
+    labelsBeside: frame.labelsBeside,
+    backToSlots: isOutfitChoices(screen) && frame.tabsHidden,
+  };
+}
+
+/** The picture grid of `spec` at side `side` across `maxW`: labels under the buttons, or beside them. */
+function gridOf(side: number, spec: PictureSpec, level: FitLevel, maxW: number, measure: StylerMeasure): { block: Block; columns: number } {
+  return spec.labelsBeside && level.labels
+    ? besidePictureGrid(spec.count, side, maxW, measure, spec.labelMinW)
+    : pictureGrid(spec.count, side, level.labels, maxW, measure, spec.labelMinW);
+}
+
+/** The outfit summary measure, which the Outfit slots view must have (stylerLayout checks it first). */
+function summaryAtOf(measure: StylerMeasure): (wrapW: number, flowed: boolean) => Size {
+  if (measure.outfitSummaryAt === undefined) throw new Error('stylerLayout: no outfitSummaryAt measure');
+  return measure.outfitSummaryAt;
+}
+
+/**
+ * `grid` with what goes under it, each wrapped at `gridW`: the caption once the level hides the
+ * labels, then the More row when `more`, then on the Outfit slots view the outfit summary or the
+ * caption in its place.
+ */
+function gridWithFooter(grid: Block, gridW: number, more: MorePiece | null, measure: StylerMeasure, level: FitLevel): Block {
   const below: Block[] = [];
   if (!level.labels) below.push(pieceBlock('caption', measure.captionAt(gridW), 'other'));
-  if (more) below.push(pieceBlock('moreColours', MORE_COLOURS_BUTTON, 'target'));
+  if (more !== null) below.push(pieceBlock(more.name, more.size, 'target'));
+  if (level.summary === 'stacked' || level.summary === 'flowed') {
+    below.push(pieceBlock('summary', summaryAtOf(measure)(gridW, level.summary === 'flowed'), 'other'));
+  }
+  if (level.summary === 'caption') below.push(pieceBlock('caption', measure.captionAt(gridW), 'other'));
   return below.length === 0 ? grid : stackBlocks([grid, ...below]);
 }
 
 /**
- * The body blocks to try for `count` picture buttons of side `side`, with More colours under them when
- * `more`: the preview above, then beside, the buttons.
+ * The body blocks to try for the picture buttons of `spec` at side `side`, with their More button
+ * under them: the preview above, then beside, the buttons. Back to slots, when `spec` has it, leads
+ * the body.
  */
 function pictureBodies(
-  count: number,
   side: number,
-  more: boolean,
+  spec: PictureSpec,
   chrome: Chrome,
   measure: StylerMeasure,
   level: FitLevel,
@@ -907,18 +1201,20 @@ function pictureBodies(
   const bandW = chrome.band.w;
   const helper = helperBlock(level, measure, bandW);
   const preview = level.previewScale === null ? null : previewBlock(measure, level.previewScale);
-  const stackedGrid = pictureGrid(count, side, level.labels, bandW, measure);
+  const lead = spec.backToSlots ? [pieceBlock('backToSlots', BACK_TO_SLOTS_BUTTON, 'target')] : [];
+  const stackedGrid = gridOf(side, spec, level, bandW, measure);
   const stacked = stackBlocks([
+    ...lead,
     ...(helper ? [helper] : []),
     ...(preview ? [preview] : []),
-    gridWithFooter(stackedGrid.block, bandW, more, measure, level),
+    gridWithFooter(stackedGrid.block, bandW, spec.more, measure, level),
   ]);
   const bodies = [{ block: stacked, columns: stackedGrid.columns }];
   if (preview !== null) {
     const sideW = bandW - preview.w - TEXT_GAP;
-    const sideGrid = pictureGrid(count, side, level.labels, sideW, measure);
-    const row = sideBlocks(preview, gridWithFooter(sideGrid.block, sideW, more, measure, level));
-    bodies.push({ block: stackBlocks([...(helper ? [helper] : []), row]), columns: sideGrid.columns });
+    const sideGrid = gridOf(side, spec, level, sideW, measure);
+    const row = sideBlocks(preview, gridWithFooter(sideGrid.block, sideW, spec.more, measure, level));
+    bodies.push({ block: stackBlocks([...lead, ...(helper ? [helper] : []), row]), columns: sideGrid.columns });
   }
   return bodies;
 }
@@ -945,35 +1241,34 @@ interface PlacedBody {
   fits: boolean;
 }
 
-/** The first picture body with `count` buttons of side `side` (and More colours when `more`) that fits the band, or null. */
+/** The first picture body of `spec` with buttons of side `side` that fits the band, or null. */
 function fittingPictureBody(
   side: number,
   chrome: Chrome,
-  count: number,
-  more: boolean,
+  spec: PictureSpec,
   measure: StylerMeasure,
   level: FitLevel,
 ): { block: Block; columns: number } | null {
-  return pictureBodies(count, side, more, chrome, measure, level).find((body) => fitsBand(body.block, chrome)) ?? null;
+  return pictureBodies(side, spec, chrome, measure, level).find((body) => fitsBand(body.block, chrome)) ?? null;
 }
 
 /**
- * The picture body for this level with `count` buttons, and More colours under them when `more`: a
+ * The picture body for this level with the buttons of `spec`, and their More button under them: a
  * body that fits at PICTURE_PX.min decides the level fits; then the buttons take the largest whole
  * side up to PICTURE_PX.max that still fits. A bigger side never fits where a smaller one does not, so
  * the side is found by halving.
  */
-function bestPictureBody(chrome: Chrome, count: number, more: boolean, measure: StylerMeasure, level: FitLevel): PlacedBody {
-  let best = fittingPictureBody(PICTURE_PX.min, chrome, count, more, measure, level);
+function bestPictureBody(chrome: Chrome, spec: PictureSpec, measure: StylerMeasure, level: FitLevel): PlacedBody {
+  let best = fittingPictureBody(PICTURE_PX.min, chrome, spec, measure, level);
   if (best === null) {
-    const tight = pictureBodies(count, PICTURE_PX.min, more, chrome, measure, level)[0];
+    const tight = pictureBodies(PICTURE_PX.min, spec, chrome, measure, level)[0];
     return { pieces: placeInBand(tight.block, chrome), columns: tight.columns, fits: false };
   }
   let fitting: number = PICTURE_PX.min;
   let tooBig = PICTURE_PX.max + 1;
   while (tooBig - fitting > 1) {
     const side = Math.floor((fitting + tooBig) / 2);
-    const body = fittingPictureBody(side, chrome, count, more, measure, level);
+    const body = fittingPictureBody(side, chrome, spec, measure, level);
     if (body === null) {
       tooBig = side;
     } else {
@@ -1070,9 +1365,11 @@ function collectBody(
   level: FitLevel,
   columns: number,
   screen: StylerScreen,
+  backToSlots: Rect | null,
+  labelsBeside: boolean,
 ): Pick<
   StylerLayout,
-  'helper' | 'preview' | 'caption' | 'options' | 'columns' | 'labelsShown' | 'optionLabels' | 'name' | 'dream'
+  'helper' | 'preview' | 'caption' | 'options' | 'columns' | 'labelsShown' | 'optionLabels' | 'name' | 'dream' | 'outfit'
 > {
   const previewRect = pieceNamed(pieces, 'preview');
   const nameBox = pieceNamed(pieces, 'nameBox');
@@ -1092,6 +1389,28 @@ function collectBody(
         : { box: nameBox, tiles, namesPerPage: tiles.length, moreNames: pieceNamed(pieces, 'moreNames') },
     dream:
       screen.step === 'dream' ? { perPage: options.length, moreColours: pieceNamed(pieces, 'moreColours') } : null,
+    outfit: outfitLayoutOf(pieces, level, screen, backToSlots, labelsBeside),
+  };
+}
+
+/** The Outfit controls from the placed pieces (and the step button Back to slots), or null on every other step. */
+function outfitLayoutOf(
+  pieces: readonly Piece[],
+  level: FitLevel,
+  screen: StylerScreen,
+  backToSlots: Rect | null,
+  labelsBeside: boolean,
+): StylerOutfitLayout | null {
+  if (screen.outfitView === undefined) return null;
+  const summary = pieceNamed(pieces, 'summary');
+  return {
+    view: screen.outfitView,
+    perPage: piecesNamed(pieces, 'option').length,
+    more: pieceNamed(pieces, 'moreOutfit'),
+    summary,
+    summaryFlowed: summary !== null && level.summary === 'flowed',
+    backToSlots: backToSlots ?? pieceNamed(pieces, 'backToSlots'),
+    labelsBeside: screen.outfitView === 'choices' && labelsBeside,
   };
 }
 

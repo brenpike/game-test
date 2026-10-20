@@ -34,10 +34,11 @@ describe('STYLER_STEPS', () => {
 });
 
 describe('RESTYLE_STEPS', () => {
-  it('lists the steps in restyle order, Dream colour after colour', () => {
+  it('lists the steps in restyle order, Dream colour after colour, then Outfit', () => {
     expect(RESTYLE_STEPS).toEqual([
       'colour',
       'dream',
+      'outfit',
       'sex',
       'eyes',
       'mouth',
@@ -51,10 +52,14 @@ describe('RESTYLE_STEPS', () => {
     ]);
   });
 
-  it('is the creator steps with dream inserted after colour', () => {
+  it('is the creator steps with dream and outfit inserted after colour', () => {
     const expected = [...STYLER_STEPS];
-    expected.splice(expected.indexOf('colour') + 1, 0, 'dream');
+    expected.splice(expected.indexOf('colour') + 1, 0, 'dream', 'outfit');
     expect(RESTYLE_STEPS).toEqual(expected);
+  });
+
+  it('puts the Outfit tab right after the Dream colour tab', () => {
+    expect(RESTYLE_STEPS.indexOf('outfit')).toBe(RESTYLE_STEPS.indexOf('dream') + 1);
   });
 
   it('is frozen', () => {
@@ -62,15 +67,16 @@ describe('RESTYLE_STEPS', () => {
     expect(Object.isFrozen(RESTYLE_ONLY_STEPS)).toBe(true);
   });
 
-  it('keeps the creator steps free of dream', () => {
+  it('keeps the creator steps free of dream and outfit', () => {
     expect(STYLER_STEPS).not.toContain('dream');
+    expect(STYLER_STEPS).not.toContain('outfit');
     expect(STYLER_STEPS).toHaveLength(11);
   });
 });
 
 describe('RESTYLE_ONLY_STEPS', () => {
-  it('holds only dream', () => {
-    expect(RESTYLE_ONLY_STEPS).toEqual(['dream']);
+  it('holds only dream and outfit', () => {
+    expect(RESTYLE_ONLY_STEPS).toEqual(['dream', 'outfit']);
   });
 
   it('holds only restyle steps missing from the creator steps', () => {
@@ -101,6 +107,10 @@ describe('stepLookField', () => {
     expect(stepLookField('dream')).toBeNull();
   });
 
+  it('maps outfit to no look field', () => {
+    expect(stepLookField('outfit')).toBeNull();
+  });
+
   it('maps colour and name to no look field', () => {
     expect(stepLookField('colour')).toBeNull();
     expect(stepLookField('name')).toBeNull();
@@ -108,7 +118,7 @@ describe('stepLookField', () => {
 
   it('maps every other step to the look field of the same name', () => {
     for (const step of RESTYLE_STEPS) {
-      if (step === 'colour' || step === 'dream' || step === 'name') continue;
+      if (step === 'colour' || step === 'dream' || step === 'outfit' || step === 'name') continue;
       expect(stepLookField(step)).toBe(step);
     }
   });

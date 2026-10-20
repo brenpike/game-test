@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { CANAL_TREASURES, WEARABLE_SLOTS, type Wearable } from './catalogue';
 import { RESTYLE_STEPS, STYLER_STEPS } from './stylerSteps';
 import * as stylerText from './stylerText';
 import {
   BACK_LABEL,
+  BACK_TO_SLOTS_LABEL,
   CANCEL_LABEL,
   CREATOR_FIXED_HELPER,
   CREATOR_HELPER,
@@ -11,11 +13,15 @@ import {
   DREAM_HELPER,
   MORE_COLOURS_LABEL,
   MORE_NAMES_LABEL,
+  MORE_SLOTS_LABEL,
+  MORE_WEARABLES_LABEL,
   NAME_FIELD_LABEL,
   NAME_HELPER,
   NAME_PLACEHOLDER,
   NEXT_LABEL,
+  NONE_LABEL,
   NO_DREAMS_HELPER,
+  OUTFIT_SLOTS_HELPER,
   READ_ONLY_HELPER,
   REAL_COLOUR_LABEL,
   RESTYLE_HELPER,
@@ -23,13 +29,17 @@ import {
   STEP_TAB_LABELS,
   STEP_TITLES,
   SURPRISE_ME_LABEL,
+  outfitHelper,
+  outfitSlotCaption,
   stepHeading,
   stepHelper,
   stepTabLabel,
   stepTitle,
+  wornOnLabel,
 } from './stylerText';
 import type { StylerMode } from './stylerUi';
 import { DONE_LABEL as TANK_DONE_LABEL } from './tankText';
+import { perkText, slotName } from './treasureChest';
 
 const BANNED = [
   'die',
@@ -60,6 +70,21 @@ const IT_FOR_A_CHOICE: readonly string[] = ['try it on', 'change it later'];
 
 const MODES: readonly StylerMode[] = ['creator', 'restyle'];
 
+/** Every catalogue Wearable. */
+const WEARABLES: readonly Wearable[] = CANAL_TREASURES.filter(
+  (treasure): treasure is Wearable => treasure.category === 'wearable',
+);
+
+/** Every Outfit text that depends on a slot: helpers, captions and the "On <name>" mark. */
+function everyOutfitText(): string[] {
+  return [
+    outfitHelper(null, 0),
+    ...WEARABLE_SLOTS.flatMap((slot) => [outfitHelper(slot, 0), outfitHelper(slot, 1), outfitSlotCaption(slot, null)]),
+    ...WEARABLES.map((wearable) => outfitSlotCaption(wearable.slot, wearable)),
+    wornOnLabel('Milo'),
+  ];
+}
+
 const exportedStrings = Object.entries(stylerText as Record<string, unknown>).filter(
   (entry): entry is [string, string] => typeof entry[1] === 'string',
 );
@@ -73,6 +98,7 @@ function everyStylerText(): string[] {
     ...STYLER_STEPS.map((step, index) => stepHeading(index, STYLER_STEPS.length, step)),
     ...MODES.flatMap((mode) => RESTYLE_STEPS.map((step) => stepHelper(mode, step))),
     ...MODES.flatMap((mode) => RESTYLE_STEPS.map((step) => stepHelper(mode, step, 1))),
+    ...everyOutfitText(),
   ];
 }
 
@@ -80,6 +106,7 @@ describe('styler text', () => {
   it('exports every styler string by name', () => {
     expect(exportedStrings.map(([name]) => name).sort()).toEqual([
       'BACK_LABEL',
+      'BACK_TO_SLOTS_LABEL',
       'CANCEL_LABEL',
       'CREATOR_FIXED_HELPER',
       'CREATOR_HELPER',
@@ -88,11 +115,15 @@ describe('styler text', () => {
       'DREAM_HELPER',
       'MORE_COLOURS_LABEL',
       'MORE_NAMES_LABEL',
+      'MORE_SLOTS_LABEL',
+      'MORE_WEARABLES_LABEL',
       'NAME_FIELD_LABEL',
       'NAME_HELPER',
       'NAME_PLACEHOLDER',
       'NEXT_LABEL',
+      'NONE_LABEL',
       'NO_DREAMS_HELPER',
+      'OUTFIT_SLOTS_HELPER',
       'READ_ONLY_HELPER',
       'REAL_COLOUR_LABEL',
       'RESTYLE_HELPER',
@@ -133,6 +164,7 @@ describe('styler text', () => {
     expect(RESTYLE_STEPS.map(stepTitle)).toEqual([
       'Pick a colour!',
       'Pick a Dream colour!',
+      'Pick your outfit!',
       'Boy or girl?',
       'Pick your eyes!',
       'Pick a mouth!',
@@ -147,6 +179,7 @@ describe('styler text', () => {
     expect(RESTYLE_STEPS.map(stepTabLabel)).toEqual([
       'Colour',
       'Dream colour',
+      'Outfit',
       'Boy or girl',
       'Eyes',
       'Mouth',
@@ -213,5 +246,76 @@ describe('styler text', () => {
     expect(stepHelper('restyle', 'dream', 1)).toBe(DREAM_HELPER);
     expect(stepHelper('restyle', 'dream', 5)).toBe(DREAM_HELPER);
     expect(stepHelper('restyle', 'eyes', 3)).toBe(RESTYLE_HELPER);
+  });
+
+  it('uses the agreed Outfit labels and slots helper', () => {
+    expect(stepTitle('outfit')).toBe('Pick your outfit!');
+    expect(stepTabLabel('outfit')).toBe('Outfit');
+    expect(NONE_LABEL).toBe('None');
+    expect(BACK_TO_SLOTS_LABEL).toBe('Back to slots');
+    expect(MORE_SLOTS_LABEL).toBe('More slots');
+    expect(MORE_WEARABLES_LABEL).toBe('More wearables');
+    expect(OUTFIT_SLOTS_HELPER).toBe('Tap a slot to choose what to wear.');
+  });
+
+  it('gives the Outfit step its slots view helper in restyle', () => {
+    expect(stepHelper('restyle', 'outfit')).toBe(OUTFIT_SLOTS_HELPER);
+    expect(stepHelper('restyle', 'outfit', 3)).toBe(OUTFIT_SLOTS_HELPER);
+  });
+});
+
+describe('outfitHelper', () => {
+  it('gives the slots view helper with no slot open', () => {
+    expect(outfitHelper(null, 0)).toBe(OUTFIT_SLOTS_HELPER);
+    expect(outfitHelper(null, 4)).toBe(OUTFIT_SLOTS_HELPER);
+  });
+
+  it('names the open slot in the choices view helper', () => {
+    expect(outfitHelper('head', 1)).toBe('Head: tap a picture to try it on.');
+    expect(outfitHelper('socks', 3)).toBe('Socks: tap a picture to try it on.');
+  });
+
+  it('points the player to trips when no Wearable for the slot is banked', () => {
+    expect(outfitHelper('head', 0)).toBe('No Head items yet. Find some on a trip!');
+    expect(outfitHelper('feet', 0)).toBe('No Feet items yet. Find some on a trip!');
+  });
+
+  it('uses every slot name', () => {
+    for (const slot of WEARABLE_SLOTS) expect(outfitHelper(slot, 2).startsWith(`${slotName(slot)}: `)).toBe(true);
+  });
+
+  it('rejects a banked count that is not a whole number of 0 or more', () => {
+    for (const count of [-1, 0.5, Number.NaN]) expect(() => outfitHelper('head', count)).toThrow(RangeError);
+  });
+});
+
+describe('wornOnLabel', () => {
+  it('marks a Wearable another axolotl wears with that axolotl\'s name', () => {
+    expect(wornOnLabel('Milo')).toBe('On Milo');
+    expect(wornOnLabel('Bubbles')).toBe('On Bubbles');
+  });
+});
+
+describe('outfitSlotCaption', () => {
+  it('names the slot, the worn Wearable and its perk', () => {
+    expect(outfitSlotCaption('head', { name: 'Sun hat', perk: { type: 'speed', value: 4 } })).toBe(
+      'Head: Sun hat, Speed +4%',
+    );
+    expect(outfitSlotCaption('tail', { name: 'Golden bow', perk: { type: 'shell', value: 1 } })).toBe(
+      'Tail: Golden bow, Shell blocks 1 hit',
+    );
+  });
+
+  it('says a slot with nothing worn is empty', () => {
+    expect(outfitSlotCaption('neck', null)).toBe('Neck: empty');
+    for (const slot of WEARABLE_SLOTS) expect(outfitSlotCaption(slot, null)).toBe(`${slotName(slot)}: empty`);
+  });
+
+  it('uses the Treasure Chest perk text for every catalogue Wearable', () => {
+    for (const wearable of WEARABLES) {
+      expect(outfitSlotCaption(wearable.slot, wearable)).toBe(
+        `${slotName(wearable.slot)}: ${wearable.name}, ${perkText(wearable.perk)}`,
+      );
+    }
   });
 });

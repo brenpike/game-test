@@ -8,7 +8,7 @@ import {
   axolotlLegRoots,
   drawAxolotl,
 } from './drawAxolotl';
-import { LEUCISTIC, T_STATIC, WHITE } from './palette';
+import { LEUCISTIC, LW, T_STATIC, WHITE } from './palette';
 import {
   AXO_AGES,
   AXO_BODIES,
@@ -16,44 +16,90 @@ import {
   AXO_SIZES,
   AXO_SIZE_SCALE,
   AXO_TAILS,
+  BACK_ANCHOR_X,
+  BACK_FRAME_BOX,
   DEFAULT_ART_LOOK,
+  EYES_LAYER,
   EYELASH_INK,
   EYELASH_UNDER,
   EYE_VARIANTS,
   FAR_EYE,
   FAR_GILL_ROOTS,
+  FEET_ENVELOPE_HALF_WIDTH,
   GILL_STEM_OL,
   GILL_STEM_W,
   GILL_STYLES,
   GILL_STYLE_IDS,
+  GLASSES_BAND,
+  GLASSES_EXTENT,
+  GLASSES_LENSES,
+  GLASSES_TEMPLE_MIN_X,
   HEAD_ELLIPSE,
+  HEAD_FOOTPRINT,
+  HEAD_SLOT_ANCHOR,
   LASH_REACH,
+  LEG_WEARABLE_LAYERS,
   MOUTH_VARIANTS,
+  NECK_FOOTPRINT,
+  NECK_SLOT_ANCHOR,
   NEAR_EYE,
   NEAR_GILL_ROOTS,
   PROTOTYPE_BELLY,
   PROTOTYPE_TAIL,
   PROTOTYPE_TORSO,
   SPOTS_OPTIONS,
+  SHIRT_BACK_FRONT_LINE_X,
+  SHIRT_FRONT_X,
+  SHIRT_NECKLINE_DEPTH,
+  SILHOUETTE_LAYER,
   SPOT_SETS,
   TAIL_SEGMENTS,
   TAIL_SLOT_POINT,
+  TAIL_SLOT_REACH,
+  TORSO_EDGE_BAND,
+  WEARABLE_LAYERS,
+  WEARABLE_SLOTS,
+  FACE_SLOT_ANCHOR,
+  FAR_EYE_ZONE as CODE_FAR_EYE_ZONE,
+  FAR_LASH_REACH,
+  GILL_ROOT_ZONE as CODE_GILL_ROOT_ZONE,
+  MOUTH_ZONE as CODE_MOUTH_ZONE,
+  NEAR_EYE_ZONE as CODE_NEAR_EYE_ZONE,
+  NEAR_LASH_REACH,
   axolotlBodyGeometry,
+  backFootprint,
+  backFrame,
   boundsOfPoints,
   eyeMarks,
   eyelashMarks,
+  feetEnvelope,
+  framePoint,
   gillGeometry,
   gillInkBounds,
   gillSpecs,
+  glassesNotches,
+  glassesOutlinePoints,
+  legAngle,
+  legRectBounds,
+  legSide,
+  legSlotFrames,
+  legWearableLayer,
   mouthInkBounds,
   MOUTH_INK,
   MOUTH_TICK_INK,
   paintEye,
   paintMouth,
   quadBounds,
+  shirtContains,
+  shirtGeometry,
+  shoeRect,
+  sockFootPad,
+  sockSleeveBounds,
   spotMarks,
   tailPointAt,
   tailSamples,
+  tailSlotBounds,
+  tailSlotFrame,
   unionBounds,
   type AxolotlArtLook,
   type BodyEllipse,
@@ -65,6 +111,8 @@ import {
   type LocalPoint,
   type MouthVariant,
   type SpotsOption,
+  type WearableSlot,
+  type ZoneCircle,
 } from './drawAxolotlParts';
 
 const TAU = Math.PI * 2;
@@ -1634,5 +1682,716 @@ describe('AXO_TEX and preview crops', () => {
   it('crops the whole axolotl to the AXO_TEX frame, and every crop sits in the frame', () => {
     expect(AXO_PREVIEW_CROPS.whole).toEqual(frameInner(0));
     for (const crop of Object.values(AXO_PREVIEW_CROPS)) expectInside(crop, frameInner(0));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wearable slots (guide 6a, 6i, 6k, 11)
+// ---------------------------------------------------------------------------
+
+/** Guide 6i lash reach circles: eye radius plus 4.0. */
+const NEAR_LASH_REACH_ZONE = { x: 28, y: -6, r: 10.4 };
+const FAR_LASH_REACH_ZONE = { x: 42, y: -7, r: 9.3 };
+/** Guide 6i mouth zone. */
+const MOUTH_ZONE_BOX: Bounds = { minX: 24.4, minY: 2.6, maxX: 52.4, maxY: 21.3 };
+
+/**
+ * The guide rounds the Back item's furthest forward corner to x -6.8; built exactly
+ * it is -6.7955 (a Regular Baby Girl), 0.0045 past the line.
+ */
+const BACK_FRONT_ROUNDING = 0.005;
+
+/** Every Boy or girl, Tail, Body, Age and size: the fields the slot geometry reads (162 looks). */
+function everyBodyLook(): AxolotlArtLook[] {
+  const looks: AxolotlArtLook[] = [];
+  for (const size of AXO_SIZES)
+    for (const sex of AXO_SEXES)
+      for (const tail of AXO_TAILS)
+        for (const body of AXO_BODIES)
+          for (const age of AXO_AGES) looks.push({ ...DEFAULT_ART_LOOK, size, sex, tail, body, age });
+  return looks;
+}
+const EVERY_BODY_LOOK = everyBodyLook();
+const lookId = (look: AxolotlArtLook): string => [look.size, look.sex, look.tail, look.body, look.age].join(' ');
+/** Ids of every body look failing `holds`; expected empty. */
+function failingBodyLooks(holds: (look: AxolotlArtLook) => boolean): string[] {
+  return EVERY_BODY_LOOK.filter((look) => !holds(look)).map(lookId);
+}
+
+function boxesOverlap(a: Bounds, b: Bounds): boolean {
+  return a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY;
+}
+
+/** Whether a box stays out of both eye zones and the gill-root zone (guide 6i). */
+function clearOfEyesAndGills(b: Bounds): boolean {
+  return (
+    boxCircleGap(b, NEAR_EYE_ZONE) >= 0 && boxCircleGap(b, FAR_EYE_ZONE) >= 0 && !boxesOverlap(b, GILL_ROOT_ZONE)
+  );
+}
+
+/** Whether a box also stays out of both lash reach circles (a Girl's lashes count as part of the eyes). */
+function clearOfLashReach(b: Bounds): boolean {
+  return boxCircleGap(b, NEAR_LASH_REACH_ZONE) >= 0 && boxCircleGap(b, FAR_LASH_REACH_ZONE) >= 0;
+}
+
+/** Shortest distance from a point to the outline of an axis-aligned ellipse, by sampling. */
+function distToEllipseEdge(x: number, y: number, e: BodyEllipse): number {
+  let best = Infinity;
+  for (let k = 0; k < 720; k++) {
+    const a = (k / 720) * TAU;
+    best = Math.min(best, Math.hypot(x - (e.cx + Math.cos(a) * e.rx), y - (e.cy + Math.sin(a) * e.ry)));
+  }
+  return best;
+}
+
+function expectBoxNear(actual: Bounds, expected: Bounds, tolerance: number): void {
+  expect(Math.abs(actual.minX - expected.minX)).toBeLessThanOrEqual(tolerance);
+  expect(Math.abs(actual.minY - expected.minY)).toBeLessThanOrEqual(tolerance);
+  expect(Math.abs(actual.maxX - expected.maxX)).toBeLessThanOrEqual(tolerance);
+  expect(Math.abs(actual.maxY - expected.maxY)).toBeLessThanOrEqual(tolerance);
+}
+
+describe('Wearable slots: layers and zones (guide 6a, 6i)', () => {
+  it('lists the eight slots in PRD order', () => {
+    const order: WearableSlot[] = ['head', 'neck', 'face', 'shirt', 'back', 'tail', 'socks', 'feet'];
+    expect(WEARABLE_SLOTS).toEqual(order);
+  });
+
+  it('has the guide layer values, back to front: Shirt, Tail, Neck, Back, Head, Face, then the eyes', () => {
+    expect(WEARABLE_LAYERS).toEqual({ shirt: 8.2, tail: 8.5, neck: 9.5, back: 9.7, head: 10.5, face: 11.5 });
+    expect(LEG_WEARABLE_LAYERS).toEqual({ far: 2.5, near: 3.5 });
+    expect([0, 1, 2, 3].map(legSide)).toEqual(['far', 'far', 'near', 'near']);
+    expect([0, 1, 2, 3].map(legWearableLayer)).toEqual([2.5, 2.5, 3.5, 3.5]);
+    const bodyLayers = Object.values(WEARABLE_LAYERS);
+    expect(bodyLayers.every((layer) => layer < EYES_LAYER)).toBe(true);
+    expect(EYES_LAYER).toBe(12);
+    // The Back item is above the Shirt and the Neck item, and above the Tail item.
+    expect(WEARABLE_LAYERS.back).toBeGreaterThan(WEARABLE_LAYERS.neck);
+    expect(WEARABLE_LAYERS.neck).toBeGreaterThan(WEARABLE_LAYERS.shirt);
+    expect(WEARABLE_LAYERS.back).toBeGreaterThan(WEARABLE_LAYERS.tail);
+  });
+
+  it('paints Socks and Feet behind the silhouette, so they can cover nothing on the body, head or gills', () => {
+    expect(SILHOUETTE_LAYER).toBe(4);
+    expect(LEG_WEARABLE_LAYERS.far).toBeLessThan(LEG_WEARABLE_LAYERS.near);
+    expect(LEG_WEARABLE_LAYERS.near).toBeLessThan(SILHOUETTE_LAYER);
+  });
+
+  it('exports the guide keep-clear zones', () => {
+    for (const [code, guide] of [
+      [CODE_NEAR_EYE_ZONE, NEAR_EYE_ZONE],
+      [CODE_FAR_EYE_ZONE, FAR_EYE_ZONE],
+      [NEAR_LASH_REACH, NEAR_LASH_REACH_ZONE],
+      [FAR_LASH_REACH, FAR_LASH_REACH_ZONE],
+    ] as [ZoneCircle, ZoneCircle][]) {
+      expect(code.x).toBe(guide.x);
+      expect(code.y).toBe(guide.y);
+      expect(code.r).toBeCloseTo(guide.r, 9);
+    }
+    expect(CODE_GILL_ROOT_ZONE).toEqual(GILL_ROOT_ZONE);
+    expect(CODE_MOUTH_ZONE).toEqual(MOUTH_ZONE_BOX);
+    expect(SHIRT_BACK_FRONT_LINE_X).toBe(-6.8);
+    expect(TORSO_EDGE_BAND).toBe(3);
+    // 1.8 units from the front line to the gill-root zone.
+    expect(GILL_ROOT_ZONE.minX - SHIRT_BACK_FRONT_LINE_X).toBeCloseTo(1.8, 9);
+  });
+
+  it('frames points as the leg and Back frames need: u along, v across', () => {
+    const f = { x: 10, y: 20, angle: Math.PI / 2 };
+    const p = framePoint(f, 3, 2);
+    expect(p.x).toBeCloseTo(8, 9);
+    expect(p.y).toBeCloseTo(23, 9);
+  });
+});
+
+describe('Head, Neck and Face slots (guide 6i): on the head, they never move', () => {
+  it('has the guide anchors', () => {
+    expect(HEAD_SLOT_ANCHOR).toEqual({ x: 26, y: -23 });
+    expect(NECK_SLOT_ANCHOR).toEqual({ x: 17, y: 16 });
+    expect(FACE_SLOT_ANCHOR).toEqual({ x: 35, y: -6.5 });
+  });
+
+  it('keeps the Head footprint on the head top: x 16 to 36, no lower than y -19.5, no higher than y -46', () => {
+    expect(HEAD_FOOTPRINT).toEqual({ minX: 16, minY: -46, maxX: 36, maxY: -19.5 });
+    expect(HEAD_SLOT_ANCHOR.x).toBeGreaterThanOrEqual(HEAD_FOOTPRINT.minX);
+    expect(HEAD_SLOT_ANCHOR.x).toBeLessThanOrEqual(HEAD_FOOTPRINT.maxX);
+    expect(clearOfEyesAndGills(HEAD_FOOTPRINT)).toBe(true);
+    expect(clearOfLashReach(HEAD_FOOTPRINT)).toBe(true);
+    // The lowest Head ink is the lowest lash corner allowed (the eyelash tests).
+    expect(HEAD_FOOTPRINT.maxY).toBe(LASH_MIN_Y);
+    // Clear of the gill stems, which stay left of about x 15.5.
+    expect(HEAD_FOOTPRINT.minX).toBeGreaterThan(15.5);
+  });
+
+  it('keeps the Neck footprint at the throat, x 13 to 22, y 11 to 21, clear of the eyes, gills and mouth zone', () => {
+    expect(NECK_FOOTPRINT).toEqual({ minX: 13, minY: 11, maxX: 22, maxY: 21 });
+    expect(clearOfEyesAndGills(NECK_FOOTPRINT)).toBe(true);
+    expect(clearOfLashReach(NECK_FOOTPRINT)).toBe(true);
+    expect(boxesOverlap(NECK_FOOTPRINT, MOUTH_ZONE_BOX)).toBe(false);
+  });
+
+  it('keeps the Neck footprint inside the silhouette (head or torso, outline included) on every look', () => {
+    const corners = (b: Bounds): LocalPoint[] => [
+      { x: b.minX, y: b.minY },
+      { x: b.maxX, y: b.minY },
+      { x: b.maxX, y: b.maxY },
+      { x: b.minX, y: b.maxY },
+    ];
+    const grow = (e: BodyEllipse): BodyEllipse => ({ ...e, rx: e.rx + LW, ry: e.ry + LW });
+    expect(
+      failingBodyLooks((look) => {
+        const torso = grow(axolotlBodyGeometry(look).torso);
+        const head = grow(HEAD_ELLIPSE);
+        return corners(NECK_FOOTPRINT).every((p) => isInEllipse(p, head) || isInEllipse(p, torso));
+      }),
+    ).toEqual([]);
+    // Nothing hangs below the silhouette: the Neck bottom is no lower than the head's lowest outline at its anchor.
+    expect(NECK_FOOTPRINT.maxY).toBeLessThanOrEqual(HEAD_ELLIPSE.cy + HEAD_ELLIPSE.ry + LW);
+  });
+
+  it('draws the glasses as one merged frame whose band keeps off both eye zones', () => {
+    expect(GLASSES_LENSES).toEqual([
+      { x: 28, y: -6, r: 9.95 },
+      { x: 42, y: -7, r: 8.85 },
+    ]);
+    expect(GLASSES_BAND).toBe(3.5);
+    const outline = glassesOutlinePoints(360);
+    expect(outline.length).toBeGreaterThan(300);
+    const half = GLASSES_BAND / 2;
+    for (const p of outline) {
+      // The band's inner edge lies on the eye zones: 1.8 units from each bead, never inside.
+      const nearGap = Math.hypot(p.x - NEAR_EYE_ZONE.x, p.y - NEAR_EYE_ZONE.y) - half - NEAR_EYE_ZONE.r;
+      const farGap = Math.hypot(p.x - FAR_EYE_ZONE.x, p.y - FAR_EYE_ZONE.y) - half - FAR_EYE_ZONE.r;
+      expect(nearGap).toBeGreaterThanOrEqual(-1e-9);
+      expect(farGap).toBeGreaterThanOrEqual(-1e-9);
+    }
+    // The notch gap to each zone is the guide's design: the band runs 1.75 either side of the outline.
+    const [top, under] = glassesNotches();
+    expect(Math.hypot(top.x - 35.3, top.y + 12.8)).toBeLessThan(0.1);
+    expect(Math.hypot(under.x - 36.2, under.y + 0.3)).toBeLessThan(0.1);
+    for (const notch of [top, under]) {
+      expect(Math.hypot(notch.x - NEAR_EYE_ZONE.x, notch.y - NEAR_EYE_ZONE.y) - half).toBeGreaterThanOrEqual(
+        NEAR_EYE_ZONE.r - 1e-9,
+      );
+      expect(Math.hypot(notch.x - FAR_EYE_ZONE.x, notch.y - FAR_EYE_ZONE.y) - half).toBeGreaterThanOrEqual(
+        FAR_EYE_ZONE.r - 1e-9,
+      );
+    }
+  });
+
+  it('keeps the glasses at x 16.3 to 52.6, y -17.7 to 5.7, with the Head item 1.8 above and the gill-root zone clear', () => {
+    expectBoxNear(GLASSES_EXTENT, { minX: 16.3, minY: -17.7, maxX: 52.6, maxY: 5.7 }, 0.05);
+    expect(GLASSES_EXTENT.minY - HEAD_FOOTPRINT.maxY).toBeCloseTo(1.8, 1);
+    expect(GLASSES_EXTENT.minX).toBeGreaterThan(GILL_ROOT_ZONE.maxX);
+    expect(GLASSES_TEMPLE_MIN_X).toBe(14);
+    expect(GLASSES_TEMPLE_MIN_X).toBeGreaterThan(GILL_ROOT_ZONE.maxX);
+    // Inside the guide's footprint box.
+    expectInside(GLASSES_EXTENT, { minX: 14, minY: -18, maxX: 54, maxY: 6 });
+  });
+
+  it('lets the glasses band reach the lash reach circles, because the eye layer paints above it', () => {
+    expect(clearOfLashReach(GLASSES_EXTENT)).toBe(false);
+    expect(EYES_LAYER).toBeGreaterThan(WEARABLE_LAYERS.face);
+  });
+
+  it('keeps the glasses about 1.0 from the near mouth tick and 0.7 from the Big grin back tick', () => {
+    const gap = (tick: LocalPoint): number =>
+      Math.min(...glassesOutlinePoints(720).map((p) => Math.hypot(p.x - tick.x, p.y - tick.y))) -
+      GLASSES_BAND / 2 -
+      MOUTH_TICK_INK / 2;
+    expect(gap({ x: 26.4, y: 7.6 })).toBeGreaterThan(0.9);
+    expect(gap({ x: 26.4, y: 7.6 })).toBeLessThan(1.1);
+    expect(gap({ x: 25.6, y: 7.2 })).toBeGreaterThan(0.6);
+    expect(gap({ x: 25.6, y: 7.2 })).toBeLessThan(0.8);
+  });
+});
+
+describe('Shirt slot (guide 6i)', () => {
+  it('has the torso centre as its anchor, and the front edge at x -7.5 with a 3-unit neckline', () => {
+    expect(SHIRT_FRONT_X).toBe(-7.5);
+    expect(SHIRT_NECKLINE_DEPTH).toBe(3);
+    for (const look of EVERY_BODY_LOOK) {
+      const torso = axolotlBodyGeometry(look).torso;
+      const shirt = shirtGeometry(look);
+      expect(shirt.anchor).toEqual({ x: torso.cx, y: 4 });
+      expect(shirt.neckline.x).toBe(-7.5);
+      expect(shirt.neckline.apexX).toBeCloseTo(-10.5, 9);
+      expect(shirt.neckline.yTop).toBeLessThan(shirt.neckline.yBottom);
+    }
+  });
+
+  it('stays inside the torso ellipse inset 3 all round, so the rim light and ink edge partner are never covered', () => {
+    expect(
+      failingBodyLooks((look) => {
+        const torso = axolotlBodyGeometry(look).torso;
+        const shirt = shirtGeometry(look);
+        const inset = { ...torso, rx: torso.rx - TORSO_EDGE_BAND, ry: torso.ry - TORSO_EDGE_BAND };
+        const { bounds } = shirt;
+        for (let i = 0; i <= 24; i++) {
+          for (let j = 0; j <= 12; j++) {
+            const x = bounds.minX + ((bounds.maxX - bounds.minX) * i) / 24;
+            const y = bounds.minY + ((bounds.maxY - bounds.minY) * j) / 12;
+            if (shirtContains(shirt, x, y) && !isInEllipse({ x, y }, inset)) return false;
+          }
+        }
+        // The footprint box corners that matter: the extremes of the clipped inset ellipse lie on it.
+        return (
+          isInEllipse({ x: bounds.minX, y: shirt.anchor.y }, inset) &&
+          isInEllipse({ x: bounds.maxX, y: shirt.anchor.y }, inset)
+        );
+      }),
+    ).toEqual([]);
+  });
+
+  it('leaves at least 2 units of body between the Shirt and the torso edge, all round', () => {
+    // Radii rx - 3 and ry - 3 put the Shirt 3 units in along both axes; round the diagonals it is never nearer than 2.
+    const worst = Math.min(
+      ...EVERY_BODY_LOOK.map((look) => {
+        const torso = axolotlBodyGeometry(look).torso;
+        const shirt = shirtGeometry(look);
+        let nearest = Infinity;
+        for (let k = 0; k < 90; k++) {
+          const a = (k / 90) * TAU;
+          const x = shirt.inset.cx + Math.cos(a) * shirt.inset.rx;
+          const y = shirt.inset.cy + Math.sin(a) * shirt.inset.ry;
+          if (shirtContains(shirt, x, y)) nearest = Math.min(nearest, distToEllipseEdge(x, y, torso));
+        }
+        return nearest;
+      }),
+    );
+    expect(worst).toBeGreaterThanOrEqual(2);
+  });
+
+  it('is cut at the tail root at the rear and at x -7.5 at the front, off the head and the gill-root zone', () => {
+    expect(
+      failingBodyLooks((look) => {
+        const geo = axolotlBodyGeometry(look);
+        const { bounds } = shirtGeometry(look);
+        const headStart = HEAD_ELLIPSE.cx - HEAD_ELLIPSE.rx;
+        return (
+          bounds.minX >= geo.tail.rootX - 1e-9 &&
+          bounds.maxX === -7.5 &&
+          bounds.maxX < SHIRT_BACK_FRONT_LINE_X &&
+          GILL_ROOT_ZONE.minX - bounds.maxX >= 2.5 &&
+          headStart - bounds.maxX >= 6.5 &&
+          clearOfEyesAndGills(bounds) &&
+          clearOfLashReach(bounds)
+        );
+      }),
+    ).toEqual([]);
+  });
+
+  it('ends at the tail root, so it never meets the waving tail core', () => {
+    expect(
+      failingBodyLooks((look) => {
+        const geo = axolotlBodyGeometry(look);
+        const { bounds } = shirtGeometry(look);
+        return SWIM_SAMPLES.every((swim) =>
+          TAIL_AMPS.every((amp) =>
+            tailSamples(geo.tail, swim, amp)
+              .slice(1)
+              .every((tp) => tp.x < bounds.minX),
+          ),
+        );
+      }),
+    ).toEqual([]);
+  });
+
+  it('never reaches a leg: every visible leg point lies outside the Shirt', () => {
+    expect(
+      failingBodyLooks((look) => {
+        const geo = axolotlBodyGeometry(look);
+        const shirt = shirtGeometry(look);
+        return SWIM_SAMPLES.every((swim) =>
+          legSlotFrames(look, swim).every((frame) => {
+            for (let k = 0; k <= 20; k++) {
+              const p = framePoint(frame, (frame.length * k) / 20, 0);
+              const outsideTorso = !isInEllipse(p, geo.torso);
+              if (outsideTorso && shirtContains(shirt, p.x, p.y)) return false;
+            }
+            return true;
+          }),
+        );
+      }),
+    ).toEqual([]);
+  });
+
+  it('measures x -38 to -7.5 and y -20 to 28 over every look', () => {
+    const boxes = EVERY_BODY_LOOK.map((look) => shirtGeometry(look).bounds);
+    expectBoxNear(unionBounds(boxes), { minX: -38, minY: -20, maxX: -7.5, maxY: 28 }, 0.05);
+  });
+});
+
+describe('Back slot (guide 6i)', () => {
+  it('rests on the torso top edge at x -17', () => {
+    expect(BACK_ANCHOR_X).toBe(-17);
+    expect(BACK_FRAME_BOX).toEqual({ minU: -9, maxU: 9, minV: -8, maxV: 5 });
+    expect(
+      failingBodyLooks((look) => {
+        const torso = axolotlBodyGeometry(look).torso;
+        const frame = backFrame(torso);
+        const onEdge = ((frame.x - torso.cx) / torso.rx) ** 2 + ((frame.y - torso.cy) / torso.ry) ** 2;
+        // Above the torso centre line, and the item turns to rise toward the snout (negative angle).
+        return Math.abs(onEdge - 1) < 1e-9 && frame.x === -17 && frame.y < torso.cy && frame.angle < 0;
+      }),
+    ).toEqual([]);
+  });
+
+  it('turns to the edge tangent, which is exact: a step along x' + "'" + ' follows the edge', () => {
+    for (const look of EVERY_BODY_LOOK) {
+      const torso = axolotlBodyGeometry(look).torso;
+      const frame = backFrame(torso);
+      const eps = 1e-4;
+      const topAt = (x: number): number =>
+        torso.cy - torso.ry * Math.sqrt(1 - ((x - torso.cx) / torso.rx) ** 2);
+      const slope = (topAt(frame.x + eps) - topAt(frame.x - eps)) / (2 * eps);
+      expect(Math.tan(frame.angle)).toBeCloseTo(slope, 6);
+    }
+  });
+
+  it('measures anchor y -22.8 to -9.1 and angle -0.374 to -0.070 over every look', () => {
+    const frames = EVERY_BODY_LOOK.map((look) => backFootprint(look).frame);
+    expect(Math.min(...frames.map((f) => f.y))).toBeCloseTo(-22.8, 1);
+    expect(Math.max(...frames.map((f) => f.y))).toBeCloseTo(-9.1, 1);
+    expect(Math.min(...frames.map((f) => f.angle))).toBeCloseTo(-0.374, 3);
+    expect(Math.max(...frames.map((f) => f.angle))).toBeCloseTo(-0.07, 3);
+  });
+
+  it('has its four corners at x -28.3 to -6.8 and y -31.6 to -2.0 over every look', () => {
+    const boxes = EVERY_BODY_LOOK.map((look) => backFootprint(look).bounds);
+    expectBoxNear(unionBounds(boxes), { minX: -28.3, minY: -31.6, maxX: -6.8, maxY: -2 }, 0.06);
+  });
+
+  it('keeps its forward corner at x -6.8 or less, clear of the gill-root zone, the head, the eyes and the lashes', () => {
+    expect(
+      failingBodyLooks((look) => {
+        const { bounds } = backFootprint(look);
+        return (
+          bounds.maxX <= SHIRT_BACK_FRONT_LINE_X + BACK_FRONT_ROUNDING &&
+          GILL_ROOT_ZONE.minX - bounds.maxX >= 1.8 - BACK_FRONT_ROUNDING &&
+          bounds.maxX < HEAD_ELLIPSE.cx - HEAD_ELLIPSE.rx &&
+          clearOfEyesAndGills(bounds) &&
+          clearOfLashReach(bounds)
+        );
+      }),
+    ).toEqual([]);
+  });
+
+  it('reaches x -6.8 (-6.7955 built exactly) on a Regular Baby Girl, the look where it reaches furthest', () => {
+    const reach = EVERY_BODY_LOOK.map((look) => ({ look, maxX: backFootprint(look).bounds.maxX })).sort(
+      (a, b) => b.maxX - a.maxX,
+    )[0];
+    expect(reach.maxX).toBeCloseTo(-6.8, 1);
+    expect(reach.look.age).toBe('baby');
+    expect(reach.look.sex).toBe('girl');
+    expect(reach.look.body).toBe('regular');
+  });
+
+  it('keeps every gill root and its stem ink clear, with no root inside its footprint', () => {
+    const stemInk = GILL_STEM_W / 2 + GILL_STEM_OL;
+    const roots = [...FAR_GILL_ROOTS, ...NEAR_GILL_ROOTS];
+    expect(
+      failingBodyLooks((look) => {
+        const { bounds } = backFootprint(look);
+        return roots.every(
+          (root) =>
+            bounds.maxX <= root.bx - stemInk + 1e-9 || boxCircleGap(bounds, { x: root.bx, y: root.by, r: stemInk }) >= 0,
+        );
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe('Tail slot (guide 6i)', () => {
+  it('has the anchor on the core top at tail point 4: (-42.6,-5.6), and (-43.7,-5.6) on the default Boy', () => {
+    const proto = tailSlotFrame(PROTOTYPE_TAIL, 0, 0);
+    expect(proto.x).toBeCloseTo(-42.6, 1);
+    expect(proto.y).toBeCloseTo(-5.6, 1);
+    expect(proto.angle).toBeCloseTo(0, 9);
+    const boy = tailSlotFrame(axolotlBodyGeometry(DEFAULT_ART_LOOK).tail, 0, 0);
+    expect(boy.x).toBeCloseTo(-43.7, 1);
+    expect(boy.y).toBeCloseTo(-5.6, 1);
+  });
+
+  it('follows the tail wave: its anchor is the painted core top, and it turns with the local tail direction', () => {
+    expect(
+      failingBodyLooks((look) => {
+        const tail = axolotlBodyGeometry(look).tail;
+        return SWIM_SAMPLES.every((swim) =>
+          TAIL_AMPS.every((amp) => {
+            const painted = tailSamples(tail, swim, amp)[TAIL_SLOT_POINT];
+            const frame = tailSlotFrame(tail, swim, amp);
+            return (
+              Math.abs(frame.x - painted.x) < 1e-9 &&
+              Math.abs(frame.y - (painted.cy - painted.hc)) < 1e-9 &&
+              Math.abs(frame.angle) < Math.PI / 2
+            );
+          }),
+        );
+      }),
+    ).toEqual([]);
+  });
+
+  it('keeps its 9-unit footprint clear of the eyes, lashes, gills and the head, and in the frame', () => {
+    expect(TAIL_SLOT_REACH).toBe(9);
+    const inner = frameInner(FRAME_PAD);
+    expect(
+      failingBodyLooks((look) => {
+        const tail = axolotlBodyGeometry(look).tail;
+        return SWIM_SAMPLES.every((swim) =>
+          TAIL_AMPS.every((amp) => {
+            const b = tailSlotBounds(tailSlotFrame(tail, swim, amp));
+            return (
+              clearOfEyesAndGills(b) &&
+              clearOfLashReach(b) &&
+              isInside(b, inner) &&
+              b.maxX < HEAD_ELLIPSE.cx - HEAD_ELLIPSE.rx
+            );
+          }),
+        );
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe('Socks and Feet slots (guide 6i, 6q)', () => {
+  /** The leg angle the painter swings (guide 9), written out independently. */
+  const swungAngle = (index: number, swim: number): number =>
+    [Math.PI / 2 - 0.2, Math.PI / 2 + 0.5, Math.PI / 2 - 0.2, Math.PI / 2 + 0.5][index] +
+    0.35 * Math.sin(swim + [Math.PI, 0, 0, Math.PI][index]);
+
+  it('puts each frame at its leg root, turned with the paddle, with the look leg lengths', () => {
+    for (const look of EVERY_BODY_LOOK) {
+      const geo = axolotlBodyGeometry(look);
+      for (const swim of [0, 1, 2.5, 4]) {
+        const frames = legSlotFrames(look, swim);
+        expect(frames).toHaveLength(4);
+        frames.forEach((frame, i) => {
+          expect(frame.index).toBe(i);
+          expect(frame.side).toBe(i < 2 ? 'far' : 'near');
+          expect(frame.x).toBe(geo.legRoots[i].x);
+          expect(frame.y).toBe(geo.legRoots[i].y);
+          expect(frame.angle).toBeCloseTo(swungAngle(i, swim), 12);
+          expect(legAngle(i, swim)).toBeCloseTo(swungAngle(i, swim), 12);
+          expect(frame.length).toBe(geo.legLengths[i]);
+          expect(frame.toeLength).toBe(geo.toeLength);
+          expect(frame.baby).toBe(look.age === 'baby');
+          // Sleeve starts at the root: the root lies on its axis.
+          const sleeve = sockSleeveBounds(frame);
+          expect(frame.x).toBeGreaterThan(sleeve.minX);
+          expect(frame.x).toBeLessThan(sleeve.maxX);
+          expect(frame.y).toBeGreaterThan(sleeve.minY);
+          expect(frame.y).toBeLessThan(sleeve.maxY);
+        });
+      }
+    }
+  });
+
+  it('has the guide pad, Shoe and Feet envelope in leg space (Young: l 14 or 15, t 8.5)', () => {
+    const frames = legSlotFrames({ ...DEFAULT_ART_LOOK, age: 'young' }, 0);
+    const far = frames[0];
+    const near = frames[2];
+    for (const [frame, l] of [
+      [far, 14],
+      [near, 15],
+    ] as const) {
+      const t = 8.5;
+      const pad = sockFootPad(frame);
+      expect(pad.u0).toBeCloseTo(l - 2, 9);
+      expect(pad.u1).toBeCloseTo(l + t + 5.3, 9);
+      expect(pad.vHalf).toBe(10.2);
+      const shoe = shoeRect(frame);
+      expect(shoe.u0).toBeCloseTo(l - 2, 9);
+      expect(shoe.u1).toBeCloseTo(l + t + 6.8, 9);
+      expect(shoe.vHalf).toBe(11.7);
+      const env = feetEnvelope(frame);
+      expect(env.u0).toBeCloseTo(l - 3, 9);
+      expect(env.u1).toBeCloseTo(l + t + 10, 9);
+      expect(env.vHalf).toBe(FEET_ENVELOPE_HALF_WIDTH);
+      expect(env.vHalf).toBe(12);
+      expect(pad.radius).toBeLessThanOrEqual(8);
+      expect(shoe.radius).toBeLessThanOrEqual(8);
+      expect(env.radius).toBe(0);
+    }
+  });
+
+  it('narrows a Baby: pad +/-8.9, Shoe +/-10.8, toes 5.95, legs x0.7', () => {
+    const baby = legSlotFrames({ ...DEFAULT_ART_LOOK, age: 'baby' }, 0);
+    expect(baby.map((f) => f.length)).toEqual([14 * 0.7, 14 * 0.7, 15 * 0.7, 15 * 0.7]);
+    expect(baby[0].toeLength).toBeCloseTo(5.95, 9);
+    expect(sockFootPad(baby[0]).vHalf).toBe(8.9);
+    expect(shoeRect(baby[0]).vHalf).toBe(10.8);
+    expect(feetEnvelope(baby[0]).vHalf).toBe(12);
+  });
+
+  it('keeps the pad and the Shoe inside the Feet envelope, and the Shoe over the pad at the sides and front', () => {
+    for (const look of EVERY_BODY_LOOK) {
+      for (const frame of legSlotFrames(look, 0)) {
+        const pad = sockFootPad(frame);
+        const shoe = shoeRect(frame);
+        const env = feetEnvelope(frame);
+        for (const r of [pad, shoe]) {
+          expect(r.u0).toBeGreaterThanOrEqual(env.u0);
+          expect(r.u1).toBeLessThanOrEqual(env.u1);
+          expect(r.vHalf).toBeLessThanOrEqual(env.vHalf);
+        }
+        // The Shoe's fill edge (ink edge less 1.4) lies 0.1 or more beyond the pad's ink edge at the sides and front.
+        expect(shoe.vHalf - 1.4).toBeGreaterThanOrEqual(pad.vHalf + 0.1 - 1e-9);
+        expect(shoe.u1 - 1.4).toBeGreaterThanOrEqual(pad.u1 + 0.1 - 1e-9);
+        // At the back the pad starts 1.4 behind the Shoe's fill edge: the Sock shows above the Shoe.
+        expect(shoe.u0 + 1.4 - pad.u0).toBeCloseTo(1.4, 9);
+      }
+    }
+  });
+
+  it('keeps pad and Shoe clear of the eyes, lashes and gill-root zone on every look and swim phase', () => {
+    expect(
+      failingBodyLooks((look) =>
+        SWIM_SAMPLES.every((swim) =>
+          legSlotFrames(look, swim).every((frame) =>
+            [sockFootPad(frame), shoeRect(frame)].every((rect) => {
+              const b = legRectBounds(frame, rect);
+              return clearOfEyesAndGills(b) && clearOfLashReach(b);
+            }),
+          ),
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it('keeps the Feet envelope off the eyes and lashes, and no more than 1 unit into the gill-root zone (behind the silhouette)', () => {
+    // The envelope is a plain box, so its square corner can touch the zone's lower edge on a Baby Slim Boy's
+    // far-front leg (built: 0.79 deep). No Shoe reaches the corner (radius 8), and every leg layer is behind
+    // the silhouette, so no root is covered.
+    const depth = (b: Bounds): number =>
+      Math.max(
+        0,
+        Math.min(
+          Math.min(b.maxX, GILL_ROOT_ZONE.maxX) - Math.max(b.minX, GILL_ROOT_ZONE.minX),
+          Math.min(b.maxY, GILL_ROOT_ZONE.maxY) - Math.max(b.minY, GILL_ROOT_ZONE.minY),
+        ),
+      );
+    expect(
+      failingBodyLooks((look) =>
+        SWIM_SAMPLES.every((swim) =>
+          legSlotFrames(look, swim).every((frame) => {
+            const b = legRectBounds(frame, feetEnvelope(frame));
+            return (
+              boxCircleGap(b, NEAR_EYE_ZONE) >= 0 &&
+              boxCircleGap(b, FAR_EYE_ZONE) >= 0 &&
+              clearOfLashReach(b) &&
+              depth(b) <= 1 &&
+              legWearableLayer(frame.index) < SILHOUETTE_LAYER
+            );
+          }),
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it('keeps the Sock sleeve off the eyes and lashes; it paints behind the silhouette, so it covers nothing', () => {
+    expect(
+      failingBodyLooks((look) =>
+        SWIM_SAMPLES.every((swim) =>
+          legSlotFrames(look, swim).every((frame) => {
+            const b = sockSleeveBounds(frame);
+            return (
+              boxCircleGap(b, NEAR_EYE_ZONE) >= 0 &&
+              boxCircleGap(b, FAR_EYE_ZONE) >= 0 &&
+              clearOfLashReach(b) &&
+              legWearableLayer(frame.index) < SILHOUETTE_LAYER
+            );
+          }),
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it('measures the Feet envelope lowest at y 58.06 and x -61.4 to 45.8, in the frame with 4 or more units of padding', () => {
+    const inner = frameInner(FRAME_PAD);
+    const boxes: Bounds[] = [];
+    for (const look of EVERY_BODY_LOOK) {
+      for (const swim of SWIM_SAMPLES) {
+        for (const frame of legSlotFrames(look, swim)) {
+          for (const rect of [sockFootPad(frame), shoeRect(frame), feetEnvelope(frame)]) {
+            boxes.push(legRectBounds(frame, rect));
+          }
+          boxes.push(sockSleeveBounds(frame));
+        }
+      }
+    }
+    const all = unionBounds(boxes);
+    expectInside(all, inner);
+    // Sampled swim phases, so a hair under the continuous lowest ink.
+    expect(all.maxY).toBeLessThanOrEqual(58.07);
+    expect(all.maxY).toBeGreaterThan(57.9);
+    expect(all.minX).toBeCloseTo(-61.4, 0);
+    expect(all.maxX).toBeCloseTo(45.8, 0);
+  });
+});
+
+describe('every Wearable slot over every look and size', () => {
+  it('has footprints that do not depend on the size, which only scales the bake', () => {
+    const byKey = new Map<string, unknown>();
+    const snapshot = (look: AxolotlArtLook): unknown => ({
+      shirt: shirtGeometry(look),
+      back: backFootprint(look),
+      tail: tailSlotFrame(axolotlBodyGeometry(look).tail, 1, 1),
+      legs: legSlotFrames(look, 1).map((f) => [sockFootPad(f), shoeRect(f), feetEnvelope(f)]),
+    });
+    for (const look of EVERY_BODY_LOOK) {
+      const key = [look.sex, look.tail, look.body, look.age].join('|');
+      const snap = snapshot(look);
+      if (!byKey.has(key)) byKey.set(key, snap);
+      expect(snap).toEqual(byKey.get(key));
+    }
+    expect(byKey.size).toBe(54);
+  });
+
+  it('keeps every slot footprint out of both eye zones, the Girl lash reach and the gill-root zone, in the frame', () => {
+    const inner = frameInner(FRAME_PAD);
+    const faceExempt = new Set<WearableSlot>(['face']);
+    const lashExempt = (slot: WearableSlot): boolean => faceExempt.has(slot);
+    // Per-slot boxes for a look. Face is the glasses band, checked on its outline above. Feet is the Shoe
+    // (the Feet envelope is checked in the Socks and Feet tests).
+    const boxesOf = (look: AxolotlArtLook): [WearableSlot, Bounds][] => {
+      const geo = axolotlBodyGeometry(look);
+      const out: [WearableSlot, Bounds][] = [
+        ['head', HEAD_FOOTPRINT],
+        ['neck', NECK_FOOTPRINT],
+        ['face', GLASSES_EXTENT],
+        ['shirt', shirtGeometry(look).bounds],
+        ['back', backFootprint(look).bounds],
+      ];
+      for (const swim of SWIM_SAMPLES) {
+        for (const amp of TAIL_AMPS) out.push(['tail', tailSlotBounds(tailSlotFrame(geo.tail, swim, amp))]);
+        for (const frame of legSlotFrames(look, swim)) {
+          out.push(['socks', legRectBounds(frame, sockFootPad(frame))]);
+          out.push(['feet', legRectBounds(frame, shoeRect(frame))]);
+        }
+      }
+      return out;
+    };
+    const slotsSeen = new Set<WearableSlot>();
+    expect(
+      failingBodyLooks((look) =>
+        boxesOf(look).every(([slot, b]) => {
+          slotsSeen.add(slot);
+          const eyes = slot === 'face' || clearOfEyesAndGills(b);
+          const lashes = lashExempt(slot) || clearOfLashReach(b);
+          return eyes && lashes && isInside(b, inner);
+        }),
+      ),
+    ).toEqual([]);
+    expect([...slotsSeen].sort()).toEqual([...WEARABLE_SLOTS].sort());
+    // Face has no box check; its band is checked against the eye zones on its outline, and the gill-root zone by x.
+    expect(GLASSES_EXTENT.minX).toBeGreaterThan(GILL_ROOT_ZONE.maxX);
+  });
+
+  it('measures Head to y -46, Back y -31.6, and the lowest ink 4 or more units inside the frame', () => {
+    const inner = frameInner(FRAME_PAD);
+    expect(HEAD_FOOTPRINT.minY).toBe(-46);
+    expect(HEAD_FOOTPRINT.minY).toBeGreaterThanOrEqual(inner.minY);
+    expect(AXO_TEX.h - AXO_TEX.originY - 58.06).toBeCloseTo(4.94, 2);
   });
 });

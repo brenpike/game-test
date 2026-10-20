@@ -509,6 +509,157 @@ export function paintIcon(ctx: CanvasRenderingContext2D, kind: IconKind, size: n
   ctx.restore();
 }
 
+// ---------------------------------------------------------------------------
+// Perk icons (guide 7b)
+// ---------------------------------------------------------------------------
+
+/** One icon per Wearable perk type; the same strings as `PerkType` in src/logic/catalogue.ts (art never imports logic). */
+export type PerkIconKind = 'speed' | 'regrowth' | 'dash' | 'shell' | 'treasureSense' | 'snackMagnet';
+
+/** Every perk icon kind, in PRD order (Speed, Regrowth, Dash, Shell, Treasure sense, Snack magnet). */
+export const PERK_ICON_KINDS: readonly PerkIconKind[] = ['speed', 'regrowth', 'dash', 'shell', 'treasureSense', 'snackMagnet'];
+
+/** Perk icon ink at the 32 box (guide 7b); it scales with the box. */
+const PERK_INK = 3;
+
+/** Texture frame for a perk icon of `size`. Anchor is the icon centre. */
+export function perkIconTextureSize(size: number): TexSize {
+  const half = size / 2;
+  return frameFromBounds(-half, -half, half, half, 1);
+}
+
+/** The two points where equal circles of radius `r` at `a` and `b` cross; the upper one (smaller y) first. */
+function circleCrossing(a: { x: number; y: number }, b: { x: number; y: number }, r: number): { x: number; y: number } {
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  const d = Math.hypot(b.x - a.x, b.y - a.y);
+  const h = Math.sqrt(Math.max(0, r * r - (d / 2) * (d / 2)));
+  const ux = -(b.y - a.y) / d;
+  const uy = (b.x - a.x) / d;
+  const p1 = { x: mx + ux * h, y: my + uy * h };
+  const p2 = { x: mx - ux * h, y: my - uy * h };
+  return p1.y <= p2.y ? p1 : p2;
+}
+
+/** The scallop shell outline: base line, left side, three round bumps, right side (guide 7b). */
+function perkShellPath(): Path2D {
+  const r = 5.2;
+  const c = [
+    { x: 10, y: 13 },
+    { x: 16, y: 10.5 },
+    { x: 22, y: 13 },
+  ];
+  const angleOn = (centre: { x: number; y: number }, pt: { x: number; y: number }): number =>
+    Math.atan2(pt.y - centre.y, pt.x - centre.x);
+  const upLeft = circleCrossing(c[0], c[1], r);
+  const upRight = circleCrossing(c[1], c[2], r);
+  const leftEdge = { x: 5.5, y: 17 };
+  const rightEdge = { x: 26.5, y: 17 };
+  const start = angleOn(c[0], leftEdge);
+  const p = new Path2D();
+  p.moveTo(11, 27.5);
+  p.lineTo(leftEdge.x, leftEdge.y);
+  p.lineTo(c[0].x + r * Math.cos(start), c[0].y + r * Math.sin(start));
+  // Left bump from its lower left, over the top, to the crossing with the middle bump.
+  p.arc(c[0].x, c[0].y, r, start, angleOn(c[0], upLeft) + TAU, false);
+  p.arc(c[1].x, c[1].y, r, angleOn(c[1], upLeft), angleOn(c[1], upRight), false);
+  const end = angleOn(c[2], rightEdge);
+  p.arc(c[2].x, c[2].y, r, angleOn(c[2], upRight), end, false);
+  p.lineTo(rightEdge.x, rightEdge.y);
+  p.lineTo(21, 27.5);
+  p.closePath();
+  return p;
+}
+
+/**
+ * Paint the perk icon for `kind` in the box (0, 0) to (size, size), like {@link paintIcon}:
+ * ink only, no fill, round joins and caps, ink 3.0 at the 32 box (guide 7b). The ink scales with
+ * the box, so it is 2.25 at 24 px and 1.7 at 18 px. Always pair with the perk's name and value as
+ * text. Still frame, so also the reduced-motion version.
+ */
+export function paintPerkIcon(ctx: CanvasRenderingContext2D, kind: PerkIconKind, size: number): void {
+  ctx.save();
+  ctx.scale(size / ICON_SIZE, size / ICON_SIZE);
+  ctx.strokeStyle = INK;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.lineWidth = PERK_INK;
+  const p = new Path2D();
+  switch (kind) {
+    case 'speed':
+      // lightning bolt, one closed outline
+      p.moveTo(19, 3.5);
+      p.lineTo(8.5, 17.5);
+      p.lineTo(15.5, 17.5);
+      p.lineTo(12.5, 28.5);
+      p.lineTo(23.5, 13.5);
+      p.lineTo(16.5, 13.5);
+      p.closePath();
+      ctx.stroke(p);
+      break;
+    case 'regrowth': {
+      // a leg (capsule outline, 9 wide, y 4 to 19) with three toes, and a spark
+      p.moveTo(12.5, 4);
+      p.arcTo(17, 4, 17, 8.5, 4.5);
+      p.lineTo(17, 14.5);
+      p.arcTo(17, 19, 12.5, 19, 4.5);
+      p.arcTo(8, 19, 8, 14.5, 4.5);
+      p.lineTo(8, 8.5);
+      p.arcTo(8, 4, 12.5, 4, 4.5);
+      p.closePath();
+      for (const x of [8, 12.5, 17]) {
+        p.moveTo(12.5, 19);
+        p.lineTo(x, x === 12.5 ? 26 : 25);
+      }
+      ctx.stroke(p);
+      ctx.lineWidth = 2;
+      ctx.stroke(surpriseStarPath(23.5, 9, 6));
+      break;
+    }
+    case 'dash':
+      // the Dash button's two right-pointing chevrons
+      p.moveTo(7, 9);
+      p.lineTo(14, 16);
+      p.lineTo(7, 23);
+      p.moveTo(17, 9);
+      p.lineTo(24, 16);
+      p.lineTo(17, 23);
+      ctx.stroke(p);
+      break;
+    case 'shell':
+      ctx.stroke(perkShellPath());
+      ctx.lineWidth = 2;
+      p.moveTo(16, 27);
+      p.lineTo(11.5, 16);
+      p.moveTo(16, 27);
+      p.lineTo(20.5, 16);
+      ctx.stroke(p);
+      break;
+    case 'treasureSense':
+      // a magnifying glass; the hint star sits inside the ring
+      p.arc(13.5, 13.5, 8.5, 0, TAU);
+      p.moveTo(19.8, 19.8);
+      p.lineTo(27.5, 27.5);
+      ctx.stroke(p);
+      ctx.lineWidth = 1.8;
+      ctx.stroke(surpriseStarPath(13.5, 13.5, 4.2));
+      break;
+    case 'snackMagnet':
+      // a horseshoe magnet: the U, then a band across each pole
+      p.moveTo(8, 5);
+      p.lineTo(8, 16);
+      p.arc(16, 16, 8, Math.PI, 0, true);
+      p.lineTo(24, 5);
+      p.moveTo(4.5, 8.5);
+      p.lineTo(11.5, 8.5);
+      p.moveTo(20.5, 8.5);
+      p.lineTo(27.5, 8.5);
+      ctx.stroke(p);
+      break;
+  }
+  ctx.restore();
+}
+
 /** Room around a stick disc for half the outline plus a pixel of bake slack. */
 const STICK_PAD = LW / 2 + 1;
 

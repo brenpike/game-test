@@ -74,6 +74,14 @@ export const GLASSES_FRAME = UI_PANEL_PINK;
 export const GLASSES_LENS = 'rgba(255,255,255,0.25)';
 /** Golden bow ribbon, soft pink. 11.19:1. */
 export const BOW_FILL = UI_PANEL_PINK;
+/** Tank top, the reed leaf green. 9.25:1. */
+export const TANK_TOP_FILL = REED_LEAF;
+/** Stripy socks, pebble C. 10.70:1. */
+export const SOCK_FILL = PEBBLE_C;
+/** Diving tank body, pebble A. 9.50:1. */
+export const DIVING_TANK_FILL = PEBBLE_A;
+/** Flippers, sun yellow. 11.05:1. */
+export const FLIPPER_FILL = SUN;
 
 // ---- Trims, gems and details inside the silhouette (free) -----------------
 
@@ -81,6 +89,12 @@ export const BOW_FILL = UI_PANEL_PINK;
 export const GOLD_TRIM = '#ffc12e';
 /** Rare and Epic trim bands. */
 export const BOAT_TRIM = SUN;
+/** Diving tank strap band, the boat yellow (guide 7e). */
+export const DIVING_TANK_STRAP = BOAT_TRIM;
+/** Flippers cuff band, the castle pink (guide 7e). */
+export const FLIPPER_CUFF = FLOWER_PETAL;
+/** Flippers fan ridges, the Paint shell ridge colour; internal lines, not ink (guide 7e). */
+export const FLIPPER_RIDGE = PEBBLE_E;
 export const CASTLE_TRIM = FLOWER_PETAL;
 export const CASTLE_GEM = WATER_SHALLOW;
 export const CASTLE_WINDOW = EYE;
