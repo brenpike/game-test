@@ -183,9 +183,6 @@ interface OptionSlot {
   nameText: Phaser.GameObjects.Text;
   tick: Phaser.GameObjects.Image;
   badge: Phaser.GameObjects.Image;
-  pictureKey: string;
-  /** What the picture texture shows, or null when it has none. */
-  pictureSig: string | null;
 }
 
 /** Sets `text` to wrap at `wrapW` and returns its size. */
@@ -412,7 +409,8 @@ function placeBadge(badge: Phaser.GameObjects.Image, info: TexInfo | null, rect:
  * box, the suggested names and More names), then Back, Next or Done, Surprise me, and Cancel in
  * restyle. Every press and key goes through reduceStyler(); changes show at once, with no tweens.
  * Each picture button is a still bake of the look so far with its option applied, repainted only
- * when the look or morph changes. The chosen option has a thick ink ring and a tick; the focused
+ * when the look or morph changes. Each step keeps its pictures until the styler is destroyed, so
+ * going back to a step re-bakes only the pictures that changed. The chosen option has a thick ink ring and a tick; the focused
  * control the double focus ring (PRD F16). The preview idles, and is a still pose under reduced
  * motion. After Done or Cancel the styler ignores further input; the owner destroys it.
  */
@@ -424,6 +422,10 @@ export class AxolotlStyler {
   private readonly onDone: (axolotl: StylerAxolotl) => void;
   private readonly onCancel: (() => void) | undefined;
   private readonly previewKey: string;
+  /** The start of every picture texture key: one texture per picture step and option index. */
+  private readonly pictureKeyStart: string;
+  /** What each baked picture texture shows, by key. Each key is baked again in place, never added twice. */
+  private readonly pictureSigs = new Map<string, string>();
   private readonly container: Phaser.GameObjects.Container;
   private readonly panel: Phaser.GameObjects.Graphics;
   private readonly boxes: Phaser.GameObjects.Graphics;
@@ -456,7 +458,6 @@ export class AxolotlStyler {
   private placed: StylerLayout | null = null;
   private screenKey = '';
   private tabPage: number | null = null;
-  private pictureStep: StylerStep | null = null;
   private clock = 0;
   private entry: TextEntry | null = null;
   private nameBeforeTyping = '';
@@ -478,6 +479,7 @@ export class AxolotlStyler {
     this.baseBakeScale = assets.axolotl.bakeScale;
     const id = stylerCount++;
     this.previewKey = `styler-preview-${id}`;
+    this.pictureKeyStart = `styler-picture-${id}`;
     this.shownLook = this.state.look;
     this.preview = createAxolotlTexture(scene, this.previewKey, this.baseBakeScale, this.shownLook);
     this.morphBadges = assets.morph.badges[MORPH_BADGE_PX];
@@ -494,7 +496,7 @@ export class AxolotlStyler {
     this.helper = this.addText(HELPER_TEXT_PX, false);
     this.caption = this.addText(CAPTION_TEXT_PX, true);
     this.labelProbe = this.addText(OPTION_LABEL_TEXT_PX, true).setVisible(false);
-    this.slots = Array.from({ length: MAX_STEP_OPTIONS }, (_unused, index) => this.createSlot(id, index));
+    this.slots = Array.from({ length: MAX_STEP_OPTIONS }, (_unused, index) => this.createSlot(index));
     this.tabTexts = STYLER_STEPS.map((step) => this.addText(TAB_TEXT_PX, true).setText(stepTabLabel(step)));
     this.tabZones = STYLER_STEPS.map((step) => createTapZone(scene, () => this.dispatch({ type: 'tab', step })));
     this.prevPage = createChevron(scene, this.baked, 'left', () => this.turnTabPage(-1));
@@ -565,15 +567,19 @@ export class AxolotlStyler {
 
   /**
    * Lays the current step screen out for `view` with stylerLayout() and redraws it. Re-bakes the
-   * picture buttons and the preview when their size changed (never upscaled), and moves an open name
-   * field to the name box.
+   * picture buttons and the preview when their size or the resolution changed (never upscaled), and
+   * moves an open name field to the name box.
    */
   layout(view: SceneView): void {
     this.view = view;
     this.relayout();
   }
 
-  /** Sets the text and button resolution to `dpr`, and re-bakes the preview and picture buttons for it. */
+  /**
+   * Sets the text and button resolution to `dpr`. Call layout() straight after, as a resize does: it
+   * re-bakes the preview and the picture buttons for `dpr` once, for the new layout, so nothing is
+   * baked for the old layout first.
+   */
   setResolution(dpr: number): void {
     this.dpr = dpr;
     for (const text of this.texts) {
@@ -582,10 +588,6 @@ export class AxolotlStyler {
     for (const button of Object.values(this.buttons)) {
       button.setResolution(dpr);
     }
-    if (this.placed === null) return;
-    this.ensurePreviewBake(this.placed.preview);
-    this.lastPose = null;
-    this.refresh();
   }
 
   /** Closes the name field without callbacks, then removes every object, the preview and the picture textures. */
@@ -594,16 +596,17 @@ export class AxolotlStyler {
     this.closeEntry();
     this.container.destroy();
     if (this.scene.textures.exists(this.previewKey)) this.scene.textures.remove(this.previewKey);
-    for (const slot of this.slots) {
-      if (this.scene.textures.exists(slot.pictureKey)) this.scene.textures.remove(slot.pictureKey);
+    for (const key of this.pictureSigs.keys()) {
+      if (this.scene.textures.exists(key)) this.scene.textures.remove(key);
     }
+    this.pictureSigs.clear();
   }
 
   private addText(sizePx: number, bold: boolean): Phaser.GameObjects.Text {
     return this.scene.add.text(0, 0, '', { ...uiTextStyle(sizePx, this.dpr, bold), align: 'center' });
   }
 
-  private createSlot(id: number, index: number): OptionSlot {
+  private createSlot(index: number): OptionSlot {
     const checkInfo = this.baked.icons.check;
     return {
       zone: createTapZone(this.scene, () => this.dispatch({ type: 'pick', index })),
@@ -616,8 +619,6 @@ export class AxolotlStyler {
         .setScale(TICK_BADGE.iconPx / ICON_SIZE / checkInfo.scale)
         .setVisible(false),
       badge: this.scene.add.image(0, 0, this.morphBadges.triangle.key).setVisible(false),
-      pictureKey: `styler-picture-${id}-${index}`,
-      pictureSig: null,
     };
   }
 
@@ -919,7 +920,6 @@ export class AxolotlStyler {
     const rects = isName ? (placed.name?.tiles ?? []) : placed.options;
     const chosen = chosenIndex(this.state);
     const focus = this.state.focus;
-    this.syncPictureStep(isName);
     this.slots.forEach((slot, index) => {
       const option = options[index];
       const rect = rects[index];
@@ -967,9 +967,9 @@ export class AxolotlStyler {
   private showPictureOption(slot: OptionSlot, option: StylerOption, index: number, placed: StylerLayout): void {
     const rect = placed.options[index];
     slot.nameText.setVisible(false);
-    this.bakePicture(slot, option, rect);
+    const key = this.bakePicture(option, index, rect);
     const centre = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
-    slot.picture.setTexture(slot.pictureKey).setOrigin(0.5, 0.5).setPosition(centre.x, centre.y);
+    slot.picture.setTexture(key).setOrigin(0.5, 0.5).setPosition(centre.x, centre.y);
     slot.picture.setScale(1 / this.dpr).setVisible(true);
     const labelRect = placed.labelsShown ? placed.optionLabels[index] : undefined;
     if (labelRect === undefined) slot.label.setVisible(false);
@@ -1018,30 +1018,17 @@ export class AxolotlStyler {
     placeTextIn(this.moreNamesText, name.moreNames);
   }
 
-  /** On a new step (or on Name, which has no pictures), removes every picture texture. */
-  private syncPictureStep(isName: boolean): void {
-    const step = isName ? null : this.state.step;
-    if (step === this.pictureStep) return;
-    this.pictureStep = step;
-    for (const slot of this.slots) {
-      this.releasePicture(slot);
-    }
-  }
-
-  private releasePicture(slot: OptionSlot): void {
-    slot.picture.setTexture('__DEFAULT').setVisible(false);
-    slot.pictureSig = null;
-    if (this.scene.textures.exists(slot.pictureKey)) this.scene.textures.remove(slot.pictureKey);
-  }
-
   /**
-   * Bakes the picture of `option` when it would show something new: the look so far with the option
-   * applied (on Colour, in that morph's palette), at the still pose, cropped for the step and sized
-   * to fill the button inside its outline at the device pixel ratio. Whole-axolotl pictures are drawn
-   * at their size factor, so Size options look different.
+   * The texture key of the picture of `option`, at `index` on the current step, baked first when it
+   * would show something new: the look so far with the option applied (on Colour, in that morph's
+   * palette), at the still pose, cropped for the step and sized to fill the button inside its outline
+   * at the device pixel ratio. Whole-axolotl pictures are drawn at their size factor, so Size options
+   * look different. Each step and index has its own key, kept until destroy(), so going back to a
+   * step bakes nothing that did not change; there are at most MAX_STEP_OPTIONS keys per step.
    */
-  private bakePicture(slot: OptionSlot, option: StylerOption, rect: Rect): void {
+  private bakePicture(option: StylerOption, index: number, rect: Rect): string {
     const { step, look, morph } = this.state;
+    const key = `${this.pictureKeyStart}-${step}-${index}`;
     const field = stepLookField(step);
     const pictureLook = field === null ? look : lookWithOption(look, field, option.id);
     const pictureMorph = step === 'colour' ? (option.id as RealMorphId) : morph;
@@ -1052,8 +1039,8 @@ export class AxolotlStyler {
     const scale = unit * this.dpr;
     const sizeFactor = cropName === 'whole' ? AXO_SIZE_SCALE[pictureLook.size] : 1;
     const sig = JSON.stringify([pictureLook, pictureMorph, cropName, scale]);
-    if (sig === slot.pictureSig) return;
-    bakeAxolotlStill(this.scene, slot.pictureKey, {
+    if (this.pictureSigs.get(key) === sig) return key;
+    bakeAxolotlStill(this.scene, key, {
       look: pictureLook,
       palette: MORPH_PALETTES[pictureMorph],
       pose: STILL_POSE,
@@ -1061,7 +1048,8 @@ export class AxolotlStyler {
       scale,
       sizeFactor,
     });
-    slot.pictureSig = sig;
+    this.pictureSigs.set(key, sig);
+    return key;
   }
 
   /**
