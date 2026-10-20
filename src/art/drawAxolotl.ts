@@ -45,6 +45,7 @@ import {
   type Bounds,
   type TailSample,
 } from './drawAxolotlParts';
+import { dreamMarkerCentres, paintDreamMarker, paintDreamPattern } from './drawDreamOverlay';
 
 /**
  * Texture frame in logical units. Holds every look (every gill style, Boy or
@@ -138,6 +139,12 @@ export interface AxolotlPose {
    * present, exactly as before. A missing entry counts as present.
    */
   legs?: readonly LegLook[];
+  /**
+   * Iridescent sheen phase in [0, 1) (dreamSheenAt), read only by the
+   * Iridescent Dream colour: its stripe pair glides from x 14 to the tail tip
+   * (guide 6p, 9). Undefined holds the reduced-motion still stripe at x -10.
+   */
+  sheen?: number;
 }
 
 /** A calm, eyes-open pose. */
@@ -656,9 +663,16 @@ export function drawAxolotl(
   ctx.fillStyle = palette.belly;
   ctx.fill(p);
 
-  // 6.2 morph rim light and speckles (clipped to the silhouette, under the shines)
-  if (extras?.rim) paintMorphRim(ctx, sil, topF, extras.rim.fin ? N : i0, torso, extras.rim);
+  // 6.2 morph rim light and speckles (clipped to the silhouette, under the shines); a Dream rim paints at 6.5
+  if (extras?.rim && !palette.dream) paintMorphRim(ctx, sil, topF, extras.rim.fin ? N : i0, torso, extras.rim);
   if (extras?.speckles) paintMorphDots(ctx, sil, tail, torso, extras.speckles);
+
+  // 6.5 Dream overlay (guide 6p): pattern, then the rim light (top fin edge included), then the Dream marker
+  if (palette.dream) {
+    paintDreamPattern(ctx, sil, { id: palette.dream.id, torso, tail, sheen: pose.sheen });
+    if (extras?.rim) paintMorphRim(ctx, sil, topF, extras.rim.fin ? N : i0, torso, extras.rim);
+    paintDreamMarker(ctx, dreamMarkerCentres(tail));
+  }
 
   // 7. shines (body, head); the body shine moves onto the look's torso
   if (extras?.shineAlpha !== 0) {

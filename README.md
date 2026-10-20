@@ -6,7 +6,7 @@ It is mostly fun, with real axolotl facts along the way.
 
 ## What you can do now
 
-Version 0.14.1 is playable in one canal zone:
+Version 0.15.0 is playable in one canal zone:
 
 - Make your own axolotl the first time you play, one step at a time in 11 steps: colour (one of eight real morphs), boy or girl (with a boy or girl sign), eyes, mouth (eight to choose from), gills, spots, tail, body, age, size, and name. Every choice is a big picture button that shows it on your axolotl, and the preview changes as you pick. Surprise me picks everything at random, with a name that fits. The other seven colours are the ones you rescue.
 - Type a name, or pick a suggested one that fits a boy or a girl, so typing is optional. Names stay on your device.
@@ -27,7 +27,8 @@ Version 0.14.1 is playable in one canal zone:
 - Meet the tilapia: the first time you swim near one, a fact card tells you about it.
 - Visit your Home Tank after the title and after every trip. A trip-end message tells you how the trip went.
 - Watch your axolotl swim around the Home Tank. With reduced motion it stays still.
-- Rename and restyle your axolotl from the Home Tank: tap it, or move the focus to it (its name shows) and press Enter. Restyling starts on Eyes and uses the same step screens, with tabs to jump between steps. Its colour and boy or girl show but cannot change. Cancel leaves without keeping the changes.
+- Rename and restyle your axolotl from the Home Tank: tap it, or move the focus to it (its name shows) and press Enter. Restyling starts on Eyes and uses the same step screens, with tabs to jump between steps, plus a Dream colour tab. Its colour and boy or girl show but cannot change. Cancel leaves without keeping the changes.
+- Give your axolotls Dream colours: on the restyle screen's Dream colour tab, put any Dream colour you banked on any axolotl, or pick Real colour to take it off. One Dream colour can be on lots of axolotls at once, and spots show on top of it. Dream colours are not found in nature.
 - Decorate your Home Tank with the Decorations you banked, by touch or keyboard.
 - Open the Treasure Chest to see the Decorations, Wearables, and Dream colours you banked.
 - Open the Collection Book to see the morphs you rescued, with a fun fact for each, the Dream colours, and the fact cards: the tilapia card and the "Boy or girl?" card.
@@ -35,7 +36,7 @@ Version 0.14.1 is playable in one canal zone:
 ## Coming next
 
 The Axolotl MVP is in progress ([epic #6](https://github.com/brenpike/glam-gills/issues/6)).
-Next up: saving, outfits with 8 wearable slots, and Dream colours.
+Next up: saving, and outfits with 8 wearable slots.
 The [PRD](docs/prds/axolotl-mvp.md) is the source of truth.
 
 After the MVP: the Tank Top Model fashion show, more real freshwater areas, and building a safe refuge for axolotls.
@@ -80,7 +81,7 @@ npm install
 | Go exploring (from the Home Tank) | Go exploring button | Tab/Shift+Tab or arrow keys to choose a hub button, Enter or Space to press |
 | Beat Area 1 | Swim into the open exit at the far end of the canal | Swim into the open exit at the far end of the canal |
 | Pick an axolotl (Home Tank) | Tap the axolotl | Tab/Shift+Tab or arrow keys past the hub buttons to focus it and show its name, Enter or Space to restyle it |
-| Rename and restyle | Tap a tab to jump to a step (arrow buttons page the tabs when they do not all fit), tap a picture button to pick it, Surprise me, Done, and Cancel buttons | Same as making your axolotl, with Tab/Shift+Tab also reaching the tabs and Cancel, plus Esc to cancel |
+| Rename and restyle | Tap a tab to jump to a step (arrow buttons page the tabs when they do not all fit), tap a picture button to pick it, More colours button on the Dream colour tab to see more, Surprise me, Done, and Cancel buttons | Same as making your axolotl, with Tab/Shift+Tab also reaching the tabs, More colours, and Cancel, plus Esc to cancel |
 | Close the trip-end message (also the "Area beaten" message) | OK button | Enter or Space |
 | Close the tilapia fact card | OK button | Enter, Space, P, or Esc |
 | Treasure Chest | Back, Next, and Close buttons | Left/Right to turn pages, Tab/Shift+Tab to move focus, Enter or Space to press, Esc to close |

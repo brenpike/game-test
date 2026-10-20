@@ -1,10 +1,13 @@
 import * as Phaser from 'phaser';
 import { AXO_PREVIEW_CROPS, AXO_SCENE_SCALE, AXO_TEX, type AxolotlPose } from '../art/drawAxolotl';
 import { AXO_SIZE_SCALE } from '../art/drawAxolotlParts';
+import { dreamSheenAt } from '../art/drawDreamOverlay';
+import { dreamSwatchTextureSize, paintDreamSwatch } from '../art/drawTreasures';
 import { BUTTON_PRESS_OFFSET, ICON_SIZE, NAME_FIELD, type IconKind } from '../art/drawUi';
 import type { MorphTextures } from '../art/morphTextures';
-import { HOME_TANK_WALL, INK, LW, MORPH_PALETTES, T_STATIC, UI_PANEL, WHITE } from '../art/palette';
+import { HOME_TANK_WALL, INK, LW, T_STATIC, UI_PANEL, WHITE, axolotlPalette } from '../art/palette';
 import {
+  bake,
   bakeAxolotlStill,
   bakeSizedButton,
   buttonKey,
@@ -19,6 +22,8 @@ import {
 } from '../art/textures';
 import type { AxolotlLook, AxolotlSex, LookField } from '../logic/axolotlLook';
 import { NAME_FIELD_RAW_MAX, fitNameEdit, suggestedNamesFor } from '../logic/axolotlNames';
+import type { DreamColourId } from '../logic/catalogue';
+import { MAX_DREAM_OPTIONS, REAL_COLOUR_OPTION_ID } from '../logic/dreamPaint';
 import type { Rect, Size } from '../logic/hudLayout';
 import { morphById, type RealMorphId } from '../logic/morphs';
 import type { MotionProfile } from '../logic/motion';
@@ -29,6 +34,7 @@ import {
   setName,
   stepIndex,
   stepOptions,
+  withDreamsPerPage,
   withNamesPerPage,
   type StylerAction,
   type StylerAxolotl,
@@ -37,11 +43,12 @@ import {
   type StylerOption,
   type StylerState,
 } from '../logic/styler';
-import { MAX_STEP_OPTIONS, STYLER_STEPS, stepLookField, type StylerStep } from '../logic/stylerSteps';
+import { MAX_STEP_OPTIONS, RESTYLE_STEPS, STYLER_STEPS, stepLookField, type StylerStep } from '../logic/stylerSteps';
 import {
   BACK_LABEL,
   CANCEL_LABEL,
   DONE_LABEL,
+  MORE_COLOURS_LABEL,
   MORE_NAMES_LABEL,
   NAME_FIELD_LABEL,
   NAME_PLACEHOLDER,
@@ -468,10 +475,12 @@ export class AxolotlStyler {
   private readonly onDone: (axolotl: StylerAxolotl) => void;
   private readonly onCancel: (() => void) | undefined;
   private readonly previewKey: string;
-  /** The start of every picture texture key: one texture per picture step and option index. */
+  /** The start of every picture texture key: one texture per picture step and option id. */
   private readonly pictureKeyStart: string;
   /** What each baked picture texture shows, by key. Each key is baked again in place, never added twice. */
   private readonly pictureSigs = new Map<string, string>();
+  /** The Dream colour step's 24 px swatch tiles, by key: one per Dream colour, baked again when the resolution changes. */
+  private readonly swatches = new Map<string, TexInfo>();
   private readonly container: Phaser.GameObjects.Container;
   private readonly panel: Phaser.GameObjects.Graphics;
   private readonly boxes: Phaser.GameObjects.Graphics;
@@ -493,12 +502,15 @@ export class AxolotlStyler {
   private readonly nameBoxZone: Phaser.GameObjects.Zone;
   private readonly moreNamesText: Phaser.GameObjects.Text;
   private readonly moreNamesZone: Phaser.GameObjects.Zone;
+  private readonly moreColoursText: Phaser.GameObjects.Text;
+  private readonly moreColoursZone: Phaser.GameObjects.Zone;
   private readonly buttons: Partial<Record<NavControl, UiButton>>;
   private readonly texts: Phaser.GameObjects.Text[];
   private preview: AxolotlTexture;
   private shownLook: AxolotlLook;
   private lastPose: AxolotlPose | null = null;
-  private paintedMorph: RealMorphId | null = null;
+  /** The morph and Dream colour the preview was last painted in, or null before the first paint. */
+  private paintedPalette: string | null = null;
   private redrawAcc = 0;
   private state: StylerState;
   private view: SceneView;
@@ -549,8 +561,8 @@ export class AxolotlStyler {
     this.caption = this.addText(CAPTION_TEXT_PX, true);
     this.labelProbe = this.addText(OPTION_LABEL_TEXT_PX, true).setVisible(false);
     this.slots = Array.from({ length: MAX_STEP_OPTIONS }, (_unused, index) => this.createSlot(index));
-    this.tabTexts = STYLER_STEPS.map((step) => this.addText(TAB_TEXT_PX, true).setText(stepTabLabel(step)));
-    this.tabZones = STYLER_STEPS.map((step) => createTapZone(scene, () => this.dispatch({ type: 'tab', step })));
+    this.tabTexts = RESTYLE_STEPS.map((step) => this.addText(TAB_TEXT_PX, true).setText(stepTabLabel(step)));
+    this.tabZones = RESTYLE_STEPS.map((step) => createTapZone(scene, () => this.dispatch({ type: 'tab', step })));
     this.prevPage = createChevron(scene, this.baked, 'left', () => this.turnTabPage(-1));
     this.nextPage = createChevron(scene, this.baked, 'right', () => this.turnTabPage(1));
     this.nameBoxText = this.addText(NAME_TEXT_PX, true).setAlign('left');
@@ -567,6 +579,8 @@ export class AxolotlStyler {
     this.nameBoxZone = createTapZone(scene, () => this.dispatch({ type: 'nameTap' }));
     this.moreNamesText = this.addText(NAME_TEXT_PX, true).setText(MORE_NAMES_LABEL);
     this.moreNamesZone = createTapZone(scene, () => this.pressMoreNames());
+    this.moreColoursText = this.addText(NAME_TEXT_PX, true).setText(MORE_COLOURS_LABEL);
+    this.moreColoursZone = createTapZone(scene, () => this.pressMoreColours());
     this.buttons = {};
     for (const control of NAV_CONTROLS[options.mode]) {
       this.buttons[control] = this.createNavButton(control);
@@ -580,6 +594,7 @@ export class AxolotlStyler {
       ...this.tabTexts,
       this.nameBoxText,
       this.moreNamesText,
+      this.moreColoursText,
     ];
 
     this.container = scene.add
@@ -598,6 +613,7 @@ export class AxolotlStyler {
         ...this.tabZones,
         this.nameBoxZone,
         this.moreNamesZone,
+        this.moreColoursZone,
         this.prevPage.container,
         this.nextPage.container,
         ...Object.values(this.buttons).map((button) => button.container),
@@ -658,16 +674,20 @@ export class AxolotlStyler {
     }
   }
 
-  /** Closes the name field without callbacks, then removes every object, the preview and the picture textures. */
+  /**
+   * Closes the name field without callbacks, then removes every object, the preview, the picture
+   * textures and the Dream swatch tiles.
+   */
   destroy(): void {
     this.finished = true;
     this.closeEntry();
     this.container.destroy();
     if (this.scene.textures.exists(this.previewKey)) this.scene.textures.remove(this.previewKey);
-    for (const key of this.pictureSigs.keys()) {
+    for (const key of [...this.pictureSigs.keys(), ...this.swatches.keys()]) {
       if (this.scene.textures.exists(key)) this.scene.textures.remove(key);
     }
     this.pictureSigs.clear();
+    this.swatches.clear();
   }
 
   private addText(sizePx: number, bold: boolean): Phaser.GameObjects.Text {
@@ -706,12 +726,34 @@ export class AxolotlStyler {
     });
   }
 
-  /** The step screen stylerLayout() lays out: on Name, the option count is every suggested name that fits. */
+  /**
+   * The step screen stylerLayout() lays out: on Name, the option count is every suggested name that
+   * fits; on Dream colour, the real colour and every owned Dream colour, over all pages.
+   */
   private screenOf(): StylerScreen {
     const { mode, step } = this.state;
-    const optionCount =
-      step === 'name' ? suggestedNamesFor(this.state.look.sex).length : stepOptions(this.state).length;
-    return { mode, step, optionCount, tabPage: this.tabPage };
+    return { mode, step, optionCount: this.optionCountOf(step), tabPage: this.tabPage };
+  }
+
+  private optionCountOf(step: StylerStep): number {
+    if (step === 'name') return suggestedNamesFor(this.state.look.sex).length;
+    if (step === 'dream') return 1 + this.state.ownedDreams.length;
+    return stepOptions(this.state).length;
+  }
+
+  /**
+   * The option labels to measure: none on Name, every page's labels on Dream colour (so each page
+   * lays out alike), else the step's.
+   */
+  private measuredLabels(): string[] {
+    const { step } = this.state;
+    if (step === 'name') return [];
+    const onOnePage = step === 'dream' ? { ...this.state, dreamPage: 0, dreamsPerPage: MAX_DREAM_OPTIONS } : this.state;
+    return stepOptions(onOnePage).map((option) => option.label);
+  }
+
+  private helperText(): string {
+    return stepHelper(this.state.mode, this.state.step, this.state.ownedDreams.length);
   }
 
   /** The heading text: "Step N of 11: ..." when `full` in the creator, else the step title. */
@@ -722,10 +764,10 @@ export class AxolotlStyler {
   }
 
   private measureFor(): StylerMeasure {
-    const labels = this.state.step === 'name' ? [] : stepOptions(this.state).map((option) => option.label);
+    const labels = this.measuredLabels();
     return {
       headingAt: (wrapW, full) => wrappedSize(this.heading.setText(this.headingText(full)), wrapW),
-      helperAt: (wrapW) => wrappedSize(this.helper.setText(stepHelper(this.state.mode, this.state.step)), wrapW),
+      helperAt: (wrapW) => wrappedSize(this.helper.setText(this.helperText()), wrapW),
       captionAt: (wrapW) => largestWrapped(this.caption, labels, wrapW),
       optionLabelAt: (wrapW) => largestWrapped(this.labelProbe, labels, wrapW),
       optionLabelMinW: longestWordWidth(this.labelProbe, labels),
@@ -735,8 +777,9 @@ export class AxolotlStyler {
   }
 
   /**
-   * Lays out the current step screen, fits the names per page to it on Name, places the panel, the
-   * heading, the helper and the step buttons, then redraws everything else.
+   * Lays out the current step screen, fits the names per page to it on Name and the options per page
+   * on Dream colour, places the panel, the heading, the helper and the step buttons, then redraws
+   * everything else.
    */
   private relayout(): void {
     const screen = this.screenOf();
@@ -744,10 +787,11 @@ export class AxolotlStyler {
     this.placed = placed;
     this.screenKey = screenKeyOf(screen);
     if (placed.name !== null) this.state = withNamesPerPage(this.state, placed.name.namesPerPage);
+    if (placed.dream !== null) this.state = withDreamsPerPage(this.state, placed.dream.perPage);
     const { panel } = placed;
     drawPanel(this.panel, panel.x, panel.y, panel.w, panel.h, UI_PANEL);
     this.placeHeading(placed);
-    this.helper.setText(stepHelper(this.state.mode, this.state.step));
+    this.helper.setText(this.helperText());
     if (placed.helper === null) this.helper.setVisible(false);
     else placeTextIn(this.helper, placed.helper);
     for (const control of Object.keys(this.buttons) as NavControl[]) {
@@ -802,6 +846,10 @@ export class AxolotlStyler {
     this.dispatch({ type: 'moreNames', perPage: this.placed?.name?.namesPerPage ?? this.state.namesPerPage });
   }
 
+  private pressMoreColours(): void {
+    this.dispatch({ type: 'moreColours', perPage: this.placed?.dream?.perPage ?? this.state.dreamsPerPage });
+  }
+
   /** A page button: shows the next or previous page of restyle tabs, wrapping. Focus stays. */
   private turnTabPage(offset: number): void {
     const tabs = this.placed?.tabs;
@@ -820,7 +868,7 @@ export class AxolotlStyler {
     this.finished = true;
     this.blinkNameCursor();
     if (effect.type === 'done') {
-      this.onDone({ name: effect.name, look: effect.look, morph: effect.morph });
+      this.onDone({ name: effect.name, look: effect.look, morph: effect.morph, dreamColour: effect.dreamColour });
       return;
     }
     if (this.onCancel === undefined) throw new Error('AxolotlStyler: cancel without onCancel');
@@ -933,6 +981,7 @@ export class AxolotlStyler {
     this.drawTabs(placed);
     this.drawOptions(placed);
     this.drawNameControls(placed);
+    this.drawMoreColours(placed);
     for (const [control, button] of Object.entries(this.buttons)) {
       button.setFocused(this.state.focus.kind === control);
     }
@@ -971,7 +1020,7 @@ export class AxolotlStyler {
     if (!strip) return;
     const focus = this.state.focus;
     for (const tab of strip.tabs) {
-      const index = STYLER_STEPS.indexOf(tab.step);
+      const index = RESTYLE_STEPS.indexOf(tab.step);
       const current = tab.step === this.state.step;
       drawBox(this.boxes, tab.rect, focus.kind === 'tab' && focus.step === tab.step);
       const text = this.tabTexts[index].setFontStyle(current ? 'bold' : 'normal');
@@ -1054,22 +1103,44 @@ export class AxolotlStyler {
 
   /**
    * A picture button: its still picture (re-baked when it shows something new), its label, the Colour
-   * step's morph badge and the Boy or girl step's symbol.
+   * step's morph badge, the Dream colour step's badge and the Boy or girl step's symbol.
    */
   private showPictureOption(slot: OptionSlot, option: StylerOption, index: number, placed: StylerLayout): void {
     const rect = placed.options[index];
     slot.nameText.setVisible(false);
-    const key = this.bakePicture(option, index, rect);
+    const key = this.bakePicture(option, rect);
     const centre = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
     slot.picture.setTexture(key).setOrigin(0.5, 0.5).setPosition(centre.x, centre.y);
     slot.picture.setScale(1 / this.dpr).setVisible(true);
     const labelRect = placed.labelsShown ? placed.optionLabels[index] : undefined;
     if (labelRect === undefined) slot.label.setVisible(false);
     else placeTextIn(slot.label.setText(option.label), labelRect);
-    const badgeInfo = this.state.step === 'colour' ? this.morphBadges[morphById(option.id as RealMorphId).badge] : null;
     const badgeRect = cornerBadgeRect(rect);
-    placeBadge(slot.badge, badgeInfo, badgeRect);
+    placeBadge(slot.badge, this.cornerBadgeOf(option), badgeRect);
     this.placeSexSymbol(slot, option, badgeRect);
+  }
+
+  /**
+   * The badge in a picture button's lower-left corner: on Colour, the option's morph badge; on Dream
+   * colour, the real morph's badge for the real colour, else the Dream colour's swatch tile; else none.
+   */
+  private cornerBadgeOf(option: StylerOption): TexInfo | null {
+    const { step, morph } = this.state;
+    if (step === 'colour') return this.morphBadges[morphById(option.id as RealMorphId).badge];
+    if (step !== 'dream') return null;
+    if (option.id === REAL_COLOUR_OPTION_ID) return this.morphBadges[morphById(morph).badge];
+    return this.dreamSwatch(option.id as DreamColourId);
+  }
+
+  /** The MORPH_BADGE_PX swatch tile of the Dream colour `id`, baked once for it at the device pixel ratio. */
+  private dreamSwatch(id: DreamColourId): TexInfo {
+    const key = `${this.pictureKeyStart}-swatch-${id}`;
+    const baked = this.swatches.get(key);
+    if (baked !== undefined && baked.scale === this.dpr) return baked;
+    const frame = dreamSwatchTextureSize(MORPH_BADGE_PX);
+    const info = bake(this.scene, key, frame, this.dpr, (ctx) => paintDreamSwatch(ctx, id, MORPH_BADGE_PX));
+    this.swatches.set(key, info);
+    return info;
   }
 
   /** On the Boy or girl step, the white disc with an ink ring and the boy or girl icon centred in `rect`; else hidden. */
@@ -1128,6 +1199,18 @@ export class AxolotlStyler {
     placeTextIn(this.moreNamesText, name.moreNames);
   }
 
+  /** More colours under the Dream colour options, or none when every option fits on one page or on other steps. */
+  private drawMoreColours(placed: StylerLayout): void {
+    const rect = placed.dream?.moreColours ?? null;
+    placeZone(this.moreColoursZone, rect);
+    if (rect === null) {
+      this.moreColoursText.setVisible(false);
+      return;
+    }
+    drawBox(this.boxes, rect, this.state.focus.kind === 'moreColours');
+    placeTextIn(this.moreColoursText, rect);
+  }
+
   /**
    * The name box's parts: the name left-aligned in the text room and centred down it (else the
    * placeholder, normal weight, in the placeholder colour), the pencil icon, and the text cursor at the
@@ -1159,30 +1242,33 @@ export class AxolotlStyler {
   }
 
   /**
-   * The texture key of the picture of `option`, at `index` on the current step, baked first when it
-   * would show something new: the look so far with the option applied (on Colour, in that morph's
-   * palette), at the still pose, cropped for the step and sized to fill the button inside its outline
-   * at the device pixel ratio. Whole-axolotl pictures are drawn at their size factor, so Size options
-   * look different. Each step and index has its own key, kept until destroy(), so going back to a
-   * step bakes nothing that did not change; there are at most MAX_STEP_OPTIONS keys per step.
+   * The texture key of the picture of `option` on the current step, baked first when it would show
+   * something new: the look so far with the option applied, in the applied Dream colour (on Colour,
+   * in that morph's palette; on Dream colour, in that option's colour over the real morph), at the
+   * still pose, cropped for the step and sized to fill the button inside its outline at the device
+   * pixel ratio. Whole-axolotl pictures are drawn at their size factor, so Size options look
+   * different. Each step and option id has its own key, kept until destroy(), so going back to a step
+   * or a Dream colour page bakes nothing that did not change; there is at most one key per option of
+   * a step (on Dream colour, MAX_DREAM_OPTIONS).
    */
-  private bakePicture(option: StylerOption, index: number, rect: Rect): string {
+  private bakePicture(option: StylerOption, rect: Rect): string {
     const { step, look, morph } = this.state;
-    const key = `${this.pictureKeyStart}-${step}-${index}`;
+    const key = `${this.pictureKeyStart}-${step}-${option.id}`;
     const field = stepLookField(step);
     const pictureLook = field === null ? look : lookWithOption(look, field, option.id);
     const pictureMorph = step === 'colour' ? (option.id as RealMorphId) : morph;
+    const pictureDream = this.pictureDreamOf(option);
     const cropName = pictureCropOf(step);
     const crop = AXO_PREVIEW_CROPS[cropName];
     const inner = Math.max(1, rect.w - 2 * PICTURE_INSET);
     const unit = inner / Math.max(crop.maxX - crop.minX, crop.maxY - crop.minY);
     const scale = unit * this.dpr;
     const sizeFactor = cropName === 'whole' ? AXO_SIZE_SCALE[pictureLook.size] : 1;
-    const sig = JSON.stringify([pictureLook, pictureMorph, cropName, scale]);
+    const sig = JSON.stringify([pictureLook, pictureMorph, pictureDream, cropName, scale]);
     if (this.pictureSigs.get(key) === sig) return key;
     bakeAxolotlStill(this.scene, key, {
       look: pictureLook,
-      palette: MORPH_PALETTES[pictureMorph],
+      palette: axolotlPalette(pictureMorph, pictureDream),
       pose: STILL_POSE,
       crop,
       scale,
@@ -1190,6 +1276,12 @@ export class AxolotlStyler {
     });
     this.pictureSigs.set(key, sig);
     return key;
+  }
+
+  /** The Dream colour a picture shows: on Dream colour the option's (none for the real colour), else the applied one. */
+  private pictureDreamOf(option: StylerOption): DreamColourId | null {
+    if (this.state.step !== 'dream') return this.state.dreamColour;
+    return option.id === REAL_COLOUR_OPTION_ID ? null : (option.id as DreamColourId);
   }
 
   /**
@@ -1231,10 +1323,11 @@ export class AxolotlStyler {
   }
 
   /**
-   * Paints the preview in the chosen morph's palette when the pose or the morph changed: the idle, or
-   * under reduced motion the still frame (t = 1.0 s, eyes open). Per-frame idle repaints (`dt` given)
-   * keep the repaint budget, at most 30 a second while the frame rate is under 45; a first paint, a
-   * new morph, the still pose and any call without `dt` paint at once.
+   * Paints the preview in the chosen morph and Dream colour's palette when the pose, the morph or the
+   * Dream colour changed: the idle (with the Iridescent sheen gliding), or under reduced motion the
+   * still frame (t = 1.0 s, eyes open, no sheen). Per-frame idle repaints (`dt` given) keep the
+   * repaint budget, at most 30 a second while the frame rate is under 45; a first paint, a new morph
+   * or Dream colour, the still pose and any call without `dt` paint at once.
    */
   private renderPreview(dt?: number): void {
     const motion = this.motion();
@@ -1245,18 +1338,20 @@ export class AxolotlStyler {
       blink: motion.ambient ? blinkAt(t) : 1,
       tailAmp: 1,
       sparkle: 0,
+      sheen: motion.ambient ? dreamSheenAt(this.clock) : undefined,
     };
-    const morph = this.state.morph;
-    if (this.lastPose !== null && this.paintedMorph === morph) {
-      if (samePose(pose, this.lastPose)) return;
+    const { morph, dreamColour } = this.state;
+    const paletteKey = `${morph}|${dreamColour ?? ''}`;
+    if (this.lastPose !== null && this.paintedPalette === paletteKey) {
+      if (samePose(pose, this.lastPose) && pose.sheen === this.lastPose.sheen) return;
       if (dt !== undefined && motion.ambient) {
         this.redrawAcc += dt;
         if (this.scene.game.loop.actualFps < LOW_FPS && this.redrawAcc < LOW_FPS_REDRAW_S) return;
       }
     }
     this.redrawAcc = 0;
-    this.preview.redraw(pose, MORPH_PALETTES[morph]);
+    this.preview.redraw(pose, axolotlPalette(morph, dreamColour));
     this.lastPose = pose;
-    this.paintedMorph = morph;
+    this.paintedPalette = paletteKey;
   }
 }

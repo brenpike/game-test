@@ -1,10 +1,11 @@
 import * as Phaser from 'phaser';
 import { AXO_MAX_TAIL_AMP, AXO_SCENE_SCALE, type AxolotlPose } from '../art/drawAxolotl';
 import { AXO_SIZE_SCALE } from '../art/drawAxolotlParts';
+import { dreamSheenAt } from '../art/drawDreamOverlay';
 import { DEPTH } from '../art/layers';
 import {
+  axolotlPalette,
   HAZE,
-  MORPH_PALETTES,
   SURFACE_LINE,
   SURFACE_LINE_WIDTH,
   T_STATIC,
@@ -298,7 +299,7 @@ export class SwimScene extends Phaser.Scene {
     const session = readSession(this.registry);
     const start = tripStart(session, Math.floor(Math.random() * 0x100000000) >>> 0);
     const explorer = explorerAxolotl(session);
-    this.explorerPalette = MORPH_PALETTES[explorer.morph];
+    this.explorerPalette = axolotlPalette(explorer.morph, explorer.dreamColour);
     this.assets.axolotl.setLook(explorer.look);
     this.setItems(restoreSnacks(zone.collectibles, start.eatenSnacks));
     this.allDone = this.snackTally.left === 0;
@@ -866,6 +867,7 @@ export class SwimScene extends Phaser.Scene {
       tailAmp: dashing ? AXO_MAX_TAIL_AMP : 1 + (this.motion.ambient ? SWIM_TAIL_BOOST * intensity : 0),
       sparkle: this.sparkleLevel,
       legs: this.snapshot.legs.slots,
+      sheen: this.motion.ambient ? dreamSheenAt(this.clock) : undefined,
     };
     this.redrawAxolotl(pose, dt);
 

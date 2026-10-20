@@ -1,0 +1,514 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AXO_REST_POSE, drawAxolotl } from './drawAxolotl';
+import {
+  AXO_AGES,
+  AXO_BODIES,
+  AXO_SEXES,
+  AXO_TAILS,
+  DEFAULT_ART_LOOK,
+  HEAD_ELLIPSE,
+  axolotlBodyGeometry,
+  tailSamples,
+  type AxolotlArtLook,
+  type BodyEllipse,
+  type TailSample,
+} from './drawAxolotlParts';
+import {
+  DREAM_FACE_LIMIT_X,
+  DREAM_INSET_IDS,
+  DREAM_MARKER_INK,
+  DREAM_PATTERN_INSET,
+  IRIDESCENT_GLIDE_S,
+  IRIDESCENT_STILL_X,
+  dreamClipPolygons,
+  dreamMarkerCentres,
+  dreamPatternShapes,
+  dreamSheenAt,
+  iridescentStripeX,
+  type DreamPolygon,
+  type DreamShape,
+} from './drawDreamOverlay';
+import { MORPH_LOOK_IDS } from './drawMorphs';
+import {
+  DREAM_EYE_RING,
+  DREAM_RIM_LIGHT,
+  DREAM_SLOTS,
+  INK,
+  MORPH_PALETTES,
+  WHITE,
+  axolotlPalette,
+  dreamPalette,
+  type DreamLookId,
+  type MorphPalette,
+} from './palette';
+import { DREAM_SWATCH } from './treasurePalette';
+
+const TAU = Math.PI * 2;
+const DREAM_IDS = Object.keys(DREAM_SLOTS) as DreamLookId[];
+const SOLID_IDS: readonly DreamLookId[] = ['mint', 'sky-blue', 'lavender', 'sunset-orange', 'bubblegum', 'midnight-blue'];
+const DARK_IDS: readonly DreamLookId[] = ['midnight-blue', 'galaxy', 'tie-dye-galaxy'];
+const RIM_IDS: readonly DreamLookId[] = ['midnight-blue', 'rainbow', 'galaxy', 'tie-dye-galaxy'];
+const SWIM_SAMPLES = Array.from({ length: 13 }, (_, i) => (i / 12) * TAU);
+const TAIL_AMPS = [1, 1.6] as const;
+/** Guide 10 cue floor. */
+const CUE_RATIO = 3;
+/** Float slack on distances. */
+const EPS = 1e-6;
+/** Every Boy or girl, Tail, Body and Age look, plus swim samples and two amplitudes: give it room in a parallel run. */
+const ENUMERATION_TIMEOUT_MS = 30_000;
+
+function rgbOf(hex: string): [number, number, number] {
+  expect(hex).toMatch(/^#[0-9a-f]{6}$/i);
+  return [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16)) as [number, number, number];
+}
+
+/** WCAG 2 relative luminance of a #rrggbb colour. */
+function relativeLuminance(hex: string): number {
+  const [r, g, b] = rgbOf(hex).map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG 2 contrast ratio of two #rrggbb colours. */
+function contrastRatio(a: string, b: string): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/** Channels of `from` mixed `t` of the way toward `to` in sRGB (guide 3f). */
+function mixChannels(from: string, to: string, t: number): number[] {
+  const a = rgbOf(from);
+  const b = rgbOf(to);
+  return a.map((v, i) => v + (b[i] - v) * t);
+}
+
+function expectNear(hex: string, expected: number[], label: string): void {
+  rgbOf(hex).forEach((v, i) => expect(Math.abs(v - expected[i]), `${label} channel ${i}`).toBeLessThanOrEqual(1));
+}
+
+function everyPair(): [string, DreamLookId, MorphPalette][] {
+  return MORPH_LOOK_IDS.flatMap((morph) =>
+    DREAM_IDS.map((id): [string, DreamLookId, MorphPalette] => [`${morph} + ${id}`, id, axolotlPalette(morph, id)]),
+  );
+}
+
+describe('Dream colour slots (guide 3f)', () => {
+  it('has the twelve Dream colours with the swatch body colours', () => {
+    expect(DREAM_IDS).toEqual(Object.keys(DREAM_SWATCH));
+    for (const id of DREAM_IDS) expect(DREAM_SLOTS[id].body, id).toBe(DREAM_SWATCH[id].body);
+  });
+
+  it('follows the 3f mixing rule within 1 per channel', () => {
+    for (const id of DREAM_IDS) {
+      const s = DREAM_SLOTS[id];
+      expectNear(s.farSide, mixChannels(s.body, INK, 0.12), `${id} far side`);
+      expectNear(s.fin, mixChannels(s.body, WHITE, 0.4), `${id} fin`);
+      expectNear(s.belly, mixChannels(s.body, WHITE, 0.55), `${id} belly`);
+      expectNear(s.gillNearFilament, mixChannels(s.gillNearStem, WHITE, 0.22), `${id} near filament`);
+      expectNear(s.gillFarStem, mixChannels(s.gillNearStem, INK, 0.1), `${id} far stem`);
+      expectNear(s.gillFarFilament, mixChannels(s.gillNearFilament, INK, 0.08), `${id} far filament`);
+    }
+  });
+});
+
+describe('Dream palettes over every real morph (guide 3f, 6h, 6p)', () => {
+  it('swap the body and gill slots and keep the morph eye and mouth', () => {
+    for (const morph of MORPH_LOOK_IDS) {
+      for (const id of DREAM_IDS) {
+        const palette = axolotlPalette(morph, id);
+        expect(palette, `${morph} + ${id}`).toMatchObject(DREAM_SLOTS[id]);
+        expect(palette.eye).toBe(MORPH_PALETTES[morph].eye);
+        expect(palette.mouth).toBe(MORPH_PALETTES[morph].mouth);
+        expect(palette.dream).toEqual({ id });
+      }
+    }
+  });
+
+  it('turn the morph extras off: no speckles, flecks, shimmer, shine alpha or fin rays', () => {
+    for (const [name, , palette] of everyPair()) {
+      const keys = Object.keys(palette.extras ?? {});
+      for (const key of keys) expect(['spot', 'rim', 'eyeRing'], `${name} ${key}`).toContain(key);
+    }
+  });
+
+  it('carry the rim light on exactly Midnight blue, Rainbow, Galaxy and Tie-dye galaxy', () => {
+    for (const [name, id, palette] of everyPair()) {
+      if (RIM_IDS.includes(id)) expect(palette.extras?.rim, name).toEqual(DREAM_RIM_LIGHT);
+      else expect(palette.extras?.rim, name).toBeUndefined();
+    }
+    expect(DREAM_RIM_LIGHT).toEqual({ colour: '#cec9f0', width: 2, fin: true });
+    expect(DREAM_EYE_RING).toEqual({ colour: '#cec9f0', width: 1.5 });
+  });
+
+  it('use the 3b Dream spot colours: white on the dark bodies, ink on bodies of luminance 0.2 or more', () => {
+    for (const [name, id, palette] of everyPair()) {
+      const dark = DARK_IDS.includes(id);
+      expect(relativeLuminance(palette.body) >= 0.2, name).toBe(!dark);
+      expect(palette.extras?.spot, name).toBe(dark ? 'rgba(255,255,255,0.45)' : 'rgba(43,35,80,0.30)');
+    }
+  });
+
+  it('keep the eye bead or its ring at 3:1 or more against the Dream body', () => {
+    for (const [name, id, palette] of everyPair()) {
+      const ring = palette.extras?.eyeRing;
+      if (DARK_IDS.includes(id)) expect(ring, name).toEqual(DREAM_EYE_RING);
+      const bead = contrastRatio(palette.eye, palette.body);
+      const ringRatio = ring ? contrastRatio(ring.colour, palette.body) : 0;
+      expect(Math.max(bead, ringRatio), name).toBeGreaterThanOrEqual(CUE_RATIO);
+    }
+  });
+
+  it('return the real morph palette for no Dream colour, and one cached object per pair', () => {
+    for (const morph of MORPH_LOOK_IDS) {
+      expect(axolotlPalette(morph, null)).toBe(MORPH_PALETTES[morph]);
+      expect(MORPH_PALETTES[morph].dream).toBeUndefined();
+      for (const id of DREAM_IDS) {
+        expect(axolotlPalette(morph, id)).toBe(axolotlPalette(morph, id));
+        expect(axolotlPalette(morph, id)).toEqual(dreamPalette(MORPH_PALETTES[morph], id));
+      }
+    }
+  });
+});
+
+/** Path2D stand-in that counts its points and remembers ellipses. */
+class RecordingPath2D {
+  points = 0;
+  ellipses = 0;
+  closed = false;
+  moveTo(): void {
+    this.points++;
+  }
+  lineTo(): void {
+    this.points++;
+  }
+  quadraticCurveTo(): void {
+    this.points++;
+  }
+  bezierCurveTo(): void {
+    this.points++;
+  }
+  closePath(): void {
+    this.closed = true;
+  }
+  ellipse(): void {
+    this.ellipses++;
+  }
+  arc(): void {
+    this.ellipses++;
+  }
+}
+
+interface PaintCall {
+  readonly op: 'fill' | 'stroke';
+  readonly style: string;
+  readonly lineWidth: number;
+  readonly path: RecordingPath2D;
+  /** Clips active when the call was made. */
+  readonly clips: number;
+}
+
+/** Every fill and stroke drawAxolotl makes, in order. */
+function recordAxolotl(palette: MorphPalette, look: AxolotlArtLook): PaintCall[] {
+  vi.stubGlobal('Path2D', RecordingPath2D);
+  const calls: PaintCall[] = [];
+  const state = { fillStyle: '', strokeStyle: '', lineWidth: 0, clips: 0 };
+  const saved: number[] = [];
+  const methods: Record<string, (path: RecordingPath2D) => void> = {
+    save: () => saved.push(state.clips),
+    restore: () => {
+      state.clips = saved.pop() ?? 0;
+    },
+    clip: () => {
+      state.clips++;
+    },
+    fill: (path) => calls.push({ op: 'fill', style: state.fillStyle, lineWidth: 0, path, clips: state.clips }),
+    stroke: (path) =>
+      calls.push({ op: 'stroke', style: state.strokeStyle, lineWidth: state.lineWidth, path, clips: state.clips }),
+  };
+  const ctx = new Proxy(
+    {},
+    {
+      get: (_target, key) => (typeof key === 'string' && key in methods ? methods[key] : () => {}),
+      set: (_target, key, value: unknown) => {
+        if (key === 'fillStyle' || key === 'strokeStyle') state[key] = value as string;
+        if (key === 'lineWidth') state.lineWidth = value as number;
+        return true;
+      },
+    },
+  ) as CanvasRenderingContext2D;
+  drawAxolotl(ctx, AXO_REST_POSE, palette, look);
+  vi.unstubAllGlobals();
+  return calls;
+}
+
+/** Indices of Dream marker fills: a white 4-point star path then stroked with ink 1.6. */
+function markerFillIndices(calls: readonly PaintCall[]): number[] {
+  return calls.flatMap((call, i) => {
+    if (call.op !== 'fill' || call.style !== WHITE || call.path.points !== 8 || call.path.ellipses !== 0) return [];
+    const inked = calls.some(
+      (c) => c.op === 'stroke' && c.path === call.path && c.style === INK && c.lineWidth === DREAM_MARKER_INK,
+    );
+    return inked ? [i] : [];
+  });
+}
+
+describe('Dream overlay paint order (guide 6a layer 6.5, 6p)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const dotsLook: AxolotlArtLook = { ...DEFAULT_ART_LOOK, spots: 'dots' };
+
+  it('paints the Dream marker on every morph and Dream colour pair', () => {
+    for (const [name, , palette] of everyPair()) {
+      expect(markerFillIndices(recordAxolotl(palette, dotsLook)), name).toHaveLength(3);
+    }
+  });
+
+  it('never paints the Dream marker on a real morph', () => {
+    for (const morph of MORPH_LOOK_IDS) {
+      expect(markerFillIndices(recordAxolotl(MORPH_PALETTES[morph], dotsLook)), morph).toEqual([]);
+    }
+  });
+
+  it('paints the player spots after every overlay fill', () => {
+    for (const [name, id, palette] of everyPair()) {
+      const calls = recordAxolotl(palette, dotsLook);
+      const spot = palette.extras?.spot;
+      const spotFills = calls.flatMap((c, i) => (c.op === 'fill' && c.style === spot ? [i] : []));
+      const patternFills = calls.flatMap((c, i) => (c.op === 'fill' && c.clips >= 3 ? [i] : []));
+      const overlay = [...patternFills, ...markerFillIndices(calls)];
+      expect(spotFills.length, name).toBeGreaterThan(0);
+      expect(patternFills.length > 0, name).toBe(!SOLID_IDS.includes(id));
+      expect(Math.max(...overlay), name).toBeLessThan(Math.min(...spotFills));
+    }
+  });
+});
+
+/** Every Boy or girl, Tail, Body and Age look. */
+function everyBodyLook(): AxolotlArtLook[] {
+  const looks: AxolotlArtLook[] = [];
+  for (const sex of AXO_SEXES)
+    for (const tail of AXO_TAILS)
+      for (const body of AXO_BODIES)
+        for (const age of AXO_AGES) looks.push({ ...DEFAULT_ART_LOOK, sex, tail, body, age });
+  return looks;
+}
+const EVERY_BODY_LOOK = everyBodyLook();
+
+function lookName(look: AxolotlArtLook): string {
+  return [look.sex, look.tail, look.body, look.age].join(' ');
+}
+
+/** Distance from (x, y) to the ellipse edge: positive inside, negative outside. */
+function ellipseDepth(x: number, y: number, e: BodyEllipse): number {
+  const at = (a: number): number => Math.hypot(e.cx + e.rx * Math.cos(a) - x, e.cy + e.ry * Math.sin(a) - y);
+  const steps = 180;
+  let best = 0;
+  for (let k = 1; k < steps; k++) if (at((k / steps) * TAU) < at((best / steps) * TAU)) best = k;
+  let lo = ((best - 1) / steps) * TAU;
+  let hi = ((best + 1) / steps) * TAU;
+  for (let k = 0; k < 60; k++) {
+    const m1 = lo + (hi - lo) / 3;
+    const m2 = hi - (hi - lo) / 3;
+    if (at(m1) < at(m2)) hi = m2;
+    else lo = m1;
+  }
+  const dist = at((lo + hi) / 2);
+  const inside = ((x - e.cx) / e.rx) ** 2 + ((y - e.cy) / e.ry) ** 2 <= 1;
+  return inside ? dist : -dist;
+}
+
+/** The layer 4 tail and fin polygon, as drawAxolotl paints it. */
+function silhouetteTail(tail: readonly TailSample[]): [number, number][] {
+  const top = tail.map((tp): [number, number] => [tp.x, tp.cy - tp.hc - tp.finTop]).reverse();
+  const bottom = tail.map((tp): [number, number] => [tp.x, tp.cy + tp.hc + tp.finBottom]);
+  return [...top, ...bottom];
+}
+
+function isInPolygon(x: number, y: number, poly: DreamPolygon): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i];
+    const [xj, yj] = poly[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function segmentDistance(x: number, y: number, a: readonly [number, number], b: readonly [number, number]): number {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(a[0] + dx * t - x, a[1] + dy * t - y);
+}
+
+/** Distance from (x, y) to the polygon edge: positive inside, negative outside. */
+function polygonDepth(x: number, y: number, poly: DreamPolygon): number {
+  let dist = Infinity;
+  for (let i = 0; i < poly.length; i++) dist = Math.min(dist, segmentDistance(x, y, poly[i], poly[(i + 1) % poly.length]));
+  return isInPolygon(x, y, poly) ? dist : -dist;
+}
+
+/** Points of `poly` that sit outside x <= 14 or closer than `inset` to the edge of their silhouette piece. */
+function clipFailures(poly: DreamPolygon, depth: (x: number, y: number) => number, inset: number): string[] {
+  return poly.flatMap(([x, y]) => {
+    const failures: string[] = [];
+    if (x > DREAM_FACE_LIMIT_X + EPS) failures.push(`(${x.toFixed(2)}, ${y.toFixed(2)}) past x 14`);
+    const d = depth(x, y);
+    if (d < inset - EPS) failures.push(`(${x.toFixed(2)}, ${y.toFixed(2)}) depth ${d.toFixed(4)}`);
+    return failures;
+  });
+}
+
+const INSETS = [0, DREAM_PATTERN_INSET] as const;
+
+/** Every swim sample and tail amplitude of every look, with its torso and painted tail. */
+function everyPose(): { name: string; torso: BodyEllipse; tail: TailSample[] }[] {
+  return EVERY_BODY_LOOK.flatMap((look) => {
+    const geo = axolotlBodyGeometry(look);
+    return SWIM_SAMPLES.flatMap((swim) =>
+      TAIL_AMPS.map((amp) => ({
+        name: `${lookName(look)} swim ${swim.toFixed(2)} amp ${amp}`,
+        torso: geo.torso,
+        tail: tailSamples(geo.tail, swim, amp),
+      })),
+    );
+  });
+}
+const EVERY_POSE = everyPose();
+
+describe('Dream pattern clip (guide 6p)', () => {
+  it('uses the 2-unit inset on Hearts, Tie-dye and Iridescent only', () => {
+    expect([...DREAM_INSET_IDS].sort()).toEqual(['hearts', 'iridescent', 'tie-dye']);
+    expect(DREAM_PATTERN_INSET).toBe(2);
+  });
+
+  it('stays at x <= 14 and inside the silhouette, inset where asked, on every look and swim pose', () => {
+    const failures: string[] = [];
+    for (const inset of INSETS) {
+      for (const look of EVERY_BODY_LOOK) {
+        const geo = axolotlBodyGeometry(look);
+        const [head, torso] = dreamClipPolygons(geo.torso, tailSamples(geo.tail, 0, 1), inset);
+        const ellipses: [DreamPolygon, BodyEllipse][] = [
+          [head, HEAD_ELLIPSE],
+          [torso, geo.torso],
+        ];
+        for (const [poly, e] of ellipses) {
+          for (const failure of clipFailures(poly, (x, y) => ellipseDepth(x, y, e), inset)) {
+            failures.push(`inset ${inset} ${lookName(look)}: ${failure}`);
+          }
+        }
+      }
+      for (const pose of EVERY_POSE) {
+        const polys = dreamClipPolygons(pose.torso, pose.tail, inset);
+        expect(polys).toHaveLength(3);
+        const sil = silhouetteTail(pose.tail);
+        const depth = (x: number, y: number): number => {
+          const inTail = polygonDepth(x, y, sil);
+          return inTail >= inset - EPS ? inTail : Math.max(inTail, ellipseDepth(x, y, pose.torso));
+        };
+        for (const failure of clipFailures(polys[2], depth, inset)) {
+          failures.push(`inset ${inset} ${pose.name}: ${failure}`);
+        }
+      }
+    }
+    expect(failures.slice(0, 20)).toEqual([]);
+  }, ENUMERATION_TIMEOUT_MS);
+
+  it('puts every Hearts and Galaxy shape centre inside the clip', () => {
+    const failures: string[] = [];
+    for (const id of ['hearts', 'galaxy'] as const) {
+      const inset = DREAM_INSET_IDS.includes(id) ? DREAM_PATTERN_INSET : 0;
+      for (const pose of EVERY_POSE) {
+        const polys = dreamClipPolygons(pose.torso, pose.tail, inset);
+        const shapes = dreamPatternShapes(id, pose.torso, pose.tail, undefined);
+        for (const s of shapes) {
+          if (!('x' in s)) continue;
+          if (!polys.some((poly) => isInPolygon(s.x, s.y, poly))) {
+            failures.push(`${id} ${s.kind} (${s.x.toFixed(2)}, ${s.y.toFixed(2)}) on ${pose.name}`);
+          }
+        }
+      }
+    }
+    expect(failures.slice(0, 20)).toEqual([]);
+  }, ENUMERATION_TIMEOUT_MS);
+
+  it('draws the guide 6p counts: 7 hearts; Galaxy 2 nebulae, 10 stars, 4 dots; Tie-dye galaxy 6 stars', () => {
+    const geo = axolotlBodyGeometry(DEFAULT_ART_LOOK);
+    const tail = tailSamples(geo.tail, 0, 1);
+    const count = (id: DreamLookId, kind: DreamShape['kind']): number =>
+      dreamPatternShapes(id, geo.torso, tail, undefined).filter((s) => s.kind === kind).length;
+    expect(count('hearts', 'heart')).toBe(7);
+    expect(count('galaxy', 'ellipse')).toBe(2);
+    expect(count('galaxy', 'star')).toBe(10);
+    expect(count('galaxy', 'dot')).toBe(4);
+    expect(count('tie-dye-galaxy', 'star')).toBe(6);
+    expect(count('rainbow', 'polygon')).toBe(5);
+    expect(count('iridescent', 'polygon')).toBe(2);
+  });
+});
+
+describe('Dream marker (guide 4e, 6p)', () => {
+  it('sits on the top fin band, midway between the core edge and the fin edge', () => {
+    for (const pose of EVERY_POSE) {
+      const centres = dreamMarkerCentres(pose.tail);
+      expect(centres).toHaveLength(3);
+      for (const c of centres) {
+        const sil = silhouetteTail(pose.tail);
+        expect(polygonDepth(c.x, c.y, sil), pose.name).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
+describe('Dream greyscale cues (PRD F15, guide 6p)', () => {
+  it('leaves exactly the six solids plain', () => {
+    const plain = DREAM_IDS.filter((id) => DREAM_SWATCH[id].pattern === 'plain');
+    expect(plain).toEqual(SOLID_IDS);
+  });
+
+  it('gives the six patterned and sheen colours pairwise distinct cues, each with a pattern', () => {
+    const patterned = DREAM_IDS.filter((id) => !SOLID_IDS.includes(id));
+    const cues = patterned.map((id) => DREAM_SWATCH[id].pattern);
+    expect(new Set(cues).size).toBe(6);
+    const geo = axolotlBodyGeometry(DEFAULT_ART_LOOK);
+    const tail = tailSamples(geo.tail, 0, 1);
+    for (const id of DREAM_IDS) {
+      const shapes = dreamPatternShapes(id, geo.torso, tail, undefined);
+      expect(shapes.length > 0, id).toBe(!SOLID_IDS.includes(id));
+    }
+  });
+});
+
+describe('Iridescent glide (guide 6p, 9)', () => {
+  it('repeats every 4 s', () => {
+    expect(IRIDESCENT_GLIDE_S).toBe(4);
+    expect(dreamSheenAt(0)).toBe(0);
+    expect(dreamSheenAt(1)).toBeCloseTo(0.25, 12);
+    expect(dreamSheenAt(4)).toBe(0);
+    expect(dreamSheenAt(5)).toBeCloseTo(dreamSheenAt(1), 12);
+    expect(dreamSheenAt(-1)).toBeCloseTo(0.75, 12);
+    for (let t = 0; t < 12; t += 0.37) {
+      expect(dreamSheenAt(t)).toBeGreaterThanOrEqual(0);
+      expect(dreamSheenAt(t)).toBeLessThan(1);
+    }
+  });
+
+  it('holds at x -10 under reduced motion and glides from x 14 toward the tail tip', () => {
+    const tipX = -74;
+    expect(iridescentStripeX(undefined, tipX)).toBe(IRIDESCENT_STILL_X);
+    expect(IRIDESCENT_STILL_X).toBe(-10);
+    expect(iridescentStripeX(0, tipX)).toBe(14);
+    let last = Infinity;
+    for (const sheen of [0, 0.25, 0.5, 0.75, 0.999]) {
+      const x = iridescentStripeX(sheen, tipX);
+      expect(x).toBeLessThan(last);
+      expect(x).toBeGreaterThan(tipX);
+      last = x;
+    }
+  });
+});

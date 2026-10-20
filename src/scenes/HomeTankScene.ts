@@ -1,11 +1,12 @@
 import * as Phaser from 'phaser';
 import type { AxolotlPose } from '../art/drawAxolotl';
+import { dreamSheenAt } from '../art/drawDreamOverlay';
 import { DEPTH } from '../art/layers';
 import {
+  axolotlPalette,
   HOME_TANK_WALL,
   INK,
   LW,
-  MORPH_PALETTES,
   SURFACE_LINE,
   SURFACE_LINE_WIDTH,
   T_STATIC,
@@ -17,6 +18,7 @@ import type { IconKind } from '../art/drawUi';
 import { createAxolotlTexture, type AxolotlTexture, type TexInfo } from '../art/textures';
 import { areaLabel } from '../logic/areaText';
 import { areaById, type AreaData } from '../logic/areas';
+import { ownedDreamColours } from '../logic/catalogue';
 import { GAME_EVENTS, REGISTRY_KEYS, type ReducedMotionPayload } from '../logic/gameEvents';
 import type { Rect, Size } from '../logic/hudLayout';
 import { motionProfile, type MotionProfile } from '../logic/motion';
@@ -26,12 +28,13 @@ import {
   bestStars,
   canRescueMore,
   restyleAxolotl,
+  setDreamColour,
   setTankLayout,
   type OwnedAxolotl,
   type Session,
 } from '../logic/session';
 import { hubStarsBadgeRect } from '../logic/starsUi';
-import type { StylerAxolotl } from '../logic/styler';
+import { restyleStart, type StylerAxolotl } from '../logic/styler';
 import { TANK, tankFrame, tankToCss, type TankFrame, type TankLayout } from '../logic/tank';
 import {
   axolotlFocusIndex,
@@ -145,6 +148,7 @@ interface HubButton {
 interface TankSwimmer {
   id: string;
   texture: AxolotlTexture;
+  /** Its morph's colours, or its Dream colour's over its morph (axolotlPalette). */
   palette: MorphPalette;
   image: Phaser.GameObjects.Image;
   lastPose: AxolotlPose | null;
@@ -347,7 +351,7 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * One swimmer per owned axolotl in its morph's colours and its own look, each with its own texture
+   * One swimmer per owned axolotl in its morph's colours (or its Dream colour) and its own look, each with its own texture
    * so their poses never share a frame. Baked at the boot bake scale; the look's size factor is
    * applied by the texture.
    */
@@ -363,7 +367,7 @@ export class HomeTankScene extends Phaser.Scene {
       const swimmer: TankSwimmer = {
         id: axolotl.id,
         texture,
-        palette: MORPH_PALETTES[axolotl.morph],
+        palette: axolotlPalette(axolotl.morph, axolotl.dreamColour),
         image,
         lastPose: null,
         redrawAcc: 0,
@@ -577,8 +581,8 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * Opens the restyle screen (PRD F6) for the axolotl at `index`, starting from its name, look and
-   * morph (shown read-only).
+   * Opens the restyle screen (PRD F6) for the axolotl at `index`, starting from its name, look,
+   * morph (shown read-only) and Dream colour, offering the Dream colours the hub owns.
    * The hub hides and every key goes to the styler until Done or Cancel.
    */
   private openRestyle(index: number): void {
@@ -587,22 +591,31 @@ export class HomeTankScene extends Phaser.Scene {
     this.restyler = new AxolotlStyler(this, this.assets, this.view, TANK_DEPTH.restyle, {
       mode: 'restyle',
       motion: () => this.motion,
-      initial: { name: axolotl.name, look: axolotl.look, morph: axolotl.morph },
+      initial: restyleStart(
+        { name: axolotl.name, look: axolotl.look, morph: axolotl.morph, dreamColour: axolotl.dreamColour },
+        ownedDreamColours(this.session.hub.banked),
+      ),
       onDone: (styled) => this.finishRestyle(index, styled),
       onCancel: () => this.closeRestyle(index),
     });
   }
 
   /**
-   * Done in restyle: stores the new name and look (the morph and every other field stay), shows the
-   * look on that axolotl's swimmer, and goes back to the hub with that axolotl focused.
+   * Done in restyle: stores the new name, look and Dream colour (the morph and every other field
+   * stay), repaints that axolotl's swimmer in them from a first paint, and goes back to the hub
+   * with that axolotl focused.
    */
   private finishRestyle(index: number, styled: StylerAxolotl): void {
     const { id } = this.swimmerAxolotl(index);
-    this.session = restyleAxolotl(readSession(this.registry), id, { name: styled.name, look: styled.look });
+    let next = restyleAxolotl(readSession(this.registry), id, { name: styled.name, look: styled.look });
+    if (styled.dreamColour !== undefined) next = setDreamColour(next, id, styled.dreamColour);
+    this.session = next;
     writeSession(this.registry, this.session);
+    const axolotl = this.swimmerAxolotl(index);
     const swimmer = this.swimmers[index];
-    swimmer.texture.setLook(this.swimmerAxolotl(index).look);
+    swimmer.texture.setLook(axolotl.look);
+    swimmer.palette = axolotlPalette(axolotl.morph, axolotl.dreamColour);
+    swimmer.lastPose = null;
     this.applySwimmerTexture(swimmer);
     this.closeRestyle(index);
   }
@@ -890,6 +903,7 @@ export class HomeTankScene extends Phaser.Scene {
       blink: this.motion.ambient ? blinkAt(t) : 1,
       tailAmp: 1,
       sparkle: 0,
+      sheen: this.motion.ambient ? dreamSheenAt(t) : undefined,
     };
     if (index === 0) this.redrawSwimmer(swimmer, pose, dt);
     else this.askRescuedRepaint(swimmer, index - 1, pose, dt);

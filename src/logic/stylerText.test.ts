@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { STYLER_STEPS } from './stylerSteps';
+import { RESTYLE_STEPS, STYLER_STEPS } from './stylerSteps';
 import * as stylerText from './stylerText';
 import {
   BACK_LABEL,
@@ -8,12 +8,16 @@ import {
   CREATOR_HELPER,
   CREATOR_TITLE,
   DONE_LABEL,
+  DREAM_HELPER,
+  MORE_COLOURS_LABEL,
   MORE_NAMES_LABEL,
   NAME_FIELD_LABEL,
   NAME_HELPER,
   NAME_PLACEHOLDER,
   NEXT_LABEL,
+  NO_DREAMS_HELPER,
   READ_ONLY_HELPER,
+  REAL_COLOUR_LABEL,
   RESTYLE_HELPER,
   RESTYLE_TITLE,
   STEP_TAB_LABELS,
@@ -64,10 +68,11 @@ const exportedStrings = Object.entries(stylerText as Record<string, unknown>).fi
 function everyStylerText(): string[] {
   return [
     ...exportedStrings.map(([, text]) => text),
-    ...STYLER_STEPS.map(stepTitle),
-    ...STYLER_STEPS.map(stepTabLabel),
+    ...RESTYLE_STEPS.map(stepTitle),
+    ...RESTYLE_STEPS.map(stepTabLabel),
     ...STYLER_STEPS.map((step, index) => stepHeading(index, STYLER_STEPS.length, step)),
-    ...MODES.flatMap((mode) => STYLER_STEPS.map((step) => stepHelper(mode, step))),
+    ...MODES.flatMap((mode) => RESTYLE_STEPS.map((step) => stepHelper(mode, step))),
+    ...MODES.flatMap((mode) => RESTYLE_STEPS.map((step) => stepHelper(mode, step, 1))),
   ];
 }
 
@@ -80,12 +85,16 @@ describe('styler text', () => {
       'CREATOR_HELPER',
       'CREATOR_TITLE',
       'DONE_LABEL',
+      'DREAM_HELPER',
+      'MORE_COLOURS_LABEL',
       'MORE_NAMES_LABEL',
       'NAME_FIELD_LABEL',
       'NAME_HELPER',
       'NAME_PLACEHOLDER',
       'NEXT_LABEL',
+      'NO_DREAMS_HELPER',
       'READ_ONLY_HELPER',
+      'REAL_COLOUR_LABEL',
       'RESTYLE_HELPER',
       'RESTYLE_TITLE',
       'SURPRISE_ME_LABEL',
@@ -120,9 +129,10 @@ describe('styler text', () => {
     expect(DONE_LABEL).toBe('Done');
   });
 
-  it('gives every step a title and a tab label, in PRD F1 order', () => {
-    expect(STYLER_STEPS.map(stepTitle)).toEqual([
+  it('gives every step a title and a tab label, in restyle order', () => {
+    expect(RESTYLE_STEPS.map(stepTitle)).toEqual([
       'Pick a colour!',
+      'Pick a Dream colour!',
       'Boy or girl?',
       'Pick your eyes!',
       'Pick a mouth!',
@@ -134,8 +144,9 @@ describe('styler text', () => {
       'Pick a size!',
       'Pick a name!',
     ]);
-    expect(STYLER_STEPS.map(stepTabLabel)).toEqual([
+    expect(RESTYLE_STEPS.map(stepTabLabel)).toEqual([
       'Colour',
+      'Dream colour',
       'Boy or girl',
       'Eyes',
       'Mouth',
@@ -147,8 +158,8 @@ describe('styler text', () => {
       'Size',
       'Name',
     ]);
-    expect(Object.keys(STEP_TITLES).sort()).toEqual([...STYLER_STEPS].sort());
-    expect(Object.keys(STEP_TAB_LABELS).sort()).toEqual([...STYLER_STEPS].sort());
+    expect(Object.keys(STEP_TITLES).sort()).toEqual([...RESTYLE_STEPS].sort());
+    expect(Object.keys(STEP_TAB_LABELS).sort()).toEqual([...RESTYLE_STEPS].sort());
   });
 
   it('heads each creator step "Step N of 11:" and its title', () => {
@@ -168,7 +179,7 @@ describe('styler text', () => {
 
   it('gives every step a helper line in both modes', () => {
     for (const mode of MODES) {
-      for (const step of STYLER_STEPS) expect(stepHelper(mode, step).length).toBeGreaterThan(0);
+      for (const step of RESTYLE_STEPS) expect(stepHelper(mode, step).length).toBeGreaterThan(0);
     }
   });
 
@@ -178,6 +189,10 @@ describe('styler text', () => {
     expect(NAME_HELPER).toBe('Tap a name, or tap the name box to type one.');
     expect(RESTYLE_HELPER).toBe('Tap a picture to try it on.');
     expect(READ_ONLY_HELPER).toBe('This stays the same after you make your axolotl.');
+    expect(DREAM_HELPER).toBe('Tap a picture to try it on. Dream colours are not found in nature.');
+    expect(NO_DREAMS_HELPER).toBe('Find Paint shells in the canal to get Dream colours!');
+    expect(REAL_COLOUR_LABEL).toBe('Real colour');
+    expect(MORE_COLOURS_LABEL).toBe('More colours');
   });
 
   it('picks the helper for each step and mode', () => {
@@ -190,5 +205,13 @@ describe('styler text', () => {
     expect(stepHelper('restyle', 'sex')).toBe(READ_ONLY_HELPER);
     expect(stepHelper('restyle', 'gills')).toBe(RESTYLE_HELPER);
     expect(stepHelper('restyle', 'name')).toBe(NAME_HELPER);
+  });
+
+  it('picks the Dream colour helper by how many Dream colours are owned', () => {
+    expect(stepHelper('restyle', 'dream')).toBe(NO_DREAMS_HELPER);
+    expect(stepHelper('restyle', 'dream', 0)).toBe(NO_DREAMS_HELPER);
+    expect(stepHelper('restyle', 'dream', 1)).toBe(DREAM_HELPER);
+    expect(stepHelper('restyle', 'dream', 5)).toBe(DREAM_HELPER);
+    expect(stepHelper('restyle', 'eyes', 3)).toBe(RESTYLE_HELPER);
   });
 });
