@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-19
+
+### Added
+
+- Step-by-step character creator: one feature per screen (Colour, Boy or girl, Eyes, Mouth, Gills, Spots, Tail, Body, Age, Size, Name) with headings, progress dots, helper text, picture buttons with previews, Back, Next, Surprise me and Done. Works with touch and keyboard (#52).
+- Restyle in the Home Tank uses the same step screens with tabs. Colour and Boy or girl stay fixed after creation (#52).
+- New look options: Boy or girl (with subtle cues and girl eyelashes), tail length, body shape and age (#52).
+- Suggested names fit Boy or girl in the creator, Surprise me and for rescued axolotls. Rescued axolotls get Boy or girl from the trip (#52).
+- "Boy or girl?" fact card in the Collection Book (#52).
+
+### Changed
+
+- Axolotls are smaller: Large is the old Medium, Medium is the old Small, and there is a new smaller Small (#52).
+- The tilapia's hit reach is 26 px and touch reach 29 px, matching the new Medium at every size (#52).
+- Text about one axolotl says "he" or "she" (#52).
+- The stranded axolotl is drawn at the new Medium size with its Boy or girl look (#52).
+
+### Fixed
+
+- The leg-loss puff, regrowth twinkles and snack speed-up star sit on the leg at every size. The protected ring and carry-home bubble scale with size (#49).
+
 ## [0.12.0] - 2026-10-19
 
 ### Added
