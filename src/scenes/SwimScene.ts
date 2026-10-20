@@ -326,7 +326,12 @@ export class SwimScene extends Phaser.Scene {
    * Per-frame cost (#31 review findings ac16b4b1, fb55980d, 18472eb6).
    * Snack drift is computed on read from each snack's base point and the drift clock. The snack
    * tally (left, collected, sparkling ids) is worked out only in setItems, when the items change,
-   * and frame code reads it. Snacks, the exit and the last-3 stars create no objects per frame.
+   * and frame code reads it. Snack positions, the exit and the last-3 stars create no objects per
+   * frame. Drawn-frame capture (#51 review finding cbed1ef9): captureDrawnFrame builds the
+   * drawnAxolotl input and result and the snack frame, and collectSnacks builds the head point while
+   * swimming, so four small objects per frame. They stay plain values, like the step results below:
+   * drawnAxolotl and headPoint are pure src/logic functions tested as values (ADR 0006), and the eat
+   * and the sprite read one immutable capture. Same bounded cost as the residual below.
    * Recorded residual, inherited from main: stepSwim and stepTrip return new immutable state and
    * event lists each frame, syncSnapshot builds a trip snapshot to compare, the views take a render
    * argument object, and the reeds-near Set, bubble views and surface x list are rebuilt each frame.
