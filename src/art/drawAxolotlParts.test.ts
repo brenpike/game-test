@@ -45,7 +45,10 @@ import {
   gillInkBounds,
   gillSpecs,
   mouthInkBounds,
+  MOUTH_INK,
+  MOUTH_TICK_INK,
   paintEye,
+  paintMouth,
   quadBounds,
   spotMarks,
   tailPointAt,
@@ -59,6 +62,7 @@ import {
   type EyeSpot,
   type GillRoot,
   type LocalPoint,
+  type MouthVariant,
 } from './drawAxolotlParts';
 
 const TAU = Math.PI * 2;
@@ -233,7 +237,7 @@ function markInsideEllipse(m: BodyMark, e: BodyEllipse): boolean {
 describe('creator look ids', () => {
   it('lists every option of guide 6l to 6o, plus Boy or girl, Tail, Body and Age', () => {
     expect(EYE_VARIANTS).toEqual(['happy', 'sleepy', 'determined', 'curious', 'grumpy']);
-    expect(MOUTH_VARIANTS).toEqual(['smile', 'openD', 'tongueOut', 'smallO']);
+    expect(MOUTH_VARIANTS).toEqual(['smile', 'openD', 'tongueOut', 'smallO', 'bigGrin', 'catSmile', 'smirk', 'tongueTip']);
     expect(GILL_STYLE_IDS).toEqual(['fluffy', 'long', 'short']);
     expect(SPOTS_OPTIONS).toEqual(['none', 'freckles', 'dots', 'patches']);
     expect(AXO_SIZES).toEqual(['small', 'medium', 'large']);
@@ -649,7 +653,228 @@ describe('eye ring (guide 3b)', () => {
   });
 });
 
+/** The morph mouth slot fill handed to paintMouth when recording. */
+const MOUTH_SLOT = '#123456';
+/** Tongue fill (guide 3g, 6l). */
+const TONGUE_FILL = '#ff9fb5';
+/** Envelope bin width, in local units. */
+const ENVELOPE_BIN = 0.25;
+/** A dip counts once the lower edge rises and falls back by this much. */
+const DIP_DEPTH = 1;
+/** One-sided: the two ends of the mouth line differ in height by at least this much. */
+const ONE_SIDED_DROP = 4;
+/** Ink box width, height or lowest point must differ by at least this much to tell two mouths apart. */
+const BOX_TRAIT_GAP = 2;
+
+type MouthPathCommand =
+  | { readonly op: 'move' | 'line'; readonly x: number; readonly y: number }
+  | { readonly op: 'quad'; readonly cx: number; readonly cy: number; readonly x: number; readonly y: number }
+  | { readonly op: 'ellipse'; readonly x: number; readonly y: number; readonly rx: number; readonly ry: number }
+  | { readonly op: 'close' };
+
+class RecordingMouthPath {
+  readonly commands: MouthPathCommand[] = [];
+  moveTo(x: number, y: number): void {
+    this.commands.push({ op: 'move', x, y });
+  }
+  lineTo(x: number, y: number): void {
+    this.commands.push({ op: 'line', x, y });
+  }
+  quadraticCurveTo(cx: number, cy: number, x: number, y: number): void {
+    this.commands.push({ op: 'quad', cx, cy, x, y });
+  }
+  ellipse(x: number, y: number, rx: number, ry: number): void {
+    this.commands.push({ op: 'ellipse', x, y, rx, ry });
+  }
+  closePath(): void {
+    this.commands.push({ op: 'close' });
+  }
+}
+
+/** One fill or stroke paintMouth made, with the style and width it used. */
+interface MouthPaint {
+  readonly kind: 'fill' | 'stroke';
+  readonly style: string;
+  readonly lineWidth: number;
+  readonly path: RecordingMouthPath;
+}
+
+/** Every fill and stroke paintMouth makes for `variant`, in order. */
+function recordMouthPaint(variant: MouthVariant): MouthPaint[] {
+  const paints: MouthPaint[] = [];
+  const state = { fillStyle: '', strokeStyle: '', lineWidth: 0 };
+  const ctx = {
+    fill: (path: RecordingMouthPath) =>
+      paints.push({ kind: 'fill', style: state.fillStyle, lineWidth: state.lineWidth, path }),
+    stroke: (path: RecordingMouthPath) =>
+      paints.push({ kind: 'stroke', style: state.strokeStyle, lineWidth: state.lineWidth, path }),
+    set fillStyle(v: string) {
+      state.fillStyle = v;
+    },
+    set strokeStyle(v: string) {
+      state.strokeStyle = v;
+    },
+    set lineWidth(v: number) {
+      state.lineWidth = v;
+    },
+  } as unknown as CanvasRenderingContext2D;
+  vi.stubGlobal('Path2D', RecordingMouthPath);
+  try {
+    paintMouth(ctx, variant, MOUTH_SLOT);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  return paints;
+}
+
+/** Centre-line sample points of recorded path commands. */
+function samplePath(commands: readonly MouthPathCommand[]): LocalPoint[] {
+  const points: LocalPoint[] = [];
+  let pen: LocalPoint = { x: 0, y: 0 };
+  for (const cmd of commands) {
+    if (cmd.op === 'move' || cmd.op === 'line') {
+      pen = { x: cmd.x, y: cmd.y };
+      points.push(pen);
+    } else if (cmd.op === 'quad') {
+      for (let k = 1; k <= 128; k++) {
+        const u = k / 128;
+        const m = 1 - u;
+        points.push({
+          x: m * m * pen.x + 2 * u * m * cmd.cx + u * u * cmd.x,
+          y: m * m * pen.y + 2 * u * m * cmd.cy + u * u * cmd.y,
+        });
+      }
+      pen = { x: cmd.x, y: cmd.y };
+    } else if (cmd.op === 'ellipse') {
+      for (let k = 0; k < 256; k++) {
+        const a = (k / 256) * TAU;
+        points.push({ x: cmd.x + Math.cos(a) * cmd.rx, y: cmd.y + Math.sin(a) * cmd.ry });
+      }
+    }
+  }
+  return points;
+}
+
+/** The lowest sample (largest y) of a set of points. */
+function lowestPoint(points: readonly LocalPoint[]): LocalPoint {
+  return points.reduce((low, p) => (p.y > low.y ? p : low));
+}
+
+/** Whether a recorded path is an open line: no ellipse and no closePath. */
+function isOpenLine(path: RecordingMouthPath): boolean {
+  return path.commands.every((cmd) => cmd.op !== 'ellipse' && cmd.op !== 'close');
+}
+
+/** The first mouth-ink stroke that is an open line, or null for mouths drawn as closed shapes only. */
+function mouthLineOf(paints: readonly MouthPaint[]): RecordingMouthPath | null {
+  const found = paints.find((p) => p.kind === 'stroke' && p.lineWidth === MOUTH_INK && isOpenLine(p.path));
+  return found ? found.path : null;
+}
+
+/** First and last points of an open line. */
+function lineEnds(path: RecordingMouthPath): [LocalPoint, LocalPoint] {
+  const points = samplePath(path.commands);
+  return [points[0], points[points.length - 1]];
+}
+
+/** The slot-filled shape of a mouth, or null when it has none. */
+function slotFillOf(paints: readonly MouthPaint[]): RecordingMouthPath | null {
+  const found = paints.find((p) => p.kind === 'fill' && p.style === MOUTH_SLOT);
+  return found ? found.path : null;
+}
+
+/** Ellipses filled with anything but the mouth slot: the tongues. */
+function tongueEllipsesOf(paints: readonly MouthPaint[]): { x: number; y: number; rx: number; ry: number }[] {
+  return paints
+    .filter((p) => p.kind === 'fill' && p.style !== MOUTH_SLOT)
+    .flatMap((p) => p.path.commands.flatMap((cmd) => (cmd.op === 'ellipse' ? [cmd] : [])));
+}
+
+/** Largest y of the mouth-ink centre lines in each ENVELOPE_BIN column, left to right. */
+function lowerEnvelope(paints: readonly MouthPaint[]): number[] {
+  const columns = new Map<number, number>();
+  for (const paint of paints) {
+    if (paint.kind !== 'stroke' || paint.lineWidth !== MOUTH_INK) continue;
+    for (const p of samplePath(paint.path.commands)) {
+      const column = Math.floor(p.x / ENVELOPE_BIN);
+      columns.set(column, Math.max(columns.get(column) ?? -Infinity, p.y));
+    }
+  }
+  return [...columns.keys()].sort((a, b) => a - b).map((column) => columns.get(column)!);
+}
+
+/** Lobes of the lower edge: a new dip starts only after it rises DIP_DEPTH and falls DIP_DEPTH again. */
+function countDips(envelope: readonly number[]): number {
+  let dips = 1;
+  let high = envelope[0];
+  let low = Infinity;
+  let inDip = true;
+  for (const y of envelope) {
+    if (inDip) {
+      high = Math.max(high, y);
+      if (y <= high - DIP_DEPTH) {
+        inDip = false;
+        low = y;
+      }
+    } else {
+      low = Math.min(low, y);
+      if (y >= low + DIP_DEPTH) {
+        inDip = true;
+        high = y;
+        dips++;
+      }
+    }
+  }
+  return dips;
+}
+
+/** What tells a mouth apart, measured from paintMouth and mouthInkBounds. */
+interface MouthTraits {
+  readonly filled: boolean;
+  readonly tongueArea: number | null;
+  readonly oneSided: boolean;
+  readonly dips: number;
+  readonly width: number;
+  readonly height: number;
+  readonly lowest: number;
+}
+
+function mouthTraits(variant: MouthVariant): MouthTraits {
+  const paints = recordMouthPaint(variant);
+  const tongues = tongueEllipsesOf(paints);
+  const line = mouthLineOf(paints);
+  const ends = line ? lineEnds(line) : null;
+  const box = mouthInkBounds(variant);
+  return {
+    filled: slotFillOf(paints) !== null,
+    tongueArea: tongues.length === 0 ? null : tongues.reduce((sum, t) => sum + Math.PI * t.rx * t.ry, 0),
+    oneSided: ends !== null && Math.abs(ends[0].y - ends[1].y) >= ONE_SIDED_DROP,
+    dips: countDips(lowerEnvelope(paints)),
+    width: box.maxX - box.minX,
+    height: box.maxY - box.minY,
+    lowest: box.maxY,
+  };
+}
+
+/** Whether two mouths differ in at least one trait. */
+function mouthsDiffer(a: MouthTraits, b: MouthTraits): boolean {
+  if (a.filled !== b.filled || a.oneSided !== b.oneSided || a.dips !== b.dips) return true;
+  if ((a.tongueArea === null) !== (b.tongueArea === null)) return true;
+  if (a.tongueArea !== null && b.tongueArea !== null) {
+    if (Math.max(a.tongueArea, b.tongueArea) >= 2 * Math.min(a.tongueArea, b.tongueArea)) return true;
+  }
+  return (
+    Math.abs(a.width - b.width) >= BOX_TRAIT_GAP ||
+    Math.abs(a.height - b.height) >= BOX_TRAIT_GAP ||
+    Math.abs(a.lowest - b.lowest) >= BOX_TRAIT_GAP
+  );
+}
+
 describe('mouth variants (guide 6l)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('stay inside the mouth zone under the corner ticks', () => {
     for (const variant of MOUTH_VARIANTS) {
       const b = mouthInkBounds(variant);
@@ -680,6 +905,82 @@ describe('mouth variants (guide 6l)', () => {
     const tongueBottom = mouthInkBounds('tongueOut').maxY - 1.2;
     expect(tongueBottom - lip).toBeGreaterThan(3.5);
     expect(tongueBottom - lip).toBeLessThan(4.5);
+  });
+
+  it('Big grin opens at least 2 wider than the Open D, its lower lip at least 1 lower', () => {
+    const openD = slotFillOf(recordMouthPaint('openD'))!;
+    const bigGrin = slotFillOf(recordMouthPaint('bigGrin'))!;
+    const opening = (path: RecordingMouthPath): number => {
+      const xs = path.commands.flatMap((cmd) => (cmd.op === 'move' || cmd.op === 'quad' ? [cmd.x] : []));
+      return Math.max(...xs) - Math.min(...xs);
+    };
+    expect(opening(openD)).toBe(21);
+    expect(opening(bigGrin)).toBeGreaterThanOrEqual(opening(openD) + 2);
+    const openDLip = lowestPoint(samplePath(openD.commands)).y;
+    expect(openDLip).toBeCloseTo(15.3, 1);
+    expect(lowestPoint(samplePath(bigGrin.commands)).y).toBeGreaterThanOrEqual(openDLip + 1);
+  });
+
+  it('Cat smile is an unfilled "w": two dips at least 4 apart, the middle at least 1.5 higher', () => {
+    const paints = recordMouthPaint('catSmile');
+    expect(slotFillOf(paints)).toBeNull();
+    const line = mouthLineOf(paints)!;
+    const [move, first, second] = line.commands;
+    expect(line.commands.map((cmd) => cmd.op)).toEqual(['move', 'quad', 'quad']);
+    if (move.op !== 'move' || first.op !== 'quad' || second.op !== 'quad') throw new Error('not a w');
+    const firstLow = lowestPoint(samplePath([move, first]));
+    const secondLow = lowestPoint(samplePath([{ op: 'move', x: first.x, y: first.y }, second]));
+    expect(Math.abs(secondLow.x - firstLow.x)).toBeGreaterThanOrEqual(4);
+    expect(Math.min(firstLow.y, secondLow.y) - first.y).toBeGreaterThanOrEqual(1.5);
+    expect(countDips(lowerEnvelope(paints))).toBe(2);
+  });
+
+  it('Smirk is one-sided, lowest near its low end, with one tick at its raised end', () => {
+    const paints = recordMouthPaint('smirk');
+    expect(slotFillOf(paints)).toBeNull();
+    const line = mouthLineOf(paints)!;
+    const [start, end] = lineEnds(line);
+    expect(Math.abs(start.y - end.y)).toBeGreaterThanOrEqual(ONE_SIDED_DROP);
+    const [lowEnd, raisedEnd] = start.y > end.y ? [start, end] : [end, start];
+    const lowest = lowestPoint(samplePath(line.commands));
+    expect(Math.abs(lowest.x - lowEnd.x) / Math.abs(raisedEnd.x - lowEnd.x)).toBeLessThanOrEqual(0.4);
+    const ticks = paints.filter((p) => p.kind === 'stroke' && p.lineWidth === MOUTH_TICK_INK);
+    expect(ticks).toHaveLength(1);
+    const tickStarts = ticks[0].path.commands.filter((cmd) => cmd.op === 'move');
+    expect(tickStarts).toEqual([{ op: 'move', x: raisedEnd.x, y: raisedEnd.y }]);
+  });
+
+  it('Blep is the Smile line plus a small tongue poking at least 1.5 below it', () => {
+    const tongueTip = recordMouthPaint('tongueTip');
+    const smileLine = mouthLineOf(recordMouthPaint('smile'))!;
+    expect(mouthLineOf(tongueTip)!.commands).toEqual(smileLine.commands);
+    expect(slotFillOf(tongueTip)).toBeNull();
+    expect(tongueTip.filter((p) => p.kind === 'fill').map((p) => p.style)).toEqual([TONGUE_FILL]);
+    const [tongue] = tongueEllipsesOf(tongueTip);
+    const [bigTongue] = tongueEllipsesOf(recordMouthPaint('tongueOut'));
+    expect(tongue.rx * tongue.ry).toBeLessThanOrEqual(0.5 * bigTongue.rx * bigTongue.ry);
+    expect(tongue.y + tongue.ry - lowestPoint(samplePath(smileLine.commands)).y).toBeGreaterThanOrEqual(1.5);
+  });
+
+  it('never paint white: no teeth (guide 6l)', () => {
+    for (const variant of MOUTH_VARIANTS) {
+      for (const paint of recordMouthPaint(variant)) expect(paint.style).not.toBe(WHITE);
+    }
+  });
+
+  it('every pair of mouths differs in at least one trait', () => {
+    const traits = MOUTH_VARIANTS.map(mouthTraits);
+    const pairs: string[] = [];
+    const alike: string[] = [];
+    for (let i = 0; i < MOUTH_VARIANTS.length; i++) {
+      for (let j = i + 1; j < MOUTH_VARIANTS.length; j++) {
+        pairs.push(`${MOUTH_VARIANTS[i]} ${MOUTH_VARIANTS[j]}`);
+        if (!mouthsDiffer(traits[i], traits[j])) alike.push(`${MOUTH_VARIANTS[i]} ${MOUTH_VARIANTS[j]}`);
+      }
+    }
+    expect(traits.every((t) => !mouthsDiffer(t, t))).toBe(true);
+    expect(pairs).toHaveLength(28);
+    expect(alike).toEqual([]);
   });
 });
 
@@ -860,7 +1161,7 @@ describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)',
   }
 
   it('enumerates every combination', () => {
-    expect(EVERY_LOOK).toHaveLength(5 * 4 * 3 * 4 * 2 * 3 * 3 * 3);
+    expect(EVERY_LOOK).toHaveLength(5 * 8 * 3 * 4 * 2 * 3 * 3 * 3);
   });
 
   it('fits AXO_TEX with padding at sampled flutter phases and tail amplitudes 1 and 1.6', () => {

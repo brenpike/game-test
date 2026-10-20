@@ -122,6 +122,9 @@ const ICON_KINDS: readonly IconKind[] = [
   'putAway',
   'book',
   'surprise',
+  'boy',
+  'girl',
+  'pencil',
 ];
 
 export const bgKey = (i: number): string => `bg-${i}`;

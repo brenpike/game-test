@@ -11,6 +11,7 @@ import {
   MORE_NAMES_LABEL,
   NAME_FIELD_LABEL,
   NAME_HELPER,
+  NAME_PLACEHOLDER,
   NEXT_LABEL,
   READ_ONLY_HELPER,
   RESTYLE_HELPER,
@@ -82,6 +83,7 @@ describe('styler text', () => {
       'MORE_NAMES_LABEL',
       'NAME_FIELD_LABEL',
       'NAME_HELPER',
+      'NAME_PLACEHOLDER',
       'NEXT_LABEL',
       'READ_ONLY_HELPER',
       'RESTYLE_HELPER',
@@ -110,6 +112,7 @@ describe('styler text', () => {
     expect(CANCEL_LABEL).toBe('Cancel');
     expect(MORE_NAMES_LABEL).toBe('More names');
     expect(NAME_FIELD_LABEL).toBe('Axolotl name');
+    expect(NAME_PLACEHOLDER).toBe('Type a name');
   });
 
   it('reuses the Home Tank Done label', () => {

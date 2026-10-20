@@ -19,7 +19,7 @@ import { INK, WHITE, type MorphEyeRing } from './palette';
 /** Eye variants (guide 6l). */
 export type EyeVariant = 'happy' | 'sleepy' | 'determined' | 'curious' | 'grumpy';
 /** Mouth variants (guide 6l). */
-export type MouthVariant = 'smile' | 'openD' | 'tongueOut' | 'smallO';
+export type MouthVariant = 'smile' | 'openD' | 'tongueOut' | 'smallO' | 'bigGrin' | 'catSmile' | 'smirk' | 'tongueTip';
 /** Gill styles (guide 6m). */
 export type GillStyleId = 'fluffy' | 'long' | 'short';
 /** Spot options (guide 6n). */
@@ -36,7 +36,16 @@ export type AxoBody = 'slim' | 'regular' | 'chubby';
 export type AxoAge = 'baby' | 'young' | 'grownUp';
 
 export const EYE_VARIANTS: readonly EyeVariant[] = ['happy', 'sleepy', 'determined', 'curious', 'grumpy'];
-export const MOUTH_VARIANTS: readonly MouthVariant[] = ['smile', 'openD', 'tongueOut', 'smallO'];
+export const MOUTH_VARIANTS: readonly MouthVariant[] = [
+  'smile',
+  'openD',
+  'tongueOut',
+  'smallO',
+  'bigGrin',
+  'catSmile',
+  'smirk',
+  'tongueTip',
+];
 export const GILL_STYLE_IDS: readonly GillStyleId[] = ['fluffy', 'long', 'short'];
 export const SPOTS_OPTIONS: readonly SpotsOption[] = ['none', 'freckles', 'dots', 'patches'];
 export const AXO_SIZES: readonly AxoSize[] = ['small', 'medium', 'large'];
@@ -562,18 +571,83 @@ export const MOUTH_TICK_INK = 2;
 /** Tongue fill (guide 3g, 6l). Kept here: the palette belongs to the morph work. */
 const TONGUE = '#ff9fb5';
 
-const MOUTH_LEFT: readonly [number, number] = [28, 10];
-const MOUTH_RIGHT: readonly [number, number] = [49, 7];
-const OPEN_D_UPPER_CTRL: readonly [number, number] = [38, 13];
-const OPEN_D_LOWER_CTRL: readonly [number, number] = [38, 22];
-const SMILE_CTRL: readonly [number, number] = [38, 19];
-/** Corner ticks: from the mouth corner out to the tick end. */
-const MOUTH_TICKS: readonly (readonly [number, number, number, number])[] = [
+/** A point in local units, as [x, y]. */
+type MouthPoint = readonly [number, number];
+/** A corner tick: from the mouth corner (x0, y0) out to the tick end (x1, y1). */
+type MouthTick = readonly [number, number, number, number];
+
+/** A filled open mouth: an upper and a lower quadratic lip between two corners, plus corner ticks. */
+interface OpenMouth {
+  readonly left: MouthPoint;
+  readonly right: MouthPoint;
+  readonly upperCtrl: MouthPoint;
+  readonly lowerCtrl: MouthPoint;
+  readonly ticks: readonly MouthTick[];
+}
+
+/** An unfilled mouth line: quadratics joined end to end from `start`, each as [control, end], plus corner ticks. */
+interface MouthLine {
+  readonly start: MouthPoint;
+  readonly curves: readonly (readonly [MouthPoint, MouthPoint])[];
+  readonly ticks: readonly MouthTick[];
+}
+
+/** An axis-aligned mouth ellipse. */
+interface MouthEllipse {
+  readonly x: number;
+  readonly y: number;
+  readonly rx: number;
+  readonly ry: number;
+}
+
+const MOUTH_LEFT: MouthPoint = [28, 10];
+const MOUTH_RIGHT: MouthPoint = [49, 7];
+/** Prototype corner ticks (guide 6c). */
+const MOUTH_TICKS: readonly MouthTick[] = [
   [28, 10, 26.4, 7.6],
   [49, 7, 50.4, 4.6],
 ];
-const TONGUE_ELL = { x: 40, y: 15.5, rx: 4.6, ry: 3.6 } as const;
-const SMALL_O_ELL = { x: 39, y: 11, rx: 3.4, ry: 4 } as const;
+/** The prototype mouth (guide 6c). */
+const OPEN_D: OpenMouth = {
+  left: MOUTH_LEFT,
+  right: MOUTH_RIGHT,
+  upperCtrl: [38, 13],
+  lowerCtrl: [38, 22],
+  ticks: MOUTH_TICKS,
+};
+/** Wider and deeper than the Open D. Its ticks stand a little steeper, so they stay in the mouth zone. */
+const BIG_GRIN: OpenMouth = {
+  left: [27, 9.5],
+  right: [50, 6.5],
+  upperCtrl: [38.5, 12.5],
+  lowerCtrl: [38.5, 27],
+  ticks: [
+    [27, 9.5, 25.6, 7.2],
+    [50, 6.5, 51.2, 4.2],
+  ],
+};
+const SMILE: MouthLine = { start: MOUTH_LEFT, curves: [[[38, 19], MOUTH_RIGHT]], ticks: MOUTH_TICKS };
+/** A "w": two quadratic dips joined at a raised middle. No ticks. */
+const CAT_SMILE: MouthLine = {
+  start: [31, 10.5],
+  curves: [
+    [
+      [34.75, 15.5],
+      [38.5, 10],
+    ],
+    [
+      [42.25, 14.5],
+      [46, 8.5],
+    ],
+  ],
+  ticks: [],
+};
+/** Low at the back, raised at the snout corner, with the prototype tick there only. */
+const SMIRK: MouthLine = { start: [30, 12], curves: [[[41, 14], MOUTH_RIGHT]], ticks: [MOUTH_TICKS[1]] };
+const TONGUE_ELL: MouthEllipse = { x: 40, y: 15.5, rx: 4.6, ry: 3.6 };
+/** Blep: a small tongue tip under the Smile line. */
+const TONGUE_TIP_ELL: MouthEllipse = { x: 39, y: 14.6, rx: 2.6, ry: 2.4 };
+const SMALL_O_ELL: MouthEllipse = { x: 39, y: 11, rx: 3.4, ry: 4 };
 
 /** Box of a quadratic Bezier, from its endpoints and in-range extremes. */
 export function quadBounds(
@@ -605,27 +679,39 @@ export function quadBounds(
   return boundsOfPoints(points, pad);
 }
 
-function ellBounds(e: { x: number; y: number; rx: number; ry: number }, pad: number): Bounds {
+function ellBounds(e: MouthEllipse, pad: number): Bounds {
   return { minX: e.x - e.rx - pad, minY: e.y - e.ry - pad, maxX: e.x + e.rx + pad, maxY: e.y + e.ry + pad };
 }
 
-function tickBounds(): Bounds {
-  const ends = MOUTH_TICKS.flatMap(([x0, y0, x1, y1]): [number, number][] => [
+function tickBounds(ticks: readonly MouthTick[]): Bounds {
+  const ends = ticks.flatMap(([x0, y0, x1, y1]): [number, number][] => [
     [x0, y0],
     [x1, y1],
   ]);
   return boundsOfPoints(ends, MOUTH_TICK_INK / 2);
 }
 
-function openDBounds(): Bounds {
-  const [lx, ly] = MOUTH_LEFT;
-  const [rx, ry] = MOUTH_RIGHT;
+function openMouthBounds(mouth: OpenMouth): Bounds {
+  const [lx, ly] = mouth.left;
+  const [rx, ry] = mouth.right;
   const pad = MOUTH_INK / 2;
   return unionBounds([
-    quadBounds(lx, ly, OPEN_D_UPPER_CTRL[0], OPEN_D_UPPER_CTRL[1], rx, ry, pad),
-    quadBounds(rx, ry, OPEN_D_LOWER_CTRL[0], OPEN_D_LOWER_CTRL[1], lx, ly, pad),
-    tickBounds(),
+    quadBounds(lx, ly, mouth.upperCtrl[0], mouth.upperCtrl[1], rx, ry, pad),
+    quadBounds(rx, ry, mouth.lowerCtrl[0], mouth.lowerCtrl[1], lx, ly, pad),
+    tickBounds(mouth.ticks),
   ]);
+}
+
+function mouthLineBounds(mouthLine: MouthLine): Bounds {
+  const pad = MOUTH_INK / 2;
+  const boxes: Bounds[] = [];
+  let from = mouthLine.start;
+  for (const [ctrl, to] of mouthLine.curves) {
+    boxes.push(quadBounds(from[0], from[1], ctrl[0], ctrl[1], to[0], to[1], pad));
+    from = to;
+  }
+  if (mouthLine.ticks.length > 0) boxes.push(tickBounds(mouthLine.ticks));
+  return unionBounds(boxes);
 }
 
 /** Box holding all ink and fill a mouth variant paints, outline included. */
@@ -633,79 +719,97 @@ export function mouthInkBounds(variant: MouthVariant): Bounds {
   const pad = MOUTH_INK / 2;
   switch (variant) {
     case 'openD':
-      return openDBounds();
+      return openMouthBounds(OPEN_D);
     case 'tongueOut':
-      return unionBounds([openDBounds(), ellBounds(TONGUE_ELL, pad)]);
+      return unionBounds([openMouthBounds(OPEN_D), ellBounds(TONGUE_ELL, pad)]);
     case 'smile':
-      return unionBounds([
-        quadBounds(MOUTH_LEFT[0], MOUTH_LEFT[1], SMILE_CTRL[0], SMILE_CTRL[1], MOUTH_RIGHT[0], MOUTH_RIGHT[1], pad),
-        tickBounds(),
-      ]);
+      return mouthLineBounds(SMILE);
     case 'smallO':
       return ellBounds(SMALL_O_ELL, pad);
+    case 'bigGrin':
+      return openMouthBounds(BIG_GRIN);
+    case 'catSmile':
+      return mouthLineBounds(CAT_SMILE);
+    case 'smirk':
+      return mouthLineBounds(SMIRK);
+    case 'tongueTip':
+      return unionBounds([mouthLineBounds(SMILE), ellBounds(TONGUE_TIP_ELL, pad)]);
   }
 }
 
-function strokeMouthTicks(ctx: CanvasRenderingContext2D): void {
-  const ticks = new Path2D();
-  for (const [x0, y0, x1, y1] of MOUTH_TICKS) {
-    ticks.moveTo(x0, y0);
-    ticks.lineTo(x1, y1);
+function strokeMouthTicks(ctx: CanvasRenderingContext2D, ticks: readonly MouthTick[]): void {
+  if (ticks.length === 0) return;
+  const tickPath = new Path2D();
+  for (const [x0, y0, x1, y1] of ticks) {
+    tickPath.moveTo(x0, y0);
+    tickPath.lineTo(x1, y1);
   }
   ctx.lineWidth = MOUTH_TICK_INK;
   ctx.strokeStyle = INK;
-  ctx.stroke(ticks);
+  ctx.stroke(tickPath);
 }
 
-function paintOpenD(ctx: CanvasRenderingContext2D, fill: string): void {
-  const mouth = new Path2D();
-  mouth.moveTo(MOUTH_LEFT[0], MOUTH_LEFT[1]);
-  mouth.quadraticCurveTo(OPEN_D_UPPER_CTRL[0], OPEN_D_UPPER_CTRL[1], MOUTH_RIGHT[0], MOUTH_RIGHT[1]);
-  mouth.quadraticCurveTo(OPEN_D_LOWER_CTRL[0], OPEN_D_LOWER_CTRL[1], MOUTH_LEFT[0], MOUTH_LEFT[1]);
-  mouth.closePath();
+function paintOpenMouth(ctx: CanvasRenderingContext2D, mouth: OpenMouth, fill: string): void {
+  const outline = new Path2D();
+  outline.moveTo(mouth.left[0], mouth.left[1]);
+  outline.quadraticCurveTo(mouth.upperCtrl[0], mouth.upperCtrl[1], mouth.right[0], mouth.right[1]);
+  outline.quadraticCurveTo(mouth.lowerCtrl[0], mouth.lowerCtrl[1], mouth.left[0], mouth.left[1]);
+  outline.closePath();
   ctx.fillStyle = fill;
-  ctx.fill(mouth);
+  ctx.fill(outline);
   ctx.lineWidth = MOUTH_INK;
   ctx.strokeStyle = INK;
-  ctx.stroke(mouth);
-  strokeMouthTicks(ctx);
+  ctx.stroke(outline);
+  strokeMouthTicks(ctx, mouth.ticks);
 }
 
-function paintSmile(ctx: CanvasRenderingContext2D): void {
-  const smile = new Path2D();
-  smile.moveTo(MOUTH_LEFT[0], MOUTH_LEFT[1]);
-  smile.quadraticCurveTo(SMILE_CTRL[0], SMILE_CTRL[1], MOUTH_RIGHT[0], MOUTH_RIGHT[1]);
+function paintMouthLine(ctx: CanvasRenderingContext2D, mouthLine: MouthLine): void {
+  const linePath = new Path2D();
+  linePath.moveTo(mouthLine.start[0], mouthLine.start[1]);
+  for (const [ctrl, to] of mouthLine.curves) linePath.quadraticCurveTo(ctrl[0], ctrl[1], to[0], to[1]);
   ctx.lineWidth = MOUTH_INK;
   ctx.strokeStyle = INK;
-  ctx.stroke(smile);
-  strokeMouthTicks(ctx);
+  ctx.stroke(linePath);
+  strokeMouthTicks(ctx, mouthLine.ticks);
 }
 
-function paintEllipseMouth(
-  ctx: CanvasRenderingContext2D,
-  e: { x: number; y: number; rx: number; ry: number },
-  fill: string,
-): void {
+function paintEllipseMouth(ctx: CanvasRenderingContext2D, e: MouthEllipse, fill: string): void {
   const p = new Path2D();
   ell(p, e.x, e.y, e.rx, e.ry);
   shape(ctx, p, fill, MOUTH_INK);
 }
 
-/** Paint the mouth (layer 11). `fill` is the morph's mouth slot. */
+/**
+ * Paint the mouth (layer 11). `fill` is the morph's mouth slot. Blep paints
+ * its tongue first, so the Smile line crosses over the tongue's top.
+ */
 export function paintMouth(ctx: CanvasRenderingContext2D, variant: MouthVariant, fill: string): void {
   switch (variant) {
     case 'openD':
-      paintOpenD(ctx, fill);
+      paintOpenMouth(ctx, OPEN_D, fill);
       return;
     case 'tongueOut':
-      paintOpenD(ctx, fill);
+      paintOpenMouth(ctx, OPEN_D, fill);
       paintEllipseMouth(ctx, TONGUE_ELL, TONGUE);
       return;
     case 'smile':
-      paintSmile(ctx);
+      paintMouthLine(ctx, SMILE);
       return;
     case 'smallO':
       paintEllipseMouth(ctx, SMALL_O_ELL, fill);
+      return;
+    case 'bigGrin':
+      paintOpenMouth(ctx, BIG_GRIN, fill);
+      return;
+    case 'catSmile':
+      paintMouthLine(ctx, CAT_SMILE);
+      return;
+    case 'smirk':
+      paintMouthLine(ctx, SMIRK);
+      return;
+    case 'tongueTip':
+      paintEllipseMouth(ctx, TONGUE_TIP_ELL, TONGUE);
+      paintMouthLine(ctx, SMILE);
       return;
   }
 }

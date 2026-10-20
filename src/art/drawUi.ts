@@ -18,6 +18,26 @@ export const BUTTON_MARGIN = 8;
 export const ICON_SIZE = 32;
 
 /**
+ * Name box look (kids' typeable field). Values only; the scene and the text
+ * entry overlay (src/platform/textEntry.ts) read or copy them.
+ * Fill #f6f3fd: ink on fill 13.13:1. Placeholder #6e6790 on fill 4.78:1.
+ * The inset is a band inside the outline on the top and left edges only.
+ * Provisional.
+ */
+export const NAME_FIELD = Object.freeze({
+  fill: '#f6f3fd',
+  inset: '#c9c2e0',
+  insetW: 3,
+  outline: INK,
+  outlineW: LW,
+  radius: 8,
+  placeholder: '#6e6790',
+  cursor: INK,
+  cursorW: 2.5,
+  cursorH: 24,
+});
+
+/**
  * Swim pad (on-screen directional stick), nominal logical radii. These are the
  * largest displayed sizes; the HUD only scales down from them.
  */
@@ -46,7 +66,10 @@ export type IconKind =
   | 'check'
   | 'putAway'
   | 'book'
-  | 'surprise';
+  | 'surprise'
+  | 'boy'
+  | 'girl'
+  | 'pencil';
 
 /**
  * House icon (guide 7d), shared by the Home Spot flag and every "go home" UI.
@@ -427,6 +450,59 @@ export function paintIcon(ctx: CanvasRenderingContext2D, kind: IconKind, size: n
       ctx.lineWidth = 3;
       ctx.stroke(surpriseStarPath(14, 18, 10));
       ctx.stroke(surpriseStarPath(25, 8, 5));
+      break;
+    }
+    case 'boy': {
+      // male sign: ring with an arrow leaving its upper right edge. Paths only, ink 3.5.
+      ctx.lineWidth = 3.5;
+      const sign = new Path2D();
+      sign.arc(13, 19, 7, 0, TAU);
+      // shaft starts on the ring edge (13 + 7 cos 45, 19 - 7 sin 45)
+      sign.moveTo(13 + 7 * Math.SQRT1_2, 19 - 7 * Math.SQRT1_2);
+      sign.lineTo(26, 6);
+      // arrowhead: legs to (19, 6) and (26, 13)
+      sign.moveTo(19, 6);
+      sign.lineTo(26, 6);
+      sign.lineTo(26, 13);
+      ctx.stroke(sign);
+      break;
+    }
+    case 'girl': {
+      // female sign: ring over a stem with a crossbar. Paths only, ink 3.5.
+      ctx.lineWidth = 3.5;
+      const sign = new Path2D();
+      sign.arc(16, 12, 7.5, 0, TAU);
+      sign.moveTo(16, 19.5);
+      sign.lineTo(16, 29);
+      sign.moveTo(11, 24.5);
+      sign.lineTo(21, 24.5);
+      ctx.stroke(sign);
+      break;
+    }
+    case 'pencil': {
+      // diagonal pencil, tip (7, 25) to eraser end (25, 7). Outline only, ink 2.6.
+      // t runs along the pencil from the tip, s across it (half width 3.4).
+      ctx.lineWidth = 2.6;
+      const len = 18 * Math.SQRT2;
+      const half = 3.4;
+      const pt = (t: number, s: number): [number, number] => [
+        7 + (t + s) * Math.SQRT1_2,
+        25 + (s - t) * Math.SQRT1_2,
+      ];
+      const pencil = new Path2D();
+      // outline: tip, cone to the shoulders, body, eraser end
+      pencil.moveTo(...pt(0, 0));
+      pencil.lineTo(...pt(6, -half));
+      pencil.lineTo(...pt(len, -half));
+      pencil.lineTo(...pt(len, half));
+      pencil.lineTo(...pt(6, half));
+      pencil.closePath();
+      // shoulder line under the cone, and the eraser band line
+      pencil.moveTo(...pt(6, -half));
+      pencil.lineTo(...pt(6, half));
+      pencil.moveTo(...pt(len - 5, -half));
+      pencil.lineTo(...pt(len - 5, half));
+      ctx.stroke(pencil);
       break;
     }
   }
