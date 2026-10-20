@@ -599,8 +599,9 @@ Product owner decisions, 2026-10-20:
 - No change to the hint sparkle (B7) or to the rarity glow decisions (issue #68).
 - If too few spots meet a rarity's risk rule, more spots are added as area data.
 
-Later, the risk measure counts every hazard and predator, not only the tilapia (N3, issue #73).
-The PR that builds it updates B6 (or adds a B row), the Testing Decisions, the Tuning values, and CONTEXT.md (Hiding spot). Until then, those stay as they are. It starts after fewer treasures (issue #39) merges.
+This ladder is defined for the tilapia only: it applies in area 1 and in any area that has a tilapia. It does not cover hazards with no patrol route or lunge range (such as plastic worms, fishing lines, currents, and murky water), or areas without a tilapia.
+The area framework (N3, issue #73) defines a generic risk measure and band rule for those other hazards and predators, including areas without a tilapia, and updates this ladder in its PR.
+The PR that builds this ladder updates B6 (or adds a B row), the Testing Decisions, the Tuning values, and CONTEXT.md (Hiding spot). Until then, those stay as they are. It starts after fewer treasures (issue #39) merges.
 
 ### Shuffled hiding spots (decision)
 
