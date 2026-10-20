@@ -393,13 +393,13 @@ describe('HUD overlay fit', () => {
   );
 
   it(
-    'places each overlay alone on every supported canvas at least 480 x 440 or 568 tall',
+    'places each overlay alone on every supported canvas at least 375 tall or 520 wide',
     () => {
-      // Below that, some messages have no place outside the open middle and wait (X10); the two
-      // smallest canvases are pinned in the next test. A toast with Go home visible is unreachable:
-      // trip.ts banks a non-empty bag inside the ring in the same step, and HudScene clears the
-      // toast on 'banked'.
-      const roomy = allHudCases().filter(({ view }) => view.cssH >= 568 || (view.cssW >= 480 && view.cssH >= 440));
+      // Below that (460 and 480 wide, 360 tall or less on this grid) some messages have no place
+      // outside the open middle and wait (X10); 460 x 320 is pinned in the next test. A toast with
+      // Go home visible is unreachable: trip.ts banks a non-empty bag inside the ring in the same
+      // step, and HudScene clears the toast on 'banked'.
+      const roomy = allHudCases().filter(({ view }) => view.cssH >= 375 || view.cssW >= 520);
       const toastCases = roomy
         .filter((hud) => !hud.goHomeVisible)
         .flatMap((hud) => ALL_TOASTS.map((toast) => runCase(hud, { ids: ['findToast'], toast })));
@@ -414,32 +414,25 @@ describe('HUD overlay fit', () => {
     FIT_TIMEOUT_MS,
   );
 
-  it('holds exactly these messages, each shown alone, at 460 x 320 and 320 x 440', () => {
-    const landscapeNarrow = [
-      'findToast "Sunset orange Paint shell"',
-      'findToast "Midnight blue Paint shell"',
-      'findToast "Tie-dye galaxy Paint shell"',
-      'findToast "Golden albino axolotl"',
-      ...BANNER_IDS,
-    ];
-    const landscapeWide = ['findToast "Tie-dye galaxy Paint shell"', ...BANNER_IDS];
-    const portraitAll = [...ALL_TOASTS.map((toast) => `findToast "${toast.name}"`), ...BANNER_IDS];
-    const expected: Readonly<Record<string, Readonly<Record<PanelWidth, readonly string[]>>>> = {
-      '460x320': { narrow: landscapeNarrow, wide: landscapeWide },
-      '320x440': { narrow: portraitAll, wide: portraitAll },
-    };
-    for (const canvas of [
-      { cssW: 460, cssH: 320 },
-      { cssW: 320, cssH: 440 },
-    ]) {
+  it.each([
+    { cssW: 460, cssH: 320, shown: ['findToast "Tie-dye galaxy Paint shell"', ...BANNER_IDS], hidden: ['snackBanner'] },
+    { cssW: 320, cssH: 440, shown: [], hidden: [] },
+    { cssW: 390, cssH: 440, shown: [], hidden: [] },
+    { cssW: 667, cssH: 375, shown: [], hidden: [] },
+    { cssW: 844, cssH: 360, shown: [], hidden: [] },
+    { cssW: 1024, cssH: 360, shown: [], hidden: [] },
+  ])(
+    'holds exactly these messages, each shown alone, at $cssW x $cssH',
+    ({ cssW, cssH, shown, hidden }) => {
       for (const panelWidth of PANEL_WIDTHS) {
         for (const goHomeVisible of [true, false]) {
-          const hud = makeHudCase(canvas, panelWidth, goHomeVisible);
-          expect(aloneWaits(hud), hud.label).toEqual(expected[`${canvas.cssW}x${canvas.cssH}`][panelWidth]);
+          const hud = makeHudCase({ cssW, cssH }, panelWidth, goHomeVisible);
+          expect(aloneWaits(hud), hud.label).toEqual(goHomeVisible ? shown : hidden);
         }
       }
-    }
-  });
+    },
+    FIT_TIMEOUT_MS,
+  );
 
   it(
     'gives the highest-priority overlay of every 2 or 3 overlay combination the place it takes alone',

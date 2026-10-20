@@ -1,5 +1,8 @@
 import { stickLayout, type StickLayout, type StickView } from './stick';
+import { VIEW } from './tuning';
 import type { Vec2 } from './vec';
+import { fitView } from './viewport';
+import { BED_TOP, SURF, WORLD_H } from './zone';
 
 /** Axis-aligned rectangle in CSS px. */
 export interface Rect {
@@ -45,7 +48,10 @@ export const FIND_TOAST = Object.freeze({
   nameWrapW: 360,
 });
 
-/** The middle of the play area, where overlays cover only the status panels, as fractions of the canvas height. */
+/**
+ * The middle of the play area, where overlays cover only the status panels, as fractions of the
+ * water as drawn on screen: 0 is the surface (SURF) and 1 the top of the bed (BED_TOP).
+ */
 export const PLAY_MIDDLE = Object.freeze({ topFraction: 0.3, bottomFraction: 0.7 });
 
 /** Measured sizes of the HUD controls and status panels, in CSS px. */
@@ -264,12 +270,23 @@ export function statusPanelsBox(controls: HudControls): Rect {
 
 /**
  * Returns the middle of the play area: the full margin-inset width, from topFraction to
- * bottomFraction of the canvas height. Inside it an overlay may cover only the status panels
- * themselves, never open water.
+ * bottomFraction of the water as drawn on screen, between the surface and the top of the bed.
+ * Inside it an overlay may cover only the status panels themselves, never open water.
+ *
+ * INVARIANT: the swim camera never scrolls vertically. fitView keeps the whole world height in
+ * view (fitZoom <= cssH / WORLD_H) and fitWorldCamera in src/scenes/BootScene.ts sets camera
+ * bounds exactly one view tall, centred on the world, so world row y always draws at
+ * cssH / 2 + (y - WORLD_H / 2) * fitZoom.
+ *
+ * The water rows are the canal's (SURF to BED_TOP). An area with other water rows must pass its
+ * own (X9).
  */
 export function playMiddle(view: HudView): Rect {
-  const top = PLAY_MIDDLE.topFraction * view.cssH;
-  const bottom = PLAY_MIDDLE.bottomFraction * view.cssH;
+  const { fitZoom } = fitView(view.cssW, view.cssH, 1, { worldH: WORLD_H, ...VIEW });
+  const waterTop = view.cssH / 2 + (SURF - WORLD_H / 2) * fitZoom;
+  const waterBottom = view.cssH / 2 + (BED_TOP - WORLD_H / 2) * fitZoom;
+  const top = waterTop + PLAY_MIDDLE.topFraction * (waterBottom - waterTop);
+  const bottom = waterTop + PLAY_MIDDLE.bottomFraction * (waterBottom - waterTop);
   return { x: HUD.margin, y: top, w: view.cssW - 2 * HUD.margin, h: bottom - top };
 }
 

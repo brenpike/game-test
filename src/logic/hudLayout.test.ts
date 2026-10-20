@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { exitClosedText } from './areaText';
+import { isSupportedCanvas } from './cardFit';
 import {
   FIND_TOAST,
   HUD,
@@ -297,14 +298,41 @@ describe('overlay boxes', () => {
 
 describe('playMiddle', () => {
   it.each([
-    { view: { cssW: 460, cssH: 320 }, middle: { x: 16, y: 96, w: 428, h: 128 } },
-    { view: { cssW: 800, cssH: 600 }, middle: { x: 16, y: 180, w: 768, h: 240 } },
-  ])('spans 30% to 70% of the height at $view.cssW x $view.cssH', ({ view, middle }) => {
-    const rect = playMiddle(view);
-    expect(rect.x).toBe(middle.x);
-    expect(rect.w).toBe(middle.w);
-    expect(rect.y).toBeCloseTo(middle.y, 9);
-    expect(rect.h).toBeCloseTo(middle.h, 9);
+    { note: 'tiny, height-limited', view: { cssW: 120, cssH: 90 }, top: 37.85, bottom: 61.65 },
+    { note: 'smallest landscape', view: { cssW: 460, cssH: 320 }, top: 6056 / 45, bottom: 219.2 },
+    { note: 'height-limited', view: { cssW: 667, cssH: 375 }, top: 3785 / 24, bottom: 2055 / 8 },
+    { note: 'height-limited', view: { cssW: 844, cssH: 360 }, top: 151.4, bottom: 246.6 },
+    { note: 'height-limited', view: { cssW: 800, cssH: 600 }, top: 757 / 3, bottom: 411 },
+    { note: 'zoom switch point', view: { cssW: 320, cssH: 360 }, top: 151.4, bottom: 246.6 },
+    { note: 'just height-limited', view: { cssW: 321, cssH: 360 }, top: 151.4, bottom: 246.6 },
+    { note: 'just width-limited', view: { cssW: 320, cssH: 361 }, top: 151.9, bottom: 247.1 },
+    { note: 'smallest portrait, letterboxed', view: { cssW: 320, cssH: 440 }, top: 191.4, bottom: 286.6 },
+    { note: 'portrait, letterboxed', view: { cssW: 390, cssH: 440 }, top: 29623 / 160, bottom: 48187 / 160 },
+    { note: 'tall portrait, letterboxed', view: { cssW: 320, cssH: 800 }, top: 371.4, bottom: 466.6 },
+    { note: 'tall portrait, letterboxed', view: { cssW: 414, cssH: 932 }, top: 343199 / 800, bottom: 441731 / 800 },
+  ])(
+    'spans 30% to 70% of the water on screen at $view.cssW x $view.cssH ($note)',
+    ({ view, top, bottom }) => {
+      const rect = playMiddle(view);
+      expect(rect.x).toBe(HUD.margin);
+      expect(rect.w).toBe(view.cssW - 2 * HUD.margin);
+      expect(rect.y).toBeCloseTo(top, 9);
+      expect(rect.y + rect.h).toBeCloseTo(bottom, 9);
+    },
+  );
+
+  it('lies inside 30% to 70% of the canvas height on every supported canvas', () => {
+    const widths = [320, 360, 390, 414, 460, 568, 667, 800, 844, 1024, 1280, 1920];
+    const heights = [320, 340, 360, 375, 414, 440, 568, 600, 667, 768, 844, 932, 1080, 1366];
+    const canvases = widths.flatMap((cssW) => heights.map((cssH) => ({ cssW, cssH })));
+    const supported = canvases.filter(({ cssW, cssH }) => isSupportedCanvas(cssW, cssH));
+    expect(supported.length).toBeGreaterThan(0);
+    for (const view of supported) {
+      const rect = playMiddle(view);
+      expect(rect.y, `${view.cssW} x ${view.cssH}`).toBeGreaterThanOrEqual(0.3 * view.cssH - EPSILON);
+      expect(rect.y + rect.h, `${view.cssW} x ${view.cssH}`).toBeLessThanOrEqual(0.7 * view.cssH + EPSILON);
+      expect(rect.h).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -337,7 +365,8 @@ describe('placeHudOverlays', () => {
   it('puts the toast on the bottom edge when the top is blocked', () => {
     const view = { cssW: 800, cssH: 600 };
     const controls = hudControls(view, SIZES);
-    const keepOuts = [...controlKeepOuts(controls, { goHomeVisible: false }), { x: 0, y: 0, w: 800, h: 170 }];
+    const topBlock = { x: 0, y: 0, w: 800, h: playMiddle(view).y };
+    const keepOuts = [...controlKeepOuts(controls, { goHomeVisible: false }), topBlock];
     const [placed] = placeHudOverlays(view, controls, keepOuts, requestsFor(['findToast'], REAL_TEXTS));
     const rect = placed.rect as Rect;
     expect(placed.edge).toBe('bottom');
@@ -346,7 +375,7 @@ describe('placeHudOverlays', () => {
   });
 
   it('puts a short toast over the Trip Bag when the Trip Bag is above the middle', () => {
-    const view = { cssW: 320, cssH: 800 };
+    const view = { cssW: 320, cssH: 568 };
     const controls = hudControls(view, SIZES);
     const keepOuts = controlKeepOuts(controls, { goHomeVisible: false });
     const [placed] = placeHudOverlays(view, controls, keepOuts, requestsFor(['findToast'], SMALL_TEXTS));
@@ -369,32 +398,56 @@ describe('placeHudOverlays', () => {
     }
   });
 
-  it('holds a two-line toast at 460 x 320 rather than reach past the legs into the middle', () => {
+  it('shows a two-line toast at 460 x 320 over the status panels, above the middle', () => {
     const controls = hudControls(SMALLEST, SIZES);
     for (const goHomeVisible of [true, false]) {
       const keepOuts = controlKeepOuts(controls, { goHomeVisible });
       const [placed] = placeHudOverlays(SMALLEST, controls, keepOuts, requestsFor(['findToast'], REAL_TEXTS));
-      expect(placed).toEqual({ id: 'findToast', rect: null, edge: null });
+      const rect = placed.rect as Rect;
+      expect(placed.edge).toBe('panel');
+      expect(rect).toEqual({ x: HUD.margin, y: HUD.margin, w: 206, h: 103 });
+      expect(rect.y + rect.h).toBeLessThanOrEqual(playMiddle(SMALLEST).y);
     }
   });
 
+  it('holds a toast at 460 x 320 rather than reach past the legs into the middle', () => {
+    const controls = hudControls(SMALLEST, SIZES);
+    const box = (): Size => ({ w: 206, h: 130 });
+    for (const goHomeVisible of [true, false]) {
+      const keepOuts = controlKeepOuts(controls, { goHomeVisible });
+      const [placed] = placeHudOverlays(SMALLEST, controls, keepOuts, [{ id: 'findToast', boxAt: box }]);
+      expect(placed).toEqual({ id: 'findToast', rect: null, edge: null });
+    }
+    const reaching = { x: HUD.margin, y: HUD.margin, w: 206, h: 130 };
+    expect(reaching.y + reaching.h).toBeGreaterThan(playMiddle(SMALLEST).y);
+    expect(coversOnlyPanelsInMiddle(reaching, SMALLEST, controls)).toBe(false);
+  });
+
   it('never puts an overlay over open water in the middle from a panel place (finding a336ac95)', () => {
-    // Before the fix, the status panels place took this box at (16, 79.2): its lower part covered
-    // the middle beside the legs and in the gap above the Trip Bag.
+    // Before the fix, the status panels place took a 206 x 103 box at (16, 79.2): its lower part
+    // covered the middle beside the legs and in the gap above the Trip Bag. With the middle measured
+    // on the water that box ends above it, so this box is 120 tall: its lower part reaches the open
+    // water beside the Trip Bag.
     const controls = hudControls(PORTRAIT, SIZES);
     const keepOuts = controlKeepOuts(controls, { goHomeVisible: false });
-    const box = (): Size => ({ w: 206, h: 103 });
+    const box = (): Size => ({ w: 206, h: 120 });
     const [placed] = placeHudOverlays(PORTRAIT, controls, keepOuts, [{ id: 'findToast', boxAt: box }]);
     expect(placed).toEqual({ id: 'findToast', rect: null, edge: null });
-    const offending = { x: HUD.margin, y: 79.2, w: 206, h: 103 };
+    const offending = { x: HUD.margin, y: 79.2, w: 206, h: 120 };
     expect(coversOnlyPanelsInMiddle(offending, PORTRAIT, controls)).toBe(false);
   });
 
-  it('holds a short toast at 320 x 440: the Trip Bag is in the middle and no room above it fits', () => {
+  it('shows a short toast at 320 x 440 over the status panels, above the middle the Trip Bag reaches into', () => {
     const controls = hudControls(PORTRAIT, SIZES);
     const keepOuts = controlKeepOuts(controls, { goHomeVisible: false });
     const [placed] = placeHudOverlays(PORTRAIT, controls, keepOuts, requestsFor(['findToast'], SMALL_TEXTS));
-    expect(placed).toEqual({ id: 'findToast', rect: null, edge: null });
+    const rect = placed.rect as Rect;
+    expect(controls.bag.y + controls.bag.h).toBeGreaterThan(playMiddle(PORTRAIT).y);
+    expect(placed.edge).toBe('panel');
+    expect(rect.x).toBe(HUD.margin);
+    expect(rect.y).toBeCloseTo(79.2, 9);
+    expect(rect).toMatchObject({ w: 185, h: 57 });
+    expect(rect.y + rect.h).toBeLessThanOrEqual(playMiddle(PORTRAIT).y);
   });
 
   it('may cover the status panels themselves inside the middle', () => {
