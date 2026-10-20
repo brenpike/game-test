@@ -195,8 +195,12 @@ The in-game book of morphs and fact cards, nicknamed the Axolotl-dex in game.
 **Fun-fact card**:
 A short, true fact about axolotls or their world.
 
+**Save**:
+Progress kept in device storage by itself: banked treasures, the axolotls, the tank, the Collection Book, and stars; never anything from a trip in progress.
+_Avoid_: banking (banking moves trip finds to ownership)
+
 **Start over**:
-Erasing all saved progress after confirmation.
+Erasing all saved progress on this device after two confirmations, from the title screen.
 
 ### After the MVP
 

@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-19
+- Updated: 2026-10-20. Names are now saved on the device, with the rest of the hub, per [ADR 0012](0012-save-on-device.md). They still never leave the device. The original text below is unchanged, so its "not stored on the device in this build" line describes the build before saving.
 
 ## Context
 

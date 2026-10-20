@@ -233,14 +233,14 @@ Everything stays calm, never scary, readable without colour, and usable with red
 
 ### D. Save and load
 
-1. **D1** Progress saves on the device by itself after banking, going home, being carried home, beating an area, finishing the character creator, any tank change, any outfit change, any rename or restyle, any Dream colour change, choosing the explorer, and any Collection Book unlock. There is no save button.
-2. **D2** Saved: banked treasures (including owned Dream colours), the starter and rescued axolotls, each axolotl's name and look (real morph, applied Dream colour, boy or girl, face, gill style, spots, tail, body, age, and size), each axolotl's outfit, the chosen explorer, decoration placements, Collection Book unlocks, the stars earned for each area, and settings. Not saved: the Trip Bag, the position mid-trip, leg state, and Shell blocks used this trip. The look is plain data, with each option held by its stable id. Nothing is saved yet: saving is issue #15.
+1. **D1** Progress saves on the device by itself after banking, going home, being carried home, beating an area, finishing the character creator, any tank change, any outfit change, any rename or restyle, any Dream colour change, choosing the explorer, and any Collection Book unlock. There is no save button. Treasures banked at the Home Spot mid-trip are saved at once. A rescue banked mid-trip is saved when the trip ends (open question 57).
+2. **D2** Saved: banked treasures (including owned Dream colours), the starter and rescued axolotls, each axolotl's name and look (real morph, applied Dream colour, boy or girl, face, gill style, spots, tail, body, age, and size), each axolotl's outfit, the chosen explorer, decoration placements, Collection Book unlocks, the stars earned for each area, and settings (none yet; reduced motion follows the device). Not saved: the Trip Bag, the position mid-trip, leg state, Shell blocks used this trip, the trip seed, eaten snacks, and a stranded axolotl left waiting (open question 56). The look is plain data, with each option held by its stable id.
 3. **D3** Closing or reloading and then reopening restores saved progress exactly. The game opens in the Home Tank, never mid-trip. Unbanked finds from an unfinished trip reappear on the next trip, in freshly picked hiding spots.
 4. **D4** Saves hold no personal data, never leave the device, and need no account or network, per [ADR 0007](../adr/0007-kid-safety-and-privacy.md).
-5. **D5** If there is no save, the game starts fresh. An unreadable save never crashes the game, and the player can still play.
+5. **D5** If there is no save, the game starts fresh. An unreadable save never crashes the game, and the player can still play. The game starts fresh with no message. A damaged save is kept on the device until the next "Start over". A save from a newer version is left untouched and is never overwritten (open question 54).
 6. **D6** Saves from an earlier version still load after an update.
-7. **D7** "Start over" erases saved progress only after a two-step confirmation. The wording works for kids and for parents.
-8. **D8** A note that parents can read says progress is kept only in this browser on this device, and that clearing browser data erases it.
+7. **D7** "Start over" erases saved progress only after a two-step confirmation. The wording works for kids and for parents. It is a button on the title screen, shown only once an axolotl is owned (open questions 51 and 52).
+8. **D8** A note that parents can read says progress is kept only in this browser on this device, and that clearing browser data erases it. It is on the first "Start over" card and in the README (open question 53).
 
 ### E. Updates
 
@@ -373,7 +373,10 @@ Everything stays calm, never scary, readable without colour, and usable with red
 
 1. **Two-tier ownership.** Finds live in one of two tiers. The Trip Bag holds unbanked finds for this trip only. The banked tier holds the Treasure Chest and the axolotls in the Home Tank. Only banking moves finds from the Trip Bag to the banked tier. Being carried home returns Trip Bag finds to the world. No gameplay event removes anything banked. Only "Start over" does.
 2. **Stable identities.** The treasure catalogue and hiding spots are fixed per area. Every catalogue item, hiding spot, and morph has a stable, unique identity. Saves therefore survive updates and additions to the catalogue or to areas. Which spot holds which treasure is picked fresh each trip and is never saved.
-3. **Persistent save contents.** The save holds banked state, the tank layout, each axolotl's look and outfit, the chosen explorer, Collection Book unlocks, stars earned per area, and settings only. It is versioned, and older saves are upgraded forward. It stays on the device.
+3. **Persistent save contents.** The save is one versioned JSON save of the hub only, kept in `localStorage` under the key `glam-gills:save` ([ADR 0012](../adr/0012-save-on-device.md)). The hub is banked state, the tank layout, each axolotl's look and outfit, the chosen explorer, Collection Book unlocks, stars earned per area, and settings. Nothing from a trip is saved. It stays on the device.
+    - Upgrade chain: older saves are upgraded forward, one upgrade per version step, then loaded.
+    - Additive rule: a new hub field loads with its default when an older save lacks it, with no version bump. Only a change an old save cannot load by default (a rename, a new meaning) adds an upgrade and bumps the save version.
+    - Repair rule: a save that is structurally damaged (not JSON, not an object, no valid version, no hub, or an upgrade that fails) or from a newer version is unreadable. Anything else loads, repaired field by field: unknown ids are dropped and bad fields fall back to their defaults, so one bad field never wipes the rest.
 4. **Deterministic rules.** The rules for legs, regrowth, protected time, the tilapia telegraph, lunge and cooldown, banking, hiding difficulty by rarity, the snack regrowth speed-up, the exit rule, star rules, save upgrades, and the update decision are deterministic. They can be tested without rendering, per [ADR 0006](../adr/0006-testing-strategy.md).
 5. **Fail state.** Fail-state behaviour follows [ADR 0008](../adr/0008-gentle-fail-state.md), as amended by [ADR 0010](../adr/0010-carried-home-full-reset.md).
 6. **Update check.** Any update check is first-party only and sends no player data.
@@ -398,9 +401,12 @@ Everything stays calm, never scary, readable without colour, and usable with red
   - lost treasures being placed again on the next trip;
   - per-trip spot shuffling (same trip seed gives the same placement, every pick meets B6, never two treasures in one spot, banked treasures never placed);
   - hiding-difficulty rules checked over the area layout;
-  - save round-trip;
-  - an unreadable save;
-  - upgrading saves from older save versions;
+  - save round-trip: the hub saved and loaded again comes back exactly, and only hub fields are saved;
+  - an unreadable save: damaged text starts fresh and is kept under `glam-gills:save-unreadable` (the first one kept) until the next "Start over"; a newer-version save starts fresh, is left untouched, and turns saving off; anything else is repaired field by field, dropping unknown ids and defaulting bad fields;
+  - upgrading saves from older save versions through the upgrade chain, a failing upgrade counting as damaged, and a new field loading with its default with no version bump;
+  - nothing mid-trip restored (D3): a loaded save opens in the Home Tank with a fresh canal, and unbanked finds come back in freshly picked spots;
+  - treasures banked at the Home Spot mid-trip saved at once (D1);
+  - "Start over"'s two steps (D7): erasing only after two go presses in a row, Keep and Escape closing either card, and the button showing only once an axolotl is owned;
   - the update decision;
   - perk caps for every perk type, including a full Legendary outfit still losing a leg to every unblocked hit;
   - Shell perks blocking at most one hit per trip in total;
@@ -528,14 +534,14 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | 4 | What does the Home Spot look like: a burrow or a buoy? | Art decision. |
 | 5 | Do strandings stop after all morphs are rescued? | Yes, none after that. |
 | 6 | Do snacks change in the MVP? | Decided: yes. Snacks speed up regrowth while a leg is missing (A19), and every snack must be eaten to open the exit (H2). |
-| 7 | Closing the game mid-trip sends unbanked finds back into the canal (they reappear in fresh spots next trip). Is that acceptable? | Needs confirmation. |
+| 7 | Closing the game mid-trip sends unbanked finds back into the canal (they reappear in fresh spots next trip). Is that acceptable? | Yes. Nothing mid-trip is saved (D2, D3): the game reopens in the Home Tank, eaten snacks start over, and a stranded axolotl left waiting is not kept (open question 56). Treasures already banked at the Home Spot stay saved (open question 57). Needs confirmation. |
 | 8 | Does the update check need its own ADR? | Yes, before slice E, if it makes any request beyond loading the game. [ADR 0007](../adr/0007-kid-safety-and-privacy.md) allows no third-party requests; AGENTS.md says no network requests. |
 | 9 | What are the exact perk values and caps? | Tuning. Start from the Tuning values below. |
 | 10 | Can a Dream colour be combined with spots? | Decided: yes. Spots draw on top of the Dream colour (F14). |
 | 11 | Can one owned Dream colour be on more than one axolotl at the same time? | Decided: yes. It is a paint, not a single item (F14). |
 | 12 | Is the explorer shown with its own look and outfit on trips? | Decided: yes (F7). |
 | 13 | Which treasure is an area's special treasure, and does it count if banked on an earlier trip? | One treasure per area is marked special in the area data. The star counts when the area is beaten with it owned, banked earlier or in the Trip Bag. Needs confirmation. |
-| 14 | Do eaten snacks stay eaten after going home by choice, or after closing the game? | They stay eaten until carried home or the area is beaten. Not saved, so closing the game starts them over. Needs confirmation. |
+| 14 | Do eaten snacks stay eaten after going home by choice, or after closing the game? | They stay eaten until carried home or the area is beaten. Not saved (D2, open question 56), so closing the game starts them over. Needs confirmation. |
 | 15 | Is the full reset when carried home (A12) too harsh? | Decided for now: full reset. Review after play-tests. Fallback: a softer, partial reset. |
 | 16 | Do the last 3 snacks sparkle all the time, or only when near, like treasure hints? | All the time. Needs confirmation. |
 | 17 | Where does the player go after the "Area beaten" screen? | The Home Tank. Needs confirmation. |
@@ -572,6 +578,13 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | 48 | What does the Dream colour tab show when no Dream colour is owned (F6)? | Only "Real colour", with the helper line "Find Paint shells in the canal to get Dream colours!". Needs confirmation. |
 | 49 | Does "Surprise me" change the Dream colour (F6)? | No. "Surprise me" never changes the Dream colour, like the colour and the boy or girl. Needs confirmation. |
 | 50 | Where does the Iridescent sheen move (F15, F16)? | It glides along the axolotl in the Home Tank, the restyle preview, and on trips. Under reduced motion and on picture buttons it stays still at x -10 ([art style guide](../art-style-guide.md) 6p). Needs confirmation. |
+| 51 | Where does "Start over" go (D7)? | A secondary button on the title screen, under Start, shown only once an axolotl is owned. Not in the Home Tank hub: a fifth hub tile does not fit the smallest canvas, 460 x 320 (open question 25). Tab reaches it, and Enter and Space still press Start. It hides while the update prompt shows (E1). Awaiting owner confirmation. |
+| 52 | What are the two steps of "Start over", and their words (D7)? | Step 1: the title "Start over?", the text "This erases your axolotls, treasures, tank and stars on this device.", and the buttons "Keep playing" (focused first) and "Start over". Step 2: the title "Are you sure?", the text "This can't be undone.", and the buttons "No, keep them" (focused first) and "Yes, erase". Escape keeps everything on either step. Each card appears and leaves at once, with no motion. On the smallest canvases the step 1 text shortens to "This erases everything.", and the title hides when a card still does not fit. The go button takes no input for the first 0.8 seconds a card shows, so a double tap cannot erase. Awaiting owner confirmation. |
+| 53 | Where is the note for parents (D8)? | "Grown-ups: progress is saved only in this browser on this device. Clearing browser data erases it." It is on the step 1 card of "Start over" and in the README. Awaiting owner confirmation. |
+| 54 | What happens with an unreadable save (D5)? | No message. The game starts fresh. A damaged save's text is kept under `glam-gills:save-unreadable` until the next "Start over"; if one is already kept, the first one stays. A save from a newer version is left untouched, and saving is off for that page session, so it is never overwritten. That build cannot erase it: the game starts fresh with no axolotl owned, so "Start over" does not show (D7), and there is no way back to the title. Progress made on that build is lost when the page closes. Whether an older build should offer a way to erase a newer save is the owner's call ([review thread](https://github.com/brenpike/glam-gills/pull/66#discussion_r4326822771)). Awaiting owner confirmation. |
+| 55 | What if the game is open in two tabs? | The last save wins. Tabs do not sync. Awaiting owner confirmation. |
+| 56 | What is not saved (D2)? | Eaten snacks and a stranded axolotl left waiting, as well as the trip itself: the Trip Bag, the position, leg state, Shell blocks used, and the trip seed. Reopening the game starts the snacks over, and the next trip picks its stranded axolotl afresh. Awaiting owner confirmation. |
+| 57 | When does banking mid-trip save (D1)? | Treasures banked at the Home Spot mid-trip save at once, so closing the game keeps them. A rescue banked mid-trip saves when the trip ends. If the game closes first, the rescue is not kept, and that morph can be stranded again on a later trip. Awaiting owner confirmation. |
 
 ### Tuning values (starting points)
 
@@ -655,7 +668,8 @@ Early slices may use a placeholder find and an interim home.
 | Regrowth | A lost leg growing back. | healing |
 | Carried home | Ending a trip after losing the fourth leg. | death, die, game over, wipe, fail |
 | Snack | A worm or bug the axolotl eats by touching it with its head. Not a trip find. Speeds up regrowth while a leg is missing. Every snack must be eaten to open the exit. | |
-| Start over | Erasing all saved progress after confirmation. | |
+| Save | Progress kept in device storage, by itself: banked treasures, the axolotls, the tank, the Collection Book, and stars. Never anything from a trip in progress (D2). | banking (banking moves trip finds to ownership) |
+| Start over | Erasing all saved progress on this device after two confirmations, from the title screen (D7). | |
 | Area / Habitat | A named part of the world, such as the canal (Area 1). Each area is a level: reaching its open exit beats it. | map; "level" in UI text (say "Area 1") |
 | Exit | The way out of an area. It stays closed until every snack in the area is eaten. Reaching the open exit beats the area. | |
 | Star | One of up to 3 rewards for beating an area. A star, once earned, is kept forever. | |

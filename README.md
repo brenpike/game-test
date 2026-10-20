@@ -6,7 +6,7 @@ It is mostly fun, with real axolotl facts along the way.
 
 ## What you can do now
 
-Version 0.15.0 is playable in one canal zone:
+Version 0.16.0 is playable in one canal zone:
 
 - Make your own axolotl the first time you play, one step at a time in 11 steps: colour (one of eight real morphs), boy or girl (with a boy or girl sign), eyes, mouth (eight to choose from), gills, spots, tail, body, age, size, and name. Every choice is a big picture button that shows it on your axolotl, and the preview changes as you pick. Surprise me picks everything at random, with a name that fits. The other seven colours are the ones you rescue.
 - Type a name, or pick a suggested one that fits a boy or a girl, so typing is optional. Names stay on your device.
@@ -20,7 +20,7 @@ Version 0.15.0 is playable in one canal zone:
 - The exit opens when every snack is eaten. While it is closed, it shows a padlock sign and a message.
 - Swim into the open exit at the far end of the canal to beat Area 1 and bank the Trip Bag. A rescued axolotl following you moves into your Home Tank.
 - Earn up to 3 stars: reach the exit, find the Castle tower, and rescue the stranded axolotl or keep all four legs.
-- Your best stars show on the "Area beaten" card and in the Home Tank. They are kept for the session, not saved.
+- Your best stars show on the "Area beaten" card and in the Home Tank. They are saved on your device.
 - Eaten snacks come back after you are carried home or beat the area. They stay eaten after Go home.
 - Bank your finds at the Home Spot to keep them safe.
 - Rescue a stranded axolotl in the canal. Each trip, one real morph you do not have yet waits looking a little lost. Swim to it and it follows you; bring it to the Home Spot or the open exit and it moves into your Home Tank.
@@ -32,11 +32,14 @@ Version 0.15.0 is playable in one canal zone:
 - Decorate your Home Tank with the Decorations you banked, by touch or keyboard.
 - Open the Treasure Chest to see the Decorations, Wearables, and Dream colours you banked.
 - Open the Collection Book to see the morphs you rescued, with a fun fact for each, the Dream colours, and the fact cards: the tilapia card and the "Boy or girl?" card.
+- Your progress saves on your device by itself: your axolotls, treasures, Home Tank and stars. There is no save button.
+- Start over from the title screen to erase everything and make a new axolotl. It asks twice before it erases anything.
+  Grown-ups: progress is saved only in this browser on this device. Clearing browser data erases it.
 
 ## Coming next
 
 The Axolotl MVP is in progress ([epic #6](https://github.com/brenpike/glam-gills/issues/6)).
-Next up: saving, and outfits with 8 wearable slots.
+Next up: outfits with 8 wearable slots.
 The [PRD](docs/prds/axolotl-mvp.md) is the source of truth.
 
 After the MVP: the Tank Top Model fashion show, more real freshwater areas, and building a safe refuge for axolotls.
@@ -70,6 +73,7 @@ npm install
 | Action | Touch | Keyboard |
 |---|---|---|
 | Start (opens the character creator the first time, then the Home Tank) | Tap | Enter or Space |
+| Start over (title screen, once you have an axolotl) | Tap Start over, then Start over and Yes, erase on the two cards, or Keep playing and No, keep them to keep everything | Tab/Shift+Tab to choose Start or Start over, Enter or Space to press; on the cards, Tab/Shift+Tab to choose, Enter or Space to press, Esc to keep everything |
 | Make your axolotl (first time) | Tap a picture button to pick it, Back and Next buttons to change step, Surprise me button, Done button on the last step | Arrow keys to move between picture buttons, Enter or Space to pick, Tab/Shift+Tab to reach Back, Next, Surprise me, and Done, Enter or Space to press |
 | Type a name | On the Name step, tap the name, type, then press Enter or tap elsewhere to keep it | On the Name step, focus the name and press Enter or Space, type, Enter to keep it, Esc to undo the typing |
 | Swim | Drag the swim pad in the bottom-left corner | Arrow keys or WASD |

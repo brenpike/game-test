@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-20
+
+### Added
+
+- Your progress now saves on this device by itself: your axolotls with their names, looks and Dream colours, banked treasures, the tank, the Collection Book and your stars (#15).
+- Treasures you bank in the middle of a trip are saved right away (#15).
+- A Start over button on the title screen. It takes two steps, and a note for grown-ups explains that the save lives only in this browser on this device (#15).
+
+### Changed
+
+- Stars and progress are kept after you close the game (#15).
+- If a save cannot be read, the game starts fresh instead of crashing, and keeps the old save aside (#15).
+
 ## [0.15.0] - 2026-10-20
 
 ### Added

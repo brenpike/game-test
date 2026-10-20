@@ -4,6 +4,15 @@ import { DEPTH } from '../art/layers';
 import { T_STATIC, UI_PANEL } from '../art/palette';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { GAME_EVENTS, REGISTRY_KEYS, type ReducedMotionPayload } from '../logic/gameEvents';
+import { START_OVER_LABEL, showsStartOver } from '../logic/startOver';
+import {
+  BUTTON_LABEL_PAD,
+  LABEL_BOLD_EM,
+  TILE_BUTTON,
+  WIDE_BUTTON,
+  nextFocusIndex,
+  tankKeyFor,
+} from '../logic/tankUi';
 import type { BuildManifest } from '../logic/updateCheck';
 import { WORLD_H } from '../logic/zone';
 import { applyUpdate, versionLabel, watchForUpdates } from '../platform/updates';
@@ -20,7 +29,8 @@ import {
   type SceneView,
   type UiButton,
 } from './BootScene';
-import { openHomeTank } from './sceneFlow';
+import { openHomeTank, readSession, startOver } from './sceneFlow';
+import { StartOverCard, type StartOverOutcome } from './StartOverCard';
 
 const TAU = Math.PI * 2;
 const MARGIN = 16;
@@ -43,6 +53,18 @@ const CONTROLS_TEXT =
   'Keys: arrows or WASD to swim, Space to dash, P to pause.\n' +
   'Find all the snacks!';
 const UPDATE_PROMPT_TEXT = 'A new version is ready!';
+const BUTTONS_BOTTOM_INSET = 8;
+const START_OVER_SIZE = 0.8;
+const START_INDEX = 0;
+const START_OVER_INDEX = 1;
+const CAPTURED_KEYS: readonly number[] = [
+  Phaser.Input.Keyboard.KeyCodes.TAB,
+  Phaser.Input.Keyboard.KeyCodes.LEFT,
+  Phaser.Input.Keyboard.KeyCodes.RIGHT,
+  Phaser.Input.Keyboard.KeyCodes.UP,
+  Phaser.Input.Keyboard.KeyCodes.DOWN,
+  Phaser.Input.Keyboard.KeyCodes.SPACE,
+];
 
 /** The update prompt: a text panel and an Update button, shown once a newer build is published. */
 interface UpdatePrompt {
@@ -51,7 +73,28 @@ interface UpdatePrompt {
   button: UiButton;
 }
 
-/** Title card: canal background, idle axolotl, game name and subtitle, controls, version label, a Start button and the update prompt. */
+/** The Start over button (PRD D7) and the two-step card it opens; built only once an axolotl is owned. */
+interface StartOverControls {
+  button: UiButton;
+  card: StartOverCard;
+}
+
+/**
+ * Label-sized body width of the size-0.8 Start over button (art guide 8, Button width): the scaled
+ * icon, the gap and the label (estimated wide at its 22 px size) with BUTTON_LABEL_PAD each side, at
+ * least the standard size-0.8 wide body, in whole CSS px.
+ */
+function startOverButtonBodyWidth(): number {
+  const labelPx = Math.max(TILE_BUTTON.labelPx, Math.round(WIDE_BUTTON.labelPx * START_OVER_SIZE));
+  const labelW = START_OVER_LABEL.length * LABEL_BOLD_EM * labelPx;
+  const contentW = WIDE_BUTTON.iconPx * START_OVER_SIZE + WIDE_BUTTON.iconGap + labelW + 2 * BUTTON_LABEL_PAD;
+  return Math.ceil(Math.max(WIDE_BUTTON.w * START_OVER_SIZE, contentW) - 1e-6);
+}
+
+/**
+ * Title card: canal background, idle axolotl, game name and subtitle, controls, version label, a
+ * Start button, the Start over button with its card (PRD D7) and the update prompt.
+ */
 export class TitleScene extends Phaser.Scene {
   private assets!: GameAssets;
   private motion!: MotionProfile;
@@ -69,6 +112,9 @@ export class TitleScene extends Phaser.Scene {
   private controls!: Phaser.GameObjects.Text;
   private versionText!: Phaser.GameObjects.Text;
   private startButton!: UiButton;
+  private startOver: StartOverControls | null = null;
+  private startOverShown = false;
+  private focusIndex = START_INDEX;
   private updating = false;
   private updateManifest: BuildManifest | null = null;
   private updatePrompt: UpdatePrompt | null = null;
@@ -84,6 +130,9 @@ export class TitleScene extends Phaser.Scene {
     this.starting = false;
     this.lastPose = null;
     this.redrawAcc = 0;
+    this.startOver = null;
+    this.startOverShown = false;
+    this.focusIndex = START_INDEX;
     this.updating = false;
     this.updateManifest = null;
     this.updatePrompt = null;
@@ -124,10 +173,10 @@ export class TitleScene extends Phaser.Scene {
       onPress: () => this.openTank(),
     });
     this.startButton.container.setDepth(DEPTH.ui);
-    this.startButton.setFocused(true);
+    if (showsStartOver(readSession(this.registry))) this.createStartOver();
+    this.refreshFocus();
 
-    this.input.keyboard?.on('keydown-ENTER', this.openTank, this);
-    this.input.keyboard?.on('keydown-SPACE', this.openTank, this);
+    this.bindInput();
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.game.events.on(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
@@ -141,14 +190,110 @@ export class TitleScene extends Phaser.Scene {
     this.animateAxolotl(Math.min(deltaMs / 1000, 0.05));
   }
 
-  /** Start: opens the Home Tank hub (PRD C7). */
+  /** Start: opens the Home Tank hub (PRD C7). Ignored while the Start over card shows. */
   private openTank(): void {
-    if (this.starting) return;
+    if (this.starting || this.startOverCardShowing()) return;
     this.starting = true;
     openHomeTank(this, this.assets);
   }
 
-  /** Shows the update prompt once; later builds only replace the target manifest. */
+  /** Builds the Start over button, centred under Start, and its card over everything else (PRD D7). */
+  private createStartOver(): void {
+    const button = createButton(this, this.assets.baked, {
+      fill: 'secondary',
+      shape: 'wide',
+      size: START_OVER_SIZE,
+      width: startOverButtonBodyWidth(),
+      label: START_OVER_LABEL,
+      icon: 'close',
+      dpr: this.view.fit.dpr,
+      pressOnDown: false,
+      onPress: () => this.openStartOverCard(),
+    });
+    button.container.setDepth(DEPTH.ui);
+    const card = new StartOverCard(this, this.assets, this.view, DEPTH.ui + 1, (outcome) =>
+      this.handleStartOverDone(outcome),
+    );
+    this.startOver = { button, card };
+    this.startOverShown = true;
+  }
+
+  /** Opens the first Start over card; the title buttons lose the focus ring while it shows. */
+  private openStartOverCard(): void {
+    if (this.starting || this.startOver === null || !this.startOverShown) return;
+    this.startOver.card.open();
+    this.refreshFocus();
+  }
+
+  /** Keep puts the focus back on Start over (or Start when it is hidden); erase starts over once. */
+  private handleStartOverDone(outcome: StartOverOutcome): void {
+    if (outcome === 'erase') {
+      if (this.starting) return;
+      this.starting = true;
+      startOver(this, this.assets);
+      return;
+    }
+    this.focusIndex = this.startOverShown ? START_OVER_INDEX : START_INDEX;
+    this.refreshFocus();
+  }
+
+  private startOverCardShowing(): boolean {
+    return this.startOver?.card.isShowing() === true;
+  }
+
+  /** How many title buttons take the focus: Start, plus Start over while it shows. */
+  private focusCount(): number {
+    return this.startOverShown ? 2 : 1;
+  }
+
+  /** Shows the focus ring on the focused title button, only while the Start over card is hidden. */
+  private refreshFocus(): void {
+    const cardShowing = this.startOverCardShowing();
+    this.startButton.setFocused(!cardShowing && this.focusIndex === START_INDEX);
+    this.startOver?.button.setFocused(!cardShowing && this.startOverShown && this.focusIndex === START_OVER_INDEX);
+  }
+
+  /** One keydown handler for every title key; Tab, the arrows and Space are captured while it runs. */
+  private bindInput(): void {
+    const keyboard = this.input.keyboard;
+    if (!keyboard) return;
+    keyboard.addCapture([...CAPTURED_KEYS]);
+    keyboard.on(Phaser.Input.Keyboard.Events.ANY_KEY_DOWN, this.handleKeyDown, this);
+  }
+
+  /**
+   * While the Start over card shows, keys go to it. Otherwise Tab and Shift+Tab move the focus
+   * between Start and Start over, wrapping, and Enter and Space press the focused button, ignoring
+   * key repeat.
+   */
+  private handleKeyDown(event: KeyboardEvent): void {
+    const action = tankKeyFor(event.key, event.shiftKey);
+    if (action === null) return;
+    if (this.startOver !== null && this.startOver.card.isShowing()) {
+      this.startOver.card.handleKey(action, event.repeat);
+      return;
+    }
+    if (action === 'confirm') {
+      if (!event.repeat) this.pressFocused();
+      return;
+    }
+    if (action !== 'next' && action !== 'previous') return;
+    this.focusIndex = nextFocusIndex(this.focusIndex, this.focusCount(),action === 'next' ? 1 : -1);
+    this.refreshFocus();
+  }
+
+  private pressFocused(): void {
+    if (this.focusIndex === START_OVER_INDEX && this.startOverShown) {
+      this.openStartOverCard();
+      return;
+    }
+    this.openTank();
+  }
+
+  /**
+   * Shows the update prompt once; later builds only replace the target manifest. The Start over
+   * button hides while the prompt shows (art guide section 12), and the focus moves to Start.
+   */
   private showUpdatePrompt(manifest: BuildManifest): void {
     if (this.starting || this.updating) return;
     this.updateManifest = manifest;
@@ -171,12 +316,16 @@ export class TitleScene extends Phaser.Scene {
     button.container.setDepth(DEPTH.ui);
     this.updatePrompt = { panel, text, button };
     this.input.keyboard?.on('keydown-U', this.updateNow, this);
+    this.startOverShown = false;
+    this.startOver?.button.container.setVisible(false);
+    this.focusIndex = START_INDEX;
+    this.refreshFocus();
     this.layout();
   }
 
-  /** Reloads into the new build. Saved progress is untouched (ADR 0009). */
+  /** Reloads into the new build. Saved progress is untouched (ADR 0009). Ignored while the Start over card shows. */
   private updateNow(): void {
-    if (this.updating || this.starting || this.updateManifest === null) return;
+    if (this.updating || this.starting || this.updateManifest === null || this.startOverCardShowing()) return;
     this.updating = true;
     applyUpdate(this.updateManifest);
   }
@@ -189,9 +338,12 @@ export class TitleScene extends Phaser.Scene {
     this.controls.setResolution(this.view.fit.dpr);
     this.versionText.setResolution(this.view.fit.dpr);
     this.startButton.setResolution(this.view.fit.dpr);
+    this.startOver?.button.setResolution(this.view.fit.dpr);
+    this.startOver?.card.setResolution(this.view.fit.dpr);
     this.updatePrompt?.text.setResolution(this.view.fit.dpr);
     this.updatePrompt?.button.setResolution(this.view.fit.dpr);
     this.layout();
+    this.startOver?.card.layout(this.view);
   }
 
   private handleReducedMotion(payload: ReducedMotionPayload): void {
@@ -202,6 +354,10 @@ export class TitleScene extends Phaser.Scene {
     this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.game.events.off(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
     this.stopUpdates();
+    const keyboard = this.input.keyboard;
+    if (!keyboard) return;
+    keyboard.off(Phaser.Input.Keyboard.Events.ANY_KEY_DOWN, this.handleKeyDown, this);
+    keyboard.removeCapture([...CAPTURED_KEYS]);
   }
 
   /** World units to CSS px for the background and axolotl. */
@@ -232,10 +388,22 @@ export class TitleScene extends Phaser.Scene {
     this.axolotl.setScale((AXO_SCENE_SCALE * zoom) / this.assets.axolotl.scale);
   }
 
-  /** Places Start, plus Update beside it or above it; returns the top of the topmost button. */
+  /**
+   * Places Start, plus Start over centred 12 px under it while it shows, or Update beside or above
+   * it; returns the top of the topmost button.
+   */
   private layoutButtons(cssW: number, cssH: number): number {
     const start = this.startButton;
-    const startY = cssH - MARGIN - start.height - 8;
+    const bottomY = cssH - MARGIN - BUTTONS_BOTTOM_INSET;
+    if (this.startOver !== null && this.startOverShown) {
+      const startOverButton = this.startOver.button;
+      const startOverY = bottomY - startOverButton.height;
+      const startAboveY = startOverY - BUTTON_GAP - start.height;
+      start.container.setPosition((cssW - start.width) / 2, startAboveY);
+      startOverButton.container.setPosition((cssW - startOverButton.width) / 2, startOverY);
+      return startAboveY;
+    }
+    const startY = bottomY - start.height;
     const update = this.updatePrompt?.button;
     if (update === undefined) {
       start.container.setPosition((cssW - start.width) / 2, startY);

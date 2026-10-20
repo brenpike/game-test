@@ -2,6 +2,14 @@ import * as Phaser from 'phaser';
 import type { Collectible } from '../logic/collectibles';
 import type { RealMorphId } from '../logic/morphs';
 import {
+  SAVE_GATE_REGISTRY_KEY,
+  bankedMidTrip,
+  encodeSave,
+  gateAfterErase,
+  loadSave,
+  type SaveGate,
+} from '../logic/save';
+import {
   SESSION_REGISTRY_KEY,
   addStarter,
   createSession,
@@ -13,7 +21,8 @@ import {
   type Session,
 } from '../logic/session';
 import type { TripState } from '../logic/trip';
-import type { TripEnding } from '../logic/tripEvents';
+import { TRIP_REGISTRY_KEYS, type TripEnding, type TripSnapshot } from '../logic/tripEvents';
+import { backupUnreadableSave, eraseStoredSave, readStoredSave, writeStoredSave } from '../platform/saveStorage';
 import { SCENE_KEYS, type GameAssets } from './BootScene';
 
 /** What the Home Tank scene starts from: the game assets and how the last trip ended (null from the title). */
@@ -22,18 +31,76 @@ export interface HomeTankStart {
   arrival: TripEnding | null;
 }
 
-/** The play session in the game registry. Creates and stores a new session when there is none yet. */
+/**
+ * The play session in the game registry. When there is none yet, loads the saved game from the
+ * device first (PRD D1 to D8, loadSave).
+ */
 export function readSession(registry: Phaser.Data.DataManager): Session {
   const stored = registry.get(SESSION_REGISTRY_KEY) as Session | undefined;
   if (stored !== undefined) return stored;
-  const session = createSession();
-  writeSession(registry, session);
-  return session;
+  return loadStoredSession(registry);
 }
 
-/** Stores `session` as the play session in the game registry. Session only: nothing is saved to the device. */
+/**
+ * Loads the saved game into the registry once: the session and the save gate. A damaged save's
+ * text is backed up first; when the backup fails the gate closes, so the damaged save is never
+ * overwritten. Nothing is written to the save key here. Also starts saving banked finds mid-trip.
+ */
+function loadStoredSession(registry: Phaser.Data.DataManager): Session {
+  const load = loadSave(readStoredSave());
+  const gate: SaveGate = load.backup !== null && !backupUnreadableSave(load.backup) ? 'closed' : load.gate;
+  registry.set(SAVE_GATE_REGISTRY_KEY, gate);
+  registry.set(SESSION_REGISTRY_KEY, load.session);
+  watchMidTripBanking(registry);
+  return load.session;
+}
+
+const bankingWatchedRegistries = new WeakSet<Phaser.Data.DataManager>();
+
+/**
+ * Saves finds as soon as they are banked mid-trip, not only when the trip ends. Relies on
+ * SwimScene publishing each trip snapshot with `registry.set(TRIP_REGISTRY_KEYS.state, ...)`. Phaser
+ * emits the per-key change event only when the key already holds a value; the first snapshot of a
+ * game is a swimming one, so no banking is missed. Registers at most once per registry.
+ */
+function watchMidTripBanking(registry: Phaser.Data.DataManager): void {
+  if (bankingWatchedRegistries.has(registry)) return;
+  bankingWatchedRegistries.add(registry);
+  registry.events.on(
+    Phaser.Data.Events.CHANGE_DATA_KEY + TRIP_REGISTRY_KEYS.state,
+    (_parent: unknown, snapshot: TripSnapshot) => saveMidTripBanking(registry, snapshot),
+  );
+}
+
+/** Banks the finds of a banked snapshot into the session (bankedMidTrip), writing it only when something is new. */
+function saveMidTripBanking(registry: Phaser.Data.DataManager, snapshot: TripSnapshot): void {
+  if (snapshot.phase !== 'banked' || snapshot.justBanked.length === 0) return;
+  const current = readSession(registry);
+  const next = bankedMidTrip(current, snapshot.justBanked);
+  if (next !== current) writeSession(registry, next);
+}
+
+/**
+ * Stores `session` as the play session in the game registry, then saves its hub to the device
+ * when the save gate is open. A failed save is ignored: play goes on in memory.
+ */
 export function writeSession(registry: Phaser.Data.DataManager, session: Session): void {
   registry.set(SESSION_REGISTRY_KEY, session);
+  if (registry.get(SAVE_GATE_REGISTRY_KEY) === 'open') writeStoredSave(encodeSave(session.hub));
+}
+
+/**
+ * Start over (#15): erases the save on the device, then starts a new session in memory and opens
+ * the character creator. The save gate opens once the save was erased; when erasing fails (storage
+ * off) it stays as it was. The new session is not saved until the creator is done.
+ */
+export function startOver(scene: Phaser.Scene, assets: GameAssets): void {
+  const registry = scene.registry;
+  readSession(registry);
+  const erased = eraseStoredSave();
+  registry.set(SAVE_GATE_REGISTRY_KEY, gateAfterErase(registry.get(SAVE_GATE_REGISTRY_KEY) as SaveGate, erased));
+  registry.set(SESSION_REGISTRY_KEY, createSession());
+  openCreator(scene, assets);
 }
 
 /**
@@ -50,8 +117,8 @@ export function openHomeTank(scene: Phaser.Scene, assets: GameAssets): void {
 }
 
 /**
- * The single way into the character creator (PRD F1). Start over (#15) will call it too, after
- * clearing the session.
+ * The single way into the character creator (PRD F1), from the title screen and from Start over
+ * (startOver) after the session is reset.
  */
 export function openCreator(scene: Phaser.Scene, assets: GameAssets): void {
   scene.scene.start(SCENE_KEYS.creator, assets);
@@ -59,8 +126,8 @@ export function openCreator(scene: Phaser.Scene, assets: GameAssets): void {
 
 /**
  * Done in the character creator: makes `style` the starter axolotl of real morph `starterMorph` in
- * the session, found in the Collection Book from the start (session only, nothing is saved to the
- * device), and opens the Home Tank with no arrival card. Throws when an axolotl is already owned,
+ * the session, found in the Collection Book from the start (saved to the device by writeSession
+ * when the save gate is open), and opens the Home Tank with no arrival card. Throws when an axolotl is already owned,
  * or when the cleaned name or the look is invalid.
  */
 export function finishCreator(
