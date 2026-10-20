@@ -227,14 +227,14 @@ export const FINDS: Readonly<FindTuning> = Object.freeze({
  * Provisional snack reach values, mirroring the drawn head because src/logic cannot import
  * src/art (ESLint): HEAD_ELL (src/art/drawAxolotl.ts, centre (26, -1), radii 27 x 22), its LW 3.5
  * ink outline (src/art/palette.ts, stroked at 2 x LW under the fill by blob in src/art/canvasKit.ts),
- * AXO_SCENE_SCALE 0.95 (src/art/drawAxolotl.ts) and AXO_SIZE_SCALE.large 1.15
- * (src/art/drawAxolotlParts.ts). `headAhead` is the largest head centre, 26 x 0.95 x 1.15 = 28.4,
- * rounded to 28. The farthest drawn point of the largest head, ink included, is about 33.8 px from
+ * AXO_SCENE_SCALE 0.95 (src/art/drawAxolotl.ts) and AXO_SIZE_SCALE.large 1
+ * (src/art/drawAxolotlParts.ts). `headAhead` is the largest head centre, 26 x 0.95 x 1 = 24.7,
+ * rounded to 25. The farthest drawn point of the largest head, ink included, is about 29.3 px from
  * that reach centre; `radius` adds room for the longest swim step so a fast pass still eats.
- * One reach for every size: size is for looks only (PRD F4).
+ * One reach for every size and age: size is for looks only (PRD F4), and a Baby keeps the head.
  */
 export const SNACK_REACH: Readonly<SnackReachTuning> = Object.freeze({
-  headAhead: 28,
+  headAhead: 25,
   radius: 36,
 });
 
