@@ -268,6 +268,7 @@ Everything stays calm, never scary, readable without colour, and usable with red
     3. The preview shrinks to 0.6 of its size.
     4. The heading drops its "Step N of 11:" start.
     5. The preview hides, and the chosen picture button is the preview (F3).
+    6. (restyle only) The heading hides; the bold current tab names the step (F6).
 
     Every step fits the smallest canvases, 460 x 320 and 320 x 440.
 2. **F2** The character creator offers:
@@ -544,7 +545,7 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | 33 | Which suggested names are on the list, and which fit a boy or a girl (F17)? | Boy names: Axel, Finn, Ollie, Milo, and Gus. Girl names: Lily, Blossom, Daisy, Rosie, and Luna. Names for anyone: Bubbles, Gilly, Pebble, Noodle, Sprinkles, Mochi, Ripple, Puddle, Sunny, Peanut, Wiggles, Splash, Pickle, and Xochi. Needs confirmation. |
 | 34 | What does the "Boy or girl?" fact card say, and when is it found (C14)? | "Grown-up boy axolotls are longer and slimmer, with a bigger bump by the back legs. Girls are rounder and plumper." Source: Animal Diversity Web (University of Michigan); supporting: the Royal Veterinary College axolotl care sheet. Found from the start, with no picture, listed after the tilapia card. Issue #52's example text about longer tails and eggs had no reputable source, so it is not used. Needs confirmation. |
 | 35 | How are Tail, Body, Age, and the boy and girl cues drawn (F2)? | Art decision, in the [art style guide](../art-style-guide.md). Every combination reads in greyscale and keeps the eyes, the gill roots, and the 6i anchors and keep-clear zones clear. Age changes proportions only, and the head and face anchors never move. Needs confirmation. |
-| 36 | How do the restyle tabs fit the smallest canvases, 460 x 320 and 320 x 440 (F6)? | As many tabs as fit, each at least 48 pixels tall, with 48 by 48 pixel arrow buttons to page through the rest. The current tab is marked by a bar and bold text. Needs confirmation. |
+| 36 | How do the restyle tabs fit the smallest canvases, 460 x 320 and 320 x 440 (F6)? | As many tabs as fit, each at least 48 pixels tall, with 48 by 48 pixel arrow buttons to page through the rest. The current tab is marked by a bar and bold text. When a restyle step still does not fit after fit step 5, the heading hides as fit step 6 (restyle only, F1); the bold current tab names the step. Needs confirmation. |
 | 37 | What are the defaults for the new options (F2)? | Medium tail, Regular body, and Young age. Boy or girl has no default: the creator picks one at random, and a stranded axolotl gets one from the trip seed. Needs confirmation. |
 
 ### Tuning values (starting points)

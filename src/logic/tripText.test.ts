@@ -13,7 +13,9 @@ import {
   arrivalText,
   describeTreasures,
   tripBagStatus,
+  type ArrivalReason,
   type ArrivalStars,
+  type WaitingAxolotl,
 } from './tripText';
 
 const BANNED = [
@@ -57,6 +59,16 @@ const AXOLOTL_SAMPLES: readonly (readonly string[])[] = [
   [],
   ['Golden albino axolotl'],
   ['Golden albino axolotl', 'Leucistic axolotl'],
+];
+
+const WAITING_SAMPLES: readonly (readonly WaitingAxolotl[])[] = [
+  [],
+  [{ name: 'Golden albino axolotl', sex: 'boy' }],
+  [{ name: 'Golden albino axolotl', sex: 'girl' }],
+  [
+    { name: 'Golden albino axolotl', sex: 'girl' },
+    { name: 'Leucistic axolotl', sex: 'boy' },
+  ],
 ];
 
 const AXOLOTL_COUNTS = [0, 1, 2];
@@ -146,14 +158,14 @@ function collectHelperOutputs(): string[] {
 function collectAxolotlArrivalOutputs(names: readonly string[], axolotls: readonly string[]): string[] {
   const outputs: string[] = [];
   for (const reason of ['wentHome', 'carriedHome'] as const) {
-    for (const waitingNames of AXOLOTL_SAMPLES) {
+    for (const waiting of WAITING_SAMPLES) {
       const text = arrivalText({
         reason,
         returnedNames: names,
         bankedThisTripNames: names,
         bankedTotal: names.length,
         rescuedNames: axolotls,
-        waitingNames,
+        waiting,
       });
       outputs.push(text.title, text.body, text.shortBody, text.bankedLine, text.button);
     }
@@ -469,7 +481,7 @@ describe('rescued and waiting axolotls', () => {
     reason: 'wentHome' | 'carriedHome',
     treasures: readonly string[],
     rescuedNames: readonly string[],
-    waitingNames: readonly string[],
+    waiting: readonly WaitingAxolotl[],
   ) {
     return arrivalText({
       reason,
@@ -477,7 +489,7 @@ describe('rescued and waiting axolotls', () => {
       bankedThisTripNames: reason === 'wentHome' ? treasures : [],
       bankedTotal: 2,
       rescuedNames,
-      waitingNames,
+      waiting,
     });
   }
 
@@ -539,13 +551,13 @@ describe('rescued and waiting axolotls', () => {
     );
   });
 
-  it('carried home: a waiting axolotl is waiting, and "Nothing was lost." is left out', () => {
-    const text = arrivalWith('carriedHome', [], [], [GOLDEN]);
+  it('carried home: a waiting girl is waiting, and "Nothing was lost." is left out', () => {
+    const text = arrivalWith('carriedHome', [], [], [{ name: GOLDEN, sex: 'girl' }]);
     expect(text.body).toBe(
-      `${TRIP_END_BODY} ${GOLDEN} swam back to where you found it. It's waiting for you! ` +
+      `${TRIP_END_BODY} ${GOLDEN} swam back to where you found her. She's waiting for you! ` +
         'Treasures at the Home Spot are always safe.',
     );
-    expect(text.body).toContain("It's waiting for you");
+    expect(text.body).toContain("She's waiting for you");
     expect(text.body).not.toContain('Nothing was lost.');
     expect(text.shortBody).toBe(
       'A big bubble floated you home. You are safe! Your axolotl friend is waiting for you!',
@@ -554,10 +566,10 @@ describe('rescued and waiting axolotls', () => {
   });
 
   it('carried home: returned treasures, then the waiting axolotl, then the rescued one; short body tells only of axolotls', () => {
-    const text = arrivalWith('carriedHome', ['Golden bow'], [LEUCISTIC], [GOLDEN]);
+    const text = arrivalWith('carriedHome', ['Golden bow'], [LEUCISTIC], [{ name: GOLDEN, sex: 'boy' }]);
     expect(text.body).toBe(
       `${TRIP_END_BODY} Golden bow floated off to a new hiding spot. Look for it next trip! ` +
-        `${GOLDEN} swam back to where you found it. It's waiting for you! ` +
+        `${GOLDEN} swam back to where you found him. He's waiting for you! ` +
         `${LEUCISTIC} is safe in your Home Tank. Treasures at the Home Spot are always safe.`,
     );
     expect(text.shortBody).toBe(
@@ -567,11 +579,25 @@ describe('rescued and waiting axolotls', () => {
   });
 
   it('carried home: several waiting axolotls use "them" and "They\'re"', () => {
-    const text = arrivalWith('carriedHome', [], [], [GOLDEN, LEUCISTIC]);
+    const text = arrivalWith('carriedHome', [], [], [
+      { name: GOLDEN, sex: 'boy' },
+      { name: LEUCISTIC, sex: 'girl' },
+    ]);
     expect(text.body).toContain(
       `${GOLDEN} and ${LEUCISTIC} swam back to where you found them. They're waiting for you!`,
     );
     expect(text.shortBody).toContain('2 axolotl friends are waiting for you!');
+  });
+
+  it('carried home: a waiting boy is waiting, with "him" and "He\'s"', () => {
+    const text = arrivalWith('carriedHome', [], [], [{ name: GOLDEN, sex: 'boy' }]);
+    expect(text.body).toBe(
+      `${TRIP_END_BODY} ${GOLDEN} swam back to where you found him. He's waiting for you! ` +
+        'Treasures at the Home Spot are always safe.',
+    );
+    expect(text.shortBody).toBe(
+      'A big bubble floated you home. You are safe! Your axolotl friend is waiting for you!',
+    );
   });
 
   it('carried home: a rescued axolotl alone keeps "Nothing was lost." in the full body and uses "is"', () => {
@@ -775,5 +801,62 @@ describe('ALL_SNACKS_BANNER (H2)', () => {
   it('kindly says the last snack opened the exit', () => {
     expect(ALL_SNACKS_BANNER).toBe('Yum! That was the last snack. The exit is open!');
     expect(ALL_SNACKS_BANNER.toLowerCase()).not.toContain('pond');
+  });
+});
+
+describe('one axolotl is never "it" or "they" (C5)', () => {
+  const NAME = 'Golden albino axolotl';
+  const NOT_ONE_AXOLOTL = /\b(it|its|it's|they|them|their|they're)\b/i;
+  const REASONS: readonly ArrivalReason[] = ['wentHome', 'carriedHome', 'areaBeaten'];
+
+  /** Every arrival output for one axolotl, waiting or rescued, with no treasures. */
+  function oneAxolotlArrivalOutputs(sex: 'boy' | 'girl'): string[] {
+    const outputs: string[] = [];
+    const cases = [
+      { rescuedNames: [NAME], waiting: [] },
+      { rescuedNames: [], waiting: [{ name: NAME, sex }] },
+    ];
+    for (const reason of REASONS) {
+      for (const stars of areaBeatenStarSamples()) {
+        for (const axolotls of cases) {
+          const text = arrivalText({
+            reason,
+            returnedNames: [],
+            bankedThisTripNames: [],
+            bankedTotal: 0,
+            ...axolotls,
+            stars,
+          });
+          outputs.push(text.title, text.body, text.shortBody, text.bankedLine, text.button);
+        }
+      }
+    }
+    return outputs;
+  }
+
+  it.each(['boy', 'girl'] as const)('arrival text for one %s uses no "it" or "they" words', (sex) => {
+    for (const output of oneAxolotlArrivalOutputs(sex)) expect(output).not.toMatch(NOT_ONE_AXOLOTL);
+  });
+
+  it('banking text for one rescued axolotl uses no "it" or "they" words', () => {
+    for (const total of [0, 1, 4]) {
+      expect(bankedBody([], total, [NAME])).not.toMatch(NOT_ONE_AXOLOTL);
+      expect(bankedBodyShort(0, total, 1)).not.toMatch(NOT_ONE_AXOLOTL);
+    }
+  });
+
+  it('gives a waiting boy "him" and "He\'s" and a waiting girl "her" and "She\'s"', () => {
+    const bodyFor = (sex: 'boy' | 'girl'): string =>
+      arrivalText({
+        reason: 'carriedHome',
+        returnedNames: [],
+        bankedThisTripNames: [],
+        bankedTotal: 0,
+        waiting: [{ name: NAME, sex }],
+      }).body;
+    expect(bodyFor('boy')).toContain(`${NAME} swam back to where you found him. He's waiting for you!`);
+    expect(bodyFor('girl')).toContain(`${NAME} swam back to where you found her. She's waiting for you!`);
+    expect(bodyFor('boy')).not.toMatch(/\b(she|her)\b/i);
+    expect(bodyFor('girl')).not.toMatch(/\b(he|him|his)\b/i);
   });
 });

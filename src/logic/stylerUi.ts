@@ -1,183 +1,365 @@
 /**
- * Styler layout: the CSS px layout of the character creator (PRD F1 to F3) and the restyle screen
- * (PRD F6). One part stepper picks which part to change and one choice stepper changes it, so the
- * layout never depends on how many parts there are. Sizes come in measured; nothing here shrinks a
- * control or its text.
+ * Styler layout: the CSS px layout of one step screen of the step-by-step character creator (PRD F1
+ * to F3) and the restyle screen (PRD F6), for 1 to MAX_STEP_OPTIONS picture buttons or the Name step.
+ * Text sizes come in measured from the scene; button sizes are estimated wide here. Nothing here
+ * shrinks text or a touch target: when a step does not fit, it makes room in the PRD F1 order
+ * (FIT_LEVELS), and the picture buttons grow from PICTURE_PX.min only when there is room.
  */
+import { NAME_MAX, SUGGESTED_NAMES } from './axolotlNames';
 import type { HudView, Rect, Size } from './hudLayout';
-import { REAL_MORPHS } from './morphs';
+import { MAX_STEP_OPTIONS, STYLER_STEPS, type StylerStep } from './stylerSteps';
 import {
+  BACK_LABEL,
   CANCEL_LABEL,
-  COLOUR_PART_LABEL,
   DONE_LABEL,
-  EYES_PART_LABEL,
-  GILLS_PART_LABEL,
-  MOUTH_PART_LABEL,
-  NAME_PART_LABEL,
-  SIZE_PART_LABEL,
-  SPOTS_PART_LABEL,
+  MORE_NAMES_LABEL,
+  NEXT_LABEL,
   SURPRISE_ME_LABEL,
+  stepTabLabel,
 } from './stylerText';
-import { LABEL_BOLD_EM, TILE_BUTTON, UI, WIDE_BUTTON, tileButtonWidth, wideButtonWidth } from './tankUi';
+import { BUTTON_LABEL_PAD, LABEL_BOLD_EM, TILE_BUTTON, UI, WIDE_BUTTON, tileButtonWidth } from './tankUi';
 import type { Vec2 } from './vec';
 
-/** Which screen the styler is: the first-launch creator, or restyling an owned axolotl. */
-export type StylerMode = 'create' | 'restyle';
+/** Which screen the styler is: the character creator or the restyle screen (the same union as styler.ts). */
+export type StylerMode = 'creator' | 'restyle';
 
-/** Side of a chevron stepper button, in CSS px (the 48 px touch target, art guide 8). */
-export const STEPPER_PX = 48;
+/** Least side of any touch target, in CSS px (art guide 10). */
+export const MIN_TARGET_PX = 48;
 
-/** Bold text size of the part and choice values, in CSS px. */
-export const VALUE_TEXT_PX = 20;
+/** Bold heading text ("Step 3 of 11: Pick your eyes!"), in CSS px. */
+export const HEADING_TEXT_PX = 28;
 
-/** Side of the square morph badge beside a Colour choice, in CSS px. */
-export const CHOICE_BADGE_PX = 24;
+/** Helper line text, in CSS px. */
+export const HELPER_TEXT_PX = 18;
 
-/** Gap between the choice text and its morph badge, in CSS px. */
-export const CHOICE_BADGE_GAP = 8;
+/** Bold caption text that names the focused or chosen option once the labels hide, in CSS px. */
+export const CAPTION_TEXT_PX = 18;
 
-/** Characters a choice value must hold: a 12-character name, longer than any option label. */
-export const CHOICE_VALUE_CHARS = 12;
+/** Bold picture button label text, under each picture, in CSS px. */
+export const OPTION_LABEL_TEXT_PX = 18;
 
-/** Every part label, in creator order. */
-const PART_LABELS: readonly string[] = Object.freeze([
-  NAME_PART_LABEL,
-  EYES_PART_LABEL,
-  MOUTH_PART_LABEL,
-  GILLS_PART_LABEL,
-  SPOTS_PART_LABEL,
-  SIZE_PART_LABEL,
-  COLOUR_PART_LABEL,
-]);
+/** Bold restyle tab label text, in CSS px. */
+export const TAB_TEXT_PX = 18;
 
-/** Characters a part value must hold: the longest part label. */
-export const PART_VALUE_CHARS = Math.max(...PART_LABELS.map((label) => label.length));
+/** Bold text of the name box, the suggested-name tiles and More names, in CSS px. */
+export const NAME_TEXT_PX = 20;
 
-/** Characters in the longest real morph name, shown with its badge as a Colour choice. */
-const LONGEST_MORPH_NAME_CHARS = Math.max(...REAL_MORPHS.map((morph) => morph.name.length));
+/** Least room between text or another non-interactive part (dots, preview) and anything, in CSS px. */
+export const TEXT_GAP = 4;
+
+/** Side of a square picture button: at least `min`, growing up to `max` when there is room. */
+export const PICTURE_PX = Object.freeze({ min: MIN_TARGET_PX, max: 96 });
+
+/** Preview scale in CSS px per local unit: its full size, and the size after fit step 3 (PRD F1). */
+export const PREVIEW_SCALE = Object.freeze({ full: 1, shrunk: 0.6 });
+
+/** One progress dot slot (creator): its side and the room between slots, in CSS px. */
+export const PROGRESS_DOT = Object.freeze({ px: 14, gap: 6 });
+
+/** Height of a restyle tab, in CSS px (PRD F6). */
+export const TAB_H = MIN_TARGET_PX;
+
+/** Side of a square tab page button, in CSS px (PRD F6). */
+export const PAGE_BUTTON_PX = MIN_TARGET_PX;
 
 /** `px` rounded up to a whole CSS px, ignoring float noise just over a whole number. */
 function wholePxUp(px: number): number {
   return Math.ceil(px - 1e-6);
 }
 
-/** Estimated (wide) width of `chars` bold value characters, in CSS px. */
-function boldValueW(chars: number): number {
-  return chars * LABEL_BOLD_EM * VALUE_TEXT_PX;
+/** Estimated (wide) width of `chars` bold characters at `px`. */
+function boldTextW(chars: number, px: number): number {
+  return chars * LABEL_BOLD_EM * px;
 }
 
-/** A value box holding `contentW` CSS px of content with UI.pad each side, stepper tall. */
-function valueBoxSize(contentW: number): Size {
-  return { w: wholePxUp(contentW + 2 * UI.pad), h: STEPPER_PX };
+/** A wide button sized to its label: the icon, the gap and the label with BUTTON_LABEL_PAD each side. */
+function labelWideButton(label: string): Size {
+  const contentW = WIDE_BUTTON.iconPx + WIDE_BUTTON.iconGap + boldTextW(label.length, WIDE_BUTTON.labelPx);
+  return { w: wholePxUp(Math.max(MIN_TARGET_PX, contentW + 2 * BUTTON_LABEL_PAD)), h: WIDE_BUTTON.h };
 }
 
-/** Size of the part value box between the part chevrons. */
-export const PART_VALUE: Size = Object.freeze(valueBoxSize(boldValueW(PART_VALUE_CHARS)));
+/** A square tile sized to its label (the icon sits over the label). */
+function labelTileButton(label: string): Size {
+  return { w: tileButtonWidth(label), h: TILE_BUTTON.h };
+}
+
+/** Width of a text-only target holding `chars` bold characters at `px` with BUTTON_LABEL_PAD each side. */
+function textButtonWidth(chars: number, px: number): number {
+  return wholePxUp(Math.max(MIN_TARGET_PX, boldTextW(chars, px) + 2 * BUTTON_LABEL_PAD));
+}
+
+/** Back (creator, from step 2): a secondary tile. */
+export const BACK_BUTTON: Size = Object.freeze(labelTileButton(BACK_LABEL));
+
+/** Next (creator, before the last step): the primary wide button, sized to its label. */
+export const NEXT_BUTTON: Size = Object.freeze(labelWideButton(NEXT_LABEL));
+
+/** Done (creator last step, and every restyle step): the primary wide button, sized to its label. */
+export const DONE_BUTTON: Size = Object.freeze(labelWideButton(DONE_LABEL));
+
+/** Surprise me: a secondary tile. */
+export const SURPRISE_BUTTON: Size = Object.freeze(labelTileButton(SURPRISE_ME_LABEL));
+
+/** Cancel (restyle only): a secondary tile. */
+export const CANCEL_BUTTON: Size = Object.freeze(labelTileButton(CANCEL_LABEL));
+
+/** The name box on the Name step: a NAME_MAX-character name with UI.pad each side. */
+export const NAME_BOX: Size = Object.freeze({
+  w: wholePxUp(boldTextW(NAME_MAX, NAME_TEXT_PX) + 2 * UI.pad),
+  h: MIN_TARGET_PX,
+});
+
+/** One suggested-name tile: every tile is as wide as the longest suggested name, so no name is cut. */
+export const NAME_TILE: Size = Object.freeze({
+  w: textButtonWidth(Math.max(...SUGGESTED_NAMES.map((name) => name.length)), NAME_TEXT_PX),
+  h: MIN_TARGET_PX,
+});
+
+/** More names: a text button that shows the next page of suggested names. */
+export const MORE_NAMES_BUTTON: Size = Object.freeze({
+  w: textButtonWidth(MORE_NAMES_LABEL.length, NAME_TEXT_PX),
+  h: MIN_TARGET_PX,
+});
+
+/** Width of the restyle tab for `step`: its label with BUTTON_LABEL_PAD each side. */
+export function tabWidth(step: StylerStep): number {
+  return textButtonWidth(stepTabLabel(step).length, TAB_TEXT_PX);
+}
 
 /**
- * Size of the choice value box between the choice chevrons: a 12-character name, or the longest
- * real morph name with its badge, whichever is wider.
+ * The step screen to lay out: the mode, the step, how many option buttons it has (1 to
+ * MAX_STEP_OPTIONS; on Name, how many suggested names fit the axolotl's boy or girl), and in restyle
+ * the tab page to show (null for the page holding `step`; any other whole number wraps).
  */
-export const CHOICE_VALUE: Size = Object.freeze(
-  valueBoxSize(
-    Math.max(
-      boldValueW(CHOICE_VALUE_CHARS),
-      boldValueW(LONGEST_MORPH_NAME_CHARS) + CHOICE_BADGE_GAP + CHOICE_BADGE_PX,
-    ),
-  ),
-);
-
-/** Surprise me: a secondary square tile wide enough for its label. */
-export const SURPRISE_BUTTON: Size = Object.freeze({ w: tileButtonWidth(SURPRISE_ME_LABEL), h: TILE_BUTTON.h });
-
-/** Cancel (restyle only): a secondary square tile wide enough for its label. */
-export const CANCEL_BUTTON: Size = Object.freeze({ w: tileButtonWidth(CANCEL_LABEL), h: TILE_BUTTON.h });
-
-/** Done: the primary wide button, 64 px tall. */
-export const DONE_BUTTON: Size = Object.freeze({ w: wideButtonWidth(DONE_LABEL), h: WIDE_BUTTON.h });
-
-/** Preview scale in CSS px per local unit at Medium: the size it wants, and the least before stacking. */
-export const PREVIEW_SCALE = Object.freeze({ preferred: 1.4, min: 0.75 });
-
-/** One stepper row: the back chevron, the value box and the next chevron. */
-export interface StepperRow {
-  back: Rect;
-  value: Rect;
-  next: Rect;
+export interface StylerScreen {
+  mode: StylerMode;
+  step: StylerStep;
+  optionCount: number;
+  tabPage: number | null;
 }
 
 /**
- * Styler measurements from the scene: the title wrapped at a wrap width; the axolotl texture frame
- * in local units at Medium (local (0,0) sits originX from the left and originY from the top), which
- * holds every look, Long gills included (art guide 6m, 11); and the largest size scale the preview
- * must hold (art guide 6o).
+ * Styler measurements from the scene. `headingAt` is the heading wrapped at a wrap width: with its
+ * "Step N of 11:" start when `full`, else the step title (restyle always asks for the title).
+ * `helperAt` is the step's helper line, `captionAt` the longest option name as the caption, and
+ * `optionLabelAt` the bounds of the tallest option label (w: its widest line); `optionLabelMinW` is
+ * the longest word of any option label, the narrowest a label wraps without cutting a word. The
+ * preview frame is the axolotl texture frame in local units (local (0,0) sits originX from the left
+ * and originY from the top) and `previewLargestSize` the largest size scale (art guide 6o, 11).
  */
 export interface StylerMeasure {
-  titleAt: (wrapW: number) => Size;
+  headingAt: (wrapW: number, full: boolean) => Size;
+  helperAt: (wrapW: number) => Size;
+  captionAt: (wrapW: number) => Size;
+  optionLabelAt: (wrapW: number) => Size;
+  optionLabelMinW: number;
   previewFrame: Readonly<{ w: number; h: number; originX: number; originY: number }>;
   previewLargestSize: number;
 }
 
+/** The live preview: its box, the scale (CSS px per local unit, times each size scale) and where local (0,0) goes. */
+export interface StylerPreview {
+  rect: Rect;
+  scale: number;
+  anchor: Vec2;
+}
+
+/** One restyle tab shown on the current tab page. */
+export interface StylerTab {
+  step: StylerStep;
+  rect: Rect;
+}
+
 /**
- * The styler layout. `preview` holds a Large axolotl with Long gills at `previewScale`; the scene
- * draws local (0,0) at `previewAnchor` and scales each size by `previewScale` times its size scale.
- * `title` is null when it is hidden and `cancel` is null in the creator.
+ * The restyle tab row: every tab page (steps in order), the page shown, its tabs, and the page
+ * buttons either side (null when every tab fits on one page).
+ */
+export interface StylerTabStrip {
+  pages: readonly (readonly StylerStep[])[];
+  page: number;
+  tabs: StylerTab[];
+  prevPage: Rect | null;
+  nextPage: Rect | null;
+}
+
+/**
+ * The Name step controls: the name box, `namesPerPage` suggested-name tiles in order (the last page
+ * fills only the first ones), and More names (null when every name fits on one page).
+ */
+export interface StylerNameLayout {
+  box: Rect;
+  tiles: Rect[];
+  namesPerPage: number;
+  moreNames: Rect | null;
+}
+
+/** The step buttons. Creator: Back (null on step 1), Next or Done, Surprise me. Restyle: Done, Surprise me, Cancel. */
+export interface StylerNav {
+  back: Rect | null;
+  next: Rect | null;
+  done: Rect | null;
+  surprise: Rect;
+  cancel: Rect | null;
+}
+
+/**
+ * One step screen. `fitStep` is how far the PRD F1 fit order went: 0 when everything shows, else the
+ * last fit step taken (1 helper hidden, 2 labels hidden and caption shown, 3 preview at 0.6, 4
+ * creator heading without "Step N of 11:", 5 preview hidden: the chosen picture button is the
+ * preview, 6 restyle only: heading hidden (null), the bold current tab names the step). `options` are the square picture buttons in order, `columns` per row (0 on Name), and
+ * `optionLabels` their labels under them while `labelsShown`. `cancelInTabRow` is true when restyle
+ * Cancel sits at the end of the tab row, the last layout choice.
  */
 export interface StylerLayout {
   panel: Rect;
-  title: Rect | null;
-  preview: Rect;
-  previewScale: number;
-  previewAnchor: Vec2;
-  part: StepperRow;
-  choice: StepperRow;
-  surprise: Rect;
-  done: Rect;
-  cancel: Rect | null;
+  fitStep: number;
+  heading: Rect | null;
+  headingFull: boolean;
+  dots: Rect[] | null;
+  tabs: StylerTabStrip | null;
+  helper: Rect | null;
+  preview: StylerPreview | null;
+  caption: Rect | null;
+  options: Rect[];
+  columns: number;
+  labelsShown: boolean;
+  optionLabels: Rect[];
+  name: StylerNameLayout | null;
+  nav: StylerNav;
+  cancelInTabRow: boolean;
 }
 
-/** Everything but the preview, the room left for it, and whether the controls fit the panel. */
-interface StylerArrangement {
-  title: Rect | null;
-  previewArea: Rect;
-  part: StepperRow;
-  choice: StepperRow;
-  surprise: Rect;
-  done: Rect;
-  cancel: Rect | null;
-  controlsFit: boolean;
+/** What one fit level shows: the helper, the labels, the preview scale (null: hidden), the full heading and the heading. */
+interface FitLevel {
+  helper: boolean;
+  labels: boolean;
+  previewScale: number | null;
+  headingFull: boolean;
+  heading: boolean;
 }
 
-/** One fit step: whether the title shows, whether the choice value sits above its chevrons, and the least scale. */
-interface FitStep {
-  title: boolean;
-  stacked: boolean;
-  leastScale: number;
-}
-
-/** The fit order when tight: hide the title, then shrink the preview to its minimum, then stack the choice. */
-const FIT_STEPS: readonly FitStep[] = Object.freeze([
-  { title: true, stacked: false, leastScale: PREVIEW_SCALE.preferred },
-  { title: false, stacked: false, leastScale: PREVIEW_SCALE.preferred },
-  { title: false, stacked: false, leastScale: PREVIEW_SCALE.min },
-  { title: false, stacked: true, leastScale: PREVIEW_SCALE.min },
+/** The PRD F1 fit order: level N has taken fit steps 1 to N. Step 6 (heading hidden) is restyle only (PRD F6). */
+const FIT_LEVELS: readonly FitLevel[] = Object.freeze([
+  { helper: true, labels: true, previewScale: PREVIEW_SCALE.full, headingFull: true, heading: true },
+  { helper: false, labels: true, previewScale: PREVIEW_SCALE.full, headingFull: true, heading: true },
+  { helper: false, labels: false, previewScale: PREVIEW_SCALE.full, headingFull: true, heading: true },
+  { helper: false, labels: false, previewScale: PREVIEW_SCALE.shrunk, headingFull: true, heading: true },
+  { helper: false, labels: false, previewScale: PREVIEW_SCALE.shrunk, headingFull: false, heading: true },
+  { helper: false, labels: false, previewScale: null, headingFull: false, heading: true },
+  { helper: false, labels: false, previewScale: null, headingFull: false, heading: false },
 ]);
 
-/** Width of a stepper row with the value between its chevrons. */
-const INLINE_ROW_W = 2 * (STEPPER_PX + UI.gap) + Math.max(PART_VALUE.w, CHOICE_VALUE.w);
+/** Where the step buttons go: a centred row at the bottom, or a right column under the tab row (restyle landscape). */
+interface StylerFrame {
+  nav: 'row' | 'column';
+  cancelInStrip: boolean;
+}
 
-/** Width of the steppers with the choice value above its chevrons. */
-const STACKED_ROW_W = Math.max(2 * (STEPPER_PX + UI.gap) + PART_VALUE.w, CHOICE_VALUE.w);
+/** What borders a layout part, for the gap rule: a touch target, other content, or the panel padding. */
+type EdgeKind = 'target' | 'other' | 'edge';
+
+/** The parts a body block places. */
+type PieceName = 'helper' | 'preview' | 'caption' | 'option' | 'optionLabel' | 'nameBox' | 'nameTile' | 'moreNames';
+
+/** One placed part of a block, relative to the block's top left. */
+interface Piece {
+  name: PieceName;
+  rect: Rect;
+}
 
 /**
- * The styler layout: a panel inside the edge margins with `UI.pad` inside it, the title centred at
- * the top. Landscape (`cssW > cssH`): the preview on the left over Surprise me (and Cancel), and a
- * right column with the part and choice steppers at the top and Done at the bottom. Portrait: the
- * part and choice steppers, the preview, then Surprise me, Cancel and Done in centred rows at the
- * bottom; with the choice value above its chevrons, the chevrons sit either side of the preview.
- * The title is measured at the content width.
+ * A block of parts: its size, what borders its top and bottom edges, its own parts, and the blocks
+ * inside it at their offsets. Parts are only moved into place once a block is chosen (placedPieces).
  */
-export function stylerLayout(view: HudView, measure: StylerMeasure, mode: StylerMode): StylerLayout {
+interface Block {
+  w: number;
+  h: number;
+  top: EdgeKind;
+  bottom: EdgeKind;
+  pieces: Piece[];
+  children: { block: Block; dx: number; dy: number }[];
+}
+
+/** The heading (null when hidden), the dots or tab row, the step buttons, and the band left for the helper and the body. */
+interface Chrome {
+  heading: Rect | null;
+  dots: Rect[] | null;
+  tabs: StylerTabStrip | null;
+  nav: StylerNav;
+  band: Rect;
+  bandTop: EdgeKind;
+  bandBottom: EdgeKind;
+  fits: boolean;
+}
+
+/** Least room between two parts stacked or side by side: UI.gap between touch targets, else TEXT_GAP. */
+function gapBetween(first: EdgeKind, second: EdgeKind): number {
+  if (first === 'edge' || second === 'edge') return 0;
+  return first === 'target' && second === 'target' ? UI.gap : TEXT_GAP;
+}
+
+/** Throws a RangeError when `screen` has no valid option count or tab page. */
+function checkScreen(screen: StylerScreen): void {
+  const maxOptions = screen.step === 'name' ? Infinity : MAX_STEP_OPTIONS;
+  if (!Number.isInteger(screen.optionCount) || screen.optionCount < 1 || screen.optionCount > maxOptions) {
+    throw new RangeError(`stylerLayout: ${screen.optionCount} options on the ${screen.step} step`);
+  }
+  if (screen.tabPage !== null && !Number.isInteger(screen.tabPage)) {
+    throw new RangeError(`stylerLayout: tab page ${screen.tabPage} is not a whole number`);
+  }
+}
+
+/** The frames to try, in order: restyle tries Cancel in the tab row only when nothing else fits. */
+function framesFor(view: HudView, mode: StylerMode): StylerFrame[] {
+  if (mode === 'creator') return [{ nav: 'row', cancelInStrip: false }];
+  const nav = view.cssW > view.cssH ? 'column' : 'row';
+  return [
+    { nav, cancelInStrip: false },
+    { nav, cancelInStrip: true },
+  ];
+}
+
+/** The fit levels that change something on `screen`, with their PRD F1 fit step numbers. The creator never hides its heading. */
+function levelsFor(screen: StylerScreen): { fitStep: number; level: FitLevel }[] {
+  const levels: { fitStep: number; level: FitLevel }[] = [];
+  let previous: FitLevel | null = null;
+  FIT_LEVELS.forEach((raw, fitStep) => {
+    const level: FitLevel = {
+      helper: raw.helper,
+      labels: screen.step !== 'name' && raw.labels,
+      previewScale: raw.previewScale,
+      headingFull: screen.mode === 'creator' && raw.headingFull,
+      heading: screen.mode === 'creator' || raw.heading,
+    };
+    if (previous === null || !sameLevel(previous, level)) levels.push({ fitStep, level });
+    previous = level;
+  });
+  return levels;
+}
+
+/** True when two fit levels show the same things. */
+function sameLevel(first: FitLevel, second: FitLevel): boolean {
+  return (
+    first.helper === second.helper &&
+    first.labels === second.labels &&
+    first.previewScale === second.previewScale &&
+    first.headingFull === second.headingFull &&
+    first.heading === second.heading
+  );
+}
+
+/**
+ * The step screen layout: a panel inside the edge margins with UI.pad inside it. From the top: the
+ * heading, centred; the progress dots (creator) or the tab row (restyle); then the helper line and
+ * the body (the preview, the picture buttons and the caption, or on Name the name box, the name tiles
+ * and More names). The step buttons sit in centred rows at the bottom, except in restyle landscape,
+ * where they stack in a right column under the tab row with Done at the bottom. The body sets the
+ * preview above or beside the picture buttons, whichever fits. When a step does not fit it takes the
+ * PRD F1 fit steps in order (restyle adds step 6: the heading hides); restyle then tries Cancel at the end of the tab row. Below the smallest
+ * canvases it returns the last try, which may overflow.
+ */
+export function stylerLayout(view: HudView, screen: StylerScreen, measure: StylerMeasure): StylerLayout {
+  checkScreen(screen);
   const panel: Rect = {
     x: UI.margin,
     y: UI.margin,
@@ -190,76 +372,213 @@ export function stylerLayout(view: HudView, measure: StylerMeasure, mode: Styler
     w: Math.max(0, panel.w - 2 * UI.pad),
     h: Math.max(0, panel.h - 2 * UI.pad),
   };
-  const arrange = view.cssW > view.cssH ? landscapeStyler : portraitStyler;
-  const titleSize = measure.titleAt(inner.w);
-  const title = titleSize.w <= inner.w ? titleSize : null;
-  const cancel = mode === 'restyle' ? CANCEL_BUTTON : null;
-  let arrangement = arrange(inner, null, true, cancel);
-  for (const step of FIT_STEPS) {
-    if (step.title && title === null) continue;
-    const candidate = arrange(inner, step.title ? title : null, step.stacked, cancel);
-    if (candidate.controlsFit && previewScaleFor(candidate.previewArea, measure) >= step.leastScale - 1e-9) {
-      arrangement = candidate;
-      break;
+  const levels = levelsFor(screen);
+  let lastTry: StylerLayout | null = null;
+  for (const frame of framesFor(view, screen.mode)) {
+    for (const { fitStep, level } of levels) {
+      const tried = arrangeScreen(inner, panel, screen, measure, frame, level, fitStep);
+      if (tried.fits) return tried.layout;
+      lastTry = tried.layout;
     }
   }
-  return withPreview(panel, arrangement, measure);
+  if (lastTry === null) throw new Error('stylerLayout: no fit levels to try');
+  return lastTry;
 }
 
-/** Largest preview scale, up to the preferred scale, at which the frame at its largest size fits `area`; at least 0. */
-function previewScaleFor(area: Rect, measure: StylerMeasure): number {
-  const fitW = area.w / (measure.previewFrame.w * measure.previewLargestSize);
-  const fitH = area.h / (measure.previewFrame.h * measure.previewLargestSize);
-  return Math.max(0, Math.min(PREVIEW_SCALE.preferred, fitW, fitH));
-}
-
-/** The finished layout: the preview box centred in its area at the largest scale that fits. */
-function withPreview(panel: Rect, arrangement: StylerArrangement, measure: StylerMeasure): StylerLayout {
-  const { previewArea, title, part, choice, surprise, done, cancel } = arrangement;
-  const scale = previewScaleFor(previewArea, measure);
-  const frame = measure.previewFrame;
-  const unit = measure.previewLargestSize * scale;
-  const w = frame.w * unit;
-  const h = frame.h * unit;
-  const preview: Rect = {
-    x: previewArea.x + (previewArea.w - w) / 2,
-    y: previewArea.y + (previewArea.h - h) / 2,
-    w,
-    h,
+/** One try at the layout with `frame` and `level`, and whether it fits the panel. */
+function arrangeScreen(
+  inner: Rect,
+  panel: Rect,
+  screen: StylerScreen,
+  measure: StylerMeasure,
+  frame: StylerFrame,
+  level: FitLevel,
+  fitStep: number,
+): { layout: StylerLayout; fits: boolean } {
+  const chrome = placeChrome(inner, screen, measure, frame, level);
+  const body =
+    screen.step === 'name'
+      ? bestNameBody(chrome, screen.optionCount, measure, level)
+      : bestPictureBody(chrome, screen.optionCount, measure, level);
+  const layout: StylerLayout = {
+    panel,
+    fitStep,
+    heading: chrome.heading,
+    headingFull: level.headingFull,
+    dots: chrome.dots,
+    tabs: chrome.tabs,
+    ...collectBody(body.pieces, measure, level, body.columns, screen),
+    nav: chrome.nav,
+    cancelInTabRow: frame.cancelInStrip,
   };
-  const previewAnchor: Vec2 = {
-    x: preview.x + frame.originX * unit,
-    y: preview.y + frame.originY * unit,
+  return { layout, fits: chrome.fits && body.fits };
+}
+
+/** The heading at the top of `inner` when `level` shows it, else null. */
+function placeHeading(inner: Rect, measure: StylerMeasure, level: FitLevel): Rect | null {
+  if (!level.heading) return null;
+  const headingSize = measure.headingAt(inner.w, level.headingFull);
+  return { x: inner.x + (inner.w - headingSize.w) / 2, y: inner.y, ...headingSize };
+}
+
+/** The heading, the dots or tab row, and the step buttons of `frame`, with the band between them. */
+function placeChrome(
+  inner: Rect,
+  screen: StylerScreen,
+  measure: StylerMeasure,
+  frame: StylerFrame,
+  level: FitLevel,
+): Chrome {
+  const heading = placeHeading(inner, measure, level);
+  const aboveKind: EdgeKind = heading === null ? 'edge' : 'other';
+  let top = heading === null ? inner.y : heading.y + heading.h;
+  let dots: Rect[] | null = null;
+  let tabs: StylerTabStrip | null = null;
+  let stripCancel: Rect | null = null;
+  let stripFits = true;
+  let bandTop: EdgeKind;
+  if (screen.mode === 'creator') {
+    top += gapBetween(aboveKind, 'other');
+    dots = dotSlots(inner, top);
+    top += PROGRESS_DOT.px;
+    bandTop = 'other';
+  } else {
+    top += gapBetween(aboveKind, 'target');
+    const strip = placeTabStrip(inner, top, screen, frame.cancelInStrip);
+    tabs = strip.tabs;
+    stripCancel = strip.cancel;
+    stripFits = strip.fits;
+    top += strip.h;
+    bandTop = 'target';
+  }
+  const navSizes = navButtonSizes(screen, frame.cancelInStrip);
+  const placed =
+    frame.nav === 'row' ? placeNavRow(inner, top, navSizes) : placeNavColumn(inner, top, bandTop, navSizes);
+  return {
+    heading,
+    dots,
+    tabs,
+    nav: namedNav(screen, placed.rects, stripCancel),
+    band: placed.band,
+    bandTop,
+    bandBottom: placed.bandBottom,
+    fits: stripFits && placed.fits && (heading === null || heading.w <= inner.w + 1e-9),
   };
-  return { panel, title, preview, previewScale: scale, previewAnchor, part, choice, surprise, done, cancel };
 }
 
-/** The title centred across `inner` at its top, or null; and the top of the content below it. */
-function placeTitle(inner: Rect, title: Size | null): { rect: Rect | null; contentTop: number } {
-  if (title === null) return { rect: null, contentTop: inner.y };
-  const rect: Rect = { x: inner.x + (inner.w - title.w) / 2, y: inner.y, w: title.w, h: title.h };
-  return { rect, contentTop: inner.y + title.h + UI.gap };
+/** The progress dot slots, one per step, centred across `inner` at `top`. */
+function dotSlots(inner: Rect, top: number): Rect[] {
+  const count = STYLER_STEPS.length;
+  const rowW = count * PROGRESS_DOT.px + (count - 1) * PROGRESS_DOT.gap;
+  const left = inner.x + (inner.w - rowW) / 2;
+  return STYLER_STEPS.map((_step, index) => ({
+    x: left + index * (PROGRESS_DOT.px + PROGRESS_DOT.gap),
+    y: top,
+    w: PROGRESS_DOT.px,
+    h: PROGRESS_DOT.px,
+  }));
 }
 
-/** A chevron stepper at (`x`, `y`). */
-function stepperAt(x: number, y: number): Rect {
-  return { x, y, w: STEPPER_PX, h: STEPPER_PX };
+/** The step's tabs split into pages that each fit `areaW` with UI.gap between tabs. */
+function tabPages(areaW: number): StylerStep[][] {
+  const pages: StylerStep[][] = [];
+  let rowW = 0;
+  for (const step of STYLER_STEPS) {
+    const page = pages[pages.length - 1];
+    const w = tabWidth(step);
+    if (page !== undefined && rowW + UI.gap + w <= areaW) {
+      page.push(step);
+      rowW += UI.gap + w;
+    } else {
+      pages.push([step]);
+      rowW = w;
+    }
+  }
+  return pages;
 }
 
-/** A stepper row with `value` placed and its chevrons at `chevronTop`, at both ends of `w` from `x`. */
-function chevronsAt(x: number, w: number, chevronTop: number, value: Rect): StepperRow {
-  return { back: stepperAt(x, chevronTop), value, next: stepperAt(x + w - STEPPER_PX, chevronTop) };
-}
-
-/** A stepper row across `w` from `x` at `top`: chevrons at both ends and `value` centred between them. */
-function stepperRow(x: number, w: number, top: number, value: Size): StepperRow {
-  const valueRect: Rect = { x: x + (w - value.w) / 2, y: top + (STEPPER_PX - value.h) / 2, w: value.w, h: value.h };
-  return chevronsAt(x, w, top, valueRect);
+/** Total width of `steps`' tabs side by side with UI.gap between them. */
+function tabsWidth(steps: readonly StylerStep[]): number {
+  return steps.reduce((sum, step) => sum + tabWidth(step), 0) + UI.gap * Math.max(0, steps.length - 1);
 }
 
 /**
- * `sizes` in rows that each take items in order while they fit `maxW` with `UI.gap` between, centred
- * on `centreX`, with the last row ending at `bottom`. Rows are `UI.gap` apart.
+ * The tab row at `top`: every tab when they fit across, else pages of tabs between a page button at
+ * each end. With `cancelInStrip`, Cancel ends the row and the row is as tall as Cancel.
+ */
+function placeTabStrip(
+  inner: Rect,
+  top: number,
+  screen: StylerScreen,
+  cancelInStrip: boolean,
+): { tabs: StylerTabStrip; cancel: Rect | null; h: number; fits: boolean } {
+  const h = cancelInStrip ? Math.max(TAB_H, CANCEL_BUTTON.h) : TAB_H;
+  const rowW = inner.w - (cancelInStrip ? CANCEL_BUTTON.w + UI.gap : 0);
+  const tabTop = top + (h - TAB_H) / 2;
+  const paging = tabsWidth(STYLER_STEPS) > rowW;
+  const sideW = paging ? PAGE_BUTTON_PX + UI.gap : 0;
+  const areaW = rowW - 2 * sideW;
+  const pages = paging ? tabPages(areaW) : [[...STYLER_STEPS]];
+  const homePage = pages.findIndex((page) => page.includes(screen.step));
+  const page = screen.tabPage === null ? homePage : ((screen.tabPage % pages.length) + pages.length) % pages.length;
+  let x = inner.x + sideW + (areaW - tabsWidth(pages[page])) / 2;
+  const tabs: StylerTab[] = [];
+  for (const step of pages[page]) {
+    tabs.push({ step, rect: { x, y: tabTop, w: tabWidth(step), h: TAB_H } });
+    x += tabWidth(step) + UI.gap;
+  }
+  const pageButtonAt = (left: number): Rect => ({ x: left, y: tabTop, w: PAGE_BUTTON_PX, h: PAGE_BUTTON_PX });
+  const cancel: Rect | null = cancelInStrip
+    ? { x: inner.x + inner.w - CANCEL_BUTTON.w, y: top + (h - CANCEL_BUTTON.h) / 2, ...CANCEL_BUTTON }
+    : null;
+  return {
+    tabs: {
+      pages,
+      page,
+      tabs,
+      prevPage: paging ? pageButtonAt(inner.x) : null,
+      nextPage: paging ? pageButtonAt(inner.x + rowW - PAGE_BUTTON_PX) : null,
+    },
+    cancel,
+    h,
+    fits: pages.every((stepsOnPage) => tabsWidth(stepsOnPage) <= areaW + 1e-9),
+  };
+}
+
+/** The step button sizes in visual order. Creator Back keeps its place on step 1 so nothing moves. */
+function navButtonSizes(screen: StylerScreen, cancelInStrip: boolean): Size[] {
+  if (screen.mode === 'creator') {
+    const isLast = STYLER_STEPS.indexOf(screen.step) === STYLER_STEPS.length - 1;
+    return [BACK_BUTTON, SURPRISE_BUTTON, isLast ? DONE_BUTTON : NEXT_BUTTON];
+  }
+  return cancelInStrip ? [SURPRISE_BUTTON, DONE_BUTTON] : [SURPRISE_BUTTON, CANCEL_BUTTON, DONE_BUTTON];
+}
+
+/** The placed step buttons by name, from rects in navButtonSizes order. */
+function namedNav(screen: StylerScreen, rects: Rect[], stripCancel: Rect | null): StylerNav {
+  if (screen.mode === 'creator') {
+    const index = STYLER_STEPS.indexOf(screen.step);
+    const isLast = index === STYLER_STEPS.length - 1;
+    return {
+      back: index > 0 ? rects[0] : null,
+      next: isLast ? null : rects[2],
+      done: isLast ? rects[2] : null,
+      surprise: rects[1],
+      cancel: null,
+    };
+  }
+  return {
+    back: null,
+    next: null,
+    done: rects[rects.length - 1],
+    surprise: rects[0],
+    cancel: stripCancel ?? rects[1],
+  };
+}
+
+/**
+ * `sizes` in rows that each take items in order while they fit `maxW` with UI.gap between, centred
+ * on `centreX`, with the last row ending at `bottom`. Rows are UI.gap apart.
  */
 function buttonRows(sizes: readonly Size[], centreX: number, maxW: number, bottom: number): Rect[] {
   const rows: Size[][] = [];
@@ -289,96 +608,351 @@ function buttonRows(sizes: readonly Size[], centreX: number, maxW: number, botto
   return rects.map((rect) => ({ ...rect, y: rect.y + shift }));
 }
 
-/** Top edge of the highest rect, or `fallback` when there are none. */
-function topOfAll(rects: readonly Rect[], fallback: number): number {
-  return rects.reduce((top, rect) => Math.min(top, rect.y), fallback);
-}
-
-/** True when every rect is at most `maxW` wide. */
-function allFitAcross(rects: readonly Rect[], maxW: number): boolean {
-  return rects.every((rect) => rect.w <= maxW);
+/** Step buttons in centred rows at the bottom of `inner`; the band runs from `top` to the highest row. */
+function placeNavRow(
+  inner: Rect,
+  top: number,
+  sizes: readonly Size[],
+): { rects: Rect[]; band: Rect; bandBottom: EdgeKind; fits: boolean } {
+  const bottom = inner.y + inner.h;
+  const rects = buttonRows(sizes, inner.x + inner.w / 2, inner.w, bottom);
+  const navTop = rects.reduce((highest, rect) => Math.min(highest, rect.y), bottom);
+  return {
+    rects,
+    band: { x: inner.x, y: top, w: inner.w, h: navTop - top },
+    bandBottom: 'target',
+    fits: rects.every((rect) => rect.w <= inner.w + 1e-9),
+  };
 }
 
 /**
- * Landscape: the steppers at the top of a right column with Done at its bottom; the preview on the
- * left above Surprise me and Cancel. Stacked, the choice chevrons sit a gap under the choice value.
+ * Step buttons stacked UI.gap apart in a right column as wide as the widest, ending at the bottom of
+ * `inner`; the band is left of the column, UI.gap away, from `top` to the bottom.
  */
-function landscapeStyler(inner: Rect, title: Size | null, stacked: boolean, cancel: Size | null): StylerArrangement {
-  const { rect: titleRect, contentTop } = placeTitle(inner, title);
-  const innerBottom = inner.y + inner.h;
-  const columnW = Math.max(stacked ? STACKED_ROW_W : INLINE_ROW_W, DONE_BUTTON.w);
+function placeNavColumn(
+  inner: Rect,
+  top: number,
+  topKind: EdgeKind,
+  sizes: readonly Size[],
+): { rects: Rect[]; band: Rect; bandBottom: EdgeKind; fits: boolean } {
+  const bottom = inner.y + inner.h;
+  const columnW = Math.max(...sizes.map((size) => size.w));
   const columnX = inner.x + inner.w - columnW;
-  const part = stepperRow(columnX, columnW, contentTop, PART_VALUE);
-  const choiceTop = contentTop + STEPPER_PX + UI.gap;
-  const choiceRow = stepperRow(columnX, columnW, choiceTop, CHOICE_VALUE);
-  const chevronTop = choiceTop + CHOICE_VALUE.h + UI.gap;
-  const choice = stacked ? chevronsAt(columnX, columnW, chevronTop, choiceRow.value) : choiceRow;
-  const done: Rect = { x: columnX + (columnW - DONE_BUTTON.w) / 2, y: innerBottom - DONE_BUTTON.h, ...DONE_BUTTON };
-  const leftW = columnX - UI.gap - inner.x;
-  const secondarySizes = cancel === null ? [SURPRISE_BUTTON] : [SURPRISE_BUTTON, cancel];
-  const secondaries = buttonRows(secondarySizes, inner.x + leftW / 2, leftW, innerBottom);
-  const previewBottom = topOfAll(secondaries, innerBottom) - UI.gap;
-  const controlsBottom = choice.next.y + choice.next.h;
+  const stackH = sizes.reduce((sum, size) => sum + size.h, 0) + UI.gap * (sizes.length - 1);
+  let y = bottom - stackH;
+  const rects: Rect[] = [];
+  for (const size of sizes) {
+    rects.push({ x: columnX + (columnW - size.w) / 2, y, w: size.w, h: size.h });
+    y += size.h + UI.gap;
+  }
   return {
-    title: titleRect,
-    previewArea: { x: inner.x, y: contentTop, w: leftW, h: previewBottom - contentTop },
-    part,
-    choice,
-    surprise: secondaries[0],
-    done,
-    cancel: cancel === null ? null : secondaries[1],
-    controlsFit: controlsBottom + UI.gap <= done.y && leftW > 0 && allFitAcross(secondaries, leftW),
+    rects,
+    band: { x: inner.x, y: top, w: Math.max(0, columnX - UI.gap - inner.x), h: bottom - top },
+    bandBottom: 'edge',
+    fits: bottom - stackH >= top + gapBetween(topKind, 'target') - 1e-9,
   };
 }
 
-/**
- * Portrait: the part stepper, the choice stepper, the preview, then Surprise me, Cancel and Done in
- * centred rows at the bottom; chevrons at the content edges. Stacked, the choice value sits under
- * the part stepper and the choice chevrons either side of the preview, centred on it.
- */
-function portraitStyler(inner: Rect, title: Size | null, stacked: boolean, cancel: Size | null): StylerArrangement {
-  const { rect: titleRect, contentTop } = placeTitle(inner, title);
-  const buttonSizes = cancel === null ? [SURPRISE_BUTTON, DONE_BUTTON] : [SURPRISE_BUTTON, cancel, DONE_BUTTON];
-  const buttons = buttonRows(buttonSizes, inner.x + inner.w / 2, inner.w, inner.y + inner.h);
-  const bandBottom = topOfAll(buttons, inner.y + inner.h) - UI.gap;
-  const part = stepperRow(inner.x, inner.w, contentTop, PART_VALUE);
-  const choiceTop = contentTop + STEPPER_PX + UI.gap;
-  const choiceRow = stepperRow(inner.x, inner.w, choiceTop, CHOICE_VALUE);
-  const bandTop = choiceTop + STEPPER_PX + UI.gap;
-  const band: Rect = { x: inner.x, y: bandTop, w: inner.w, h: bandBottom - bandTop };
-  const sideW = STEPPER_PX + UI.gap;
-  const chevronTop = band.y + (band.h - STEPPER_PX) / 2;
-  const choice = stacked ? chevronsAt(inner.x, inner.w, chevronTop, choiceRow.value) : choiceRow;
-  const previewArea: Rect = stacked ? { ...band, x: band.x + sideW, w: band.w - 2 * sideW } : band;
-  const rowW = stacked ? STACKED_ROW_W : INLINE_ROW_W;
-  const bandFits = stacked ? band.h >= STEPPER_PX && previewArea.w > 0 : band.h >= 0;
+/** A block holding one part of `size`. */
+function pieceBlock(name: PieceName, size: Size, kind: EdgeKind): Block {
+  return { w: size.w, h: size.h, top: kind, bottom: kind, pieces: [{ name, rect: { x: 0, y: 0, ...size } }], children: [] };
+}
+
+/** Every part of `block` and the blocks inside it, with the block's top left at (`dx`, `dy`). */
+function placedPieces(block: Block, dx: number, dy: number): Piece[] {
+  const own = block.pieces.map((piece) => ({ name: piece.name, rect: { ...piece.rect, x: piece.rect.x + dx, y: piece.rect.y + dy } }));
+  return own.concat(...block.children.map((child) => placedPieces(child.block, dx + child.dx, dy + child.dy)));
+}
+
+/** `blocks` stacked top to bottom, each centred across the widest, with the gap rule between them. */
+function stackBlocks(blocks: readonly Block[]): Block {
+  const w = Math.max(...blocks.map((block) => block.w));
+  const children: Block['children'] = [];
+  let y = 0;
+  blocks.forEach((block, index) => {
+    if (index > 0) y += gapBetween(blocks[index - 1].bottom, block.top);
+    children.push({ block, dx: (w - block.w) / 2, dy: y });
+    y += block.h;
+  });
+  return { w, h: y, top: blocks[0].top, bottom: blocks[blocks.length - 1].bottom, pieces: [], children };
+}
+
+/** The preview block `left` and `right` side by side, top-aligned, TEXT_GAP apart (the preview is not a target). */
+function sideBlocks(left: Block, right: Block): Block {
+  const gap = TEXT_GAP;
+  const h = Math.max(left.h, right.h);
+  const top: EdgeKind = left.top === 'target' || right.top === 'target' ? 'target' : 'other';
+  const bottom = bottomKindOf(left, right);
   return {
-    title: titleRect,
-    previewArea,
-    part,
-    choice,
-    surprise: buttons[0],
-    done: buttons[buttons.length - 1],
-    cancel: cancel === null ? null : buttons[1],
-    controlsFit: rowW <= inner.w && bandFits && allFitAcross(buttons, inner.w),
+    w: left.w + gap + right.w,
+    h,
+    top,
+    bottom,
+    pieces: [],
+    children: [
+      { block: left, dx: 0, dy: 0 },
+      { block: right, dx: left.w + gap, dy: 0 },
+    ],
   };
 }
 
+/** What borders the bottom of two top-aligned blocks: the taller one's bottom, or a target when equal. */
+function bottomKindOf(left: Block, right: Block): EdgeKind {
+  if (Math.abs(left.h - right.h) < 1e-9) return left.bottom === 'target' || right.bottom === 'target' ? 'target' : 'other';
+  return left.h > right.h ? left.bottom : right.bottom;
+}
+
+/** The preview block at `scale`. */
+function previewBlock(measure: StylerMeasure, scale: number): Block {
+  const unit = measure.previewLargestSize * scale;
+  return pieceBlock('preview', { w: measure.previewFrame.w * unit, h: measure.previewFrame.h * unit }, 'other');
+}
+
+/** Rows of `count` items `itemW` wide with UI.gap between, at most `columns` to a row, each row centred. */
+function gridRowStarts(count: number, columns: number, itemW: number, gridW: number): number[] {
+  const starts: number[] = [];
+  for (let first = 0; first < count; first += columns) {
+    const inRow = Math.min(columns, count - first);
+    starts.push((gridW - (inRow * itemW + (inRow - 1) * UI.gap)) / 2);
+  }
+  return starts;
+}
+
 /**
- * Where the choice text and its morph badge sit in the choice `value` box. With a badge, the text,
- * CHOICE_BADGE_GAP and a CHOICE_BADGE_PX square are centred together across the box; without one,
- * the text is centred and `badge` is null. Each is centred vertically. `text` is the text's top left.
+ * `count` square picture buttons of side `side` in the fewest rows that fit `maxW`, balanced across
+ * the rows; with `labels`, each label sits TEXT_GAP under its button in a cell as wide as the button
+ * or the longest label word, and the next row TEXT_GAP under the labels.
  */
-export function choiceValueContent(value: Rect, text: Size, badge: boolean): { text: Vec2; badge: Rect | null } {
-  const groupW = badge ? text.w + CHOICE_BADGE_GAP + CHOICE_BADGE_PX : text.w;
-  const textX = value.x + (value.w - groupW) / 2;
-  const textPos: Vec2 = { x: textX, y: value.y + (value.h - text.h) / 2 };
-  if (!badge) return { text: textPos, badge: null };
-  const badgeRect: Rect = {
-    x: textX + text.w + CHOICE_BADGE_GAP,
-    y: value.y + (value.h - CHOICE_BADGE_PX) / 2,
-    w: CHOICE_BADGE_PX,
-    h: CHOICE_BADGE_PX,
+function pictureGrid(count: number, side: number, labels: boolean, maxW: number, measure: StylerMeasure): { block: Block; columns: number } {
+  const cellW = labels ? Math.max(side, measure.optionLabelMinW) : side;
+  const maxColumns = Math.max(1, Math.floor((maxW + UI.gap) / (cellW + UI.gap)));
+  const rows = Math.ceil(count / maxColumns);
+  const columns = Math.ceil(count / rows);
+  const labelSize = labels ? measure.optionLabelAt(cellW) : { w: 0, h: 0 };
+  const rowH = labels ? side + TEXT_GAP + labelSize.h : side;
+  const rowGap = labels ? TEXT_GAP : UI.gap;
+  const gridW = columns * cellW + (columns - 1) * UI.gap;
+  const starts = gridRowStarts(count, columns, cellW, gridW);
+  const pieces: Piece[] = [];
+  for (let index = 0; index < count; index++) {
+    const row = Math.floor(index / columns);
+    const cellX = starts[row] + (index % columns) * (cellW + UI.gap);
+    const y = row * (rowH + rowGap);
+    pieces.push({ name: 'option', rect: { x: cellX + (cellW - side) / 2, y, w: side, h: side } });
+    if (labels) {
+      const labelRect = { x: cellX + (cellW - labelSize.w) / 2, y: y + side + TEXT_GAP, ...labelSize };
+      pieces.push({ name: 'optionLabel', rect: labelRect });
+    }
+  }
+  const block: Block = {
+    w: gridW,
+    h: rows * rowH + (rows - 1) * rowGap,
+    top: 'target',
+    bottom: labels ? 'other' : 'target',
+    pieces,
+    children: [],
   };
-  return { text: textPos, badge: badgeRect };
+  return { block, columns };
+}
+
+/** The helper line block across `wrapW`, or null when the level hides it. */
+function helperBlock(level: FitLevel, measure: StylerMeasure, wrapW: number): Block | null {
+  return level.helper ? pieceBlock('helper', measure.helperAt(wrapW), 'other') : null;
+}
+
+/** The body blocks to try for picture buttons of side `side`: the preview above, then beside, the buttons. */
+function pictureBodies(count: number, side: number, chrome: Chrome, measure: StylerMeasure, level: FitLevel): { block: Block; columns: number }[] {
+  const bandW = chrome.band.w;
+  const helper = helperBlock(level, measure, bandW);
+  const preview = level.previewScale === null ? null : previewBlock(measure, level.previewScale);
+  const withCaption = (gridW: number, grid: Block): Block =>
+    level.labels ? grid : stackBlocks([grid, pieceBlock('caption', measure.captionAt(gridW), 'other')]);
+  const stackedGrid = pictureGrid(count, side, level.labels, bandW, measure);
+  const stacked = stackBlocks([
+    ...(helper ? [helper] : []),
+    ...(preview ? [preview] : []),
+    withCaption(bandW, stackedGrid.block),
+  ]);
+  const bodies = [{ block: stacked, columns: stackedGrid.columns }];
+  if (preview !== null) {
+    const sideW = bandW - preview.w - TEXT_GAP;
+    const sideGrid = pictureGrid(count, side, level.labels, sideW, measure);
+    const row = sideBlocks(preview, withCaption(sideW, sideGrid.block));
+    bodies.push({ block: stackBlocks([...(helper ? [helper] : []), row]), columns: sideGrid.columns });
+  }
+  return bodies;
+}
+
+/** True when `block` fits the band of `chrome` with the gap rule at both ends. */
+function fitsBand(block: Block, chrome: Chrome): boolean {
+  const needH = gapBetween(chrome.bandTop, block.top) + block.h + gapBetween(block.bottom, chrome.bandBottom);
+  return block.w <= chrome.band.w + 1e-9 && needH <= chrome.band.h + 1e-9;
+}
+
+/** `block`'s pieces placed in the band of `chrome`: centred across it and centred down the room left. */
+function placeInBand(block: Block, chrome: Chrome): Piece[] {
+  const { band } = chrome;
+  const topGap = gapBetween(chrome.bandTop, block.top);
+  const roomH = band.h - topGap - gapBetween(block.bottom, chrome.bandBottom);
+  const y = band.y + topGap + Math.max(0, (roomH - block.h) / 2);
+  return placedPieces(block, band.x + (band.w - block.w) / 2, y);
+}
+
+/** A placed body: its pieces, the picture columns (0 on Name), and whether it fits. */
+interface PlacedBody {
+  pieces: Piece[];
+  columns: number;
+  fits: boolean;
+}
+
+/** The first picture body with buttons of side `side` that fits the band, or null. */
+function fittingPictureBody(
+  side: number,
+  chrome: Chrome,
+  count: number,
+  measure: StylerMeasure,
+  level: FitLevel,
+): { block: Block; columns: number } | null {
+  return pictureBodies(count, side, chrome, measure, level).find((body) => fitsBand(body.block, chrome)) ?? null;
+}
+
+/**
+ * The picture body for this level: a body that fits at PICTURE_PX.min decides the level fits; then
+ * the buttons take the largest whole side up to PICTURE_PX.max that still fits. A bigger side never
+ * fits where a smaller one does not, so the side is found by halving.
+ */
+function bestPictureBody(chrome: Chrome, count: number, measure: StylerMeasure, level: FitLevel): PlacedBody {
+  let best = fittingPictureBody(PICTURE_PX.min, chrome, count, measure, level);
+  if (best === null) {
+    const tight = pictureBodies(count, PICTURE_PX.min, chrome, measure, level)[0];
+    return { pieces: placeInBand(tight.block, chrome), columns: tight.columns, fits: false };
+  }
+  let fitting: number = PICTURE_PX.min;
+  let tooBig = PICTURE_PX.max + 1;
+  while (tooBig - fitting > 1) {
+    const side = Math.floor((fitting + tooBig) / 2);
+    const body = fittingPictureBody(side, chrome, count, measure, level);
+    if (body === null) {
+      tooBig = side;
+    } else {
+      fitting = side;
+      best = body;
+    }
+  }
+  return { pieces: placeInBand(best.block, chrome), columns: best.columns, fits: true };
+}
+
+/**
+ * The name controls in rows UI.gap apart, each centred across the widest: the name box (with More
+ * names beside it when both fit `maxW`), then `perPage` name tiles flowing in rows that fit `maxW`,
+ * with More names after them (sharing the last row when it fits) when it is not beside the box.
+ */
+function nameBlock(perPage: number, more: boolean, maxW: number): Block {
+  const moreBesideBox = more && NAME_BOX.w + UI.gap + MORE_NAMES_BUTTON.w <= maxW;
+  const firstRow: { name: PieceName; size: Size }[] = [{ name: 'nameBox', size: NAME_BOX }];
+  if (moreBesideBox) firstRow.push({ name: 'moreNames', size: MORE_NAMES_BUTTON });
+  const flow: { name: PieceName; size: Size }[] = Array.from({ length: perPage }, () => ({ name: 'nameTile', size: NAME_TILE }));
+  if (more && !moreBesideBox) flow.push({ name: 'moreNames', size: MORE_NAMES_BUTTON });
+  const rows = [firstRow, ...flowRows(flow, maxW)];
+  return stackBlocks(rows.map(rowBlock));
+}
+
+/** `items` in rows that each take items in order while they fit `maxW` with UI.gap between. */
+function flowRows<Item extends { size: Size }>(items: readonly Item[], maxW: number): Item[][] {
+  const rows: Item[][] = [];
+  let rowW = 0;
+  for (const item of items) {
+    const row = rows[rows.length - 1];
+    if (row !== undefined && rowW + UI.gap + item.size.w <= maxW) {
+      row.push(item);
+      rowW += UI.gap + item.size.w;
+    } else {
+      rows.push([item]);
+      rowW = item.size.w;
+    }
+  }
+  return rows;
+}
+
+/** One row of touch targets UI.gap apart, top-aligned. */
+function rowBlock(row: readonly { name: PieceName; size: Size }[]): Block {
+  const pieces: Piece[] = [];
+  let x = 0;
+  for (const item of row) {
+    pieces.push({ name: item.name, rect: { x, y: 0, ...item.size } });
+    x += item.size.w + UI.gap;
+  }
+  return { w: x - UI.gap, h: Math.max(...row.map((item) => item.size.h)), top: 'target', bottom: 'target', pieces, children: [] };
+}
+
+/** The Name bodies to try with `perPage` names: the preview above, then beside, the name controls. */
+function nameBodies(perPage: number, nameCount: number, chrome: Chrome, measure: StylerMeasure, level: FitLevel): Block[] {
+  const bandW = chrome.band.w;
+  const more = nameCount > perPage;
+  const helper = helperBlock(level, measure, bandW);
+  const preview = level.previewScale === null ? null : previewBlock(measure, level.previewScale);
+  const head = helper ? [helper] : [];
+  const bodies = [stackBlocks([...head, ...(preview ? [preview] : []), nameBlock(perPage, more, bandW)])];
+  if (preview !== null) {
+    const row = sideBlocks(preview, nameBlock(perPage, more, bandW - preview.w - TEXT_GAP));
+    bodies.push(stackBlocks([...head, row]));
+  }
+  return bodies;
+}
+
+/** The Name body for this level with the most names per page (up to MAX_STEP_OPTIONS) that fit. */
+function bestNameBody(chrome: Chrome, nameCount: number, measure: StylerMeasure, level: FitLevel): PlacedBody {
+  const mostPerPage = Math.min(MAX_STEP_OPTIONS, nameCount);
+  for (let perPage = mostPerPage; perPage >= 1; perPage--) {
+    const body = nameBodies(perPage, nameCount, chrome, measure, level).find((candidate) => fitsBand(candidate, chrome));
+    if (body !== undefined) return { pieces: placeInBand(body, chrome), columns: 0, fits: true };
+  }
+  const tight = nameBodies(1, nameCount, chrome, measure, level)[0];
+  return { pieces: placeInBand(tight, chrome), columns: 0, fits: false };
+}
+
+/** Rects of every piece named `name`, in order. */
+function piecesNamed(pieces: readonly Piece[], name: PieceName): Rect[] {
+  return pieces.filter((piece) => piece.name === name).map((piece) => piece.rect);
+}
+
+/** The single piece named `name`, or null. */
+function pieceNamed(pieces: readonly Piece[], name: PieceName): Rect | null {
+  return piecesNamed(pieces, name)[0] ?? null;
+}
+
+/** The body parts of the layout from its placed pieces. */
+function collectBody(
+  pieces: readonly Piece[],
+  measure: StylerMeasure,
+  level: FitLevel,
+  columns: number,
+  screen: StylerScreen,
+): Pick<StylerLayout, 'helper' | 'preview' | 'caption' | 'options' | 'columns' | 'labelsShown' | 'optionLabels' | 'name'> {
+  const previewRect = pieceNamed(pieces, 'preview');
+  const nameBox = pieceNamed(pieces, 'nameBox');
+  const tiles = piecesNamed(pieces, 'nameTile');
+  return {
+    helper: pieceNamed(pieces, 'helper'),
+    preview: previewRect === null || level.previewScale === null ? null : withAnchor(previewRect, level.previewScale, measure),
+    caption: pieceNamed(pieces, 'caption'),
+    options: piecesNamed(pieces, 'option'),
+    columns,
+    labelsShown: screen.step !== 'name' && level.labels,
+    optionLabels: piecesNamed(pieces, 'optionLabel'),
+    name:
+      nameBox === null
+        ? null
+        : { box: nameBox, tiles, namesPerPage: tiles.length, moreNames: pieceNamed(pieces, 'moreNames') },
+  };
+}
+
+/** The preview at `rect` and `scale`, with local (0,0) at the frame origin. */
+function withAnchor(rect: Rect, scale: number, measure: StylerMeasure): StylerPreview {
+  const unit = measure.previewLargestSize * scale;
+  return {
+    rect,
+    scale,
+    anchor: { x: rect.x + measure.previewFrame.originX * unit, y: rect.y + measure.previewFrame.originY * unit },
+  };
 }

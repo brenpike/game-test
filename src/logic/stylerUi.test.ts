@@ -1,39 +1,45 @@
 import { describe, expect, it } from 'vitest';
+import { LOOK_FIELD_OPTIONS, LOOK_FIELDS } from './axolotlLook';
+import { NAME_MAX, SUGGESTED_NAMES, suggestedNamesFor } from './axolotlNames';
 import { isSupportedCanvas } from './cardFit';
 import type { HudView, Rect, Size } from './hudLayout';
 import { REAL_MORPHS } from './morphs';
+import { MAX_STEP_OPTIONS, STYLER_STEPS, type StylerStep } from './stylerSteps';
 import {
+  BACK_LABEL,
   CANCEL_LABEL,
-  COLOUR_PART_LABEL,
-  CREATOR_TITLE,
   DONE_LABEL,
-  EYES_PART_LABEL,
-  GILLS_PART_LABEL,
-  MOUTH_PART_LABEL,
-  NAME_PART_LABEL,
-  RESTYLE_TITLE,
-  SIZE_PART_LABEL,
-  SPOTS_PART_LABEL,
+  MORE_NAMES_LABEL,
+  NEXT_LABEL,
   SURPRISE_ME_LABEL,
+  stepHeading,
+  stepHelper,
+  stepTabLabel,
+  stepTitle,
 } from './stylerText';
 import {
+  BACK_BUTTON,
   CANCEL_BUTTON,
-  CHOICE_BADGE_GAP,
-  CHOICE_BADGE_PX,
-  CHOICE_VALUE,
   DONE_BUTTON,
-  PART_VALUE,
+  MORE_NAMES_BUTTON,
+  NAME_BOX,
+  NAME_TEXT_PX,
+  NAME_TILE,
+  NEXT_BUTTON,
+  PICTURE_PX,
   PREVIEW_SCALE,
-  STEPPER_PX,
   SURPRISE_BUTTON,
-  VALUE_TEXT_PX,
-  choiceValueContent,
+  TAB_H,
+  TAB_TEXT_PX,
+  TEXT_GAP,
   stylerLayout,
+  tabWidth,
   type StylerLayout,
   type StylerMeasure,
   type StylerMode,
+  type StylerScreen,
 } from './stylerUi';
-import { TILE_BUTTON, UI, WIDE_BUTTON, tileButtonWidth, wideButtonWidth } from './tankUi';
+import { UI } from './tankUi';
 
 /** Text size estimate that errs wide, the cardCopyFit.test constants. */
 const BOLD_EM = 0.6;
@@ -41,59 +47,47 @@ const LINE_HEIGHT_EM = 1.25;
 
 const MIN_TARGET_PX = 48;
 const PRIMARY_H = 64;
-const TITLE_PX = 34;
-const MIN_VALUE_PX = 20;
+const MIN_TEXT_PX = 18;
 
-/** Longest name a player can type or be given (axolotlNames), as a 12-character stand-in. */
-const LONGEST_NAME = 'Bubblesnoot!';
+/** Text sizes the scene measures with, mirrored here: heading, helper, caption and option labels. */
+const HEADING_PX = 28;
+const HELPER_PX = 18;
+const CAPTION_PX = 18;
+const OPTION_LABEL_PX = 18;
 
-/** Longest option labels (axolotlLook): 'Determined' (eyes) and 'Tongue out' (mouth). */
-const LONGEST_OPTION_LABELS: readonly string[] = ['Determined', 'Tongue out'];
+/** The axolotl texture frame, mirroring AXO_TEX (src/art/drawAxolotl.ts). */
+const PREVIEW_FRAME = Object.freeze({ w: 166, h: 139, originX: 102, originY: 79 });
 
-/** Every part label, in creator order. */
-const PART_LABELS: readonly string[] = [
-  NAME_PART_LABEL,
-  EYES_PART_LABEL,
-  MOUTH_PART_LABEL,
-  GILLS_PART_LABEL,
-  SPOTS_PART_LABEL,
-  SIZE_PART_LABEL,
-  COLOUR_PART_LABEL,
+/** The largest size scale, mirroring AXO_SIZE_SCALE.large (src/art/drawAxolotlParts.ts); sizes are 0.72, 0.85 and 1. */
+const PREVIEW_LARGEST_SIZE = 1;
+
+/** Every option label the steps show today: every look option and every real morph name. */
+const OPTION_LABELS: readonly string[] = [
+  ...LOOK_FIELDS.flatMap((field) => LOOK_FIELD_OPTIONS[field].map((option) => option.label)),
+  ...REAL_MORPHS.map((morph) => morph.name),
 ];
 
-/** The axolotl texture frame at Medium, mirroring AXO_TEX (src/art/drawAxolotl.ts). */
-const PREVIEW_FRAME = Object.freeze({ w: 148, h: 125, originX: 84, originY: 73 });
-
-/** The largest size scale, mirroring AXO_SIZE_SCALE.large (src/art/drawAxolotlParts.ts). */
-const PREVIEW_LARGEST_SIZE = 1.15;
-
-/** Longest real morph name, shown with its badge as a Colour choice. */
-const LONGEST_MORPH_NAME = REAL_MORPHS.reduce(
-  (longest, morph) => (morph.name.length > longest.length ? morph.name : longest),
-  '',
-);
-
-const CANVASES: readonly HudView[] = [
+const SMALLEST: readonly HudView[] = [
   { cssW: 460, cssH: 320 },
   { cssW: 320, cssH: 440 },
-  { cssW: 480, cssH: 360 },
-  { cssW: 844, cssH: 390 },
-  { cssW: 390, cssH: 844 },
-  { cssW: 1280, cssH: 800 },
 ];
 
-const MODES: readonly StylerMode[] = ['create', 'restyle'];
+const MODES: readonly StylerMode[] = ['creator', 'restyle'];
+
+/** Option counts every picture step is laid out for, up to MAX_STEP_OPTIONS. */
+const OPTION_COUNTS: readonly number[] = [2, 3, 4, 5, MAX_STEP_OPTIONS];
+
+/** Suggested names fitting a boy or a girl: the most the Name step pages through. */
+const NAME_COUNT = Math.max(suggestedNamesFor('boy').length, suggestedNamesFor('girl').length);
 
 const CANVAS_WIDTHS: readonly number[] = [
   320, 340, 360, 375, 390, 414, 430, 459, 460, 480, 520, 568, 640, 667, 736, 800, 844, 1024, 1280, 1366,
 ];
-const CANVAS_HEIGHTS: readonly number[] = [
-  320, 340, 360, 375, 414, 440, 480, 568, 600, 667, 740, 768, 844, 932,
-];
+const CANVAS_HEIGHTS: readonly number[] = [320, 340, 360, 375, 414, 440, 480, 568, 600, 667, 740, 768, 844, 932];
 
 /** Lines `text` wraps to at `wrapW`, splitting greedily on ' ', every character `em * px` wide. */
-function estimateLines(text: string, px: number, wrapW: number, em: number): number {
-  const charW = em * px;
+function estimateLines(text: string, px: number, wrapW: number): number {
+  const charW = BOLD_EM * px;
   let lines = 1;
   let lineW = 0;
   for (const word of text.split(' ')) {
@@ -108,31 +102,77 @@ function estimateLines(text: string, px: number, wrapW: number, em: number): num
   return lines;
 }
 
-/** Estimated size of `text` wrapped at `wrapW`. */
-function textSize(text: string, px: number, wrapW: number, em: number): Size {
-  const lines = estimateLines(text, px, wrapW, em);
-  return { w: Math.min(wrapW, text.length * em * px), h: lines * LINE_HEIGHT_EM * px };
+/** Estimated size of `text` wrapped at `wrapW`: its widest line and its lines. */
+function textSize(text: string, px: number, wrapW: number): Size {
+  const lines = estimateLines(text, px, wrapW);
+  const widestWord = Math.max(...text.split(' ').map((word) => word.length)) * BOLD_EM * px;
+  const w = lines === 1 ? text.length * BOLD_EM * px : Math.max(widestWord, Math.min(wrapW, text.length * BOLD_EM * px));
+  return { w, h: lines * LINE_HEIGHT_EM * px };
 }
 
-/** The styler measure for `mode`: its title in bold ink 34 px, and the preview frame and largest size. */
-function measureFor(mode: StylerMode): StylerMeasure {
-  const title = mode === 'create' ? CREATOR_TITLE : RESTYLE_TITLE;
+/** The tallest and widest of `texts` wrapped at `wrapW`. */
+function boundsOf(texts: readonly string[], px: number, wrapW: number): Size {
+  const sizes = texts.map((text) => textSize(text, px, wrapW));
+  return { w: Math.max(...sizes.map((size) => size.w)), h: Math.max(...sizes.map((size) => size.h)) };
+}
+
+/** `sizeAt` remembering each wrap width it was asked for. */
+function memoByWidth(sizeAt: (wrapW: number) => Size): (wrapW: number) => Size {
+  const known = new Map<number, Size>();
+  return (wrapW) => {
+    const size = known.get(wrapW) ?? sizeAt(wrapW);
+    known.set(wrapW, size);
+    return size;
+  };
+}
+
+/** The styler measure for `step` in `mode`, as the scene measures it, with every option label. */
+function measureFor(mode: StylerMode, step: StylerStep): StylerMeasure {
+  const index = STYLER_STEPS.indexOf(step);
+  const longestLabel = OPTION_LABELS.reduce((longest, label) => (label.length > longest.length ? label : longest), '');
+  const longestWord = Math.max(...OPTION_LABELS.flatMap((label) => label.split(' ').map((word) => word.length)));
   return {
-    titleAt: (wrapW) => textSize(title, TITLE_PX, wrapW, BOLD_EM),
+    headingAt: (wrapW, full) =>
+      textSize(full ? stepHeading(index, STYLER_STEPS.length, step) : stepTitle(step), HEADING_PX, wrapW),
+    helperAt: (wrapW) => textSize(stepHelper(mode, step), HELPER_PX, wrapW),
+    captionAt: (wrapW) => textSize(longestLabel, CAPTION_PX, wrapW),
+    optionLabelAt: memoByWidth((wrapW) => boundsOf(OPTION_LABELS, OPTION_LABEL_PX, wrapW)),
+    optionLabelMinW: longestWord * BOLD_EM * OPTION_LABEL_PX,
     previewFrame: PREVIEW_FRAME,
     previewLargestSize: PREVIEW_LARGEST_SIZE,
   };
 }
 
-/** Wide bold width estimate of `text` at `px`. */
-function boldTextW(text: string, px: number): number {
-  return text.length * BOLD_EM * px;
+/** The screen for `step` with `optionCount` options (on Name, every name that fits). */
+function screenFor(mode: StylerMode, step: StylerStep, optionCount: number): StylerScreen {
+  return { mode, step, optionCount: step === 'name' ? NAME_COUNT : optionCount, tabPage: null };
+}
+
+const MEASURES = new Map<string, StylerMeasure>();
+
+/** The measure for `step` in `mode`, made once. */
+function sharedMeasure(mode: StylerMode, step: StylerStep): StylerMeasure {
+  const key = `${mode} ${step}`;
+  const measure = MEASURES.get(key) ?? measureFor(mode, step);
+  MEASURES.set(key, measure);
+  return measure;
+}
+
+function layoutFor(view: HudView, mode: StylerMode, step: StylerStep, optionCount: number): StylerLayout {
+  return stylerLayout(view, screenFor(mode, step, optionCount), sharedMeasure(mode, step));
 }
 
 /** Supported canvases from the width and height grid (art guide 1). */
 function supportedCanvases(): HudView[] {
   return CANVAS_WIDTHS.flatMap((cssW) =>
     CANVAS_HEIGHTS.filter((cssH) => isSupportedCanvas(cssW, cssH)).map((cssH) => ({ cssW, cssH })),
+  );
+}
+
+/** Every step's screen, with each option count on the picture steps and once on Name. */
+function screensOf(): [StylerStep, number][] {
+  return STYLER_STEPS.flatMap((step): [StylerStep, number][] =>
+    step === 'name' ? [[step, NAME_COUNT]] : OPTION_COUNTS.map((count): [StylerStep, number] => [step, count]),
   );
 }
 
@@ -164,255 +204,306 @@ function panelInner(layout: StylerLayout): Rect {
   return { x: panel.x + UI.pad, y: panel.y + UI.pad, w: panel.w - 2 * UI.pad, h: panel.h - 2 * UI.pad };
 }
 
-/** The touch targets of a layout, by name. */
+/** The primary step buttons shown, by name. */
+function primariesOf(layout: StylerLayout): [string, Rect][] {
+  const { back, next, done, surprise, cancel } = layout.nav;
+  const named: [string, Rect | null][] = [
+    ['back', back],
+    ['next', next],
+    ['done', done],
+    ['surprise', surprise],
+    ['cancel', cancel],
+  ];
+  return named.filter((entry): entry is [string, Rect] => entry[1] !== null);
+}
+
+/** Every touch target of a layout, by name. */
 function targetsOf(layout: StylerLayout): [string, Rect][] {
-  const targets: [string, Rect][] = [
-    ['part.back', layout.part.back],
-    ['part.next', layout.part.next],
-    ['choice.back', layout.choice.back],
-    ['choice.next', layout.choice.next],
-    ['surprise', layout.surprise],
-    ['done', layout.done],
-  ];
-  return layout.cancel ? [...targets, ['cancel', layout.cancel]] : targets;
+  const targets: [string, Rect][] = [...primariesOf(layout)];
+  layout.options.forEach((rect, index) => targets.push([`option ${index}`, rect]));
+  if (layout.tabs) {
+    layout.tabs.tabs.forEach((tab) => targets.push([`tab ${tab.step}`, tab.rect]));
+    if (layout.tabs.prevPage) targets.push(['prevPage', layout.tabs.prevPage]);
+    if (layout.tabs.nextPage) targets.push(['nextPage', layout.tabs.nextPage]);
+  }
+  if (layout.name) {
+    targets.push(['nameBox', layout.name.box]);
+    layout.name.tiles.forEach((rect, index) => targets.push([`nameTile ${index}`, rect]));
+    if (layout.name.moreNames) targets.push(['moreNames', layout.name.moreNames]);
+  }
+  return targets;
 }
 
-/** Every rect inside the panel, by name. */
-function contentsOf(layout: StylerLayout): [string, Rect][] {
-  const contents: [string, Rect][] = [
-    ...targetsOf(layout),
-    ['part.value', layout.part.value],
-    ['choice.value', layout.choice.value],
-    ['preview', layout.preview],
-  ];
-  return layout.title ? [...contents, ['title', layout.title]] : contents;
+/** Every non-interactive part of a layout, by name: text, dots and the preview. */
+function othersOf(layout: StylerLayout): [string, Rect][] {
+  const others: [string, Rect][] = layout.heading ? [['heading', layout.heading]] : [];
+  if (layout.helper) others.push(['helper', layout.helper]);
+  if (layout.caption) others.push(['caption', layout.caption]);
+  if (layout.preview) others.push(['preview', layout.preview.rect]);
+  layout.optionLabels.forEach((rect, index) => others.push([`optionLabel ${index}`, rect]));
+  layout.dots?.forEach((rect, index) => others.push([`dot ${index}`, rect]));
+  return others;
 }
 
-/** True when the choice value sits above its chevrons instead of between them. */
-function isStacked(layout: StylerLayout): boolean {
-  return layout.choice.value.y + layout.choice.value.h <= layout.choice.back.y;
-}
-
-/** Every problem with one layout: outside the margins or panel, gaps under UI.gap, small targets, shrunk text. */
-function stylerProblems(view: HudView, mode: StylerMode): string[] {
-  const label = `${mode} ${view.cssW}x${view.cssH}`;
-  const layout = stylerLayout(view, measureFor(mode), mode);
+/** Every problem with one layout: outside the panel, too close, small targets, no preview before fit step 5, or no heading before fit step 6. */
+function layoutProblems(view: HudView, mode: StylerMode, step: StylerStep, optionCount: number): string[] {
+  const label = `${mode} ${step} x${optionCount} ${view.cssW}x${view.cssH}`;
+  const layout = layoutFor(view, mode, step, optionCount);
   const inner = panelInner(layout);
-  const contents = contentsOf(layout);
+  const targets = targetsOf(layout);
+  const parts = [...targets.map(([name, rect]): [string, Rect, boolean] => [name, rect, true]), ...othersOf(layout).map(([name, rect]): [string, Rect, boolean] => [name, rect, false])];
   const problems: string[] = [];
   if (!isInside(layout.panel, marginBounds(view))) problems.push(`${label}: panel outside the margins`);
-  for (const [name, rect] of contents) {
+  for (const [name, rect] of parts) {
     if (!isInside(rect, inner)) problems.push(`${label}: ${name} outside the panel padding`);
   }
-  for (let i = 0; i < contents.length; i++) {
-    for (let j = i + 1; j < contents.length; j++) {
-      if (clearance(contents[i][1], contents[j][1]) < UI.gap - 1e-9) {
-        problems.push(`${label}: ${contents[i][0]} and ${contents[j][0]} closer than ${UI.gap}`);
+  for (let i = 0; i < parts.length; i++) {
+    for (let j = i + 1; j < parts.length; j++) {
+      const least = parts[i][2] && parts[j][2] ? UI.gap : TEXT_GAP;
+      if (clearance(parts[i][1], parts[j][1]) < least - 1e-9) {
+        problems.push(`${label}: ${parts[i][0]} and ${parts[j][0]} closer than ${least}`);
       }
     }
   }
-  for (const [name, rect] of targetsOf(layout)) {
-    if (rect.w < MIN_TARGET_PX || rect.h < MIN_TARGET_PX) problems.push(`${label}: ${name} under ${MIN_TARGET_PX} px`);
+  for (const [name, rect] of targets) {
+    if (rect.w < MIN_TARGET_PX - 1e-9 || rect.h < MIN_TARGET_PX - 1e-9) problems.push(`${label}: ${name} under ${MIN_TARGET_PX} px`);
   }
-  for (const stepper of [layout.part.back, layout.part.next, layout.choice.back, layout.choice.next]) {
-    if (stepper.w !== STEPPER_PX || stepper.h !== STEPPER_PX) problems.push(`${label}: stepper not ${STEPPER_PX} px`);
+  for (const [name, rect] of primariesOf(layout)) {
+    if (rect.h < PRIMARY_H) problems.push(`${label}: ${name} under ${PRIMARY_H} px tall`);
   }
-  if (layout.done.h < PRIMARY_H) problems.push(`${label}: Done under ${PRIMARY_H} px`);
-  if ((layout.cancel === null) !== (mode === 'create')) problems.push(`${label}: Cancel shown in the wrong mode`);
-  if (layout.previewScale < PREVIEW_SCALE.min) problems.push(`${label}: preview under its minimum`);
+  for (const rect of layout.options) {
+    if (rect.w !== rect.h) problems.push(`${label}: a picture button is not square`);
+  }
+  if (layout.preview === null && layout.fitStep < 5) problems.push(`${label}: no preview before fit step 5`);
+  if (layout.heading === null && layout.fitStep < 6) problems.push(`${label}: no heading before fit step 6`);
+  if (step !== 'name' && layout.options.length !== optionCount) problems.push(`${label}: ${layout.options.length} options`);
   return problems;
 }
 
-/** Problems when a layout's text boxes or buttons differ from their measured sizes. */
-function sizeProblems(view: HudView, mode: StylerMode): string[] {
-  const label = `${mode} ${view.cssW}x${view.cssH}`;
-  const measure = measureFor(mode);
-  const layout = stylerLayout(view, measure, mode);
-  const expected: [string, Rect | null, Size][] = [
-    ['part.value', layout.part.value, PART_VALUE],
-    ['choice.value', layout.choice.value, CHOICE_VALUE],
-    ['surprise', layout.surprise, SURPRISE_BUTTON],
-    ['done', layout.done, DONE_BUTTON],
-    ['cancel', layout.cancel, CANCEL_BUTTON],
-    ['title', layout.title, measure.titleAt(panelInner(layout).w)],
-  ];
-  return expected
-    .filter(([, rect, size]) => rect !== null && (rect.w !== size.w || rect.h !== size.h))
-    .map(([name]) => `${label}: ${name} not at its measured size`);
+/** Problems with every screen of every step in both modes on `views`. */
+function problemsOn(views: readonly HudView[]): string[] {
+  return views.flatMap((view) =>
+    MODES.flatMap((mode) => screensOf().flatMap(([step, count]) => layoutProblems(view, mode, step, count))),
+  );
 }
 
 describe('styler sizes', () => {
-  it('fits the longest option label and a 12-character name in the choice value at 20 px or more', () => {
-    expect(VALUE_TEXT_PX).toBeGreaterThanOrEqual(MIN_VALUE_PX);
-    expect(LONGEST_NAME).toHaveLength(12);
-    for (const text of [LONGEST_NAME, ...LONGEST_OPTION_LABELS]) {
-      expect(CHOICE_VALUE.w).toBeGreaterThanOrEqual(boldTextW(text, VALUE_TEXT_PX) + 2 * UI.pad);
-    }
-    expect(CHOICE_VALUE.h).toBeGreaterThanOrEqual(LINE_HEIGHT_EM * VALUE_TEXT_PX);
-  });
-
-  it('fits the longest morph name, the badge gap and the badge in the choice value at 20 px', () => {
-    const contentW = boldTextW(LONGEST_MORPH_NAME, VALUE_TEXT_PX) + CHOICE_BADGE_GAP + CHOICE_BADGE_PX;
-    expect(CHOICE_VALUE.w).toBeGreaterThanOrEqual(contentW + 2 * UI.pad);
-    expect(CHOICE_VALUE.h).toBe(STEPPER_PX);
-    expect(CHOICE_BADGE_PX).toBeLessThanOrEqual(STEPPER_PX);
-  });
-
-  it('fits every part label, Colour included, in the part value', () => {
-    for (const text of PART_LABELS) {
-      expect(PART_VALUE.w).toBeGreaterThanOrEqual(boldTextW(text, VALUE_TEXT_PX) + 2 * UI.pad);
+  it('keeps every text size at 18 px or more', () => {
+    for (const px of [HEADING_PX, HELPER_PX, CAPTION_PX, OPTION_LABEL_PX, TAB_TEXT_PX, NAME_TEXT_PX]) {
+      expect(px).toBeGreaterThanOrEqual(MIN_TEXT_PX);
     }
   });
 
-  it('sizes Surprise me and Cancel as label-wide tiles and Done as a 64 px wide button', () => {
-    expect(SURPRISE_BUTTON).toEqual({ w: tileButtonWidth(SURPRISE_ME_LABEL), h: TILE_BUTTON.h });
-    expect(CANCEL_BUTTON).toEqual({ w: tileButtonWidth(CANCEL_LABEL), h: TILE_BUTTON.h });
-    expect(DONE_BUTTON).toEqual({ w: wideButtonWidth(DONE_LABEL), h: WIDE_BUTTON.h });
-    expect(DONE_BUTTON.h).toBeGreaterThanOrEqual(PRIMARY_H);
+  it('sizes the primary buttons to their labels, at least 48 wide and 64 tall', () => {
+    const buttons: [string, Size][] = [
+      [BACK_LABEL, BACK_BUTTON],
+      [NEXT_LABEL, NEXT_BUTTON],
+      [DONE_LABEL, DONE_BUTTON],
+      [SURPRISE_ME_LABEL, SURPRISE_BUTTON],
+      [CANCEL_LABEL, CANCEL_BUTTON],
+    ];
+    for (const [text, size] of buttons) {
+      expect(size.h).toBeGreaterThanOrEqual(PRIMARY_H);
+      expect(size.w).toBeGreaterThanOrEqual(MIN_TARGET_PX);
+      expect(size.w).toBeGreaterThanOrEqual(text.length * BOLD_EM * 22);
+      expect(size.w).toBeLessThan(200);
+    }
   });
 
-  it('uses a 48 x 48 chevron stepper', () => {
-    expect(STEPPER_PX).toBe(MIN_TARGET_PX);
+  it('fits a 12-character name in the name box and every suggested name in a name tile at 20 px', () => {
+    expect(NAME_MAX).toBe(12);
+    expect(NAME_BOX.w).toBeGreaterThanOrEqual(NAME_MAX * BOLD_EM * NAME_TEXT_PX);
+    for (const name of SUGGESTED_NAMES) expect(NAME_TILE.w).toBeGreaterThanOrEqual(name.length * BOLD_EM * NAME_TEXT_PX);
+    expect(MORE_NAMES_BUTTON.w).toBeGreaterThanOrEqual(MORE_NAMES_LABEL.length * BOLD_EM * NAME_TEXT_PX);
+    for (const size of [NAME_BOX, NAME_TILE, MORE_NAMES_BUTTON]) expect(size.h).toBeGreaterThanOrEqual(MIN_TARGET_PX);
+  });
+
+  it('fits each tab label in its tab, 48 px tall or more', () => {
+    expect(TAB_H).toBeGreaterThanOrEqual(MIN_TARGET_PX);
+    for (const step of STYLER_STEPS) {
+      expect(tabWidth(step)).toBeGreaterThanOrEqual(stepTabLabel(step).length * BOLD_EM * TAB_TEXT_PX);
+      expect(tabWidth(step)).toBeGreaterThanOrEqual(MIN_TARGET_PX);
+    }
+  });
+
+  it('starts picture buttons at the 48 px least target and shrinks the preview to 0.6', () => {
+    expect(PICTURE_PX.min).toBe(MIN_TARGET_PX);
+    expect(PREVIEW_SCALE.shrunk / PREVIEW_SCALE.full).toBeCloseTo(0.6);
   });
 });
 
 describe('stylerLayout', () => {
-  it.each(CANVASES.flatMap((view) => MODES.map((mode): [HudView, StylerMode] => [view, mode])))(
-    'fits %j in %s mode',
-    (view, mode) => {
-      expect(stylerProblems(view, mode)).toEqual([]);
-    },
-  );
-
-  it('fits every supported canvas in both modes', () => {
-    const problems = supportedCanvases().flatMap((view) => MODES.flatMap((mode) => stylerProblems(view, mode)));
-    expect(problems).toEqual([]);
+  it.each(SMALLEST)('fits every step with 2, 3, 4, 5 and 8 options and the Name step in both modes on %j', (view) => {
+    expect(problemsOn([view])).toEqual([]);
   });
 
-  it('never shrinks text or buttons', () => {
-    const problems = CANVASES.flatMap((view) => MODES.flatMap((mode) => sizeProblems(view, mode)));
-    expect(problems).toEqual([]);
+  it('fits every step in both modes on every supported canvas', () => {
+    expect(problemsOn(supportedCanvases())).toEqual([]);
   });
 
-  it('sizes the preview box to hold a Large axolotl with Long gills at the preview scale', () => {
-    for (const view of CANVASES) {
-      const layout = stylerLayout(view, measureFor('restyle'), 'restyle');
-      const unit = PREVIEW_LARGEST_SIZE * layout.previewScale;
-      expect(layout.preview.w).toBeCloseTo(PREVIEW_FRAME.w * unit);
-      expect(layout.preview.h).toBeCloseTo(PREVIEW_FRAME.h * unit);
-      expect(layout.previewAnchor.x).toBeCloseTo(layout.preview.x + PREVIEW_FRAME.originX * unit);
-      expect(layout.previewAnchor.y).toBeCloseTo(layout.preview.y + PREVIEW_FRAME.originY * unit);
-      expect(layout.previewScale).toBeLessThanOrEqual(PREVIEW_SCALE.preferred);
-    }
-  });
-
-  it('shows the title, the choice value between its chevrons and the preferred preview when there is room', () => {
-    for (const view of [
-      { cssW: 1280, cssH: 800 },
-      { cssW: 844, cssH: 390 },
-      { cssW: 390, cssH: 844 },
-    ]) {
-      for (const mode of MODES) {
-        const layout = stylerLayout(view, measureFor(mode), mode);
-        expect(layout.title).not.toBeNull();
-        expect(isStacked(layout)).toBe(false);
-        expect(layout.previewScale).toBe(PREVIEW_SCALE.preferred);
+  it('shows everything with room to spare', () => {
+    for (const mode of MODES) {
+      for (const [step, count] of screensOf()) {
+        const layout = layoutFor({ cssW: 1280, cssH: 800 }, mode, step, count);
+        expect(layout.fitStep).toBe(0);
+        expect(layout.helper).not.toBeNull();
+        expect(layout.preview?.scale).toBe(PREVIEW_SCALE.full);
+        expect(layout.labelsShown).toBe(step !== 'name');
       }
     }
   });
 
-  it('hides the title, then shrinks the preview, then stacks the choice when tight', () => {
-    for (const view of [
-      { cssW: 460, cssH: 320 },
-      { cssW: 320, cssH: 440 },
-      { cssW: 480, cssH: 360 },
-    ]) {
+  it('takes the fit steps in the PRD F1 order', () => {
+    for (const view of [...SMALLEST, ...supportedCanvases()]) {
       for (const mode of MODES) {
-        const layout = stylerLayout(view, measureFor(mode), mode);
-        expect(layout.title).toBeNull();
-        expect(isStacked(layout)).toBe(true);
-        expect(layout.previewScale).toBeGreaterThanOrEqual(PREVIEW_SCALE.min);
-      }
-    }
-  });
-
-  it('skips a title too wide for the panel', () => {
-    const view = { cssW: 1280, cssH: 800 };
-    const wide: StylerMeasure = { ...measureFor('create'), titleAt: (wrapW) => ({ w: wrapW + 1, h: 40 }) };
-    expect(stylerLayout(view, wide, 'create').title).toBeNull();
-  });
-
-  it('puts the preview left of the steppers and Done in landscape', () => {
-    for (const view of [
-      { cssW: 460, cssH: 320 },
-      { cssW: 844, cssH: 390 },
-      { cssW: 1280, cssH: 800 },
-    ]) {
-      for (const mode of MODES) {
-        const layout = stylerLayout(view, measureFor(mode), mode);
-        const previewRight = layout.preview.x + layout.preview.w;
-        for (const rect of [layout.part.back, layout.choice.back, layout.choice.value, layout.done]) {
-          expect(rect.x).toBeGreaterThan(previewRight);
+        for (const [step, count] of screensOf()) {
+          const layout = layoutFor(view, mode, step, count);
+          const { fitStep } = layout;
+          expect(layout.helper !== null).toBe(fitStep < 1);
+          if (step !== 'name') expect(layout.labelsShown).toBe(fitStep < 2);
+          expect(layout.caption !== null).toBe(step !== 'name' && fitStep >= 2);
+          if (fitStep < 5) expect(layout.preview?.scale).toBe(fitStep >= 3 ? PREVIEW_SCALE.shrunk : PREVIEW_SCALE.full);
+          expect(layout.headingFull).toBe(mode === 'creator' && fitStep < 4);
+          expect(layout.heading === null).toBe(fitStep >= 6);
         }
-        expect(layout.part.back.y).toBeLessThan(layout.choice.back.y);
       }
     }
   });
 
-  it('stacks the steppers, the preview and the buttons in portrait', () => {
-    for (const view of [
-      { cssW: 320, cssH: 440 },
-      { cssW: 390, cssH: 844 },
-    ]) {
+  it('hides the heading at fit step 6 in restyle only, and never in the creator', () => {
+    const views = [...SMALLEST, ...supportedCanvases()];
+    let restyleHides = 0;
+    for (const view of views) {
+      for (const [step, count] of screensOf()) {
+        const creator = layoutFor(view, 'creator', step, count);
+        expect(creator.fitStep).toBeLessThanOrEqual(5);
+        expect(creator.heading).not.toBeNull();
+        const restyle = layoutFor(view, 'restyle', step, count);
+        expect(restyle.fitStep).toBeLessThanOrEqual(6);
+        expect(restyle.heading === null).toBe(restyle.fitStep === 6);
+        if (restyle.fitStep === 6) {
+          restyleHides += 1;
+          expect(restyle.tabs?.tabs.map((tab) => tab.step)).toContain(step);
+        }
+      }
+    }
+    expect(restyleHides).toBeGreaterThan(0);
+  });
+
+  it('keeps the heading at its measured size', () => {
+    const view = { cssW: 460, cssH: 320 };
+    for (const mode of MODES) {
+      for (const step of STYLER_STEPS) {
+        const layout = layoutFor(view, mode, step, MAX_STEP_OPTIONS);
+        if (layout.heading === null) continue;
+        const measured = measureFor(mode, step).headingAt(panelInner(layout).w, layout.headingFull);
+        expect({ w: layout.heading.w, h: layout.heading.h }).toEqual(measured);
+      }
+    }
+  });
+
+  it('sizes the preview box to hold a Large axolotl at the preview scale, anchored at the frame origin', () => {
+    for (const view of [{ cssW: 1280, cssH: 800 }, { cssW: 844, cssH: 390 }, ...SMALLEST]) {
       for (const mode of MODES) {
-        const layout = stylerLayout(view, measureFor(mode), mode);
-        const previewBottom = layout.preview.y + layout.preview.h;
-        expect(layout.part.value.y).toBeLessThan(layout.choice.value.y);
-        expect(layout.choice.value.y + layout.choice.value.h).toBeLessThan(layout.preview.y);
-        for (const rect of [layout.surprise, layout.done]) expect(rect.y).toBeGreaterThan(previewBottom);
+        const preview = layoutFor(view, mode, 'eyes', 3).preview;
+        if (preview === null) continue;
+        const unit = PREVIEW_LARGEST_SIZE * preview.scale;
+        expect(preview.rect.w).toBeCloseTo(PREVIEW_FRAME.w * unit);
+        expect(preview.rect.h).toBeCloseTo(PREVIEW_FRAME.h * unit);
+        expect(preview.anchor.x).toBeCloseTo(preview.rect.x + PREVIEW_FRAME.originX * unit);
+        expect(preview.anchor.y).toBeCloseTo(preview.rect.y + PREVIEW_FRAME.originY * unit);
       }
     }
   });
 
-  it('puts the stacked choice chevrons either side of the preview in portrait', () => {
-    const layout = stylerLayout({ cssW: 320, cssH: 440 }, measureFor('restyle'), 'restyle');
-    const previewCentreY = layout.preview.y + layout.preview.h / 2;
-    expect(layout.choice.back.x + layout.choice.back.w).toBeLessThan(layout.preview.x);
-    expect(layout.choice.next.x).toBeGreaterThan(layout.preview.x + layout.preview.w);
-    expect(layout.choice.back.y + STEPPER_PX / 2).toBeCloseTo(previewCentreY);
-  });
-
-  it('shows Cancel only when restyling', () => {
+  it('gives the creator progress dots and Back from step 2, Next before the last step and Done on it', () => {
     const view = { cssW: 844, cssH: 390 };
-    expect(stylerLayout(view, measureFor('create'), 'create').cancel).toBeNull();
-    expect(stylerLayout(view, measureFor('restyle'), 'restyle').cancel).not.toBeNull();
-  });
-});
-
-describe('choiceValueContent', () => {
-  const value: Rect = { x: 100, y: 40, w: CHOICE_VALUE.w, h: CHOICE_VALUE.h };
-  const text: Size = { w: boldTextW(LONGEST_MORPH_NAME, VALUE_TEXT_PX), h: LINE_HEIGHT_EM * VALUE_TEXT_PX };
-
-  it('centres the text, the gap and the badge together inside the value box', () => {
-    const content = choiceValueContent(value, text, true);
-    const textRect: Rect = { ...content.text, ...text };
-    expect(content.badge).not.toBeNull();
-    const badge = content.badge as Rect;
-    expect(isInside(textRect, value)).toBe(true);
-    expect(isInside(badge, value)).toBe(true);
-    expect(badge.w).toBe(CHOICE_BADGE_PX);
-    expect(badge.h).toBe(CHOICE_BADGE_PX);
-    expect(badge.x - (textRect.x + textRect.w)).toBeCloseTo(CHOICE_BADGE_GAP);
-    expect(textRect.x - value.x).toBeCloseTo(value.x + value.w - (badge.x + badge.w));
-    expect(textRect.y + textRect.h / 2).toBeCloseTo(value.y + value.h / 2);
-    expect(badge.y + badge.h / 2).toBeCloseTo(value.y + value.h / 2);
+    const first = layoutFor(view, 'creator', 'colour', 4);
+    expect(first.dots).toHaveLength(STYLER_STEPS.length);
+    expect(first.tabs).toBeNull();
+    expect(first.nav.back).toBeNull();
+    expect(first.nav.next).not.toBeNull();
+    expect(first.nav.done).toBeNull();
+    expect(first.nav.cancel).toBeNull();
+    const middle = layoutFor(view, 'creator', 'eyes', 5);
+    expect(middle.nav.back).not.toBeNull();
+    expect(middle.nav.surprise).toEqual(first.nav.surprise);
+    expect(middle.nav.next).toEqual(first.nav.next);
+    const last = layoutFor(view, 'creator', 'name', NAME_COUNT);
+    expect(last.nav.next).toBeNull();
+    expect(last.nav.done).not.toBeNull();
   });
 
-  it('centres the text alone with no badge', () => {
-    const content = choiceValueContent(value, text, false);
-    expect(content.badge).toBeNull();
-    expect(content.text.x + text.w / 2).toBeCloseTo(value.x + value.w / 2);
-    expect(content.text.y + text.h / 2).toBeCloseTo(value.y + value.h / 2);
-    expect(isInside({ ...content.text, ...text }, value)).toBe(true);
+  it('gives restyle a tab row, Done, Surprise me and Cancel, and no dots, Back or Next', () => {
+    for (const view of [{ cssW: 844, cssH: 390 }, ...SMALLEST]) {
+      const layout = layoutFor(view, 'restyle', 'eyes', 5);
+      expect(layout.dots).toBeNull();
+      expect(layout.tabs).not.toBeNull();
+      expect(layout.nav.back).toBeNull();
+      expect(layout.nav.next).toBeNull();
+      expect(layout.nav.done).not.toBeNull();
+      expect(layout.nav.cancel).not.toBeNull();
+    }
+  });
+
+  it('pages the tabs with 48 px page buttons when they do not all fit, and shows the current step', () => {
+    for (const view of supportedCanvases()) {
+      for (const step of STYLER_STEPS) {
+        const tabs = layoutFor(view, 'restyle', step, 3).tabs;
+        if (tabs === null) throw new Error('restyle has tabs');
+        expect(tabs.pages.flat()).toEqual(STYLER_STEPS);
+        expect(tabs.tabs.map((tab) => tab.step)).toEqual(tabs.pages[tabs.page]);
+        expect(tabs.tabs.map((tab) => tab.step)).toContain(step);
+        expect(tabs.prevPage === null).toBe(tabs.pages.length === 1);
+        expect(tabs.nextPage === null).toBe(tabs.pages.length === 1);
+      }
+    }
+  });
+
+  it('shows the asked tab page, wrapping at both ends', () => {
+    const view = { cssW: 460, cssH: 320 };
+    const at = (tabPage: number): StylerLayout =>
+      stylerLayout(view, { mode: 'restyle', step: 'eyes', optionCount: 5, tabPage }, measureFor('restyle', 'eyes'));
+    const pageCount = at(0).tabs?.pages.length ?? 0;
+    expect(pageCount).toBeGreaterThan(1);
+    expect(at(pageCount).tabs?.page).toBe(0);
+    expect(at(-1).tabs?.page).toBe(pageCount - 1);
+  });
+
+  it('pages suggested names with no name cut, and shows More names only when they do not all fit', () => {
+    for (const view of [...SMALLEST, ...supportedCanvases()]) {
+      for (const mode of MODES) {
+        const name = layoutFor(view, mode, 'name', NAME_COUNT).name;
+        if (name === null) throw new Error('the Name step has name controls');
+        expect(name.namesPerPage).toBeGreaterThanOrEqual(1);
+        expect(name.namesPerPage).toBeLessThanOrEqual(MAX_STEP_OPTIONS);
+        expect(name.tiles).toHaveLength(name.namesPerPage);
+        expect(name.moreNames !== null).toBe(NAME_COUNT > name.namesPerPage);
+        for (const tile of name.tiles) expect(tile).toMatchObject(NAME_TILE);
+        expect(name.box).toMatchObject(NAME_BOX);
+      }
+    }
+    const few = stylerLayout(
+      { cssW: 1280, cssH: 800 },
+      { mode: 'creator', step: 'name', optionCount: 3, tabPage: null },
+      measureFor('creator', 'name'),
+    );
+    expect(few.name?.moreNames).toBeNull();
+    expect(few.name?.namesPerPage).toBe(3);
+  });
+
+  it('keeps the creator step buttons in the same place on every step of a canvas', () => {
+    for (const view of [...SMALLEST, { cssW: 844, cssH: 390 }]) {
+      const places = STYLER_STEPS.map((step) => layoutFor(view, 'creator', step, MAX_STEP_OPTIONS).nav.surprise);
+      for (const place of places) expect(place).toEqual(places[0]);
+    }
+  });
+
+  it('rejects an option count outside 1 to 8, and a tab page that is not a whole number', () => {
+    const view = { cssW: 844, cssH: 390 };
+    const measure = measureFor('creator', 'eyes');
+    expect(() => stylerLayout(view, { mode: 'creator', step: 'eyes', optionCount: 0, tabPage: null }, measure)).toThrow(RangeError);
+    expect(() => stylerLayout(view, { mode: 'creator', step: 'eyes', optionCount: 9, tabPage: null }, measure)).toThrow(RangeError);
+    expect(() => stylerLayout(view, { mode: 'restyle', step: 'eyes', optionCount: 3, tabPage: 0.5 }, measure)).toThrow(RangeError);
   });
 });

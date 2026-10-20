@@ -2,6 +2,7 @@
  * Stranded axolotl rescue rules (PRD C2 to C6): which morph waits where this trip, whether it is
  * waiting, following or safe, how it follows the player and where it rests once banked.
  */
+import type { AxolotlSex } from './axolotlLook';
 import { axolotlFindId, rescuableMorphs, type RealMorphId } from './morphs';
 import { mulberry32 } from './rng';
 import type { FindId, Holdings } from './tripBag';
@@ -34,9 +35,13 @@ export const RESCUE: Readonly<RescueTuning> = Object.freeze({
   restOffset: Object.freeze({ x: -44, y: 40 }),
 });
 
-/** A stranded axolotl left waiting after a trip, stored so the next trip shows it at the same place. */
+/**
+ * A stranded axolotl left waiting after a trip, stored so the next trip shows it at the same place
+ * as the same boy or girl.
+ */
 export interface WaitingStranded {
   morph: RealMorphId;
+  sex: AxolotlSex;
   placeId: string;
 }
 
@@ -44,6 +49,7 @@ export interface WaitingStranded {
 export interface Stranding {
   id: FindId;
   morph: RealMorphId;
+  sex: AxolotlSex;
   placeId: string;
   x: number;
   y: number;
@@ -57,6 +63,7 @@ export interface Stranding {
 export interface RescueState {
   id: FindId;
   morph: RealMorphId;
+  sex: AxolotlSex;
   placeId: string;
   place: Point;
   met: boolean;
@@ -75,7 +82,8 @@ const FACING_HYSTERESIS = 2;
 /**
  * This trip's stranded axolotl, or null when every real morph is owned (C6) or there are no
  * places. A waiting record whose morph is still rescuable and whose place is in `places` comes back
- * with `met` true. Otherwise a morph not in `owned`, then a place, are picked by `tripSeed`.
+ * with its sex and `met` true. Otherwise a morph not in `owned`, then a place, then a sex are picked
+ * by `tripSeed`; the sex is the third draw, so the morph and place picked for a seed do not depend on it.
  */
 export function pickStranding(
   owned: readonly RealMorphId[],
@@ -88,11 +96,12 @@ export function pickStranding(
   const waitingPlace = waiting && rescuable.includes(waiting.morph)
     ? places.find((place) => place.id === waiting.placeId)
     : undefined;
-  if (waiting && waitingPlace) return createStranding(waiting.morph, waitingPlace, true);
+  if (waiting && waitingPlace) return createStranding(waiting.morph, waiting.sex, waitingPlace, true);
   const rng = mulberry32((tripSeed ^ STRANDING_SEED_SALT) >>> 0);
   const morph = rescuable[Math.floor(rng() * rescuable.length)];
   const place = places[Math.floor(rng() * places.length)];
-  return createStranding(morph, place, false);
+  const sex: AxolotlSex = rng() < 0.5 ? 'boy' : 'girl';
+  return createStranding(morph, sex, place, false);
 }
 
 /** A rescue waiting at its stranding place, with an empty trail, facing left. */
@@ -100,6 +109,7 @@ export function createRescue(stranding: Stranding): RescueState {
   return {
     id: stranding.id,
     morph: stranding.morph,
+    sex: stranding.sex,
     placeId: stranding.placeId,
     place: { x: stranding.x, y: stranding.y },
     met: stranding.met,
@@ -161,8 +171,8 @@ export function sendRescueBack(rescue: RescueState): RescueState {
 }
 
 /**
- * The waiting record to keep after a trip: the morph and place of a rescue the player met but did
- * not bank, else null.
+ * The waiting record to keep after a trip: the morph, sex and place of a rescue the player met but
+ * did not bank, else null.
  */
 export function waitingAfterTrip(
   rescue: RescueState | null,
@@ -170,11 +180,11 @@ export function waitingAfterTrip(
   phase: TripPhase,
 ): WaitingStranded | null {
   if (!rescue || !rescue.met || rescueStatus(rescue, holdings, phase) === 'safe') return null;
-  return { morph: rescue.morph, placeId: rescue.placeId };
+  return { morph: rescue.morph, sex: rescue.sex, placeId: rescue.placeId };
 }
 
-function createStranding(morph: RealMorphId, place: StrandingPlace, met: boolean): Stranding {
-  return { id: axolotlFindId(morph), morph, placeId: place.id, x: place.x, y: place.y, met };
+function createStranding(morph: RealMorphId, sex: AxolotlSex, place: StrandingPlace, met: boolean): Stranding {
+  return { id: axolotlFindId(morph), morph, sex, placeId: place.id, x: place.x, y: place.y, met };
 }
 
 function distanceBetween(a: Point, b: Point): number {

@@ -1,4 +1,6 @@
 import { AREA_BEATEN_TITLE, bestStarsLine, starLines, starsShortLine } from './areaText';
+import type { AxolotlSex } from './axolotlLook';
+import { axolotlPronouns } from './pronouns';
 import type { AreaStars } from './stars';
 
 /** Label next to the four leg icons in the legs display. */
@@ -62,6 +64,12 @@ export interface ArrivalStars {
   rescueOpen: boolean;
 }
 
+/** An axolotl carried in the Trip Bag that swam back to where it was found: its name and sex. */
+export interface WaitingAxolotl {
+  name: string;
+  sex: AxolotlSex;
+}
+
 /**
  * Everything the tank arrival card needs to describe how the trip ended. `stars` is read only when
  * the area was beaten.
@@ -74,7 +82,7 @@ export interface ArrivalInput {
   /** Axolotls banked at the Home Spot this trip; they now live in the Home Tank. */
   rescuedNames?: readonly string[];
   /** Axolotls carried in the Trip Bag that swam back to where they were found. */
-  waitingNames?: readonly string[];
+  waiting?: readonly WaitingAxolotl[];
   stars?: ArrivalStars;
 }
 
@@ -155,11 +163,15 @@ function returnedSentence(returnedNames: readonly string[]): string {
   return `${describeTreasures(returnedNames)} floated off to new hiding spots. Look for them next trip!`;
 }
 
-function waitingSentence(waitingNames: readonly string[]): string {
-  if (waitingNames.length === 1) {
-    return `${waitingNames[0]} swam back to where you found it. It's waiting for you!`;
+/** One waiting axolotl reads "him. He's" or "her. She's"; more than one reads "them. They're". */
+function waitingSentence(waiting: readonly WaitingAxolotl[]): string {
+  if (waiting.length === 1) {
+    const { name, sex } = waiting[0];
+    const pronouns = axolotlPronouns(sex);
+    return `${name} swam back to where you found ${pronouns.object}. ${pronouns.Subject}'s waiting for you!`;
   }
-  return `${describeTreasures(waitingNames)} swam back to where you found them. They're waiting for you!`;
+  const names = waiting.map((axolotl) => axolotl.name);
+  return `${describeTreasures(names)} swam back to where you found them. They're waiting for you!`;
 }
 
 function safeInTankSentence(rescuedNames: readonly string[]): string {
@@ -168,13 +180,13 @@ function safeInTankSentence(rescuedNames: readonly string[]): string {
 }
 
 function carriedHomeBody(input: ArrivalInput): string {
-  const waitingNames = input.waitingNames ?? [];
+  const waiting = input.waiting ?? [];
   const rescuedNames = input.rescuedNames ?? [];
   const parts = [TRIP_END_BODY];
-  if (input.returnedNames.length > 0 || waitingNames.length === 0) {
+  if (input.returnedNames.length > 0 || waiting.length === 0) {
     parts.push(returnedSentence(input.returnedNames));
   }
-  if (waitingNames.length > 0) parts.push(waitingSentence(waitingNames));
+  if (waiting.length > 0) parts.push(waitingSentence(waiting));
   if (rescuedNames.length > 0) parts.push(safeInTankSentence(rescuedNames));
   parts.push('Treasures at the Home Spot are always safe.');
   return parts.join(' ');
@@ -205,7 +217,7 @@ function returnedShortSentence(returnedCount: number): string {
  * treasure sentence so the short wording stays short.
  */
 function carriedHomeShortBody(input: ArrivalInput): string {
-  const waitingCount = input.waitingNames?.length ?? 0;
+  const waitingCount = input.waiting?.length ?? 0;
   const rescuedCount = input.rescuedNames?.length ?? 0;
   const parts = [CARRIED_HOME_SHORT_OPENING];
   if (waitingCount === 0 && rescuedCount === 0) parts.push(returnedShortSentence(input.returnedNames.length));

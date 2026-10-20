@@ -22,6 +22,7 @@ import {
   arrivalText,
   type ArrivalReason,
   type ArrivalStars,
+  type WaitingAxolotl,
 } from './tripText';
 import { NO_STARS } from './stars';
 import { starRowSize } from './starsUi';
@@ -88,11 +89,14 @@ interface Canvas {
   cssH: number;
 }
 
-/** Axolotls on a card: rescued ones banked this trip, and waiting ones returned when carried home. */
+/**
+ * Axolotls on a card: rescued ones banked this trip, and waiting ones returned when carried home. A
+ * waiting girl reads "her. She's", longer than a boy's "him. He's", so the waiting case uses a girl.
+ */
 interface AxolotlCase {
   tag: string;
   rescued: readonly string[];
-  waiting: readonly string[];
+  waiting: readonly WaitingAxolotl[];
 }
 
 const NO_AXOLOTLS: AxolotlCase = { tag: '', rescued: [], waiting: [] };
@@ -101,7 +105,7 @@ const NO_AXOLOTLS: AxolotlCase = { tag: '', rescued: [], waiting: [] };
 const ARRIVAL_AXOLOTL_CASES: readonly AxolotlCase[] = [
   NO_AXOLOTLS,
   { tag: ' rescued=1', rescued: SORTED_AXOLOTL_NAMES.slice(0, 1), waiting: [] },
-  { tag: ' waiting=1', rescued: [], waiting: SORTED_AXOLOTL_NAMES.slice(0, 1) },
+  { tag: ' waiting=1', rescued: [], waiting: [{ name: SORTED_AXOLOTL_NAMES[0], sex: 'girl' }] },
 ];
 
 const BANKING_AXOLOTL_CASES: readonly AxolotlCase[] = [
@@ -178,7 +182,7 @@ function arrivalSections(
     bankedThisTripNames: reason === 'wentHome' || isBeaten ? names : [],
     bankedTotal: total,
     rescuedNames: axolotls.rescued,
-    waitingNames: axolotls.waiting,
+    waiting: axolotls.waiting,
     stars: isBeaten ? beatenStars(axolotls) : undefined,
   });
   const starRow: CardSection[] = isBeaten ? [{ kind: 'fixed', height: starRowSize().h }] : [];

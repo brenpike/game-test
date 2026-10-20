@@ -1,96 +1,108 @@
 /**
- * Styler state rules: the part and choice steppers, naming, colour, "Surprise me", focus and keyboard
- * of the character creator (PRD F1, F2, F17) and the restyle screen (PRD F6), as one pure reducer so
- * the scene only draws the state and acts on the returned effect.
+ * Styler rules: the step-by-step character creator (PRD F1, F2, F17) and the restyle screen (PRD F6),
+ * with their focus and keys (PRD F16), as one pure reducer so the scene only draws the state and acts
+ * on the returned effect.
  */
 import {
-  EYE_OPTIONS,
-  GILL_OPTIONS,
-  MOUTH_OPTIONS,
-  SIZE_OPTIONS,
-  SPOT_OPTIONS,
-  stepOption,
+  DEFAULT_LOOK,
+  LOOK_FIELD_OPTIONS,
+  copyLook,
+  sameLook,
   surpriseLook,
   type AxolotlLook,
+  type AxolotlSex,
+  type LookField,
   type LookOption,
 } from './axolotlLook';
-import { cleanName, randomSuggestedName, stepSuggestedName } from './axolotlNames';
-import { REAL_MORPHS, morphById, type MorphBadgeShape, type RealMorphId } from './morphs';
 import {
-  COLOUR_PART_LABEL,
-  EYES_PART_LABEL,
-  GILLS_PART_LABEL,
-  MOUTH_PART_LABEL,
-  NAME_PART_LABEL,
-  SIZE_PART_LABEL,
-  SPOTS_PART_LABEL,
-} from './stylerText';
-import type { StylerMode } from './stylerUi';
+  SUGGESTED_NAMES,
+  cleanName,
+  nameFits,
+  randomSuggestedName,
+  stepSuggestedName,
+  suggestedNamesFor,
+} from './axolotlNames';
+import { REAL_MORPHS, STARTER_MORPH, morphById, type RealMorphId } from './morphs';
+import {
+  FIXED_AFTER_CREATION,
+  MAX_STEP_OPTIONS,
+  RESTYLE_START_STEP,
+  STYLER_STEPS,
+  stepLookField,
+  type StylerStep,
+} from './stylerSteps';
 import { nextFocusIndex, tankKeyFor } from './tankUi';
 
-/** A part the styler changes: the name, one look field, or the colour (the real morph). */
-export type StylerPart = 'name' | keyof AxolotlLook | 'colour';
+/** Which screen the styler is: the character creator or the restyle screen. */
+export type StylerMode = 'creator' | 'restyle';
 
-/** The parts in part-stepper order (PRD F2). Data, so a later part is one more entry. */
-export const STYLER_PARTS: readonly StylerPart[] = Object.freeze([
-  'name',
-  'eyes',
-  'mouth',
-  'gills',
-  'spots',
-  'size',
-  'colour',
-]);
+/** A styler button. `nameBox` is the name text box on the Name step, before typing starts. */
+export type StylerButton = 'nameBox' | 'moreNames' | 'back' | 'surprise' | 'next' | 'done' | 'cancel';
 
-/** The label the player reads for each part. */
-export const STYLER_PART_LABELS: Readonly<Record<StylerPart, string>> = Object.freeze({
-  name: NAME_PART_LABEL,
-  eyes: EYES_PART_LABEL,
-  mouth: MOUTH_PART_LABEL,
-  gills: GILLS_PART_LABEL,
-  spots: SPOTS_PART_LABEL,
-  size: SIZE_PART_LABEL,
-  colour: COLOUR_PART_LABEL,
-});
+/** The focused styler control: one option button, one restyle tab, or a button. */
+export type StylerFocus =
+  | { readonly kind: 'option'; readonly index: number }
+  | { readonly kind: 'tab'; readonly step: StylerStep }
+  | { readonly kind: StylerButton };
 
-/** A focusable styler control: the part row, the choice row, or a button. */
-export type StylerFocus = 'part' | 'choice' | 'surprise' | 'done' | 'cancel';
+/** A kind of focusable control: one Tab stop in the focus order. */
+export type StylerFocusKind = StylerFocus['kind'];
 
-/** The styler: which screen, the part being changed, the name, look and morph so far, and the focus. */
+/**
+ * The styler: the screen, the current step, the name, look and morph so far, the focus, and which
+ * page of suggested names the Name step shows, `namesPerPage` names to a page.
+ */
 export interface StylerState {
   readonly mode: StylerMode;
-  readonly part: StylerPart;
+  readonly step: StylerStep;
   readonly name: string;
   readonly look: AxolotlLook;
   readonly morph: RealMorphId;
   readonly focus: StylerFocus;
+  readonly namePage: number;
+  readonly namesPerPage: number;
 }
 
-/** The axolotl the styler starts from, and finishes with on Done. In restyle the morph never changes. */
+/** The axolotl the styler starts from, and finishes with on Done. In restyle the morph and sex never change. */
 export interface StylerAxolotl {
   readonly name: string;
   readonly look: AxolotlLook;
   readonly morph: RealMorphId;
 }
 
+/** One option button of the current step: a stable id and the label the player reads. */
+export interface StylerOption {
+  readonly id: string;
+  readonly label: string;
+}
+
+/** A key press: a `KeyboardEvent.key` value, whether Shift is held, and the option grid's column count. */
+export interface StylerKeyAction {
+  type: 'key';
+  key: string;
+  shiftKey: boolean;
+  columns: number;
+}
+
 /**
- * A styler input. `key` is a `KeyboardEvent.key` value with Shift; the rest are pointer presses:
- * the part and choice chevrons, the three buttons, and a tap on the name value.
+ * A styler input: a key, or a pointer press of an option button by its index in stepOptions, Back, Next, a restyle
+ * tab, Surprise me, Done, Cancel, a tap on the name box, and More names with the names that fit a page.
  */
 export type StylerAction =
-  | { type: 'key'; key: string; shiftKey: boolean }
-  | { type: 'partBack' }
-  | { type: 'partNext' }
-  | { type: 'choiceBack' }
-  | { type: 'choiceNext' }
+  | StylerKeyAction
+  | { type: 'pick'; index: number }
+  | { type: 'back' }
+  | { type: 'next' }
+  | { type: 'tab'; step: StylerStep }
   | { type: 'surprise' }
   | { type: 'done' }
   | { type: 'cancel' }
-  | { type: 'nameTap' };
+  | { type: 'nameTap' }
+  | { type: 'moreNames'; perPage: number };
 
 /**
  * What the scene must do after an action: open the name text field, finish with the axolotl
- * (create or keep the restyle), or leave the restyle screen without keeping changes.
+ * (create it or keep the restyle), or leave the restyle screen without keeping changes.
  */
 export type StylerEffect =
   | { type: 'startTyping' }
@@ -98,190 +110,414 @@ export type StylerEffect =
   | { type: 'cancel' };
 
 /** Result of a styler action: the new state and, when the scene must act, an effect. */
-export interface StylerStepResult {
+export interface StylerResult {
   state: StylerState;
   effect?: StylerEffect;
 }
 
-const LOOK_PART_OPTIONS: { readonly [Field in keyof AxolotlLook]: readonly LookOption<AxolotlLook[Field]>[] } =
-  Object.freeze({
-    eyes: EYE_OPTIONS,
-    mouth: MOUTH_OPTIONS,
-    gills: GILL_OPTIONS,
-    spots: SPOT_OPTIONS,
-    size: SIZE_OPTIONS,
-  });
-
-const MORPH_IDS: readonly RealMorphId[] = Object.freeze(REAL_MORPHS.map((morph) => morph.id));
-
-const CREATE_FOCUS_ORDER: readonly StylerFocus[] = Object.freeze(['part', 'choice', 'surprise', 'done']);
-const RESTYLE_FOCUS_ORDER: readonly StylerFocus[] = Object.freeze(['part', 'choice', 'surprise', 'done', 'cancel']);
-
 /** Most "Surprise me" rolls before stepping the name to force a change. */
 export const SURPRISE_ROLLS = 8;
 
-/** The focus order of `mode`: part, choice, Surprise me, Done, then Cancel in restyle only. */
-export function stylerFocusOrder(mode: StylerMode): readonly StylerFocus[] {
-  return mode === 'restyle' ? RESTYLE_FOCUS_ORDER : CREATE_FOCUS_ORDER;
+const MORPH_IDS: readonly RealMorphId[] = Object.freeze(REAL_MORPHS.map((morph) => morph.id));
+
+const COLOUR_OPTIONS: readonly StylerOption[] = Object.freeze(
+  REAL_MORPHS.map((morph) => Object.freeze({ id: morph.id, label: morph.name })),
+);
+
+const LAST_STEP_INDEX = STYLER_STEPS.length - 1;
+
+function randomIndex(rand: () => number, count: number): number {
+  return Math.min(count - 1, Math.max(0, Math.floor(rand() * count)));
 }
 
-/** A styler on the Name part with the part row focused. */
-export function createStylerState(mode: StylerMode, axolotl: StylerAxolotl): StylerState {
-  return { mode, part: STYLER_PARTS[0], name: axolotl.name, look: axolotl.look, morph: axolotl.morph, focus: 'part' };
+function lookFieldOf(step: StylerStep): LookField {
+  const field = stepLookField(step);
+  if (field === null) throw new Error(`Step ${step} has no look field`);
+  return field;
 }
 
-/** The part `step` places from the current part, wrapping past either end. */
-export function stepPart(state: StylerState, step: number): StylerState {
-  const index = nextFocusIndex(STYLER_PARTS.indexOf(state.part), STYLER_PARTS.length, step);
-  return { ...state, part: STYLER_PARTS[index] };
+function requirePositiveInteger(value: number, what: string): number {
+  if (!Number.isInteger(value) || value < 1) throw new RangeError(`${what} must be a positive integer: ${value}`);
+  return value;
 }
 
-function stepLookField<Field extends keyof AxolotlLook>(look: AxolotlLook, field: Field, step: number): AxolotlLook {
-  const options: readonly LookOption<AxolotlLook[Field]>[] = LOOK_PART_OPTIONS[field];
-  return { ...look, [field]: stepOption(options, look[field], step) };
+function nameKey(name: string): string {
+  return name.toLowerCase();
 }
 
-/** Whether the current part's choice steps: false only for the Colour part in restyle, where the morph is read-only. */
-export function stylerChoiceSteps(state: StylerState): boolean {
-  return !(state.part === 'colour' && state.mode === 'restyle');
+/** The index of `step` in STYLER_STEPS: 0 for Colour, 10 for Name. */
+export function stepIndex(state: StylerState): number {
+  return STYLER_STEPS.indexOf(state.step);
+}
+
+/** True on a restyle step that is fixed after creation (Colour, Boy or girl): it shows one option and ignores picks. */
+export function isReadOnly(state: StylerState): boolean {
+  return state.mode === 'restyle' && FIXED_AFTER_CREATION.includes(state.step);
+}
+
+function fittingNames(state: StylerState): readonly string[] {
+  return suggestedNamesFor(state.look.sex);
+}
+
+/** How many pages of suggested names fitting the current sex the Name step has. */
+export function namePageCount(state: StylerState): number {
+  return Math.ceil(fittingNames(state).length / state.namesPerPage);
+}
+
+function clampedNamePage(state: StylerState): number {
+  return Math.min(Math.max(state.namePage, 0), namePageCount(state) - 1);
+}
+
+function namePageNames(state: StylerState): readonly string[] {
+  const start = clampedNamePage(state) * state.namesPerPage;
+  return fittingNames(state).slice(start, start + state.namesPerPage);
+}
+
+/** The styler with the name page that holds the current name, or its page kept in range for a typed name. */
+function syncNamePage(state: StylerState): StylerState {
+  const currentKey = nameKey(state.name);
+  const index = fittingNames(state).findIndex((name) => nameKey(name) === currentKey);
+  const namePage = index < 0 ? clampedNamePage(state) : Math.floor(index / state.namesPerPage);
+  return { ...state, namePage };
+}
+
+function currentLookOption(state: StylerState): StylerOption {
+  const field = lookFieldOf(state.step);
+  const options: readonly LookOption<string>[] = LOOK_FIELD_OPTIONS[field];
+  const option = options.find((candidate) => candidate.id === state.look[field]);
+  if (option === undefined) throw new Error(`Unknown ${field} option: ${state.look[field]}`);
+  return option;
+}
+
+function readOnlyOption(state: StylerState): StylerOption {
+  if (state.step === 'colour') return { id: state.morph, label: morphById(state.morph).name };
+  return currentLookOption(state);
 }
 
 /**
- * The current part's choice `step` places away, wrapping past either end. On the Name part this is
- * the suggested name from the current name's place, or from the start for a typed name. On the
- * Colour part this is the morph in REAL_MORPHS order, in the creator only; restyle keeps the morph.
+ * The option buttons of the current step, in order: the real morphs on Colour, the current page of
+ * suggested names fitting the sex on Name, else the look field's options. A read-only restyle step
+ * shows only its current value.
  */
-export function stepChoice(state: StylerState, step: number): StylerState {
-  if (!stylerChoiceSteps(state)) return state;
-  if (state.part === 'name') return { ...state, name: stepSuggestedName(state.name, step) };
-  if (state.part === 'colour') {
-    const index = nextFocusIndex(MORPH_IDS.indexOf(state.morph), MORPH_IDS.length, step);
-    return { ...state, morph: MORPH_IDS[index] };
+export function stepOptions(state: StylerState): readonly StylerOption[] {
+  if (isReadOnly(state)) return [readOnlyOption(state)];
+  if (state.step === 'colour') return COLOUR_OPTIONS;
+  if (state.step === 'name') return namePageNames(state).map((name) => ({ id: name, label: name }));
+  return LOOK_FIELD_OPTIONS[lookFieldOf(state.step)];
+}
+
+function chosenId(state: StylerState): string {
+  return state.step === 'colour' ? state.morph : state.look[lookFieldOf(state.step)];
+}
+
+/**
+ * The index in stepOptions of the current value, or -1 when it is not shown: a typed name, or a
+ * suggested name on another page. Names match ignoring case.
+ */
+export function chosenIndex(state: StylerState): number {
+  const options = stepOptions(state);
+  if (state.step === 'name') {
+    const currentKey = nameKey(state.name);
+    return options.findIndex((option) => nameKey(option.id) === currentKey);
   }
-  return { ...state, look: stepLookField(state.look, state.part, step) };
+  const chosen = chosenId(state);
+  return options.findIndex((option) => option.id === chosen);
 }
 
-/** The label of the current part's choice: the name itself, the morph's name, or the chosen option's label. */
-export function stylerChoiceLabel(state: StylerState): string {
-  if (state.part === 'name') return state.name;
-  if (state.part === 'colour') return morphById(state.morph).name;
-  const field = state.part;
-  const option = LOOK_PART_OPTIONS[field].find((candidate) => candidate.id === state.look[field]);
-  if (option === undefined) throw new Error(`Unknown ${field} option: ${String(state.look[field])}`);
-  return option.label;
+function nameControls(state: StylerState): readonly StylerFocusKind[] {
+  if (state.step !== 'name') return ['option'];
+  return namePageCount(state) > 1 ? ['nameBox', 'option', 'moreNames'] : ['nameBox', 'option'];
 }
 
-/** The morph badge shape shown beside the choice on the Colour part, so colour never relies on hue alone; else null. */
-export function stylerChoiceBadge(state: StylerState): MorphBadgeShape | null {
-  return state.part === 'colour' ? morphById(state.morph).badge : null;
+function creatorButtons(state: StylerState): readonly StylerButton[] {
+  const index = stepIndex(state);
+  const forward: StylerButton = index === LAST_STEP_INDEX ? 'done' : 'next';
+  return index > 0 ? ['back', 'surprise', forward] : ['surprise', forward];
+}
+
+/**
+ * The Tab order of the current screen, in visual order, one stop per kind. Creator: options, Back
+ * (not on step 1), Surprise me, then Next or Done on the last step. Restyle: the tabs, options,
+ * Surprise me, Cancel, Done. On the Name step the options are the name box, the name buttons and
+ * More names (when there is more than one page).
+ */
+export function focusOrder(state: StylerState): readonly StylerFocusKind[] {
+  if (state.mode === 'restyle') return ['tab', ...nameControls(state), 'surprise', 'cancel', 'done'];
+  return [...nameControls(state), ...creatorButtons(state)];
+}
+
+function isStylerButton(kind: StylerFocusKind): kind is StylerButton {
+  return kind !== 'option' && kind !== 'tab';
+}
+
+/** The buttons the current screen shows, in visual order. Restyle also shows the tabs (one per step). */
+export function visibleButtons(state: StylerState): readonly StylerButton[] {
+  return focusOrder(state).filter(isStylerButton);
+}
+
+/** True when `first` and `second` are the same focus target. */
+export function sameFocus(first: StylerFocus, second: StylerFocus): boolean {
+  if (first.kind === 'option' && second.kind === 'option') return first.index === second.index;
+  if (first.kind === 'tab' && second.kind === 'tab') return first.step === second.step;
+  return first.kind === second.kind;
+}
+
+/** The focus a Tab stop of `kind` lands on: the chosen option (else the first), the current tab, or the button. */
+function focusFor(state: StylerState, kind: StylerFocusKind): StylerFocus {
+  if (kind === 'option') return { kind, index: Math.max(chosenIndex(state), 0) };
+  if (kind === 'tab') return { kind, step: state.step };
+  return { kind };
+}
+
+/** The focus on arriving at a step: its chosen option, else the name box on Name, else the first option. */
+function stepEntryFocus(state: StylerState): StylerFocus {
+  const chosen = chosenIndex(state);
+  if (chosen >= 0) return { kind: 'option', index: chosen };
+  return state.step === 'name' ? { kind: 'nameBox' } : { kind: 'option', index: 0 };
+}
+
+function enterStep(state: StylerState, step: StylerStep): StylerState {
+  const moved = syncNamePage({ ...state, step });
+  return { ...moved, focus: stepEntryFocus(moved) };
+}
+
+function startState(mode: StylerMode, axolotl: StylerAxolotl, step: StylerStep): StylerState {
+  const base: StylerState = {
+    mode,
+    step,
+    name: axolotl.name,
+    look: copyLook(axolotl.look),
+    morph: axolotl.morph,
+    focus: { kind: 'surprise' },
+    namePage: 0,
+    namesPerPage: MAX_STEP_OPTIONS,
+  };
+  return enterStep(base, step);
+}
+
+/**
+ * A new character creator on Colour with the chosen option focused: the default look with a random
+ * sex, a random suggested name that fits it, and STARTER_MORPH. `rand` yields floats in [0, 1).
+ */
+export function creatorStart(rand: () => number): StylerState {
+  const sexOptions = LOOK_FIELD_OPTIONS.sex;
+  const sex = sexOptions[randomIndex(rand, sexOptions.length)].id;
+  const look: AxolotlLook = { ...DEFAULT_LOOK, sex };
+  return startState('creator', { name: randomSuggestedName(rand, sex), look, morph: STARTER_MORPH }, STYLER_STEPS[0]);
+}
+
+/** A restyle of `axolotl` on RESTYLE_START_STEP with the chosen option focused. Extra fields are dropped. */
+export function restyleStart(axolotl: StylerAxolotl): StylerState {
+  return startState('restyle', axolotl, RESTYLE_START_STEP);
+}
+
+/** The styler with `perPage` suggested names to a Name page, on the page holding the current name. */
+export function withNamesPerPage(state: StylerState, perPage: number): StylerState {
+  const sized = syncNamePage({ ...state, namesPerPage: requirePositiveInteger(perPage, 'Names per page') });
+  if (sized.focus.kind !== 'option') return sized;
+  const lastIndex = stepOptions(sized).length - 1;
+  return { ...sized, focus: { kind: 'option', index: Math.min(sized.focus.index, lastIndex) } };
 }
 
 /** The styler with `raw` cleaned as its name; unchanged when the cleaned name is empty. */
 export function setName(state: StylerState, raw: string): StylerState {
   const name = cleanName(raw);
-  return name === '' ? state : { ...state, name };
+  return name === '' ? state : syncNamePage({ ...state, name });
+}
+
+/** The first suggested name after `name` in SUGGESTED_NAMES order, wrapping, that fits `sex`. */
+function nextFittingName(name: string, sex: AxolotlSex): string {
+  const currentKey = nameKey(name);
+  const start = SUGGESTED_NAMES.findIndex((candidate) => nameKey(candidate) === currentKey);
+  for (let offset = 1; offset <= SUGGESTED_NAMES.length; offset++) {
+    const candidate = SUGGESTED_NAMES[(start + offset) % SUGGESTED_NAMES.length];
+    if (nameFits(candidate, sex)) return candidate;
+  }
+  throw new Error(`No suggested name fits ${sex}`);
+}
+
+/** The styler with `sex`; a suggested name that does not fit it becomes the next one that does. Typed names stay. */
+function withSex(state: StylerState, sex: AxolotlSex): StylerState {
+  const name = nameFits(state.name, sex) ? state.name : nextFittingName(state.name, sex);
+  return { ...state, name, look: { ...state.look, sex } };
+}
+
+function withLookOption<Field extends LookField>(look: AxolotlLook, field: Field, index: number): AxolotlLook {
+  const options: readonly LookOption<AxolotlLook[Field]>[] = LOOK_FIELD_OPTIONS[field];
+  return { ...look, [field]: options[index].id };
+}
+
+function chooseOption(state: StylerState, index: number): StylerState {
+  if (state.step === 'colour') return { ...state, morph: MORPH_IDS[index] };
+  if (state.step === 'name') return { ...state, name: namePageNames(state)[index] };
+  if (state.step === 'sex') return withSex(state, LOOK_FIELD_OPTIONS.sex[index].id);
+  return { ...state, look: withLookOption(state.look, lookFieldOf(state.step), index) };
 }
 
 /**
- * "Surprise me": a random look, suggested name and, in the creator only, morph from `rand` (floats
- * in [0, 1)), drawn in that order, rolled up to SURPRISE_ROLLS times until it is not exactly the
+ * Picks the option at `index` in stepOptions and focuses it. An index outside the options is ignored;
+ * a read-only restyle step only takes the focus.
+ */
+export function pickOption(state: StylerState, index: number): StylerState {
+  if (!Number.isInteger(index) || index < 0 || index >= stepOptions(state).length) return state;
+  const focused: StylerState = { ...state, focus: { kind: 'option', index } };
+  return isReadOnly(state) ? focused : chooseOption(focused, index);
+}
+
+function sameAxolotl(first: StylerAxolotl, second: StylerAxolotl): boolean {
+  return first.name === second.name && first.morph === second.morph && sameLook(first.look, second.look);
+}
+
+function rollSurprise(state: StylerState, rand: () => number): StylerAxolotl {
+  if (state.mode === 'restyle') {
+    const look: AxolotlLook = { ...surpriseLook(rand), sex: state.look.sex };
+    return { name: randomSuggestedName(rand, look.sex), look, morph: state.morph };
+  }
+  const look = surpriseLook(rand);
+  const name = randomSuggestedName(rand, look.sex);
+  return { name, look, morph: MORPH_IDS[randomIndex(rand, MORPH_IDS.length)] };
+}
+
+/**
+ * "Surprise me" from `rand` (floats in [0, 1)). Creator: a random look with sex, a suggested name
+ * fitting that sex, and a random real morph. Restyle: a random look keeping the sex, and a suggested
+ * name fitting it; never the morph. Rolled up to SURPRISE_ROLLS times until it is not exactly the
  * current name, look and morph; if every roll matches, the last roll's name steps to the next
- * suggested name. Restyle keeps the morph and draws none. Part and focus stay.
+ * fitting suggested name. Step and focus stay.
  */
 export function surprise(state: StylerState, rand: () => number): StylerState {
   let rolled = rollSurprise(state, rand);
   for (let roll = 1; roll < SURPRISE_ROLLS && sameAxolotl(rolled, state); roll++) rolled = rollSurprise(state, rand);
-  if (sameAxolotl(rolled, state)) rolled = { ...rolled, name: stepSuggestedName(rolled.name, 1) };
-  return { ...state, name: rolled.name, look: rolled.look, morph: rolled.morph };
+  if (sameAxolotl(rolled, state)) rolled = { ...rolled, name: stepSuggestedName(rolled.name, 1, rolled.look.sex) };
+  return syncNamePage({ ...state, name: rolled.name, look: rolled.look, morph: rolled.morph });
 }
 
-function rollSurprise(state: StylerState, rand: () => number): StylerAxolotl {
-  const look = surpriseLook(rand);
-  const name = randomSuggestedName(rand);
-  const morph = state.mode === 'create' ? randomMorph(rand) : state.morph;
-  return { name, look, morph };
+function doneEffect(state: StylerState): StylerEffect {
+  return { type: 'done', name: state.name, look: state.look, morph: state.morph };
 }
 
-function randomMorph(rand: () => number): RealMorphId {
-  const index = Math.min(MORPH_IDS.length - 1, Math.max(0, Math.floor(rand() * MORPH_IDS.length)));
-  return MORPH_IDS[index];
+/** Back or Next in the creator: moves `offset` steps when that step exists. Restyle has neither. */
+function goToStep(state: StylerState, offset: number): StylerResult {
+  const target = stepIndex(state) + offset;
+  if (state.mode !== 'creator' || target < 0 || target > LAST_STEP_INDEX) return { state };
+  return { state: enterStep(state, STYLER_STEPS[target]) };
 }
 
-function sameAxolotl(first: StylerAxolotl, second: StylerAxolotl): boolean {
-  if (first.name !== second.name || first.morph !== second.morph) return false;
-  return (Object.keys(LOOK_PART_OPTIONS) as (keyof AxolotlLook)[]).every(
-    (field) => first.look[field] === second.look[field],
-  );
+function jumpToTab(state: StylerState, step: StylerStep): StylerState {
+  return { ...enterStep(state, step), focus: { kind: 'tab', step } };
 }
 
-/** The styler with focus moved `step` places through the mode's focus order, wrapping. */
-function stepFocus(state: StylerState, step: number): StylerState {
-  const order = stylerFocusOrder(state.mode);
-  return { ...state, focus: order[nextFocusIndex(order.indexOf(state.focus), order.length, step)] };
+function pressDone(state: StylerState): StylerResult {
+  if (state.mode === 'creator' && stepIndex(state) !== LAST_STEP_INDEX) return { state };
+  const focused: StylerState = { ...state, focus: { kind: 'done' } };
+  return { state: focused, effect: doneEffect(focused) };
 }
 
-/** The styler with `focus` focused, when the mode has that control. */
-function focusOn(state: StylerState, focus: StylerFocus): StylerState {
-  return stylerFocusOrder(state.mode).includes(focus) ? { ...state, focus } : state;
+function pressCancel(state: StylerState): StylerResult {
+  if (state.mode !== 'restyle') return { state };
+  return { state: { ...state, focus: { kind: 'cancel' } }, effect: { type: 'cancel' } };
 }
 
-/** Presses a control as Enter, Space or a pointer would: focuses it and returns its effect. */
-function pressControl(state: StylerState, control: StylerFocus, rand: () => number): StylerStepResult {
-  if (!stylerFocusOrder(state.mode).includes(control)) return { state };
-  const focused = focusOn(state, control);
-  if (control === 'surprise') return { state: surprise(focused, rand) };
-  if (control === 'done') {
-    return { state: focused, effect: { type: 'done', name: focused.name, look: focused.look, morph: focused.morph } };
-  }
-  if (control === 'cancel') return { state: focused, effect: { type: 'cancel' } };
-  if (control === 'choice' && focused.part === 'name') return { state: focused, effect: { type: 'startTyping' } };
-  return { state: focused };
+function tapNameBox(state: StylerState): StylerResult {
+  if (state.step !== 'name') return { state };
+  return { state: { ...state, focus: { kind: 'nameBox' } }, effect: { type: 'startTyping' } };
 }
 
-/** Left or right on the focused row steps it; on a button it does nothing. */
-function stepFocusedRow(state: StylerState, step: number): StylerState {
-  if (state.focus === 'part') return stepPart(state, step);
-  if (state.focus === 'choice') return stepChoice(state, step);
-  return state;
+function showMoreNames(state: StylerState, perPage: number): StylerState {
+  if (state.step !== 'name') return state;
+  const sized: StylerState = { ...state, namesPerPage: requirePositiveInteger(perPage, 'Names per page') };
+  const namePage = (clampedNamePage(sized) + 1) % namePageCount(sized);
+  return { ...sized, namePage, focus: { kind: 'moreNames' } };
+}
+
+function moveFocus(state: StylerState, step: number): StylerState {
+  const order = focusOrder(state);
+  const kind = order[nextFocusIndex(order.indexOf(state.focus.kind), order.length, step)];
+  return { ...state, focus: focusFor(state, kind) };
+}
+
+function moveInGrid(state: StylerState, index: number, offset: number): StylerState {
+  const target = index + offset;
+  if (target < 0 || target >= stepOptions(state).length) return state;
+  return { ...state, focus: { kind: 'option', index: target } };
+}
+
+function moveTab(state: StylerState, step: StylerStep, offset: number): StylerState {
+  const index = nextFocusIndex(STYLER_STEPS.indexOf(step), STYLER_STEPS.length, offset);
+  return jumpToTab(state, STYLER_STEPS[index]);
 }
 
 /**
- * A key, through tankKeyFor: Tab, Shift+Tab, up and down move focus; left and right step the
- * focused row; Enter and Space press the focused control; Escape cancels in restyle only.
+ * An arrow key: in the option grid left and right move by one and up and down by `columns`,
+ * stopping at the ends; on a restyle tab left and right open the next tab, wrapping. Else nothing.
  */
-function reduceKey(state: StylerState, key: string, shiftKey: boolean, rand: () => number): StylerStepResult {
-  const intent = tankKeyFor(key, shiftKey);
-  if (intent === 'next' || intent === 'down') return { state: stepFocus(state, 1) };
-  if (intent === 'previous' || intent === 'up') return { state: stepFocus(state, -1) };
-  if (intent === 'left') return { state: stepFocusedRow(state, -1) };
-  if (intent === 'right') return { state: stepFocusedRow(state, 1) };
-  if (intent === 'confirm') return pressControl(state, state.focus, rand);
-  if (intent === 'cancel' && state.mode === 'restyle') return { state, effect: { type: 'cancel' } };
+function arrowFocus(state: StylerState, arrow: 'left' | 'right' | 'up' | 'down', columns: number): StylerState {
+  const focus = state.focus;
+  if (focus.kind === 'tab') {
+    if (arrow === 'left') return moveTab(state, focus.step, -1);
+    return arrow === 'right' ? moveTab(state, focus.step, 1) : state;
+  }
+  if (focus.kind !== 'option') return state;
+  if (arrow === 'left') return moveInGrid(state, focus.index, -1);
+  if (arrow === 'right') return moveInGrid(state, focus.index, 1);
+  const rowStep = requirePositiveInteger(columns, 'Columns');
+  return moveInGrid(state, focus.index, arrow === 'up' ? -rowStep : rowStep);
+}
+
+/** Enter or Space on the focused control: picks an option, starts typing on the name box, or presses a button. */
+function pressFocused(state: StylerState, rand: () => number): StylerResult {
+  const focus = state.focus;
+  if (focus.kind === 'option') return { state: pickOption(state, focus.index) };
+  if (focus.kind === 'tab') return { state };
+  const button = focus.kind;
+  if (button === 'nameBox') return tapNameBox(state);
+  if (button === 'moreNames') return { state: showMoreNames(state, state.namesPerPage) };
+  return reduceStyler(state, { type: button }, rand);
+}
+
+/**
+ * A key, through tankKeyFor: Tab and Shift+Tab move through focusOrder; arrows move in the option
+ * grid or the tabs; Enter and Space press the focused control; Escape cancels in restyle only.
+ */
+function reduceKey(state: StylerState, action: StylerKeyAction, rand: () => number): StylerResult {
+  const intent = tankKeyFor(action.key, action.shiftKey);
+  if (intent === 'next') return { state: moveFocus(state, 1) };
+  if (intent === 'previous') return { state: moveFocus(state, -1) };
+  if (intent === 'confirm') return pressFocused(state, rand);
+  if (intent === 'cancel') return pressCancel(state);
+  if (intent === 'left' || intent === 'right' || intent === 'up' || intent === 'down') {
+    return { state: arrowFocus(state, intent, action.columns) };
+  }
   return { state };
 }
 
 /**
  * Applies one styler action. `rand` yields floats in [0, 1), such as mulberry32, and is used only by
- * "Surprise me". Pointer presses focus the pressed control. Cancel does nothing in the creator. In
- * restyle no action changes the morph.
+ * "Surprise me". Pointer presses focus the pressed control. Back and Next do nothing in restyle;
+ * tabs, Cancel and Escape do nothing in the creator, and Done works only on its last step.
+ * In restyle no action changes the morph or the sex.
  */
-export function reduceStyler(state: StylerState, action: StylerAction, rand: () => number): StylerStepResult {
+export function reduceStyler(state: StylerState, action: StylerAction, rand: () => number): StylerResult {
   switch (action.type) {
     case 'key':
-      return reduceKey(state, action.key, action.shiftKey, rand);
-    case 'partBack':
-      return { state: stepPart(focusOn(state, 'part'), -1) };
-    case 'partNext':
-      return { state: stepPart(focusOn(state, 'part'), 1) };
-    case 'choiceBack':
-      return { state: stepChoice(focusOn(state, 'choice'), -1) };
-    case 'choiceNext':
-      return { state: stepChoice(focusOn(state, 'choice'), 1) };
+      return reduceKey(state, action, rand);
+    case 'pick':
+      return { state: pickOption(state, action.index) };
+    case 'back':
+      return goToStep(state, -1);
+    case 'next':
+      return goToStep(state, 1);
+    case 'tab':
+      return { state: state.mode === 'restyle' ? jumpToTab(state, action.step) : state };
     case 'surprise':
+      return { state: surprise({ ...state, focus: { kind: 'surprise' } }, rand) };
     case 'done':
+      return pressDone(state);
     case 'cancel':
-      return pressControl(state, action.type, rand);
+      return pressCancel(state);
     case 'nameTap':
-      return state.part === 'name' ? pressControl(state, 'choice', rand) : { state };
+      return tapNameBox(state);
+    case 'moreNames':
+      return { state: showMoreNames(state, action.perPage) };
   }
 }
