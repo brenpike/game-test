@@ -11,6 +11,7 @@ import { NO_REPAINT, pickSecondaryRepaint } from '../logic/repaintBudget';
 import { rescueStatus, type RescueState, type RescueStatus } from '../logic/rescue';
 import type { TripState } from '../logic/trip';
 import { blinkAt, samePose, type GameAssets } from './BootScene';
+import { faceSprite } from './spriteFacing';
 
 const TAU = Math.PI * 2;
 const TEXTURE_KEY = 'stranded-axolotl';
@@ -90,7 +91,7 @@ export class StrandedView {
     const x = rescue.pos.x;
     const y = rescue.pos.y + look.bob;
     const sizeScale = AXO_SIZE_SCALE[this.texture.look.size];
-    this.body.setVisible(true).setPosition(x, y).setFlipX(look.facing < 0);
+    faceSprite(this.body.setVisible(true).setPosition(x, y), look.facing, this.texture.displayScale(1));
     this.bubble
       .setVisible(look.bubble)
       .setPosition(x + look.facing * BUBBLE_HEAD_SHIFT_PX * sizeScale, y - BUBBLE_RISE_PX * sizeScale);
