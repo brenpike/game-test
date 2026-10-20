@@ -130,6 +130,18 @@ export interface FindTuning {
   containerRadius: number;
 }
 
+/** Snack eating reach tuning: snacks are eaten at the drawn head, not the body centre. */
+export interface SnackReachTuning {
+  /**
+   * Distance in px along the facing, rotated with the body, from the body centre to the reach
+   * centre when the body is not squashed. headPoint (src/logic/collectibles.ts) shortens it by the
+   * turn squash.
+   */
+  headAhead: number;
+  /** Distance in px from the reach centre within which a snack is eaten (inclusive). */
+  radius: number;
+}
+
 /** Treasure hint sparkle tuning. */
 export interface HintTuning {
   /** Distance in px within which a treasure's hint sparkle shows; strictly shorter for rarer. */
@@ -206,6 +218,21 @@ export const CARRY: Readonly<CarryTuning> = Object.freeze({
 export const FINDS: Readonly<FindTuning> = Object.freeze({
   pickupRadius: 24,
   containerRadius: 30,
+});
+
+/**
+ * Provisional snack reach values, mirroring the drawn head because src/logic cannot import
+ * src/art (ESLint): HEAD_ELL (src/art/drawAxolotl.ts, centre (26, -1), radii 27 x 22), its LW 3.5
+ * ink outline (src/art/palette.ts, stroked at 2 x LW under the fill by blob in src/art/canvasKit.ts),
+ * AXO_SCENE_SCALE 0.95 (src/art/drawAxolotl.ts) and AXO_SIZE_SCALE.large 1.15
+ * (src/art/drawAxolotlParts.ts). `headAhead` is the largest head centre, 26 x 0.95 x 1.15 = 28.4,
+ * rounded to 28. The farthest drawn point of the largest head, ink included, is about 33.8 px from
+ * that reach centre; `radius` adds room for the longest swim step so a fast pass still eats.
+ * One reach for every size: size is for looks only (PRD F4).
+ */
+export const SNACK_REACH: Readonly<SnackReachTuning> = Object.freeze({
+  headAhead: 28,
+  radius: 36,
 });
 
 /** Provisional hint values; rarer treasures get a subtler, shorter-range hint (PRD B7). */

@@ -15,15 +15,17 @@ import { BUBBLE_RADII, type TexInfo } from '../art/textures';
 import { areaById, atExit, exitContact, exitOpen, type AreaData } from '../logic/areas';
 import { BUBBLE_MAX_ALIVE, bubblePos, createBubbles, updateBubbles, type BubbleSystem } from '../logic/bubbles';
 import {
-  DEFAULT_COLLECT_RADIUS,
   SPARKLE_SNACKS_LEFT,
-  collectDriftingNear,
+  collectSnacksAtHead,
+  drawnSnackX,
+  drawnSnackY,
+  headPoint,
   snackTally,
-  snackX,
-  snackY,
   type Collectible,
+  type SnackFrame,
   type SnackTally,
 } from '../logic/collectibles';
+import { TURN_SQUASH, drawnAxolotl, type DrawnAxolotl } from '../logic/drawnAxolotl';
 import { createEncounterContext } from '../logic/encounter';
 import { currentAt, reedDragAt, reedsNear } from '../logic/environment';
 import { TILAPIA_FACT } from '../logic/factCards';
@@ -39,7 +41,7 @@ import {
   type SteerPayload,
 } from '../logic/gameEvents';
 import { hintSparkleRadius } from '../logic/hints';
-import { legSwimTuning, legWobble } from '../logic/legs';
+import { legSwimTuning } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { mulberry32 } from '../logic/rng';
 import { pickStranding } from '../logic/rescue';
@@ -92,10 +94,6 @@ const SIM_SEED = 0xb0bb1e;
 const IDLE_PADDLE = 0.3;
 const DASH_PADDLE = 2;
 const SWIM_TAIL_BOOST = 0.2;
-const MAX_TILT = 0.35;
-const IDLE_TILT = 0.12;
-const BOB_SHARE = 0.3;
-const TURN_SQUASH = 0.6;
 const TURN_MS = 140;
 const SPARKLE_FADE_S = 0.4;
 const SPARKLE_SPAWN_S = 0.05;
@@ -108,8 +106,6 @@ const REED_PERIOD = 4;
 const REED_TOUCH_RADIUS = 26;
 const REED_NUDGE_PX = 7;
 const REED_NUDGE_RATE = 6;
-const SNACK_BOB_PX = 2.5;
-const SNACK_BOB_PERIOD = 2.4;
 const SNACK_POP_MS = 200;
 /** Last-snack hint star (PRD H3, guide 7e and 9): the Common star, 16 px above the snack. */
 const SNACK_STAR_OFFSET_Y = -16;
@@ -233,6 +229,10 @@ export class SwimScene extends Phaser.Scene {
   private sparkleLevel = 0;
   private turn = { squash: 1 };
   private lastFacing: 1 | -1 = 1;
+  /** The drawn axolotl this frame, captured once after the trip step; the eat check and the sprite read it. */
+  private body!: DrawnAxolotl;
+  /** Where the snacks are drawn this frame, captured with `body`. */
+  private snackView!: SnackFrame;
   private lastPose: AxolotlPose | null = null;
   private redrawAcc = 0;
 
@@ -317,6 +317,7 @@ export class SwimScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
 
     this.publishSnapshot(tripSnapshot(this.trip));
+    this.captureDrawnFrame();
     this.renderFrame(0);
     this.scene.launch(SCENE_KEYS.hud, this.assets);
   }
@@ -325,7 +326,12 @@ export class SwimScene extends Phaser.Scene {
    * Per-frame cost (#31 review findings ac16b4b1, fb55980d, 18472eb6).
    * Snack drift is computed on read from each snack's base point and the drift clock. The snack
    * tally (left, collected, sparkling ids) is worked out only in setItems, when the items change,
-   * and frame code reads it. Snacks, the exit and the last-3 stars create no objects per frame.
+   * and frame code reads it. Snack positions, the exit and the last-3 stars create no objects per
+   * frame. Drawn-frame capture (#51 review finding cbed1ef9): captureDrawnFrame builds the
+   * drawnAxolotl input and result and the snack frame, and collectSnacks builds the head point while
+   * swimming, so four small objects per frame. They stay plain values, like the step results below:
+   * drawnAxolotl and headPoint are pure src/logic functions tested as values (ADR 0006), and the eat
+   * and the sprite read one immutable capture. Same bounded cost as the residual below.
    * Recorded residual, inherited from main: stepSwim and stepTrip return new immutable state and
    * event lists each frame, syncSnapshot builds a trip snapshot to compare, the views take a render
    * argument object, and the reeds-near Set, bubble views and surface x list are rebuilt each frame.
@@ -343,6 +349,14 @@ export class SwimScene extends Phaser.Scene {
       this.stepPlay(dt);
     }
     this.advanceTrip(dt);
+    // INVARIANT: the trip step runs before the eat, so the eat reads the transform drawn this frame.
+    this.captureDrawnFrame();
+    // INVARIANT: a trip that left swimming in its step eats nothing.
+    if (this.trip.phase === 'swimming') {
+      this.collectSnacks();
+    }
+    // INVARIANT: the exit check runs after the eat, so eating the last snack at the exit beats it this frame.
+    this.checkExit();
     this.followPoint.set(this.swim.x, this.swim.y);
     this.renderFrame(dt);
   }
@@ -372,7 +386,6 @@ export class SwimScene extends Phaser.Scene {
       this.emitDashState();
     }
     this.driftClock += dt;
-    this.collectSnacks();
   }
 
   // ---- setup ---------------------------------------------------------------
@@ -552,14 +565,7 @@ export class SwimScene extends Phaser.Scene {
 
   private collectSnacks(): void {
     const before = this.snackTally.collected;
-    const result = collectDriftingNear(
-      this.items,
-      this.swim,
-      DEFAULT_COLLECT_RADIUS,
-      this.driftClock,
-      this.area.snackDrift,
-      this.bounds,
-    );
+    const result = collectSnacksAtHead(this.items, headPoint(this.body), this.snackView);
     if (!result) return;
     this.setItems(result.items);
     const total = this.items.length;
@@ -634,7 +640,6 @@ export class SwimScene extends Phaser.Scene {
     }
     this.dispatchTripEvents(result.events);
     this.syncSnapshot();
-    this.checkExit();
   }
 
   /**
@@ -820,7 +825,7 @@ export class SwimScene extends Phaser.Scene {
       phase: this.trip.phase,
     });
     this.renderReeds(dt, t);
-    this.renderSnacks(t);
+    this.renderSnacks();
     this.renderSnackStars(dt, t);
     this.renderStreaks(dt);
     this.renderBubbles(dt);
@@ -832,8 +837,6 @@ export class SwimScene extends Phaser.Scene {
   private renderAxolotl(dt: number): void {
     const intensity = swimIntensity(this.swim);
     const dashing = this.isDashing();
-    const facing = this.swim.facing;
-    const t = this.motion.ambient ? this.clock : T_STATIC;
 
     if (this.motion.ambient) {
       const paddle = (IDLE_PADDLE + (1 - IDLE_PADDLE) * intensity) * (dashing ? DASH_PADDLE : 1);
@@ -844,11 +847,6 @@ export class SwimScene extends Phaser.Scene {
     }
     this.sparkleLevel =
       dashing && this.motion.dashTrail ? 1 : Math.max(0, this.sparkleLevel - dt / SPARKLE_FADE_S);
-
-    if (facing !== this.lastFacing) {
-      this.lastFacing = facing;
-      this.startTurnSquash();
-    }
 
     const pose: AxolotlPose = {
       swimPhase: this.swimPhase,
@@ -861,16 +859,50 @@ export class SwimScene extends Phaser.Scene {
     this.redrawAxolotl(pose, dt);
 
     const baseScale = this.assets.axolotl.displayScale(1);
-    const bob = this.motion.bob * BOB_SHARE * (1 - intensity) * Math.sin((TAU * t) / 3);
-    const swimTilt = Phaser.Math.Clamp(this.swim.vy / SWIM.maxSpeed, -1, 1) * MAX_TILT;
-    const idleTilt = this.motion.ambient ? IDLE_TILT * (1 - intensity) * Math.cos((TAU * t) / 3) : 0;
-    const wobble =
-      this.trip.phase === 'swimming' ? legWobble(this.snapshot.legs.present, this.clock, !this.motion.ambient) : 0;
+    const body = this.body;
+    // Phaser flips about the texture frame centre, but the AXO_TEX anchor (originX) is off-centre,
+    // so setFlipX drew a left-facing axolotl ahead of its anchor. A negative x scale mirrors about
+    // the anchor, so the head lands where the eat check expects.
     this.axolotl
-      .setPosition(this.swim.x, this.swim.y + bob)
-      .setFlipX(facing < 0)
-      .setScale(baseScale * this.turn.squash, baseScale)
-      .setRotation(facing * (swimTilt + idleTilt) + wobble);
+      .setPosition(body.x, body.y)
+      .setScale(body.facing * baseScale * body.squash, baseScale)
+      .setRotation(body.rotation);
+  }
+
+  /**
+   * Captures the drawn axolotl and snacks once per frame, after the trip step. A facing change
+   * starts the turn squash here, so the captured squash is the one the sprite shows.
+   */
+  private captureDrawnFrame(): void {
+    if (this.swim.facing !== this.lastFacing) {
+      this.lastFacing = this.swim.facing;
+      this.startTurnSquash();
+    }
+    this.body = drawnAxolotl({
+      swim: this.swim,
+      t: this.motion.ambient ? this.clock : T_STATIC,
+      clock: this.clock,
+      ambient: this.motion.ambient,
+      motionBob: this.motion.bob,
+      legsPresent: this.snapshot.legs.present,
+      swimming: this.trip.phase === 'swimming',
+      squash: this.turn.squash,
+    });
+    this.snackView = this.snackFrame();
+  }
+
+  /**
+   * Where the snacks are drawn this frame: drift time, bob time and bounds. Read once per frame by
+   * captureDrawnFrame, so a reduced-motion toggle applies from the next frame.
+   */
+  private snackFrame(): SnackFrame {
+    return {
+      driftT: this.driftClock,
+      bobT: this.motion.ambient ? this.clock : T_STATIC,
+      bobbing: this.motion.collectBob,
+      drift: this.area.snackDrift,
+      bounds: this.bounds,
+    };
   }
 
   /** Dashing look and trail, only while swimming: a frozen dash shows nothing once the carry starts. */
@@ -910,17 +942,13 @@ export class SwimScene extends Phaser.Scene {
   }
 
   /** Each snack where its drift puts it at the drift time (PRD H4), plus its bob. */
-  private renderSnacks(t: number): void {
-    const { snackDrift } = this.area;
+  private renderSnacks(): void {
+    const frame = this.snackView;
     for (let i = 0; i < this.items.length; i++) {
       const item = this.items[i];
       const sprite = this.snacks.get(item.id);
       if (!sprite) continue;
-      const bob = this.motion.collectBob ? SNACK_BOB_PX * Math.sin((TAU * t) / SNACK_BOB_PERIOD + i) : 0;
-      sprite.setPosition(
-        snackX(item, i, this.driftClock, snackDrift, this.bounds),
-        snackY(item, i, this.driftClock, snackDrift, this.bounds) + bob,
-      );
+      sprite.setPosition(drawnSnackX(item, i, frame), drawnSnackY(item, i, frame));
     }
   }
 

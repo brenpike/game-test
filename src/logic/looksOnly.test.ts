@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_LOOK, SIZE_OPTIONS, surpriseLook, type AxolotlLook } from './axolotlLook';
-import { DEFAULT_COLLECT_RADIUS, collectNear, createCollectibles } from './collectibles';
+import { collectSnacksAtHead, createCollectibles, headPoint, type SnackFrame } from './collectibles';
 import { currentAt, reedDragAt } from './environment';
 import { legSwimTuning, presentCount } from './legs';
 import { mulberry32 } from './rng';
@@ -8,7 +8,7 @@ import { addStarter, createSession, explorerAxolotl, tripStart, type Session } f
 import { stepSwim, type SwimState } from './swimPhysics';
 import { lungeConnects, touching } from './tilapia';
 import { createTrip, createTripContext, keepExploring, stepTrip, type TripEvent, type TripState } from './trip';
-import { FINDS, LEGS, SWIM, TILAPIA } from './tuning';
+import { FINDS, LEGS, SNACK_REACH, SWIM, TILAPIA } from './tuning';
 import { clampLen, type Vec2 } from './vec';
 import { buildCanalZone, swimBounds, type Point } from './zone';
 
@@ -100,9 +100,17 @@ function hitAreaProbe(session: Session): boolean[] {
     touching(patrolling, { x: centre.x, y: centre.y + dy }),
   );
   const snack = createCollectibles(zone.collectibles.slice(0, 1));
-  const snacks = aroundRadius(DEFAULT_COLLECT_RADIUS).map(
-    (dx) => collectNear(snack, { x: snack[0].x + dx, y: snack[0].y }).newly.length > 0,
-  );
+  const still: SnackFrame = {
+    driftT: 0,
+    bobT: 0,
+    bobbing: false,
+    drift: { amplitudeX: 0, amplitudeY: 0, periodX: 1, periodY: 1 },
+    bounds: swimBounds(),
+  };
+  const snacks = aroundRadius(SNACK_REACH.radius).map((dy) => {
+    const body = { x: snack[0].x - SNACK_REACH.headAhead, y: snack[0].y - dy, facing: 1 as const, rotation: 0 };
+    return collectSnacksAtHead(snack, headPoint(body), still) !== null;
+  });
   const find = trip.placed.find((placed) => !placed.sealed);
   if (find === undefined) throw new Error('no open find placed');
   const pickups = aroundRadius(FINDS.pickupRadius).map((dy) => {

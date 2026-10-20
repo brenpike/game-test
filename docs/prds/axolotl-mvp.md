@@ -174,7 +174,7 @@ Everything stays calm, never scary, readable without colour, and usable with red
 16. **A16** The Trip Bag display shows the number of unbanked finds and that they are "not safe yet" (an icon and a number).
 17. **A17** Pause freezes the tilapia, telegraphs, cooldowns, protected time, and regrowth.
 18. **A18** Every trip starts at the Home Spot with four legs and an empty Trip Bag.
-19. **A19** Snacks are not trip finds. With four legs, eating a snack works as in the swim test. While a leg is missing, each snack eaten moves the regrowing leg's regrowth forward by a fixed amount (see Tuning values). Regrowth only moves forward and never goes past a full leg. The player gets clear feedback when a snack speeds up regrowth, readable in greyscale and under reduced motion. The speed-up works together with the Regrowth perk, and a Snack magnet perk can pull nearby snacks toward the explorer (F9). Banking does not affect snacks. Being carried home resets them (A12). Every snack must be eaten to open the exit (H2). (Issue #30. This replaces "snacks keep their swim-test behaviour".)
+19. **A19** Snacks are not trip finds. The axolotl eats a snack when its head, where it is drawn, touches the snack where it is drawn (with its drift and bob, H4), under full and reduced motion. The eat reach is the same at every size, so size stays for looks only (F4; see Tuning values). With four legs, eating a snack does not change the legs. While a leg is missing, each snack eaten moves the regrowing leg's regrowth forward by a fixed amount (see Tuning values). Regrowth only moves forward and never goes past a full leg. The player gets clear feedback when a snack speeds up regrowth, readable in greyscale and under reduced motion. The speed-up works together with the Regrowth perk, and a Snack magnet perk can pull nearby snacks toward the explorer (F9). Banking does not affect snacks. Being carried home resets them (A12). Every snack must be eaten to open the exit (H2). (Issue #30. This replaces "snacks keep their swim-test behaviour".)
 20. **A20** The first trip shows one short hint: bring finds to the Home Spot to keep them safe.
 21. **A21** The first time the player meets the tilapia, a short fact card appears with play paused. The player can dismiss it. It explains that the tilapia is a fish people brought to Xochimilco, that it does not belong there, and that it eats axolotl eggs and food. The tone is gentle, with no blame. The card can be read again in the Collection Book once the book exists.
 22. **A22** Perks from the explorer's outfit can change the rules for speed, regrowth, Tail Dash, and blocking a hit, only within the per-type caps (see F9 to F12). With any outfit, every hit that a Shell perk does not block still removes exactly one leg, and losing the fourth leg still ends the trip (A11). A hit blocked by a Shell perk costs no leg and starts normal protected time (A5).
@@ -294,7 +294,7 @@ Everything stays calm, never scary, readable without colour, and usable with red
 1. **H1** Areas are the levels of the game. The canal is Area 1, and it is the only area in the MVP (X9). Reaching an area's open exit beats it.
 2. **H2** Area 1 has one clear, reachable exit. It stays closed until every snack in the area has been eaten. Closed and open differ by shape or icon, not by colour alone, including under reduced motion.
 3. **H3** A snack counter (an icon and a number) shows the snacks left. When only 3 are left, each gets the same hint sparkle that hidden treasures use (B7; see open question 16). The sparkle is static under reduced motion.
-4. **H4** Snacks move. In Area 1 they drift slowly. Faster snacks come only in later areas (N2).
+4. **H4** Snacks move. In Area 1 they drift slowly. A snack is eaten where it is drawn, drift and bob included, by the axolotl's head (A19). Faster snacks come only in later areas (N2).
 5. **H5** Reaching the open exit banks every trip find at once, as at the Home Spot (A14). Then a kind "Area beaten" screen shows the stars earned (see open question 17).
 6. **H6** Each area has up to 3 stars:
     - Star 1: reach the exit.
@@ -359,6 +359,7 @@ Everything stays calm, never scary, readable without colour, and usable with red
   - the starter's chosen morph being owned and found in the Collection Book from the start, and only the other three morphs ever being stranded (C1, C2, F5);
   - putting on and taking off a Dream colour, returning the axolotl to its real morph;
   - the snack speed-up: no effect with four legs, a fixed amount on the regrowing leg, never past a full leg, and working together with the Regrowth perk;
+  - the snack eat reach: a snack under the drawn head is eaten at every size, facing either way, tilted, drifting and bobbing, under full and reduced motion; the reach is the same for every look; and the longest swim step cannot carry the head past a snack;
   - the exit staying closed until every snack is eaten, the snacks-left count, and the last-3 sparkle threshold;
   - being carried home resetting the snacks;
   - star rules, including stars kept across replays;
@@ -500,6 +501,7 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | Tilapia in the canal | At least 3 |
 | Treasures | 12 or more Decorations and Wearables (at least 4 Decorations and 8 Wearables), plus 12 Paint shells |
 | Snack regrowth speed-up | Each snack adds 20% of one leg's regrowth to the leg that is regrowing (about 4 seconds at the base time). Never past a full leg. |
+| Snack eat reach | A circle of 36 pixels radius, centred 28 pixels ahead of the axolotl's middle along its body, turning with its tilt. While the body squashes in a turn, the centre moves in with it. The same at every size. It covers the whole head of the largest size; smaller sizes reach a little in front of the snout. |
 | Treasure hint range (Common / Rare / Epic / Legendary) | 150 / 115 / 85 / 60 pixels. Rarer is shorter. |
 | Dash pot touch distance | 30 pixels |
 | Dream colours by rarity | Common: Mint, Sky blue, Lavender (solid). Rare: Sunset orange, Bubblegum, Midnight blue (solid). Epic: Hearts, Tie-dye, Iridescent (patterned or sheen). Legendary: Rainbow, Galaxy, Tie-dye galaxy (patterned). |
@@ -565,7 +567,7 @@ Early slices may use a placeholder find and an interim home.
 | Leg loss | Losing one leg to a hit. | injury, wound, damage |
 | Regrowth | A lost leg growing back. | healing |
 | Carried home | Ending a trip after losing the fourth leg. | death, die, game over, wipe, fail |
-| Snack | A worm or bug the axolotl eats. Not a trip find. Speeds up regrowth while a leg is missing. Every snack must be eaten to open the exit. | |
+| Snack | A worm or bug the axolotl eats by touching it with its head. Not a trip find. Speeds up regrowth while a leg is missing. Every snack must be eaten to open the exit. | |
 | Start over | Erasing all saved progress after confirmation. | |
 | Area / Habitat | A named part of the world, such as the canal (Area 1). Each area is a level: reaching its open exit beats it. | map; "level" in UI text (say "Area 1") |
 | Exit | The way out of an area. It stays closed until every snack in the area is eaten. Reaching the open exit beats the area. | |
