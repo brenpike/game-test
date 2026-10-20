@@ -3,10 +3,10 @@
  * morph portraits, the unfound-morph silhouette, the lost thought bubble and the
  * tilapia picture for fact cards.
  *
- * Morph badges: one shape per morph, so a morph never relies on colour alone:
- * rounded triangle, rounded hexagon, six-petal flower, crescent moon. None of
- * them is a rarity shape (circle, diamond, shield, star) or the Dream swatch
- * tile. Geometry is authored in the guide's 24 x 24 box (origin top-left) and
+ * Morph badges: one shape per morph, so a morph never relies on colour alone.
+ * Eight shapes: rounded triangle, rounded hexagon, six-petal flower, cloud,
+ * leaf, capsule, drop, crescent moon. Never a circle, diamond, shield or star
+ * (the rarity shapes) or the Dream swatch tile. Geometry is authored in the guide's 24 x 24 box (origin top-left) and
  * scaled by size / 24. Outline 2.6 (`shape`), never scaled. One white shine at
  * the upper left, as the rarity badges.
  *
@@ -22,7 +22,21 @@ import { drawAxolotl, AXO_REST_POSE, AXO_TEX } from './drawAxolotl';
 import { BADGE_LW, roundedPolygon, scaledPath, badgeTextureSize, type Pt } from './drawBadges';
 import { TILAPIA_TEX, paintTilapia } from './drawTilapia';
 import { TAU, ell, frameFromBounds, shape, type TexSize } from './canvasKit';
-import { INK, MORPH_PALETTES, SILHOUETTE, WHITE, type MorphLookId } from './palette';
+import {
+  AXANTHIC,
+  COPPER,
+  GOLDEN_ALBINO,
+  INK,
+  LEUCISTIC,
+  MELANOID,
+  MORPH_PALETTES,
+  PIEBALD,
+  SILHOUETTE,
+  WHITE,
+  WHITE_ALBINO,
+  WILD,
+  type MorphLookId,
+} from './palette';
 import { TREASURE_SHINE } from './treasurePalette';
 
 // ---------------------------------------------------------------------------
@@ -30,23 +44,48 @@ import { TREASURE_SHINE } from './treasurePalette';
 // ---------------------------------------------------------------------------
 
 /** Morph badge shapes. Same strings as the logic layer's MorphBadgeShape. */
-export type MorphBadgeShape = 'triangle' | 'hexagon' | 'flower' | 'moon';
-
-/** Badge shapes in morph order: Leucistic, Wild, Golden albino, Melanoid. */
-export const MORPH_BADGE_SHAPES: readonly MorphBadgeShape[] = ['triangle', 'hexagon', 'flower', 'moon'];
-
-/** Look ids in book order. Must match the logic layer's RealMorphId list. */
-export const MORPH_LOOK_IDS: readonly MorphLookId[] = ['leucistic', 'wild', 'golden-albino', 'melanoid'];
+export type MorphBadgeShape = 'triangle' | 'hexagon' | 'flower' | 'cloud' | 'leaf' | 'capsule' | 'drop' | 'moon';
 
 /**
- * Badge fill per shape: the body colour of the morph that wears it (Leucistic,
- * Wild, Golden albino, Melanoid). Shape carries the meaning, not the colour.
+ * Badge shapes in morph order: Leucistic, Wild, Golden albino, White albino,
+ * Copper, Piebald, Axanthic, Melanoid.
+ */
+export const MORPH_BADGE_SHAPES: readonly MorphBadgeShape[] = [
+  'triangle',
+  'hexagon',
+  'flower',
+  'cloud',
+  'leaf',
+  'capsule',
+  'drop',
+  'moon',
+];
+
+/** Look ids in book order. Must match the logic layer's RealMorphId list. */
+export const MORPH_LOOK_IDS: readonly MorphLookId[] = [
+  'leucistic',
+  'wild',
+  'golden-albino',
+  'white-albino',
+  'copper',
+  'piebald',
+  'axanthic',
+  'melanoid',
+];
+
+/**
+ * Badge fill per shape: the body colour of the morph that wears it. Shape
+ * carries the meaning, not the colour.
  */
 export const MORPH_BADGE_FILL: Readonly<Record<MorphBadgeShape, string>> = {
-  triangle: '#ffb7cf',
-  hexagon: '#b0b86e',
-  flower: '#ffd36b',
-  moon: '#4f4a6e',
+  triangle: LEUCISTIC.body,
+  hexagon: WILD.body,
+  flower: GOLDEN_ALBINO.body,
+  cloud: WHITE_ALBINO.body,
+  leaf: COPPER.body,
+  capsule: PIEBALD.body,
+  drop: AXANTHIC.body,
+  moon: MELANOID.body,
 };
 
 /** The authoring box, centre at (12, 12). */
@@ -63,6 +102,20 @@ const MOON_OUTER = { x: 12, y: 12, r: 10.5 } as const;
 const MOON_INNER = { x: 16, y: 9, r: 8.5 } as const;
 /** Fillet radius that rounds each crescent tip (the round join adds the rest). */
 const MOON_TIP_R = 1;
+/** Cloud: two side bumps and a top bump on a flat base along the side bumps' bottoms (y 20). */
+const CLOUD_LEFT = { x: 7, y: 15, r: 5 } as const;
+const CLOUD_TOP = { x: 12, y: 10.5, r: 6.5 } as const;
+const CLOUD_RIGHT = { x: 17, y: 15, r: 5 } as const;
+/** Leaf: the lens where two discs overlap, tips (3.5, 20.5) and (20.5, 3.5), each side bulging 5 from the tip line. */
+const LEAF_R = 16.948;
+const LEAF_LOWER_RIGHT: Pt = { x: 20.448, y: 20.448 };
+const LEAF_UPPER_LEFT: Pt = { x: 3.552, y: 3.552 };
+/** Fillet radius that rounds each leaf tip, as the moon. */
+const LEAF_TIP_R = 1;
+const CAPSULE_CORNER = 5.5;
+const DROP_BASE = { x: 12, y: 14.5, r: 7.5 } as const;
+const DROP_TIP: Pt = { x: 12, y: 2.5 };
+const DROP_TIP_R = 1.5;
 
 function trianglePath(): Path2D {
   return roundedPolygon(
@@ -131,6 +184,19 @@ function onCircle(c: Pt, r: number, toward: Pt): Pt {
   return { x: c.x + ((toward.x - c.x) / d) * r, y: c.y + ((toward.y - c.y) / d) * r };
 }
 
+/** Angle of `p` seen from the centre `c`. */
+function angleTo(c: Pt, p: Pt): number {
+  return Math.atan2(p.y - c.y, p.x - c.x);
+}
+
+/** True when the short way from angle `from` to angle `to` turns anticlockwise. */
+function turnsBack(from: number, to: number): boolean {
+  let d = to - from;
+  while (d > Math.PI) d -= TAU;
+  while (d <= -Math.PI) d += TAU;
+  return d < 0;
+}
+
 /** Crescent: outer circle minus inner circle, both tips rounded by a small fillet arc. */
 function moonPath(): Path2D {
   const o: Pt = MOON_OUTER;
@@ -138,7 +204,6 @@ function moonPath(): Path2D {
   const R = MOON_OUTER.r;
   const r = MOON_INNER.r;
   const rf = MOON_TIP_R;
-  const ang = (c: Pt, p: Pt): number => Math.atan2(p.y - c.y, p.x - c.x);
 
   // Fillet circle centre per tip: inside the outer circle (R - rf), outside the inner (r + rf).
   const fA = circleHit(o, R - rf, i, r + rf, -1);
@@ -148,22 +213,105 @@ function moonPath(): Path2D {
   const inA = onCircle(i, r, fA);
   const inB = onCircle(i, r, fB);
 
-  const turnsBack = (from: number, to: number): boolean => {
-    let d = to - from;
-    while (d > Math.PI) d -= TAU;
-    while (d <= -Math.PI) d += TAU;
-    return d < 0;
-  };
-
   const p = new Path2D();
   // Outer edge, the long way round the left, tip A to tip B.
-  p.arc(o.x, o.y, R, ang(o, outA), ang(o, outB), true);
+  p.arc(o.x, o.y, R, angleTo(o, outA), angleTo(o, outB), true);
   // Tip B fillet, outer edge to inner edge.
-  p.arc(fB.x, fB.y, rf, ang(fB, outB), ang(fB, inB), turnsBack(ang(fB, outB), ang(fB, inB)));
+  p.arc(fB.x, fB.y, rf, angleTo(fB, outB), angleTo(fB, inB), turnsBack(angleTo(fB, outB), angleTo(fB, inB)));
   // Inner edge, tip B back to tip A, through the part inside the outer circle.
-  p.arc(i.x, i.y, r, ang(i, inB), ang(i, inA), false);
+  p.arc(i.x, i.y, r, angleTo(i, inB), angleTo(i, inA), false);
   // Tip A fillet, inner edge to outer edge.
-  p.arc(fA.x, fA.y, rf, ang(fA, inA), ang(fA, outA), turnsBack(ang(fA, inA), ang(fA, outA)));
+  p.arc(fA.x, fA.y, rf, angleTo(fA, inA), angleTo(fA, outA), turnsBack(angleTo(fA, inA), angleTo(fA, outA)));
+  p.closePath();
+  return p;
+}
+
+/**
+ * Cloud as ONE outline: the left bump up to its notch with the top bump, the
+ * top bump over to the right notch, the right bump down to the base, then a
+ * straight base back to the start. A single stroke draws no line inside.
+ */
+function cloudPath(): Path2D {
+  const l = CLOUD_LEFT;
+  const t = CLOUD_TOP;
+  const r = CLOUD_RIGHT;
+  // Upper crossings with the top bump: (5.51, 10.23) and (18.49, 10.23).
+  const notchL = circleHit(l, l.r, t, t.r, -1);
+  const notchR = circleHit(t, t.r, r, r.r, -1);
+
+  const p = new Path2D();
+  p.moveTo(l.x, l.y + l.r);
+  p.arc(l.x, l.y, l.r, Math.PI / 2, angleTo(l, notchL), false);
+  p.arc(t.x, t.y, t.r, angleTo(t, notchL), angleTo(t, notchR), false);
+  // INVARIANT: ends at pi / 2, the same angle as 5 pi / 2. The notch angle is
+  // negative, so an end 2 pi or more past it would draw the whole circle.
+  p.arc(r.x, r.y, r.r, angleTo(r, notchR), Math.PI / 2, false);
+  p.closePath();
+  return p;
+}
+
+/** Leaf: the lens where two discs overlap, both tips rounded by a small fillet arc (the moon's method). */
+function leafPath(): Path2D {
+  const a = LEAF_LOWER_RIGHT;
+  const b = LEAF_UPPER_LEFT;
+  const R = LEAF_R;
+  const rf = LEAF_TIP_R;
+
+  // Fillet circle centre per tip, inside both discs: +1 is the upper right tip, -1 the lower left.
+  const fUp = circleHit(a, R - rf, b, R - rf, 1);
+  const fDown = circleHit(a, R - rf, b, R - rf, -1);
+  const aUp = onCircle(a, R, fUp);
+  const aDown = onCircle(a, R, fDown);
+  const bUp = onCircle(b, R, fUp);
+  const bDown = onCircle(b, R, fDown);
+
+  // Every arc is under half a turn, so each takes the short way round.
+  const p = new Path2D();
+  p.arc(a.x, a.y, R, angleTo(a, aDown), angleTo(a, aUp), turnsBack(angleTo(a, aDown), angleTo(a, aUp)));
+  p.arc(fUp.x, fUp.y, rf, angleTo(fUp, aUp), angleTo(fUp, bUp), turnsBack(angleTo(fUp, aUp), angleTo(fUp, bUp)));
+  p.arc(b.x, b.y, R, angleTo(b, bUp), angleTo(b, bDown), turnsBack(angleTo(b, bUp), angleTo(b, bDown)));
+  p.arc(
+    fDown.x,
+    fDown.y,
+    rf,
+    angleTo(fDown, bDown),
+    angleTo(fDown, aDown),
+    turnsBack(angleTo(fDown, bDown), angleTo(fDown, aDown)),
+  );
+  p.closePath();
+  return p;
+}
+
+function capsulePath(): Path2D {
+  return roundedPolygon(
+    [
+      { x: 2, y: 6.5 },
+      { x: 22, y: 6.5 },
+      { x: 22, y: 17.5 },
+      { x: 2, y: 17.5 },
+    ],
+    CAPSULE_CORNER,
+  );
+}
+
+/**
+ * Drop: a base circle with two straight sides tangent to it, meeting at a
+ * rounded tip. Tangent points (6.15, 9.81) and (17.85, 9.81).
+ */
+function dropPath(): Path2D {
+  const c = DROP_BASE;
+  const tipAngle = angleTo(c, DROP_TIP);
+  const spread = Math.acos(c.r / Math.hypot(DROP_TIP.x - c.x, DROP_TIP.y - c.y));
+  const leftAngle = tipAngle - spread;
+  const rightAngle = tipAngle + spread;
+  const left: Pt = { x: c.x + c.r * Math.cos(leftAngle), y: c.y + c.r * Math.sin(leftAngle) };
+  const right: Pt = { x: c.x + c.r * Math.cos(rightAngle), y: c.y + c.r * Math.sin(rightAngle) };
+
+  const p = new Path2D();
+  p.moveTo(left.x, left.y);
+  p.arcTo(DROP_TIP.x, DROP_TIP.y, right.x, right.y, DROP_TIP_R);
+  p.lineTo(right.x, right.y);
+  p.arc(c.x, c.y, c.r, rightAngle, leftAngle + TAU, false);
   p.closePath();
   return p;
 }
@@ -176,6 +324,14 @@ function outlinePath(kind: MorphBadgeShape): Path2D {
       return hexagonPath();
     case 'flower':
       return flowerPath();
+    case 'cloud':
+      return cloudPath();
+    case 'leaf':
+      return leafPath();
+    case 'capsule':
+      return capsulePath();
+    case 'drop':
+      return dropPath();
     case 'moon':
       return moonPath();
   }
@@ -186,7 +342,11 @@ const SHINE: Readonly<Record<MorphBadgeShape, { x: number; y: number; rx: number
   triangle: { x: 10.45, y: 11.4, rx: 3.0, ry: 1.2, rot: -1.06 },
   hexagon: { x: 6.9, y: 9.05, rx: 2.8, ry: 1.2, rot: -Math.PI / 3 },
   flower: { x: 5.7, y: 8.0, rx: 1.8, ry: 0.8, rot: -0.8 },
-  moon: { x: 4.3, y: 8.2, rx: 2.2, ry: 0.9, rot: -1.1 },
+  cloud: { x: 9.5, y: 8.0, rx: 2.2, ry: 0.9, rot: -Math.PI / 4 },
+  leaf: { x: 10.6, y: 10.6, rx: 2.8, ry: 1.0, rot: -Math.PI / 4 },
+  capsule: { x: 9.0, y: 9.6, rx: 3.0, ry: 1.0, rot: 0 },
+  drop: { x: 8.3, y: 11.9, rx: 2.2, ry: 0.9, rot: -0.96 },
+  moon:{ x: 4.3, y: 8.2, rx: 2.2, ry: 0.9, rot: -1.1 },
 };
 
 /** Texture frame for a morph badge of `size` (24 or 32). Anchor is the box centre. */

@@ -96,8 +96,8 @@ export const BUBBLE_STROKE_WIDTH = 2;
 // ---- Morph role slots (guide 3b) ----------------------------------------
 /**
  * A morph swaps colours through these named slots. Shapes, line weights and
- * layer order never change. LEUCISTIC, WILD, GOLDEN_ALBINO and MELANOID are
- * implemented; GFP is not in the MVP.
+ * layer order never change. LEUCISTIC, WILD, GOLDEN_ALBINO, WHITE_ALBINO,
+ * COPPER, PIEBALD, AXANTHIC and MELANOID are implemented; GFP is not in the MVP.
  */
 export interface MorphPalette {
   readonly body: string;
@@ -203,7 +203,7 @@ export const WILD: MorphPalette = {
   extras: {
     // Far gill stem #714a77 at 0.55.
     spot: 'rgba(113,74,119,0.55)',
-    // Corrective contrast cue (guide 12 "Wild recheck"): a 2 px rim in the Wild
+    // Corrective contrast cue (guide 12 "Wild rim"): a 2 px rim in the Wild
     // belly colour just inside the ink from snout to tail point 3, not on the
     // fin. Ink vs rim is 10.98:1 (worst case 3.31:1). It keeps the body, so Wild
     // luminance stays 0.446, and it differs from Melanoid's fin-inclusive #cec9f0 rim.
@@ -257,6 +257,128 @@ export const GOLDEN_ALBINO: MorphPalette = {
 };
 
 /**
+ * White albino colourway (guide 3b), derived (provisional). Lightest value.
+ * Non-hue cue: light pink eye with an ink ring, as Golden albino, on a
+ * near-white body. Ink vs body 13.38:1, so it passes alone.
+ */
+export const WHITE_ALBINO: MorphPalette = {
+  body: '#fff4f6',
+  farSide: '#f5dce3',
+  fin: '#ffe6ec',
+  belly: '#fffafb',
+  gillNearStem: '#ff7f9e',
+  gillNearFilament: '#ff9fb6',
+  gillFarStem: '#ec6a8b',
+  gillFarFilament: '#f786a3',
+  eye: '#e2557a',
+  mouth: '#e86a80',
+  extras: {
+    spot: FRECKLE,
+    eyeRing: { colour: INK, width: 1.5 },
+  },
+};
+
+/**
+ * Copper colourway (guide 3b), derived (provisional). Non-hue cue: fine copper
+ * speckles plus white shimmer glints with no outline. Ink vs body 9.24:1, so it
+ * passes alone.
+ */
+export const COPPER: MorphPalette = {
+  body: '#fac595',
+  farSide: '#eba878',
+  fin: '#fdd8b6',
+  belly: '#fee6cf',
+  gillNearStem: '#f0785f',
+  gillNearFilament: '#f7967f',
+  gillFarStem: '#d9634b',
+  gillFarFilament: '#e88068',
+  eye: EYE,
+  mouth: '#d9675a',
+  extras: {
+    // Speckle colour #a8613a at 0.55.
+    spot: 'rgba(168,97,58,0.55)',
+    // Nine fine dots. Positions are derived (provisional).
+    speckles: {
+      colour: '#a8613a',
+      marks: [
+        bodyMark(-6, -2, 1.2),
+        bodyMark(-20, -2, 1.1),
+        bodyMark(-32, 3, 1.0),
+        bodyMark(-12, 6, 1.0),
+        bodyMark(-26, 7, 1.0),
+        tailMark(0.2, -0.35, 1.1),
+        tailMark(0.4, 0.3, 1.0),
+        tailMark(0.6, -0.2, 0.9),
+        tailMark(0.8, 0.1, 0.8),
+      ],
+    },
+    // Three white four-point glints, no outline. Positions are derived (provisional).
+    shimmer: {
+      colour: 'rgba(255,255,255,0.8)',
+      marks: [bodyMark(-28, -4, 1.8), bodyMark(2, -9, 1.8), tailMark(0.5, 0.15, 1.6)],
+    },
+  },
+};
+
+/**
+ * Piebald colourway (guide 3b), derived (provisional). Non-hue cue: a few large
+ * dark patches on a near-white body. Ink vs body 12.75:1, so it passes alone and
+ * the patches stay inset from the edge.
+ */
+export const PIEBALD: MorphPalette = {
+  body: '#f8eff1',
+  farSide: '#e8d8dd',
+  fin: '#fbe6eb',
+  belly: '#fffafb',
+  gillNearStem: '#ee4f6e',
+  gillNearFilament: '#f7728c',
+  gillFarStem: '#d6435f',
+  gillFarFilament: '#e5627b',
+  eye: EYE,
+  mouth: '#e8567e',
+  extras: {
+    spot: FRECKLE,
+    // Five patches. Positions are derived (provisional).
+    speckles: {
+      colour: '#4a4459',
+      marks: [
+        bodyMark(8, -8, 3.4),
+        bodyMark(-6, -3, 4.2),
+        bodyMark(-24, 1, 3.6),
+        tailMark(0.35, -0.3, 2.8),
+        tailMark(0.65, 0.2, 2.2),
+      ],
+    },
+  },
+};
+
+/**
+ * Axanthic colourway (guide 3b), derived (provisional). Cool grey, second
+ * darkest value, with normal shine and no eye ring (EYE vs body is 3.85:1).
+ */
+export const AXANTHIC: MorphPalette = {
+  body: '#74767f',
+  farSide: '#5e606a',
+  fin: '#cfd1d8',
+  belly: '#8a8c96',
+  gillNearStem: '#8c879f',
+  gillNearFilament: '#a6a2b8',
+  gillFarStem: '#6f6b84',
+  gillFarFilament: '#88849c',
+  eye: EYE,
+  mouth: '#e8567e',
+  extras: {
+    // Rim colour at 0.4, so spots show on the grey body.
+    spot: 'rgba(228,230,235,0.4)',
+    // The Axanthic rim is required: ink vs body is only 3.18:1, ink vs rim
+    // 11.53:1. The fin #cfd1d8 is 9.43:1 with ink and passes alone, so the rim
+    // stops at tail point 3. It differs from Melanoid's fin-inclusive #cec9f0 rim.
+    rim: { colour: '#e4e6eb', width: 2, fin: false },
+    finRays: 'rgba(94,96,106,0.65)',
+  },
+};
+
+/**
  * Melanoid colourway (guide 3b), derived (provisional). Darkest value, matte,
  * with a required rim light: ink vs body is only 1.74:1, ink vs rim 9.07:1.
  * The mouth slot keeps the Leucistic value.
@@ -304,12 +426,24 @@ export const SILHOUETTE: MorphPalette = {
 };
 
 /** Look ids of the real morphs. Must match the logic layer's RealMorphId. */
-export type MorphLookId = 'leucistic' | 'wild' | 'golden-albino' | 'melanoid';
+export type MorphLookId =
+  | 'leucistic'
+  | 'wild'
+  | 'golden-albino'
+  | 'white-albino'
+  | 'copper'
+  | 'piebald'
+  | 'axanthic'
+  | 'melanoid';
 
 export const MORPH_PALETTES: Record<MorphLookId, MorphPalette> = {
   leucistic: LEUCISTIC,
   wild: WILD,
   'golden-albino': GOLDEN_ALBINO,
+  'white-albino': WHITE_ALBINO,
+  copper: COPPER,
+  piebald: PIEBALD,
+  axanthic: AXANTHIC,
   melanoid: MELANOID,
 };
 

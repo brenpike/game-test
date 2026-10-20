@@ -1,8 +1,16 @@
 /** A real axolotl morph (PRD C1). */
-export type RealMorphId = 'leucistic' | 'wild' | 'golden-albino' | 'melanoid';
+export type RealMorphId =
+  | 'leucistic'
+  | 'wild'
+  | 'golden-albino'
+  | 'white-albino'
+  | 'copper'
+  | 'piebald'
+  | 'axanthic'
+  | 'melanoid';
 
 /** Collection Book badge shape of a morph. Never a rarity badge shape. */
-export type MorphBadgeShape = 'triangle' | 'hexagon' | 'flower' | 'moon';
+export type MorphBadgeShape = 'triangle' | 'hexagon' | 'flower' | 'cloud' | 'leaf' | 'capsule' | 'drop' | 'moon';
 
 /** A real morph's id, display copy, badge shape and fact. */
 export interface RealMorph {
@@ -13,7 +21,7 @@ export interface RealMorph {
   fact: string;
 }
 
-/** The four real morphs, in PRD order. */
+/** The eight real morphs, in PRD order. */
 export const REAL_MORPHS: readonly Readonly<RealMorph>[] = Object.freeze([
   Object.freeze({
     id: 'leucistic',
@@ -35,6 +43,34 @@ export const REAL_MORPHS: readonly Readonly<RealMorph>[] = Object.freeze([
     displayName: 'Golden albino axolotl',
     badge: 'flower',
     fact: 'Golden albino axolotls have no dark colour at all. They are golden, with reddish eyes.',
+  }),
+  Object.freeze({
+    id: 'white-albino',
+    name: 'White albino',
+    displayName: 'White albino axolotl',
+    badge: 'cloud',
+    fact: 'White albino axolotls look a lot like Leucistic ones. Check the eyes: theirs are pink!',
+  }),
+  Object.freeze({
+    id: 'copper',
+    name: 'Copper',
+    displayName: 'Copper axolotl',
+    badge: 'leaf',
+    fact: 'Copper axolotls get browner as they grow up, until they are copper all over.',
+  }),
+  Object.freeze({
+    id: 'piebald',
+    name: 'Piebald',
+    displayName: 'Piebald axolotl',
+    badge: 'capsule',
+    fact: 'Piebald axolotls are white with dark patches. The patches get darker as they grow.',
+  }),
+  Object.freeze({
+    id: 'axanthic',
+    name: 'Axanthic',
+    displayName: 'Axanthic axolotl',
+    badge: 'drop',
+    fact: 'Axanthic axolotls have no yellow colour at all, so they look dark grey all over.',
   }),
   Object.freeze({
     id: 'melanoid',
@@ -73,12 +109,12 @@ export function axolotlFindId(morph: RealMorphId): string {
   return `axolotl/${morph}`;
 }
 
-/** The morph of an axolotl find id, or undefined when the id is not one of the four exactly. */
+/** The morph of an axolotl find id, or undefined when the id is not exactly a REAL_MORPHS find id. */
 export function morphOfFindId(id: string): RealMorphId | undefined {
   return Object.hasOwn(MORPHS_BY_FIND_ID, id) ? MORPHS_BY_FIND_ID[id] : undefined;
 }
 
-/** Whether an id is exactly one of the four axolotl find ids. */
+/** Whether an id is exactly one of the eight axolotl find ids. */
 export function isAxolotlFindId(id: string): boolean {
   return morphOfFindId(id) !== undefined;
 }

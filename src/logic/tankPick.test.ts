@@ -69,6 +69,15 @@ describe('tankFocusTarget', () => {
     ]);
   });
 
+  it('maps three hub buttons then eight axolotls, 11 in all', () => {
+    expect(allTargets(3, 8)).toEqual([
+      { kind: 'hub', i: 0 },
+      { kind: 'hub', i: 1 },
+      { kind: 'hub', i: 2 },
+      ...Array.from({ length: 8 }, (_, i) => ({ kind: 'axolotl', i })),
+    ]);
+  });
+
   it('maps only hub buttons when no axolotl is owned', () => {
     expect(allTargets(3, 0).every((target) => target?.kind === 'hub')).toBe(true);
   });
@@ -111,6 +120,20 @@ describe('stepTankFocus', () => {
     expect(stepTankFocus(0, 3, 2, -1)).toBe(4);
     expect(stepTankFocus(5, 4, 2, 1)).toBe(0);
     expect(stepTankFocus(0, 4, 2, -1)).toBe(5);
+  });
+
+  it('wraps through all 11 targets for three hub buttons and eight axolotls', () => {
+    const visited: number[] = [];
+    let focus = 0;
+    for (let step = 0; step < 11; step++) {
+      visited.push(focus);
+      focus = stepTankFocus(focus, 3, 8, 1);
+    }
+    expect(visited).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(focus).toBe(0);
+    expect(stepTankFocus(0, 3, 8, -1)).toBe(10);
+    expect(stepTankFocus(10, 3, 8, 1)).toBe(0);
+    expect(stepTankFocus(3, 3, 8, -1)).toBe(2);
   });
 
   it('wraps over the hub buttons alone when no axolotl is owned', () => {

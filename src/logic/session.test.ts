@@ -514,9 +514,9 @@ describe('stranded axolotl rescue across trips (C1, C4 to C6, A11, A12)', () => 
     expect(after.canal.waitingStranded).toBeNull();
   });
 
-  it('owns every morph after three rescues, and no stranded axolotl appears after that (C6)', () => {
+  it('owns every morph after seven rescues, and no stranded axolotl appears after that (C6)', () => {
     let session = withStarter();
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < REAL_MORPHS.length - 1; i++) {
       session = rescueAndGoHome(session, FIRST_SEED);
       expectConsistent(session);
     }
@@ -693,7 +693,7 @@ describe('canRescueMore (C6)', () => {
   });
 });
 
-describe.each(REAL_MORPHS.map((morph) => morph.id))('starter %s: the other three morphs are rescuable (C1, C2, C6, F5)', (starter) => {
+describe.each(REAL_MORPHS.map((morph) => morph.id))('starter %s: the other seven morphs are rescuable (C1, C2, C6, F5)', (starter) => {
   const others = REAL_MORPHS.map((morph) => morph.id).filter((id) => id !== starter);
   const SEED_COUNT = 200;
 
@@ -714,9 +714,10 @@ describe.each(REAL_MORPHS.map((morph) => morph.id))('starter %s: the other three
     expect([...seen].sort()).toEqual([...others].sort());
   });
 
-  it('rescues each other morph in three trips, then strands no more (C2, C6)', () => {
+  it('rescues each other morph in seven trips, then strands no more (C2, C6)', () => {
     let session = withStarter('Gilly', starter);
     for (let cycle = 0; cycle < others.length; cycle++) {
+      expect(canRescueMore(session)).toBe(true);
       const owned = session.hub.axolotls.map((axolotl) => axolotl.morph);
       const { morph } = rescueOf(startRescueTrip(session, FIRST_SEED + cycle));
       expect(morph).not.toBe(starter);
@@ -728,6 +729,7 @@ describe.each(REAL_MORPHS.map((morph) => morph.id))('starter %s: the other three
     expect(session.hub.axolotls).toHaveLength(REAL_MORPHS.length);
     expect(new Set(session.hub.axolotls.map((axolotl) => axolotl.morph))).toEqual(new Set(REAL_MORPHS.map((morph) => morph.id)));
     expect(session.hub.book.foundMorphs).toEqual(REAL_MORPHS.map((morph) => morph.id));
+    expect(canRescueMore(session)).toBe(false);
     for (let seed = 0; seed < SEED_COUNT; seed++) expect(startRescueTrip(session, seed).rescue).toBeNull();
   });
 });

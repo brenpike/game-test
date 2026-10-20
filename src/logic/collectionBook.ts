@@ -1,5 +1,5 @@
 /**
- * Collection Book listing (PRD C12, C13, C14, F15): the four real morphs, the Dream colours in their
+ * Collection Book listing (PRD C12, C13, C14, F15): the eight real morphs, the Dream colours in their
  * own section, and the fact cards, with pages and the CSS px layout of one featured entry. Pure
  * data; drawing lives in the scene and art layers.
  */
@@ -72,7 +72,7 @@ export interface BookSectionOf<C extends BookCategory, E extends BookEntry> {
   readonly entries: readonly E[];
 }
 
-/** The Morphs section, heading e.g. 'Morphs: 2 of 4 found'. */
+/** The Morphs section, heading e.g. 'Morphs: 2 of 8 found'. */
 export type BookMorphSection = BookSectionOf<'morph', BookMorphEntry>;
 
 /** The Dream colours section, heading 'Dream colours'. */
@@ -172,7 +172,7 @@ function countedHeading(name: string, entries: readonly { found: boolean }[]): s
 }
 
 /**
- * The Collection Book sections, always Morphs, Dream colours, then Fact cards. Morphs lists the four
+ * The Collection Book sections, always Morphs, Dream colours, then Fact cards. Morphs lists the eight
  * real morphs in REAL_MORPHS order, found when in `foundMorphs` (duplicates and order ignored).
  * Dream colours lists all 12 in catalogue order, each with DREAM_COLOUR_LABEL. Fact cards holds the
  * tilapia card, found only when `tilapiaFound` is true (PRD C14).

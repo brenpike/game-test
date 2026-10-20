@@ -4,7 +4,19 @@ import { TANK_SWIM, tankLapPeriod, tankLaneY, tankSwimPose, type TankSwimPose } 
 
 const STEP_S = 0.1;
 const LONG_S = 200;
-const IDS = [STARTER_AXOLOTL_ID, 'rescued-leucistic', 'rescued-wild', 'rescued-golden-albino', 'rescued-melanoid'];
+const IDS = [
+  STARTER_AXOLOTL_ID,
+  'rescued-leucistic',
+  'rescued-wild',
+  'rescued-golden-albino',
+  'rescued-melanoid',
+  'rescued-white-albino',
+  'rescued-copper',
+  'rescued-piebald',
+  'rescued-axanthic',
+];
+const TANK_AXOLOTL_COUNT = 8;
+const MIN_LANE_GAP_PX = 15;
 const END_SLACK_PX = 2;
 
 /** Poses of one axolotl from 0 to `untilS` every STEP_S seconds. */
@@ -113,5 +125,23 @@ describe('lap period and lanes', () => {
   it('gives four indexes distinct still poses', () => {
     const still = [0, 1, 2, 3].map((index) => tankSwimPose(STARTER_AXOLOTL_ID, index, 0, true));
     expect(new Set(still.map((pose) => `${pose.x},${pose.y}`)).size).toBe(4);
+  });
+
+  it('gives eight indexes distinct lanes inside the water', () => {
+    const lanes = Array.from({ length: TANK_AXOLOTL_COUNT }, (_, index) => tankLaneY(index));
+    expect(new Set(lanes).size).toBe(TANK_AXOLOTL_COUNT);
+    const sorted = [...lanes].sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i++) expect(sorted[i] - sorted[i - 1]).toBeGreaterThanOrEqual(MIN_LANE_GAP_PX);
+    for (const lane of lanes) {
+      expect(lane - TANK_SWIM.bobPx).toBeGreaterThanOrEqual(TANK_SWIM.waterY0);
+      expect(lane + TANK_SWIM.bobPx).toBeLessThanOrEqual(TANK_SWIM.waterY1);
+    }
+  });
+
+  it('gives eight indexes distinct still poses', () => {
+    const still = Array.from({ length: TANK_AXOLOTL_COUNT }, (_, index) =>
+      tankSwimPose(STARTER_AXOLOTL_ID, index, 0, true),
+    );
+    expect(new Set(still.map((pose) => `${pose.x},${pose.y}`)).size).toBe(TANK_AXOLOTL_COUNT);
   });
 });

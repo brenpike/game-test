@@ -177,13 +177,13 @@ describe('pickStranding', () => {
     expect([...placeIds].sort()).toEqual(STRANDING_PLACES.map((place) => place.id).sort());
   });
 
-  it('returns null once all three non-starter morphs are owned, for each possible starter', () => {
+  it('returns null once all seven non-starter morphs are owned, for each possible starter', () => {
     for (const starter of REAL_MORPHS.map((morph) => morph.id)) {
       const others = REAL_MORPHS.map((morph) => morph.id).filter((id) => id !== starter);
       const lastOne = others[others.length - 1];
       for (let seed = 0; seed < 20; seed++) {
         expect(pickStranding([starter, ...others], null, STRANDING_PLACES, seed)).toBeNull();
-        expect(pickStranding([starter, ...others.slice(0, 2)], null, STRANDING_PLACES, seed)?.morph).toBe(lastOne);
+        expect(pickStranding([starter, ...others.slice(0, -1)], null, STRANDING_PLACES, seed)?.morph).toBe(lastOne);
       }
     }
   });
