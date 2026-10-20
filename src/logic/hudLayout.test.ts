@@ -74,19 +74,46 @@ function toastMeasureFor(texts: OverlayTexts): FindToastMeasure {
   };
 }
 
+/** The banner overlays: every overlay but the find toast. */
+type BannerId = Exclude<HudOverlayId, 'findToast'>;
+
+/** Builds the panel-size function for banner `id` with its text at `px`, from fake text lengths. */
+function bannerBoxFor(id: BannerId, texts: OverlayTexts, px: number): (maxW: number) => Size {
+  const text = textAt(texts[id], px);
+  return (maxW) => bannerBox(maxW, text);
+}
+
 /** Builds the panel-size function for overlay `id` from fake text lengths. */
 function boxFor(id: HudOverlayId, texts: OverlayTexts): (maxW: number) => Size {
   if (id === 'findToast') {
     const measure = toastMeasureFor(texts);
     return (maxW) => findToastBox(maxW, measure);
   }
-  const text = textAt(texts[id], HUD.bannerTextPx);
-  return (maxW) => bannerBox(maxW, text);
+  return bannerBoxFor(id, texts, HUD.bannerTextPx);
 }
 
-/** Builds overlay requests for `ids` from fake text lengths. */
+/** Builds overlay requests for `ids` from fake text lengths; banners also get a retry measure. */
 function requestsFor(ids: readonly HudOverlayId[], texts: OverlayTexts): HudOverlayRequest[] {
-  return ids.map((id) => ({ id, boxAt: boxFor(id, texts) }));
+  return ids.map((id) => {
+    if (id === 'findToast') return { id, boxAt: boxFor(id, texts) };
+    return { id, boxAt: boxFor(id, texts), retryBoxAt: bannerBoxFor(id, texts, HUD.bannerRetryTextPx) };
+  });
+}
+
+/** A panel-size function that always returns `size` and logs each call as `label` to `log`. */
+function loggedBox(size: Size, label: string, log: string[]): (maxW: number) => Size {
+  return () => {
+    log.push(label);
+    return size;
+  };
+}
+
+/** Text size problems: a toast with a textPx, a placed banner not at 24 or 20, an unplaced one with one. */
+function textPxProblems(placement: HudOverlayPlacement): string[] {
+  const { id, rect, textPx } = placement;
+  if (rect === null || id === 'findToast') return textPx === null ? [] : [`${id}: textPx ${textPx}`];
+  const sizes: number[] = [HUD.bannerTextPx, HUD.bannerRetryTextPx];
+  return textPx !== null && sizes.includes(textPx) ? [] : [`${id}: placed at textPx ${String(textPx)}`];
 }
 
 /** Every non-empty subset of the overlays. */
@@ -416,7 +443,7 @@ describe('placeHudOverlays', () => {
     for (const goHomeVisible of [true, false]) {
       const keepOuts = controlKeepOuts(controls, { goHomeVisible });
       const [placed] = placeHudOverlays(SMALLEST, controls, keepOuts, [{ id: 'findToast', boxAt: box }]);
-      expect(placed).toEqual({ id: 'findToast', rect: null, edge: null });
+      expect(placed).toEqual({ id: 'findToast', rect: null, edge: null, textPx: null });
     }
     const reaching = { x: HUD.margin, y: HUD.margin, w: 206, h: 130 };
     expect(reaching.y + reaching.h).toBeGreaterThan(playMiddle(SMALLEST).y);
@@ -432,7 +459,7 @@ describe('placeHudOverlays', () => {
     const keepOuts = controlKeepOuts(controls, { goHomeVisible: false });
     const box = (): Size => ({ w: 206, h: 120 });
     const [placed] = placeHudOverlays(PORTRAIT, controls, keepOuts, [{ id: 'findToast', boxAt: box }]);
-    expect(placed).toEqual({ id: 'findToast', rect: null, edge: null });
+    expect(placed).toEqual({ id: 'findToast', rect: null, edge: null, textPx: null });
     const offending = { x: HUD.margin, y: 79.2, w: 206, h: 120 };
     expect(coversOnlyPanelsInMiddle(offending, PORTRAIT, controls)).toBe(false);
   });
@@ -476,7 +503,7 @@ describe('placeHudOverlays', () => {
     const placed = placeHudOverlays(view, controls, [], requestsFor(['findToast', 'hint', 'findToast'], SMALL_TEXTS));
     expect(placed.map((entry) => entry.id)).toEqual(['findToast', 'hint', 'findToast']);
     expect(placed[0].rect).not.toBeNull();
-    expect(placed[2]).toEqual({ id: 'findToast', rect: null, edge: null });
+    expect(placed[2]).toEqual({ id: 'findToast', rect: null, edge: null, textPx: null });
   });
 
   it('sizes each overlay once per maxW', () => {
@@ -564,6 +591,132 @@ describe('placeHudOverlays', () => {
       { id: 'snackBanner', boxAt: box },
     ]);
     expect(banners.map((entry) => entry.rect !== null)).toEqual([false, true]);
+  });
+
+  it('tries every place at 24 px before any place at 20 px', () => {
+    const view = { cssW: 800, cssH: 600 };
+    const controls = hudControls(view, SIZES);
+    const keepOuts = [...controlKeepOuts(controls, { goHomeVisible: false }), { x: 0, y: 90, w: 800, h: 162 }];
+    const log: string[] = [];
+    const request: HudOverlayRequest = {
+      id: 'snackBanner',
+      boxAt: loggedBox({ w: 150, h: 120 }, 'box', log),
+      retryBoxAt: loggedBox({ w: 150, h: 40 }, 'retry', log),
+    };
+    const [placed] = placeHudOverlays(view, controls, keepOuts, [request]);
+    expect(placed.edge).toBe('bottom');
+    expect(placed.textPx).toBe(HUD.bannerTextPx);
+    expect(placed.rect).toMatchObject({ w: 150, h: 120 });
+    expect(log).not.toContain('retry');
+    const [onTop] = placeHudOverlays(view, controls, keepOuts, [{ id: 'snackBanner', boxAt: () => ({ w: 150, h: 40 }) }]);
+    expect(onTop.edge).toBe('top');
+  });
+
+  it('never measures a banner at 20 px when it fits at 24 px', () => {
+    const view = { cssW: 800, cssH: 600 };
+    const controls = hudControls(view, SIZES);
+    const keepOuts = controlKeepOuts(controls, { goHomeVisible: true });
+    for (const id of ['snackBanner', 'hint'] as const) {
+      const log: string[] = [];
+      const request = { id, boxAt: boxFor(id, REAL_TEXTS), retryBoxAt: loggedBox({ w: 10, h: 10 }, 'retry', log) };
+      const [placed] = placeHudOverlays(view, controls, keepOuts, [request]);
+      expect(placed.rect).not.toBeNull();
+      expect(placed.textPx).toBe(HUD.bannerTextPx);
+      expect(log).toEqual([]);
+    }
+  });
+
+  it('places a banner at 20 px when it has no place at 24 px, after every 24 px try', () => {
+    const view = { cssW: 800, cssH: 600 };
+    const controls = hudControls(view, SIZES);
+    const keepOuts = [...controlKeepOuts(controls, { goHomeVisible: false }), { x: 0, y: 90, w: 800, h: 510 }];
+    for (const id of ['snackBanner', 'hint'] as const) {
+      const log: string[] = [];
+      const request: HudOverlayRequest = {
+        id,
+        boxAt: loggedBox({ w: 150, h: 120 }, 'box', log),
+        retryBoxAt: loggedBox({ w: 150, h: 40 }, 'retry', log),
+      };
+      const [placed] = placeHudOverlays(view, controls, keepOuts, [request]);
+      expect(placed.edge).toBe('top');
+      expect(placed.textPx).toBe(HUD.bannerRetryTextPx);
+      expect(placed.rect).toMatchObject({ w: 150, h: 40 });
+      expect(log.indexOf('retry')).toBeGreaterThan(log.lastIndexOf('box'));
+    }
+  });
+
+  it('places a banner with real text at 20 px only where it has no place at 24 px', () => {
+    const view = { cssW: 800, cssH: 600 };
+    const controls = hudControls(view, SIZES);
+    const stripW = view.cssW - 2 * HUD.margin - (controls.counter.x + controls.counter.w + HUD.gap - HUD.margin);
+    const box = boxFor('snackBanner', REAL_TEXTS)(stripW);
+    const retryBox = bannerBoxFor('snackBanner', REAL_TEXTS, HUD.bannerRetryTextPx)(stripW);
+    expect(retryBox.h).toBeLessThan(box.h);
+    const stripH = (box.h + retryBox.h) / 2;
+    const blockTop = HUD.margin + stripH + HUD.gap;
+    const keepOuts = [{ x: 0, y: blockTop, w: view.cssW, h: view.cssH - blockTop }];
+    const [placed] = placeHudOverlays(view, controls, keepOuts, requestsFor(['snackBanner'], REAL_TEXTS));
+    expect(placed.edge).toBe('top');
+    expect(placed.textPx).toBe(HUD.bannerRetryTextPx);
+    expect(placed.rect).toMatchObject({ y: HUD.margin, w: retryBox.w, h: retryBox.h });
+    const [held] = placeHudOverlays(view, controls, keepOuts, [{ id: 'snackBanner', boxAt: boxFor('snackBanner', REAL_TEXTS) }]);
+    expect(held).toEqual({ id: 'snackBanner', rect: null, edge: null, textPx: null });
+  });
+
+  it('never shrinks the find toast, even when given a retry measure', () => {
+    const view = { cssW: 800, cssH: 600 };
+    const controls = hudControls(view, SIZES);
+    const keepOuts = controlKeepOuts(controls, { goHomeVisible: true });
+    const log: string[] = [];
+    const request: HudOverlayRequest = {
+      id: 'findToast',
+      boxAt: () => ({ w: 2000, h: 2000 }),
+      retryBoxAt: loggedBox({ w: 10, h: 10 }, 'retry', log),
+    };
+    const [placed] = placeHudOverlays(view, controls, keepOuts, [request]);
+    expect(placed).toEqual({ id: 'findToast', rect: null, edge: null, textPx: null });
+    expect(log).toEqual([]);
+  });
+
+  it('reports no text size for the toast and 24 or 20 px for placed banners across canvases', () => {
+    const widths = [200, 320, 460, 800, 1024];
+    const heights = [150, 240, 320, 440, 600];
+    const textSizes = new Set<number | null>();
+    for (const cssW of widths) {
+      for (const cssH of heights) {
+        const view = { cssW, cssH };
+        const controls = hudControls(view, SIZES);
+        const keepOuts = controlKeepOuts(controls, { goHomeVisible: true });
+        for (const texts of [SMALL_TEXTS, REAL_TEXTS, LARGE_TEXTS]) {
+          for (const ids of OVERLAY_SUBSETS) {
+            const placed = placeHudOverlays(view, controls, keepOuts, requestsFor(ids, texts));
+            expect(placed.flatMap(textPxProblems), `${cssW} x ${cssH}`).toEqual([]);
+            for (const entry of placed) textSizes.add(entry.textPx);
+          }
+        }
+      }
+    }
+    expect(textSizes).toContain(HUD.bannerTextPx);
+  });
+
+  it('gives the highest-priority overlay the place it gets alone', () => {
+    const widths = [320, 460, 800, 1024];
+    const heights = [320, 440, 600];
+    for (const cssW of widths) {
+      for (const cssH of heights) {
+        const view = { cssW, cssH };
+        const controls = hudControls(view, SIZES);
+        const keepOuts = controlKeepOuts(controls, { goHomeVisible: true });
+        for (const texts of [SMALL_TEXTS, REAL_TEXTS, LARGE_TEXTS]) {
+          for (const ids of OVERLAY_SUBSETS) {
+            const top = ids[0];
+            const placed = placeHudOverlays(view, controls, keepOuts, requestsFor(ids, texts));
+            const [alone] = placeHudOverlays(view, controls, keepOuts, requestsFor([top], texts));
+            expect(placed.find((entry) => entry.id === top), `${cssW} x ${cssH} [${ids.join(', ')}]`).toEqual(alone);
+          }
+        }
+      }
+    }
   });
 });
 

@@ -21,7 +21,11 @@ export interface Size {
 /** CSS viewport size in px. */
 export type HudView = StickView;
 
-/** HUD layout constants, in CSS px (the values HudScene uses). */
+/**
+ * HUD layout constants, in CSS px (the values HudScene uses). Banners show their text at
+ * bannerTextPx; a banner with no place at that size may show at bannerRetryTextPx instead, never
+ * smaller.
+ */
 export const HUD = Object.freeze({
   margin: 16,
   gap: 12,
@@ -31,6 +35,7 @@ export const HUD = Object.freeze({
   bannerPad: 12,
   bannerMinWrap: 120,
   bannerTextPx: 24,
+  bannerRetryTextPx: 20,
 });
 
 /** Find toast layout constants, in CSS px (the values FindPopup uses). */
@@ -114,26 +119,41 @@ export type HudOverlayId = 'findToast' | 'snackBanner' | 'hint';
 /** Overlay priority, highest first: when not every overlay fits, earlier ones win the room. */
 export const HUD_OVERLAY_PRIORITY: readonly HudOverlayId[] = Object.freeze(['findToast', 'snackBanner', 'hint']);
 
+/** The overlays that may retry at HUD.bannerRetryTextPx: the banners, never the find toast. */
+const RETRY_IDS: ReadonlySet<HudOverlayId> = new Set<HudOverlayId>(['snackBanner', 'hint']);
+
 /** Where a placed overlay sits: the top edge, the bottom edge or over the status panels. */
 export type OverlayEdge = 'top' | 'bottom' | 'panel';
 
 /** One overlay to place: its id and its panel size when at most `maxW` wide. */
 export interface HudOverlayRequest {
   id: HudOverlayId;
+  /** Panel size; for a banner, with the text at HUD.bannerTextPx. */
   boxAt: (maxW: number) => Size;
+  /** Banners only: panel size with the text at HUD.bannerRetryTextPx. Ignored for the find toast. */
+  retryBoxAt?: (maxW: number) => Size;
 }
 
-/** Where an overlay goes; `rect` and `edge` are null when it has no room. */
+/**
+ * Where an overlay goes; `rect` and `edge` are null when it has no room. `textPx` is the text size
+ * a placed banner was placed at (HUD.bannerTextPx or HUD.bannerRetryTextPx); null for the find
+ * toast and for any overlay with no place.
+ */
 export interface HudOverlayPlacement {
   id: HudOverlayId;
   rect: Rect | null;
   edge: OverlayEdge | null;
+  textPx: number | null;
 }
 
-/** An overlay request with its panel sizes memoised per maxW for one call. */
+/**
+ * An overlay request with its panel sizes memoised per maxW for one call. `retrySizeAt` is null
+ * when the request has no retry measure or its id may not retry.
+ */
 interface SizedRequest {
   id: HudOverlayId;
   sizeAt: (maxW: number) => Size;
+  retrySizeAt: ((maxW: number) => Size) | null;
 }
 
 /**
@@ -147,10 +167,11 @@ interface OverlayTier {
   anchorFor: (size: Size) => Vec2;
 }
 
-/** A placed overlay rect and the edge of the tier it was placed in. */
+/** A placed overlay rect, the edge of the tier it was placed in and its banner text size. */
 interface TieredRect {
   rect: Rect;
   edge: OverlayEdge;
+  textPx: number | null;
 }
 
 /** A candidate position and its distance from the preferred spot. */
@@ -359,17 +380,29 @@ export function clears(rect: Rect, view: HudView, obstacles: readonly Rect[]): b
   return obstacles.every((obstacle) => isApart(rect, obstacle, HUD.gap));
 }
 
-/** Wraps a request so its panel size is computed once per distinct maxW. */
-function memoiseRequest(request: HudOverlayRequest): SizedRequest {
+/** Wraps a panel-size function so it runs once per distinct maxW. */
+function memoiseSize(boxAt: (maxW: number) => Size): (maxW: number) => Size {
   const sizesByMaxW = new Map<number, Size>();
-  const sizeAt = (maxW: number): Size => {
+  return (maxW: number): Size => {
     const cached = sizesByMaxW.get(maxW);
     if (cached !== undefined) return cached;
-    const size = request.boxAt(maxW);
+    const size = boxAt(maxW);
     sizesByMaxW.set(maxW, size);
     return size;
   };
-  return { id: request.id, sizeAt };
+}
+
+/**
+ * Wraps a request so each of its panel sizes is computed once per distinct maxW; keeps the retry
+ * measure only for an id that may retry.
+ */
+function memoiseRequest(request: HudOverlayRequest): SizedRequest {
+  const retryBoxAt = RETRY_IDS.has(request.id) ? request.retryBoxAt : undefined;
+  return {
+    id: request.id,
+    sizeAt: memoiseSize(request.boxAt),
+    retrySizeAt: retryBoxAt === undefined ? null : memoiseSize(retryBoxAt),
+  };
 }
 
 /** Returns the requests ordered by `order`, keeping only the first request for each id. */
@@ -499,11 +532,11 @@ function overlayTiers(view: HudView, controls: HudControls): OverlayTier[] {
 }
 
 /**
- * Returns `request` sized to `room` and moved as near the tier anchor as the room allows; null
- * when it does not fit.
+ * Returns a panel sized by `sizeAt` for `room` and moved as near the tier anchor as the room
+ * allows; null when it does not fit.
  */
-function candidateIn(room: Rect, request: SizedRequest, anchorFor: (size: Size) => Vec2): Candidate | null {
-  const size = request.sizeAt(room.w);
+function candidateIn(room: Rect, sizeAt: (maxW: number) => Size, anchorFor: (size: Size) => Vec2): Candidate | null {
+  const size = sizeAt(room.w);
   if (size.w > room.w + FIT_EPSILON_PX || size.h > room.h + FIT_EPSILON_PX) return null;
   const anchor = anchorFor(size);
   const x = clampTo(anchor.x, room.x, room.x + room.w - size.w);
@@ -522,7 +555,7 @@ function isNearer(a: Candidate, b: Candidate): boolean {
  * middle bounds the free rooms as a wall with no gap.
  */
 function placeInTier(
-  request: SizedRequest,
+  sizeAt: (maxW: number) => Size,
   view: HudView,
   tier: OverlayTier,
   obstacles: readonly Rect[],
@@ -532,7 +565,7 @@ function placeInTier(
   const walls = [...tierObstacles.map((rect) => growRect(rect, HUD.gap)), ...openMiddle];
   let best: Candidate | null = null;
   for (const room of freeRects(tier.room, walls)) {
-    const candidate = candidateIn(room, request, tier.anchorFor);
+    const candidate = candidateIn(room, sizeAt, tier.anchorFor);
     if (candidate === null || !clears(candidate.rect, view, tierObstacles)) continue;
     if (!keepsOffOpenMiddle(candidate.rect, openMiddle)) continue;
     if (best === null || isNearer(candidate, best)) best = candidate;
@@ -540,19 +573,38 @@ function placeInTier(
   return best?.rect ?? null;
 }
 
-/** Returns the spot in the first tier with room for `request`, or null when no tier has room. */
+/** Returns the spot in the first tier with room for a panel sized by `sizeAt`, or null when no tier has room. */
 function placeInTiers(
+  sizeAt: (maxW: number) => Size,
+  view: HudView,
+  tiers: readonly OverlayTier[],
+  obstacles: readonly Rect[],
+  openMiddle: readonly Rect[],
+): { rect: Rect; edge: OverlayEdge } | null {
+  for (const tier of tiers) {
+    const rect = placeInTier(sizeAt, view, tier, obstacles, openMiddle);
+    if (rect !== null) return { rect, edge: tier.edge };
+  }
+  return null;
+}
+
+/**
+ * Returns the spot for `request`: every tier at its own size first; then, only for a banner with no
+ * place and a retry measure, every tier at HUD.bannerRetryTextPx. The find toast's textPx is null.
+ */
+function placeRequest(
   request: SizedRequest,
   view: HudView,
   tiers: readonly OverlayTier[],
   obstacles: readonly Rect[],
   openMiddle: readonly Rect[],
 ): TieredRect | null {
-  for (const tier of tiers) {
-    const rect = placeInTier(request, view, tier, obstacles, openMiddle);
-    if (rect !== null) return { rect, edge: tier.edge };
-  }
-  return null;
+  const isBanner = RETRY_IDS.has(request.id);
+  const placed = placeInTiers(request.sizeAt, view, tiers, obstacles, openMiddle);
+  if (placed !== null) return { ...placed, textPx: isBanner ? HUD.bannerTextPx : null };
+  if (request.retrySizeAt === null) return null;
+  const retried = placeInTiers(request.retrySizeAt, view, tiers, obstacles, openMiddle);
+  return retried === null ? null : { ...retried, textPx: HUD.bannerRetryTextPx };
 }
 
 /** Places overlays one by one in priority order, each a gap from the keep-outs and earlier overlays. */
@@ -566,7 +618,7 @@ function fitOverlays(
   const placed = new Map<HudOverlayId, TieredRect>();
   for (const request of ordered) {
     const obstacles = [...keepOuts, ...[...placed.values()].map((entry) => entry.rect)];
-    const tiered = placeInTiers(request, view, tiers, obstacles, openMiddle);
+    const tiered = placeRequest(request, view, tiers, obstacles, openMiddle);
     if (tiered !== null) placed.set(request.id, tiered);
   }
   return placed;
@@ -576,8 +628,11 @@ function fitOverlays(
  * Places the requested overlays in priority order, each in the first tier with room: the top edge
  * above the play middle, the bottom edge below it, over the Trip Bag, then over the status panels.
  * In every tier, inside the play middle an overlay covers only the status panels themselves.
+ * A banner (snackBanner or hint) with no place at HUD.bannerTextPx tries every tier again with its
+ * retryBoxAt size at HUD.bannerRetryTextPx, if given; the find toast never retries or shrinks.
  * Returns one placement per request, in request order; a rect is null when that overlay has no
- * room (or its id was already answered), never clipped.
+ * room (or its id was already answered), never clipped. Each placed banner reports the text size it
+ * was placed at; textPx is null for the find toast and for any overlay with no place.
  */
 export function placeHudOverlays(
   view: HudView,
@@ -594,7 +649,12 @@ export function placeHudOverlays(
   return requests.map((request) => {
     const tiered = answered.has(request.id) ? null : (checked.get(request.id) ?? null);
     answered.add(request.id);
-    return { id: request.id, rect: tiered?.rect ?? null, edge: tiered?.edge ?? null };
+    return {
+      id: request.id,
+      rect: tiered?.rect ?? null,
+      edge: tiered?.edge ?? null,
+      textPx: tiered?.textPx ?? null,
+    };
   });
 }
 

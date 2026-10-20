@@ -9,6 +9,7 @@ import {
   createTrip,
   createTripContext,
   foundInfo,
+  followReducedMotion,
   foundInfos,
   goHome,
   idleTripSnapshot,
@@ -20,6 +21,7 @@ import {
   stepTrip,
   tripAxolotlPos,
   tripSnapshot,
+  type CarryState,
   type TripEvent,
   type TripInput,
   type TripSource,
@@ -641,7 +643,7 @@ describe('stepTrip full-motion carry', () => {
 });
 
 describe('stepTrip still carry', () => {
-  it('holds at the start point, then arrives after stillHold even if reduced motion turns off', () => {
+  it('holds at the start point, then arrives after stillHold', () => {
     const start = carrying(farZone, farTarget, true);
     expect(start.last.events.at(-1)).toEqual({ type: 'carryStart', from: farTarget, still: true });
     expect(start.state.carry?.duration).toBe(CARRY.stillHold);
@@ -649,7 +651,7 @@ describe('stepTrip still carry', () => {
     let seconds = 0;
     const arrivals: TripEvent[] = [];
     while (current.phase === 'carrying' && seconds < 10) {
-      const result = stepTrip(current, { axolotlPos: farTarget, reduced: false, dashing: false }, DT, ctx);
+      const result = stepTrip(current, { axolotlPos: farTarget, reduced: true, dashing: false }, DT, ctx);
       current = result.state;
       seconds += DT;
       arrivals.push(...result.events);
@@ -658,6 +660,237 @@ describe('stepTrip still carry', () => {
     expect(arrivals).toEqual([{ type: 'arrivedHome', still: true, returned: [] }]);
     expect(Math.abs(seconds - CARRY.stillHold)).toBeLessThanOrEqual(DT + 1e-9);
     expect(tripAxolotlPos(current)).toEqual(current.home);
+  });
+});
+
+describe('carry follows reduced motion (A11, X3)', () => {
+  interface CarryRun {
+    state: TripState;
+    events: TripEvent[];
+    seconds: number;
+  }
+
+  function carryStep(state: TripState, reduced: boolean, dt = DT): TripStepResult {
+    return stepTrip(state, { axolotlPos: farTarget, reduced, dashing: false }, dt, ctx);
+  }
+
+  function holdFor(state: TripState, reduced: boolean, frames: number): TripState {
+    let current = state;
+    for (let i = 0; i < frames; i++) current = carryStep(current, reduced).state;
+    expect(current.phase).toBe('carrying');
+    return current;
+  }
+
+  function runUntilEnded(state: TripState, reduced: boolean, limit = 20): CarryRun {
+    let current = state;
+    const events: TripEvent[] = [];
+    let seconds = 0;
+    while (current.phase === 'carrying' && seconds < limit) {
+      const result = carryStep(current, reduced);
+      current = result.state;
+      seconds += DT;
+      events.push(...result.events);
+    }
+    return { state: current, events, seconds };
+  }
+
+  function carryPosOf(state: TripState): Point {
+    return tripAxolotlPos(state) as Point;
+  }
+
+  function flippedReduced(final: boolean, frame: number): boolean {
+    const flips = Math.min(Math.floor(frame / 5), 12);
+    return flips % 2 === 1 ? !final : final;
+  }
+
+  it('turning on mid-carry holds where the axolotl is, then arrives once still', () => {
+    const start = carrying(farZone, farTarget, false).state;
+    const duration = start.carry?.duration as number;
+    const mid = holdFor(start, false, 30);
+    const here = carryPosOf(mid);
+    expect(here).not.toEqual(farTarget);
+    let current = mid;
+    const events: TripEvent[] = [];
+    let seconds = 0;
+    while (current.phase === 'carrying' && seconds < 20) {
+      const result = carryStep(current, true);
+      current = result.state;
+      seconds += DT;
+      events.push(...result.events);
+      if (current.phase === 'carrying') {
+        expect(carryPosOf(current)).toEqual(here);
+        expect(current.carry?.still).toBe(true);
+      }
+    }
+    expect(events).toEqual([{ type: 'arrivedHome', still: true, returned: [] }]);
+    const expected = Math.min(duration - 30 * DT, CARRY.stillHold);
+    expect(Math.abs(seconds - expected)).toBeLessThanOrEqual(DT + 1e-9);
+    expect(current.phase).toBe('ended');
+    expect(carryPosOf(current)).toEqual(current.home);
+  });
+
+  it('turning on never makes the carry longer', () => {
+    const start = carrying(farZone, farTarget, false).state;
+    const duration = start.carry?.duration as number;
+    for (const fraction of [0.1, 0.5, 0.9]) {
+      const frames = Math.round((fraction * duration) / DT);
+      const mid = holdFor(start, false, frames);
+      const run = runUntilEnded(mid, true);
+      expect(run.state.phase).toBe('ended');
+      expect(countOf(run.events, 'arrivedHome')).toBe(1);
+      expect(frames * DT + run.seconds).toBeLessThanOrEqual(duration + DT + 1e-9);
+    }
+  });
+
+  it('turning off mid-carry floats home from where the axolotl is, timed like a fresh carry', () => {
+    const start = carrying(farZone, farTarget, true).state;
+    const mid = holdFor(start, true, 30);
+    const here = carryPosOf(mid);
+    expect(here).toEqual(farTarget);
+    const expected = expectedDuration(here, mid.home);
+    let current = mid;
+    let previous = distanceToHome(mid, here);
+    const events: TripEvent[] = [];
+    let seconds = 0;
+    while (current.phase === 'carrying' && seconds < 20) {
+      const result = carryStep(current, false);
+      current = result.state;
+      seconds += DT;
+      events.push(...result.events);
+      const distance = distanceToHome(current, carryPosOf(current));
+      expect(distance).toBeLessThanOrEqual(previous);
+      previous = distance;
+      if (current.phase === 'carrying') expect(current.carry?.still).toBe(false);
+    }
+    expect(events).toEqual([{ type: 'arrivedHome', still: false, returned: [] }]);
+    expect(Math.abs(seconds - expected)).toBeLessThanOrEqual(DT + 1e-9);
+    expect(current.phase).toBe('ended');
+    expect(carryPosOf(current)).toEqual(current.home);
+  });
+
+  it('toggling many times never moves away or moves while still, and arrives once as it ends', () => {
+    for (const final of [true, false]) {
+      let current = carrying(farZone, farTarget, final).state;
+      let previousPos = carryPosOf(current);
+      let previous = distanceToHome(current, previousPos);
+      const events: TripEvent[] = [];
+      let frame = 0;
+      while (current.phase === 'carrying' && frame * DT < 20) {
+        const reduced = flippedReduced(final, frame);
+        const result = carryStep(current, reduced);
+        current = result.state;
+        frame += 1;
+        events.push(...result.events);
+        const pos = carryPosOf(current);
+        const distance = distanceToHome(current, pos);
+        expect(distance).toBeLessThanOrEqual(previous);
+        if (current.phase === 'carrying') {
+          expect(current.carry?.still).toBe(reduced);
+          if (reduced) expect(pos).toEqual(previousPos);
+        }
+        previous = distance;
+        previousPos = pos;
+      }
+      expect(frame).toBeGreaterThan(60);
+      expect(events).toEqual([{ type: 'arrivedHome', still: final, returned: [] }]);
+      for (const reduced of [true, false, true]) {
+        const after = carryStep(current, reduced);
+        expect(after.state).toBe(current);
+        expect(after.events).toEqual([]);
+      }
+    }
+  });
+
+  it('toggling while paused changes nothing until the next real step', () => {
+    const mid = holdFor(carrying(farZone, farTarget, false).state, false, 30);
+    const here = carryPosOf(mid);
+    let reduced = false;
+    for (const dt of [...PAUSE_DTS, ...PAUSE_DTS]) {
+      reduced = !reduced;
+      const result = carryStep(mid, reduced, dt);
+      expect(result.state).toBe(mid);
+      expect(result.events).toEqual([]);
+    }
+    expect(reduced).toBe(false);
+    const next = carryStep(mid, true);
+    expect(next.events).toEqual([]);
+    expect(next.state.carry?.still).toBe(true);
+    expect(carryPosOf(next.state)).toEqual(here);
+    const resumed = carryStep(mid, reduced);
+    expect(resumed.state.carry?.still).toBe(false);
+    expect(distanceToHome(resumed.state, carryPosOf(resumed.state))).toBeLessThan(distanceToHome(mid, here));
+  });
+
+  it('turning on in the step the carry would end arrives in that step, still, once', () => {
+    let current = carrying(farZone, farTarget, false).state;
+    while (current.carry && current.carry.duration - current.carry.elapsed >= DT) {
+      current = carryStep(current, false).state;
+    }
+    expect(current.phase).toBe('carrying');
+    const result = carryStep(current, true);
+    expect(result.events).toEqual([{ type: 'arrivedHome', still: true, returned: [] }]);
+    expect(result.state.phase).toBe('ended');
+    expect(carryStep(result.state, true).events).toEqual([]);
+  });
+
+  describe('followReducedMotion', () => {
+    const to: Point = Object.freeze({ x: 100, y: 300 });
+    function frozenCarry(still: boolean, elapsed: number, duration: number): CarryState {
+      return Object.freeze({
+        from: Object.freeze({ x: 900, y: 200 }),
+        to,
+        pos: Object.freeze({ x: 700, y: 220 }),
+        elapsed,
+        duration,
+        still,
+      });
+    }
+
+    it('returns the same carry when reduced motion has not changed', () => {
+      const moving = frozenCarry(false, 1, 4);
+      const holding = frozenCarry(true, 0.5, CARRY.stillHold);
+      expect(followReducedMotion(moving, false, CARRY)).toBe(moving);
+      expect(followReducedMotion(holding, true, CARRY)).toBe(holding);
+    });
+
+    it('turning on holds at pos for the rest of the carry, at most stillHold', () => {
+      const long = frozenCarry(false, 1, 4);
+      expect(followReducedMotion(long, true, CARRY)).toEqual({
+        from: { x: 700, y: 220 },
+        to: { x: 100, y: 300 },
+        pos: { x: 700, y: 220 },
+        elapsed: 0,
+        duration: CARRY.stillHold,
+        still: true,
+      });
+      const short = frozenCarry(false, 3.5, 4);
+      expect(followReducedMotion(short, true, CARRY).duration).toBe(0.5);
+    });
+
+    it('turning off starts a fresh full-motion carry from pos', () => {
+      const holding = frozenCarry(true, 0.5, CARRY.stillHold);
+      const pos = { x: 700, y: 220 };
+      expect(followReducedMotion(holding, false, CARRY)).toEqual({
+        from: pos,
+        to: { x: 100, y: 300 },
+        pos,
+        elapsed: 0,
+        duration: expectedDuration(pos, to),
+        still: false,
+      });
+    });
+
+    it('never mutates or shares the input points', () => {
+      for (const still of [false, true]) {
+        const carry = frozenCarry(still, 0.5, 4);
+        const before = structuredClone(carry);
+        const next = followReducedMotion(carry, !still, CARRY);
+        expect(next.pos).not.toBe(carry.pos);
+        expect(next.from).not.toBe(carry.pos);
+        expect(next.to).not.toBe(carry.to);
+        expect(carry).toEqual(before);
+      }
+    });
   });
 });
 

@@ -56,8 +56,8 @@ export type TripSource = EncounterSource & Pick<ZoneLayout, 'start' | 'homeSpot'
 
 /**
  * The carried-home transition. `pos` is the axolotl centre, moving from `from` to `to`
- * over `duration` seconds. `still` (reduced motion, locked at carry start) keeps `pos`
- * at `from` until arrival.
+ * over `duration` seconds. `still` (reduced motion) keeps `pos` at `from` until arrival.
+ * `still` follows reduced motion on every carrying step; each switch starts a new segment from `pos`.
  */
 export interface CarryState {
   from: Point;
@@ -329,7 +329,7 @@ export function beatArea(state: TripState, ctx: StarContext): TripStepResult {
  * `SWIM.dtMax`.
  *
  * Swimming: steps the encounter; each `hit` adds one to `legsLost`. When it ends (fourth leg lost) the carry starts in the same
- * step: `carryStart` is emitted, any bump impulse is dropped, and reduced motion is locked.
+ * step: `carryStart` is emitted and any bump impulse is dropped.
  * Otherwise, in placed order, every sealed Dash pot within the container radius breaks when
  * `input.dashing` (`containerBroken`), or emits `dashNeeded` when the axolotl was not already
  * touching it; pots never give an impulse. Then every unsealed treasure not held and within the
@@ -342,8 +342,9 @@ export function beatArea(state: TripState, ctx: StarContext): TripStepResult {
  * rest point by the Home Spot. It is never part of the encounter, so it cannot be hit. The first
  * step where the axolotl meets a tilapia sets `metTilapia`. When the carry starts, a following
  * stranded axolotl goes back to its place.
- * Carrying: the encounter is not stepped, so legs stay frozen, and nothing is picked up; on
- * arrival `arrivedHome` is emitted and the phase becomes 'ended'.
+ * Carrying: the encounter is not stepped, so legs stay frozen, and nothing is picked up. The
+ * carry follows `input.reduced` on every step (`followReducedMotion`); on arrival `arrivedHome` is
+ * emitted and the phase becomes 'ended'.
  */
 export function stepTrip(
   state: TripState,
@@ -355,7 +356,9 @@ export function stepTrip(
     return { state, events: [] };
   }
   const step = Math.min(dt, SWIM.dtMax);
-  if (state.phase === 'carrying' && state.carry) return advanceCarry(state, state.carry, step);
+  if (state.phase === 'carrying' && state.carry) {
+    return advanceCarry(state, followReducedMotion(state.carry, input.reduced, ctx.carry), step);
+  }
   return stepSwimming(state, input, step, ctx);
 }
 
@@ -681,6 +684,26 @@ function startCarry(from: Point, home: Point, still: boolean, tuning: CarryTunin
     elapsed: 0,
     duration,
     still,
+  };
+}
+
+/**
+ * The carry after reduced motion is set to `reduced`, starting a new segment from `carry.pos` when
+ * it changes; the same object when it does not. Turning on holds still where the axolotl is for
+ * the rest of the carry, at most `stillHold`, so the switch never lengthens the carry. Turning off
+ * floats home from where the axolotl is, timed like a fresh carry from there.
+ */
+export function followReducedMotion(carry: CarryState, reduced: boolean, tuning: CarryTuning): CarryState {
+  if (carry.still === reduced) return carry;
+  const here = { x: carry.pos.x, y: carry.pos.y };
+  if (!reduced) return startCarry(here, carry.to, false, tuning);
+  return {
+    from: here,
+    to: { x: carry.to.x, y: carry.to.y },
+    pos: { x: here.x, y: here.y },
+    elapsed: 0,
+    duration: Math.min(carry.duration - carry.elapsed, tuning.stillHold),
+    still: true,
   };
 }
 

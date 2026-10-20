@@ -246,9 +246,14 @@ function requestsFor(set: OverlaySet): HudOverlayRequest[] {
       const measure = toastMeasure(set.toast);
       return { id, boxAt: (maxW) => findToastBox(maxW, measure) };
     }
-    const text = BANNER_TEXTS[id];
-    return { id, boxAt: (maxW) => bannerBox(maxW, (wrapW) => estimateSize(text, HUD.bannerTextPx, wrapW, BOLD_EM)) };
+    return { id, boxAt: bannerBoxAt(id, HUD.bannerTextPx), retryBoxAt: bannerBoxAt(id, HUD.bannerRetryTextPx) };
   });
+}
+
+/** Panel size function for banner `id` with its text at `px`. */
+function bannerBoxAt(id: BannerId, px: number): (maxW: number) => Size {
+  const text = BANNER_TEXTS[id];
+  return (maxW) => bannerBox(maxW, (wrapW) => estimateSize(text, px, wrapW, BOLD_EM));
 }
 
 /** Expands overlay id sets into overlay sets, one per toast text when the toast is active. */
@@ -296,6 +301,38 @@ function clearProblems(overlayCase: OverlayCase): string[] {
     const others = placed.filter((other) => other !== placement).map((other) => other.rect);
     const ok = clears(placement.rect, overlayCase.hud.view, [...overlayCase.hud.keepOuts, ...others]);
     return ok ? [] : [`${overlayCase.label}: ${placement.id} does not clear`];
+  });
+}
+
+/** The rect and text size of overlay `id` in one case, both null when it has no placement. */
+function fitFor(overlayCase: OverlayCase, id: HudOverlayId): Pick<HudOverlayPlacement, 'rect' | 'textPx'> {
+  const placement = overlayCase.placements.find((entry) => entry.id === id);
+  return { rect: placement?.rect ?? null, textPx: placement?.textPx ?? null };
+}
+
+/**
+ * Problems with one case: a placed banner not at 24 or 20 px (never under 20, X6), a find toast
+ * with a text size, or an overlay with no place that reports one.
+ */
+function textPxProblems(overlayCase: OverlayCase): string[] {
+  return overlayCase.placements.flatMap(({ id, rect, textPx }) => {
+    const allowed: (number | null)[] = rect === null || id === 'findToast' ? [null] : [HUD.bannerTextPx, HUD.bannerRetryTextPx];
+    return allowed.includes(textPx) ? [] : [`${overlayCase.label}: ${id} at textPx ${textPx}`];
+  });
+}
+
+/**
+ * Problems with one case: a banner placed at 20 px that would have a place at 24 px. Each such
+ * banner is placed again with its retry removed and the other requests the same; it must then have
+ * no place.
+ */
+function shrinkProblems(overlayCase: OverlayCase): string[] {
+  const { view, controls, keepOuts } = overlayCase.hud;
+  return overlayCase.placements.flatMap(({ id, textPx }) => {
+    if (textPx !== HUD.bannerRetryTextPx) return [];
+    const requests = overlayCase.requests.map((request) => (request.id === id ? { id, boxAt: request.boxAt } : request));
+    const unretried = placeHudOverlays(view, controls, keepOuts, requests).find((placement) => placement.id === id);
+    return unretried?.rect === null ? [] : [`${overlayCase.label}: ${id} shrank to ${textPx} px with room at 24 px`];
   });
 }
 
@@ -381,29 +418,35 @@ describe('estimateLines', () => {
 
 describe('HUD overlay fit', () => {
   it(
-    'keeps every placed overlay clear of the controls, the other overlays and the middle on every supported canvas',
+    'keeps every placed overlay clear of the controls, the other overlays and the middle, at its text size, on every supported canvas',
     () => {
       const sets = allOverlaySets();
       const cases = allHudCases().flatMap((hud) => sets.map((set) => runCase(hud, set)));
       expect(cases.length).toBeGreaterThan(0);
       expect(cases.flatMap(clearProblems)).toEqual([]);
       expect(cases.flatMap(middleProblems)).toEqual([]);
+      expect(cases.flatMap(textPxProblems)).toEqual([]);
+      expect(cases.some(({ placements }) => placements.some(({ textPx }) => textPx === HUD.bannerRetryTextPx))).toBe(true);
+      expect(cases.flatMap(shrinkProblems)).toEqual([]);
     },
     FIT_TIMEOUT_MS,
   );
 
   it(
-    'places each overlay alone on every supported canvas at least 375 tall or 520 wide',
+    'places each banner alone on every supported canvas, and each toast alone at least 375 tall or 520 wide',
     () => {
-      // Below that (460 and 480 wide, 360 tall or less on this grid) some messages have no place
-      // outside the open middle and wait (X10); 460 x 320 is pinned in the next test. A toast with
-      // Go home visible is unreachable: trip.ts banks a non-empty bag inside the ring in the same
-      // step, and HudScene clears the toast on 'banked'.
-      const roomy = allHudCases().filter(({ view }) => view.cssH >= 375 || view.cssW >= 520);
+      // A banner with no place at 24 px retries at 20 px, so every banner alone finds a place on
+      // every supported canvas. The toast never shrinks: below 375 tall and 520 wide (460 and 480
+      // wide, 360 tall or less on this grid) a long toast may have no place outside the open
+      // middle and wait (X10); the next test pins those waits. A toast with Go home visible is
+      // unreachable: trip.ts banks a non-empty bag inside the ring in the same step, and HudScene
+      // clears the toast on 'banked'.
+      const huds = allHudCases();
+      const roomy = huds.filter(({ view }) => view.cssH >= 375 || view.cssW >= 520);
       const toastCases = roomy
         .filter((hud) => !hud.goHomeVisible)
         .flatMap((hud) => ALL_TOASTS.map((toast) => runCase(hud, { ids: ['findToast'], toast })));
-      const bannerCases = roomy.flatMap((hud) => BANNER_IDS.map((id) => runCase(hud, { ids: [id], toast: null })));
+      const bannerCases = huds.flatMap((hud) => BANNER_IDS.map((id) => runCase(hud, { ids: [id], toast: null })));
       const problems = [
         ...toastCases.flatMap((overlayCase) => unplacedProblems(overlayCase, 'findToast')),
         ...bannerCases.flatMap((overlayCase) => unplacedProblems(overlayCase, overlayCase.set.ids[0])),
@@ -415,7 +458,12 @@ describe('HUD overlay fit', () => {
   );
 
   it.each([
-    { cssW: 460, cssH: 320, shown: ['findToast "Tie-dye galaxy Paint shell"', ...BANNER_IDS], hidden: ['snackBanner'] },
+    { cssW: 460, cssH: 320, shown: ['findToast "Tie-dye galaxy Paint shell"'], hidden: [] },
+    { cssW: 460, cssH: 340, shown: ['findToast "Tie-dye galaxy Paint shell"'], hidden: [] },
+    { cssW: 460, cssH: 360, shown: [], hidden: [] },
+    { cssW: 480, cssH: 320, shown: [], hidden: [] },
+    { cssW: 480, cssH: 340, shown: [], hidden: [] },
+    { cssW: 480, cssH: 360, shown: [], hidden: [] },
     { cssW: 320, cssH: 440, shown: [], hidden: [] },
     { cssW: 390, cssH: 440, shown: [], hidden: [] },
     { cssW: 667, cssH: 375, shown: [], hidden: [] },
@@ -443,8 +491,8 @@ describe('HUD overlay fit', () => {
         const top = HUD_OVERLAY_PRIORITY.find((id) => overlayCase.set.ids.includes(id));
         if (top === undefined) return [`${overlayCase.label}: no active overlay`];
         const toast = top === 'findToast' ? overlayCase.set.toast : null;
-        const alone = rectFor(runCase(overlayCase.hud, { ids: [top], toast }), top);
-        const placed = rectFor(overlayCase, top);
+        const alone = fitFor(runCase(overlayCase.hud, { ids: [top], toast }), top);
+        const placed = fitFor(overlayCase, top);
         return JSON.stringify(placed) === JSON.stringify(alone) ? [] : [`${overlayCase.label}: ${top} moved or held`];
       });
       expect(problems).toEqual([]);
