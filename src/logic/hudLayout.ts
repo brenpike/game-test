@@ -23,7 +23,6 @@ export const HUD = Object.freeze({
   margin: 16,
   gap: 12,
   panelPad: 12,
-  bannerExtraTop: 8,
   ringGap: 8,
   ringTrackPx: 9,
   bannerPad: 12,
@@ -31,18 +30,23 @@ export const HUD = Object.freeze({
   bannerTextPx: 24,
 });
 
-/** Find pop-up layout constants, in CSS px (the values FindPopup uses). */
-export const FIND_POPUP = Object.freeze({
-  pad: 12,
-  iconPx: 48,
-  columnGap: 12,
-  nameWrapW: 260,
-  nameMinW: 120,
-  nameTextPx: 22,
+/** Find toast layout constants, in CSS px (the values FindPopup uses). */
+export const FIND_TOAST = Object.freeze({
+  padX: 8,
+  padY: 4,
+  iconPx: 32,
+  columnGap: 8,
+  nameTextPx: 20,
   detailTextPx: 18,
-  badgePx: 32,
+  badgePx: 24,
   badgeGap: 6,
+  nameMinW: 120,
+  detailMinW: 90,
+  nameWrapW: 360,
 });
+
+/** The middle of the play area overlays keep out of, as fractions of the canvas height. */
+export const PLAY_MIDDLE = Object.freeze({ topFraction: 0.3, bottomFraction: 0.7 });
 
 /** Measured sizes of the HUD controls and status panels, in CSS px. */
 export interface HudControlSizes {
@@ -77,8 +81,6 @@ export interface HudControls {
   stick: StickLayout;
   /** Square around the swim pad footprint (not the capture zone). */
   stickBounds: Rect;
-  /** Top edge of the overlay stack: clear of Pause, the status panels and Go home. */
-  stackTop: number;
 }
 
 /** Which controls show right now. */
@@ -86,22 +88,28 @@ export interface KeepOutOptions {
   goHomeVisible: boolean;
 }
 
-/** Text measurements for one find pop-up. */
-export interface FindPopupMeasure {
+/** Text measurements for one find toast. */
+export interface FindToastMeasure {
   /** Name block size when wrapped at `wrapW`. */
   nameAt: (wrapW: number) => Size;
-  category: Size;
-  rarity: Size;
+  /** Detail line size (beside the badge) when wrapped at `wrapW`. */
+  detailAt: (wrapW: number) => Size;
+}
+
+/** A find toast panel size and the wrap widths its name and detail were measured at. */
+export interface FindToastBox extends Size {
+  nameWrapW: number;
+  detailWrapW: number;
 }
 
 /** The HUD overlays placed by placeHudOverlays(). */
-export type HudOverlayId = 'findPopup' | 'snackBanner' | 'hint';
-
-/** Overlay stack order, top to bottom. */
-export const HUD_OVERLAY_STACK: readonly HudOverlayId[] = Object.freeze(['hint', 'snackBanner', 'findPopup']);
+export type HudOverlayId = 'findToast' | 'snackBanner' | 'hint';
 
 /** Overlay priority, highest first: when not every overlay fits, earlier ones win the room. */
-export const HUD_OVERLAY_PRIORITY: readonly HudOverlayId[] = Object.freeze(['findPopup', 'snackBanner', 'hint']);
+export const HUD_OVERLAY_PRIORITY: readonly HudOverlayId[] = Object.freeze(['findToast', 'snackBanner', 'hint']);
+
+/** Where a placed overlay sits: the top edge, the bottom edge or over the status panels. */
+export type OverlayEdge = 'top' | 'bottom' | 'panel';
 
 /** One overlay to place: its id and its panel size when at most `maxW` wide. */
 export interface HudOverlayRequest {
@@ -109,16 +117,34 @@ export interface HudOverlayRequest {
   boxAt: (maxW: number) => Size;
 }
 
-/** Where an overlay goes; `rect` is null when it has no room. */
+/** Where an overlay goes; `rect` and `edge` are null when it has no room. */
 export interface HudOverlayPlacement {
   id: HudOverlayId;
   rect: Rect | null;
+  edge: OverlayEdge | null;
 }
 
 /** An overlay request with its panel sizes memoised per maxW for one call. */
 interface SizedRequest {
   id: HudOverlayId;
   sizeAt: (maxW: number) => Size;
+}
+
+/**
+ * One placement tier: the room an overlay may take, the obstacles it adds to the control keep-outs
+ * and the placed overlays, and the preferred top-left for a panel of a given size.
+ */
+interface OverlayTier {
+  edge: OverlayEdge;
+  room: Rect;
+  extraObstacles: readonly Rect[];
+  anchorFor: (size: Size) => Vec2;
+}
+
+/** A placed overlay rect and the edge of the tier it was placed in. */
+interface TieredRect {
+  rect: Rect;
+  edge: OverlayEdge;
 }
 
 /** A candidate position and its distance from the preferred spot. */
@@ -148,6 +174,15 @@ function squareAround(centre: Vec2, half: number): Rect {
 /** Returns the rect grown by `by` on every side. */
 function growRect(rect: Rect, by: number): Rect {
   return { x: rect.x - by, y: rect.y - by, w: rect.w + 2 * by, h: rect.h + 2 * by };
+}
+
+/** Returns the overlap of two rects, zero-sized when they do not meet. */
+function intersectRect(a: Rect, b: Rect): Rect {
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const w = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - x);
+  const h = Math.max(0, Math.min(bottomOf(a), bottomOf(b)) - y);
+  return { x, y, w, h };
 }
 
 /** Returns the frame overlays must stay inside: the view inset by the margin. */
@@ -214,12 +249,27 @@ export function hudControls(view: HudView, sizes: HudControlSizes): HudControls 
   const reserveTop = Math.max(bottomOf(panels.bag), bottomOf(goHome));
   const reserveRight = HUD.margin + dash.bounds.w;
   const stick = stickLayout(view, { top: reserveTop, right: reserveRight });
-  const stackTop = Math.max(
-    bottomOf(pause) + HUD.gap + HUD.bannerExtraTop,
-    bottomOf(panels.bag) + HUD.gap,
-    bottomOf(goHome) + HUD.gap,
-  );
-  return { ...panels, pause, goHome, dash, stick, stickBounds: stickFootprintRect(stick), stackTop };
+  return { ...panels, pause, goHome, dash, stick, stickBounds: stickFootprintRect(stick) };
+}
+
+/** Returns the bounding box of the snack counter, legs and Trip Bag panels. */
+export function statusPanelsBox(controls: HudControls): Rect {
+  const panels = [controls.counter, controls.legs, controls.bag];
+  const left = Math.min(...panels.map((panel) => panel.x));
+  const top = Math.min(...panels.map((panel) => panel.y));
+  const right = Math.max(...panels.map((panel) => panel.x + panel.w));
+  const bottom = Math.max(...panels.map(bottomOf));
+  return { x: left, y: top, w: right - left, h: bottom - top };
+}
+
+/**
+ * Returns the middle of the play area: the full margin-inset width, from topFraction to
+ * bottomFraction of the canvas height. Overlays keep a gap from it except over the status panels.
+ */
+export function playMiddle(view: HudView): Rect {
+  const top = PLAY_MIDDLE.topFraction * view.cssH;
+  const bottom = PLAY_MIDDLE.bottomFraction * view.cssH;
+  return { x: HUD.margin, y: top, w: view.cssW - 2 * HUD.margin, h: bottom - top };
 }
 
 /** Returns the control areas overlays must keep a gap from; the swim pad capture zone is not one. */
@@ -231,21 +281,24 @@ export function controlKeepOuts(controls: HudControls, options: KeepOutOptions):
 }
 
 /**
- * Returns the find pop-up panel size for a panel meant to be at most `maxW` wide: icon, then a
- * column of the name (wrapped at the column room clamped to [nameMinW, nameWrapW]), category and
- * the badge row. The size is the true panel around its content, so it is wider than `maxW` when
- * the content cannot fit; a room narrower than that must not take the pop-up.
+ * Returns the find toast panel size for a panel meant to be at most `maxW` wide: icon, then a
+ * column of the name (wrapped at the column room clamped to [nameMinW, nameWrapW]) over the badge
+ * and detail line (wrapped at the room beside the badge clamped to [detailMinW, nameWrapW]). The
+ * size is the true panel around its content, so it is wider than `maxW` when the content cannot
+ * fit; a room narrower than that must not take the toast. Also returns both wrap widths used.
  */
-export function findPopupBox(maxW: number, measure: FindPopupMeasure): Size {
-  const columnMaxW = Math.max(0, maxW) - 2 * FIND_POPUP.pad - FIND_POPUP.iconPx - FIND_POPUP.columnGap;
-  const name = measure.nameAt(Math.max(FIND_POPUP.nameMinW, Math.min(FIND_POPUP.nameWrapW, columnMaxW)));
-  const rarityRowW = FIND_POPUP.badgePx + FIND_POPUP.badgeGap + measure.rarity.w;
-  const rarityRowH = Math.max(FIND_POPUP.badgePx, measure.rarity.h);
-  const columnW = Math.max(name.w, measure.category.w, rarityRowW);
-  const columnH = name.h + measure.category.h + rarityRowH;
-  const contentH = Math.max(FIND_POPUP.iconPx, columnH);
-  const panelW = 2 * FIND_POPUP.pad + FIND_POPUP.iconPx + FIND_POPUP.columnGap + columnW;
-  return { w: panelW, h: contentH + 2 * FIND_POPUP.pad };
+export function findToastBox(maxW: number, measure: FindToastMeasure): FindToastBox {
+  const { padX, padY, iconPx, columnGap, badgePx, badgeGap } = FIND_TOAST;
+  const columnMaxW = Math.max(0, maxW) - 2 * padX - iconPx - columnGap;
+  const nameWrapW = clampTo(columnMaxW, FIND_TOAST.nameMinW, FIND_TOAST.nameWrapW);
+  const detailWrapW = clampTo(columnMaxW - badgePx - badgeGap, FIND_TOAST.detailMinW, FIND_TOAST.nameWrapW);
+  const name = measure.nameAt(nameWrapW);
+  const detail = measure.detailAt(detailWrapW);
+  const columnW = Math.max(name.w, badgePx + badgeGap + detail.w);
+  const columnH = name.h + Math.max(badgePx, detail.h);
+  const w = 2 * padX + iconPx + columnGap + columnW;
+  const h = 2 * padY + Math.max(iconPx, columnH);
+  return { w, h, nameWrapW, detailWrapW };
 }
 
 /**
@@ -311,28 +364,6 @@ function orderRequests(requests: readonly SizedRequest[], order: readonly HudOve
   return ordered;
 }
 
-/**
- * Stacks the overlays centred under stackTop in stack order, a gap apart, as HudScene's
- * layoutBanners did; the find pop-up always sits a gap below the stack (or below stackTop).
- */
-function stackOverlays(
-  view: HudView,
-  controls: HudControls,
-  ordered: readonly SizedRequest[],
-): Map<HudOverlayId, Rect> {
-  const maxW = view.cssW - 2 * HUD.margin;
-  const placed = new Map<HudOverlayId, Rect>();
-  let stackBottom: number | null = null;
-  for (const request of ordered) {
-    const size = request.sizeAt(maxW);
-    const below = stackBottom ?? controls.stackTop;
-    const y: number = stackBottom !== null || request.id === 'findPopup' ? below + HUD.gap : below;
-    placed.set(request.id, { x: (view.cssW - size.w) / 2, y, w: size.w, h: size.h });
-    stackBottom = y + size.h;
-  }
-  return placed;
-}
-
 /** Returns the sorted distinct values, each clamped into [min, max]. */
 function edgeStops(values: readonly number[], min: number, max: number): number[] {
   const clamped = values.map((value) => clampTo(value, min, max));
@@ -379,16 +410,56 @@ function freeRects(frame: Rect, grown: readonly Rect[]): Rect[] {
 }
 
 /**
- * Returns `request` sized to `room` and moved as near stackTop, then the view's centre line, as the
- * room allows; null when it does not fit.
+ * Returns the placement tiers in order: the top edge above the middle, the bottom edge below it,
+ * over the Trip Bag, then over all the status panels. Each panel room is its panels grown by half
+ * a gap, inside the margin frame.
  */
-function candidateIn(room: Rect, request: SizedRequest, view: HudView, stackTop: number): Candidate | null {
+function overlayTiers(view: HudView, controls: HudControls): OverlayTier[] {
+  const frame = overlayFrame(view);
+  const middle = playMiddle(view);
+  const panels = [controls.counter, controls.legs, controls.bag];
+  const centredX = (size: Size): number => view.cssW / 2 - size.w / 2;
+  const topBottom = middle.y - HUD.gap;
+  const bottomTop = bottomOf(middle) + HUD.gap;
+  return [
+    {
+      edge: 'top',
+      room: { x: frame.x, y: frame.y, w: frame.w, h: topBottom - frame.y },
+      extraObstacles: panels,
+      anchorFor: (size) => ({ x: centredX(size), y: frame.y }),
+    },
+    {
+      edge: 'bottom',
+      room: { x: frame.x, y: bottomTop, w: frame.w, h: bottomOf(frame) - bottomTop },
+      extraObstacles: panels,
+      anchorFor: (size) => ({ x: centredX(size), y: bottomOf(frame) - size.h }),
+    },
+    {
+      edge: 'panel',
+      room: intersectRect(growRect(controls.bag, HUD.gap / 2), frame),
+      extraObstacles: [controls.counter, controls.legs],
+      anchorFor: () => ({ x: controls.bag.x, y: controls.bag.y }),
+    },
+    {
+      edge: 'panel',
+      room: intersectRect(growRect(statusPanelsBox(controls), HUD.gap / 2), frame),
+      extraObstacles: [],
+      anchorFor: () => ({ x: frame.x, y: frame.y }),
+    },
+  ];
+}
+
+/**
+ * Returns `request` sized to `room` and moved as near the tier anchor as the room allows; null
+ * when it does not fit.
+ */
+function candidateIn(room: Rect, request: SizedRequest, anchorFor: (size: Size) => Vec2): Candidate | null {
   const size = request.sizeAt(room.w);
   if (size.w > room.w + FIT_EPSILON_PX || size.h > room.h + FIT_EPSILON_PX) return null;
-  const y = clampTo(stackTop, room.y, room.y + room.h - size.h);
-  const x = clampTo(view.cssW / 2 - size.w / 2, room.x, room.x + room.w - size.w);
-  const rect = { x, y, w: size.w, h: size.h };
-  return { rect, dy: Math.abs(y - stackTop), dx: Math.abs(x + size.w / 2 - view.cssW / 2) };
+  const anchor = anchorFor(size);
+  const x = clampTo(anchor.x, room.x, room.x + room.w - size.w);
+  const y = clampTo(anchor.y, room.y, room.y + room.h - size.h);
+  return { rect: { x, y, w: size.w, h: size.h }, dy: Math.abs(y - anchor.y), dx: Math.abs(x - anchor.x) };
 }
 
 /** Whether candidate `a` is nearer the preferred spot than `b`. */
@@ -397,48 +468,54 @@ function isNearer(a: Candidate, b: Candidate): boolean {
   return a.dx < b.dx;
 }
 
-/** Returns the best clearing spot for `request` among the free rooms left by `obstacles`, or null. */
-function placeAmong(
-  request: SizedRequest,
-  view: HudView,
-  stackTop: number,
-  obstacles: readonly Rect[],
-): Rect | null {
+/** Returns the clearing spot nearest the tier anchor among the tier's free rooms, or null. */
+function placeInTier(request: SizedRequest, view: HudView, tier: OverlayTier, obstacles: readonly Rect[]): Rect | null {
+  const tierObstacles = [...obstacles, ...tier.extraObstacles];
+  const grown = tierObstacles.map((rect) => growRect(rect, HUD.gap));
   let best: Candidate | null = null;
-  for (const room of freeRects(overlayFrame(view), obstacles.map((rect) => growRect(rect, HUD.gap)))) {
-    const candidate = candidateIn(room, request, view, stackTop);
-    if (candidate === null || !clears(candidate.rect, view, obstacles)) continue;
+  for (const room of freeRects(tier.room, grown)) {
+    const candidate = candidateIn(room, request, tier.anchorFor);
+    if (candidate === null || !clears(candidate.rect, view, tierObstacles)) continue;
     if (best === null || isNearer(candidate, best)) best = candidate;
   }
   return best?.rect ?? null;
 }
 
-/**
- * Places overlays one by one in priority order: first clear of the status panels too, then (when
- * that fails) allowed over them. Every overlay stays a gap from the keep-outs and earlier overlays.
- */
+/** Returns the spot in the first tier with room for `request`, or null when no tier has room. */
+function placeInTiers(
+  request: SizedRequest,
+  view: HudView,
+  tiers: readonly OverlayTier[],
+  obstacles: readonly Rect[],
+): TieredRect | null {
+  for (const tier of tiers) {
+    const rect = placeInTier(request, view, tier, obstacles);
+    if (rect !== null) return { rect, edge: tier.edge };
+  }
+  return null;
+}
+
+/** Places overlays one by one in priority order, each a gap from the keep-outs and earlier overlays. */
 function fitOverlays(
   view: HudView,
-  controls: HudControls,
+  tiers: readonly OverlayTier[],
   keepOuts: readonly Rect[],
   ordered: readonly SizedRequest[],
-): Map<HudOverlayId, Rect> {
-  const panels = [controls.counter, controls.legs, controls.bag];
-  const placed = new Map<HudOverlayId, Rect>();
+): Map<HudOverlayId, TieredRect> {
+  const placed = new Map<HudOverlayId, TieredRect>();
   for (const request of ordered) {
-    const others = [...keepOuts, ...placed.values()];
-    const rect =
-      placeAmong(request, view, controls.stackTop, [...others, ...panels]) ??
-      placeAmong(request, view, controls.stackTop, others);
-    if (rect !== null) placed.set(request.id, rect);
+    const obstacles = [...keepOuts, ...[...placed.values()].map((entry) => entry.rect)];
+    const tiered = placeInTiers(request, view, tiers, obstacles);
+    if (tiered !== null) placed.set(request.id, tiered);
   }
   return placed;
 }
 
 /**
- * Places the requested overlays: the centred stack under stackTop when all of it clears, otherwise
- * each overlay in priority order in the free room nearest stackTop. Returns one placement per
- * request, in request order; a rect is null when that overlay has no room, never clipped.
+ * Places the requested overlays in priority order, each in the first tier with room: the top edge
+ * above the play middle, the bottom edge below it, over the Trip Bag, then over the status panels.
+ * Returns one placement per request, in request order; a rect is null when that overlay has no
+ * room (or its id was already answered), never clipped.
  */
 export function placeHudOverlays(
   view: HudView,
@@ -447,31 +524,36 @@ export function placeHudOverlays(
   requests: readonly HudOverlayRequest[],
 ): HudOverlayPlacement[] {
   const sized = requests.map(memoiseRequest);
-  const stacked = stackOverlays(view, controls, orderRequests(sized, HUD_OVERLAY_STACK));
-  let checked = checkPlacements(view, keepOuts, stacked);
-  if ([...checked.values()].includes(null)) {
-    const fitted = fitOverlays(view, controls, keepOuts, orderRequests(sized, HUD_OVERLAY_PRIORITY));
-    checked = checkPlacements(view, keepOuts, fitted);
-  }
+  const tiers = overlayTiers(view, controls);
+  const fitted = fitOverlays(view, tiers, keepOuts, orderRequests(sized, HUD_OVERLAY_PRIORITY));
+  const checked = checkPlacements(view, tiers, keepOuts, fitted);
   const answered = new Set<HudOverlayId>();
   return requests.map((request) => {
-    const rect = answered.has(request.id) ? null : (checked.get(request.id) ?? null);
+    const tiered = answered.has(request.id) ? null : (checked.get(request.id) ?? null);
     answered.add(request.id);
-    return { id: request.id, rect };
+    return { id: request.id, rect: tiered?.rect ?? null, edge: tiered?.edge ?? null };
   });
 }
 
-/** Re-checks every placed rect with clears(); a rect that fails becomes null. */
+/** Whether `rect` keeps a gap from the play middle or lies inside a panel tier's room. */
+function isOutOfMiddle(rect: Rect, view: HudView, tiers: readonly OverlayTier[]): boolean {
+  if (isApart(rect, playMiddle(view), HUD.gap)) return true;
+  return tiers.some((tier) => tier.edge === 'panel' && isInside(rect, tier.room));
+}
+
+/** Re-checks every placed rect with clears() and the middle rule; a rect that fails becomes null. */
 function checkPlacements(
   view: HudView,
+  tiers: readonly OverlayTier[],
   keepOuts: readonly Rect[],
-  placed: ReadonlyMap<HudOverlayId, Rect>,
-): Map<HudOverlayId, Rect | null> {
-  const rects = [...placed.values()];
-  const checked = new Map<HudOverlayId, Rect | null>();
-  for (const [id, rect] of placed) {
-    const obstacles = [...keepOuts, ...rects.filter((other) => other !== rect)];
-    checked.set(id, clears(rect, view, obstacles) ? rect : null);
+  placed: ReadonlyMap<HudOverlayId, TieredRect>,
+): Map<HudOverlayId, TieredRect | null> {
+  const rects = [...placed.values()].map((entry) => entry.rect);
+  const checked = new Map<HudOverlayId, TieredRect | null>();
+  for (const [id, tiered] of placed) {
+    const obstacles = [...keepOuts, ...rects.filter((other) => other !== tiered.rect)];
+    const ok = clears(tiered.rect, view, obstacles) && isOutOfMiddle(tiered.rect, view, tiers);
+    checked.set(id, ok ? tiered : null);
   }
   return checked;
 }
