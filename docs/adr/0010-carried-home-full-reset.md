@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-18
 - Amends: [ADR 0008](0008-gentle-fail-state.md) (replaces only its "Losing the fourth leg" rule; every other ADR 0008 rule stays in force)
+- Updated: 2026-10-20. Each trip now hides only a few treasures (issue #39; PRD B4). Lost treasures reappear on the next trip in the same play session. After the game is closed or reloaded, they rejoin the canal and can turn up on a later trip (PRD A12, D3). The original text below is unchanged.
 
 ## Context
 

@@ -130,6 +130,29 @@ export interface FindTuning {
   containerRadius: number;
 }
 
+/** A rarity that has a per-trip chance; Common is always in. */
+export type RarerRarity = Exclude<Rarity, 'common'>;
+
+/** How many treasures one trip hides and how the trip picks their rarities (PRD B4, Tuning values). */
+export interface TripTreasureTuning {
+  /** Each rarity's share of one trip; the shares add up to the treasures per trip. */
+  mix: Readonly<Record<Rarity, number>>;
+  /** Chance from 0 to 1 that a rarity gets its share on a trip; a missed share moves to the next more common rarity that is in. */
+  chance: Readonly<Record<RarerRarity, number>>;
+  /** Spot weight for the pool spot nearest the main swim path. */
+  leastHiddenWeight: number;
+  /** Spot weight for the pool spot farthest from the main swim path; weights between are linear in distance. */
+  bestHiddenWeight: number;
+}
+
+/** One area's changes to TRIP_TREASURES; anything left out keeps the default (PRD B4). */
+export interface TripTreasureOverride {
+  mix?: Partial<Record<Rarity, number>>;
+  chance?: Partial<Record<RarerRarity, number>>;
+  leastHiddenWeight?: number;
+  bestHiddenWeight?: number;
+}
+
 /** Snack eating reach tuning: snacks are eaten at the drawn head, not the body centre. */
 export interface SnackReachTuning {
   /**
@@ -222,6 +245,50 @@ export const FINDS: Readonly<FindTuning> = Object.freeze({
   pickupRadius: 24,
   containerRadius: 30,
 });
+
+/**
+ * Provisional trip treasure values from the PRD Tuning values (B4): 2 Common, 1 Rare, 1 Epic and
+ * 1 Legendary, so a trip holds 5; Rare is in on 80% of trips, Epic on 50% and Legendary on 25%.
+ * The farthest spot from the main swim path is picked 3 times as often as the nearest.
+ */
+export const TRIP_TREASURES: Readonly<TripTreasureTuning> = Object.freeze({
+  mix: Object.freeze({ common: 2, rare: 1, epic: 1, legendary: 1 }),
+  chance: Object.freeze({ rare: 0.8, epic: 0.5, legendary: 0.25 }),
+  leastHiddenWeight: 1,
+  bestHiddenWeight: 3,
+});
+
+/** Per-area changes to TRIP_TREASURES, keyed by area id. An area with no entry uses the default (PRD B4). */
+export const TRIP_TREASURES_BY_AREA: Readonly<Record<string, Readonly<TripTreasureOverride>>> = Object.freeze({});
+
+/** The trip treasure tuning for an area: TRIP_TREASURES with that area's override merged per rarity. */
+export function tripTreasureTuning(
+  areaId: string,
+  overrides: Readonly<Record<string, Readonly<TripTreasureOverride>>> = TRIP_TREASURES_BY_AREA,
+): TripTreasureTuning {
+  const override: Readonly<TripTreasureOverride> = Object.hasOwn(overrides, areaId) ? overrides[areaId] : {};
+  const base = TRIP_TREASURES;
+  return Object.freeze({
+    mix: Object.freeze({
+      common: override.mix?.common ?? base.mix.common,
+      rare: override.mix?.rare ?? base.mix.rare,
+      epic: override.mix?.epic ?? base.mix.epic,
+      legendary: override.mix?.legendary ?? base.mix.legendary,
+    }),
+    chance: Object.freeze({
+      rare: override.chance?.rare ?? base.chance.rare,
+      epic: override.chance?.epic ?? base.chance.epic,
+      legendary: override.chance?.legendary ?? base.chance.legendary,
+    }),
+    leastHiddenWeight: override.leastHiddenWeight ?? base.leastHiddenWeight,
+    bestHiddenWeight: override.bestHiddenWeight ?? base.bestHiddenWeight,
+  });
+}
+
+/** Treasures one trip hides before lost treasures and the special treasure: the sum of the mix. */
+export function treasuresPerTrip(tuning: Pick<TripTreasureTuning, 'mix'>): number {
+  return tuning.mix.common + tuning.mix.rare + tuning.mix.epic + tuning.mix.legendary;
+}
 
 /**
  * Provisional snack reach values, mirroring the drawn head because src/logic cannot import

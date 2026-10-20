@@ -61,10 +61,10 @@ The MVP is the first complete loop of the game.
 ### Features
 
 **A. Predator, legs and banking.**
-Tilapia patrol the canal. They warn before they lunge, and only one lunges at a time. A lunge that connects costs one leg, shown as a gentle sparkle poof. Legs grow back over time. Eating snacks while a leg is missing makes it grow back faster. Fewer legs means a slower, wobblier swim, but the axolotl can always get home. Finds stay in the Trip Bag until the player banks them at the Home Spot. If the last leg is lost, the axolotl is carried home, and unbanked finds go back into the canal. Every eaten snack comes back too, so the snacks start over. Lost treasures reappear on the next trip in freshly picked hiding spots.
+Tilapia patrol the canal. They warn before they lunge, and only one lunges at a time. A lunge that connects costs one leg, shown as a gentle sparkle poof. Legs grow back over time. Eating snacks while a leg is missing makes it grow back faster. Fewer legs means a slower, wobblier swim, but the axolotl can always get home. Finds stay in the Trip Bag until the player banks them at the Home Spot. If the last leg is lost, the axolotl is carried home, and unbanked finds go back into the canal. Every eaten snack comes back too, so the snacks start over. Lost treasures are placed on the next trip in this play session, in freshly picked hiding spots.
 
 **B. Hidden treasures and rarity.**
-Treasures come in three categories: Decorations, Wearables, and Paint shells. A Paint shell holds one Dream colour. There are 12 Dream colours. Solid Dream colours are Common or Rare. Patterned and sheen Dream colours are always Epic or Legendary, so they are rarer. Each treasure has one of four rarities. Each trip, every unbanked treasure hides in a spot picked from its own pool of hiding places. Rarer treasures are hidden better: behind reeds, in a cave, past the current, or inside something only Tail Dash can break.
+Treasures come in three categories: Decorations, Wearables, and Paint shells. A Paint shell holds one Dream colour. There are 12 Dream colours. Solid Dream colours are Common or Rare. Patterned and sheen Dream colours are always Epic or Legendary, so they are rarer. Each treasure has one of four rarities. Each trip hides only a few of the unbanked treasures. Each one hides in a spot picked from its own pool of hiding places, and the better-hidden spots are picked more often. Rarer treasures turn up on fewer trips. Rarer treasures are hidden better: behind reeds, in a cave, past the current, or inside something only Tail Dash can break.
 
 **C. Rescue, Home Tank and Collection Book.**
 Each trip may have one stranded axolotl to rescue. It is always one of the real morphs the player did not choose in the character creator. Rescued axolotls live in the Home Tank. The player places decorations in the tank, dresses axolotls in outfits, and can rename and restyle any axolotl. The Collection Book shows every real morph, with true fun facts about real axolotls. Dream colours are listed separately and marked as not found in nature.
@@ -169,7 +169,7 @@ Everything stays calm, never scary, readable without colour, and usable with red
 9. **A9** Fewer legs means a lower top speed and a wobblier swim. Wobble is suppressed under reduced motion; the slowdown stays. With 1 to 4 legs, the axolotl can always swim against every current and reach the Home Spot from anywhere.
 10. **A10** Tail Dash works with any number of legs.
 11. **A11** Losing the fourth leg ends the trip. The axolotl is carried home to the Home Tank with a gentle transition (for example, it floats home in a bubble; a still card under reduced motion). If reduced motion turns on during the carry, the still version takes over at once, and if it turns off, the axolotl floats home from where it is (open question 59). The tilapia is never shown catching or eating the axolotl. There is no "game over". A kind message says what was lost and that everything banked is safe.
-12. **A12** Being carried home is a full reset of the trip. All unbanked trip finds leave the Trip Bag and go back into the canal. They reappear on the next trip, each in a freshly picked valid hiding spot (B4). Every snack eaten comes back, so the snacks start over on the next trip (H2). Banked items and stars are untouched. The axolotl arrives with four legs. (Product owner decision, issue #31. Review after play-tests; see open question 15.)
+12. **A12** Being carried home is a full reset of the trip. All unbanked trip finds leave the Trip Bag and go back into the canal. In this play session, they are always placed on the next trip, each in a freshly picked valid hiding spot (B4). After the game is closed or reloaded, they rejoin the canal and can turn up on a later trip (D3). Every snack eaten comes back, so the snacks start over on the next trip (H2). Banked items and stars are untouched. The axolotl arrives with four legs. (Product owner decision, issue #31. Review after play-tests; see open question 15.)
 13. **A13** A clearly marked Home Spot sits where each trip starts. It is a safe area.
 14. **A14** Reaching the Home Spot banks every trip find at once, with a short celebration that lists them. The Trip Bag empties. The banked total rises by exactly the number of finds banked.
 15. **A15** At the Home Spot, the player can keep exploring or go home. Going home banks first. Both choices work by touch and by keyboard.
@@ -197,12 +197,21 @@ Everything stays calm, never scary, readable without colour, and usable with red
     - In total, 12 or more Decorations and Wearables (at least 4 Decorations and 8 Wearables), plus the twelve Paint shells.
 
     Each item has a unique name, a category, and a rarity. Each Wearable also has a slot and a perk, and may have a set ID (Implementation Decision 12). No item can be owned twice.
-4. **B4** Each treasure has a pool of hiding spots, and every spot in it meets that treasure's rarity rule (B6). At the start of each trip, one spot is picked from the pool for every unbanked treasure. No two treasures share a spot in one trip. A Legendary always lands in a Dash pot in the cave or past the current. Hiding spots shuffle each trip (product owner decision, 2026-10-18, issue #11; this replaces "one fixed spot").
+4. **B4** Each treasure has a pool of hiding spots, and every spot in it meets that treasure's rarity rule (B6). At the start of each trip, the trip seed picks only a few unbanked treasures to hide (issue #39; see Tuning values):
+    - Each rarity has a share of the trip: 2 Common, 1 Rare, 1 Epic, and 1 Legendary, so a trip holds 5.
+    - Common always gets its share. Rare gets its share on 80% of trips, Epic on 50%, and Legendary on 25%. A missed share moves to the next more common rarity that is in. So each chance is how often that rarity appears, and the trip still holds 5.
+    - If a rarity has fewer treasures left than its share, the extra passes to more common rarities first, then to rarer ones.
+    - When 5 or fewer unbanked treasures are left, all of them are placed.
+    - Lost treasures (A12) are always picked on the next trip in this play session. They take their rarity's share first, and are placed past it if needed.
+    - The area's special treasure (H6) is always placed while it is unbanked, as an extra outside the mix. Other treasures of its rarity still get their chance, so a trip holds 6 while it is unbanked.
+    - Every area uses these numbers unless it sets its own.
+
+    Each picked treasure then gets a spot picked from its own pool. Spots farther from the main swim path are picked more often, but any spot in the pool can still be picked. No two treasures share a spot in one trip. A Legendary always lands in a Dash pot in the cave or past the current. Hiding spots shuffle each trip (product owner decision, 2026-10-18, issue #11; this replaces "one fixed spot"). Hiding only a few treasures each trip is a product owner decision, 2026-10-20 (issue #39; this replaces "a spot for every unbanked treasure"; see open questions 60 to 66).
 5. **B5** Hiding places include behind reeds, under lily pads, inside a small cave, and past the current. Some treasures sit inside a container that only Tail Dash can break open. Swimming into the container without dashing shows a "dash needed" hint and does not open it. Breaking it is a gentle crumble with sparkles and no sudden flash.
 6. **B6** Rarer treasures are hidden better. Common treasures can be reached from the main swim path. Rare treasures need a detour. Epic treasures are in the cave or past the current. Legendary treasures need Tail Dash and are in the cave or past the current. Paint shells follow these same rules for their rarity, so rarer Dream colours are hidden better.
 7. **B7** Near a hidden treasure, a subtle hint appears that does not rely on colour (a small sparkle). Rarer treasures have a subtler, shorter-range hint. A Treasure sense perk makes the hint appear from further away, within its cap (see F9 and F11). The hint is static under reduced motion.
 8. **B8** Swimming into a revealed treasure adds it to the Trip Bag, with a short toast at a screen edge showing its name, category, and rarity badge with the rarity name. At most one toast shows at a time; a newer find replaces it (X10).
-9. **B9** Banked treasures are owned forever and are never placed again. A hiding spot holds whatever treasure this trip picked for it, or nothing. Unbanked treasures lost when the axolotl is carried home reappear on the next trip in a freshly picked valid spot.
+9. **B9** Banked treasures are owned forever and are never placed again. A hiding spot holds whatever treasure this trip picked for it, or nothing. Unbanked treasures lost when the axolotl is carried home are placed on the next trip in this play session, in a freshly picked valid spot. Every catalogue treasure can turn up over many trips. The area's special treasure is always placed while it is unbanked, outside the mix (B4).
 
 ### C. Rescue, Home Tank and Collection Book
 
@@ -235,7 +244,7 @@ Everything stays calm, never scary, readable without colour, and usable with red
 
 1. **D1** Progress saves on the device by itself after banking, going home, being carried home, beating an area, finishing the character creator, any tank change, any outfit change, any rename or restyle, any Dream colour change, choosing the explorer, and any Collection Book unlock. There is no save button. Treasures banked at the Home Spot mid-trip are saved at once. A rescue banked mid-trip is saved when the trip ends (open question 57).
 2. **D2** Saved: banked treasures (including owned Dream colours), the starter and rescued axolotls, each axolotl's name and look (real morph, applied Dream colour, boy or girl, face, gill style, spots, tail, body, age, and size), each axolotl's outfit, the chosen explorer, decoration placements, Collection Book unlocks, the stars earned for each area, and settings (none yet; reduced motion follows the device). Not saved: the Trip Bag, the position mid-trip, leg state, Shell blocks used this trip, the trip seed, eaten snacks, and a stranded axolotl left waiting (open question 56). The look is plain data, with each option held by its stable id.
-3. **D3** Closing or reloading and then reopening restores saved progress exactly. The game opens in the Home Tank, never mid-trip. Unbanked finds from an unfinished trip reappear on the next trip, in freshly picked hiding spots.
+3. **D3** Closing or reloading and then reopening restores saved progress exactly. The game opens in the Home Tank, never mid-trip. Unbanked finds from an unfinished trip go back into the canal and can be picked again (B4). They are not sure to be on the next trip after a reload.
 4. **D4** Saves hold no personal data, never leave the device, and need no account or network, per [ADR 0007](../adr/0007-kid-safety-and-privacy.md).
 5. **D5** If there is no save, the game starts fresh. An unreadable save never crashes the game, and the player can still play. The game starts fresh with no message. A damaged save is kept on the device until the next "Start over". A save from a newer version is left untouched and is never overwritten (open question 54).
 6. **D6** Saves from an earlier version still load after an update.
@@ -398,13 +407,14 @@ Everything stays calm, never scary, readable without colour, and usable with red
   - beating every current with one leg;
   - at most one tilapia telegraphing at a time, and a 1-leg axolotl reaching the Home Spot from anywhere with every tilapia patrolling;
   - ownership changes on banking and on being carried home;
-  - lost treasures being placed again on the next trip;
-  - per-trip spot shuffling (same trip seed gives the same placement, every pick meets B6, never two treasures in one spot, banked treasures never placed);
+  - lost treasures always being placed on the next trip in this play session, each in a freshly picked spot;
+  - per-trip treasure and spot picks (B4): the same trip seed gives the same treasures and spots; at most the per-trip number, in the rarity mix, while enough treasures are left, and all of them when fewer are left; every treasure placed over many trip seeds; the special treasure placed on every trip until banked; every pick meets B6; never two treasures in one spot; banked treasures never placed; and the spot weighting favouring better-hidden spots while every spot can still be picked;
+  - rarity frequency: over many trip seeds, Legendary treasures appear less often than Epic, Epic less often than Rare, and Rare less often than Common;
   - hiding-difficulty rules checked over the area layout;
   - save round-trip: the hub saved and loaded again comes back exactly, and only hub fields are saved;
   - an unreadable save: damaged text starts fresh and is kept under `glam-gills:save-unreadable` (the first one kept) until the next "Start over"; a newer-version save starts fresh, is left untouched, and turns saving off; anything else is repaired field by field, dropping unknown ids and defaulting bad fields;
   - upgrading saves from older save versions through the upgrade chain, a failing upgrade counting as damaged, and a new field loading with its default with no version bump;
-  - nothing mid-trip restored (D3): a loaded save opens in the Home Tank with a fresh canal, and unbanked finds come back in freshly picked spots;
+  - nothing mid-trip restored (D3): a loaded save opens in the Home Tank with a fresh canal, and unbanked finds go back into the canal and can be picked again;
   - treasures banked at the Home Spot mid-trip saved at once (D1);
   - "Start over"'s two steps (D7): erasing only after two go presses in a row, Keep and Escape closing either card, and the button showing only once an axolotl is owned;
   - the update decision;
@@ -521,9 +531,10 @@ The area chain and refuge goal (N2) are the first steps.
 
 Product owner decision, 2026-10-18 (issue #11): hiding spots shuffle each trip.
 This replaces the fixed spot per treasure that B4 used to describe.
-Each trip picks a spot for every unbanked treasure from that treasure's pool (B4, B6).
+Each trip picks a few unbanked treasures (issue #39), then a spot for each from that treasure's pool (B4, B6).
 Spot ids stay stable per area (X9, Implementation Decision 2).
-The trip seed that picks the spots is never saved. The save (issue #15) keeps banked ids only.
+The trip seed that picks the treasures and spots is never saved. The save (issue #15) keeps banked ids only.
+Lost treasure ids are kept for this play session only and are never saved.
 The same decision sets at least 3 tilapia in the canal (A1).
 
 ### Open questions (recommended defaults)
@@ -535,7 +546,7 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | 4 | What does the Home Spot look like: a burrow or a buoy? | Art decision. |
 | 5 | Do strandings stop after all morphs are rescued? | Yes, none after that. |
 | 6 | Do snacks change in the MVP? | Decided: yes. Snacks speed up regrowth while a leg is missing (A19), and every snack must be eaten to open the exit (H2). |
-| 7 | Closing the game mid-trip sends unbanked finds back into the canal (they reappear in fresh spots next trip). Is that acceptable? | Yes. Nothing mid-trip is saved (D2, D3): the game reopens in the Home Tank, eaten snacks start over, and a stranded axolotl left waiting is not kept (open question 56). Treasures already banked at the Home Spot stay saved (open question 57). Needs confirmation. |
+| 7 | Closing the game mid-trip sends unbanked finds back into the canal (they can turn up again on a later trip, in fresh spots). Is that acceptable? | Yes. Nothing mid-trip is saved (D2, D3): the game reopens in the Home Tank, eaten snacks start over, and a stranded axolotl left waiting is not kept (open question 56). Treasures already banked at the Home Spot stay saved (open question 57). Needs confirmation. |
 | 8 | Does the update check need its own ADR? | Yes, before slice E, if it makes any request beyond loading the game. [ADR 0007](../adr/0007-kid-safety-and-privacy.md) allows no third-party requests; AGENTS.md says no network requests. |
 | 9 | What are the exact perk values and caps? | Tuning. Start from the Tuning values below. |
 | 10 | Can a Dream colour be combined with spots? | Decided: yes. Spots draw on top of the Dream colour (F14). |
@@ -588,6 +599,13 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | 57 | When does banking mid-trip save (D1)? | Treasures banked at the Home Spot mid-trip save at once, so closing the game keeps them. A rescue banked mid-trip saves when the trip ends. If the game closes first, the rescue is not kept, and that morph can be stranded again on a later trip. Awaiting owner confirmation. |
 | 58 | In what order does a banner with no room retry at 20 pixels (X10, X6)? | Every place at 24 pixels first, then every place at 20 pixels, so 24 pixels wins wherever it fits anywhere. Only the snack banner and the first-trip hint retry; the find toast never shrinks. 20 pixels is still above the 18 pixel minimum (X6). The owner chose this fallback (option D in issue #61). Needs owner confirmation of the retry order. |
 | 59 | What happens if reduced motion changes during the carry home (A11, X3)? | It takes effect on the next step. Turned on: the axolotl holds where it is in its still bubble and arrives after the rest of the carry or the still hold time, whichever is shorter, so the switch never lengthens the carry. Turned off: it floats home from where it is, timed like a fresh carry. Each switch off starts a fresh float, so toggling many times can lengthen the carry; this is driven by the player's device setting and each float is capped at the carry's longest time. From issue #34. Needs owner confirmation. |
+| 60 | How many treasures does each trip hide (B4)? | 5: 2 Common, 1 Rare, 1 Epic, and 1 Legendary, picked from the trip seed (issue #39). Owner confirmed starting value 2026-10-20. Tune after play-testing. |
+| 61 | How often does each rarity turn up, and where does a missed share go (B4)? | Rare on 80% of trips, Epic on 50%, and Legendary on 25%. A missed share moves to the next more common rarity that is in. It skips rarities whose own roll missed, so each chance is how often that rarity appears. Owner confirmed starting values 2026-10-20. Tune after play-testing. |
+| 62 | What happens when only a few treasures are left (B4)? | When 5 or fewer unbanked treasures are left, all of them are placed. A rarity with fewer treasures left than its share passes the extra to more common rarities first, then to rarer ones. Awaiting owner confirmation. |
+| 63 | Are lost treasures placed on the next trip (A12, B4, D3)? | Yes, always, in this play session. They take their rarity's share first, and are placed past it if needed. This is never saved, so after the game is closed or reloaded they rejoin the canal and can turn up on a later trip. Owner confirmed 2026-10-20. |
+| 64 | Is the area's special treasure on every trip (B4, H6)? | Yes. It is always placed while it is unbanked, as an extra outside the mix, so Star 2 can be earned on every trip. Owner confirmed 2026-10-20. |
+| 65 | Do the hint sparkles change now that fewer treasures hide (B7)? | No. The hint ranges stay the same. Owner confirmed 2026-10-20. |
+| 66 | Are better-hidden spots picked more often (B4)? | Yes. Each spot's weight goes from 1 for the spot nearest the main swim path to 3 for the farthest, linear within each treasure's pool. Any spot can still be picked. Common spots are all the same distance from the path today, so Common is not affected. Owner confirmed starting value 2026-10-20. Tune after play-testing. |
 
 ### Tuning values (starting points)
 
@@ -603,6 +621,10 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | Tilapia touch reach (bump, no leg lost) | 29 pixels from centre to centre (was 34), the same at every size (F4) |
 | Axolotl size scale (Small / Medium / Large) | 0.72 / 0.85 / 1.00. Default: Medium. Looks only (F4). |
 | Treasures | 12 or more Decorations and Wearables (at least 4 Decorations and 8 Wearables), plus 12 Paint shells |
+| Treasures per trip (Common / Rare / Epic / Legendary) | 2 / 1 / 1 / 1 = 5, plus any lost treasures past their share, plus the special treasure as an extra while it is unbanked (B4) |
+| Rarity chance per trip (Common / Rare / Epic / Legendary) | Always / 80% / 50% / 25%. A missed share moves to the next more common rarity that is in. |
+| Hiding spot weighting | 1 for the spot nearest the main swim path to 3 for the farthest, linear within each treasure's pool |
+| Per-area tuning | Every area uses these treasure values unless it sets its own, keyed by area id |
 | Snack regrowth speed-up | Each snack adds 20% of one leg's regrowth to the leg that is regrowing (about 4 seconds at the base time). Never past a full leg. |
 | Snack eat reach | A circle of 36 pixels radius, centred 25 pixels ahead of the axolotl's middle along its body, turning with its tilt. While the body squashes in a turn, the centre moves in with it. The same at every size. It covers the whole head of the largest size; smaller sizes reach a little in front of the snout. |
 | Treasure hint range (Common / Rare / Epic / Legendary) | 150 / 115 / 85 / 60 pixels. Rarer is shorter. |
@@ -698,5 +720,5 @@ Early slices may use a placeholder find and an interim home.
 | Real morph | One of the eight true axolotl morphs: Leucistic, Wild, Golden albino, White albino, Copper, Piebald, Axanthic, or Melanoid. | |
 | Dream colour | A fantasy colour, solid or patterned, that can be put on any owned axolotl. Patterned and sheen ones are Epic or Legendary; solid ones are Common or Rare. Not found in nature. | skin |
 | Paint shell | A hidden treasure that holds one Dream colour. | |
-| Hiding spot | A place in an area where a treasure can hide. Each trip picks one per unbanked treasure. | |
+| Hiding spot | A place in an area where a treasure can hide. Each trip picks one per treasure picked for that trip. | |
 | Dash pot | A pot only Tail Dash can break. Legendary treasures hide in one. | |
