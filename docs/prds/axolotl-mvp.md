@@ -76,7 +76,7 @@ Progress saves on the device by itself. Closing the game or reloading never lose
 After a new version is deployed, players get it quickly and never mid-trip. The version number is visible.
 
 **F. Character creator and outfits.**
-At first launch, the player makes a starter axolotl: a name, a face, a gill style, spots, a size, and one of the four real morphs. Size is for looks only. The other three real morphs become the axolotls to rescue. Any owned axolotl can be renamed and restyled in the Home Tank. Each axolotl has eight wearable slots: Head, Neck, Face, Shirt, Back, Tail, Socks, and Feet, with one item per slot. Each wearable gives one small perk. Rarer wearables give a slightly stronger perk and look fancier. Each perk type has a hard cap, so no outfit makes an axolotl untouchable. Before a trip, the player picks which axolotl goes exploring. Only that axolotl's outfit applies on the trip. Dream colours, found in Paint shells, can be put on any owned axolotl and taken off at any time. One owned Dream colour can be on any number of owned axolotls at the same time. Names stay on the device.
+At first launch, the player makes a starter axolotl: a name, a face, a gill style, spots, a size, and one of the eight real morphs. Size is for looks only. The other seven real morphs become the axolotls to rescue. Any owned axolotl can be renamed and restyled in the Home Tank. Each axolotl has eight wearable slots: Head, Neck, Face, Shirt, Back, Tail, Socks, and Feet, with one item per slot. Each wearable gives one small perk. Rarer wearables give a slightly stronger perk and look fancier. Each perk type has a hard cap, so no outfit makes an axolotl untouchable. Before a trip, the player picks which axolotl goes exploring. Only that axolotl's outfit applies on the trip. Dream colours, found in Paint shells, can be put on any owned axolotl and taken off at any time. One owned Dream colour can be on any number of owned axolotls at the same time. Names stay on the device.
 
 **H. Areas, exit and stars.**
 Areas are the levels of the game. The canal is Area 1, and it is the only area in the MVP. Its exit stays closed until every snack in the area has been eaten. A counter shows how many snacks are left, and the last 3 sparkle. In Area 1, snacks drift slowly. Reaching the open exit beats the area and banks everything in the Trip Bag. Beating an area earns up to 3 stars, and stars, once earned, are kept.
@@ -205,21 +205,25 @@ Everything stays calm, never scary, readable without colour, and usable with red
 ### C. Rescue, Home Tank and Collection Book
 
 1. **C1** The player starts with one axolotl, made in the character creator (F1). Its morph is the real morph the player chose. It is already in the Home Tank, and its morph is already found in the Collection Book.
-2. **C2** Each trip has at most one stranded axolotl. It is always a real morph not yet owned: one of the three morphs not chosen in the character creator (F5). It looks a little lost, never hurt.
+2. **C2** Each trip has at most one stranded axolotl. It is always a real morph not yet owned: one of the seven morphs not chosen in the character creator (F5). It looks a little lost, never hurt.
 3. **C3** Reaching the stranded axolotl makes it follow the player. It counts as a trip find until banked. The tilapia cannot hit it. It keeps up with the player and never gets stuck.
 4. **C4** Banking or going home moves the rescued axolotl into the Home Tank for good. Its morph unlocks in the Collection Book.
 5. **C5** If the player is carried home first, the stranded axolotl returns to where it was found. A kind message says "it's waiting for you".
-6. **C6** After all three morphs are rescued, no more stranded axolotls appear in the MVP (see open question 5).
+6. **C6** After all seven morphs are rescued, no more stranded axolotls appear in the MVP (see open question 5).
 7. **C7** After the title screen, the game opens in the Home Tank, which is the hub. On first launch, the character creator comes first (F1). A clear "Go exploring" button starts the Go exploring flow (F7).
 8. **C8** Every owned axolotl swims around the tank on its own. Under reduced motion, they hold still poses.
 9. **C9** The player can place an owned Decoration in the tank, move it, and put it away, by touch and by keyboard. Each Decoration can be placed at most once. Decorations cannot go outside the tank.
 10. **C10** The player can put an owned Wearable on any owned axolotl and take it off. Each axolotl has eight slots (Head, Neck, Face, Shirt, Back, Tail, Socks, and Feet) and wears at most one Wearable per slot (F8). Each Wearable fits one slot and is on at most one axolotl at a time. Wearables never cover the eyes or the gill roots, per the accessory rules in the [art style guide](../art-style-guide.md).
 11. **C11** The Treasure Chest lists owned Decorations, Wearables, and Dream colours, each with its name and rarity badge. Each Wearable also shows its slot and its perk (F10). Each Dream colour shows its pattern cue (solid colours show their name beside the swatch, F15) and the label "Dream colour — not found in nature". The Treasure Chest also shows "X of Y found" for each category.
-12. **C12** The Collection Book shows the four real morphs only: Leucistic, Wild, Golden albino, and Melanoid. A found morph shows its picture, name, a distinct badge shape, and a fun-fact card. An unfound morph shows a friendly silhouette, "???", and a hint ("Rescue me in the canal!"). Found and unfound are never told apart by colour alone. Dream colours are never shown as morphs. They are listed in a separate section, each labelled "Dream colour — not found in nature".
+12. **C12** The Collection Book shows the eight real morphs only: Leucistic, Wild, Golden albino, White albino, Copper, Piebald, Axanthic, and Melanoid. A found morph shows its picture, name, a distinct badge shape, and a fun-fact card. An unfound morph shows a friendly silhouette, "???", and a hint ("Rescue me in the canal!"). Found and unfound are never told apart by colour alone. Dream colours are never shown as morphs. They are listed in a separate section, each labelled "Dream colour — not found in nature".
 13. **C13** Fun facts are true, short, and written for ages 8 to 12. Each is checked against a reputable source before release. Examples:
     - Leucistic: pale pink with dark eyes; not an albino.
     - Wild: natural dark, speckled colouring with shiny gold flecks.
     - Golden albino: no dark pigment; golden with light eyes.
+    - White albino: looks a lot like Leucistic, but with pink eyes.
+    - Copper: gets browner with age until it is copper all over.
+    - Piebald: white with dark patches that darken with age.
+    - Axanthic: has no yellow colour, so it is dark grey all over.
     - Melanoid: extra dark, with no shiny flecks.
 14. **C14** The Collection Book also holds the tilapia fact card once the player has met the tilapia.
 
@@ -252,10 +256,10 @@ Everything stays calm, never scary, readable without colour, and usable with red
     - Gill style: fluffy, long, or short.
     - Spots: none, or one of a few patterns (for example freckles or spots).
     - Size: small, medium, or large.
-    - Colour: one of the four real morphs: Leucistic, Wild, Golden albino, or Melanoid.
+    - Colour: one of the eight real morphs: Leucistic, Wild, Golden albino, White albino, Copper, Piebald, Axanthic or Melanoid.
 3. **F3** A preview of the axolotl updates straight away whenever an option changes. Under reduced motion, the preview is a still pose.
 4. **F4** Size is for looks only. Small, medium, and large axolotls have exactly the same hit area and the same speed, on trips and everywhere else.
-5. **F5** The starter's morph decides which morphs can be rescued: the other three real morphs become the stranded axolotls (C2). The starter's morph cannot be rescued again.
+5. **F5** The starter's morph decides which morphs can be rescued: the other seven real morphs become the stranded axolotls (C2). The starter's morph cannot be rescued again.
 6. **F6** In the Home Tank, the player can rename any owned axolotl and restyle its face (eyes and mouth), gill style, spots, and size, by touch and by keyboard, with the same options and live preview as the character creator. An axolotl's real morph never changes. Only a Dream colour can be put on top of it (F14).
 7. **F7** The Go exploring flow asks which owned axolotl goes exploring: the explorer. It shows the explorer's outfit and its outfit summary (F10), and lets the player change the outfit before the trip starts. With one owned axolotl, it is chosen already. The last explorer is remembered. The explorer is the axolotl the player swims as on the trip, shown with its own look and outfit.
 8. **F8** Each axolotl has eight Wearable slots:
@@ -356,7 +360,7 @@ Everything stays calm, never scary, readable without colour, and usable with red
   - outfit and slot rules: one Wearable per slot, each Wearable in one slot only, and on at most one axolotl at a time;
   - perks applying only from the explorer's outfit, and only on trips;
   - save round-trip of every axolotl's look, name, and outfit, owned Dream colours, and the chosen explorer;
-  - the starter's chosen morph being owned and found in the Collection Book from the start, and only the other three morphs ever being stranded (C1, C2, F5);
+  - the starter's chosen morph being owned and found in the Collection Book from the start, and only the other seven morphs ever being stranded, for each of the eight starter morphs (C1, C2, F5);
   - putting on and taking off a Dream colour, returning the axolotl to its real morph;
   - the snack speed-up: no effect with four legs, a fixed amount on the regrowing leg, never past a full leg, and working together with the Regrowth perk;
   - the snack eat reach: a snack under the drawn head is eaten at every size, facing either way, tilted, drifting and bobbing, under full and reduced motion; the reach is the same for every look; and the longest swim step cannot carry the head past a snack;
@@ -488,6 +492,8 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | 26 | What do Cancel and Escape do on the restyle screen (F6)? | Leave without keeping any change. Needs confirmation. |
 | 27 | Which colour does the creator start on (F1, F2)? | Leucistic, the first real morph. Needs confirmation. |
 | 28 | How does restyling show the real morph (F6)? | The Colour part shows the morph name and its badge with no arrows; it cannot be changed. Needs confirmation. |
+| 29 | Which four real morphs join the first four (C12, F2)? | White albino, Copper, Piebald, and Axanthic, for eight in all. Lavender is left out because it is also a Dream colour (F15). Needs confirmation. |
+| 30 | Which badge shapes do the new morphs get (C12)? | White albino a cloud, Copper a leaf, Piebald a capsule, Axanthic a drop ([art style guide](../art-style-guide.md) 8). None is a rarity shape or the Dream swatch tile. Needs confirmation. |
 
 ### Tuning values (starting points)
 
@@ -583,7 +589,7 @@ Early slices may use a placeholder find and an interim home.
 | Perk | The one small gameplay bonus a Wearable gives on trips. | stat, buff (in UI) |
 | Perk cap | The hard limit on the total of one perk type in an outfit. | |
 | Explorer | The axolotl the player takes on a trip. Only its outfit applies. | |
-| Real morph | One of the four true axolotl morphs: Leucistic, Wild, Golden albino, or Melanoid. | |
+| Real morph | One of the eight true axolotl morphs: Leucistic, Wild, Golden albino, White albino, Copper, Piebald, Axanthic, or Melanoid. | |
 | Dream colour | A fantasy colour, solid or patterned, that can be put on any owned axolotl. Patterned and sheen ones are Epic or Legendary; solid ones are Common or Rare. Not found in nature. | skin |
 | Paint shell | A hidden treasure that holds one Dream colour. | |
 | Hiding spot | A place in an area where a treasure can hide. Each trip picks one per unbanked treasure. | |

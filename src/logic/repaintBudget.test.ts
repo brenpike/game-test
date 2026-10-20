@@ -109,6 +109,28 @@ describe('three secondaries at 60 fps', () => {
   });
 });
 
+describe('seven secondaries at 60 fps (eight tank axolotls)', () => {
+  const dt = 1 / 60;
+  const secondaryCount = 7;
+  const repaintFrames = simulateRepaints(secondaryCount, dt, SIM_S);
+
+  it('repaints at most one per frame', () => {
+    expect(hasOneRepaintPerFrame(repaintFrames)).toBe(true);
+  });
+
+  it('keeps every gap at least SECONDARY_REPAINT_S', () => {
+    for (const frames of repaintFrames) {
+      for (const gap of repaintGaps(frames, dt)) expect(gap).toBeGreaterThanOrEqual(SECONDARY_REPAINT_S);
+    }
+  });
+
+  it('starves none: counts differ by at most 1, about 60/7 a second each', () => {
+    const counts = repaintFrames.map((frames) => frames.length);
+    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
+    for (const count of counts) expect(Math.abs(count / SIM_S - 60 / secondaryCount)).toBeLessThanOrEqual(0.5);
+  });
+});
+
 describe('any number of secondaries', () => {
   it('never repaints more than one per frame for 1 to 8 secondaries', () => {
     for (let count = 1; count <= MAX_SECONDARIES; count++) {

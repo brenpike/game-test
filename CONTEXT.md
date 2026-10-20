@@ -134,7 +134,7 @@ _Avoid_: inventory
 An axolotl colour type, such as Leucistic or Wild.
 
 **Real morph**:
-One of the four true axolotl morphs: Leucistic, Wild, Golden albino, or Melanoid.
+One of the eight true axolotl morphs: Leucistic, Wild, Golden albino, White albino, Copper, Piebald, Axanthic, or Melanoid.
 
 **Character creator**:
 The screen at first launch where the player makes a starter axolotl.
@@ -207,7 +207,7 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - A **Wearable** fits exactly one **Slot**, gives exactly one **Perk**, and may belong to one **Wearable set**
 - An **Outfit** holds at most one **Wearable** per **Slot**; each **Perk** type in it is limited by its **Perk cap**
 - Each axolotl has exactly one **Real morph**; a **Dream colour** draws on top of it and never changes it
-- The starter axolotl's **Real morph**, chosen in the **Character creator**, decides which three **Real morphs** can be **Stranded axolotls**
+- The starter axolotl's **Real morph**, chosen in the **Character creator**, decides which seven **Real morphs** can be **Stranded axolotls**
 - Each **Trip** has at most one **Stranded axolotl**; a **Rescue** moves it into the **Home Tank** and unlocks its **Morph** in the **Collection Book**
 - The **Treasure Chest** lists owned **Decorations**, **Wearables**, and **Dream colours**; placed **Decorations** live in the **Home Tank**
 - The **Collection Book** holds one entry per **Real morph**, each with a **Fun-fact card**, and lists **Dream colours** separately as not found in nature
