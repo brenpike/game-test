@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-19
+
+### Fixed
+
+- Swimming your axolotl's head over a snack now always eats it, at every size, facing either way, while snacks drift and bob, and with reduced motion (#51). Before, only the middle of the body could eat, so a snack under the head was sometimes missed.
+- An axolotl facing left on a trip is now drawn on its own spot, like one facing right, so it no longer jumps forward when it turns and its bubbles come from its mouth.
+
+### Docs
+
+- PRD rows for the snack eat reach (A19, H4, tuning values, testing decisions).
+
 ## [0.11.0] - 2026-10-19
 
 ### Added
