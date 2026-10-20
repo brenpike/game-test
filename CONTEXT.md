@@ -213,6 +213,9 @@ A themed group of Wearables, named by a Wearable's optional set ID, that unlocks
 **Refuge**:
 The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 
+**Area map**:
+The map shown after the **Explorer** is chosen, where the player picks an unlocked **Area** to explore, with each area's **Stars** and which areas are locked (N2); not in the MVP.
+
 ## Relationships
 
 - A **Trip** has exactly one **Explorer**, starts at the **Home Spot** in one **Area**, and ends by **Go home**, **Carried home**, or reaching the open **Exit**
