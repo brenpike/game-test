@@ -32,6 +32,8 @@ import {
   axolotlBodyGeometry,
   boundsOfPoints,
   gillInkBounds,
+  legAngle,
+  legSlotFrames,
   paintEye,
   paintGills,
   paintMouth,
@@ -46,6 +48,7 @@ import {
   type TailSample,
 } from './drawAxolotlParts';
 import { dreamMarkerCentres, paintDreamMarker, paintDreamPattern } from './drawDreamOverlay';
+import { NO_OUTFIT, paintBodyWearable, paintLegWearables, wearsOnLegs, type ArtOutfit } from './drawWearables';
 
 /**
  * Texture frame in logical units. Holds every look (every gill style, Boy or
@@ -163,14 +166,12 @@ const TOE_W = 4.2;
 const TOE_OL = 2.6;
 const TOE_SPLAY = 0.6;
 
-/** Leg angles in leg draw order (far-front, far-rear, near-front, near-rear); diagonal pairs swing opposite. */
+/**
+ * Leg angles in leg draw order (far-front, far-rear, near-front, near-rear); diagonal pairs swing
+ * opposite. The same legAngle() the Socks and Feet frames turn with, so a Sock follows its paddle.
+ */
 function legAngles(swim: number): number[] {
-  return [
-    Math.PI / 2 - 0.2 + 0.35 * Math.sin(swim + Math.PI),
-    Math.PI / 2 + 0.5 + 0.35 * Math.sin(swim),
-    Math.PI / 2 - 0.2 + 0.35 * Math.sin(swim),
-    Math.PI / 2 + 0.5 + 0.35 * Math.sin(swim + Math.PI),
-  ];
+  return [0, 1, 2, 3].map((index) => legAngle(index, swim));
 }
 
 /** Leg end point and its three toe tips. */
@@ -556,12 +557,21 @@ const BODY_SHINE_ELL = { x: -16, y: -9, rx: 12, ry: 3, rot: -0.08 } as const;
  * creator parts (guide 6l to 6n) and the body proportions (Boy or girl, Tail,
  * Body, Age). Size is not painted here: the caller bakes and scales by
  * AXO_SIZE_SCALE (guide 6o).
+ *
+ * `outfit` is what the axolotl wears (guide 6a, 6i), none by default, and then
+ * the painter makes exactly the calls it made before Wearables. Wearables paint
+ * at their layers: Socks and Feet with their leg behind the silhouette (the Sock
+ * first, then the Feet item), then the Shirt (8.2), Tail (8.5), Neck (9.5), Back
+ * (9.7), Head (10.5) and Face (11.5) items. Eyes (layer 12) still paint last.
+ * A leg wears its Socks and Feet only while its status is 'present', so a lost
+ * or regrowing leg is the bare ghost; a Shirt never reads the leg state.
  */
 export function drawAxolotl(
   ctx: CanvasRenderingContext2D,
   pose: AxolotlPose,
   palette: MorphPalette = LEUCISTIC,
   look: AxolotlArtLook = DEFAULT_ART_LOOK,
+  outfit: ArtOutfit = NO_OUTFIT,
 ): void {
   const swim = pose.swimPhase;
   const tfl = pose.gillPhase;
@@ -577,6 +587,15 @@ export function drawAxolotl(
   const legLen = geo.legLengths;
   const toeLen = geo.toeLength;
   const legColour = [palette.farSide, palette.farSide, palette.body, palette.body];
+  // Socks and Feet (layers 2.5 far, 3.5 near): only on a present leg, after both legs of their side are painted.
+  const legFrames = wearsOnLegs(outfit) ? legSlotFrames(look, swim) : null;
+  const wearLegs = (first: number, last: number): void => {
+    if (!legFrames) return;
+    for (let i = first; i <= last; i++) {
+      const status = pose.legs?.[i]?.status ?? 'present';
+      if (status === 'present') paintLegWearables(ctx, outfit, legFrames[i]);
+    }
+  };
   for (let i = 0; i < 4; i++) {
     const { x, y } = geo.legRoots[i];
     const legLook = pose.legs?.[i];
@@ -589,6 +608,8 @@ export function drawAxolotl(
       legGhost(ctx, x, y, legAng[i], legLen[i], toeLen, GHOST_ALPHA_REGROW);
       if (pr >= LEG_FILL_MIN) leg(ctx, x, y, legAng[i], legLen[i], toeLen, legColour[i], pr);
     }
+    if (i === 1) wearLegs(0, 1);
+    if (i === 3) wearLegs(2, 3);
   }
 
   // tail geometry
@@ -694,8 +715,16 @@ export function drawAxolotl(
   const spot = extras?.spot === undefined ? FRECKLE : extras.spot;
   if (spot !== null) paintSpots(ctx, look.spots, swim, pose.tailAmp, spot, geo.tail, torso);
 
+  // 8.2 Shirt item, 8.5 Tail item (guide 6i)
+  paintBodyWearable(ctx, 'shirt', outfit, look, swim, pose.tailAmp);
+  paintBodyWearable(ctx, 'tail', outfit, look, swim, pose.tailAmp);
+
   // 9. near gills (in front of the body, sprouting from the cheek)
   paintGills(ctx, 'near', look.gills, tfl, palette.gillNearStem, palette.gillNearFilament, geo.gillLength);
+
+  // 9.5 Neck item, 9.7 Back item: from the body out, over the Shirt and the near gills
+  paintBodyWearable(ctx, 'neck', outfit, look, swim, pose.tailAmp);
+  paintBodyWearable(ctx, 'back', outfit, look, swim, pose.tailAmp);
 
   // 10. blush
   if (extras?.blush !== false) {
@@ -706,8 +735,14 @@ export function drawAxolotl(
     ctx.fill(p);
   }
 
+  // 10.5 Head item
+  paintBodyWearable(ctx, 'head', outfit, look, swim, pose.tailAmp);
+
   // 11. mouth
   paintMouth(ctx, look.mouth, palette.mouth);
+
+  // 11.5 Face item (below the eyes on purpose: no Face item can cover them)
+  paintBodyWearable(ctx, 'face', outfit, look, swim, pose.tailAmp);
 
   // 12. eyes, far then near, so the near bead covers any far lash that reaches it (the Girl cue adds lashes)
   const eyelashes = look.sex === 'girl';

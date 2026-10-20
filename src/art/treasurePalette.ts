@@ -106,6 +106,16 @@ export const GEM_GLINT = WHITE;
 /** 4-point star on Legendary icons (guide 4e): white with an ink outline. */
 export const TREASURE_STAR = WHITE;
 
+// ---- Worn looks (guide 6a, 6i) ----------------------------------------------
+
+/**
+ * Far-leg Socks and Feet are the item colours mixed this far toward ink (guide 6a layer 2.5,
+ * the far-side depth rule of 3f). Ink and shine stay as on the near pair.
+ */
+export const WORN_FAR_INK_MIX = 0.12;
+/** Stripy socks: the three sleeve stripes are ink at this alpha (guide 6i), the same colour darkened. */
+export const SOCK_STRIPE_ALPHA = 0.3;
+
 // ---- Paint shell (guide 3g, 7e) --------------------------------------------
 
 /** Paint shell fill. 10.70:1 with ink. */

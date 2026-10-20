@@ -11,6 +11,7 @@ import * as Phaser from 'phaser';
 import { beginDraw, clearAll, type TexSize } from './canvasKit';
 import { AXO_REST_POSE, AXO_SCENE_SCALE, AXO_TEX, drawAxolotl, type AxolotlPose } from './drawAxolotl';
 import { AXO_SIZE_SCALE, DEFAULT_ART_LOOK, type AxolotlArtLook, type Bounds } from './drawAxolotlParts';
+import { NO_OUTFIT, type ArtOutfit } from './drawWearables';
 import {
   CAVE_TEX,
   CURRENT_MARKER_TEX,
@@ -420,6 +421,8 @@ export interface AxolotlStill {
   readonly scale: number;
   /** Size factor (AXO_SIZE_SCALE) the axolotl is drawn at, about the crop centre. */
   readonly sizeFactor: number;
+  /** What the axolotl wears (guide 6i). Undefined draws none. */
+  readonly outfit?: ArtOutfit;
 }
 
 /**
@@ -442,7 +445,7 @@ export function bakeAxolotlStill(scene: Phaser.Scene, key: string, still: Axolot
     ctx.translate(centreX, centreY);
     ctx.scale(still.sizeFactor, still.sizeFactor);
     ctx.translate(-centreX, -centreY);
-    drawAxolotl(ctx, still.pose, still.palette, still.look);
+    drawAxolotl(ctx, still.pose, still.palette, still.look, still.outfit ?? NO_OUTFIT);
   });
 }
 
@@ -463,10 +466,18 @@ export interface AxolotlTexture {
   readonly info: TexInfo;
   /** Creator look currently painted. */
   readonly look: AxolotlArtLook;
-  /** Clear, repaint in the given pose (and morph) and refresh the texture. */
-  redraw(pose: AxolotlPose, palette?: MorphPalette): void;
+  /** What is currently painted on the axolotl (none until a redraw passes an outfit). */
+  readonly outfit: ArtOutfit;
   /**
-   * Swap the creator look and repaint with the last pose and morph. A size
+   * Clear, repaint in the given pose (and morph) and refresh the texture. `outfit` is what the
+   * axolotl wears, painted at its layers (guide 6a, 6i); each call states it, and the default is
+   * none, so a caller that never passes one draws no Wearable. Key any "repaint only when it
+   * changes" check on outfitKey(outfit) (drawWearables.ts), and keep paying the secondary repaint
+   * budget (src/logic/repaintBudget.ts) as before: an outfit change is a repaint, not an extra one.
+   */
+  redraw(pose: AxolotlPose, palette?: MorphPalette, outfit?: ArtOutfit): void;
+  /**
+   * Swap the creator look and repaint with the last pose, morph and outfit. A size
    * change re-bakes the texture under the same key at the new scale, so `scale`
    * and `info` change: callers must then re-apply the texture
    * (setTexture(key)), the origin (info.originNormX/Y) and the scale
@@ -497,18 +508,20 @@ export function createAxolotlTexture(
   let tex = createCanvas(scene, info);
   let lastPose: AxolotlPose = AXO_REST_POSE;
   let lastPalette: MorphPalette = LEUCISTIC;
+  let lastOutfit: ArtOutfit = NO_OUTFIT;
 
   const paint = (): void => {
     const ctx = tex.context;
     clearAll(ctx);
     beginDraw(ctx, scale, AXO_TEX.originX, AXO_TEX.originY);
-    drawAxolotl(ctx, lastPose, lastPalette, currentLook);
+    drawAxolotl(ctx, lastPose, lastPalette, currentLook, lastOutfit);
     tex.refresh();
   };
 
-  const redraw = (pose: AxolotlPose, palette: MorphPalette = LEUCISTIC): void => {
+  const redraw = (pose: AxolotlPose, palette: MorphPalette = LEUCISTIC, outfit: ArtOutfit = NO_OUTFIT): void => {
     lastPose = pose;
     lastPalette = palette;
+    lastOutfit = outfit;
     paint();
   };
 
@@ -536,6 +549,9 @@ export function createAxolotlTexture(
     },
     get look() {
       return currentLook;
+    },
+    get outfit() {
+      return lastOutfit;
     },
     redraw,
     setLook,
