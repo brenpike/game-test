@@ -586,10 +586,15 @@ Owner request (issue #70): rarer treasures are harder to get, as well as harder 
 Each hiding spot gets a pure, tested risk measure, for example its distance from each tilapia's patrol route and lunge range. Placement picks spots by both how well hidden and how risky they are for the rarity.
 Product owner decisions, 2026-10-20:
 
-- Risk ladder. In each area, each rarity's hiding spots sit in one band of the risk measure. The bands never overlap: every spot in a band is riskier than every spot in a band listed before it, so a test can check each band against the one before it. Here, lunge range means a tilapia's lunge range of its patrol route. From least to most risky:
-    - Common: never within lunge range.
-    - Rare: outside lunge range, in the band closest to the route (near the edge of a patrol).
-    - Epic and Legendary: within lunge range (within reach of a patrol), so grabbing one means watching the telegraph. A Legendary spot also needs Tail Dash, as B6 says.
+- Risk ladder. In each area, each rarity's hiding spots sit in one band of the risk measure, one row per rarity in the table below, listed from least to most risky. A spot is riskier the nearer it is to the nearest tilapia patrol route. Lunge range is the distance within which a tilapia starts a lunge (A3), and a spot is within lunge range when it is that close to any point of a tilapia's patrol route. The bands never overlap, and each band is strictly riskier than the row above it, checked by a test between adjacent rows.
+
+    | Rarity | Risk band |
+    |---|---|
+    | Common | Never within lunge range, in the band furthest from the route. |
+    | Rare | Outside lunge range, in the band closest to the route (near the edge of a patrol). |
+    | Epic | Within lunge range, short of its deepest part, so grabbing one means watching the telegraph. |
+    | Legendary | Within lunge range, in its deepest part, closest to the route, so grabbing one means watching the telegraph. It also needs Tail Dash, as B6 says. |
+
 - Fairness. Every treasure can always be grabbed without being hit, by timing or Tail Dash. No spot sits where a tilapia rests or turns, so a skilled player never loses a leg by force. It stays kid-safe and never scary.
 - No change to the hint sparkle (B7) or to the rarity glow decisions (issue #68).
 - If too few spots meet a rarity's risk rule, more spots are added as area data.
