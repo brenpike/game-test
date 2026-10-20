@@ -132,7 +132,11 @@ export interface FindTuning {
 
 /** Snack eating reach tuning: snacks are eaten at the drawn head, not the body centre. */
 export interface SnackReachTuning {
-  /** Distance in px along the facing, rotated with the body, from the body centre to the reach centre. */
+  /**
+   * Distance in px along the facing, rotated with the body, from the body centre to the reach
+   * centre when the body is not squashed. headPoint (src/logic/collectibles.ts) shortens it by the
+   * turn squash.
+   */
   headAhead: number;
   /** Distance in px from the reach centre within which a snack is eaten (inclusive). */
   radius: number;
