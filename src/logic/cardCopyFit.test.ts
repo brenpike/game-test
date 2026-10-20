@@ -9,6 +9,7 @@ import {
   fitCard,
   homeTitleWrapWidth,
   isSupportedCanvas,
+  SMALLEST_CANVAS,
   type CardFit,
   type CardSection,
   type TextFit,
@@ -26,6 +27,16 @@ import {
 } from './tripText';
 import { NO_STARS } from './stars';
 import { starRowSize } from './starsUi';
+import {
+  START_OVER_TEXT,
+  fitStartOverCard,
+  startOverBodyVariants,
+  startOverButtonWidth,
+  startOverButtonsStacked,
+  type StartOverCardSize,
+  type StartOverCardStep,
+  type StartOverFit,
+} from './startOver';
 
 /**
  * Text size estimate that errs wide. Measured with Phaser's wrap rule against Segoe UI, Verdana and
@@ -408,4 +419,64 @@ describe('area beaten card copy fit (H5, H8)', () => {
     expect(sections.map((section) => section.kind)).toEqual(['fixed', 'fixed', 'body', 'icons', 'actions']);
     expect(sections[1]).toEqual({ kind: 'fixed', height: starRowSize().h });
   });
+});
+
+const START_OVER_STEPS: readonly StartOverCardStep[] = ['ask', 'confirm'];
+
+/** Start over card size on a `cssW` wide canvas: bold title, body variants, keep and go buttons. */
+function startOverSize(step: StartOverCardStep, cssW: number): StartOverCardSize {
+  const textW = cardTextWidth(cssW);
+  const text = START_OVER_TEXT[step];
+  const stacked = startOverButtonsStacked(cssW, startOverButtonWidth(text.keep), startOverButtonWidth(text.go));
+  return {
+    titleH: titleHeight(text.title, textW),
+    bodyVariants: startOverBodyVariants(step).map((body) => bodyFit(body, textW)),
+    actionsH: stacked ? BUTTON_H + CARD.buttonGap + BUTTON_H : BUTTON_H,
+  };
+}
+
+/** The Start over card for `step` fitted on one canvas. */
+function fitStartOverOn(step: StartOverCardStep, canvas: Canvas): StartOverFit {
+  return fitStartOverCard(canvas.cssH - 2 * CARD.margin, startOverSize(step, canvas.cssW));
+}
+
+/** Problems with one fitted Start over card: clipped, body lines dropped, or actions outside availH. */
+function startOverProblems(step: StartOverCardStep, canvas: Canvas): string[] {
+  const label = `start over ${step} ${canvas.cssW}x${canvas.cssH}`;
+  const { fit } = fitStartOverOn(step, canvas);
+  const variant = startOverSize(step, canvas.cssW).bodyVariants[fit.bodyVariant];
+  const problems = fitProblems(makeCombination(label, canvas, 0, []), fit);
+  if (fit.bodyLines !== variant.lines) problems.push(`${label}: ${fit.bodyLines} of ${variant.lines} body lines`);
+  return problems;
+}
+
+describe('start over card copy fit (D7)', () => {
+  it('fits both steps on every supported canvas without clipping or dropping a body line', () => {
+    const problems = supportedCanvases().flatMap((canvas) =>
+      START_OVER_STEPS.flatMap((step) => startOverProblems(step, canvas)),
+    );
+    expect(problems).toEqual([]);
+  });
+
+  it.each([
+    { cssW: 800, cssH: 600 },
+    { cssW: 1024, cssH: 768 },
+  ])('shows the title and the full body at $cssW x $cssH', (canvas) => {
+    for (const step of START_OVER_STEPS) {
+      const { fit, showsTitle } = fitStartOverOn(step, canvas);
+      expect(showsTitle, step).toBe(true);
+      expect(fit.bodyVariant, step).toBe(0);
+    }
+  });
+
+  it.each([SMALLEST_CANVAS.landscape, SMALLEST_CANVAS.portrait])(
+    'hides the title and shows the short ask wording with the grown-ups note at $cssW x $cssH',
+    (canvas) => {
+      const { fit, showsTitle } = fitStartOverOn('ask', canvas);
+      expect(showsTitle).toBe(false);
+      expect(fit.clipped).toBe(false);
+      expect(fit.bodyVariant).toBe(1);
+      expect(startOverBodyVariants('ask')[fit.bodyVariant]).toContain(START_OVER_TEXT.ask.note);
+    },
+  );
 });
