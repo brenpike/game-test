@@ -76,7 +76,6 @@ const OVERLAY_ALPHA = 0.45;
 const OVERLAY_COVER = 8192;
 const OVERLAY_PAD = 24;
 const OVERLAY_TITLE_PX = 34;
-const BANNER_TEXT_PX = 24;
 const BANNER_MS = 3000;
 const BANNER_FADE_MS = 250;
 const STICK_IDLE_ALPHA = 0.8;
@@ -139,53 +138,67 @@ function widestText(text: Phaser.GameObjects.Text, values: readonly string[]): n
   return widest;
 }
 
-/** A pink banner panel size and the text wrap width that produced it. */
+/** A pink banner panel size and the text wrap width and text size that produced it. */
 interface WrappedBox {
   size: Size;
   wrapW: number;
+  textPx: number;
 }
 
-/** Sets `text` to wrap at `wrapW` and returns its size. */
-function measureWrapped(text: Phaser.GameObjects.Text, wrapW: number): Size {
+/** Sets `text` to `textPx` and to wrap at `wrapW`, and returns its size. */
+function measureWrapped(text: Phaser.GameObjects.Text, wrapW: number, textPx: number): Size {
+  text.setFontSize(textPx);
   text.setWordWrapWidth(wrapW, true);
   return { w: text.width, h: text.height };
 }
 
-/** Returns the bannerBox() size of `text` for `maxW` and records it in `boxes` with its wrap width. */
-function measureBanner(text: Phaser.GameObjects.Text, maxW: number, boxes: WrappedBox[]): Size {
+/**
+ * Returns the bannerBox() size of `text` at `textPx` for `maxW` and records it in `boxes` with its
+ * wrap width and text size.
+ */
+function measureBanner(text: Phaser.GameObjects.Text, maxW: number, textPx: number, boxes: WrappedBox[]): Size {
   let wrapW: number = HUD.bannerMinWrap;
   const textAt = (atW: number): Size => {
     wrapW = atW;
-    return measureWrapped(text, atW);
+    return measureWrapped(text, atW, textPx);
   };
   const size = bannerBox(maxW, textAt);
-  boxes.push({ size, wrapW });
+  boxes.push({ size, wrapW, textPx });
   return size;
 }
 
-/** Overlay request for the pink banner `id` showing `text`; every size it measures lands in `boxes`. */
+/**
+ * Overlay request for the pink banner `id` showing `text`, measured at HUD.bannerTextPx with a retry
+ * at HUD.bannerRetryTextPx; every size it measures lands in `boxes`.
+ */
 function bannerRequest(id: HudOverlayId, text: Phaser.GameObjects.Text, boxes: WrappedBox[]): HudOverlayRequest {
-  return { id, boxAt: (maxW) => measureBanner(text, maxW, boxes) };
+  return {
+    id,
+    boxAt: (maxW) => measureBanner(text, maxW, HUD.bannerTextPx, boxes),
+    retryBoxAt: (maxW) => measureBanner(text, maxW, HUD.bannerRetryTextPx, boxes),
+  };
 }
 
 /**
- * Shows a pink banner with its panel drawn to `rect` and its text centred inside, wrapped as it was
- * when measured at that size; hides it when `rect` is null. Throws when `rect` is not a size in `boxes`.
+ * Shows a pink banner with its panel drawn to `rect` and its text centred inside, at `textPx` and
+ * wrapped as it was when measured at that size; hides it when `rect` is null. Throws when `rect` and
+ * `textPx` are not a size and text size in `boxes`.
  */
 function placeTopBanner(
   container: Phaser.GameObjects.Container,
   panel: Phaser.GameObjects.Graphics,
   text: Phaser.GameObjects.Text,
   rect: Rect | null,
+  textPx: number | null,
   boxes: readonly WrappedBox[],
 ): void {
   if (rect === null) {
     container.setVisible(false);
     return;
   }
-  const match = boxes.find((box) => box.size.w === rect.w && box.size.h === rect.h);
+  const match = boxes.find((box) => box.textPx === textPx && box.size.w === rect.w && box.size.h === rect.h);
   if (match === undefined) throw new Error('placeTopBanner: rect is not a measured banner size');
-  measureWrapped(text, match.wrapW);
+  measureWrapped(text, match.wrapW, match.textPx);
   drawPanel(panel, rect.x, rect.y, rect.w, rect.h, UI_PANEL_PINK);
   text.setPosition(rect.x + (rect.w - text.width) / 2, rect.y + HUD.bannerPad);
   container.setVisible(true);
@@ -501,7 +514,7 @@ export class HudScene extends Phaser.Scene {
   private buildBanner(): void {
     this.bannerPanel = this.add.graphics();
     this.bannerText = this.add.text(0, 0, ALL_SNACKS_BANNER, {
-      ...uiTextStyle(BANNER_TEXT_PX, this.view.fit.dpr),
+      ...uiTextStyle(HUD.bannerTextPx, this.view.fit.dpr),
       align: 'center',
     });
     this.banner = this.add
@@ -514,7 +527,7 @@ export class HudScene extends Phaser.Scene {
   private buildHint(): void {
     this.hintPanel = this.add.graphics();
     this.hintText = this.add.text(0, 0, BANKING_HINT, {
-      ...uiTextStyle(BANNER_TEXT_PX, this.view.fit.dpr),
+      ...uiTextStyle(HUD.bannerTextPx, this.view.fit.dpr),
       align: 'center',
     });
     this.hint = this.add
@@ -723,25 +736,28 @@ export class HudScene extends Phaser.Scene {
     if (this.bannerActive) requests.push(bannerRequest('snackBanner', this.bannerText, bannerBoxes));
     if (this.foundPopup.hasFind()) requests.push({ id: 'findToast', boxAt: (maxW) => this.foundPopup.box(maxW) });
     const keepOuts = controlKeepOuts(this.controls, { goHomeVisible: this.goHomeButton.container.visible });
-    for (const { id, rect } of placeHudOverlays(this.view, this.controls, keepOuts, requests)) {
-      this.placeOverlay(id, rect, id === 'hint' ? hintBoxes : bannerBoxes);
+    for (const { id, rect, textPx } of placeHudOverlays(this.view, this.controls, keepOuts, requests)) {
+      this.placeOverlay(id, rect, textPx, id === 'hint' ? hintBoxes : bannerBoxes);
     }
   }
 
-  /** Draws overlay `id` at `rect`, or holds it when `rect` is null; `boxes` are a banner's measured sizes. */
-  private placeOverlay(id: HudOverlayId, rect: Rect | null, boxes: readonly WrappedBox[]): void {
+  /**
+   * Draws overlay `id` at `rect`, or holds it when `rect` is null; `textPx` is the text size the
+   * solver placed a banner at and `boxes` are a banner's measured sizes.
+   */
+  private placeOverlay(id: HudOverlayId, rect: Rect | null, textPx: number | null, boxes: readonly WrappedBox[]): void {
     if (id === 'findToast') {
       this.foundPopup.place(rect);
       return;
     }
     if (id === 'hint') {
       this.hintHeld = rect === null;
-      placeTopBanner(this.hint, this.hintPanel, this.hintText, rect, boxes);
+      placeTopBanner(this.hint, this.hintPanel, this.hintText, rect, textPx, boxes);
       holdTimer(this.hintTimer, this.hintHeld);
       return;
     }
     this.bannerHeld = rect === null;
-    placeTopBanner(this.banner, this.bannerPanel, this.bannerText, rect, boxes);
+    placeTopBanner(this.banner, this.bannerPanel, this.bannerText, rect, textPx, boxes);
     holdTimer(this.bannerTimer, this.bannerHeld);
   }
 
