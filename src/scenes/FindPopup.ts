@@ -5,17 +5,20 @@ import type { TexInfo } from '../art/textures';
 import type { TreasureIconSize, TreasureTextures } from '../art/treasureTextures';
 import { ICON_ROW_BOX_PX, ICON_ROW_GAP_PX, iconsPerRow } from '../logic/cardFit';
 import { categoryName, treasureSlug } from '../logic/catalogue';
+import {
+  createFindToastState,
+  describeFindToastFrame,
+  stepFindToast,
+  type FindToastEvent,
+  type FindToastState,
+  type ToastItem,
+} from '../logic/findToast';
 import { badgeShape, rarityName } from '../logic/hints';
 import { FIND_TOAST, findToastBox, type FindToastBox, type OverlayEdge, type Rect, type Size } from '../logic/hudLayout';
 import { RESCUE_POPUP_DETAIL, morphById, type RealMorphId } from '../logic/morphs';
 import type { MotionProfile } from '../logic/motion';
 import type { FoundInfo } from '../logic/tripEvents';
 import { drawPanel, uiTextStyle, type GameAssets, type SceneView } from './BootScene';
-import { addMotionTween } from './motionTweens';
-
-const FADE_MS = 250;
-const HOLD_MS = 2000;
-const SLIDE_PX = 16;
 
 /** Adds a centre-anchored image showing `info` at its logical size. */
 function addCentredImage(scene: Phaser.Scene, info: TexInfo): Phaser.GameObjects.Image {
@@ -61,10 +64,6 @@ export function placeIconRows(
   });
 }
 
-
-/** One toast: a found treasure, or a stranded axolotl now following the player. */
-type ToastItem = { kind: 'treasure'; found: FoundInfo } | { kind: 'axolotl'; morph: RealMorphId };
-
 /** The icon and badge of one toast item. */
 interface ToastImages {
   icon: Phaser.GameObjects.Image;
@@ -76,23 +75,14 @@ function textSize(text: Phaser.GameObjects.Text): Size {
   return { w: text.width, h: text.height };
 }
 
-/** Returns the content offset a toast slides in from at `edge`: down from above at the top, up from below at the bottom. */
-function enterOffset(edge: OverlayEdge | null): number {
-  if (edge === 'top') return -SLIDE_PX;
-  if (edge === 'bottom') return SLIDE_PX;
-  return 0;
-}
-
 /**
  * Find toast: a compact white panel with the treasure icon, then its name over its rarity badge and
  * "<Rarity> <Category>"; for a rescued axolotl, its portrait, then its name over its morph badge
  * and the rescue detail. The HUD places it through placeHudOverlays() at a screen edge or over the
- * status panels; with no room it is held: hidden, with its hold timer paused, until the HUD places
- * it again. Never interactive and has no dim, so presses pass through to the controls. Shows the
- * latest find only: a new one while a toast is up swaps the content at once at full opacity and
- * restarts the hold. A toast that enters when none is up slides in from its edge while fading in,
- * holds, then fades out, all on the HUD clock (so pause freezes it); it appears and leaves at once
- * under reduced motion, including when reduced motion turns on mid-fade.
+ * status panels; with no room it waits, hidden, until the HUD places it again. Never interactive
+ * and has no dim, so presses pass through to the controls. The lifecycle (enter, hold, leave,
+ * replace, pause, waiting and reduced motion) is stepFindToast() in logic/findToast; this view
+ * feeds it events, advances it each HUD frame through update() and draws describeFindToastFrame().
  */
 export class FindPopup {
   private readonly scene: Phaser.Scene;
@@ -109,18 +99,13 @@ export class FindPopup {
   private readonly requestPlacement: () => void;
   private icon: Phaser.GameObjects.Image | null = null;
   private badge: Phaser.GameObjects.Image | null = null;
-  private current: ToastItem | null = null;
-  private timer: Phaser.Time.TimerEvent | null = null;
-  /** Whether placement found no room, so the toast is hidden and its timer paused. */
-  private held = false;
-  /** The edge of the last place() with a rect, or null before one or when held. */
-  private edge: OverlayEdge | null = null;
+  private toast: FindToastState = createFindToastState();
   /** Boxes box() measured since the last place(). */
   private measured: FindToastBox[] = [];
 
   /**
    * `requestPlacement` asks the HUD to place the toast again (through box() and place()); it runs
-   * when a new find is filled, before it shows, and when the toast leaves.
+   * when a new item is filled, before it shows, and when the toast leaves or is cleared.
    */
   constructor(
     scene: Phaser.Scene,
@@ -143,32 +128,30 @@ export class FindPopup {
     this.container = scene.add.container(0, 0, [this.content]).setDepth(depth).setVisible(false);
   }
 
-  /** Whether a find is current: on screen, fading or held. */
+  /** Whether a find is current: on screen, fading or waiting for room. */
   hasFind(): boolean {
-    return this.current !== null;
+    return this.toast.item !== null;
   }
 
-  /** Shows the last of `found`, if any (earlier ones in the same batch are not shown). */
-  showFinds(found: readonly FoundInfo[]): void {
-    const last = found.at(-1);
-    if (last === undefined) return;
-    this.show({ kind: 'treasure', found: last });
-  }
-
-  /** Shows the rescued axolotl of `morph`. */
-  showRescue(morph: RealMorphId): void {
-    this.show({ kind: 'axolotl', morph });
+  /** Fills and shows `item`, replacing any current toast at once (see stepFindToast()). */
+  show(item: ToastItem): void {
+    this.fill(item);
+    this.dispatch({ kind: 'show', item, ambient: this.motion().ambient });
   }
 
   /** Hides the toast now, then asks the HUD to place again when a find was current. */
   clear(): void {
-    const hadFind = this.hasFind();
-    this.current = null;
-    this.stopTimer();
-    this.held = false;
-    this.settleContent();
-    this.container.setVisible(false);
-    if (hadFind) this.requestPlacement();
+    this.dispatch({ kind: 'clear' });
+  }
+
+  /** Advances the toast by `deltaMs` of HUD frame time (none passes while paused or waiting) and redraws it. */
+  update(deltaMs: number): void {
+    this.dispatch({ kind: 'tick', dtMs: deltaMs, ambient: this.motion().ambient });
+  }
+
+  /** Freezes or thaws the toast's time with the HUD clock. */
+  setPaused(paused: boolean): void {
+    this.dispatch({ kind: paused ? 'pause' : 'resume' });
   }
 
   setResolution(dpr: number): void {
@@ -192,27 +175,23 @@ export class FindPopup {
   }
 
   /**
-   * Draws the toast at `rect`, a size box() returned, on `edge`; a null rect holds it: hidden, with
-   * its hold timer paused, until a later place() gives it a rect.
+   * Draws the toast at `rect`, a size box() returned, on `edge`; a null rect makes it wait: hidden,
+   * with its time frozen, until a later place() gives it a rect.
    */
   place(rect: Rect | null, edge: OverlayEdge | null): void {
     const measured = this.measured;
     this.measured = [];
-    this.held = rect === null;
-    this.edge = rect === null ? null : edge;
-    if (rect !== null) {
-      const match = measured.find((entry) => entry.w === rect.w && entry.h === rect.h);
-      if (match === undefined) throw new Error('FindPopup.place: rect is not a size box() measured');
-      this.wrapText(this.name, match.nameWrapW);
-      this.wrapText(this.detail, match.detailWrapW);
-      this.container.setPosition(rect.x, rect.y);
-      this.layoutContent(rect);
+    if (rect === null) {
+      this.dispatch({ kind: 'noRoom' });
+      return;
     }
-    this.applyHold();
-  }
-
-  private ambient(): boolean {
-    return this.motion().ambient;
+    const match = measured.find((entry) => entry.w === rect.w && entry.h === rect.h);
+    if (match === undefined) throw new Error('FindPopup.place: rect is not a size box() measured');
+    this.wrapText(this.name, match.nameWrapW);
+    this.wrapText(this.detail, match.detailWrapW);
+    this.container.setPosition(rect.x, rect.y);
+    this.layoutContent(rect);
+    this.dispatch({ kind: 'placed', edge });
   }
 
   /** Sets `text` to wrap at `wrapW` and returns its size. */
@@ -221,74 +200,19 @@ export class FindPopup {
     return textSize(text);
   }
 
-  /** Shows the toast only while a find is current and placed, and pauses its timer while held. */
-  private applyHold(): void {
-    this.container.setVisible(this.current !== null && !this.held);
-    if (this.timer) this.timer.paused = this.held;
+  /** Applies `event` to the toast state, draws the result, then asks the HUD to place again when the step says so. */
+  private dispatch(event: FindToastEvent): void {
+    const step = stepFindToast(this.toast, event);
+    this.toast = step.state;
+    this.drawFrame();
+    if (step.placementRequested) this.requestPlacement();
   }
 
-  private stopTimer(): void {
-    if (this.timer) this.scene.time.removeEvent(this.timer);
-    this.timer = null;
-  }
-
-  /** Stops the content's slide or fade and puts it at rest: no offset, full opacity. */
-  private settleContent(): void {
-    this.scene.tweens.killTweensOf(this.content);
-    this.content.setPosition(0, 0).setAlpha(1);
-  }
-
-  /**
-   * Shows `item`: swaps it in at once at full opacity when a toast is current (entering, holding,
-   * leaving or held), else enters it; either way has the HUD place it and (re)starts the hold.
-   */
-  private show(item: ToastItem): void {
-    const replacing = this.hasFind();
-    this.stopTimer();
-    this.settleContent();
-    this.current = item;
-    this.fill(item);
-    const enters = !replacing && this.ambient();
-    if (enters) this.content.setAlpha(0);
-    this.requestPlacement();
-    if (enters) this.enter();
-    this.timer = this.scene.time.delayedCall((enters ? FADE_MS : 0) + HOLD_MS, this.leave, [], this);
-    this.applyHold();
-  }
-
-  /** Slides the content in from the placed edge while fading it in. */
-  private enter(): void {
-    this.content.setPosition(0, enterOffset(this.edge));
-    addMotionTween(this.scene, {
-      targets: this.content,
-      props: { y: 0, alpha: 1 },
-      duration: FADE_MS,
-      ease: 'Sine.easeOut',
-    });
-  }
-
-  /** Fades the toast out (or hides it at once under reduced motion), then finishes it. */
-  private leave(): void {
-    this.timer = null;
-    if (!this.ambient()) {
-      this.finish();
-      return;
-    }
-    addMotionTween(this.scene, {
-      targets: this.content,
-      props: { alpha: 0 },
-      duration: FADE_MS,
-      onComplete: () => this.finish(),
-    });
-  }
-
-  /** Hides the toast and asks the HUD to place again. */
-  private finish(): void {
-    this.current = null;
-    this.held = false;
-    this.container.setVisible(false);
-    this.content.setAlpha(1);
-    this.requestPlacement();
+  /** Draws the toast state: visibility, content opacity and slide offset. */
+  private drawFrame(): void {
+    const frame = describeFindToastFrame(this.toast);
+    this.container.setVisible(frame.visible);
+    this.content.setPosition(0, frame.offsetY).setAlpha(frame.alpha);
   }
 
   /** Replaces the icon, badge and texts with the item's. */

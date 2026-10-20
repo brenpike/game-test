@@ -6,6 +6,7 @@ import { INK, UI_PANEL, UI_PANEL_PINK, WHITE } from '../art/palette';
 import { iconKey, type TexInfo } from '../art/textures';
 import { exitClosedText, snacksLeftLabel } from '../logic/areaText';
 import { TILAPIA_FACT } from '../logic/factCards';
+import { pickToastAnnouncement } from '../logic/findToast';
 import {
   GAME_EVENTS,
   REGISTRY_KEYS,
@@ -345,8 +346,9 @@ export class HudScene extends Phaser.Scene {
     this.showHintOnce();
   }
 
-  update(): void {
+  update(_time: number, deltaMs: number): void {
     this.updateStick();
+    this.foundPopup.update(deltaMs);
   }
 
   // ---- build ---------------------------------------------------------------
@@ -711,7 +713,8 @@ export class HudScene extends Phaser.Scene {
   /**
    * Places the active overlays through placeHudOverlays(), clear of the visible controls: the hint
    * while active, the snack banner while active and the find toast while it has a find. An
-   * overlay with no room is held: hidden, with its timer paused, until a later call places it.
+   * overlay with no room is held: hidden, with its timer (the toast's clock) paused, until a later
+   * call places it.
    */
   private layoutOverlays(): void {
     const hintBoxes: WrappedBox[] = [];
@@ -971,13 +974,14 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Freezes or thaws every HUD timer and tween (banners, find toast, banking card, swim pad and any added later),
-   * so pause stops HUD motion as well as the swim scene. The pause overlay and its buttons use neither.
-   * Only the scene clock (Clock.paused) changes: a timer an overlay hold paused (TimerEvent.paused)
-   * stays paused until its overlay is placed again.
+   * Freezes or thaws every HUD timer and tween (banners, banking card, swim pad and any added later)
+   * and the find toast's own clock, so pause stops HUD motion as well as the swim scene. The pause
+   * overlay and its buttons use neither. Only the scene clock (Clock.paused) changes: a timer an
+   * overlay hold paused (TimerEvent.paused) stays paused until its overlay is placed again.
    */
   private setHudClockPaused(paused: boolean): void {
     this.time.paused = paused;
+    this.foundPopup.setPaused(paused);
     if (paused) {
       this.tweens.pauseAll();
     } else {
@@ -1133,8 +1137,7 @@ export class HudScene extends Phaser.Scene {
     this.drawLegs();
     this.drawTripBag();
     this.refreshControls();
-    this.announceFinds(snapshot);
-    this.announceRescue(previousRescue, snapshot);
+    this.announceToast(previousRescue, snapshot);
     this.showFactCardWhenDue(snapshot);
     if (snapshot.phase === previousPhase) return;
     if (previousPhase === 'banked') this.hideBankingCard();
@@ -1148,23 +1151,13 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Shows the latest find picked up since the last snapshot on the find toast, only while swimming.
-   * A shorter found list means a new trip, so counting starts again.
+   * Shows on the find toast what pickToastAnnouncement() picks for `snapshot`: a newly following
+   * axolotl, else the latest find since the last snapshot, only while swimming.
    */
-  private announceFinds(snapshot: TripSnapshot): void {
-    if (snapshot.found.length < this.announcedCount) this.announcedCount = 0;
-    if (snapshot.phase === 'swimming') {
-      this.foundPopup.showFinds(snapshot.found.slice(this.announcedCount));
-    }
-    this.announcedCount = snapshot.found.length;
-  }
-
-  /** Shows the stranded axolotl on the find toast when it starts following, only while swimming. */
-  private announceRescue(previous: RescueSnapshot | null, snapshot: TripSnapshot): void {
-    const rescue = snapshot.rescue;
-    if (snapshot.phase !== 'swimming' || rescue === null || rescue.status !== 'following') return;
-    if (previous?.status === 'following') return;
-    this.foundPopup.showRescue(rescue.morph);
+  private announceToast(previousRescue: RescueSnapshot | null, snapshot: TripSnapshot): void {
+    const announcement = pickToastAnnouncement(this.announcedCount, previousRescue, snapshot);
+    this.announcedCount = announcement.announcedCount;
+    if (announcement.item !== null) this.foundPopup.show(announcement.item);
   }
 
   /** Shows the banking card and captures Tab so it moves focus between the card buttons. */
@@ -1224,8 +1217,8 @@ export class HudScene extends Phaser.Scene {
 
   /**
    * Switches the HUD motion profile. When reduced motion turns on, ends every running motion tween
-   * in this scene at its end state: the banners, the hint, the find toast, the banking card and
-   * the swim pad.
+   * in this scene at its end state: the banners, the hint, the banking card and the swim pad. The
+   * find toast reads the profile on its next update() and settles there.
    */
   private handleReducedMotion(payload: ReducedMotionPayload): void {
     this.motion = motionProfile(payload.reduced);
