@@ -46,21 +46,21 @@ export function anchorWorld(sprite: SpriteTransform, textureScale: number, local
  * World-space axis-aligned box holding the sprite's texture frame, with the frame mirrored by a
  * negative `scaleX` and rotated. Use this instead of Phaser's `getBounds()`, which ignores the
  * sign of `scaleX` and so returns the un-mirrored box for a sprite facing left.
+ *
+ * Uses the same scale, mirror and rotation as `anchorWorld`. Each world coordinate of a corner is
+ * one term from its x edge plus one term from its y edge, so the box's extremes are the sums of
+ * the per-edge extremes. Called every frame, so it allocates only the returned box.
  */
 export function spriteFrameBounds(sprite: SpriteFrame): Rect {
-  const left = -sprite.displayOriginX;
-  const top = -sprite.displayOriginY;
-  const right = sprite.width - sprite.displayOriginX;
-  const bottom = sprite.height - sprite.displayOriginY;
-  const corners = [
-    anchorWorld(sprite, 1, { x: left, y: top }),
-    anchorWorld(sprite, 1, { x: right, y: top }),
-    anchorWorld(sprite, 1, { x: right, y: bottom }),
-    anchorWorld(sprite, 1, { x: left, y: bottom }),
-  ];
-  const xs = corners.map((corner) => corner.x);
-  const ys = corners.map((corner) => corner.y);
-  const minX = Math.min(...xs);
-  const minY = Math.min(...ys);
-  return { x: minX, y: minY, w: Math.max(...xs) - minX, h: Math.max(...ys) - minY };
+  const left = -sprite.displayOriginX * sprite.scaleX;
+  const right = (sprite.width - sprite.displayOriginX) * sprite.scaleX;
+  const top = -sprite.displayOriginY * sprite.scaleY;
+  const bottom = (sprite.height - sprite.displayOriginY) * sprite.scaleY;
+  const cos = Math.cos(sprite.rotation);
+  const sin = Math.sin(sprite.rotation);
+  const minX = Math.min(left * cos, right * cos) - Math.max(top * sin, bottom * sin);
+  const maxX = Math.max(left * cos, right * cos) - Math.min(top * sin, bottom * sin);
+  const minY = Math.min(left * sin, right * sin) + Math.min(top * cos, bottom * cos);
+  const maxY = Math.max(left * sin, right * sin) + Math.max(top * cos, bottom * cos);
+  return { x: sprite.x + minX, y: sprite.y + minY, w: maxX - minX, h: maxY - minY };
 }
