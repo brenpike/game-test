@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { collectSnacksAtHead, headPoint, type Collectible, type SnackFrame } from './collectibles';
+import { collectSnacksAtHead, headPoint, type Collectible, type DrawnBody, type SnackFrame } from './collectibles';
 import {
   AXO_BOB_PERIOD,
   BOB_SHARE,
   IDLE_TILT,
   MAX_TILT,
   TURN_SQUASH,
+  bodyPoint,
   drawnAxolotl,
   type DrawnAxolotlInput,
 } from './drawnAxolotl';
@@ -13,6 +14,7 @@ import { legWobble } from './legs';
 import { motionProfile } from './motion';
 import type { SwimState } from './swimPhysics';
 import { LEGS, SNACK_REACH, SWIM, TILAPIA } from './tuning';
+import type { Vec2 } from './vec';
 
 const TAU = Math.PI * 2;
 const REDUCED_T = 1;
@@ -173,6 +175,159 @@ describe('drawnAxolotl', () => {
       expect(collectSnacksAtHead([atHead], postHead, frame)?.newly.length).toBe(1);
       expect(collectSnacksAtHead([snack], postHead, frame)?.newly.length).toBe(1);
       expect(collectSnacksAtHead([snack], preHead, frame)).toBeNull();
+    }
+  });
+});
+
+/** Art local units to scene px, mirroring AXO_SCENE_SCALE (src/art/drawAxolotl.ts). */
+const SCENE_SCALE = 0.95;
+
+/** Every size factor, mirroring AXO_SIZE_SCALE (src/art/drawAxolotlParts.ts). */
+const SIZE_FACTORS: readonly number[] = [0.72, 0.85, 1];
+
+/** Scene px per art unit at each size. */
+const WORLD_PER_UNIT: readonly number[] = SIZE_FACTORS.map((size) => size * SCENE_SCALE);
+
+/** Largest sprite rotation: swim tilt, idle tilt and the wobble of three missing legs (src/logic/legs.ts). */
+const MAX_ROTATION = MAX_TILT + IDLE_TILT + (LEGS.count - 1) * LEGS.wobbleAmp;
+
+const ROTATIONS: readonly number[] = [-MAX_ROTATION, -MAX_TILT, 0, MAX_TILT, MAX_ROTATION];
+const SQUASHES: readonly number[] = [TURN_SQUASH, 0.8, 1];
+
+/** Mouth tip in art local units. */
+const MOUTH: Vec2 = { x: 51.6, y: 4.2 };
+
+/** Art local points: mouth, both tail edges and the origin. */
+const LOCAL_POINTS: readonly Vec2[] = [MOUTH, { x: -46.3, y: 7.4 }, { x: -46.3, y: -7.4 }, { x: 0, y: 0 }];
+
+/** Independent oracle: scale by (facing x squash x s, s), then rotate in polar form about the body. */
+function scaleThenRotate(body: DrawnBody, worldPerUnit: number, local: Vec2): Vec2 {
+  const scaledX = local.x * body.facing * (body.squash ?? 1) * worldPerUnit;
+  const scaledY = local.y * worldPerUnit;
+  const radius = Math.hypot(scaledX, scaledY);
+  const angle = Math.atan2(scaledY, scaledX) + body.rotation;
+  return { x: body.x + radius * Math.cos(angle), y: body.y + radius * Math.sin(angle) };
+}
+
+/** Every drawn body the bodyPoint tests sweep: both facings, each rotation and each squash. */
+function sweptBodies(): DrawnBody[] {
+  const bodies: DrawnBody[] = [];
+  for (const facing of [1, -1] as const) {
+    for (const rotation of ROTATIONS) {
+      for (const squash of SQUASHES) {
+        bodies.push({ x: 200, y: 150, facing, rotation, squash });
+      }
+    }
+  }
+  return bodies;
+}
+
+describe('bodyPoint', () => {
+  it('matches scale (facing x squash x s, s) then rotate over sizes, facing, rotation, squash and points', () => {
+    for (const body of sweptBodies()) {
+      for (const worldPerUnit of WORLD_PER_UNIT) {
+        for (const local of LOCAL_POINTS) {
+          const expected = scaleThenRotate(body, worldPerUnit, local);
+          const actual = bodyPoint(body, worldPerUnit, local.x, local.y);
+          expect(actual.x).toBeCloseTo(expected.x, 9);
+          expect(actual.y).toBeCloseTo(expected.y, 9);
+        }
+      }
+    }
+  });
+
+  it('puts the origin on the drawn body position, bob included', () => {
+    for (const body of sweptBodies()) {
+      for (const worldPerUnit of WORLD_PER_UNIT) {
+        expect(bodyPoint(body, worldPerUnit, 0, 0)).toEqual({ x: body.x, y: body.y });
+      }
+    }
+    const swim = swimAt(1, 0, 0);
+    const drawn = drawnAxolotl(inputFor(swim, { t: 0.4 }));
+    expect(drawn.y).not.toBe(swim.y);
+    const origin = bodyPoint(drawn, SCENE_SCALE, 0, 0);
+    expect(origin.x).toBe(swim.x);
+    expect(origin.y).toBe(drawn.y);
+  });
+
+  it('mirrors x about the body at rotation 0', () => {
+    for (const squash of SQUASHES) {
+      for (const worldPerUnit of WORLD_PER_UNIT) {
+        for (const local of LOCAL_POINTS) {
+          const right = bodyPoint({ x: 200, y: 150, facing: 1, rotation: 0, squash }, worldPerUnit, local.x, local.y);
+          const left = bodyPoint({ x: 200, y: 150, facing: -1, rotation: 0, squash }, worldPerUnit, local.x, local.y);
+          expect(left.x - 200).toBeCloseTo(-(right.x - 200), 9);
+          expect(left.y).toBeCloseTo(right.y, 9);
+        }
+      }
+    }
+  });
+
+  it('keeps the distance from the body under rotation', () => {
+    for (const body of sweptBodies()) {
+      for (const worldPerUnit of WORLD_PER_UNIT) {
+        for (const local of LOCAL_POINTS) {
+          const turned = bodyPoint(body, worldPerUnit, local.x, local.y);
+          const level = bodyPoint({ ...body, rotation: 0 }, worldPerUnit, local.x, local.y);
+          const turnedDistance = Math.hypot(turned.x - body.x, turned.y - body.y);
+          const levelDistance = Math.hypot(level.x - body.x, level.y - body.y);
+          expect(turnedDistance).toBeCloseTo(levelDistance, 9);
+        }
+      }
+    }
+  });
+
+  it('shortens only x with the turn squash', () => {
+    for (const facing of [1, -1] as const) {
+      for (const squash of SQUASHES) {
+        for (const worldPerUnit of WORLD_PER_UNIT) {
+          for (const local of LOCAL_POINTS) {
+            const squashed = bodyPoint({ x: 200, y: 150, facing, rotation: 0, squash }, worldPerUnit, local.x, local.y);
+            const full = bodyPoint({ x: 200, y: 150, facing, rotation: 0 }, worldPerUnit, local.x, local.y);
+            expect(squashed.x - 200).toBeCloseTo(squash * (full.x - 200), 9);
+            expect(squashed.y).toBeCloseTo(full.y, 9);
+            if (squash < 1 && local.x !== 0) {
+              expect(Math.abs(squashed.x - 200)).toBeLessThan(Math.abs(full.x - 200));
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('gives headPoint at (SNACK_REACH.headAhead, 0) and 1 px per unit', () => {
+    for (const body of sweptBodies()) {
+      const head = headPoint(body);
+      const point = bodyPoint(body, 1, SNACK_REACH.headAhead, 0);
+      expect(point.x).toBeCloseTo(head.x, 9);
+      expect(point.y).toBeCloseTo(head.y, 9);
+    }
+  });
+
+  it('writes into and returns the out object it is passed', () => {
+    const body: DrawnBody = { x: 200, y: 150, facing: -1, rotation: MAX_TILT, squash: TURN_SQUASH };
+    const out: Vec2 = { x: Number.NaN, y: Number.NaN };
+    const result = bodyPoint(body, SCENE_SCALE, MOUTH.x, MOUTH.y, out);
+    expect(result).toBe(out);
+    expect(out).toEqual(bodyPoint(body, SCENE_SCALE, MOUTH.x, MOUTH.y));
+    expect(bodyPoint(body, SCENE_SCALE, MOUTH.x, MOUTH.y)).not.toBe(bodyPoint(body, SCENE_SCALE, MOUTH.x, MOUTH.y));
+  });
+
+  it('REGRESSION #55: a bump tilt moves the Large mouth point by 2r sin(tilt / 2)', () => {
+    const worldPerUnit = Math.max(...SIZE_FACTORS) * SCENE_SCALE;
+    for (const facing of [1, -1] as const) {
+      const pre = swimAt(facing, 0, 0);
+      const post: SwimState = { ...pre, vy: TILAPIA.bumpSpeed };
+      const preBody = drawnAxolotl(reducedInput(pre, 0.5, LEGS.count));
+      const postBody = drawnAxolotl(reducedInput(post, 0.5, LEGS.count));
+      expect(preBody.rotation).toBe(0);
+      expect(postBody.rotation).toBeCloseTo(facing * MAX_TILT, 9);
+      const level = bodyPoint(preBody, worldPerUnit, MOUTH.x, MOUTH.y);
+      const tilted = bodyPoint(postBody, worldPerUnit, MOUTH.x, MOUTH.y);
+      const radius = worldPerUnit * Math.hypot(MOUTH.x, MOUTH.y);
+      const gap = Math.hypot(tilted.x - level.x, tilted.y - level.y);
+      expect(gap).toBeCloseTo(2 * radius * Math.sin(MAX_TILT / 2), 9);
+      expect(gap).toBeGreaterThan(8);
     }
   });
 });
