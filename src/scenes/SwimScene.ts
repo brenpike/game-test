@@ -15,13 +15,15 @@ import { BUBBLE_RADII, type TexInfo } from '../art/textures';
 import { areaById, atExit, exitContact, exitOpen, type AreaData } from '../logic/areas';
 import { BUBBLE_MAX_ALIVE, bubblePos, createBubbles, updateBubbles, type BubbleSystem } from '../logic/bubbles';
 import {
-  DEFAULT_COLLECT_RADIUS,
   SPARKLE_SNACKS_LEFT,
-  collectDriftingNear,
+  collectSnacksAtHead,
+  drawnSnackX,
+  drawnSnackY,
+  headPoint,
   snackTally,
-  snackX,
-  snackY,
   type Collectible,
+  type DrawnBody,
+  type SnackFrame,
   type SnackTally,
 } from '../logic/collectibles';
 import { createEncounterContext } from '../logic/encounter';
@@ -108,8 +110,6 @@ const REED_PERIOD = 4;
 const REED_TOUCH_RADIUS = 26;
 const REED_NUDGE_PX = 7;
 const REED_NUDGE_RATE = 6;
-const SNACK_BOB_PX = 2.5;
-const SNACK_BOB_PERIOD = 2.4;
 const SNACK_POP_MS = 200;
 /** Last-snack hint star (PRD H3, guide 7e and 9): the Common star, 16 px above the snack. */
 const SNACK_STAR_OFFSET_Y = -16;
@@ -552,14 +552,9 @@ export class SwimScene extends Phaser.Scene {
 
   private collectSnacks(): void {
     const before = this.snackTally.collected;
-    const result = collectDriftingNear(
-      this.items,
-      this.swim,
-      DEFAULT_COLLECT_RADIUS,
-      this.driftClock,
-      this.area.snackDrift,
-      this.bounds,
-    );
+    // A bump or hit in advanceTrip may still change the tilt after this check this frame; the
+    // next frame checks again against the drawn head.
+    const result = collectSnacksAtHead(this.items, headPoint(this.drawnBody()), this.snackFrame());
     if (!result) return;
     this.setItems(result.items);
     const total = this.items.length;
@@ -820,7 +815,7 @@ export class SwimScene extends Phaser.Scene {
       phase: this.trip.phase,
     });
     this.renderReeds(dt, t);
-    this.renderSnacks(t);
+    this.renderSnacks();
     this.renderSnackStars(dt, t);
     this.renderStreaks(dt);
     this.renderBubbles(dt);
@@ -833,7 +828,6 @@ export class SwimScene extends Phaser.Scene {
     const intensity = swimIntensity(this.swim);
     const dashing = this.isDashing();
     const facing = this.swim.facing;
-    const t = this.motion.ambient ? this.clock : T_STATIC;
 
     if (this.motion.ambient) {
       const paddle = (IDLE_PADDLE + (1 - IDLE_PADDLE) * intensity) * (dashing ? DASH_PADDLE : 1);
@@ -861,16 +855,44 @@ export class SwimScene extends Phaser.Scene {
     this.redrawAxolotl(pose, dt);
 
     const baseScale = this.assets.axolotl.displayScale(1);
+    const body = this.drawnBody();
+    // Phaser flips about the texture frame centre, but the AXO_TEX anchor (originX) is off-centre,
+    // so setFlipX drew a left-facing axolotl ahead of its anchor. A negative x scale mirrors about
+    // the anchor, so the head lands where the eat check expects.
+    this.axolotl
+      .setPosition(body.x, body.y)
+      .setScale(facing * baseScale * this.turn.squash, baseScale)
+      .setRotation(body.rotation);
+  }
+
+  /**
+   * Where the axolotl sprite is drawn this frame: position with its bob, facing and rotation. Read
+   * every call, so a reduced-motion toggle applies at once.
+   */
+  private drawnBody(): DrawnBody {
+    const intensity = swimIntensity(this.swim);
+    const facing = this.swim.facing;
+    const t = this.motion.ambient ? this.clock : T_STATIC;
     const bob = this.motion.bob * BOB_SHARE * (1 - intensity) * Math.sin((TAU * t) / 3);
     const swimTilt = Phaser.Math.Clamp(this.swim.vy / SWIM.maxSpeed, -1, 1) * MAX_TILT;
     const idleTilt = this.motion.ambient ? IDLE_TILT * (1 - intensity) * Math.cos((TAU * t) / 3) : 0;
     const wobble =
       this.trip.phase === 'swimming' ? legWobble(this.snapshot.legs.present, this.clock, !this.motion.ambient) : 0;
-    this.axolotl
-      .setPosition(this.swim.x, this.swim.y + bob)
-      .setFlipX(facing < 0)
-      .setScale(baseScale * this.turn.squash, baseScale)
-      .setRotation(facing * (swimTilt + idleTilt) + wobble);
+    return { x: this.swim.x, y: this.swim.y + bob, facing, rotation: facing * (swimTilt + idleTilt) + wobble };
+  }
+
+  /**
+   * Where the snacks are drawn this frame: drift time, bob time and bounds. Read every call, so a
+   * reduced-motion toggle applies at once.
+   */
+  private snackFrame(): SnackFrame {
+    return {
+      driftT: this.driftClock,
+      bobT: this.motion.ambient ? this.clock : T_STATIC,
+      bobbing: this.motion.collectBob,
+      drift: this.area.snackDrift,
+      bounds: this.bounds,
+    };
   }
 
   /** Dashing look and trail, only while swimming: a frozen dash shows nothing once the carry starts. */
@@ -910,17 +932,13 @@ export class SwimScene extends Phaser.Scene {
   }
 
   /** Each snack where its drift puts it at the drift time (PRD H4), plus its bob. */
-  private renderSnacks(t: number): void {
-    const { snackDrift } = this.area;
+  private renderSnacks(): void {
+    const frame = this.snackFrame();
     for (let i = 0; i < this.items.length; i++) {
       const item = this.items[i];
       const sprite = this.snacks.get(item.id);
       if (!sprite) continue;
-      const bob = this.motion.collectBob ? SNACK_BOB_PX * Math.sin((TAU * t) / SNACK_BOB_PERIOD + i) : 0;
-      sprite.setPosition(
-        snackX(item, i, this.driftClock, snackDrift, this.bounds),
-        snackY(item, i, this.driftClock, snackDrift, this.bounds) + bob,
-      );
+      sprite.setPosition(drawnSnackX(item, i, frame), drawnSnackY(item, i, frame));
     }
   }
 

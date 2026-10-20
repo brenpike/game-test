@@ -159,51 +159,6 @@ export function snackY(item: Collectible, index: number, t: number, drift: Snack
   return clamp(item.y + driftY(index * GOLDEN_ANGLE, t, drift), bounds.minY, bounds.maxY);
 }
 
-function driftingInReach(
-  item: Collectible,
-  index: number,
-  pos: Point,
-  radius: number,
-  t: number,
-  drift: SnackDrift,
-  bounds: SwimBounds,
-): boolean {
-  if (item.collected) return false;
-  const dx = snackX(item, index, t, drift, bounds) - pos.x;
-  const dy = snackY(item, index, t, drift, bounds) - pos.y;
-  return Math.hypot(dx, dy) <= radius;
-}
-
-/**
- * `collectNear` against where the snacks have drifted to at time `t` (`snackX`, `snackY`). Returns
- * null, allocating nothing, when no uncollected snack is within radius of pos (inclusive). Otherwise
- * returns a new items array (input untouched) plus the newly collected items in index order; the
- * collected items keep their stored base `x` and `y`.
- */
-export function collectDriftingNear(
-  items: readonly Collectible[],
-  pos: Point,
-  radius: number,
-  t: number,
-  drift: SnackDrift,
-  bounds: SwimBounds,
-): CollectResult | null {
-  let first = 0;
-  while (first < items.length && !driftingInReach(items[first], first, pos, radius, t, drift, bounds)) {
-    first += 1;
-  }
-  if (first === items.length) return null;
-  const updated = items.slice();
-  const newly: Collectible[] = [];
-  for (let index = first; index < items.length; index++) {
-    if (!driftingInReach(items[index], index, pos, radius, t, drift, bounds)) continue;
-    const collectedItem = { ...items[index], collected: true };
-    updated[index] = collectedItem;
-    newly.push(collectedItem);
-  }
-  return { items: updated, newly };
-}
-
 /** Snack bob amplitude in px: a snack bobs up and down on top of its drift. */
 export const SNACK_BOB_PX = 2.5;
 
