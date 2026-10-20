@@ -475,7 +475,7 @@ export class AxolotlStyler {
   private readonly onDone: (axolotl: StylerAxolotl) => void;
   private readonly onCancel: (() => void) | undefined;
   private readonly previewKey: string;
-  /** The start of every picture texture key: one texture per picture step and option index. */
+  /** The start of every picture texture key: one texture per picture step and option id. */
   private readonly pictureKeyStart: string;
   /** What each baked picture texture shows, by key. Each key is baked again in place, never added twice. */
   private readonly pictureSigs = new Map<string, string>();
@@ -1108,7 +1108,7 @@ export class AxolotlStyler {
   private showPictureOption(slot: OptionSlot, option: StylerOption, index: number, placed: StylerLayout): void {
     const rect = placed.options[index];
     slot.nameText.setVisible(false);
-    const key = this.bakePicture(option, index, rect);
+    const key = this.bakePicture(option, rect);
     const centre = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
     slot.picture.setTexture(key).setOrigin(0.5, 0.5).setPosition(centre.x, centre.y);
     slot.picture.setScale(1 / this.dpr).setVisible(true);
@@ -1242,17 +1242,18 @@ export class AxolotlStyler {
   }
 
   /**
-   * The texture key of the picture of `option`, at `index` on the current step, baked first when it
-   * would show something new: the look so far with the option applied, in the applied Dream colour
-   * (on Colour, in that morph's palette; on Dream colour, in that option's colour over the real morph),
-   * at the still pose, cropped for the step and sized to fill the button inside its outline at the
-   * device pixel ratio. Whole-axolotl pictures are drawn at their size factor, so Size options look
-   * different. Each step and index has its own key, kept until destroy(), so going back to a step
-   * bakes nothing that did not change; there are at most MAX_STEP_OPTIONS keys per step.
+   * The texture key of the picture of `option` on the current step, baked first when it would show
+   * something new: the look so far with the option applied, in the applied Dream colour (on Colour,
+   * in that morph's palette; on Dream colour, in that option's colour over the real morph), at the
+   * still pose, cropped for the step and sized to fill the button inside its outline at the device
+   * pixel ratio. Whole-axolotl pictures are drawn at their size factor, so Size options look
+   * different. Each step and option id has its own key, kept until destroy(), so going back to a step
+   * or a Dream colour page bakes nothing that did not change; there is at most one key per option of
+   * a step (on Dream colour, MAX_DREAM_OPTIONS).
    */
-  private bakePicture(option: StylerOption, index: number, rect: Rect): string {
+  private bakePicture(option: StylerOption, rect: Rect): string {
     const { step, look, morph } = this.state;
-    const key = `${this.pictureKeyStart}-${step}-${index}`;
+    const key = `${this.pictureKeyStart}-${step}-${option.id}`;
     const field = stepLookField(step);
     const pictureLook = field === null ? look : lookWithOption(look, field, option.id);
     const pictureMorph = step === 'colour' ? (option.id as RealMorphId) : morph;
