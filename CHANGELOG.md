@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-20
+
+### Changed
+
+- Each trip now hides only a few treasures instead of every one (#39).
+- Rarer treasures turn up less often: Common ones are out on every trip, Legendary ones only on some trips (#39).
+- Treasures you lose when you are carried home are back on your next trip (#39).
+- The area's special treasure (the Castle tower) is out on every trip until you bank it (#39).
+- Treasures hide more often in spots away from the main swim path (#39).
+
 ## [0.16.1] - 2026-10-20
 
 ### Fixed
