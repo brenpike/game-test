@@ -19,7 +19,7 @@ The game is hosted on GitHub Pages at `brenpike.github.io/glam-gills/` ([ADR 000
 **Where and what.**
 
 - The save lives in `localStorage` under two keys, and only these: `glam-gills:save` holds the save, and `glam-gills:save-unreadable` holds the text of the first unreadable save, kept until the next "Start over".
-- The save is one versioned JSON object, `{"version": n, "hub": {...}}`, of the hub only: banked treasure ids (so owned Dream colours), the owned axolotls with their names and looks, the Home Tank layout, the Collection Book, and the best stars per area.
+- The save is one versioned JSON object, `{"version": n, "hub": {...}}`, of the hub only: banked treasure ids (so owned Dream colours), the owned axolotls with their names, looks and worn Dream colours, the Home Tank layout, the Collection Book, and the best stars per area.
 - Nothing from a trip is saved: not the Trip Bag, position, leg state, Shell blocks used, the trip seed, eaten snacks, or a stranded axolotl left waiting. A loaded game opens in the Home Tank, and unbanked finds reappear on the next trip in freshly picked spots (PRD D2, D3).
 - Encoding, decoding, upgrading and repairing are pure, in `src/logic/save.ts`, with headless tests ([ADR 0006](0006-testing-strategy.md)). Reading and writing storage is browser glue in `src/platform/`.
 
@@ -43,10 +43,10 @@ The game is hosted on GitHub Pages at `brenpike.github.io/glam-gills/` ([ADR 000
 **Unreadable and newer saves.**
 
 - A damaged save starts the game fresh, with no message. Its text is copied to `glam-gills:save-unreadable` first. If a backup is already kept, the first one stays. The backup is removed on the next "Start over".
-- A save from a newer version starts the game fresh, with no message, and is left untouched. Saving is turned off (the save gate is closed) for that page session, so this build never overwrites it. This build cannot erase it either: the game starts with no axolotl owned, so "Start over" does not show (PRD D7), and there is no way back to the title. The newer save stays until a build that can read it runs, or browser data is cleared. Whether an older build should offer a way to erase it is open (PRD open question 48).
+- A save from a newer version starts the game fresh, with no message, and is left untouched. Saving is turned off (the save gate is closed) for that page session, so this build never overwrites it. This build cannot erase it either: the game starts with no axolotl owned, so "Start over" does not show (PRD D7), and there is no way back to the title. The newer save stays until a build that can read it runs, or browser data is cleared. Whether an older build should offer a way to erase it is open (PRD open question 54).
 - Storage that cannot be used at all also closes the save gate: the game plays, and saves nothing.
 
-**Seam for coming fields.** Sibling issue #17 adds a Dream colour per axolotl (`dreamColour`), and #16 adds outfits and the explorer. Both come in under the additive rule, with no version bump: an older save loads them with their defaults. The encoder copies each saved type through an allowlist checked with `satisfies`, so a new field on the hub or on an owned axolotl fails the build until it is saved.
+**Seam for new fields.** Dream colours (#17) landed before this save, so each axolotl's worn Dream colour (`dreamColour`) is saved with it under the additive rule, with no version bump. A missing field, null, an unknown id, or a Dream colour not owned in the saved banked treasures loads as none (the real morph), and the axolotl itself is kept. Outfits and choosing the explorer (#16) follow the same additive rule: an older save loads them with their defaults. The encoder copies each saved type through an allowlist checked with `satisfies`, so a new field on the hub or on an owned axolotl fails the build until it is saved.
 
 ## Alternatives considered
 
@@ -72,6 +72,6 @@ Known limits:
 - Safari may erase script-written storage, the save included, after 7 days without a visit to the site.
 - The origin is shared: another project on `brenpike.github.io` could read or erase these keys. Only this game's own keys are ever touched by this game.
 - Only the first unreadable save is kept. A later damaged save is not backed up while one is kept.
-- A build older than the save cannot save: the newer save is kept, and progress made on the older build is lost when the page closes. That build shows no "Start over", so it cannot erase the newer save (PRD open question 48).
+- A build older than the save cannot save: the newer save is kept, and progress made on the older build is lost when the page closes. That build shows no "Start over", so it cannot erase the newer save (PRD open question 54).
 - A rescue banked mid-trip, and the tilapia fact card, save when the trip ends. Closing the game mid-trip loses them.
 - A damaged boy or girl in a saved look falls back to boy, the default look's value, because the repair cannot know the original.

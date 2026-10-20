@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Your progress now saves on this device by itself: your axolotls with their names and looks, banked treasures, the tank, the Collection Book and your stars (#15).
+- Your progress now saves on this device by itself: your axolotls with their names, looks and Dream colours, banked treasures, the tank, the Collection Book and your stars (#15).
 - Treasures you bank in the middle of a trip are saved right away (#15).
 - A Start over button on the title screen. It takes two steps, and a note for grown-ups explains that the save lives only in this browser on this device (#15).
 
