@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-20
+
+### Added
+
+- Four new mouths: Big grin, Cat smile, Smirk and Blep, so there are eight (#58).
+- A boy or girl sign on the Boy or girl picture buttons, in the creator and in restyle (#58).
+- A name box that looks typeable, with a pencil, a "Type a name" placeholder and a blinking cursor. The cursor stays steady with reduced motion (#58).
+
+### Changed
+
+- Boys and girls are now clearly different: boys are taller with a longer tail fin, girls have a rounder body and belly and bigger eyelashes. This replaces the subtle cues from 0.13.0 (#58).
+- Spot patterns are redrawn so Freckles, Dots and Patches look clearly different, and the Spots step shows the body and tail up close (#58).
+- Slim, Regular and Chubby bodies are clearly different in outline (#58).
+- The real text field matches the name box (#58).
+
 ## [0.13.1] - 2026-10-20
 
 ### Fixed

@@ -6,9 +6,9 @@ It is mostly fun, with real axolotl facts along the way.
 
 ## What you can do now
 
-Version 0.13.1 is playable in one canal zone:
+Version 0.14.0 is playable in one canal zone:
 
-- Make your own axolotl the first time you play, one step at a time in 11 steps: colour (one of eight real morphs), boy or girl, eyes, mouth, gills, spots, tail, body, age, size, and name. Every choice is a big picture button that shows it on your axolotl, and the preview changes as you pick. Surprise me picks everything at random, with a name that fits. The other seven colours are the ones you rescue.
+- Make your own axolotl the first time you play, one step at a time in 11 steps: colour (one of eight real morphs), boy or girl (with a boy or girl sign), eyes, mouth (eight to choose from), gills, spots, tail, body, age, size, and name. Every choice is a big picture button that shows it on your axolotl, and the preview changes as you pick. Surprise me picks everything at random, with a name that fits. The other seven colours are the ones you rescue.
 - Type a name, or pick a suggested one that fits a boy or a girl, so typing is optional. Names stay on your device.
 - On trips you swim as your own axolotl, with its own look. Size (Small, Medium, or Large), boy or girl, tail, body, and age are for looks only: every axolotl swims the same and has the same hit area.
 - Swim with the on-screen swim pad, or the arrow keys or WASD.
