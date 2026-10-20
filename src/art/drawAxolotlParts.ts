@@ -1,7 +1,8 @@
 /**
  * Axolotl face, gill and spot parts for the character creator (guide 6l to 6o),
  * so a preview can swap each part on its own (guide 11). drawAxolotl() paints
- * its eye, mouth, gill and spot layers through these painters.
+ * its eye, mouth, gill and spot layers through these painters, and reads the
+ * body proportions (Boy or girl, Tail, Body, Age) from axolotlBodyGeometry().
  *
  * Geometry lives in pure helpers (no canvas needed) so tests can check the
  * keep-clear zones of guide 6i and the texture frame. Painters build paths
@@ -25,12 +26,24 @@ export type GillStyleId = 'fluffy' | 'long' | 'short';
 export type SpotsOption = 'none' | 'freckles' | 'dots' | 'patches';
 /** Sizes (guide 6o). */
 export type AxoSize = 'small' | 'medium' | 'large';
+/** Boy or girl. */
+export type AxoSex = 'boy' | 'girl';
+/** Tail lengths. */
+export type AxoTail = 'short' | 'medium' | 'long';
+/** Body builds. */
+export type AxoBody = 'slim' | 'regular' | 'chubby';
+/** Ages: proportions only, never the size scale. */
+export type AxoAge = 'baby' | 'young' | 'grownUp';
 
 export const EYE_VARIANTS: readonly EyeVariant[] = ['happy', 'sleepy', 'determined', 'curious', 'grumpy'];
 export const MOUTH_VARIANTS: readonly MouthVariant[] = ['smile', 'openD', 'tongueOut', 'smallO'];
 export const GILL_STYLE_IDS: readonly GillStyleId[] = ['fluffy', 'long', 'short'];
 export const SPOTS_OPTIONS: readonly SpotsOption[] = ['none', 'freckles', 'dots', 'patches'];
 export const AXO_SIZES: readonly AxoSize[] = ['small', 'medium', 'large'];
+export const AXO_SEXES: readonly AxoSex[] = ['boy', 'girl'];
+export const AXO_TAILS: readonly AxoTail[] = ['short', 'medium', 'long'];
+export const AXO_BODIES: readonly AxoBody[] = ['slim', 'regular', 'chubby'];
+export const AXO_AGES: readonly AxoAge[] = ['baby', 'young', 'grownUp'];
 
 /**
  * The creator look the painter needs. Same field names and ids as the logic
@@ -42,22 +55,33 @@ export interface AxolotlArtLook {
   readonly gills: GillStyleId;
   readonly spots: SpotsOption;
   readonly size: AxoSize;
+  readonly sex: AxoSex;
+  readonly tail: AxoTail;
+  readonly body: AxoBody;
+  readonly age: AxoAge;
 }
 
-/** The prototype look: paints exactly what drawAxolotl painted before the creator. */
+/**
+ * The starting look. Its face, gills, spots, body and age are the prototype's;
+ * as a Boy it carries the Boy cue (a longer tail, taller fins).
+ */
 export const DEFAULT_ART_LOOK: AxolotlArtLook = {
   eyes: 'happy',
   mouth: 'openD',
   gills: 'fluffy',
   spots: 'freckles',
   size: 'medium',
+  sex: 'boy',
+  tail: 'medium',
+  body: 'regular',
+  age: 'young',
 };
 
-/** Uniform scale per size about local (0, 0), ink included (guide 6o). */
+/** Uniform scale per size about local (0, 0), ink included (guide 6o). Large is the prototype scale. */
 export const AXO_SIZE_SCALE: Readonly<Record<AxoSize, number>> = {
-  small: 0.85,
-  medium: 1,
-  large: 1.15,
+  small: 0.72,
+  medium: 0.85,
+  large: 1,
 };
 
 /** Axis-aligned box in local units. */
@@ -68,7 +92,8 @@ export interface Bounds {
   readonly maxY: number;
 }
 
-function boundsOfPoints(points: readonly (readonly [number, number])[], pad: number): Bounds {
+/** Box holding every point, grown by `pad` on each side. */
+export function boundsOfPoints(points: readonly (readonly [number, number])[], pad: number): Bounds {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -89,6 +114,172 @@ export function unionBounds(boxes: readonly Bounds[]): Bounds {
     minY: Math.min(...boxes.map((b) => b.minY)),
     maxX: Math.max(...boxes.map((b) => b.maxX)),
     maxY: Math.max(...boxes.map((b) => b.maxY)),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Body proportions: Boy or girl, Tail, Body, Age
+// ---------------------------------------------------------------------------
+
+/** An axis-aligned ellipse in local units. */
+export interface BodyEllipse {
+  readonly cx: number;
+  readonly cy: number;
+  readonly rx: number;
+  readonly ry: number;
+}
+
+/** A point in local units. */
+export interface LocalPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** Head ellipse (guide 6b). The same for every option, so the face, gills and slots never move. */
+export const HEAD_ELLIPSE: BodyEllipse = { cx: 26, cy: -1, rx: 27, ry: 22 };
+/** Prototype torso (guide 6b): Young, Regular. */
+export const PROTOTYPE_TORSO: BodyEllipse = { cx: -8, cy: 4, rx: 37, ry: 19 };
+/** Prototype belly (guide 6g): Young, Regular. */
+export const PROTOTYPE_BELLY: BodyEllipse = { cx: -6, cy: 14, rx: 26, ry: 6.2 };
+
+/** Tail shape. The core tapers from rootHalfHeight at the root to 2 at the tip (guide 6f). */
+export interface TailGeometry {
+  /** Local x of the tail root (s = 0). */
+  readonly rootX: number;
+  /** Core length from root to tip. */
+  readonly length: number;
+  readonly rootHalfHeight: number;
+  /** Peak top fin reach beyond the core, on top of the 2-unit fin base. */
+  readonly finTop: number;
+  /** Peak bottom fin reach beyond the core, on top of the 2-unit fin base. */
+  readonly finBottom: number;
+}
+
+/** Prototype tail (guide 6b, 6f): Medium, with no Boy cue. */
+export const PROTOTYPE_TAIL: TailGeometry = { rootX: -30, length: 44, rootHalfHeight: 13, finTop: 9, finBottom: 7 };
+
+/** Everything the body painter reads from the Boy or girl, Tail, Body and Age options. */
+export interface AxolotlBodyGeometry {
+  readonly torso: BodyEllipse;
+  readonly belly: BodyEllipse;
+  readonly tail: TailGeometry;
+  /** Leg roots in leg draw order: far-front, far-rear, near-front, near-rear (guide 6e). */
+  readonly legRoots: readonly LocalPoint[];
+  /** Leg tube lengths, in leg draw order. */
+  readonly legLengths: readonly number[];
+  readonly toeLength: number;
+  /** Factor on gill stem, filament and tip lengths. */
+  readonly gillLength: number;
+}
+
+interface BodyBuild {
+  readonly torsoRx: number;
+  readonly torsoRy: number;
+  readonly bellyRx: number;
+  readonly bellyRy: number;
+}
+
+const BODY_BUILDS: Readonly<Record<AxoBody, BodyBuild>> = {
+  slim: { torsoRx: 37, torsoRy: 16.5, bellyRx: 26, bellyRy: 5.2 },
+  regular: { torsoRx: 37, torsoRy: 19, bellyRx: 26, bellyRy: 6.2 },
+  chubby: { torsoRx: 39, torsoRy: 22, bellyRx: 28, bellyRy: 8 },
+};
+
+interface AgeBuild {
+  readonly torsoRxChange: number;
+  readonly tailLength: number;
+  readonly gillLength: number;
+  readonly legLength: number;
+}
+
+const AGE_BUILDS: Readonly<Record<AxoAge, AgeBuild>> = {
+  baby: { torsoRxChange: -6, tailLength: 0.85, gillLength: 0.8, legLength: 0.7 },
+  young: { torsoRxChange: 0, tailLength: 1, gillLength: 1, legLength: 1 },
+  grownUp: { torsoRxChange: 2, tailLength: 1, gillLength: 1.12, legLength: 1 },
+};
+
+const TAIL_CORE_LENGTHS: Readonly<Record<AxoTail, number>> = { short: 36, medium: 44, long: 52 };
+const BOY_TAIL_EXTRA = 4;
+const BOY_FIN_SCALE = 1.2;
+/** Girl cue: torso and belly a little rounder. */
+const GIRL_ROUND_EXTRA = 1.5;
+
+/** INVARIANT: the torso's front end (the head joint) stays here for every option. */
+const TORSO_FRONT_X = PROTOTYPE_TORSO.cx + PROTOTYPE_TORSO.rx;
+const PROTOTYPE_TORSO_BACK_X = PROTOTYPE_TORSO.cx - PROTOTYPE_TORSO.rx;
+/** How far the tail root sits in front of the torso's back end (guide 6b: -30 vs -45). */
+const TAIL_ROOT_OVERLAP = PROTOTYPE_TAIL.rootX - PROTOTYPE_TORSO_BACK_X;
+/** Belly centre above the torso's lowest point, for the prototype belly radius. */
+const BELLY_DROP = PROTOTYPE_TORSO.cy + PROTOTYPE_TORSO.ry - PROTOTYPE_BELLY.cy;
+
+/** Guide 6e roots, in leg draw order. */
+const PROTOTYPE_LEG_ROOTS: readonly LocalPoint[] = [
+  { x: 8, y: 15 },
+  { x: -14, y: 17 },
+  { x: 18, y: 15 },
+  { x: -24, y: 17 },
+];
+const PROTOTYPE_LEG_LENGTHS: readonly number[] = [14, 14, 15, 15];
+const PROTOTYPE_TOE_LENGTH = 8.5;
+
+/** Stretch along x behind the head joint (x < 0): the torso's back end over the prototype's. */
+export function torsoBackScale(torso: BodyEllipse): number {
+  return (torso.cx - torso.rx) / PROTOTYPE_TORSO_BACK_X;
+}
+
+/**
+ * Move a point placed on the prototype torso onto `torso`: behind x = 0 it
+ * stretches with the back end, and y scales with the torso height about its
+ * centre line. Head-side points (x >= 0) keep their x.
+ */
+export function torsoPoint(torso: BodyEllipse, x: number, y: number): LocalPoint {
+  return {
+    x: x < 0 ? x * torsoBackScale(torso) : x,
+    y: torso.cy + (y - PROTOTYPE_TORSO.cy) * (torso.ry / PROTOTYPE_TORSO.ry),
+  };
+}
+
+/**
+ * Body proportions for a look (prototype = Young, Regular, Medium tail).
+ * Age changes proportions only, never the size scale. The head never moves.
+ */
+export function axolotlBodyGeometry(look: AxolotlArtLook): AxolotlBodyGeometry {
+  const build = BODY_BUILDS[look.body];
+  const age = AGE_BUILDS[look.age];
+  const girlExtra = look.sex === 'girl' ? GIRL_ROUND_EXTRA : 0;
+  const finScale = look.sex === 'boy' ? BOY_FIN_SCALE : 1;
+  const boyTail = look.sex === 'boy' ? BOY_TAIL_EXTRA : 0;
+
+  const torsoRx = build.torsoRx + age.torsoRxChange;
+  const torso: BodyEllipse = {
+    cx: TORSO_FRONT_X - torsoRx,
+    cy: PROTOTYPE_TORSO.cy,
+    rx: torsoRx,
+    ry: build.torsoRy + girlExtra,
+  };
+  const ageStretch = torsoRx / build.torsoRx;
+  const bellyRy = build.bellyRy + girlExtra;
+  const belly: BodyEllipse = {
+    cx: torso.cx + (PROTOTYPE_BELLY.cx - PROTOTYPE_TORSO.cx) * ageStretch,
+    cy: torso.cy + torso.ry - BELLY_DROP - (bellyRy - PROTOTYPE_BELLY.ry),
+    rx: build.bellyRx * ageStretch,
+    ry: bellyRy,
+  };
+  const tail: TailGeometry = {
+    rootX: torso.cx - torso.rx + TAIL_ROOT_OVERLAP,
+    length: (TAIL_CORE_LENGTHS[look.tail] + boyTail) * age.tailLength,
+    rootHalfHeight: PROTOTYPE_TAIL.rootHalfHeight * (torso.ry / PROTOTYPE_TORSO.ry),
+    finTop: PROTOTYPE_TAIL.finTop * finScale,
+    finBottom: PROTOTYPE_TAIL.finBottom * finScale,
+  };
+  return {
+    torso,
+    belly,
+    tail,
+    legRoots: PROTOTYPE_LEG_ROOTS.map((root) => torsoPoint(torso, root.x, root.y)),
+    legLengths: PROTOTYPE_LEG_LENGTHS.map((len) => len * age.legLength),
+    toeLength: PROTOTYPE_TOE_LENGTH * age.legLength,
+    gillLength: age.gillLength,
   };
 }
 
@@ -179,6 +370,115 @@ export function eyeMarks(variant: EyeVariant, r: number): EyeMarks {
   }
 }
 
+/** Eye keep-clear zone radius beyond the prototype bead radius (guide 6i). */
+export const EYE_ZONE_MARGIN = 1.8;
+/** Girl cue lashes: ink over a white under-stroke, so they read on Melanoid and in greyscale. */
+export const EYELASH_INK = 1.4;
+export const EYELASH_UNDER = 3;
+
+/** One lash line relative to the eye centre, before the blink squash. */
+export interface EyeLash {
+  readonly x1: number;
+  readonly y1: number;
+  readonly x2: number;
+  readonly y2: number;
+}
+
+/** Lash corners stay this far inside the eye zone edge. */
+const LASH_ZONE_INSET = 0.05;
+/** Open eyes: lash roots sit this far inside the bead edge, so the bead covers them. */
+const LASH_ROOT_INSET = 1;
+/** Every variant: each lash aims at the eye zone edge at these angles (the upper back, facing right, y down). */
+const LASH_END_ANGLES: readonly number[] = [Math.PI + 0.5, Math.PI + 0.85, Math.PI + 1.2];
+/** Lidded eyes: lash roots along the lid, as fractions of the way from its back bead-edge end to its middle. */
+const LID_LASH_ROOTS: readonly number[] = [0.3, 0.42, 0.55];
+
+/** Distance from (x, y) along unit (dx, dy) to the circle of radius `reach` about the eye centre. */
+function roomToReach(x: number, y: number, dx: number, dy: number, reach: number): number {
+  const along = x * dx + y * dy;
+  return -along + Math.sqrt(along * along - (x * x + y * y) + reach * reach);
+}
+
+/**
+ * A lash from `root` aimed at the point at `angle` on the `reach` circle. It
+ * stops where the first corner of its widest (butt-capped) stroke meets that
+ * circle, so every painted corner stays within `reach` of the eye centre.
+ */
+function lashToward(root: LocalPoint, angle: number, reach: number): EyeLash {
+  const dir = Math.atan2(Math.sin(angle) * reach - root.y, Math.cos(angle) * reach - root.x);
+  const dx = Math.cos(dir);
+  const dy = Math.sin(dir);
+  const half = EYELASH_UNDER / 2;
+  const len = Math.min(
+    roomToReach(root.x - dy * half, root.y + dx * half, dx, dy, reach),
+    roomToReach(root.x + dy * half, root.y - dx * half, dx, dy, reach),
+  );
+  return { x1: root.x, y1: root.y, x2: root.x + dx * len, y2: root.y + dy * len };
+}
+
+/** The lid line's point at curve parameter u (0 at the back end, 1 at the snout end). */
+function lidPointAt(lid: EyeLid, u: number): LocalPoint {
+  const m = 1 - u;
+  return {
+    x: m * m * lid.x1 + 2 * u * m * lid.cx + u * u * lid.x2,
+    y: m * m * lid.y1 + 2 * u * m * lid.cy + u * u * lid.y2,
+  };
+}
+
+/** Curve parameter where the lid line first meets the bead edge from its back end (x1 side). */
+function lidBackParam(lid: EyeLid, beadR: number): number {
+  let outside = 0;
+  let inside = 0.5;
+  for (let step = 0; step < 40; step++) {
+    const mid = (outside + inside) / 2;
+    const p = lidPointAt(lid, mid);
+    if (Math.hypot(p.x, p.y) > beadR) outside = mid;
+    else inside = mid;
+  }
+  return inside;
+}
+
+/**
+ * Girl cue lashes for one eye at prototype bead radius r: three lashes aimed
+ * at the upper back of the eye zone edge. Open eyes root them 1 inside the
+ * bead edge on the same radial lines; lidded eyes root them on the back half
+ * of the lid line, so they rise into the space above the lid. Every corner of
+ * every butt-capped stroke stays inside the eye zone (guide 6i).
+ */
+export function eyelashMarks(variant: EyeVariant, r: number): EyeLash[] {
+  const marks = eyeMarks(variant, r);
+  const reach = r + EYE_ZONE_MARGIN - LASH_ZONE_INSET;
+  const lid = marks.lid;
+  if (lid) {
+    const back = lidBackParam(lid, marks.beadR);
+    return LASH_END_ANGLES.map((angle, i) =>
+      lashToward(lidPointAt(lid, back + LID_LASH_ROOTS[i] * (0.5 - back)), angle, reach),
+    );
+  }
+  const rootR = marks.beadR - LASH_ROOT_INSET;
+  return LASH_END_ANGLES.map((angle) =>
+    lashToward({ x: Math.cos(angle) * rootR, y: Math.sin(angle) * rootR }, angle, reach),
+  );
+}
+
+/** Lashes use butt caps, so no paint reaches past a lash end (the eye zone stays clear). */
+function paintEyelashes(ctx: CanvasRenderingContext2D, lashes: readonly EyeLash[]): void {
+  const path = new Path2D();
+  for (const lash of lashes) {
+    path.moveTo(lash.x1, lash.y1);
+    path.lineTo(lash.x2, lash.y2);
+  }
+  ctx.save();
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = EYELASH_UNDER;
+  ctx.strokeStyle = WHITE;
+  ctx.stroke(path);
+  ctx.lineWidth = EYELASH_INK;
+  ctx.strokeStyle = INK;
+  ctx.stroke(path);
+  ctx.restore();
+}
+
 function lidPath(lid: EyeLid): Path2D {
   const p = new Path2D();
   p.moveTo(lid.x1, lid.y1);
@@ -199,6 +499,8 @@ function belowLidPath(lid: EyeLid, beadR: number): Path2D {
  * Paint one eye. `blink` (1 open down to 0.12) squashes every variant
  * vertically about the eye centre. Lid lines are clipped to the bead. An
  * optional morph `ring` is stroked just inside the bead edge, under the glints.
+ * `eyelashes` (the Girl cue) paints under the bead, inside the eye transform,
+ * so a blink squashes them too.
  */
 export function paintEye(
   ctx: CanvasRenderingContext2D,
@@ -207,11 +509,13 @@ export function paintEye(
   blink: number,
   colour: string,
   ring?: MorphEyeRing,
+  eyelashes = false,
 ): void {
   const marks = eyeMarks(variant, spot.r);
   ctx.save();
   ctx.translate(spot.x, spot.y);
   ctx.scale(1, blink);
+  if (eyelashes) paintEyelashes(ctx, eyelashMarks(variant, spot.r));
   if (marks.lid) {
     ctx.save();
     ctx.clip(belowLidPath(marks.lid, marks.beadR));
@@ -485,17 +789,22 @@ export const NEAR_GILL_ROOTS: readonly GillRoot[] = [
 export interface GillSpec extends GillRoot {
   readonly len: number;
   readonly bend: number;
+  /** Age factor on the stem, filament and tip lengths (`len` already carries it). */
+  readonly lengthFactor: number;
 }
 
 export type GillLayer = 'far' | 'near';
 
-/** The three gills of a layer in a style, top to bottom. */
-export function gillSpecs(style: GillStyleId, layer: GillLayer): GillSpec[] {
+/**
+ * The three gills of a layer in a style, top to bottom. `lengthFactor` (Age)
+ * scales stems, filaments and tips; roots, angles and bends never change.
+ */
+export function gillSpecs(style: GillStyleId, layer: GillLayer, lengthFactor = 1): GillSpec[] {
   const s = GILL_STYLES[style];
   const roots = layer === 'far' ? FAR_GILL_ROOTS : NEAR_GILL_ROOTS;
   const lens = layer === 'far' ? s.farLen : s.nearLen;
   const bend = layer === 'far' ? s.farBend : s.nearBend;
-  return roots.map((root, i) => ({ ...root, len: lens[i], bend }));
+  return roots.map((root, i) => ({ ...root, len: lens[i] * lengthFactor, bend, lengthFactor }));
 }
 
 /** A straight filament from (x1, y1) to (x2, y2). */
@@ -542,28 +851,29 @@ export function gillGeometry(g: GillSpec, style: GillStyleId, tfl: number): Gill
     const p0 = pt(u);
     for (const sd of [-1, 1]) {
       const fa = tan(u) + sd * (0.95 - 0.25 * u) + 0.22 * Math.sin(tfl + phase + u * 4 + sd);
-      const fl = s.filamentLen * (1.05 - u * 0.55);
+      const fl = s.filamentLen * g.lengthFactor * (1.05 - u * 0.55);
       filaments.push({ x1: p0[0], y1: p0[1], x2: p0[0] + Math.cos(fa) * fl, y2: p0[1] + Math.sin(fa) * fl });
     }
   }
   for (const sd of [-1, 1]) {
     const fa = tan(1) + sd * 0.38 + 0.18 * Math.sin(tfl + phase + 5 + sd);
-    filaments.push({ x1: tx, y1: ty, x2: tx + Math.cos(fa) * s.tipLen, y2: ty + Math.sin(fa) * s.tipLen });
+    const tipLen = s.tipLen * g.lengthFactor;
+    filaments.push({ x1: tx, y1: ty, x2: tx + Math.cos(fa) * tipLen, y2: ty + Math.sin(fa) * tipLen });
   }
   return { bx, by, cx, cy, tx, ty, filaments };
 }
 
 /**
- * Box holding all six gills of a style at flutter phase `tfl`, outline ink
- * included. Conservative: a quadratic stem lies inside the hull of its root,
- * control and tip.
+ * Box holding all six gills of a style at flutter phase `tfl` and Age
+ * `lengthFactor`, outline ink included. Conservative: a quadratic stem lies
+ * inside the hull of its root, control and tip.
  */
-export function gillInkBounds(style: GillStyleId, tfl: number): Bounds {
+export function gillInkBounds(style: GillStyleId, tfl: number, lengthFactor = 1): Bounds {
   const stemPad = GILL_STEM_W / 2 + GILL_STEM_OL;
   const filamentPad = GILL_FILAMENT_W / 2 + GILL_FILAMENT_OL;
   const boxes: Bounds[] = [];
   for (const layer of ['far', 'near'] as const) {
-    for (const spec of gillSpecs(style, layer)) {
+    for (const spec of gillSpecs(style, layer, lengthFactor)) {
       const geo = gillGeometry(spec, style, tfl);
       const stemHull: [number, number][] = [
         [geo.bx, geo.by],
@@ -597,7 +907,7 @@ function paintGill(
   inkMany(ctx, segs);
 }
 
-/** Paint the three gills of one layer (far: layer 1, near: layer 9), top to bottom. */
+/** Paint the three gills of one layer (far: layer 1, near: layer 9), top to bottom, at Age `lengthFactor`. */
 export function paintGills(
   ctx: CanvasRenderingContext2D,
   layer: GillLayer,
@@ -605,8 +915,9 @@ export function paintGills(
   tfl: number,
   stemColour: string,
   filamentColour: string,
+  lengthFactor = 1,
 ): void {
-  for (const g of gillSpecs(style, layer)) paintGill(ctx, g, style, tfl, stemColour, filamentColour);
+  for (const g of gillSpecs(style, layer, lengthFactor)) paintGill(ctx, g, style, tfl, stemColour, filamentColour);
 }
 
 // ---------------------------------------------------------------------------
@@ -620,19 +931,58 @@ export interface TailPoint {
   readonly hc: number;
 }
 
-/** Tail centreline at s (0 root at x -30, 1 tip at x -74) for a swim phase and amplitude (guide 6f). */
-export function tailPointAt(s: number, swim: number, tailAmp: number): TailPoint {
+/** Tail wave amplitude at the tip for tailAmp 1 (guide 6f, 9). */
+const TAIL_WAVE = 11;
+/** Core half-height at the tip, and the fin reach at the root (guide 6b). */
+const TAIL_TIP_HALF_HEIGHT = 2;
+const TAIL_FIN_BASE = 2;
+
+/**
+ * Tail centreline at s (0 root, 1 tip) for a swim phase and amplitude
+ * (guide 6f). The default tail is the prototype's: root x -30, tip x -74.
+ */
+export function tailPointAt(s: number, swim: number, tailAmp: number, tail: TailGeometry = PROTOTYPE_TAIL): TailPoint {
   return {
-    x: -30 - 44 * s,
-    cy: 4 + 11 * tailAmp * s * Math.sin(swim - 4.5 * s),
-    hc: 2 + 11 * Math.pow(1 - s, 1.1),
+    x: tail.rootX - tail.length * s,
+    cy: PROTOTYPE_TORSO.cy + TAIL_WAVE * tailAmp * s * Math.sin(swim - 4.5 * s),
+    hc: TAIL_TIP_HALF_HEIGHT + (tail.rootHalfHeight - TAIL_TIP_HALF_HEIGHT) * Math.pow(1 - s, 1.1),
   };
 }
 
 /** Rotation of the local tail direction at s, in (-pi/2, pi/2). 0 when the tail is straight. */
-export function tailAngleAt(s: number, swim: number, tailAmp: number): number {
-  const dyds = 11 * tailAmp * (Math.sin(swim - 4.5 * s) - 4.5 * s * Math.cos(swim - 4.5 * s));
-  return Math.atan(dyds / -44);
+export function tailAngleAt(s: number, swim: number, tailAmp: number, tail: TailGeometry = PROTOTYPE_TAIL): number {
+  const dyds = TAIL_WAVE * tailAmp * (Math.sin(swim - 4.5 * s) - 4.5 * s * Math.cos(swim - 4.5 * s));
+  return Math.atan(dyds / -tail.length);
+}
+
+/** Tail points painted from root to tip (guide 6f: 14 segments). */
+export const TAIL_SEGMENTS = 14;
+/** The fin bands start at this tail point (guide 6b). */
+export const TAIL_FIN_START = 3;
+/** The Tail slot anchor sits on the core top at this tail point (guide 6i). */
+export const TAIL_SLOT_POINT = 4;
+
+/** One painted tail point plus its fin reach beyond the core, top and bottom. */
+export interface TailSample extends TailPoint {
+  readonly s: number;
+  readonly finTop: number;
+  readonly finBottom: number;
+}
+
+/** The TAIL_SEGMENTS + 1 tail points the painter joins, root first. */
+export function tailSamples(tail: TailGeometry, swim: number, tailAmp: number): TailSample[] {
+  const samples: TailSample[] = [];
+  for (let i = 0; i <= TAIL_SEGMENTS; i++) {
+    const s = i / TAIL_SEGMENTS;
+    const rise = Math.sin(Math.PI * Math.pow(s, 0.8));
+    samples.push({
+      s,
+      ...tailPointAt(s, swim, tailAmp, tail),
+      finTop: TAIL_FIN_BASE + tail.finTop * rise,
+      finBottom: TAIL_FIN_BASE + tail.finBottom * rise,
+    });
+  }
+  return samples;
 }
 
 /** A body mark in local units. */
@@ -660,7 +1010,7 @@ export interface SpotSet {
 const dot = (x: number, y: number, r: number): BodyMark => ({ x, y, rx: r, ry: r, rot: 0 });
 const tailDot = (s: number, v: number, r: number): TailMark => ({ s, v, rx: r, ry: r });
 
-/** Guide 6n. Freckles are the prototype's three (6g). */
+/** Guide 6n, placed on the prototype torso and tail. Freckles are the prototype's three (6g). */
 export const SPOT_SETS: Readonly<Record<SpotsOption, SpotSet>> = {
   none: { body: [], tail: [] },
   freckles: { body: [dot(-20, 1, 1.7), dot(-29, -4, 1.5), dot(-12, 5, 1.4)], tail: [] },
@@ -677,14 +1027,24 @@ export const SPOT_SETS: Readonly<Record<SpotsOption, SpotSet>> = {
   },
 };
 
-/** Every mark of a spot option resolved to local units; tail marks follow the wave. */
-export function spotMarks(option: SpotsOption, swim: number, tailAmp: number): BodyMark[] {
+/**
+ * Every mark of a spot option resolved to local units. Body marks move onto
+ * `torso` (see torsoPoint); tail marks ride `tail` and its wave.
+ */
+export function spotMarks(
+  option: SpotsOption,
+  swim: number,
+  tailAmp: number,
+  tail: TailGeometry = PROTOTYPE_TAIL,
+  torso: BodyEllipse = PROTOTYPE_TORSO,
+): BodyMark[] {
   const set = SPOT_SETS[option];
-  const tail = set.tail.map((m): BodyMark => {
-    const tp = tailPointAt(m.s, swim, tailAmp);
-    return { x: tp.x, y: tp.cy + m.v * tp.hc, rx: m.rx, ry: m.ry, rot: tailAngleAt(m.s, swim, tailAmp) };
+  const body = set.body.map((m): BodyMark => ({ ...m, ...torsoPoint(torso, m.x, m.y) }));
+  const tailMarks = set.tail.map((m): BodyMark => {
+    const tp = tailPointAt(m.s, swim, tailAmp, tail);
+    return { x: tp.x, y: tp.cy + m.v * tp.hc, rx: m.rx, ry: m.ry, rot: tailAngleAt(m.s, swim, tailAmp, tail) };
   });
-  return [...set.body, ...tail];
+  return [...body, ...tailMarks];
 }
 
 /** Paint spots (layer 8): flat fills, no outline. */
@@ -694,9 +1054,11 @@ export function paintSpots(
   swim: number,
   tailAmp: number,
   colour: string,
+  tail: TailGeometry = PROTOTYPE_TAIL,
+  torso: BodyEllipse = PROTOTYPE_TORSO,
 ): void {
   ctx.fillStyle = colour;
-  for (const m of spotMarks(option, swim, tailAmp)) {
+  for (const m of spotMarks(option, swim, tailAmp, tail, torso)) {
     const p = new Path2D();
     ell(p, m.x, m.y, m.rx, m.ry, m.rot);
     ctx.fill(p);

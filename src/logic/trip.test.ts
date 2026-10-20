@@ -872,7 +872,7 @@ const WILD = axolotlFindId('wild');
 const strandPlace: Point = { x: 800, y: 200 };
 
 function strandingAt(pos: Point, morph: RealMorphId = 'wild'): Stranding {
-  return { id: axolotlFindId(morph), morph, placeId: 'test/strand', x: pos.x, y: pos.y, met: false };
+  return { id: axolotlFindId(morph), morph, sex: 'boy', placeId: 'test/strand', x: pos.x, y: pos.y, met: false };
 }
 
 function rescueTrip(source: TripSource = findZone, place: Point = strandPlace, banked: string[] = []): TripState {

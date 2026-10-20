@@ -2,12 +2,12 @@
  * The play session across trips: what the Home Tank hub owns and what the canal remembers between
  * trips. `hub` is the part a save would hold (#15); `canal` is session-only and never saved.
  */
-import { DEFAULT_LOOK, isAxolotlLook, type AxolotlLook } from './axolotlLook';
+import { copyLook, isAxolotlLook, rescuedLook, type AxolotlLook, type AxolotlSex } from './axolotlLook';
 import { cleanName, isValidName, unusedSuggestedName } from './axolotlNames';
 import { createCollectibles, type Collectible } from './collectibles';
 import { REAL_MORPHS, STARTER_MORPH, axolotlFindId, isAxolotlFindId, rescuableMorphs, rescueMorphsIn, type RealMorphId } from './morphs';
 import { nextTripSeed } from './placement';
-import { waitingAfterTrip, type WaitingStranded } from './rescue';
+import { waitingAfterTrip, type RescueState, type WaitingStranded } from './rescue';
 import { bestStarsFor, withStars, type AreaStars, type AreaStarsRecord } from './stars';
 import { createTankLayout, sanitizeLayout, type TankLayout } from './tank';
 import type { TripState } from './trip';
@@ -74,6 +74,12 @@ export interface Session {
   canal: CanalState;
 }
 
+/** An axolotl rescued on a trip: its real morph and whether it is a boy or a girl. */
+export interface RescuedAxolotl {
+  morph: RealMorphId;
+  sex: AxolotlSex;
+}
+
 /**
  * What a trip starts from: the banked ids, the snacks already eaten, the trip seed, the owned
  * morphs, the stranded axolotl left waiting and whether the tilapia fact card was already seen.
@@ -88,7 +94,7 @@ export interface TripStart {
 }
 
 /**
- * What an ended trip hands back: every banked treasure id, the morphs of the axolotls banked, the
+ * What an ended trip hands back: every banked treasure id, the morph and sex of each axolotl banked, the
  * eaten snack ids, the trip's seed, the stranded axolotl left waiting and whether a tilapia was met.
  * The eaten snack ids are empty after being carried home or beating the area (PRD A12, A19, open
  * question 14, ADR 0010). `stars` is the area beaten and the stars earned, set only when the area
@@ -96,7 +102,7 @@ export interface TripStart {
  */
 export interface TripEndRecord {
   banked: string[];
-  rescued: RealMorphId[];
+  rescued: RescuedAxolotl[];
   eatenSnacks: string[];
   tripSeed: number;
   waitingStranded: WaitingStranded | null;
@@ -128,15 +134,14 @@ export function needsStarter(session: Session): boolean {
 }
 
 /**
- * `style` with its name cleaned and only the five look fields copied. Throws when the cleaned name or
- * the look is invalid.
+ * `style` with its name cleaned and only the look fields (LOOK_FIELDS) copied. Throws when the cleaned
+ * name or the look is invalid, including a look with no sex.
  */
 function checkedStyle(caller: string, style: AxolotlStyle): AxolotlStyle {
   const name = cleanName(style.name);
   if (!isValidName(name)) throw new Error(`${caller}: invalid name ${JSON.stringify(style.name)}`);
   if (!isAxolotlLook(style.look)) throw new Error(`${caller}: invalid look`);
-  const { eyes, mouth, gills, spots, size } = style.look;
-  return { name, look: { eyes, mouth, gills, spots, size } };
+  return { name, look: copyLook(style.look) };
 }
 
 /**
@@ -156,24 +161,37 @@ export function addStarter(session: Session, style: AxolotlStyle, starterMorph: 
 
 /**
  * The session with axolotl `id` renamed and restyled (PRD F6). Only the name and the look change;
- * every other field of that axolotl is kept. The name is cleaned and the look copied. Throws when no
- * owned axolotl has `id`, or when the cleaned name or the look is invalid.
+ * every other field of that axolotl is kept, and so is its sex whatever the style's look says. The
+ * name is cleaned and the look copied. Throws when no owned axolotl has `id`, or when the cleaned
+ * name or the look is invalid.
  */
 export function restyleAxolotl(session: Session, id: string, style: AxolotlStyle): Session {
   if (!session.hub.axolotls.some((axolotl) => axolotl.id === id)) {
     throw new Error(`restyleAxolotl: no owned axolotl has id ${id}`);
   }
   const checked = checkedStyle('restyleAxolotl', style);
-  const axolotls = session.hub.axolotls.map((axolotl) => (axolotl.id === id ? { ...axolotl, ...checked } : axolotl));
+  const axolotls = session.hub.axolotls.map((axolotl) => (axolotl.id === id ? restyled(axolotl, checked) : axolotl));
   return { ...session, hub: { ...session.hub, axolotls } };
 }
 
+/** `axolotl` with the checked style's name and look, keeping its id, morph and sex. */
+function restyled(axolotl: OwnedAxolotl, checked: AxolotlStyle): OwnedAxolotl {
+  return { ...axolotl, name: checked.name, look: { ...checked.look, sex: axolotl.look.sex } };
+}
+
 /**
- * A newly owned axolotl of real morph `morph`, such as a rescued one: the first suggested name no
- * owned axolotl uses and a copy of the default look. The player can restyle it later (PRD F6).
+ * A newly owned axolotl of real morph `morph` and sex `sex`, such as a rescued one: the first
+ * suggested name for `sex` no owned axolotl uses and the rescued look for `sex`. The player can
+ * restyle it later (PRD F6).
  */
-export function newOwnedAxolotl(id: string, morph: RealMorphId, owned: readonly OwnedAxolotl[]): OwnedAxolotl {
-  return { id, morph, name: unusedSuggestedName(owned.map((axolotl) => axolotl.name)), look: { ...DEFAULT_LOOK } };
+export function newOwnedAxolotl(
+  id: string,
+  morph: RealMorphId,
+  owned: readonly OwnedAxolotl[],
+  sex: AxolotlSex,
+): OwnedAxolotl {
+  const name = unusedSuggestedName(owned.map((axolotl) => axolotl.name), sex);
+  return { id, morph, name, look: rescuedLook(sex) };
 }
 
 /**
@@ -203,13 +221,13 @@ function keepsEatenSnacks(reason: TripEndReason): boolean {
 }
 
 /**
- * The record of an ended trip in area `areaId`: its banked treasure ids, the morphs of its banked
- * axolotls, the eaten snack ids, its seed, the stranded axolotl left waiting and whether a tilapia
+ * The record of an ended trip in area `areaId`: its banked treasure ids, the morph and sex of its
+ * banked axolotls (the sex from the trip's rescue), the eaten snack ids, its seed, the stranded axolotl left waiting and whether a tilapia
  * was met. The ids of the collected snacks are kept after going home; after being carried home or
  * beating the area every snack comes back, so the eaten snack ids are empty (PRD A12, A19, open
  * question 14, ADR 0010). A stranded axolotl met but not banked is left waiting at its place (PRD
  * C5). A beaten area also records `areaId` and the stars earned (H6). Throws when the trip has not
- * ended, has no ending, or beat the area with no stars.
+ * ended, has no ending, banked an axolotl that is not its rescue, or beat the area with no stars.
  */
 export function tripEndRecord(
   trip: TripState,
@@ -224,7 +242,7 @@ export function tripEndRecord(
   }
   const record: TripEndRecord = {
     banked: trip.holdings.banked.filter((id) => !isAxolotlFindId(id)),
-    rescued: rescueMorphsIn(trip.holdings.banked),
+    rescued: rescuedIn(trip.holdings.banked, trip.rescue),
     eatenSnacks: keepsEatenSnacks(trip.ending.reason)
       ? snacks.filter((snack) => snack.collected).map((snack) => snack.id)
       : [],
@@ -242,8 +260,8 @@ export function tripEndRecord(
 /**
  * Takes an ended trip into the session. Banked becomes the order-preserving, de-duplicated union of
  * the session's and the record's banked treasure ids, so it never shrinks; axolotl find ids are
- * never banked. Each rescued morph not already owned becomes an owned axolotl, appended after the
- * others, and its morph is found in the Collection Book, kept in REAL_MORPHS order (PRD C4). The
+ * never banked. Each rescued morph not already owned becomes an owned axolotl of the rescued sex,
+ * appended after the others, and its morph is found in the Collection Book, kept in REAL_MORPHS order (PRD C4). The
  * tilapia fact card stays unlocked once a tilapia was met. Stars earned merge into the best stars
  * for their area, so they never go down (PRD H7). The eaten snacks, the trip seed and the waiting
  * stranded axolotl are stored, so eaten snacks are kept after going home and cleared after being
@@ -255,7 +273,7 @@ export function recordTripEnd(session: Session, record: TripEndRecord): Session 
   const banked = [...new Set([...hub.banked, ...record.banked])].filter((id) => !isAxolotlFindId(id));
   const kept = hub.axolotls.map((axolotl) => ({ ...axolotl, look: { ...axolotl.look } }));
   const axolotls = [...kept, ...adoptRescued(hub.axolotls, record.rescued)];
-  const found = new Set<RealMorphId>([...hub.book.foundMorphs, ...record.rescued]);
+  const found = new Set<RealMorphId>([...hub.book.foundMorphs, ...record.rescued.map((rescued) => rescued.morph)]);
   const book: CollectionBookState = {
     foundMorphs: REAL_MORPHS.map((morph) => morph.id).filter((id) => found.has(id)),
     tilapiaCard: hub.book.tilapiaCard || record.metTilapia,
@@ -282,21 +300,34 @@ export function bestStars(session: Session, areaId: string): AreaStars {
 }
 
 /**
- * One owned axolotl per morph in `rescued` not owned yet, de-duplicated, in `rescued` order, each
- * made by `newOwnedAxolotl` so its suggested name is unused by the owned and the earlier adopted ones.
+ * The morph and sex of each axolotl find id in `banked`, in `banked` order. Throws when a banked
+ * axolotl is not `rescue`, the trip's only stranded axolotl.
  */
-function adoptRescued(owned: readonly OwnedAxolotl[], rescued: readonly RealMorphId[]): OwnedAxolotl[] {
-  const ownedMorphs = new Set(owned.map((axolotl) => axolotl.morph));
+function rescuedIn(banked: readonly string[], rescue: RescueState | null): RescuedAxolotl[] {
+  return rescueMorphsIn(banked).map((morph) => {
+    if (rescue?.morph !== morph) throw new Error(`tripEndRecord: banked axolotl ${morph} is not the trip's rescue`);
+    return { morph, sex: rescue.sex };
+  });
+}
+
+/**
+ * One owned axolotl per morph in `rescued` not owned yet, de-duplicated by morph (the first sex
+ * wins), in `rescued` order, each made by `newOwnedAxolotl` with its rescued sex so its suggested
+ * name is unused by the owned and the earlier adopted ones.
+ */
+function adoptRescued(owned: readonly OwnedAxolotl[], rescued: readonly RescuedAxolotl[]): OwnedAxolotl[] {
+  const takenMorphs = new Set(owned.map((axolotl) => axolotl.morph));
   const adopted: OwnedAxolotl[] = [];
-  for (const morph of new Set(rescued)) {
-    if (ownedMorphs.has(morph)) continue;
-    adopted.push(newOwnedAxolotl(axolotlFindId(morph), morph, [...owned, ...adopted]));
+  for (const { morph, sex } of rescued) {
+    if (takenMorphs.has(morph)) continue;
+    takenMorphs.add(morph);
+    adopted.push(newOwnedAxolotl(axolotlFindId(morph), morph, [...owned, ...adopted], sex));
   }
   return adopted;
 }
 
 function copyWaiting(waiting: WaitingStranded | null): WaitingStranded | null {
-  return waiting ? { morph: waiting.morph, placeId: waiting.placeId } : null;
+  return waiting ? { morph: waiting.morph, sex: waiting.sex, placeId: waiting.placeId } : null;
 }
 
 /** Fresh collectibles for `spawns` with every id in `eaten` already collected. Unknown ids are ignored. */

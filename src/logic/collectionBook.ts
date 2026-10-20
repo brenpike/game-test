@@ -4,7 +4,7 @@
  * data; drawing lives in the scene and art layers.
  */
 import { DREAM_COLOURS, type DreamColour, type DreamColourId } from './catalogue';
-import { FACT_CARD_UNFOUND_HINT, TILAPIA_FACT } from './factCards';
+import { BOY_OR_GIRL_FACT, FACT_CARD_UNFOUND_HINT, TILAPIA_FACT } from './factCards';
 import type { Rect, Size } from './hudLayout';
 import {
   MORPH_UNFOUND_HINT,
@@ -78,7 +78,7 @@ export type BookMorphSection = BookSectionOf<'morph', BookMorphEntry>;
 /** The Dream colours section, heading 'Dream colours'. */
 export type BookDreamColourSection = BookSectionOf<'dreamColour', BookDreamColourEntry>;
 
-/** The Fact cards section, heading e.g. 'Fact cards: 1 of 1 found'. */
+/** The Fact cards section, heading e.g. 'Fact cards: 2 of 2 found'. */
 export type BookFactCardSection = BookSectionOf<'factCard', BookFactCardEntry>;
 
 /** Any Collection Book section. */
@@ -166,6 +166,10 @@ function createTilapiaEntry(found: boolean): BookFactCardEntry {
   return { id: TILAPIA_FACT.id, found: true, name: TILAPIA_FACT.name, text: TILAPIA_FACT.body, hasPicture: true };
 }
 
+function createBoyOrGirlEntry(): BookFactCardEntry {
+  return { id: BOY_OR_GIRL_FACT.id, found: true, name: BOY_OR_GIRL_FACT.name, text: BOY_OR_GIRL_FACT.body, hasPicture: false };
+}
+
 function countedHeading(name: string, entries: readonly { found: boolean }[]): string {
   const found = entries.filter((entry) => entry.found).length;
   return `${name}: ${foundCountText(found, entries.length)}`;
@@ -175,7 +179,8 @@ function countedHeading(name: string, entries: readonly { found: boolean }[]): s
  * The Collection Book sections, always Morphs, Dream colours, then Fact cards. Morphs lists the eight
  * real morphs in REAL_MORPHS order, found when in `foundMorphs` (duplicates and order ignored).
  * Dream colours lists all 12 in catalogue order, each with DREAM_COLOUR_LABEL. Fact cards holds the
- * tilapia card, found only when `tilapiaFound` is true (PRD C14).
+ * tilapia card, found only when `tilapiaFound` is true, then the boy or girl card, always found
+ * and with no picture (PRD C14).
  */
 export function bookListing(
   foundMorphs: readonly RealMorphId[],
@@ -183,7 +188,7 @@ export function bookListing(
 ): readonly [BookMorphSection, BookDreamColourSection, BookFactCardSection] {
   const owned = new Set(foundMorphs);
   const morphs = REAL_MORPHS.map((morph) => createMorphEntry(morph, owned.has(morph.id)));
-  const factCards = [createTilapiaEntry(tilapiaFound)];
+  const factCards = [createTilapiaEntry(tilapiaFound), createBoyOrGirlEntry()];
   return [
     { category: 'morph', heading: countedHeading(MORPHS_HEADING, morphs), entries: morphs },
     { category: 'dreamColour', heading: DREAM_COLOURS_HEADING, entries: DREAM_COLOURS.map(createDreamColourEntry) },

@@ -1,12 +1,9 @@
 import * as Phaser from 'phaser';
 import { DEPTH } from '../art/layers';
 import { HOME_TANK_WALL } from '../art/palette';
-import { DEFAULT_LOOK } from '../logic/axolotlLook';
-import { randomSuggestedName } from '../logic/axolotlNames';
 import { GAME_EVENTS, REGISTRY_KEYS, type ReducedMotionPayload } from '../logic/gameEvents';
-import { STARTER_MORPH } from '../logic/morphs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
-import type { StylerAxolotl } from '../logic/styler';
+import { creatorStart, type StylerAxolotl } from '../logic/styler';
 import { AxolotlStyler } from './AxolotlStyler';
 import { SCENE_KEYS, readSceneView, useCssCamera, type GameAssets, type SceneView } from './BootScene';
 import { finishCreator } from './sceneFlow';
@@ -22,11 +19,11 @@ const CAPTURED_KEYS: readonly number[] = [
 ];
 
 /**
- * The first-launch character creator (PRD F1 to F3, F16, F17): the axolotl styler in create mode on
- * the Home Tank wall colour, with no cancel. It starts from the default look, the starter morph and a
- * random suggested name, so Done works at once. Done hands the name, look and morph to the scene
- * flow, once, which makes them the starter and opens the Home Tank. Session only: nothing is saved
- * to the device.
+ * The first-launch character creator (PRD F1 to F3, F16, F17): the axolotl styler's step-by-step
+ * creator on the Home Tank wall colour, with no cancel. It starts from creatorStart(): the default
+ * look with a random boy or girl, a random suggested name that fits, and the starter morph. Done on
+ * the last step hands the name, look and morph to the scene flow, once, which makes them the starter
+ * and opens the Home Tank. Session only: nothing is saved to the device.
  */
 export class CreatorScene extends Phaser.Scene {
   private assets!: GameAssets;
@@ -51,9 +48,9 @@ export class CreatorScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(HOME_TANK_WALL);
 
     this.styler = new AxolotlStyler(this, this.assets, this.view, DEPTH.ui, {
-      mode: 'create',
+      mode: 'creator',
       motion: () => this.motion,
-      initial: { name: randomSuggestedName(Math.random), look: DEFAULT_LOOK, morph: STARTER_MORPH },
+      initial: creatorStart(Math.random),
       onDone: (axolotl) => this.finish(axolotl),
     });
     this.bindInput();

@@ -1,9 +1,10 @@
 /**
- * Axolotl name rules: the suggested names list and the cleaning that keeps a typed or pasted name
- * short and plain (PRD F2, F17). Outside IME composition a name field's text is always a name draft
+ * Axolotl name rules: the suggested names list, which names fit a boy or a girl, and the cleaning
+ * that keeps a typed or pasted name short and plain (PRD F2, F17). Outside IME composition a name field's text is always a name draft
  * (see nameDraft), so the text shown and the name it counts cannot differ. Names never leave the
  * device.
  */
+import type { AxolotlSex } from './axolotlLook';
 import { nextFocusIndex } from './tankUi';
 
 /**
@@ -31,25 +32,64 @@ export interface NameEdit {
   readonly caret: number;
 }
 
-/** Suggested names, so a player never has to type one (PRD F17). */
-export const SUGGESTED_NAMES: readonly string[] = Object.freeze([
-  'Bubbles',
-  'Gilly',
-  'Pebble',
-  'Noodle',
-  'Sprinkles',
-  'Mochi',
-  'Lily',
-  'Ripple',
-  'Puddle',
-  'Sunny',
-  'Blossom',
-  'Peanut',
-  'Wiggles',
-  'Splash',
-  'Pickle',
-  'Xochi',
+/** Which axolotls a suggested name fits: boys only, girls only, or any. */
+type NameFit = AxolotlSex | 'any';
+
+interface SuggestedName {
+  readonly name: string;
+  readonly fit: NameFit;
+}
+
+function freezeSuggestions(suggestions: SuggestedName[]): readonly SuggestedName[] {
+  return Object.freeze(suggestions.map((suggestion) => Object.freeze(suggestion)));
+}
+
+const SUGGESTED_NAME_FITS = freezeSuggestions([
+  { name: 'Bubbles', fit: 'any' },
+  { name: 'Gilly', fit: 'any' },
+  { name: 'Pebble', fit: 'any' },
+  { name: 'Noodle', fit: 'any' },
+  { name: 'Sprinkles', fit: 'any' },
+  { name: 'Mochi', fit: 'any' },
+  { name: 'Lily', fit: 'girl' },
+  { name: 'Ripple', fit: 'any' },
+  { name: 'Puddle', fit: 'any' },
+  { name: 'Sunny', fit: 'any' },
+  { name: 'Blossom', fit: 'girl' },
+  { name: 'Peanut', fit: 'any' },
+  { name: 'Wiggles', fit: 'any' },
+  { name: 'Splash', fit: 'any' },
+  { name: 'Pickle', fit: 'any' },
+  { name: 'Xochi', fit: 'any' },
+  { name: 'Axel', fit: 'boy' },
+  { name: 'Finn', fit: 'boy' },
+  { name: 'Ollie', fit: 'boy' },
+  { name: 'Milo', fit: 'boy' },
+  { name: 'Gus', fit: 'boy' },
+  { name: 'Daisy', fit: 'girl' },
+  { name: 'Rosie', fit: 'girl' },
+  { name: 'Luna', fit: 'girl' },
 ]);
+
+/** Suggested names, so a player never has to type one (PRD F17); every name, for any sex. */
+export const SUGGESTED_NAMES: readonly string[] = Object.freeze(
+  SUGGESTED_NAME_FITS.map((suggestion) => suggestion.name),
+);
+
+function namesFitting(sex: AxolotlSex): readonly string[] {
+  const fitting = SUGGESTED_NAME_FITS.filter((suggestion) => suggestion.fit === 'any' || suggestion.fit === sex);
+  return Object.freeze(fitting.map((suggestion) => suggestion.name));
+}
+
+const SUGGESTED_NAMES_BY_SEX: { readonly [Sex in AxolotlSex]: readonly string[] } = Object.freeze({
+  boy: namesFitting('boy'),
+  girl: namesFitting('girl'),
+});
+
+/** The suggested names that fit `sex`, in SUGGESTED_NAMES order. */
+export function suggestedNamesFor(sex: AxolotlSex): readonly string[] {
+  return SUGGESTED_NAMES_BY_SEX[sex];
+}
 
 const NAME_PIECE_PATTERN = new RegExp(String.raw`\p{L}\p{M}{0,${NAME_MARKS_MAX}}|\p{Nd}|['’-]|\s+`, 'gu');
 const WHITESPACE_RUN_PATTERN = /\s+/gu;
@@ -180,29 +220,45 @@ export function fitNameEdit(before: string, after: string, caret: number): NameE
   return { value, caret: draftPrefixLength(value, caretCount) };
 }
 
-/** A random suggested name; `rand` yields floats in [0, 1), such as mulberry32. */
-export function randomSuggestedName(rand: () => number): string {
-  const count = SUGGESTED_NAMES.length;
-  const index = Math.min(count - 1, Math.max(0, Math.floor(rand() * count)));
-  return SUGGESTED_NAMES[index];
-}
-
 function suggestedNameKey(name: string): string {
   return name.toLowerCase();
 }
 
 /**
- * The suggested name `step` places from `current` (matched ignoring case), wrapping past either end.
- * A name not in the list starts from before the first name (step >= 0) or after the last (step < 0).
+ * True when `name` fits `sex`: a suggested name (matched ignoring case) fits when it is tagged for
+ * that sex or for any; a name not on the list always fits.
  */
-export function stepSuggestedName(current: string, step: number): string {
-  const currentKey = suggestedNameKey(current);
-  const currentIndex = SUGGESTED_NAMES.findIndex((name) => suggestedNameKey(name) === currentKey);
-  return SUGGESTED_NAMES[nextFocusIndex(currentIndex, SUGGESTED_NAMES.length, step)];
+export function nameFits(name: string, sex: AxolotlSex): boolean {
+  const nameKey = suggestedNameKey(name);
+  const suggestion = SUGGESTED_NAME_FITS.find((candidate) => suggestedNameKey(candidate.name) === nameKey);
+  return suggestion === undefined || suggestion.fit === 'any' || suggestion.fit === sex;
 }
 
-/** The first suggested name not in `taken` (ignoring case); the first name when all are taken. */
-export function unusedSuggestedName(taken: readonly string[]): string {
+/** A random suggested name that fits `sex`; `rand` yields floats in [0, 1), such as mulberry32. */
+export function randomSuggestedName(rand: () => number, sex: AxolotlSex): string {
+  const names = suggestedNamesFor(sex);
+  const index = Math.min(names.length - 1, Math.max(0, Math.floor(rand() * names.length)));
+  return names[index];
+}
+
+/**
+ * The suggested name fitting `sex` that `step` places from `current` (matched ignoring case) among
+ * the names fitting `sex`, wrapping past either end. A name not among them starts from before the
+ * first name (step >= 0) or after the last (step < 0).
+ */
+export function stepSuggestedName(current: string, step: number, sex: AxolotlSex): string {
+  const names = suggestedNamesFor(sex);
+  const currentKey = suggestedNameKey(current);
+  const currentIndex = names.findIndex((name) => suggestedNameKey(name) === currentKey);
+  return names[nextFocusIndex(currentIndex, names.length, step)];
+}
+
+/**
+ * The first suggested name fitting `sex` not in `taken` (ignoring case); the first name fitting
+ * `sex` when all are taken.
+ */
+export function unusedSuggestedName(taken: readonly string[], sex: AxolotlSex): string {
+  const names = suggestedNamesFor(sex);
   const takenKeys = new Set(taken.map(suggestedNameKey));
-  return SUGGESTED_NAMES.find((name) => !takenKeys.has(suggestedNameKey(name))) ?? SUGGESTED_NAMES[0];
+  return names.find((name) => !takenKeys.has(suggestedNameKey(name))) ?? names[0];
 }

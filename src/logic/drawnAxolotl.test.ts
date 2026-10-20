@@ -158,7 +158,8 @@ describe('drawnAxolotl', () => {
       const preHead = headPoint(preBody);
       const postHead = headPoint(postBody);
       const gap = Math.hypot(postHead.x - preHead.x, postHead.y - preHead.y);
-      expect(gap).toBeGreaterThanOrEqual(9);
+      expect(gap).toBeCloseTo(2 * SNACK_REACH.headAhead * Math.sin(MAX_TILT / 2), 9);
+      expect(gap).toBeGreaterThan(8);
       const reach = SNACK_REACH.radius - 0.5;
       const away = { x: (postHead.x - preHead.x) / gap, y: (postHead.y - preHead.y) / gap };
       const snack: Collectible = {

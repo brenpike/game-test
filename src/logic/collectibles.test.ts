@@ -271,10 +271,10 @@ const HEAD_INK = 3.5;
 const SCENE_SCALE = 0.95;
 
 /**
- * Every size factor, mirroring AXO_SIZE_SCALE (src/art/drawAxolotlParts.ts) plus 0.6 for a smaller
- * Small. The only list of sizes in these tests: issue #52 adds its sizes here.
+ * Every size factor, mirroring AXO_SIZE_SCALE (src/art/drawAxolotlParts.ts). The only list of
+ * sizes in these tests.
  */
-const SIZE_FACTORS: readonly number[] = [0.6, 0.85, 1, 1.15];
+const SIZE_FACTORS: readonly number[] = [0.72, 0.85, 1];
 
 /** Largest sprite rotation: swim tilt, idle tilt and the wobble of three missing legs (src/logic/legs.ts). */
 const MAX_ROTATION = MAX_TILT + IDLE_TILT + (LEGS.count - 1) * LEGS.wobbleAmp;
@@ -327,8 +327,8 @@ function eatenIds(items: readonly Collectible[], body: DrawnBody, frame: SnackFr
 }
 
 describe('SNACK_REACH', () => {
-  it('reaches 36 px around a point 28 px ahead', () => {
-    expect(SNACK_REACH).toEqual({ headAhead: 28, radius: 36 });
+  it('reaches 36 px around a point 25 px ahead', () => {
+    expect(SNACK_REACH).toEqual({ headAhead: 25, radius: 36 });
     expect(Object.isFrozen(SNACK_REACH)).toBe(true);
   });
 
@@ -378,8 +378,8 @@ describe('snackBobY, drawnSnackX and drawnSnackY', () => {
 
 describe('headPoint', () => {
   it('lies headAhead px along the facing', () => {
-    expect(headPoint({ x: 500, y: 300, facing: 1, rotation: 0 })).toEqual({ x: 528, y: 300 });
-    expect(headPoint({ x: 500, y: 300, facing: -1, rotation: 0 })).toEqual({ x: 472, y: 300 });
+    expect(headPoint({ x: 500, y: 300, facing: 1, rotation: 0 })).toEqual({ x: 525, y: 300 });
+    expect(headPoint({ x: 500, y: 300, facing: -1, rotation: 0 })).toEqual({ x: 475, y: 300 });
   });
 
   it('honours a custom reach', () => {
@@ -410,10 +410,10 @@ describe('headPoint', () => {
     }
   });
 
-  it('lies 16.8 px ahead at the turn squash with no rotation', () => {
+  it('lies 15 px ahead at the turn squash with no rotation', () => {
     for (const facing of [1, -1] as const) {
       const head = headPoint({ x: 500, y: 300, facing, rotation: 0, squash: TURN_SQUASH });
-      expect(head.x).toBeCloseTo(500 + facing * 16.8, 9);
+      expect(head.x).toBeCloseTo(500 + facing * 15, 9);
       expect(head.y).toBe(300);
     }
   });
@@ -569,7 +569,7 @@ describe('collectSnacksAtHead on a fast pass', () => {
   );
 
   it('reaches past the farthest largest-head point from either end of the longest step', () => {
-    expect(farthestHeadPoint).toBeCloseTo(33.8, 1);
+    expect(farthestHeadPoint).toBeCloseTo(29.3, 1);
     const reachMidStep = Math.sqrt(SNACK_REACH.radius ** 2 - (longestStep / 2) ** 2);
     expect(reachMidStep).toBeGreaterThanOrEqual(farthestHeadPoint);
   });

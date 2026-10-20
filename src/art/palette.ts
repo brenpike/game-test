@@ -346,7 +346,7 @@ export const PIEBALD: MorphPalette = {
         bodyMark(-6, -3, 4.2),
         bodyMark(-24, 1, 3.6),
         tailMark(0.35, -0.3, 2.8),
-        tailMark(0.65, 0.2, 2.2),
+        tailMark(0.55, 0.2, 2.2),
       ],
     },
   },

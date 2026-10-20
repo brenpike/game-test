@@ -1,28 +1,66 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AGE_OPTIONS,
+  BODY_OPTIONS,
   DEFAULT_LOOK,
   EYE_OPTIONS,
   GILL_OPTIONS,
+  LOOK_FIELDS,
+  LOOK_FIELD_OPTIONS,
   MOUTH_OPTIONS,
+  SEX_OPTIONS,
   SIZE_OPTIONS,
   SPOT_OPTIONS,
+  TAIL_OPTIONS,
+  copyLook,
   isAxolotlLook,
+  rescuedLook,
+  sameLook,
   stepOption,
   surpriseLook,
   type AxolotlLook,
+  type LookField,
   type LookOption,
 } from './axolotlLook';
 import { mulberry32 } from './rng';
 
 const SEED_COUNT = 500;
 
-const OPTION_LISTS: readonly [string, readonly LookOption<string>[], readonly string[], readonly string[]][] = [
+const OPTION_LISTS: readonly [LookField, readonly LookOption<string>[], readonly string[], readonly string[]][] = [
   ['eyes', EYE_OPTIONS, ['happy', 'sleepy', 'determined', 'curious', 'grumpy'], ['Happy', 'Sleepy', 'Determined', 'Curious', 'Grumpy']],
   ['mouth', MOUTH_OPTIONS, ['smile', 'openD', 'tongueOut', 'smallO'], ['Smile', 'Open D', 'Tongue out', 'Small o']],
   ['gills', GILL_OPTIONS, ['fluffy', 'long', 'short'], ['Fluffy', 'Long', 'Short']],
   ['spots', SPOT_OPTIONS, ['none', 'freckles', 'dots', 'patches'], ['None', 'Freckles', 'Dots', 'Patches']],
   ['size', SIZE_OPTIONS, ['small', 'medium', 'large'], ['Small', 'Medium', 'Large']],
+  ['sex', SEX_OPTIONS, ['boy', 'girl'], ['Boy', 'Girl']],
+  ['tail', TAIL_OPTIONS, ['short', 'medium', 'long'], ['Short', 'Medium', 'Long']],
+  ['body', BODY_OPTIONS, ['slim', 'regular', 'chubby'], ['Slim', 'Regular', 'Chubby']],
+  ['age', AGE_OPTIONS, ['baby', 'young', 'grownUp'], ['Baby', 'Young', 'Grown-up']],
 ];
+
+const PROTOTYPE_LOOK: AxolotlLook = {
+  eyes: 'happy',
+  mouth: 'openD',
+  gills: 'fluffy',
+  spots: 'freckles',
+  size: 'medium',
+  sex: 'boy',
+  tail: 'medium',
+  body: 'regular',
+  age: 'young',
+};
+
+const GIRL_LOOK: AxolotlLook = {
+  eyes: 'grumpy',
+  mouth: 'smallO',
+  gills: 'short',
+  spots: 'patches',
+  size: 'large',
+  sex: 'girl',
+  tail: 'long',
+  body: 'chubby',
+  age: 'grownUp',
+};
 
 function collectSurpriseLooks(): AxolotlLook[] {
   const looks: AxolotlLook[] = [];
@@ -47,13 +85,42 @@ describe('look options', () => {
   });
 });
 
-describe('DEFAULT_LOOK', () => {
-  it('is the prototype look', () => {
-    expect(DEFAULT_LOOK).toEqual({ eyes: 'happy', mouth: 'openD', gills: 'fluffy', spots: 'freckles', size: 'medium' });
+describe('LOOK_FIELDS', () => {
+  it('lists all nine look fields in surprise draw order', () => {
+    expect(LOOK_FIELDS).toEqual(['eyes', 'mouth', 'gills', 'spots', 'size', 'sex', 'tail', 'body', 'age']);
   });
 
-  it('is a valid look', () => {
+  it('is frozen', () => {
+    expect(Object.isFrozen(LOOK_FIELDS)).toBe(true);
+    expect(Object.isFrozen(LOOK_FIELD_OPTIONS)).toBe(true);
+  });
+
+  it('maps each field to its option list', () => {
+    expect(Object.keys(LOOK_FIELD_OPTIONS).sort()).toEqual([...LOOK_FIELDS].sort());
+    for (const [field, options] of OPTION_LISTS) expect(LOOK_FIELD_OPTIONS[field]).toBe(options);
+  });
+});
+
+describe('DEFAULT_LOOK', () => {
+  it('is the prototype look', () => {
+    expect(DEFAULT_LOOK).toEqual(PROTOTYPE_LOOK);
+  });
+
+  it('is a valid frozen look', () => {
     expect(isAxolotlLook(DEFAULT_LOOK)).toBe(true);
+    expect(Object.isFrozen(DEFAULT_LOOK)).toBe(true);
+  });
+});
+
+describe('rescuedLook', () => {
+  it('is DEFAULT_LOOK with the given sex', () => {
+    expect(rescuedLook('boy')).toEqual(PROTOTYPE_LOOK);
+    expect(rescuedLook('girl')).toEqual({ ...PROTOTYPE_LOOK, sex: 'girl' });
+  });
+
+  it('is a valid look and leaves DEFAULT_LOOK alone', () => {
+    expect(isAxolotlLook(rescuedLook('girl'))).toBe(true);
+    expect(DEFAULT_LOOK.sex).toBe('boy');
   });
 });
 
@@ -65,7 +132,7 @@ describe('isAxolotlLook', () => {
   });
 
   it('rejects a missing or unknown field value', () => {
-    for (const field of ['eyes', 'mouth', 'gills', 'spots', 'size'] as const) {
+    for (const field of LOOK_FIELDS) {
       const missing: Partial<AxolotlLook> = { ...DEFAULT_LOOK };
       delete missing[field];
       expect(isAxolotlLook(missing)).toBe(false);
@@ -77,6 +144,10 @@ describe('isAxolotlLook', () => {
   it('rejects an option id used in the wrong field', () => {
     expect(isAxolotlLook({ ...DEFAULT_LOOK, eyes: 'smile' })).toBe(false);
     expect(isAxolotlLook({ ...DEFAULT_LOOK, size: 'long' })).toBe(false);
+    expect(isAxolotlLook({ ...DEFAULT_LOOK, sex: 'medium' })).toBe(false);
+    expect(isAxolotlLook({ ...DEFAULT_LOOK, tail: 'small' })).toBe(false);
+    expect(isAxolotlLook({ ...DEFAULT_LOOK, body: 'large' })).toBe(false);
+    expect(isAxolotlLook({ ...DEFAULT_LOOK, age: 'boy' })).toBe(false);
   });
 
   it('accepts every option in every field', () => {
@@ -91,11 +162,25 @@ describe('surpriseLook', () => {
     for (const look of collectSurpriseLooks()) expect(isAxolotlLook(look)).toBe(true);
   });
 
+  it('always sets a sex', () => {
+    for (const look of collectSurpriseLooks()) expect(['boy', 'girl']).toContain(look.sex);
+  });
+
   it('reaches every option of every field', () => {
     const looks = collectSurpriseLooks();
     for (const [field, options] of OPTION_LISTS) {
-      const seen = new Set(looks.map((look) => look[field as keyof AxolotlLook]));
+      const seen = new Set(looks.map((look) => look[field]));
       expect(seen.size).toBe(options.length);
+    }
+  });
+
+  it('draws eyes, mouth, gills, spots and size first, then sex, tail, body and age', () => {
+    for (let seed = 0; seed < 50; seed++) {
+      const rand = mulberry32(seed);
+      const expected = Object.fromEntries(
+        OPTION_LISTS.map(([field, options]) => [field, options[Math.floor(rand() * options.length)].id]),
+      );
+      expect(surpriseLook(mulberry32(seed))).toEqual(expected);
     }
   });
 
@@ -108,6 +193,37 @@ describe('surpriseLook', () => {
   it('stays valid at the ends of the random range', () => {
     expect(isAxolotlLook(surpriseLook(() => 0))).toBe(true);
     expect(isAxolotlLook(surpriseLook(() => 0.9999999999))).toBe(true);
+  });
+});
+
+describe('copyLook', () => {
+  it('copies every look field into a new object', () => {
+    const copy = copyLook(GIRL_LOOK);
+    expect(copy).toEqual(GIRL_LOOK);
+    expect(copy).not.toBe(GIRL_LOOK);
+  });
+
+  it('drops extra keys', () => {
+    const withExtras = { ...GIRL_LOOK, morph: 'golden', name: 'Luna' } as AxolotlLook;
+    expect(copyLook(withExtras)).toEqual(GIRL_LOOK);
+    expect(Object.keys(copyLook(withExtras)).sort()).toEqual([...LOOK_FIELDS].sort());
+  });
+});
+
+describe('sameLook', () => {
+  it('is true for looks with the same option in every field', () => {
+    expect(sameLook(DEFAULT_LOOK, PROTOTYPE_LOOK)).toBe(true);
+    expect(sameLook(GIRL_LOOK, copyLook(GIRL_LOOK))).toBe(true);
+  });
+
+  it('ignores extra keys', () => {
+    expect(sameLook(GIRL_LOOK, { ...GIRL_LOOK, morph: 'golden' } as AxolotlLook)).toBe(true);
+  });
+
+  it('is false when any one field differs', () => {
+    for (const field of LOOK_FIELDS) {
+      expect(sameLook(PROTOTYPE_LOOK, { ...PROTOTYPE_LOOK, [field]: GIRL_LOOK[field] })).toBe(false);
+    }
   });
 });
 

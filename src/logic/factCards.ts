@@ -17,6 +17,17 @@ export const TILAPIA_FACT: Readonly<FactCard> = Object.freeze({
   body: 'Tilapia are fish that people brought to Xochimilco. They do not belong there. They eat axolotl eggs and food.',
 });
 
+/**
+ * The boy or girl fact card, always found in the Collection Book (PRD C14).
+ * Source: Animal Diversity Web, https://animaldiversity.org/accounts/Ambystoma_mexicanum/
+ */
+export const BOY_OR_GIRL_FACT: Readonly<FactCard> = Object.freeze({
+  id: 'boyOrGirl',
+  name: 'Boy or girl?',
+  title: 'Boy or girl?',
+  body: 'Grown-up boy axolotls are longer and slimmer, with a bigger bump by the back legs. Girls are rounder and plumper.',
+});
+
 /** Label of the button that closes a fact card. */
 export const FACT_CARD_OK_LABEL = 'OK';
 

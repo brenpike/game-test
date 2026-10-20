@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BOY_OR_GIRL_FACT,
   FACT_CARD_OK_LABEL,
   FACT_CARD_UNFOUND_HINT,
   TILAPIA_FACT,
@@ -51,6 +52,30 @@ describe('tilapia fact card copy', () => {
     FACT_CARD_OK_LABEL,
     FACT_CARD_UNFOUND_HINT,
   ])('"%s" avoids banned words', (text) => {
+    expect(findBannedWords(text)).toEqual([]);
+  });
+});
+
+describe('boy or girl fact card copy', () => {
+  it('has the boyOrGirl id, name, title and body', () => {
+    expect(BOY_OR_GIRL_FACT.id).toBe('boyOrGirl');
+    expect(BOY_OR_GIRL_FACT.name).toBe('Boy or girl?');
+    expect(BOY_OR_GIRL_FACT.title).toBe('Boy or girl?');
+    expect(BOY_OR_GIRL_FACT.body).toBe(
+      'Grown-up boy axolotls are longer and slimmer, with a bigger bump by the back legs. Girls are rounder and plumper.',
+    );
+  });
+
+  it('keeps the body non-empty and at most 120 characters', () => {
+    expect(BOY_OR_GIRL_FACT.body.length).toBeGreaterThan(0);
+    expect(BOY_OR_GIRL_FACT.body.length).toBeLessThanOrEqual(120);
+  });
+
+  it('has an id apart from the tilapia card', () => {
+    expect(BOY_OR_GIRL_FACT.id).not.toBe(TILAPIA_FACT.id);
+  });
+
+  it.each([BOY_OR_GIRL_FACT.name, BOY_OR_GIRL_FACT.title, BOY_OR_GIRL_FACT.body])('"%s" avoids banned words', (text) => {
     expect(findBannedWords(text)).toEqual([]);
   });
 });

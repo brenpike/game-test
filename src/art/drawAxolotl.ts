@@ -26,24 +26,56 @@ import {
 import {
   DEFAULT_ART_LOOK,
   FAR_EYE,
+  HEAD_ELLIPSE,
   NEAR_EYE,
+  TAIL_FIN_START,
+  TAIL_SEGMENTS,
+  axolotlBodyGeometry,
+  boundsOfPoints,
+  gillInkBounds,
   paintEye,
   paintGills,
   paintMouth,
   paintSpots,
-  tailPointAt,
+  tailSamples,
+  torsoBackScale,
+  torsoPoint,
+  unionBounds,
   type AxolotlArtLook,
+  type BodyEllipse,
+  type Bounds,
+  type TailSample,
 } from './drawAxolotlParts';
 
 /**
- * Texture frame in logical units. Covers snout, the whole tail at the largest
- * tail amplitude (1.6), the tail fin, all gills of every style at every flutter
- * phase (Long gill tips with ink reach about y -68, guide 6m and 11), legs,
- * regeneration glints and the outline, with at least 4 logical px of padding
- * on every side (guide 11). Size (guide 6o) scales the bake, not this frame.
- * Local x = 0 sits originX from the left; local y = 0 sits originY from the top.
+ * Texture frame in logical units. Holds every look (every gill style, Boy or
+ * girl, Tail, Body and Age) at every gill flutter phase and at the largest
+ * tail amplitude (1.6), outline ink included, with at least 4 logical px of
+ * padding on every side (guide 11): see axolotlInkBounds(). The far left is
+ * a Grown-up Chubby Boy's Long tail tip (x -97.5); the top is Grown-up Long
+ * gill ink (about y -74.4); the bottom is a regrowing rear leg's glints on a
+ * Chubby Girl (about y 55.7); the right is the snout ink (x 56.5), with the
+ * prototype frame's slack kept. Size (guide 6o) scales the bake, not this
+ * frame. Local x = 0 sits originX from the left; local y = 0 sits originY
+ * from the top.
  */
-export const AXO_TEX: TexSize = { w: 148, h: 125, originX: 84, originY: 73 };
+export const AXO_TEX: TexSize = { w: 166, h: 139, originX: 102, originY: 79 };
+
+/**
+ * Picture-button crops in local units: `face` for Eyes and Mouth (both eye
+ * zones, every mouth, the snout), `gills` for Gills (every gill style at every
+ * flutter phase and Age), `whole` (the AXO_TEX frame) for every other option.
+ */
+export const AXO_PREVIEW_CROPS: Readonly<Record<'face' | 'gills' | 'whole', Bounds>> = {
+  face: { minX: 14, minY: -20, maxX: 58, maxY: 24 },
+  gills: { minX: -63, minY: -77, maxX: 25, maxY: 22 },
+  whole: {
+    minX: -AXO_TEX.originX,
+    minY: -AXO_TEX.originY,
+    maxX: AXO_TEX.w - AXO_TEX.originX,
+    maxY: AXO_TEX.h - AXO_TEX.originY,
+  },
+};
 
 /** Local units are drawn at this scale in the scene (guide 6a). */
 export const AXO_SCENE_SCALE = 0.95;
@@ -69,12 +101,21 @@ export interface LegRoot {
   readonly x: number;
   readonly y: number;
 }
+/** Leg roots of DEFAULT_ART_LOOK (the prototype torso). Equals axolotlLegRoots(DEFAULT_ART_LOOK). */
 export const AXO_LEG_ROOTS: readonly LegRoot[] = [
   { x: 8, y: 15 },
   { x: -14, y: 17 },
   { x: 18, y: 15 },
   { x: -24, y: 17 },
 ];
+
+/**
+ * Leg roots the painter uses for `look`, in the same order as AXO_LEG_ROOTS.
+ * They follow the torso's lower edge and back end (Body, Age, Boy or girl).
+ */
+export function axolotlLegRoots(look: AxolotlArtLook): LegRoot[] {
+  return [...axolotlBodyGeometry(look).legRoots];
+}
 
 export interface AxolotlPose {
   /** Tail and leg cycle phase, radians (period 1.2 s at 2*pi * t / 1.2). */
@@ -104,6 +145,35 @@ export const AXO_REST_POSE: AxolotlPose = {
   sparkle: 0,
 };
 
+/** Leg tube and toe values (guide 6e). */
+const LEG_W = 8;
+const LEG_OL = 3.1;
+const TOE_W = 4.2;
+const TOE_OL = 2.6;
+const TOE_SPLAY = 0.6;
+
+/** Leg angles in leg draw order (far-front, far-rear, near-front, near-rear); diagonal pairs swing opposite. */
+function legAngles(swim: number): number[] {
+  return [
+    Math.PI / 2 - 0.2 + 0.35 * Math.sin(swim + Math.PI),
+    Math.PI / 2 + 0.5 + 0.35 * Math.sin(swim),
+    Math.PI / 2 - 0.2 + 0.35 * Math.sin(swim),
+    Math.PI / 2 + 0.5 + 0.35 * Math.sin(swim + Math.PI),
+  ];
+}
+
+/** Leg end point and its three toe tips. */
+function legPoints(bx: number, by: number, ang: number, len: number, toeLen: number): [number, number][] {
+  const ex = bx + Math.cos(ang) * len;
+  const ey = by + Math.sin(ang) * len;
+  const points: [number, number][] = [[ex, ey]];
+  for (let d = -1; d <= 1; d++) {
+    const ta = ang + d * TOE_SPLAY;
+    points.push([ex + Math.cos(ta) * toeLen, ey + Math.sin(ta) * toeLen]);
+  }
+  return points;
+}
+
 /**
  * `k` (0..1, default 1) scales a growing leg; k = 1 is the normal leg, unchanged.
  */
@@ -113,17 +183,14 @@ function leg(
   by: number,
   ang: number,
   len: number,
+  toeLen: number,
   colour: string,
   k = 1,
 ): void {
-  const ex = bx + Math.cos(ang) * len * k;
-  const ey = by + Math.sin(ang) * len * k;
+  const [[ex, ey], ...toes] = legPoints(bx, by, ang, len * k, toeLen * k);
   const ol = 0.5 + 0.5 * k;
-  const segs: Seg[] = [seg(line(bx, by, ex, ey), 8 * k, colour, 3.1 * ol)];
-  for (let d = -1; d <= 1; d++) {
-    const ta = ang + d * 0.6;
-    segs.push(seg(line(ex, ey, ex + Math.cos(ta) * 8.5 * k, ey + Math.sin(ta) * 8.5 * k), 4.2 * k, colour, 2.6 * ol));
-  }
+  const segs: Seg[] = [seg(line(bx, by, ex, ey), LEG_W * k, colour, LEG_OL * ol)];
+  for (const [tx, ty] of toes) segs.push(seg(line(ex, ey, tx, ty), TOE_W * k, colour, TOE_OL * ol));
   inkMany(ctx, segs);
 }
 
@@ -131,6 +198,8 @@ function leg(
 /** Outline radius around the leg tube and around each toe, just outside the inked leg. */
 const GHOST_R_LEG = 8.2;
 const GHOST_R_TOE = 5.6;
+/** Pale under-line width beneath the dashed ghost ink. */
+const GHOST_UNDER = 3.6;
 /** Ghost ink alpha: faint when lost, a little firmer while regrowing. */
 const GHOST_ALPHA_LOST = 0.55;
 const GHOST_ALPHA_REGROW = 0.75;
@@ -138,6 +207,11 @@ const GHOST_ALPHA_REGROW = 0.75;
 const LEG_GLINT_R = 3.8;
 /** Below this progress no fill is drawn yet, only the outline and glints. */
 const LEG_FILL_MIN = 0.04;
+/** Twinkle arms: colour width and outline. */
+const GLINT_ARM_W = 3;
+const GLINT_ARM_OL = 1.6;
+/** Regeneration glints along the tail: arm radius at full strength. */
+const REGEN_GLINT_R = 4.2;
 
 function capsule(p: Path2D, x1: number, y1: number, x2: number, y2: number, r: number): void {
   const a = Math.atan2(y2 - y1, x2 - x1);
@@ -158,19 +232,16 @@ function legGhost(
   by: number,
   ang: number,
   len: number,
+  toeLen: number,
   alpha: number,
 ): void {
-  const ex = bx + Math.cos(ang) * len;
-  const ey = by + Math.sin(ang) * len;
+  const [[ex, ey], ...toes] = legPoints(bx, by, ang, len, toeLen);
   const g = new Path2D();
   capsule(g, bx, by, ex, ey, GHOST_R_LEG);
-  for (let d = -1; d <= 1; d++) {
-    const ta = ang + d * 0.6;
-    capsule(g, ex, ey, ex + Math.cos(ta) * 8.5, ey + Math.sin(ta) * 8.5, GHOST_R_TOE);
-  }
+  for (const [tx, ty] of toes) capsule(g, ex, ey, tx, ty, GHOST_R_TOE);
   ctx.save();
   ctx.globalAlpha = alpha * 0.5;
-  ctx.lineWidth = 3.6;
+  ctx.lineWidth = GHOST_UNDER;
   ctx.strokeStyle = WHITE;
   ctx.stroke(g);
   ctx.globalAlpha = alpha;
@@ -186,49 +257,52 @@ function legProgress(look: LegLook): number {
   return Number.isFinite(p) ? Math.min(1, Math.max(0, p)) : 0;
 }
 
-/** Tail geometry: 14 segments, wave travels body to tip (guide 6f). */
-const TAIL_N = 14;
+/** Where the tail regeneration glints sit (s along the tail), alternating above and below. */
+const REGEN_GLINT_S: readonly number[] = [0.28, 0.42, 0.56, 0.7, 0.84];
 
-interface TailPoint {
-  readonly s: number;
-  readonly x: number;
-  readonly cy: number;
-  readonly hc: number;
+/** Regeneration glint centres beside the tail, in REGEN_GLINT_S order. */
+function regenGlintSpots(tail: readonly TailSample[]): [number, number][] {
+  return REGEN_GLINT_S.map((s, k): [number, number] => {
+    const tp = tail[Math.round(s * TAIL_SEGMENTS)];
+    const side = k % 2 === 0 ? -1 : 1;
+    return [tp.x, tp.cy + side * (tp.hc + 3)];
+  });
 }
 
-function tailPoints(swim: number, tailAmp: number): TailPoint[] {
-  const pts: TailPoint[] = [];
-  for (let i = 0; i <= TAIL_N; i++) {
-    const s = i / TAIL_N;
-    pts.push({ s, ...tailPointAt(s, swim, tailAmp) });
-  }
-  return pts;
+function paintTwinkle(ctx: CanvasRenderingContext2D, gx: number, gy: number, r: number): void {
+  inkMany(ctx, [
+    seg(line(gx - r, gy, gx + r, gy), GLINT_ARM_W, SUN, GLINT_ARM_OL),
+    seg(line(gx, gy - r, gx, gy + r), GLINT_ARM_W, SUN, GLINT_ARM_OL),
+  ]);
+  const core = new Path2D();
+  ell(core, gx, gy, r * 0.32, r * 0.32);
+  ctx.fillStyle = WHITE;
+  ctx.fill(core);
 }
 
 /** Regeneration glints: rounded plus-shaped twinkles along the tail. Never gory. */
-function paintRegenGlints(ctx: CanvasRenderingContext2D, tail: readonly TailPoint[], pose: AxolotlPose): void {
+function paintRegenGlints(ctx: CanvasRenderingContext2D, tail: readonly TailSample[], pose: AxolotlPose): void {
   const amount = Math.min(1, Math.max(0, pose.sparkle));
   if (amount <= 0.01) return;
-  const along = [0.28, 0.42, 0.56, 0.7, 0.84];
-  along.forEach((s, k) => {
-    const tp = tail[Math.round(s * TAIL_N)];
-    if (!tp) return;
-    const side = k % 2 === 0 ? -1 : 1;
-    const gx = tp.x;
-    const gy = tp.cy + side * (tp.hc + 3);
+  regenGlintSpots(tail).forEach(([gx, gy], k) => {
     // Twinkle at the 1.2 s swim cycle, far below 3 flashes per second.
-    const r = 4.2 * amount * (0.6 + 0.4 * Math.sin(pose.swimPhase + k * 1.3));
+    const r = REGEN_GLINT_R * amount * (0.6 + 0.4 * Math.sin(pose.swimPhase + k * 1.3));
     if (r < 0.4) return;
-    const arms: Seg[] = [
-      seg(line(gx - r, gy, gx + r, gy), 3, SUN, 1.6),
-      seg(line(gx, gy - r, gx, gy + r), 3, SUN, 1.6),
-    ];
-    inkMany(ctx, arms);
-    const core = new Path2D();
-    ell(core, gx, gy, r * 0.32, r * 0.32);
-    ctx.fillStyle = WHITE;
-    ctx.fill(core);
+    paintTwinkle(ctx, gx, gy, r);
   });
+}
+
+/** Glint centres for one regrowing leg: beside the toes on both sides, and just past the toes. */
+function legGlintSpots(root: LegRoot, ang: number, len: number): [number, number][] {
+  const ex = root.x + Math.cos(ang) * len;
+  const ey = root.y + Math.sin(ang) * len;
+  const dx = Math.cos(ang);
+  const dy = Math.sin(ang);
+  return [
+    [ex - dy * 11 + dx * 3, ey + dx * 11 + dy * 3],
+    [ex + dy * 11 + dx * 3, ey - dx * 11 + dy * 3],
+    [ex + dx * 14, ey + dy * 14],
+  ];
 }
 
 /**
@@ -239,6 +313,7 @@ function paintRegenGlints(ctx: CanvasRenderingContext2D, tail: readonly TailPoin
 function paintLegGlints(
   ctx: CanvasRenderingContext2D,
   pose: AxolotlPose,
+  legRoots: readonly LegRoot[],
   legAng: readonly number[],
   legLen: readonly number[],
 ): void {
@@ -248,31 +323,58 @@ function paintLegGlints(
     const look = legs[i];
     if (!look || look.status !== 'regrowing') continue;
     const strength = 0.6 + 0.4 * legProgress(look);
-    const { x, y } = AXO_LEG_ROOTS[i];
-    const a = legAng[i];
-    const ex = x + Math.cos(a) * legLen[i];
-    const ey = y + Math.sin(a) * legLen[i];
-    const dx = Math.cos(a);
-    const dy = Math.sin(a);
-    // Beside the toes on both sides, and just past the toes.
-    const spots: readonly (readonly [number, number])[] = [
-      [ex - dy * 11 + dx * 3, ey + dx * 11 + dy * 3],
-      [ex + dy * 11 + dx * 3, ey - dx * 11 + dy * 3],
-      [ex + dx * 14, ey + dy * 14],
-    ];
-    spots.forEach(([gx, gy], k) => {
+    legGlintSpots(legRoots[i], legAng[i], legLen[i]).forEach(([gx, gy], k) => {
       const r = LEG_GLINT_R * strength * (0.6 + 0.4 * Math.sin(pose.swimPhase + k * 1.3 + i * 0.9));
       if (r < 0.4) return;
-      inkMany(ctx, [
-        seg(line(gx - r, gy, gx + r, gy), 3, SUN, 1.6),
-        seg(line(gx, gy - r, gx, gy + r), 3, SUN, 1.6),
-      ]);
-      const core = new Path2D();
-      ell(core, gx, gy, r * 0.32, r * 0.32);
-      ctx.fillStyle = WHITE;
-      ctx.fill(core);
+      paintTwinkle(ctx, gx, gy, r);
     });
   }
+}
+
+function ellipseBounds(e: BodyEllipse, pad: number): Bounds {
+  return { minX: e.cx - e.rx - pad, minY: e.cy - e.ry - pad, maxX: e.cx + e.rx + pad, maxY: e.cy + e.ry + pad };
+}
+
+/** Box of one leg in its widest look (the lost-leg ghost or the inked leg) plus its regrowth glints. */
+function legInkBounds(root: LegRoot, ang: number, len: number, toeLen: number): Bounds {
+  const [end, ...toes] = legPoints(root.x, root.y, ang, len, toeLen);
+  const ghostLeg = GHOST_R_LEG + GHOST_UNDER / 2;
+  const ghostToe = GHOST_R_TOE + GHOST_UNDER / 2;
+  const glintPad = LEG_GLINT_R + GLINT_ARM_W / 2 + GLINT_ARM_OL;
+  return unionBounds([
+    boundsOfPoints([[root.x, root.y], end], Math.max(ghostLeg, LEG_W / 2 + LEG_OL)),
+    boundsOfPoints(toes, Math.max(ghostToe, TOE_W / 2 + TOE_OL)),
+    boundsOfPoints(legGlintSpots(root, ang, len), glintPad),
+  ]);
+}
+
+/**
+ * Box holding everything drawAxolotl can paint for `look` at this swim phase,
+ * gill phase and tail amplitude, outline ink included: silhouette, fins, legs
+ * in every leg state, regrowth and regeneration glints at full strength, and
+ * gills. The face sits inside the head. Size scales the bake, not this box.
+ */
+export function axolotlInkBounds(
+  look: AxolotlArtLook,
+  swimPhase: number,
+  gillPhase: number,
+  tailAmp: number,
+): Bounds {
+  const geo = axolotlBodyGeometry(look);
+  const tail = tailSamples(geo.tail, swimPhase, tailAmp);
+  const finEdges = tail.flatMap((tp): [number, number][] => [
+    [tp.x, tp.cy - tp.hc - tp.finTop],
+    [tp.x, tp.cy + tp.hc + tp.finBottom],
+  ]);
+  const legAng = legAngles(swimPhase);
+  return unionBounds([
+    gillInkBounds(look.gills, gillPhase, geo.gillLength),
+    ellipseBounds(HEAD_ELLIPSE, LW),
+    ellipseBounds(geo.torso, LW),
+    boundsOfPoints(finEdges, LW),
+    boundsOfPoints(regenGlintSpots(tail), REGEN_GLINT_R + GLINT_ARM_W / 2 + GLINT_ARM_OL),
+    ...geo.legRoots.map((root, i) => legInkBounds(root, legAng[i], geo.legLengths[i], geo.toeLength)),
+  ]);
 }
 
 // ---- Morph extras (guide 3b, 6h). Derived (provisional). ----------------------
@@ -280,19 +382,8 @@ function paintLegGlints(
 // draw calls. Every helper clips to the merged silhouette, so nothing can spill
 // onto the ink outline or outside the body.
 
-interface EllSpec {
-  readonly cx: number;
-  readonly cy: number;
-  readonly rx: number;
-  readonly ry: number;
-}
-
-// Same ellipses as the merged silhouette (step 4 in drawAxolotl).
-const HEAD_ELL: EllSpec = { cx: 26, cy: -1, rx: 27, ry: 22 };
-const TORSO_ELL: EllSpec = { cx: -8, cy: 4, rx: 37, ry: 19 };
-
 /** Top edge y of an ellipse at x, or null when x is outside it. */
-function ellTopAt(e: EllSpec, x: number): number | null {
+function ellTopAt(e: BodyEllipse, x: number): number | null {
   const u = (x - e.cx) / e.rx;
   if (Math.abs(u) > 1) return null;
   return e.cy - e.ry * Math.sqrt(1 - u * u);
@@ -310,24 +401,29 @@ function tailTopAt(topF: readonly (readonly [number, number])[], x: number): num
 
 /**
  * The upper silhouette edge as a polyline: from the snout tip round the head,
- * back along the torso and on along the tail's outer top edge (topF) to tail
- * point `endIndex`. Follows the real outline, so a stroke along it, clipped to
- * the silhouette, lies just inside the ink.
+ * back along the look's torso and on along the tail's outer top edge (topF)
+ * to tail point `endIndex`. Follows the real outline, so a stroke along it,
+ * clipped to the silhouette, lies just inside the ink.
  */
-function upperOutline(topF: readonly (readonly [number, number])[], endIndex: number): [number, number][] {
+function upperOutline(
+  topF: readonly (readonly [number, number])[],
+  endIndex: number,
+  torso: BodyEllipse,
+): [number, number][] {
+  const head = HEAD_ELLIPSE;
   const pts: [number, number][] = [];
   const arcSteps = 10;
   for (let k = 0; k <= arcSteps; k++) {
     const a = (k / arcSteps) * (Math.PI / 2);
-    pts.push([HEAD_ELL.cx + HEAD_ELL.rx * Math.cos(a), HEAD_ELL.cy - HEAD_ELL.ry * Math.sin(a)]);
+    pts.push([head.cx + head.rx * Math.cos(a), head.cy - head.ry * Math.sin(a)]);
   }
   const xEnd = topF[endIndex][0];
   const xs = new Set<number>();
-  for (let x = HEAD_ELL.cx - 1; x > xEnd; x -= 1) xs.add(x);
-  for (let i = 0; i <= endIndex; i++) if (topF[i][0] < HEAD_ELL.cx) xs.add(topF[i][0]);
+  for (let x = head.cx - 1; x > xEnd; x -= 1) xs.add(x);
+  for (let i = 0; i <= endIndex; i++) if (topF[i][0] < head.cx) xs.add(topF[i][0]);
   for (const x of [...xs].sort((a, b) => b - a)) {
     let y = Infinity;
-    for (const v of [ellTopAt(HEAD_ELL, x), ellTopAt(TORSO_ELL, x), tailTopAt(topF, x)]) {
+    for (const v of [ellTopAt(head, x), ellTopAt(torso, x), tailTopAt(topF, x)]) {
       if (v !== null && v < y) y = v;
     }
     if (Number.isFinite(y)) pts.push([x, y]);
@@ -345,9 +441,10 @@ function paintMorphRim(
   sil: Path2D,
   topF: readonly (readonly [number, number])[],
   endIndex: number,
+  torso: BodyEllipse,
   rim: MorphRim,
 ): void {
-  const pts = upperOutline(topF, endIndex);
+  const pts = upperOutline(topF, endIndex, torso);
   const path = new Path2D();
   pts.forEach(([x, y], i) => (i === 0 ? path.moveTo(x, y) : path.lineTo(x, y)));
   ctx.save();
@@ -361,14 +458,18 @@ function paintMorphRim(
 }
 
 /**
- * Local point of a mark. Tail marks interpolate the drawn tail polyline at `t`
- * (0 root, 1 tip) and sit `offset` x the local core half-height off the centre
- * line, so they ride the tail wave.
+ * Local point of a mark. Body marks move onto the look's torso (torsoPoint).
+ * Tail marks interpolate the drawn tail polyline at `t` (0 root, 1 tip) and
+ * sit `offset` x the local core half-height off the centre line, so they ride
+ * the tail wave. `tail` is the painted tailSamples() of the look.
  */
-function markPoint(m: MorphMark, tail: readonly TailPoint[]): [number, number] {
-  if (m.space === 'body') return [m.x, m.y];
-  const f = Math.min(1, Math.max(0, m.t)) * TAIL_N;
-  const i = Math.min(Math.floor(f), TAIL_N - 1);
+export function markPoint(m: MorphMark, tail: readonly TailSample[], torso: BodyEllipse): [number, number] {
+  if (m.space === 'body') {
+    const p = torsoPoint(torso, m.x, m.y);
+    return [p.x, p.y];
+  }
+  const f = Math.min(1, Math.max(0, m.t)) * TAIL_SEGMENTS;
+  const i = Math.min(Math.floor(f), TAIL_SEGMENTS - 1);
   const u = f - i;
   const a = tail[i];
   const b = tail[i + 1];
@@ -381,12 +482,13 @@ function markPoint(m: MorphMark, tail: readonly TailPoint[]): [number, number] {
 function paintMorphDots(
   ctx: CanvasRenderingContext2D,
   sil: Path2D,
-  tail: readonly TailPoint[],
+  tail: readonly TailSample[],
+  torso: BodyEllipse,
   set: MorphMarkSet,
 ): void {
   const dots = new Path2D();
   for (const m of set.marks) {
-    const [x, y] = markPoint(m, tail);
+    const [x, y] = markPoint(m, tail, torso);
     ell(dots, x, y, m.r, m.r);
   }
   ctx.save();
@@ -404,12 +506,13 @@ function paintMorphDots(
 function paintMorphShimmer(
   ctx: CanvasRenderingContext2D,
   sil: Path2D,
-  tail: readonly TailPoint[],
+  tail: readonly TailSample[],
+  torso: BodyEllipse,
   set: MorphMarkSet,
 ): void {
   const stars = new Path2D();
   for (const m of set.marks) {
-    const [x, y] = markPoint(m, tail);
+    const [x, y] = markPoint(m, tail, torso);
     for (let k = 0; k < 8; k++) {
       const a = -Math.PI / 2 + (k * Math.PI) / 4;
       const rad = k % 2 === 0 ? m.r : m.r * 0.38;
@@ -433,11 +536,15 @@ function bodyShineColour(extras: MorphExtras | undefined): string {
   return a === undefined ? BODY_SHINE : `rgba(255,255,255,${a})`;
 }
 
+/** Prototype body shine (guide 6g), placed on the prototype torso. */
+const BODY_SHINE_ELL = { x: -16, y: -9, rx: 12, ry: 3, rot: -0.08 } as const;
+
 /**
  * Paint the axolotl in local units, facing right, origin at local (0, 0).
  * The caller sets the transform (see AXO_TEX for the frame). `look` picks the
- * creator parts (guide 6l to 6n); the default paints the prototype. Size is
- * not painted here: the caller bakes and scales by AXO_SIZE_SCALE (guide 6o).
+ * creator parts (guide 6l to 6n) and the body proportions (Boy or girl, Tail,
+ * Body, Age). Size is not painted here: the caller bakes and scales by
+ * AXO_SIZE_SCALE (guide 6o).
  */
 export function drawAxolotl(
   ctx: CanvasRenderingContext2D,
@@ -448,49 +555,45 @@ export function drawAxolotl(
   const swim = pose.swimPhase;
   const tfl = pose.gillPhase;
   const extras = palette.extras;
+  const geo = axolotlBodyGeometry(look);
 
   // 1. far gills (behind everything)
-  paintGills(ctx, 'far', look.gills, tfl, palette.gillFarStem, palette.gillFarFilament);
+  paintGills(ctx, 'far', look.gills, tfl, palette.gillFarStem, palette.gillFarFilament, geo.gillLength);
 
   // 2-3. legs behind the body: far pair darker, then near pair
   // Order matches AXO_LEG_ROOTS: far-front, far-rear, near-front, near-rear.
-  const legAng = [
-    Math.PI / 2 - 0.2 + 0.35 * Math.sin(swim + Math.PI),
-    Math.PI / 2 + 0.5 + 0.35 * Math.sin(swim),
-    Math.PI / 2 - 0.2 + 0.35 * Math.sin(swim),
-    Math.PI / 2 + 0.5 + 0.35 * Math.sin(swim + Math.PI),
-  ];
-  const legLen = [14, 14, 15, 15];
+  const legAng = legAngles(swim);
+  const legLen = geo.legLengths;
+  const toeLen = geo.toeLength;
   const legColour = [palette.farSide, palette.farSide, palette.body, palette.body];
   for (let i = 0; i < 4; i++) {
-    const { x, y } = AXO_LEG_ROOTS[i];
-    const look = pose.legs?.[i];
-    if (!look || look.status === 'present') {
-      leg(ctx, x, y, legAng[i], legLen[i], legColour[i]);
-    } else if (look.status === 'lost') {
-      legGhost(ctx, x, y, legAng[i], legLen[i], GHOST_ALPHA_LOST);
+    const { x, y } = geo.legRoots[i];
+    const legLook = pose.legs?.[i];
+    if (!legLook || legLook.status === 'present') {
+      leg(ctx, x, y, legAng[i], legLen[i], toeLen, legColour[i]);
+    } else if (legLook.status === 'lost') {
+      legGhost(ctx, x, y, legAng[i], legLen[i], toeLen, GHOST_ALPHA_LOST);
     } else {
-      const pr = legProgress(look);
-      legGhost(ctx, x, y, legAng[i], legLen[i], GHOST_ALPHA_REGROW);
-      if (pr >= LEG_FILL_MIN) leg(ctx, x, y, legAng[i], legLen[i], legColour[i], pr);
+      const pr = legProgress(legLook);
+      legGhost(ctx, x, y, legAng[i], legLen[i], toeLen, GHOST_ALPHA_REGROW);
+      if (pr >= LEG_FILL_MIN) leg(ctx, x, y, legAng[i], legLen[i], toeLen, legColour[i], pr);
     }
   }
 
   // tail geometry
-  const tail = tailPoints(swim, pose.tailAmp);
+  const tail = tailSamples(geo.tail, swim, pose.tailAmp);
   const topC: [number, number][] = [];
   const topF: [number, number][] = [];
   const botC: [number, number][] = [];
   const botF: [number, number][] = [];
   for (const tp of tail) {
-    const ft = 2 + 9 * Math.sin(Math.PI * Math.pow(tp.s, 0.8));
-    const fb = 2 + 7 * Math.sin(Math.PI * Math.pow(tp.s, 0.8));
     topC.push([tp.x, tp.cy - tp.hc]);
-    topF.push([tp.x, tp.cy - tp.hc - ft]);
+    topF.push([tp.x, tp.cy - tp.hc - tp.finTop]);
     botC.push([tp.x, tp.cy + tp.hc]);
-    botF.push([tp.x, tp.cy + tp.hc + fb]);
+    botF.push([tp.x, tp.cy + tp.hc + tp.finBottom]);
   }
-  const N = TAIL_N;
+  const N = TAIL_SEGMENTS;
+  const { torso, belly } = geo;
 
   // 4. merged silhouette: tail + torso + head as one blob
   const sil = new Path2D();
@@ -498,12 +601,12 @@ export function drawAxolotl(
   for (let i = N; i >= 0; i--) sil.lineTo(topF[i][0], topF[i][1]);
   for (let i = 0; i <= N; i++) sil.lineTo(botF[i][0], botF[i][1]);
   sil.closePath();
-  ell(sil, -8, 4, 37, 19);
-  ell(sil, 26, -1, 27, 22);
+  ell(sil, torso.cx, torso.cy, torso.rx, torso.ry);
+  ell(sil, HEAD_ELLIPSE.cx, HEAD_ELLIPSE.cy, HEAD_ELLIPSE.rx, HEAD_ELLIPSE.ry);
   blob(ctx, sil, palette.body, LW);
 
   // 5. fin bands, fin rays, core edge
-  const i0 = 3;
+  const i0 = TAIL_FIN_START;
   const bandT = new Path2D();
   const bandB = new Path2D();
   bandT.moveTo(topC[i0][0], topC[i0][1]);
@@ -545,18 +648,19 @@ export function drawAxolotl(
 
   // 6. belly
   let p = new Path2D();
-  ell(p, -6, 14, 26, 6.2, 0.03);
+  ell(p, belly.cx, belly.cy, belly.rx, belly.ry, 0.03);
   ctx.fillStyle = palette.belly;
   ctx.fill(p);
 
   // 6.2 morph rim light and speckles (clipped to the silhouette, under the shines)
-  if (extras?.rim) paintMorphRim(ctx, sil, topF, extras.rim.fin ? N : i0, extras.rim);
-  if (extras?.speckles) paintMorphDots(ctx, sil, tail, extras.speckles);
+  if (extras?.rim) paintMorphRim(ctx, sil, topF, extras.rim.fin ? N : i0, torso, extras.rim);
+  if (extras?.speckles) paintMorphDots(ctx, sil, tail, torso, extras.speckles);
 
-  // 7. shines (body, head)
+  // 7. shines (body, head); the body shine moves onto the look's torso
   if (extras?.shineAlpha !== 0) {
+    const shine = torsoPoint(torso, BODY_SHINE_ELL.x, BODY_SHINE_ELL.y);
     p = new Path2D();
-    ell(p, -16, -9, 12, 3, -0.08);
+    ell(p, shine.x, shine.y, BODY_SHINE_ELL.rx * torsoBackScale(torso), BODY_SHINE_ELL.ry, BODY_SHINE_ELL.rot);
     ctx.fillStyle = bodyShineColour(extras);
     ctx.fill(p);
     p = new Path2D();
@@ -565,15 +669,15 @@ export function drawAxolotl(
   }
 
   // 7.5 morph flecks and shimmer glints (over the shines)
-  if (extras?.flecks) paintMorphDots(ctx, sil, tail, extras.flecks);
-  if (extras?.shimmer) paintMorphShimmer(ctx, sil, tail, extras.shimmer);
+  if (extras?.flecks) paintMorphDots(ctx, sil, tail, torso, extras.flecks);
+  if (extras?.shimmer) paintMorphShimmer(ctx, sil, tail, torso, extras.shimmer);
 
   // 8. spots (spot colour per morph, guide 3b; the prototype's freckles are the Freckles option)
   const spot = extras?.spot === undefined ? FRECKLE : extras.spot;
-  if (spot !== null) paintSpots(ctx, look.spots, swim, pose.tailAmp, spot);
+  if (spot !== null) paintSpots(ctx, look.spots, swim, pose.tailAmp, spot, geo.tail, torso);
 
   // 9. near gills (in front of the body, sprouting from the cheek)
-  paintGills(ctx, 'near', look.gills, tfl, palette.gillNearStem, palette.gillNearFilament);
+  paintGills(ctx, 'near', look.gills, tfl, palette.gillNearStem, palette.gillNearFilament, geo.gillLength);
 
   // 10. blush
   if (extras?.blush !== false) {
@@ -587,11 +691,12 @@ export function drawAxolotl(
   // 11. mouth
   paintMouth(ctx, look.mouth, palette.mouth);
 
-  // 12. eyes
-  paintEye(ctx, look.eyes, NEAR_EYE, pose.blink, palette.eye, extras?.eyeRing);
-  paintEye(ctx, look.eyes, FAR_EYE, pose.blink, palette.eye, extras?.eyeRing);
+  // 12. eyes, far then near, so the near bead covers any far lash that reaches it (the Girl cue adds lashes)
+  const eyelashes = look.sex === 'girl';
+  paintEye(ctx, look.eyes, FAR_EYE, pose.blink, palette.eye, extras?.eyeRing, eyelashes);
+  paintEye(ctx, look.eyes, NEAR_EYE, pose.blink, palette.eye, extras?.eyeRing, eyelashes);
 
   // regeneration glints sit on top of everything
   paintRegenGlints(ctx, tail, pose);
-  if (pose.legs) paintLegGlints(ctx, pose, legAng, legLen);
+  if (pose.legs) paintLegGlints(ctx, pose, geo.legRoots, legAng, legLen);
 }

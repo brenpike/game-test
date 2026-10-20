@@ -8,11 +8,15 @@
  *
  * Painters are still frames. No time, no randomness, no animation, so each one
  * is also the reduced-motion version (PRD X3). The halo is steady and
- * non-flashing (PRD A5, X4). Every painter draws around local (0, 0).
+ * non-flashing (PRD A5, X4). Every painter draws around local (0, 0). The halo
+ * and carry bubble are sized for the default look at Large; protectedHaloLookScale
+ * and carryBubbleLookScale grow them for a look that reaches further.
  *
  * Presentational only: no game state, no Phaser.
  */
 import { TAU, blob, ell, frameFromBounds, inkMany, line, seg, type TexSize } from './canvasKit';
+import { AXO_MAX_TAIL_AMP, AXO_SCENE_SCALE, axolotlInkBounds } from './drawAxolotl';
+import { DEFAULT_ART_LOOK, unionBounds, type AxolotlArtLook, type Bounds } from './drawAxolotlParts';
 import {
   BUBBLE_FILL,
   BUBBLE_STROKE,
@@ -85,7 +89,10 @@ export function paintPoof(ctx: CanvasRenderingContext2D): void {
 // Protected halo
 // ---------------------------------------------------------------------------
 
-/** Halo ellipse radii (provisional): sized to ring the axolotl (about 121 x 85 in the scene). */
+/**
+ * Halo ellipse radii (provisional): sized to ring the axolotl (about 121 x 85 in the scene).
+ * Set for the default look at Large; see protectedHaloLookScale.
+ */
 export const HALO_RX = 84;
 export const HALO_RY = 54;
 
@@ -123,7 +130,10 @@ export function paintProtectedHalo(ctx: CanvasRenderingContext2D): void {
 // Carry bubble
 // ---------------------------------------------------------------------------
 
-/** Radius of the carry-home bubble (provisional): holds the axolotl with room to spare. */
+/**
+ * Radius of the carry-home bubble (provisional): holds the axolotl with room to spare.
+ * Set for the default look at Large; see carryBubbleLookScale.
+ */
 export const CARRY_BUBBLE_R = 80;
 
 /** Texture frame for the carry bubble (provisional). Anchor is the bubble centre. */
@@ -167,4 +177,76 @@ export function paintCarryBubble(ctx: CanvasRenderingContext2D): void {
   ell(dot, -r * 0.58, -r * 0.3, 3.2, 3.2);
   ctx.fillStyle = WHITE;
   ctx.fill(dot);
+}
+
+// ---------------------------------------------------------------------------
+// Halo and carry bubble size by look
+// ---------------------------------------------------------------------------
+
+/** Swim and gill flutter phases sampled per cycle when measuring a look's reach. */
+const REACH_SAMPLES = 48;
+
+/** How far a look's ink reaches from local (0, 0) on each side, in local units. */
+export interface AxolotlReach {
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+  readonly bottom: number;
+}
+
+/**
+ * How far `look` paints from local (0, 0) on each side (axolotlInkBounds), over a
+ * whole swim cycle at the largest tail amplitude and a whole gill flutter cycle.
+ * Size is left out: it scales the halo and bubble with the axolotl.
+ */
+export function axolotlInkReach(look: AxolotlArtLook): AxolotlReach {
+  const boxes: Bounds[] = [];
+  for (let k = 0; k < REACH_SAMPLES; k++) {
+    const phase = (k * TAU) / REACH_SAMPLES;
+    boxes.push(axolotlInkBounds(look, phase, 0, AXO_MAX_TAIL_AMP), axolotlInkBounds(look, 0, phase, AXO_MAX_TAIL_AMP));
+  }
+  const box = unionBounds(boxes);
+  return { left: -box.minX, right: box.maxX, top: -box.minY, bottom: box.maxY };
+}
+
+/** The reach HALO_RX, HALO_RY and CARRY_BUBBLE_R were set for: the default look. */
+const EFFECT_REFERENCE_REACH = axolotlInkReach(DEFAULT_ART_LOOK);
+
+/** Scale that grows a radius by `growth` local units drawn in the scene; 1 when `growth` is not positive. */
+function growthScale(growth: number, radius: number): number {
+  return 1 + (AXO_SCENE_SCALE * Math.max(0, growth)) / radius;
+}
+
+function sideReach(reach: AxolotlReach): number {
+  return Math.max(reach.left, reach.right);
+}
+
+function farthestReach(reach: AxolotlReach): number {
+  return Math.max(reach.left, reach.right, reach.top, reach.bottom);
+}
+
+/**
+ * Uniform scale of the protected halo for a look of this reach, at any size: 1
+ * for the default look or any look reaching no further, larger for a longer
+ * tail or a lower belly, so the halo keeps the default look's clearance from
+ * the tail or snout (along x) and from the underside (along y). The gills poke
+ * through the top of the halo on the default look too, so the top is not
+ * measured.
+ */
+export function protectedHaloLookScale(reach: AxolotlReach): number {
+  const ref = EFFECT_REFERENCE_REACH;
+  return Math.max(
+    growthScale(sideReach(reach) - sideReach(ref), HALO_RX),
+    growthScale(reach.bottom - ref.bottom, HALO_RY),
+  );
+}
+
+/**
+ * Uniform scale of the carry bubble for a look of this reach, at any size: 1
+ * for the default look or any look reaching no further, larger otherwise, so
+ * the bubble keeps the default look's clearance from the farthest ink on any
+ * side.
+ */
+export function carryBubbleLookScale(reach: AxolotlReach): number {
+  return growthScale(farthestReach(reach) - farthestReach(EFFECT_REFERENCE_REACH), CARRY_BUBBLE_R);
 }

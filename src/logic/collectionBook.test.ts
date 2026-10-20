@@ -15,7 +15,7 @@ import {
   type BookFeatureMeasure,
   type BookSection,
 } from './collectionBook';
-import { FACT_CARD_UNFOUND_HINT, TILAPIA_FACT } from './factCards';
+import { BOY_OR_GIRL_FACT, FACT_CARD_UNFOUND_HINT, TILAPIA_FACT } from './factCards';
 import type { HudView, Rect, Size } from './hudLayout';
 import { MORPH_UNFOUND_HINT, MORPH_UNFOUND_NAME, REAL_MORPHS, type RealMorphId } from './morphs';
 import { CHEST_BUTTON, UI, chestLayout, rowsPerPage, type ChestMeasure } from './tankUi';
@@ -214,14 +214,14 @@ describe('bookListing', () => {
     expect(sections.map((section) => section.heading)).toEqual([
       'Morphs: 0 of 8 found',
       'Dream colours',
-      'Fact cards: 0 of 1 found',
+      'Fact cards: 1 of 2 found',
     ]);
   });
 
   it('counts found morphs and fact cards in the headings', () => {
     const [morphs, , factCards] = bookListing(['wild', 'melanoid', 'wild'], true);
     expect(morphs.heading).toBe('Morphs: 2 of 8 found');
-    expect(factCards.heading).toBe('Fact cards: 1 of 1 found');
+    expect(factCards.heading).toBe('Fact cards: 2 of 2 found');
     expect(bookListing(ALL_MORPHS, true)[0].heading).toBe('Morphs: 8 of 8 found');
   });
 
@@ -311,13 +311,23 @@ describe('bookListing', () => {
 
   it('holds the tilapia card only once the tilapia is met (C14)', () => {
     const [, , met] = bookListing([], true);
-    expect(met.entries).toEqual([
-      { id: 'tilapia', found: true, name: 'Tilapia', text: TILAPIA_FACT.body, hasPicture: true },
-    ]);
+    expect(met.entries[0]).toEqual({ id: 'tilapia', found: true, name: 'Tilapia', text: TILAPIA_FACT.body, hasPicture: true });
     const [, , notMet] = bookListing(ALL_MORPHS, false);
-    expect(notMet.entries).toEqual([
-      { id: 'tilapia', found: false, name: '???', text: FACT_CARD_UNFOUND_HINT, hasPicture: false },
-    ]);
+    expect(notMet.entries[0]).toEqual({
+      id: 'tilapia',
+      found: false,
+      name: '???',
+      text: FACT_CARD_UNFOUND_HINT,
+      hasPicture: false,
+    });
+  });
+
+  it('always holds the boy or girl card second, found and with no picture (C14)', () => {
+    const boyOrGirl = { id: 'boyOrGirl', found: true, name: 'Boy or girl?', text: BOY_OR_GIRL_FACT.body, hasPicture: false };
+    for (const [, , factCards] of everyListing()) {
+      expect(factCards.entries.map((entry) => entry.id)).toEqual(['tilapia', 'boyOrGirl']);
+      expect(factCards.entries[1]).toEqual(boyOrGirl);
+    }
   });
 });
 
@@ -331,6 +341,7 @@ describe('bookPages', () => {
       ['dreamColour', 5],
       ['dreamColour', 2],
       ['factCard', 1],
+      ['factCard', 1],
     ]);
     const pageEntries: readonly BookEntry[] = pages.flatMap((page): readonly BookEntry[] => page.entries);
     const sectionEntries: readonly BookEntry[] = sections.flatMap((section): readonly BookEntry[] => section.entries);
@@ -338,7 +349,7 @@ describe('bookPages', () => {
   });
 
   it('puts every Dream colour on its own page at one row per page', () => {
-    expect(bookPages(bookListing([], false), 1)).toHaveLength(REAL_MORPHS.length + 12 + 1);
+    expect(bookPages(bookListing([], false), 1)).toHaveLength(REAL_MORPHS.length + 12 + 2);
   });
 
   it('gives an empty section one page', () => {

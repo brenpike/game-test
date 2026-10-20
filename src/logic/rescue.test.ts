@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { AxolotlSex } from './axolotlLook';
 import { REAL_MORPHS, STARTER_MORPH, axolotlFindId, isAxolotlFindId, type RealMorphId } from './morphs';
 import { placeTreasures } from './placement';
 import {
@@ -28,8 +29,8 @@ const MAX_PATH_STEPS = 1200;
 const WILD_ID = axolotlFindId('wild');
 const ALL_PHASES: readonly TripPhase[] = ['swimming', 'banked', 'carrying', 'ended'];
 
-function strandingAt(pos: Point, morph: RealMorphId = 'wild'): Stranding {
-  return { id: axolotlFindId(morph), morph, placeId: 'canal/strand-test', x: pos.x, y: pos.y, met: false };
+function strandingAt(pos: Point, morph: RealMorphId = 'wild', sex: AxolotlSex = 'girl'): Stranding {
+  return { id: axolotlFindId(morph), morph, sex, placeId: 'canal/strand-test', x: pos.x, y: pos.y, met: false };
 }
 
 function rescueAt(pos: Point): RescueState {
@@ -188,16 +189,38 @@ describe('pickStranding', () => {
     }
   });
 
+  it('gives the same sex for the same seed, and both sexes over seeds 0..999', () => {
+    const sexes = new Set<AxolotlSex>();
+    for (let seed = 0; seed < 1000; seed++) {
+      const stranding = pickStranding(owned, null, STRANDING_PLACES, seed);
+      expect(stranding?.sex).toBe(pickStranding(owned, null, STRANDING_PLACES, seed)?.sex);
+      if (stranding) sexes.add(stranding.sex);
+    }
+    expect([...sexes].sort()).toEqual(['boy', 'girl']);
+  });
+
+  it('draws the sex after the morph and the place, so they stay as the seed picked them before', () => {
+    for (let seed = 0; seed < 200; seed++) {
+      const rng = mulberry32((seed ^ 0x5743a11d) >>> 0);
+      const rescuable = REAL_MORPHS.map((morph) => morph.id).filter((id) => id !== STARTER_MORPH);
+      const morph = rescuable[Math.floor(rng() * rescuable.length)];
+      const place = STRANDING_PLACES[Math.floor(rng() * STRANDING_PLACES.length)];
+      const sex = rng() < 0.5 ? 'boy' : 'girl';
+      expect(pickStranding(owned, null, STRANDING_PLACES, seed)).toMatchObject({ morph, placeId: place.id, sex });
+    }
+  });
+
   it('returns null when there are no places', () => {
     expect(pickStranding(owned, null, [], 1)).toBeNull();
   });
 
-  it('honours a waiting record: same morph and place, met', () => {
+  it.each<AxolotlSex>(['boy', 'girl'])('honours a waiting record: same morph, sex (%s) and place, met', (sex) => {
     const place = STRANDING_PLACES[2];
     for (let seed = 0; seed < 50; seed++) {
-      expect(pickStranding(owned, { morph: 'melanoid', placeId: place.id }, STRANDING_PLACES, seed)).toEqual({
+      expect(pickStranding(owned, { morph: 'melanoid', sex, placeId: place.id }, STRANDING_PLACES, seed)).toEqual({
         id: axolotlFindId('melanoid'),
         morph: 'melanoid',
+        sex,
         placeId: place.id,
         x: place.x,
         y: place.y,
@@ -207,7 +230,7 @@ describe('pickStranding', () => {
   });
 
   it('ignores a waiting record whose morph is now owned', () => {
-    const waiting = { morph: 'wild' as const, placeId: STRANDING_PLACES[0].id };
+    const waiting = { morph: 'wild' as const, sex: 'girl' as const, placeId: STRANDING_PLACES[0].id };
     for (let seed = 0; seed < 200; seed++) {
       const stranding = pickStranding([STARTER_MORPH, 'wild'], waiting, STRANDING_PLACES, seed);
       expect(stranding).toEqual(pickStranding([STARTER_MORPH, 'wild'], null, STRANDING_PLACES, seed));
@@ -217,7 +240,7 @@ describe('pickStranding', () => {
   });
 
   it('ignores a waiting record whose place is unknown', () => {
-    const waiting = { morph: 'wild' as const, placeId: 'canal/strand-gone' };
+    const waiting = { morph: 'wild' as const, sex: 'girl' as const, placeId: 'canal/strand-gone' };
     for (let seed = 0; seed < 200; seed++) {
       const stranding = pickStranding(owned, waiting, STRANDING_PLACES, seed);
       expect(stranding).toEqual(pickStranding(owned, null, STRANDING_PLACES, seed));
@@ -233,6 +256,7 @@ describe('createRescue and sendRescueBack', () => {
     expect(rescue).toEqual({
       id: axolotlFindId('golden-albino'),
       morph: 'golden-albino',
+      sex: 'girl',
       placeId: stranding.placeId,
       place: { x: 880, y: 292 },
       met: false,
@@ -292,9 +316,20 @@ describe('rescueStatus', () => {
 describe('waitingAfterTrip', () => {
   const met: RescueState = { ...rescueAt({ x: 880, y: 292 }), placeId: 'canal/strand-2', met: true };
 
-  it('keeps a met rescue that was not banked', () => {
-    expect(waitingAfterTrip(met, holdingsWith([WILD_ID]), 'ended')).toEqual({ morph: 'wild', placeId: 'canal/strand-2' });
-    expect(waitingAfterTrip(met, createHoldings(), 'ended')).toEqual({ morph: 'wild', placeId: 'canal/strand-2' });
+  it('keeps a met rescue that was not banked, with its sex', () => {
+    const waiting = { morph: 'wild', sex: 'girl', placeId: 'canal/strand-2' };
+    expect(waitingAfterTrip(met, holdingsWith([WILD_ID]), 'ended')).toEqual(waiting);
+    expect(waitingAfterTrip(met, createHoldings(), 'ended')).toEqual(waiting);
+    expect(waitingAfterTrip({ ...met, sex: 'boy' }, createHoldings(), 'ended')).toEqual({ ...waiting, sex: 'boy' });
+  });
+
+  it('keeps the sex of a following rescue that was carried home, so the next trip brings it back the same', () => {
+    let following: RescueState = { ...met, sex: 'boy' };
+    for (let i = 0; i < 30; i++) following = stepFollower(following, { x: 880 - i * 3, y: 250 }, DT);
+    const waiting = waitingAfterTrip(following, holdingsWith([WILD_ID]), 'ended');
+    expect(waiting).toEqual({ morph: 'wild', sex: 'boy', placeId: 'canal/strand-2' });
+    const place = { id: 'canal/strand-2', x: 880, y: 292 };
+    expect(pickStranding([STARTER_MORPH], waiting, [place], 7)).toMatchObject({ sex: 'boy', met: true });
   });
 
   it('drops a banked rescue, an unmet rescue and no rescue', () => {

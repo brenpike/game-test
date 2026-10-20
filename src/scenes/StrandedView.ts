@@ -1,8 +1,10 @@
 import * as Phaser from 'phaser';
-import { AXO_SCENE_SCALE, type AxolotlPose } from '../art/drawAxolotl';
+import type { AxolotlPose } from '../art/drawAxolotl';
+import { AXO_SIZE_SCALE } from '../art/drawAxolotlParts';
 import { DEPTH } from '../art/layers';
 import { MORPH_PALETTES, T_STATIC } from '../art/palette';
 import { createAxolotlTexture, type AxolotlTexture } from '../art/textures';
+import { DEFAULT_LOOK, rescuedLook, type AxolotlSex } from '../logic/axolotlLook';
 import type { RealMorphId } from '../logic/morphs';
 import type { MotionProfile } from '../logic/motion';
 import { NO_REPAINT, pickSecondaryRepaint } from '../logic/repaintBudget';
@@ -40,8 +42,9 @@ interface StrandedLook {
 
 /**
  * Draws this trip's stranded axolotl (PRD C2, C3) in its morph colours, with its own live texture,
- * and the lost thought bubble while it waits. It looks a little lost, never hurt: all four legs, no
- * marks. Visual only: the trip owns where it is and whether it waits, follows or is safe. Every
+ * and the lost thought bubble while it waits. It wears the rescued look for its sex (boy or girl
+ * cues at Medium size), and the bubble offsets scale with its size. It looks a little lost, never
+ * hurt: all four legs, no marks. Visual only: the trip owns where it is and whether it waits, follows or is safe. Every
  * timer here is driven by the frame `dt` and the scene clock, so it freezes with the scene.
  */
 export class StrandedView {
@@ -58,14 +61,9 @@ export class StrandedView {
 
   constructor(scene: Phaser.Scene, assets: GameAssets) {
     this.scene = scene;
-    this.texture = createAxolotlTexture(scene, TEXTURE_KEY, assets.axolotl.bakeScale);
-    const info = this.texture.info;
-    this.body = scene.add
-      .image(0, 0, this.texture.key)
-      .setOrigin(info.originNormX, info.originNormY)
-      .setScale(AXO_SCENE_SCALE / this.texture.scale)
-      .setDepth(DEPTH.friend)
-      .setVisible(false);
+    this.texture = createAxolotlTexture(scene, TEXTURE_KEY, assets.axolotl.bakeScale, rescuedLook(DEFAULT_LOOK.sex));
+    this.body = scene.add.image(0, 0, this.texture.key).setDepth(DEPTH.friend).setVisible(false);
+    this.applyTexture();
     const bubbleInfo = assets.morph.lostBubble;
     this.bubble = scene.add
       .image(0, 0, bubbleInfo.key)
@@ -85,15 +83,17 @@ export class StrandedView {
     }
     const status = rescueStatus(rescue, frame.trip.holdings, frame.trip.phase);
     this.advancePhases(status, frame);
+    this.showSex(rescue.sex);
     this.redraw(rescue.morph, this.poseFor(frame), frame.dt, frame.motion.ambient);
 
     const look = this.lookFor(rescue, status, frame);
     const x = rescue.pos.x;
     const y = rescue.pos.y + look.bob;
+    const sizeScale = AXO_SIZE_SCALE[this.texture.look.size];
     this.body.setVisible(true).setPosition(x, y).setFlipX(look.facing < 0);
     this.bubble
       .setVisible(look.bubble)
-      .setPosition(x + look.facing * BUBBLE_HEAD_SHIFT_PX, y - BUBBLE_RISE_PX);
+      .setPosition(x + look.facing * BUBBLE_HEAD_SHIFT_PX * sizeScale, y - BUBBLE_RISE_PX * sizeScale);
   }
 
   /** Removes the sprites and the live texture (scene shutdown). */
@@ -101,6 +101,25 @@ export class StrandedView {
     this.body.destroy();
     this.bubble.destroy();
     this.scene.textures.remove(this.texture.key);
+  }
+
+  /**
+   * Swaps to the rescued look for `sex` when the painted one differs (a new rescue). The swap paints
+   * at once, like a first paint; a size change re-bakes the texture, so it is applied again.
+   */
+  private showSex(sex: AxolotlSex): void {
+    if (this.texture.look.sex === sex) return;
+    this.texture.setLook(rescuedLook(sex));
+    this.applyTexture();
+  }
+
+  /** Shows the texture on the body sprite at the look's size: texture, origin and display scale. */
+  private applyTexture(): void {
+    const { info } = this.texture;
+    this.body
+      .setTexture(this.texture.key)
+      .setOrigin(info.originNormX, info.originNormY)
+      .setScale(this.texture.displayScale(1));
   }
 
   /** Tail and legs paddle slowly while waiting or safe; gills flutter at 0.6x while waiting. */
@@ -144,8 +163,8 @@ export class StrandedView {
    * Repaints the texture when the pose or morph changes, through the shared repaint budget for
    * secondary axolotls (src/logic/repaintBudget.ts): at most one repaint per frame and about 30 a
    * second, so the stranded axolotl adds at most one repaint every other frame at 60 fps on top of
-   * the explorer. A first paint, a new morph and the still pose under reduced motion paint
-   * immediately. The explorer's own every-frame repaint is unchanged; pre-baked frames for every
+   * the explorer. A first paint, a new morph, a new look (showSex) and the still pose under reduced
+   * motion paint immediately. The explorer's own every-frame repaint is unchanged; pre-baked frames for every
    * axolotl are planned in ADR 0004.
    */
   private redraw(morph: RealMorphId, pose: AxolotlPose, dt: number, ambient: boolean): void {

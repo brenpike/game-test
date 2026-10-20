@@ -137,7 +137,29 @@ An axolotl colour type, such as Leucistic or Wild.
 One of the eight true axolotl morphs: Leucistic, Wild, Golden albino, White albino, Copper, Piebald, Axanthic, or Melanoid.
 
 **Character creator**:
-The screen at first launch where the player makes a starter axolotl.
+The step-by-step screens at first launch where the player makes a starter axolotl: 11 steps, one choice per step, from Colour to Name.
+
+**Picture button**:
+A big button on a creator or restyle step that shows one option as a small preview on the axolotl so far.
+
+**Restyle**:
+Changing an owned axolotl's look and name in the Home Tank, on the creator's step screens with tabs; Colour and **Boy or girl** cannot change.
+
+**Boy or girl**:
+Whether an axolotl is a boy or a girl; exactly one, always set, and fixed after creation.
+_Avoid_: gender; "sex" in UI text; "they" or "it" for one axolotl
+
+**Tail**:
+The look option for how long an axolotl's tail is: Short, Medium, or Long; looks only.
+
+**Body**:
+The look option for an axolotl's body shape: Slim, Regular, or Chubby; looks only.
+
+**Age**:
+The look option for how grown-up an axolotl looks: Baby, Young, or Grown-up; it changes proportions only, never size.
+
+**Size**:
+How big an axolotl is drawn: Small, Medium, or Large; looks only, with the same hit area and speed at every size.
 
 **Stranded axolotl**:
 A lost axolotl in the canal waiting to be rescued.
@@ -207,6 +229,8 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - A **Wearable** fits exactly one **Slot**, gives exactly one **Perk**, and may belong to one **Wearable set**
 - An **Outfit** holds at most one **Wearable** per **Slot**; each **Perk** type in it is limited by its **Perk cap**
 - Each axolotl has exactly one **Real morph**; a **Dream colour** draws on top of it and never changes it
+- Each axolotl has exactly one **Boy or girl**, fixed after creation; text about one axolotl says he or she, never they or it
+- **Restyle** can change **Tail**, **Body**, **Age**, **Size**, face, gills, spots, and name, but never the **Real morph** or **Boy or girl**; none of these looks changes the hit area or speed
 - The starter axolotl's **Real morph**, chosen in the **Character creator**, decides which seven **Real morphs** can be **Stranded axolotls**
 - Each **Trip** has at most one **Stranded axolotl**; a **Rescue** moves it into the **Home Tank** and unlocks its **Morph** in the **Collection Book**
 - The **Treasure Chest** lists owned **Decorations**, **Wearables**, and **Dream colours**; placed **Decorations** live in the **Home Tank**
@@ -227,4 +251,7 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - "slot" means a Wearable **Slot** in the PRD, but code also has `LegSlot` (one leg in the legs display) and `CardSlot`: resolved: **Slot** alone always means a Wearable slot; say "leg" for legs.
 - **Slot** count differs: the PRD (F8) has eight Slots, while `WearableSlot` in `src/logic/catalogue.ts` and art style guide 6i have four (Head, Neck, Face, Tail): resolved: the PRD's eight Slots are canonical; code and art guide lag it (issue #16).
 - "Go home" and **Carried home** both end a trip and both send the axolotl home: resolved: distinct concepts; **Go home** is the player's choice and banks first (`wentHome` in code), **Carried home** follows the fourth **Leg loss** and loses unbanked finds (`carriedHome` in code).
+- "sex" in code (`AxolotlSex`, the `sex` look field, the `sex` styler step) means **Boy or girl** in the UI: resolved: say **Boy or girl** in UI text and docs; "sex" survives in code only.
+- "Tail" names three things: the **Tail** look option (tail length), the Tail Wearable **Slot**, and **Tail Dash**: resolved: **Tail** alone means the look option; say "Tail slot" for the Wearable slot and **Tail Dash** for the power.
+- "medium" (`'medium'`) is an id of both **Tail** and **Size**: resolved: always name the field with it (Medium tail, Medium size); the ids are distinct per field.
 - "Tilapia" and "predator" are used for the same fish (PRD glossary, `src/scenes/PredatorView.ts`, `src/art/predatorTextures.ts`): resolved: **Tilapia** is the term; "predator" is an accepted synonym, and "monster" is avoided.
