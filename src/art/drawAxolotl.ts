@@ -64,11 +64,15 @@ export const AXO_TEX: TexSize = { w: 166, h: 142, originX: 102, originY: 79 };
 /**
  * Picture-button crops in local units: `face` for Eyes and Mouth (both eye
  * zones, every mouth, the snout), `gills` for Gills (every gill style at every
- * flutter phase and Age), `whole` (the AXO_TEX frame) for every other option.
+ * flutter phase and Age), `spots` for Spots (every spot mark of every Boy or
+ * girl, Tail, Body and Age at every swim phase at tail amplitude 1, with 4
+ * units of padding, plus the back of the head to x 7), `whole` (the AXO_TEX
+ * frame) for every other option.
  */
-export const AXO_PREVIEW_CROPS: Readonly<Record<'face' | 'gills' | 'whole', Bounds>> = {
+export const AXO_PREVIEW_CROPS: Readonly<Record<'face' | 'gills' | 'spots' | 'whole', Bounds>> = {
   face: { minX: 14, minY: -20, maxX: 58, maxY: 24 },
   gills: { minX: -63, minY: -77, maxX: 25, maxY: 22 },
+  spots: { minX: -85, minY: -22, maxX: 7, maxY: 20 },
   whole: {
     minX: -AXO_TEX.originX,
     minY: -AXO_TEX.originY,
@@ -672,7 +676,7 @@ export function drawAxolotl(
   if (extras?.flecks) paintMorphDots(ctx, sil, tail, torso, extras.flecks);
   if (extras?.shimmer) paintMorphShimmer(ctx, sil, tail, torso, extras.shimmer);
 
-  // 8. spots (spot colour per morph, guide 3b; the prototype's freckles are the Freckles option)
+  // 8. spots (spot colour per morph, guide 3b; the player's Spots option, guide 6n)
   const spot = extras?.spot === undefined ? FRECKLE : extras.spot;
   if (spot !== null) paintSpots(ctx, look.spots, swim, pose.tailAmp, spot, geo.tail, torso);
 

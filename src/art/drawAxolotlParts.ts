@@ -71,7 +71,7 @@ export interface AxolotlArtLook {
 }
 
 /**
- * The starting look. Its face, gills, spots, body and age are the prototype's;
+ * The starting look. Its face, gills, body and age are the prototype's, with Freckles;
  * as a Boy it carries the Boy cue (a longer tail, taller fins).
  */
 export const DEFAULT_ART_LOOK: AxolotlArtLook = {
@@ -1140,20 +1140,43 @@ export interface SpotSet {
 const dot = (x: number, y: number, r: number): BodyMark => ({ x, y, rx: r, ry: r, rot: 0 });
 const tailDot = (s: number, v: number, r: number): TailMark => ({ s, v, rx: r, ry: r });
 
-/** Guide 6n, placed on the prototype torso and tail. Freckles are the prototype's three (6g). */
+/**
+ * Guide 6n, placed on the prototype torso and tail (PRD F1). Each option
+ * differs in count, size and placement, so they tell apart at a glance:
+ * Freckles are ten tiny specks clustered on the shoulders, between the near
+ * middle and bottom gill stems; Dots are six even, medium dots along the back,
+ * then down the tail centre; Patches are three big, soft blotches, one on the
+ * back and two on the tail. All stay off the head, and none looks like a morph
+ * mark (3b): no morph clusters marks like Freckles, Dots are bigger than any
+ * Wild or Copper speckle, and Patches are bigger than any Piebald patch.
+ */
 export const SPOT_SETS: Readonly<Record<SpotsOption, SpotSet>> = {
   none: { body: [], tail: [] },
-  freckles: { body: [dot(-20, 1, 1.7), dot(-29, -4, 1.5), dot(-12, 5, 1.4)], tail: [] },
+  freckles: {
+    body: [
+      dot(-22, -10.5, 1.0),
+      dot(-27, -9.5, 1.2),
+      dot(-32, -8, 0.9),
+      dot(-20, -6.5, 1.1),
+      dot(-24, -6.5, 0.8),
+      dot(-29, -5.5, 1.1),
+      dot(-34, -4.5, 1.0),
+      dot(-22, -3, 0.9),
+      dot(-26, -3.5, 1.0),
+      dot(-31, -2.5, 0.8),
+    ],
+    tail: [],
+  },
   dots: {
-    body: [dot(-8, -4, 2.2), dot(-18, -9, 2.0), dot(-22, 6, 2.4)],
-    tail: [tailDot(0.15, -0.4, 2.2), tailDot(0.35, 0.35, 2.0), tailDot(0.55, -0.3, 1.8), tailDot(0.75, 0.2, 1.5)],
+    body: [dot(-18, -5, 2.8), dot(-28, -6.3, 2.8), dot(-36, -3.2, 2.8)],
+    tail: [tailDot(0.34, -0.1, 2.8), tailDot(0.54, 0, 2.8), tailDot(0.7, 0.1, 2.8)],
   },
   patches: {
-    body: [
-      { x: -14, y: -3, rx: 6, ry: 4.5, rot: -0.3 },
-      { x: -26, y: 7, rx: 5, ry: 3.5, rot: 0 },
+    body: [{ x: -25, y: -5, rx: 8.8, ry: 4.1, rot: 0 }],
+    tail: [
+      { s: 0.2, v: -0.15, rx: 6.2, ry: 5.8 },
+      { s: 0.47, v: 0, rx: 6, ry: 6 },
     ],
-    tail: [{ s: 0.45, v: -0.2, rx: 5, ry: 3.5 }],
   },
 };
 

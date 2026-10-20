@@ -8,7 +8,7 @@ import {
   axolotlLegRoots,
   drawAxolotl,
 } from './drawAxolotl';
-import { LEUCISTIC, WHITE } from './palette';
+import { LEUCISTIC, T_STATIC, WHITE } from './palette';
 import {
   AXO_AGES,
   AXO_BODIES,
@@ -39,6 +39,7 @@ import {
   TAIL_SEGMENTS,
   TAIL_SLOT_POINT,
   axolotlBodyGeometry,
+  boundsOfPoints,
   eyeMarks,
   eyelashMarks,
   gillGeometry,
@@ -63,6 +64,7 @@ import {
   type GillRoot,
   type LocalPoint,
   type MouthVariant,
+  type SpotsOption,
 } from './drawAxolotlParts';
 
 const TAU = Math.PI * 2;
@@ -260,6 +262,79 @@ function markInsideEllipse(m: BodyMark, e: BodyEllipse): boolean {
     if (((x - e.cx) / e.rx) ** 2 + ((y - e.cy) / e.ry) ** 2 > 1) return false;
   }
   return true;
+}
+
+/** Still pose (guide 9): tail and gills at t = T_STATIC, as the picture buttons draw them. */
+const STILL_SWIM = (TAU * T_STATIC) / 1.2;
+const STILL_GILL = (TAU * T_STATIC) / 0.8;
+/** Near gill stem ink half-width: colour half-width plus outline (guide 6d). */
+const STEM_INK_HALF = GILL_STEM_W / 2 + GILL_STEM_OL;
+/**
+ * Least share of each spot option's area left in view by the near gill stems
+ * at the still pose, on every look. Patches ask less: on a Baby Slim with
+ * Long gills the stems cover most of the back, and a blotch of area 110 or
+ * more cannot fit clear of them, nor move further down a tail too thin to hold it.
+ */
+const SPOT_CLEAR_SHARE: Readonly<Record<SpotsOption, number>> = { none: 1, freckles: 0.7, dots: 0.7, patches: 0.5 };
+
+function markArea(m: { readonly rx: number; readonly ry: number }): number {
+  return Math.PI * m.rx * m.ry;
+}
+
+/** Smallest edge-to-edge gap between any two marks, as circles of their larger radius. */
+function smallestEdgeGap(marks: readonly BodyMark[]): number {
+  let gap = Infinity;
+  for (let i = 0; i < marks.length; i++) {
+    for (let j = i + 1; j < marks.length; j++) {
+      const reach = Math.max(marks[i].rx, marks[i].ry) + Math.max(marks[j].rx, marks[j].ry);
+      gap = Math.min(gap, Math.hypot(marks[i].x - marks[j].x, marks[i].y - marks[j].y) - reach);
+    }
+  }
+  return gap;
+}
+
+/** Points along the centre lines of the three near gill stems of a look at the still pose. */
+function nearStemPoints(look: AxolotlArtLook): [number, number][] {
+  const points: [number, number][] = [];
+  for (const spec of gillSpecs(look.gills, 'near', axolotlBodyGeometry(look).gillLength)) {
+    const g = gillGeometry(spec, look.gills, STILL_GILL);
+    for (let i = 0; i <= 60; i++) {
+      const u = i / 60;
+      const m = 1 - u;
+      points.push([m * m * g.bx + 2 * u * m * g.cx + u * u * g.tx, m * m * g.by + 2 * u * m * g.cy + u * u * g.ty]);
+    }
+  }
+  return points;
+}
+
+/** Points filling a (rotated) mark ellipse, on a 0.2 grid of its unit disc. */
+function markFillPoints(m: BodyMark): [number, number][] {
+  const points: [number, number][] = [];
+  for (let i = -5; i <= 5; i++) {
+    for (let j = -5; j <= 5; j++) {
+      if (i * i + j * j > 25) continue;
+      const lx = (i / 5) * m.rx;
+      const ly = (j / 5) * m.ry;
+      points.push([m.x + lx * Math.cos(m.rot) - ly * Math.sin(m.rot), m.y + lx * Math.sin(m.rot) + ly * Math.cos(m.rot)]);
+    }
+  }
+  return points;
+}
+
+/** Share of the marks' area outside the stem ink, sampled per mark and weighted by mark area. 1 for no marks. */
+function clearAreaShare(marks: readonly BodyMark[], stems: readonly (readonly [number, number])[]): number {
+  if (marks.length === 0) return 1;
+  let clear = 0;
+  let total = 0;
+  for (const m of marks) {
+    const points = markFillPoints(m);
+    const inView = points.filter(([px, py]) =>
+      stems.every(([sx, sy]) => Math.hypot(sx - px, sy - py) >= STEM_INK_HALF),
+    ).length;
+    clear += (markArea(m) * inView) / points.length;
+    total += markArea(m);
+  }
+  return clear / total;
 }
 
 describe('creator look ids', () => {
@@ -1105,13 +1180,52 @@ describe('mouth variants (guide 6l)', () => {
 });
 
 describe('spots (guide 6n)', () => {
-  it('Freckles are the prototype three (guide 6g)', () => {
-    expect(spotMarks('freckles', 0, 1)).toEqual([
-      { x: -20, y: 1, rx: 1.7, ry: 1.7, rot: 0 },
-      { x: -29, y: -4, rx: 1.5, ry: 1.5, rot: 0 },
-      { x: -12, y: 5, rx: 1.4, ry: 1.4, rot: 0 },
-    ]);
+  it('Freckles are ten tiny round specks in one shoulder cluster, no bigger than 15 x 9', () => {
+    const marks = spotMarks('freckles', STILL_SWIM, 1);
+    expect(marks).toHaveLength(10);
+    expect(SPOT_SETS.freckles.tail).toEqual([]);
+    for (const m of marks) {
+      expect(m.ry).toBe(m.rx);
+      expect(m.rx).toBeGreaterThanOrEqual(0.8);
+      expect(m.rx).toBeLessThanOrEqual(1.2);
+    }
+    expect(smallestEdgeGap(marks)).toBeGreaterThanOrEqual(0.8);
+    const box = boundsOfPoints(marks.map((m): [number, number] => [m.x, m.y]), 0);
+    expect(box.maxX - box.minX).toBeLessThanOrEqual(15);
+    expect(box.maxY - box.minY).toBeLessThanOrEqual(9);
+    expect(isInside(box, { minX: -35, minY: -11, maxX: -15, maxY: -2 })).toBe(true);
     expect(spotMarks('none', 0, 1)).toEqual([]);
+  });
+
+  it('Dots are six even, medium round dots along the back, then down the tail centre', () => {
+    const set = SPOT_SETS.dots;
+    expect(set.body.length + set.tail.length).toBe(6);
+    expect(set.body.length).toBeGreaterThanOrEqual(2);
+    expect(set.body.length).toBeLessThanOrEqual(3);
+    for (const m of [...set.body, ...set.tail]) expect([m.rx, m.ry]).toEqual([2.8, 2.8]);
+    for (const m of set.tail) {
+      expect(m.s).toBeLessThanOrEqual(0.7);
+      expect(Math.abs(m.v)).toBeLessThanOrEqual(0.1);
+    }
+    const geo = axolotlBodyGeometry(DEFAULT_ART_LOOK);
+    const marks = spotMarks('dots', STILL_SWIM, 1, geo.tail, geo.torso);
+    const steps = marks.slice(1).map((m, i) => Math.hypot(m.x - marks[i].x, m.y - marks[i].y));
+    const meanStep = steps.reduce((sum, step) => sum + step, 0) / steps.length;
+    for (const step of steps) expect(Math.abs(step / meanStep - 1)).toBeLessThanOrEqual(0.2);
+    expect(steps.every((_, i) => marks[i + 1].x < marks[i].x)).toBe(true);
+  });
+
+  it('Patches are three big, soft blotches over the back and tail, each of area 110 or more', () => {
+    const set = SPOT_SETS.patches;
+    expect([[2, 1], [1, 2]]).toContainEqual([set.body.length, set.tail.length]);
+    for (const m of [...set.body, ...set.tail]) expect(markArea(m)).toBeGreaterThanOrEqual(110);
+  });
+
+  it('step up in size: 10 Freckles, 6 Dots each 4 Freckles or more, 3 Patches each 4 Dots or more', () => {
+    const areasOf = (option: SpotsOption): number[] => [...SPOT_SETS[option].body, ...SPOT_SETS[option].tail].map(markArea);
+    expect(SPOTS_OPTIONS.map((option) => areasOf(option).length)).toEqual([0, 10, 6, 3]);
+    expect(Math.min(...areasOf('dots'))).toBeGreaterThanOrEqual(4 * Math.max(...areasOf('freckles')));
+    expect(Math.min(...areasOf('patches'))).toBeGreaterThanOrEqual(4 * Math.max(...areasOf('dots')));
   });
 
   it('never land on the head (x > 0) at any swim phase or tail amplitude', () => {
@@ -1130,9 +1244,10 @@ describe('spots (guide 6n)', () => {
     for (const swim of [0, 1, 2.5, 4]) {
       for (const option of ['dots', 'patches'] as const) {
         const marks = spotMarks(option, swim, 1.6);
-        const bodyCount = option === 'dots' ? 3 : 2;
+        const bodyCount = option === 'dots' ? 3 : 1;
         const tail = marks.slice(bodyCount);
-        const specs = option === 'dots' ? [0.15, 0.35, 0.55, 0.75] : [0.45];
+        const specs = option === 'dots' ? [0.34, 0.54, 0.7] : [0.2, 0.47];
+        expect(tail).toHaveLength(specs.length);
         tail.forEach((m, i) => {
           const tp = tailPointAt(specs[i], swim, 1.6);
           expect(m.x).toBeCloseTo(tp.x, 9);
@@ -1435,6 +1550,19 @@ describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)',
     expect(failingLooks(spotsHold)).toEqual([]);
   });
 
+  it('keeps most of each spot option in view past the near gill stems at the still pose', () => {
+    const stemsOf = memoBy((look) => `${look.gills}|${look.age}`, nearStemPoints);
+    const clearHolds = memoBy(
+      (look) => [look.spots, look.gills, look.sex, look.tail, look.body, look.age].join('|'),
+      (look) => {
+        const geo = axolotlBodyGeometry(look);
+        const marks = spotMarks(look.spots, STILL_SWIM, 1, geo.tail, geo.torso);
+        return clearAreaShare(marks, stemsOf(look)) >= SPOT_CLEAR_SHARE[look.spots];
+      },
+    );
+    expect(failingLooks(clearHolds)).toEqual([]);
+  }, ENUMERATION_TIMEOUT_MS);
+
   it('puts the Tail slot anchor on the core top at tail point 4, with its footprint in the frame', () => {
     const inner = frameInner(0);
     const anchorHolds = memoBy(
@@ -1485,6 +1613,22 @@ describe('AXO_TEX and preview crops', () => {
         for (const t of PHASES) expectInside(gillInkBounds(style, t, k), AXO_PREVIEW_CROPS.gills);
       }
     }
+  });
+
+  it('crops the spots round every spot mark of every look at sampled swim phases, padded, with the back of the head', () => {
+    const boxes: Bounds[] = [];
+    const spotLooks = EVERY_LOOK.filter((look) => look.eyes === 'happy' && look.mouth === 'smile' && look.gills === 'fluffy');
+    for (const look of spotLooks) {
+      const geo = axolotlBodyGeometry(look);
+      for (const swim of SWIM_SAMPLES) {
+        for (const m of spotMarks(look.spots, swim, 1, geo.tail, geo.torso)) {
+          boxes.push(boundsOfPoints([[m.x, m.y]], Math.max(m.rx, m.ry) + FRAME_PAD));
+        }
+      }
+    }
+    expect(spotLooks).toHaveLength(4 * 2 * 3 * 3 * 3);
+    expectInside(unionBounds(boxes), AXO_PREVIEW_CROPS.spots);
+    expect(AXO_PREVIEW_CROPS.spots.maxX).toBeGreaterThanOrEqual(6);
   });
 
   it('crops the whole axolotl to the AXO_TEX frame, and every crop sits in the frame', () => {

@@ -11,8 +11,10 @@ import {
   HEAD_ELLIPSE,
   MOUTH_VARIANTS,
   NEAR_EYE,
+  SPOT_SETS,
   axolotlBodyGeometry,
   mouthInkBounds,
+  spotMarks,
   tailSamples,
   unionBounds,
   type AxolotlArtLook,
@@ -20,7 +22,15 @@ import {
   type TailSample,
 } from './drawAxolotlParts';
 import { MORPH_LOOK_IDS } from './drawMorphs';
-import { INK, MORPH_PALETTES, WHITE, type MorphLookId, type MorphMark, type MorphPalette } from './palette';
+import {
+  INK,
+  MORPH_PALETTES,
+  T_STATIC,
+  WHITE,
+  type MorphLookId,
+  type MorphMark,
+  type MorphPalette,
+} from './palette';
 
 const TAU = Math.PI * 2;
 const SWIM_SAMPLES = Array.from({ length: 37 }, (_, i) => (i / 36) * TAU);
@@ -155,6 +165,70 @@ describe('morph marks on every look (guide 3b, 6g, 6h)', () => {
       marksOf(MORPH_PALETTES[id]).flatMap((m) => (m.space === 'body' && m.x >= 0 ? [markName(id, m)] : [])),
     );
     expect(headSide).toEqual(HEAD_SIDE_MARKS);
+  });
+});
+
+/** The Freckles cluster box (PRD F1, guide 6n): Freckles fill one, no morph crowds one. */
+const CLUSTER_BOX = { w: 15, h: 9 } as const;
+/** Most morph marks in one cluster box on the default look: Wild's speckles, flecks and a tail speckle reach 4. */
+const MORPH_MOST_IN_BOX = 4;
+/** Float slack for products of decimal radii (1.75 x 1.6 is 2.8000000000000003). */
+const RADIUS_SLACK = 1e-9;
+
+/** Most points inside any w x h box (a fullest box can always slide to touch a point on its left and its top edge). */
+function mostInBox(points: readonly (readonly [number, number])[], w: number, h: number): number {
+  let most = 0;
+  for (const [left] of points) {
+    for (const [, top] of points) {
+      const inBox = points.filter(([x, y]) => x >= left && x <= left + w && y >= top && y <= top + h).length;
+      most = Math.max(most, inBox);
+    }
+  }
+  return most;
+}
+
+/** Largest radius among the speckles and flecks of the given morphs (Piebald patches are its speckles). */
+function largestSpeckleRadius(ids: readonly MorphLookId[]): number {
+  const radii = ids.flatMap((id) => {
+    const extras = MORPH_PALETTES[id].extras;
+    return [...(extras?.speckles?.marks ?? []), ...(extras?.flecks?.marks ?? [])].map((m) => m.r);
+  });
+  return Math.max(...radii);
+}
+
+describe('player spots never look like morph marks (PRD F1, guide 3b, 6n)', () => {
+  const geo = axolotlBodyGeometry(DEFAULT_ART_LOOK);
+
+  it('Freckles put 9 or more specks in one 15 x 9 box, where no morph puts more than 4 marks', () => {
+    const crowded: string[] = [];
+    for (const id of MORPH_LOOK_IDS) {
+      for (const swim of SWIM_SAMPLES) {
+        for (const amp of TAIL_AMPS) {
+          const tail = tailSamples(geo.tail, swim, amp);
+          const points = marksOf(MORPH_PALETTES[id]).map((m) => markPoint(m, tail, geo.torso));
+          const most = mostInBox(points, CLUSTER_BOX.w, CLUSTER_BOX.h);
+          if (most > MORPH_MOST_IN_BOX) crowded.push(`${id} swim ${swim.toFixed(2)} amp ${amp}: ${most}`);
+        }
+      }
+    }
+    expect(crowded).toEqual([]);
+    const freckles = spotMarks('freckles', (TAU * T_STATIC) / 1.2, 1, geo.tail, geo.torso);
+    const specks = freckles.map((m): [number, number] => [m.x, m.y]);
+    expect(mostInBox(specks, CLUSTER_BOX.w, CLUSTER_BOX.h)).toBeGreaterThanOrEqual(9);
+  });
+
+  it('Dots are 1.75 times or more the radius of the largest Wild or Copper speckle or fleck', () => {
+    const largest = largestSpeckleRadius(['wild', 'copper']);
+    expect(largest).toBe(1.6);
+    const dots = [...SPOT_SETS.dots.body, ...SPOT_SETS.dots.tail];
+    for (const m of dots) expect(Math.min(m.rx, m.ry)).toBeGreaterThanOrEqual(1.75 * largest - RADIUS_SLACK);
+  });
+
+  it('Patches are each twice the area of the largest Piebald patch or more', () => {
+    const largest = largestSpeckleRadius(['piebald']);
+    expect(largest).toBe(4.2);
+    const patches = [...SPOT_SETS.patches.body, ...SPOT_SETS.patches.tail];
+    for (const m of patches) expect(Math.PI * m.rx * m.ry).toBeGreaterThanOrEqual(2 * Math.PI * largest * largest);
   });
 });
 
