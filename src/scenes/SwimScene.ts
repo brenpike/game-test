@@ -307,6 +307,7 @@ export class SwimScene extends Phaser.Scene {
     this.trip = createTrip(zone, LEGS, start.banked, start.tripSeed, {
       stranding,
       tilapiaCardSeen: start.tilapiaCardSeen,
+      returnedFinds: start.returnedFinds,
     });
     this.dashKeyLatched = true;
     this.tripCtx = createTripContext({ encounter: createEncounterContext({ bounds: this.bounds }) });

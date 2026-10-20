@@ -63,7 +63,7 @@ const STYLED: AxolotlLook = {
  * A session built through the session API: a starter and a rescued wild axolotl, both restyled, the
  * wild one wearing the mint Dream colour, a Paint shell, a Decoration placed in the tank and a
  * Wearable banked, the tilapia card, canal stars, and canal memory (eaten snacks, a trip seed, a
- * waiting axolotl) that must never be saved.
+ * waiting axolotl, a lost treasure) that must never be saved.
  */
 function playedSession(): Session {
   const started = addStarter(createSession(), { name: 'Bubbles', look: { ...STYLED, sex: 'boy' } });
@@ -74,6 +74,7 @@ function playedSession(): Session {
     tripSeed: 77,
     waitingStranded: { morph: 'copper', sex: 'boy', placeId: 'canal/stranding-0' },
     metTilapia: true,
+    returnedFinds: [BOAT],
     stars: { areaId: CANAL_AREA_ID, earned: { exit: true, special: false, legsOrRescue: true } },
   });
   const restyled = setDreamColour(restyleAxolotl(afterTrip, WILD, { name: 'Gilly Mae', look: STYLED }), WILD, 'mint');
@@ -127,7 +128,16 @@ describe('save round trip', () => {
     expect(Object.keys(json)).toEqual(['version', 'hub']);
     expect(json.version).toBe(SAVE_VERSION);
     expect(Object.keys(json.hub).sort()).toEqual(['axolotls', 'banked', 'book', 'stars', 'tank']);
-    const tripOnlyKeys = ['eatenSnacks', 'lastTripSeed', 'waitingStranded', 'tripSeed', 'holdings', 'bag', 'legs'];
+    const tripOnlyKeys = [
+      'eatenSnacks',
+      'lastTripSeed',
+      'waitingStranded',
+      'returnedFinds',
+      'tripSeed',
+      'holdings',
+      'bag',
+      'legs',
+    ];
     for (const tripOnly of tripOnlyKeys) {
       expect(raw).not.toContain(`"${tripOnly}":`);
     }
@@ -153,11 +163,11 @@ describe('save round trip', () => {
     expect(loaded.canal).toEqual(createSession().canal);
   });
 
-  it('puts finds left unbanked mid-trip back in fresh spots on the next trip (D3)', () => {
+  it('after a reload, finds left unbanked mid-trip rejoin the canal (D3)', () => {
     const zone = buildCanalZone();
     const session = playedSession();
     const start = tripStart(session, FRESH_SEED);
-    const trip = createTrip(zone, LEGS, start.banked, start.tripSeed);
+    const trip = createTrip(zone, LEGS, start.banked, start.tripSeed, { returnedFinds: start.returnedFinds });
     const find = trip.placed.find((placed) => !placed.sealed);
     if (find === undefined) throw new Error('no open find placed');
     const input = { axolotlPos: { x: find.x, y: find.y }, reduced: false, dashing: false };
@@ -167,9 +177,13 @@ describe('save round trip', () => {
     const loaded = sessionFromSave(decodeSave(encodeSave(session.hub)));
     const next = tripStart(loaded, FRESH_SEED);
     expect(next.banked).not.toContain(find.id);
-    const nextTrip = createTrip(zone, LEGS, next.banked, next.tripSeed);
-    expect(nextTrip.placed.map((placed) => placed.id)).toContain(find.id);
-    expect(nextTrip.holdings.bag).toEqual([]);
+    expect(next.returnedFinds).toEqual([]);
+    const placedOnSomeTrip = Array.from({ length: 200 }, (_unused, index) => index + 1).some((seed) => {
+      const nextTrip = createTrip(zone, LEGS, next.banked, seed, { returnedFinds: next.returnedFinds });
+      expect(nextTrip.holdings.bag).toEqual([]);
+      return nextTrip.placed.some((placed) => placed.id === find.id);
+    });
+    expect(placedOnSomeTrip).toBe(true);
   });
 });
 
