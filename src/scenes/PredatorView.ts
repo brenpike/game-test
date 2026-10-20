@@ -1,5 +1,7 @@
 import * as Phaser from 'phaser';
 import { AXO_SCENE_SCALE, axolotlLegRoots } from '../art/drawAxolotl';
+import type { AxolotlArtLook } from '../art/drawAxolotlParts';
+import { axolotlInkReach, carryBubbleLookScale, protectedHaloLookScale } from '../art/drawEffects';
 import type { TilapiaPose } from '../art/drawTilapia';
 import { DEPTH } from '../art/layers';
 import type { AxolotlTexture, TexInfo } from '../art/textures';
@@ -112,6 +114,9 @@ export class PredatorView {
   private readonly boostStarInfo: TexInfo;
   private readonly halo: Phaser.GameObjects.Image;
   private readonly carryBubble: Phaser.GameObjects.Image;
+  private effectLook: AxolotlArtLook;
+  private haloLookScale: number;
+  private carryBubbleLookScale: number;
   private poofCursor = 0;
   private regrowCursor = 0;
 
@@ -122,6 +127,10 @@ export class PredatorView {
     this.tilapias = Array.from({ length: tilapiaCount }, () => this.createTilapiaSprites());
     this.halo = bakedImage(scene, predator.halo, DEPTH.halo).setVisible(false);
     this.carryBubble = bakedImage(scene, predator.carryBubble, DEPTH.bubbles).setVisible(false);
+    this.effectLook = assets.axolotl.look;
+    const reach = axolotlInkReach(this.effectLook);
+    this.haloLookScale = protectedHaloLookScale(reach);
+    this.carryBubbleLookScale = carryBubbleLookScale(reach);
     this.poofs = Array.from({ length: POOF_POOL }, () =>
       createLegEffect(bakedImage(scene, predator.poof, DEPTH.fx), POOF_LIFE_S),
     );
@@ -159,6 +168,7 @@ export class PredatorView {
     frame.encounter.tilapias.forEach((tilapia, i) => {
       this.renderTilapia(this.tilapias[i], tilapia, frame);
     });
+    this.refreshEffectLook();
     this.renderHalo(frame);
     this.renderCarryBubble(frame);
     this.renderPoofs(frame);
@@ -214,7 +224,20 @@ export class PredatorView {
     return tilapia.facing;
   }
 
-  /** The halo is sized at Large and scales with the axolotl's size factor, so it keeps its clearance. */
+  /** Re-measures the halo and carry bubble look scales when the axolotl texture paints a new look. */
+  private refreshEffectLook(): void {
+    const look = this.assets.axolotl.look;
+    if (look === this.effectLook) return;
+    this.effectLook = look;
+    const reach = axolotlInkReach(look);
+    this.haloLookScale = protectedHaloLookScale(reach);
+    this.carryBubbleLookScale = carryBubbleLookScale(reach);
+  }
+
+  /**
+   * The halo is sized at Large for the default look, grown for a look that reaches further, and
+   * scaled with the axolotl's size factor, so it keeps its clearance.
+   */
   private renderHalo(frame: PredatorFrame): void {
     const visible = frame.phase === 'swimming' && isProtected(frame.encounter.legs);
     const sizeFactor = axolotlSizeFactor(frame.axolotl, this.assets.axolotl);
@@ -222,13 +245,13 @@ export class PredatorView {
       .setVisible(visible)
       .setPosition(frame.axolotl.x, frame.axolotl.y)
       .setRotation(frame.axolotl.rotation)
-      .setScale(sizeFactor / this.assets.predator.halo.scale);
+      .setScale((sizeFactor * this.haloLookScale) / this.assets.predator.halo.scale);
   }
 
   /**
-   * The carry bubble shows only in the 'carrying' phase, centred on the axolotl and scaled with its
-   * size factor (sized at Large). Under reduced motion the trip holds the axolotl still, so the
-   * bubble is static too.
+   * The carry bubble shows only in the 'carrying' phase, centred on the axolotl, sized at Large for
+   * the default look, grown for a look that reaches further, and scaled with its size factor. Under
+   * reduced motion the trip holds the axolotl still, so the bubble is static too.
    */
   private renderCarryBubble(frame: PredatorFrame): void {
     const visible = frame.phase === 'carrying';
@@ -236,7 +259,7 @@ export class PredatorView {
     this.carryBubble
       .setVisible(visible)
       .setPosition(frame.axolotl.x, frame.axolotl.y)
-      .setScale(sizeFactor / this.assets.predator.carryBubble.scale);
+      .setScale((sizeFactor * this.carryBubbleLookScale) / this.assets.predator.carryBubble.scale);
   }
 
   private startPoof(leg: number): void {

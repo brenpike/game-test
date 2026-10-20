@@ -311,10 +311,15 @@ export function restyleStart(axolotl: StylerAxolotl): StylerState {
   return startState('restyle', axolotl, RESTYLE_START_STEP);
 }
 
-/** The styler with `perPage` suggested names to a Name page, on the page holding the current name. */
+/**
+ * The styler with `perPage` suggested names to a Name page, on the page holding the current name.
+ * A focused name button moves onto the current name when it is on that page, else stays in range.
+ */
 export function withNamesPerPage(state: StylerState, perPage: number): StylerState {
   const sized = syncNamePage({ ...state, namesPerPage: requirePositiveInteger(perPage, 'Names per page') });
   if (sized.focus.kind !== 'option') return sized;
+  const chosen = sized.step === 'name' ? chosenIndex(sized) : -1;
+  if (chosen >= 0) return { ...sized, focus: { kind: 'option', index: chosen } };
   const lastIndex = stepOptions(sized).length - 1;
   return { ...sized, focus: { kind: 'option', index: Math.min(sized.focus.index, lastIndex) } };
 }

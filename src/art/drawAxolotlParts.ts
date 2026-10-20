@@ -384,78 +384,99 @@ export interface EyeLash {
   readonly y2: number;
 }
 
-const LASH_LENGTH = 3.2;
-/** Lash ends stay this far inside the eye zone edge. */
-const LASH_ZONE_INSET = 0.15;
+/** Lash corners stay this far inside the eye zone edge. */
+const LASH_ZONE_INSET = 0.05;
 /** Open eyes: lash roots sit this far inside the bead edge, so the bead covers them. */
 const LASH_ROOT_INSET = 1;
-/** Open eyes: root angles round the upper back of the bead (facing right, y down). */
-const OPEN_LASH_ANGLES: readonly number[] = [Math.PI + 0.5, Math.PI + 0.85, Math.PI + 1.2];
-/** Open eyes: each lash flicks this far from its radial line toward the back. */
-const LASH_FLICK = 0.5;
-/** Lidded eyes: lash directions fanned up and back from the lid's back end. */
-const LIDDED_LASH_ANGLES: readonly number[] = [Math.PI + 0.15, Math.PI + 0.55, Math.PI + 0.95];
+/** Every variant: each lash aims at the eye zone edge at these angles (the upper back, facing right, y down). */
+const LASH_END_ANGLES: readonly number[] = [Math.PI + 0.5, Math.PI + 0.85, Math.PI + 1.2];
+/** Lidded eyes: lash roots along the lid, as fractions of the way from its back bead-edge end to its middle. */
+const LID_LASH_ROOTS: readonly number[] = [0.3, 0.42, 0.55];
 
-/** A lash from (x, y) along `angle`, cut short so its end stays within `reach` of the eye centre. */
-function lashFrom(x: number, y: number, angle: number, reach: number): EyeLash {
-  const dx = Math.cos(angle);
-  const dy = Math.sin(angle);
+/** Distance from (x, y) along unit (dx, dy) to the circle of radius `reach` about the eye centre. */
+function roomToReach(x: number, y: number, dx: number, dy: number, reach: number): number {
   const along = x * dx + y * dy;
-  const room = -along + Math.sqrt(along * along - (x * x + y * y) + reach * reach);
-  const len = Math.min(LASH_LENGTH, room);
-  return { x1: x, y1: y, x2: x + dx * len, y2: y + dy * len };
+  return -along + Math.sqrt(along * along - (x * x + y * y) + reach * reach);
 }
 
-/** Where the lid line first meets the bead edge from its back end (x1 side). */
-function lidBackEnd(lid: EyeLid, beadR: number): LocalPoint {
-  const pointAt = (u: number): LocalPoint => {
-    const m = 1 - u;
-    return {
-      x: m * m * lid.x1 + 2 * u * m * lid.cx + u * u * lid.x2,
-      y: m * m * lid.y1 + 2 * u * m * lid.cy + u * u * lid.y2,
-    };
+/**
+ * A lash from `root` aimed at the point at `angle` on the `reach` circle. It
+ * stops where the first corner of its widest (butt-capped) stroke meets that
+ * circle, so every painted corner stays within `reach` of the eye centre.
+ */
+function lashToward(root: LocalPoint, angle: number, reach: number): EyeLash {
+  const dir = Math.atan2(Math.sin(angle) * reach - root.y, Math.cos(angle) * reach - root.x);
+  const dx = Math.cos(dir);
+  const dy = Math.sin(dir);
+  const half = EYELASH_UNDER / 2;
+  const len = Math.min(
+    roomToReach(root.x - dy * half, root.y + dx * half, dx, dy, reach),
+    roomToReach(root.x + dy * half, root.y - dx * half, dx, dy, reach),
+  );
+  return { x1: root.x, y1: root.y, x2: root.x + dx * len, y2: root.y + dy * len };
+}
+
+/** The lid line's point at curve parameter u (0 at the back end, 1 at the snout end). */
+function lidPointAt(lid: EyeLid, u: number): LocalPoint {
+  const m = 1 - u;
+  return {
+    x: m * m * lid.x1 + 2 * u * m * lid.cx + u * u * lid.x2,
+    y: m * m * lid.y1 + 2 * u * m * lid.cy + u * u * lid.y2,
   };
+}
+
+/** Curve parameter where the lid line first meets the bead edge from its back end (x1 side). */
+function lidBackParam(lid: EyeLid, beadR: number): number {
   let outside = 0;
   let inside = 0.5;
   for (let step = 0; step < 40; step++) {
     const mid = (outside + inside) / 2;
-    const p = pointAt(mid);
+    const p = lidPointAt(lid, mid);
     if (Math.hypot(p.x, p.y) > beadR) outside = mid;
     else inside = mid;
   }
-  return pointAt(inside);
+  return inside;
 }
 
 /**
- * Girl cue lashes for one eye at prototype bead radius r: three short lashes
- * at the upper back of the bead, or fanned from the lid's back end on lidded
- * variants. Every lash end stays inside the eye zone (guide 6i).
+ * Girl cue lashes for one eye at prototype bead radius r: three lashes aimed
+ * at the upper back of the eye zone edge. Open eyes root them 1 inside the
+ * bead edge on the same radial lines; lidded eyes root them on the back half
+ * of the lid line, so they rise into the space above the lid. Every corner of
+ * every butt-capped stroke stays inside the eye zone (guide 6i).
  */
 export function eyelashMarks(variant: EyeVariant, r: number): EyeLash[] {
   const marks = eyeMarks(variant, r);
   const reach = r + EYE_ZONE_MARGIN - LASH_ZONE_INSET;
-  if (marks.lid) {
-    const root = lidBackEnd(marks.lid, marks.beadR);
-    return LIDDED_LASH_ANGLES.map((angle) => lashFrom(root.x, root.y, angle, reach));
+  const lid = marks.lid;
+  if (lid) {
+    const back = lidBackParam(lid, marks.beadR);
+    return LASH_END_ANGLES.map((angle, i) =>
+      lashToward(lidPointAt(lid, back + LID_LASH_ROOTS[i] * (0.5 - back)), angle, reach),
+    );
   }
   const rootR = marks.beadR - LASH_ROOT_INSET;
-  return OPEN_LASH_ANGLES.map((angle) =>
-    lashFrom(Math.cos(angle) * rootR, Math.sin(angle) * rootR, angle - LASH_FLICK, reach),
+  return LASH_END_ANGLES.map((angle) =>
+    lashToward({ x: Math.cos(angle) * rootR, y: Math.sin(angle) * rootR }, angle, reach),
   );
 }
 
+/** Lashes use butt caps, so no paint reaches past a lash end (the eye zone stays clear). */
 function paintEyelashes(ctx: CanvasRenderingContext2D, lashes: readonly EyeLash[]): void {
   const path = new Path2D();
   for (const lash of lashes) {
     path.moveTo(lash.x1, lash.y1);
     path.lineTo(lash.x2, lash.y2);
   }
+  ctx.save();
+  ctx.lineCap = 'butt';
   ctx.lineWidth = EYELASH_UNDER;
   ctx.strokeStyle = WHITE;
   ctx.stroke(path);
   ctx.lineWidth = EYELASH_INK;
   ctx.strokeStyle = INK;
   ctx.stroke(path);
+  ctx.restore();
 }
 
 function lidPath(lid: EyeLid): Path2D {

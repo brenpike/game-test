@@ -530,6 +530,25 @@ describe('name box and More names', () => {
     expect(sized.focus).toEqual({ kind: 'option', index: 2 });
     expect(() => withNamesPerPage(state, 1.5)).toThrow(RangeError);
   });
+
+  it('withNamesPerPage moves a focused name button onto the current name on its new page', () => {
+    const names = suggestedNamesFor('girl');
+    const name = names[MAX_STEP_OPTIONS + 1];
+    const entered = creatorOn('name', { look: { ...DEFAULT_LOOK, sex: 'girl' }, name });
+    expect(entered.focus).toEqual({ kind: 'option', index: 1 });
+    for (const perPage of [3, 4, 5, 6, 7]) {
+      const sized = withNamesPerPage(entered, perPage);
+      expect(sized.focus).toEqual({ kind: 'option', index: optionIds(sized).indexOf(name) });
+      expect(chosenIndex(sized)).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('withNamesPerPage keeps a focused name button in range for a typed name', () => {
+    const state = creatorOn('name', { look: { ...DEFAULT_LOOK, sex: 'girl' }, name: 'Zed' });
+    const sized = withNamesPerPage({ ...state, focus: { kind: 'option', index: 7 } }, 4);
+    expect(chosenIndex(sized)).toBe(-1);
+    expect(sized.focus).toEqual({ kind: 'option', index: 3 });
+  });
 });
 
 describe('setName', () => {

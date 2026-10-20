@@ -453,7 +453,7 @@ export interface AxolotlTexture {
   readonly bakeScale: number;
   /**
    * Current bake scale: texture pixels per local unit, bakeScale x the size
-   * factor (AXO_SIZE_SCALE). Equals bakeScale at Medium.
+   * factor (AXO_SIZE_SCALE). Equals bakeScale at Large (x1).
    */
   readonly scale: number;
   /** Size and anchor. Use originNormX/Y for sprite.setOrigin(). Local x = 0 is the anchor. */

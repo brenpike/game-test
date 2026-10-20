@@ -55,8 +55,10 @@ import {
   type BodyEllipse,
   type BodyMark,
   type Bounds,
+  type EyeLash,
   type EyeSpot,
   type GillRoot,
+  type LocalPoint,
 } from './drawAxolotlParts';
 
 const TAU = Math.PI * 2;
@@ -106,6 +108,55 @@ function boxCircleGap(b: Bounds, c: { x: number; y: number; r: number }): number
   const dx = Math.max(b.minX - c.x, 0, c.x - b.maxX);
   const dy = Math.max(b.minY - c.y, 0, c.y - b.maxY);
   return Math.hypot(dx, dy) - c.r;
+}
+
+/** Blink squashes checked for lash paint: open, half shut and the 12% blink (guide 6c). */
+const LASH_BLINKS = [1, 0.5, 0.12] as const;
+/** Both lash strokes: the white under-stroke and the ink. */
+const LASH_WIDTHS = [EYELASH_UNDER, EYELASH_INK] as const;
+/** Lash readability floor: centre-line length clear of the bead. */
+const MIN_LASH_INK_PAST_BEAD = 0.9;
+
+/**
+ * Corners of a lash's butt-capped stroke `width` wide (its ends offset by half
+ * the width each side, square to the lash), after the blink squash about the
+ * eye centre. With butt caps these four corners bound all of its paint.
+ */
+function lashStrokeCorners(lash: EyeLash, width: number, blink: number): LocalPoint[] {
+  const len = Math.hypot(lash.x2 - lash.x1, lash.y2 - lash.y1);
+  const nx = (-(lash.y2 - lash.y1) / len) * (width / 2);
+  const ny = ((lash.x2 - lash.x1) / len) * (width / 2);
+  return [
+    { x: lash.x1 + nx, y: (lash.y1 + ny) * blink },
+    { x: lash.x1 - nx, y: (lash.y1 - ny) * blink },
+    { x: lash.x2 + nx, y: (lash.y2 + ny) * blink },
+    { x: lash.x2 - nx, y: (lash.y2 - ny) * blink },
+  ];
+}
+
+/** Whether every corner of both lash strokes lies inside the circle of radius `zoneR` about the eye centre, at every blink. */
+function lashPaintInZone(lash: EyeLash, zoneR: number): boolean {
+  for (const blink of LASH_BLINKS) {
+    for (const width of LASH_WIDTHS) {
+      for (const corner of lashStrokeCorners(lash, width, blink)) {
+        if (Math.hypot(corner.x, corner.y) > zoneR) return false;
+      }
+    }
+  }
+  return true;
+}
+
+/** Length of a lash's centre line outside the bead circle: ink the bead never paints over. */
+function inkPastBead(lash: EyeLash, beadR: number): number {
+  const len = Math.hypot(lash.x2 - lash.x1, lash.y2 - lash.y1);
+  const ux = (lash.x2 - lash.x1) / len;
+  const uy = (lash.y2 - lash.y1) / len;
+  const along = lash.x1 * ux + lash.y1 * uy;
+  const disc = along * along - (lash.x1 * lash.x1 + lash.y1 * lash.y1 - beadR * beadR);
+  if (disc <= 0) return len;
+  const enter = Math.max(0, -along - Math.sqrt(disc));
+  const leave = Math.min(len, -along + Math.sqrt(disc));
+  return len - Math.max(0, leave - enter);
 }
 
 /** The AXO_TEX frame as local bounds, shrunk by `pad` on every side. */
@@ -677,15 +728,20 @@ describe('eyelashes (Girl cue)', () => {
     [FAR_EYE, FAR_EYE_ZONE],
   ];
 
-  it('are three short lashes per eye with every point inside the eye zone', () => {
+  it('are three lashes per eye, every corner of both butt-capped strokes inside the eye zone at every blink', () => {
     for (const variant of EYE_VARIANTS) {
       for (const [spot, zone] of eyes) {
         const lashes = eyelashMarks(variant, spot.r);
         expect(lashes).toHaveLength(3);
         for (const lash of lashes) {
-          expect(Math.hypot(lash.x1, lash.y1)).toBeLessThanOrEqual(zone.r);
-          expect(Math.hypot(lash.x2, lash.y2)).toBeLessThanOrEqual(zone.r);
           expect(Math.hypot(lash.x2 - lash.x1, lash.y2 - lash.y1)).toBeGreaterThan(1.2);
+          for (const blink of LASH_BLINKS) {
+            for (const width of LASH_WIDTHS) {
+              for (const corner of lashStrokeCorners(lash, width, blink)) {
+                expect(Math.hypot(corner.x, corner.y)).toBeLessThanOrEqual(zone.r);
+              }
+            }
+          }
         }
       }
     }
@@ -704,22 +760,50 @@ describe('eyelashes (Girl cue)', () => {
     }
   });
 
-  it('start at the back end of the lid line on lidded eyes', () => {
-    for (const variant of ['sleepy', 'determined', 'grumpy'] as const) {
-      const marks = eyeMarks(variant, NEAR_EYE.r);
-      const lid = marks.lid!;
-      for (const lash of eyelashMarks(variant, NEAR_EYE.r)) {
-        expect(Math.hypot(lash.x1, lash.y1)).toBeCloseTo(marks.beadR, 6);
-        const u = (lash.x1 - lid.x1) / (lid.x2 - lid.x1);
-        expect(u).toBeLessThan(0.5);
-        expect(isBelowLid(lid, lash.x1, lash.y1 + 1e-6)).toBe(true);
-        expect(isBelowLid(lid, lash.x1, lash.y1 - 1e-3)).toBe(false);
+  it('show at least 0.9 of ink past the bead on every variant', () => {
+    for (const variant of EYE_VARIANTS) {
+      for (const [spot] of eyes) {
+        const beadR = eyeMarks(variant, spot.r).beadR;
+        for (const lash of eyelashMarks(variant, spot.r)) {
+          expect(inkPastBead(lash, beadR)).toBeGreaterThanOrEqual(MIN_LASH_INK_PAST_BEAD);
+        }
       }
     }
   });
 
-  it('paint white under ink, under the bead, inside the blink squash', () => {
+  it('keep both root corners inside the bead, so the bead covers every root below the lid', () => {
+    for (const variant of EYE_VARIANTS) {
+      for (const [spot] of eyes) {
+        const beadR = eyeMarks(variant, spot.r).beadR;
+        for (const lash of eyelashMarks(variant, spot.r)) {
+          for (const corner of lashStrokeCorners(lash, EYELASH_UNDER, 1).slice(0, 2)) {
+            expect(Math.hypot(corner.x, corner.y)).toBeLessThan(beadR);
+          }
+        }
+      }
+    }
+  });
+
+  it('root on the back half of the lid line inside the bead and rise above it on lidded eyes', () => {
+    for (const variant of ['sleepy', 'determined', 'grumpy'] as const) {
+      for (const [spot] of eyes) {
+        const marks = eyeMarks(variant, spot.r);
+        const lid = marks.lid!;
+        for (const lash of eyelashMarks(variant, spot.r)) {
+          expect(Math.hypot(lash.x1, lash.y1)).toBeLessThan(marks.beadR);
+          const u = (lash.x1 - lid.x1) / (lid.x2 - lid.x1);
+          expect(u).toBeLessThan(0.5);
+          expect(isBelowLid(lid, lash.x1, lash.y1 + 1e-6)).toBe(true);
+          expect(isBelowLid(lid, lash.x1, lash.y1 - 1e-3)).toBe(false);
+          expect(lash.y2).toBeLessThan(lash.y1);
+        }
+      }
+    }
+  });
+
+  it('paint white under ink with butt caps, under the bead, inside the blink squash', () => {
     const calls: string[] = [];
+    const lashCaps: string[] = [];
     class StubPath2D {
       moveTo(): void {}
       lineTo(): void {}
@@ -728,15 +812,24 @@ describe('eyelashes (Girl cue)', () => {
       ellipse(): void {}
     }
     vi.stubGlobal('Path2D', StubPath2D);
-    const state = { lineWidth: 0, strokeStyle: '', fillStyle: '' };
+    const state = { lineWidth: 0, strokeStyle: '', fillStyle: '', lineCap: 'round' };
+    const saved: string[] = [];
     const ctx = {
-      save: () => {},
-      restore: () => {},
+      save: () => saved.push(state.lineCap),
+      restore: () => {
+        state.lineCap = saved.pop()!;
+      },
       translate: () => calls.push('translate'),
       scale: () => calls.push('scale'),
       clip: () => {},
       fill: () => calls.push(`fill:${state.fillStyle}`),
-      stroke: () => calls.push(`stroke:${state.strokeStyle}:${state.lineWidth}`),
+      stroke: () => {
+        calls.push(`stroke:${state.strokeStyle}:${state.lineWidth}`);
+        if (state.lineWidth === EYELASH_UNDER || state.lineWidth === EYELASH_INK) lashCaps.push(state.lineCap);
+      },
+      set lineCap(v: string) {
+        state.lineCap = v;
+      },
       set lineWidth(v: number) {
         state.lineWidth = v;
       },
@@ -754,6 +847,9 @@ describe('eyelashes (Girl cue)', () => {
     expect(calls.indexOf('scale')).toBeLessThan(under);
     expect(under).toBeLessThan(ink);
     expect(ink).toBeLessThan(calls.indexOf('fill:#123456'));
+    expect(lashCaps).toEqual(['butt', 'butt']);
+    expect(state.lineCap).toBe('round');
+    expect(saved).toEqual([]);
   });
 });
 
@@ -793,9 +889,7 @@ describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)',
         const marks = eyeMarks(look.eyes, spot.r);
         const glintsIn = marks.glints.every((g) => Math.hypot(g.x, g.y) + g.r <= marks.beadR + 1e-9);
         const lashes = look.sex === 'girl' ? eyelashMarks(look.eyes, spot.r) : [];
-        const lashesIn = lashes.every(
-          (lash) => Math.hypot(lash.x1, lash.y1) <= zone.r && Math.hypot(lash.x2, lash.y2) <= zone.r,
-        );
+        const lashesIn = lashes.every((lash) => lashPaintInZone(lash, zone.r));
         return marks.beadR <= zone.r && glintsIn && lashesIn;
       });
     expect(failingLooks(eyesHold)).toEqual([]);
