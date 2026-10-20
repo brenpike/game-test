@@ -461,9 +461,9 @@ function paintMorphRim(
  * Local point of a mark. Body marks move onto the look's torso (torsoPoint).
  * Tail marks interpolate the drawn tail polyline at `t` (0 root, 1 tip) and
  * sit `offset` x the local core half-height off the centre line, so they ride
- * the tail wave.
+ * the tail wave. `tail` is the painted tailSamples() of the look.
  */
-function markPoint(m: MorphMark, tail: readonly TailSample[], torso: BodyEllipse): [number, number] {
+export function markPoint(m: MorphMark, tail: readonly TailSample[], torso: BodyEllipse): [number, number] {
   if (m.space === 'body') {
     const p = torsoPoint(torso, m.x, m.y);
     return [p.x, p.y];

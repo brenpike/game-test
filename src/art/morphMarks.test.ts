@@ -1,0 +1,216 @@
+import { describe, expect, it } from 'vitest';
+import { markPoint } from './drawAxolotl';
+import {
+  AXO_AGES,
+  AXO_BODIES,
+  AXO_SEXES,
+  AXO_TAILS,
+  DEFAULT_ART_LOOK,
+  EYE_ZONE_MARGIN,
+  FAR_EYE,
+  HEAD_ELLIPSE,
+  MOUTH_VARIANTS,
+  NEAR_EYE,
+  axolotlBodyGeometry,
+  mouthInkBounds,
+  tailSamples,
+  unionBounds,
+  type AxolotlArtLook,
+  type BodyEllipse,
+  type TailSample,
+} from './drawAxolotlParts';
+import { MORPH_LOOK_IDS } from './drawMorphs';
+import { INK, MORPH_PALETTES, WHITE, type MorphLookId, type MorphMark, type MorphPalette } from './palette';
+
+const TAU = Math.PI * 2;
+const SWIM_SAMPLES = Array.from({ length: 37 }, (_, i) => (i / 36) * TAU);
+const TAIL_AMPS = [1, 1.6] as const;
+/** Eight morphs x 54 body looks x swim samples x tail amplitudes; give it room when the suite runs in parallel. */
+const ENUMERATION_TIMEOUT_MS = 30_000;
+/**
+ * Marks stay this far inside the silhouette edge: guide 6h for the bodies
+ * that pass alone, and the 2 px rim width on Wild, Axanthic and Melanoid, so
+ * no mark covers the rim (the edge partner, guide 10).
+ */
+const INSET = 2;
+/** Points checked round each mark circle. */
+const CIRCLE_STEPS = 96;
+/** Body marks at prototype x 0 or more keep their x (torsoPoint), so they sit where torso and head overlap. */
+const HEAD_SIDE_MARKS: readonly string[] = ['copper (2, -9)', 'piebald (8, -8)'];
+
+/** Every Boy or girl, Tail, Body and Age look; the face, gills, spots and size never move a morph mark. */
+function everyBodyLook(): AxolotlArtLook[] {
+  const looks: AxolotlArtLook[] = [];
+  for (const sex of AXO_SEXES)
+    for (const tail of AXO_TAILS)
+      for (const body of AXO_BODIES)
+        for (const age of AXO_AGES) looks.push({ ...DEFAULT_ART_LOOK, sex, tail, body, age });
+  return looks;
+}
+const EVERY_BODY_LOOK = everyBodyLook();
+
+/** Every mark of a palette: speckles, flecks and shimmer. */
+function marksOf(palette: MorphPalette): MorphMark[] {
+  const extras = palette.extras;
+  return [...(extras?.speckles?.marks ?? []), ...(extras?.flecks?.marks ?? []), ...(extras?.shimmer?.marks ?? [])];
+}
+
+function markName(id: MorphLookId, m: MorphMark): string {
+  return m.space === 'body' ? `${id} (${m.x}, ${m.y})` : `${id} tail t ${m.t}`;
+}
+
+function lookName(look: AxolotlArtLook): string {
+  return [look.sex, look.tail, look.body, look.age].join(' ');
+}
+
+/** Points round the circle (x, y, r). */
+function circlePoints(x: number, y: number, r: number): [number, number][] {
+  return Array.from({ length: CIRCLE_STEPS }, (_, i): [number, number] => {
+    const a = (i / CIRCLE_STEPS) * TAU;
+    return [x + r * Math.cos(a), y + r * Math.sin(a)];
+  });
+}
+
+function isInEllipse(px: number, py: number, e: BodyEllipse): boolean {
+  return ((px - e.cx) / e.rx) ** 2 + ((py - e.cy) / e.ry) ** 2 <= 1 + 1e-9;
+}
+
+/** Whether the painted tail core holds (px, py): the core edges join the tail samples with straight lines, as painted. */
+function isOnTailCore(tail: readonly TailSample[], px: number, py: number): boolean {
+  for (let i = 0; i < tail.length - 1; i++) {
+    const a = tail[i];
+    const b = tail[i + 1];
+    if (px > a.x || px < b.x) continue;
+    const u = (a.x - px) / (a.x - b.x);
+    const cy = a.cy + (b.cy - a.cy) * u;
+    const hc = a.hc + (b.hc - a.hc) * u;
+    return Math.abs(py - cy) <= hc + 1e-9;
+  }
+  return false;
+}
+
+const EYE_ZONES = [NEAR_EYE, FAR_EYE].map((eye) => ({ x: eye.x, y: eye.y, r: eye.r + EYE_ZONE_MARGIN }));
+/** Guide 6i mouth zone: the ink of every mouth plus 1 unit. */
+const MOUTH_ZONE = unionBounds(MOUTH_VARIANTS.map(mouthInkBounds));
+
+/** Whether the circle (x, y, r) stays out of both eye zones and the mouth zone. */
+function isClearOfFace(x: number, y: number, r: number): boolean {
+  const clearOfEyes = EYE_ZONES.every((zone) => Math.hypot(x - zone.x, y - zone.y) >= zone.r + r);
+  const dx = Math.max(MOUTH_ZONE.minX - 1 - x, 0, x - MOUTH_ZONE.maxX - 1);
+  const dy = Math.max(MOUTH_ZONE.minY - 1 - y, 0, y - MOUTH_ZONE.maxY - 1);
+  return clearOfEyes && Math.hypot(dx, dy) >= r;
+}
+
+/** Failures of one body mark on one look: it must sit on the silhouette, inset, off the face; behind x 0 on the look's torso. */
+function bodyMarkFailures(m: MorphMark & { space: 'body' }, look: AxolotlArtLook, tail: readonly TailSample[]): string[] {
+  const torso = axolotlBodyGeometry(look).torso;
+  const [x, y] = markPoint(m, tail, torso);
+  const ring = circlePoints(x, y, m.r + INSET);
+  const failures: string[] = [];
+  if (!ring.every(([px, py]) => isInEllipse(px, py, torso) || isInEllipse(px, py, HEAD_ELLIPSE))) {
+    failures.push('outside the silhouette inset');
+  }
+  if (m.x < 0 && !ring.every(([px, py]) => isInEllipse(px, py, torso))) failures.push("outside the look's torso");
+  if (!isClearOfFace(x, y, m.r)) failures.push('on the face');
+  return failures;
+}
+
+/** Failures of every mark of one morph on one look, at every sampled swim phase and tail amplitude. */
+function lookFailures(id: MorphLookId, look: AxolotlArtLook): string[] {
+  const geo = axolotlBodyGeometry(look);
+  const failures: string[] = [];
+  const marks = marksOf(MORPH_PALETTES[id]);
+  for (const swim of SWIM_SAMPLES) {
+    for (const amp of TAIL_AMPS) {
+      const tail = tailSamples(geo.tail, swim, amp);
+      for (const m of marks) {
+        const where = `${markName(id, m)} on ${lookName(look)} swim ${swim.toFixed(2)} amp ${amp}`;
+        if (m.space === 'body') {
+          for (const failure of bodyMarkFailures(m, look, tail)) failures.push(`${where}: ${failure}`);
+          continue;
+        }
+        const [x, y] = markPoint(m, tail, geo.torso);
+        if (!circlePoints(x, y, m.r).every(([px, py]) => isOnTailCore(tail, px, py))) {
+          failures.push(`${where}: off the tail core`);
+        }
+      }
+    }
+  }
+  return failures;
+}
+
+describe('morph marks on every look (guide 3b, 6g, 6h)', () => {
+  it('enumerates the eight morphs on every Boy or girl, Tail, Body and Age', () => {
+    expect(MORPH_LOOK_IDS).toHaveLength(8);
+    expect(EVERY_BODY_LOOK).toHaveLength(2 * 3 * 3 * 3);
+  });
+
+  it('keeps every mark 2 inside the silhouette and off the face, body marks on the torso, tail marks on the core', () => {
+    const failures = MORPH_LOOK_IDS.flatMap((id) => EVERY_BODY_LOOK.flatMap((look) => lookFailures(id, look)));
+    expect(failures).toEqual([]);
+  }, ENUMERATION_TIMEOUT_MS);
+
+  it('puts only the guide 3b head-side marks at x 0 or more', () => {
+    const headSide = MORPH_LOOK_IDS.flatMap((id) =>
+      marksOf(MORPH_PALETTES[id]).flatMap((m) => (m.space === 'body' && m.x >= 0 ? [markName(id, m)] : [])),
+    );
+    expect(headSide).toEqual(HEAD_SIDE_MARKS);
+  });
+});
+
+/** WCAG 2 relative luminance of a #rrggbb colour. */
+function relativeLuminance(hex: string): number {
+  expect(hex).toMatch(/^#[0-9a-f]{6}$/i);
+  const channel = (offset: number): number => {
+    const c = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+}
+
+/** WCAG 2 contrast ratio of two #rrggbb colours. */
+function contrastRatio(a: string, b: string): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/** Guide 10 cue floor: 3:1. */
+const CUE_RATIO = 3;
+
+/** Guide 6u and 10 lash contrast rows: white under-stroke vs body, ink vs body. */
+const LASH_CONTRAST: Readonly<Record<MorphLookId, readonly [number, number]>> = {
+  leucistic: [1.62, 8.86],
+  wild: [2.12, 6.8],
+  'golden-albino': [1.42, 10.13],
+  'white-albino': [1.08, 13.38],
+  copper: [1.56, 9.24],
+  piebald: [1.13, 12.75],
+  axanthic: [4.53, 3.18],
+  melanoid: [8.28, 1.74],
+};
+
+describe('girl eyelashes on every morph (guide 6u, 10)', () => {
+  it('draw the ink over a white under-stroke at 14.39:1', () => {
+    expect(contrastRatio(INK, WHITE)).toBeCloseTo(14.39, 2);
+  });
+
+  it('match the guide numbers for every morph', () => {
+    for (const id of MORPH_LOOK_IDS) {
+      const body = MORPH_PALETTES[id].body;
+      const [white, ink] = LASH_CONTRAST[id];
+      expect(contrastRatio(WHITE, body), `${id} white vs body`).toBeCloseTo(white, 2);
+      expect(contrastRatio(INK, body), `${id} ink vs body`).toBeCloseTo(ink, 2);
+    }
+  });
+
+  it('read on every body: the white edge carries the lash wherever the ink is under 3:1', () => {
+    for (const id of MORPH_LOOK_IDS) {
+      const body = MORPH_PALETTES[id].body;
+      const white = contrastRatio(WHITE, body);
+      const ink = contrastRatio(INK, body);
+      expect(Math.max(white, ink), id).toBeGreaterThanOrEqual(CUE_RATIO);
+      if (ink < CUE_RATIO) expect(white, id).toBeGreaterThanOrEqual(CUE_RATIO);
+    }
+  });
+});
