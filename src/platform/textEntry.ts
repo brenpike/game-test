@@ -74,6 +74,11 @@ export interface TextEntry {
    * resize or scroll; pass a fresh rect after your own layout changes.
    */
   place(rect?: TextEntryRect): void;
+  /**
+   * Changes the caret blink of the open field, as `caretBlinkMs` in the options: a number blinks,
+   * `null` keeps it steady. Call when reduced motion is turned on or off while the field is open.
+   */
+  setCaretBlink(caretBlinkMs: number | null): void;
   /** Removes the field and every listener without calling any callback. Safe to call again. */
   close(): void;
 }
@@ -231,12 +236,15 @@ function ensureFieldStylesheet(): void {
 function styleCaret(input: HTMLInputElement, caretBlinkMs: number | null | undefined): void {
   if (caretBlinkMs === undefined) return;
   if (caretBlinkMs === null) {
+    input.classList.remove(CARET_BLINK_CLASS);
+    input.style.removeProperty('animation-duration');
     input.classList.add(CARET_STEADY_CLASS);
     return;
   }
   if (!Number.isFinite(caretBlinkMs) || caretBlinkMs <= 0) {
     throw new RangeError(`caretBlinkMs must be finite and above 0, got ${caretBlinkMs}`);
   }
+  input.classList.remove(CARET_STEADY_CLASS);
   input.classList.add(CARET_BLINK_CLASS);
   input.style.setProperty('animation-duration', `${2 * caretBlinkMs}ms`);
 }
@@ -432,6 +440,9 @@ export function openTextEntry(options: TextEntryOptions): TextEntry {
     place: (rect?: TextEntryRect) => {
       session.rect = rect;
       if (!session.closed) placeSession(session);
+    },
+    setCaretBlink: (caretBlinkMs: number | null) => {
+      if (!session.closed) styleCaret(input, caretBlinkMs);
     },
     close: () => closeSession(session),
   };

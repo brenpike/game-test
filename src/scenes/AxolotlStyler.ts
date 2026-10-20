@@ -507,7 +507,11 @@ export class AxolotlStyler {
   private screenKey = '';
   private tabPage: number | null = null;
   private clock = 0;
+  /** Real elapsed seconds (no MAX_STEP_S cap), so the name box cursor blinks on time at a low frame rate. */
+  private cursorClock = 0;
   private entry: TextEntry | null = null;
+  /** Whether the open name field's caret was last styled blinking (ambient motion) or steady. */
+  private entryCaretBlinks = false;
   private nameBeforeTyping = '';
   private captureWasOn = false;
   private finished = false;
@@ -620,9 +624,12 @@ export class AxolotlStyler {
 
   /** Advances the preview idle by `deltaMs`; under reduced motion it holds the still pose. Call every frame. */
   update(_time: number, deltaMs: number): void {
-    const dt = Math.min(Math.max(deltaMs / 1000, 0), MAX_STEP_S);
+    const realDt = Math.max(deltaMs / 1000, 0);
+    const dt = Math.min(realDt, MAX_STEP_S);
     this.clock += dt;
+    this.cursorClock += realDt;
     if (this.placed?.preview) this.renderPreview(dt);
+    this.restyleEntryCaret();
     this.blinkNameCursor();
   }
 
@@ -829,19 +836,33 @@ export class AxolotlStyler {
     this.captureWasOn = keyboard?.manager.preventDefault === true;
     keyboard?.disableGlobalCapture();
     this.nameBeforeTyping = this.state.name;
+    this.entryCaretBlinks = this.motion().ambient;
     this.entry = openTextEntry({
       value: this.state.name,
       maxRawLength: NAME_FIELD_RAW_MAX,
       fitEdit: fitNameEdit,
       ariaLabel: NAME_FIELD_LABEL,
       placeholder: NAME_PLACEHOLDER,
-      caretBlinkMs: this.motion().ambient ? NAME_CURSOR.onS * 1000 : null,
+      caretBlinkMs: this.caretBlinkMs(this.entryCaretBlinks),
       onInput: (raw) => this.showTypedName(raw),
       onCommit: (raw) => this.commitTypedName(raw),
       onCancel: () => this.cancelTyping(),
     });
     this.placeEntry();
     this.blinkNameCursor();
+  }
+
+  /** The name field caret blink: the cursor's on time in ms when `blinking`, else null for a steady caret. */
+  private caretBlinkMs(blinking: boolean): number | null {
+    return blinking ? NAME_CURSOR.onS * 1000 : null;
+  }
+
+  /** Restyles an open name field's caret when reduced motion was turned on or off while it is open. */
+  private restyleEntryCaret(): void {
+    const blinking = this.motion().ambient;
+    if (this.entry === null || blinking === this.entryCaretBlinks) return;
+    this.entryCaretBlinks = blinking;
+    this.entry.setCaretBlink(this.caretBlinkMs(blinking));
   }
 
   /** The styler with `raw` cleaned as its name, or the name from before typing when it cleans to nothing. */
@@ -1134,7 +1155,7 @@ export class AxolotlStyler {
   private blinkNameCursor(): void {
     const onNameStep = this.placed !== null && this.placed.name !== null;
     const active = onNameStep && !this.finished && this.entry === null && this.state.focus.kind === 'nameBox';
-    this.nameCursor.setVisible(active && nameCursorShown(this.clock, this.motion().ambient));
+    this.nameCursor.setVisible(active && nameCursorShown(this.cursorClock, this.motion().ambient));
   }
 
   /**
