@@ -4,17 +4,17 @@ import { CANAL_TREASURES, categoryName, type Treasure } from './catalogue';
 import { isSupportedCanvas } from './cardFit';
 import { rarityName } from './hints';
 import {
-  FIND_POPUP,
+  FIND_TOAST,
   HUD,
   HUD_OVERLAY_PRIORITY,
-  HUD_OVERLAY_STACK,
   bannerBox,
   clears,
   controlKeepOuts,
-  findPopupBox,
+  findToastBox,
   hudControls,
   placeHudOverlays,
-  type FindPopupMeasure,
+  playMiddle,
+  type FindToastMeasure,
   type HudControls,
   type HudControlSizes,
   type HudOverlayId,
@@ -24,6 +24,7 @@ import {
   type Rect,
   type Size,
 } from './hudLayout';
+import { REAL_MORPHS, RESCUE_POPUP_DETAIL } from './morphs';
 import { ALL_SNACKS_BANNER, BANKING_HINT, LEGS_LABEL, TRIP_BAG_LABEL, tripBagStatus } from './tripText';
 import { LEGS } from './tuning';
 import { buildCanalZone } from './zone';
@@ -32,7 +33,6 @@ import { buildCanalZone } from './zone';
  * Text size estimate that errs wide. Measured with Phaser's wrap rule against Segoe UI, Verdana and
  * DejaVu Sans: line height <= 1.21 em, average advance <= 0.51 em regular and <= 0.57 em bold.
  */
-const REGULAR_EM = 0.55;
 const BOLD_EM = 0.6;
 const LINE_HEIGHT_EM = 1.25;
 
@@ -76,21 +76,44 @@ const ZONE = buildCanalZone();
 const SNACK_TOTAL = ZONE.collectibles.length;
 const FIND_TOTAL = ZONE.finds.length;
 
-const SORTED_TREASURES: readonly Treasure[] = [...CANAL_TREASURES].sort(
+/** One find toast's text: the bold name over the bold detail line beside the badge. */
+interface ToastText {
+  name: string;
+  detail: string;
+}
+
+const TREASURE_TOASTS: readonly ToastText[] = CANAL_TREASURES.map((treasure: Treasure) => ({
+  name: treasure.name,
+  detail: `${rarityName(treasure.rarity)} ${categoryName(treasure.category)}`,
+}));
+const RESCUE_TOASTS: readonly ToastText[] = REAL_MORPHS.map((morph) => ({
+  name: morph.displayName,
+  detail: RESCUE_POPUP_DETAIL,
+}));
+const ALL_TOASTS: readonly ToastText[] = [...TREASURE_TOASTS, ...RESCUE_TOASTS];
+
+const SORTED_TOASTS: readonly ToastText[] = [...ALL_TOASTS].sort(
   (left, right) => right.name.length - left.name.length,
 );
-const COMBINATION_TREASURES: readonly Treasure[] = SORTED_TREASURES.slice(0, 3);
+const LONGEST_DETAIL_TOAST: ToastText = [...ALL_TOASTS].sort(
+  (left, right) => right.detail.length - left.detail.length,
+)[0];
+const COMBINATION_TOASTS: readonly ToastText[] = [...new Set([...SORTED_TOASTS.slice(0, 3), LONGEST_DETAIL_TOAST])];
 
 /** Two-digit snacks-left count: the longest closed-exit message the snack banner shows. */
 const MOST_SNACKS_LEFT = 16;
 const EXIT_CLOSED_BANNER = exitClosedText(MOST_SNACKS_LEFT);
 
-const BANNER_TEXTS: Readonly<Record<Exclude<HudOverlayId, 'findPopup'>, string>> = {
+type BannerId = Exclude<HudOverlayId, 'findToast'>;
+
+const BANNER_TEXTS: Readonly<Record<BannerId, string>> = {
   hint: BANKING_HINT,
   snackBanner: EXIT_CLOSED_BANNER.length > ALL_SNACKS_BANNER.length ? EXIT_CLOSED_BANNER : ALL_SNACKS_BANNER,
 };
+const BANNER_IDS: readonly BannerId[] = ['snackBanner', 'hint'];
 
-const FIT_TIMEOUT_MS = 20000;
+const FIT_TIMEOUT_MS = 30000;
+const EPSILON = 1e-6;
 
 type PanelWidth = 'narrow' | 'wide';
 
@@ -108,10 +131,10 @@ interface HudCase {
   keepOuts: Rect[];
 }
 
-/** One set of active overlays; the pop-up shows `treasure` when it is active. */
+/** One set of active overlays; the toast shows `toast` when it is active. */
 interface OverlaySet {
   ids: HudOverlayId[];
-  treasure: Treasure | null;
+  toast: ToastText | null;
 }
 
 /** One placement run: a HUD state, an overlay set and the solver's answer. */
@@ -207,50 +230,49 @@ function canvasHudCases(canvas: Canvas): HudCase[] {
   return PANEL_WIDTHS.flatMap((panelWidth) => [true, false].map((visible) => makeHudCase(canvas, panelWidth, visible)));
 }
 
-/** Find pop-up text measure for `treasure`: bold name 22, regular category 18, bold rarity 18. */
-function popupMeasure(treasure: Treasure): FindPopupMeasure {
+/** Find toast text measure for `toast`: bold name 20 and bold detail 18. */
+function toastMeasure(toast: ToastText): FindToastMeasure {
   return {
-    nameAt: (wrapW) => estimateSize(treasure.name, FIND_POPUP.nameTextPx, wrapW, BOLD_EM),
-    category: estimateSize(categoryName(treasure.category), FIND_POPUP.detailTextPx, Infinity, REGULAR_EM),
-    rarity: estimateSize(rarityName(treasure.rarity), FIND_POPUP.detailTextPx, Infinity, BOLD_EM),
+    nameAt: (wrapW) => estimateSize(toast.name, FIND_TOAST.nameTextPx, wrapW, BOLD_EM),
+    detailAt: (wrapW) => estimateSize(toast.detail, FIND_TOAST.detailTextPx, wrapW, BOLD_EM),
   };
 }
 
 /** Builds the overlay requests for one set. */
 function requestsFor(set: OverlaySet): HudOverlayRequest[] {
   return set.ids.map((id): HudOverlayRequest => {
-    if (id === 'findPopup') {
-      if (set.treasure === null) throw new Error('requestsFor: the find pop-up needs a treasure');
-      const measure = popupMeasure(set.treasure);
-      return { id, boxAt: (maxW) => findPopupBox(maxW, measure) };
+    if (id === 'findToast') {
+      if (set.toast === null) throw new Error('requestsFor: the find toast needs its text');
+      const measure = toastMeasure(set.toast);
+      return { id, boxAt: (maxW) => findToastBox(maxW, measure) };
     }
     const text = BANNER_TEXTS[id];
     return { id, boxAt: (maxW) => bannerBox(maxW, (wrapW) => estimateSize(text, HUD.bannerTextPx, wrapW, BOLD_EM)) };
   });
 }
 
-/** Expands overlay id sets into overlay sets, one per pop-up treasure when the pop-up is active. */
-function expandSets(idSets: readonly HudOverlayId[][], treasures: readonly Treasure[]): OverlaySet[] {
+/** Expands overlay id sets into overlay sets, one per toast text when the toast is active. */
+function expandSets(idSets: readonly HudOverlayId[][], toasts: readonly ToastText[]): OverlaySet[] {
   return idSets.flatMap((ids): OverlaySet[] =>
-    ids.includes('findPopup') ? treasures.map((treasure) => ({ ids, treasure })) : [{ ids, treasure: null }],
+    ids.includes('findToast') ? toasts.map((toast) => ({ ids, toast })) : [{ ids, toast: null }],
   );
 }
 
-/** Every overlay id set of `size` overlays, in stack order. */
+/** Every overlay id set of `size` overlays, in priority order. */
 function idSetsOfSize(size: number): HudOverlayId[][] {
   const sets: HudOverlayId[][] = [];
-  for (let mask = 1; mask < 1 << HUD_OVERLAY_STACK.length; mask++) {
-    const ids = HUD_OVERLAY_STACK.filter((_, index) => (mask & (1 << index)) !== 0);
+  for (let mask = 1; mask < 1 << HUD_OVERLAY_PRIORITY.length; mask++) {
+    const ids = HUD_OVERLAY_PRIORITY.filter((_, index) => (mask & (1 << index)) !== 0);
     if (ids.length === size) sets.push(ids);
   }
   return sets;
 }
 
-/** Single overlays with every treasure, and 2 or 3 overlays with the 3 longest pop-up names. */
+/** Single overlays with every toast, and 2 or 3 overlays with the longest toasts. */
 function allOverlaySets(): OverlaySet[] {
   return [
-    ...expandSets(idSetsOfSize(1), CANAL_TREASURES),
-    ...expandSets([...idSetsOfSize(2), ...idSetsOfSize(3)], COMBINATION_TREASURES),
+    ...expandSets(idSetsOfSize(1), ALL_TOASTS),
+    ...expandSets([...idSetsOfSize(2), ...idSetsOfSize(3)], COMBINATION_TOASTS),
   ];
 }
 
@@ -258,7 +280,7 @@ function allOverlaySets(): OverlaySet[] {
 function runCase(hud: HudCase, set: OverlaySet): OverlayCase {
   const requests = requestsFor(set);
   const placements = placeHudOverlays(hud.view, hud.controls, hud.keepOuts, requests);
-  const name = set.treasure === null ? '' : ` "${set.treasure.name}"`;
+  const name = set.toast === null ? '' : ` "${set.toast.name}"`;
   return { label: `${hud.label} [${set.ids.join(', ')}]${name}`, hud, set, requests, placements };
 }
 
@@ -282,35 +304,59 @@ function unplacedProblems(overlayCase: OverlayCase, id: HudOverlayId): string[] 
   return rectFor(overlayCase, id) === null ? [`${overlayCase.label}: ${id} not placed`] : [];
 }
 
-/** The guide stack: hint, all-snacks banner, find pop-up top to bottom, centred under stackTop. */
-function guideStack(overlayCase: OverlayCase): Map<HudOverlayId, Rect> {
-  const { view, controls } = overlayCase.hud;
-  const maxW = view.cssW - 2 * HUD.margin;
-  const stack = new Map<HudOverlayId, Rect>();
-  let bottom: number | null = null;
-  for (const id of HUD_OVERLAY_STACK) {
-    const request = overlayCase.requests.find((candidate) => candidate.id === id);
-    if (request === undefined) continue;
-    const size = request.boxAt(maxW);
-    const y: number = bottom !== null ? bottom + HUD.gap : id === 'findPopup' ? controls.stackTop + HUD.gap : controls.stackTop;
-    stack.set(id, { x: (view.cssW - size.w) / 2, y, w: size.w, h: size.h });
-    bottom = y + size.h;
-  }
-  return stack;
+/** Sorted distinct cut points: `lo`, `hi` and every edge strictly between them. */
+function cutsBetween(lo: number, hi: number, edges: readonly number[]): number[] {
+  return [...new Set([lo, hi, ...edges.filter((edge) => edge > lo && edge < hi)])].sort((a, b) => a - b);
 }
 
-/** Problems with one case: a placement that is not its guide stack spot. */
-function stackProblems(overlayCase: OverlayCase): string[] {
-  const stack = guideStack(overlayCase);
-  return overlayCase.set.ids.flatMap((id) => {
-    const rect = rectFor(overlayCase, id);
-    const expected = stack.get(id);
-    if (rect === null) return [`${overlayCase.label}: ${id} not placed`];
-    if (expected === undefined || JSON.stringify(rect) !== JSON.stringify(expected)) {
-      return [`${overlayCase.label}: ${id} at ${JSON.stringify(rect)}, guide stack ${JSON.stringify(expected)}`];
+/**
+ * Whether the part of `rect` inside the play middle lies on the snack counter, legs and Trip Bag
+ * panels themselves (no open water): every cell of the grid cut at the panel edges has its centre
+ * on a panel.
+ */
+function coversOnlyPanelsInMiddle(rect: Rect, view: HudView, controls: HudControls): boolean {
+  const middle = playMiddle(view);
+  const panels = [controls.counter, controls.legs, controls.bag];
+  const left = Math.max(rect.x, middle.x);
+  const right = Math.min(rect.x + rect.w, middle.x + middle.w);
+  const top = Math.max(rect.y, middle.y);
+  const bottom = Math.min(rect.y + rect.h, middle.y + middle.h);
+  if (right - left <= EPSILON || bottom - top <= EPSILON) return true;
+  const xs = cutsBetween(left, right, panels.flatMap((panel) => [panel.x, panel.x + panel.w]));
+  const ys = cutsBetween(top, bottom, panels.flatMap((panel) => [panel.y, panel.y + panel.h]));
+  for (let i = 0; i + 1 < xs.length; i++) {
+    for (let j = 0; j + 1 < ys.length; j++) {
+      if (xs[i + 1] - xs[i] <= EPSILON || ys[j + 1] - ys[j] <= EPSILON) continue;
+      const cx = (xs[i] + xs[i + 1]) / 2;
+      const cy = (ys[j] + ys[j + 1]) / 2;
+      const onPanel = panels.some((p) => cx > p.x && cx < p.x + p.w && cy > p.y && cy < p.y + p.h);
+      if (!onPanel) return false;
     }
-    return [];
+  }
+  return true;
+}
+
+/** Problems with one case: a placed rect over open water in the play middle, whatever its place. */
+function middleProblems(overlayCase: OverlayCase): string[] {
+  const { view, controls } = overlayCase.hud;
+  return overlayCase.placements.flatMap(({ id, rect }) => {
+    if (rect === null || coversOnlyPanelsInMiddle(rect, view, controls)) return [];
+    return [`${overlayCase.label}: ${id} at ${JSON.stringify(rect)} covers open water in the middle`];
   });
+}
+
+/** What waits when shown alone in one HUD state: each held toast by name, then each held banner id. */
+function aloneWaits(hud: HudCase): string[] {
+  const toasts = ALL_TOASTS.filter((toast) => rectFor(runCase(hud, { ids: ['findToast'], toast }), 'findToast') === null);
+  const banners = BANNER_IDS.filter((id) => rectFor(runCase(hud, { ids: [id], toast: null }), id) === null);
+  return [...toasts.map((toast) => `findToast "${toast.name}"`), ...banners];
+}
+
+/** Problems with one case: the toast is not on the top edge at the margin. */
+function topEdgeProblems(overlayCase: OverlayCase): string[] {
+  const placement = overlayCase.placements.find((entry) => entry.id === 'findToast');
+  if (placement?.edge === 'top' && placement.rect?.y === HUD.margin) return [];
+  return [`${overlayCase.label}: toast at ${JSON.stringify(placement)}`];
 }
 
 /** Every HUD state on every supported canvas. */
@@ -335,51 +381,71 @@ describe('estimateLines', () => {
 
 describe('HUD overlay fit', () => {
   it(
-    'keeps every placed overlay clear of the controls and the other overlays on every supported canvas',
+    'keeps every placed overlay clear of the controls, the other overlays and the middle on every supported canvas',
     () => {
       const sets = allOverlaySets();
       const cases = allHudCases().flatMap((hud) => sets.map((set) => runCase(hud, set)));
       expect(cases.length).toBeGreaterThan(0);
       expect(cases.flatMap(clearProblems)).toEqual([]);
+      expect(cases.flatMap(middleProblems)).toEqual([]);
     },
     FIT_TIMEOUT_MS,
   );
 
   it(
-    'places each overlay alone on every supported canvas',
+    'places each overlay alone on every supported canvas at least 375 tall or 520 wide',
     () => {
-      // A pop-up with Go home visible is unreachable: trip.ts banks a non-empty bag inside the ring
-      // in the same step, and HudScene clears the pop-up on 'banked'.
-      const popupCases = allHudCases()
+      // Below that (460 and 480 wide, 360 tall or less on this grid) some messages have no place
+      // outside the open middle and wait (X10); 460 x 320 is pinned in the next test. A toast with
+      // Go home visible is unreachable: trip.ts banks a non-empty bag inside the ring in the same
+      // step, and HudScene clears the toast on 'banked'.
+      const roomy = allHudCases().filter(({ view }) => view.cssH >= 375 || view.cssW >= 520);
+      const toastCases = roomy
         .filter((hud) => !hud.goHomeVisible)
-        .flatMap((hud) => CANAL_TREASURES.map((treasure) => runCase(hud, { ids: ['findPopup'], treasure })));
-      const bannerCases = allHudCases().flatMap((hud) => [
-        runCase(hud, { ids: ['hint'], treasure: null }),
-        runCase(hud, { ids: ['snackBanner'], treasure: null }),
-      ]);
+        .flatMap((hud) => ALL_TOASTS.map((toast) => runCase(hud, { ids: ['findToast'], toast })));
+      const bannerCases = roomy.flatMap((hud) => BANNER_IDS.map((id) => runCase(hud, { ids: [id], toast: null })));
       const problems = [
-        ...popupCases.flatMap((overlayCase) => unplacedProblems(overlayCase, 'findPopup')),
+        ...toastCases.flatMap((overlayCase) => unplacedProblems(overlayCase, 'findToast')),
         ...bannerCases.flatMap((overlayCase) => unplacedProblems(overlayCase, overlayCase.set.ids[0])),
       ];
+      expect(roomy.length).toBeGreaterThan(0);
       expect(problems).toEqual([]);
     },
     FIT_TIMEOUT_MS,
   );
 
+  it.each([
+    { cssW: 460, cssH: 320, shown: ['findToast "Tie-dye galaxy Paint shell"', ...BANNER_IDS], hidden: ['snackBanner'] },
+    { cssW: 320, cssH: 440, shown: [], hidden: [] },
+    { cssW: 390, cssH: 440, shown: [], hidden: [] },
+    { cssW: 667, cssH: 375, shown: [], hidden: [] },
+    { cssW: 844, cssH: 360, shown: [], hidden: [] },
+    { cssW: 1024, cssH: 360, shown: [], hidden: [] },
+  ])(
+    'holds exactly these messages, each shown alone, at $cssW x $cssH',
+    ({ cssW, cssH, shown, hidden }) => {
+      for (const panelWidth of PANEL_WIDTHS) {
+        for (const goHomeVisible of [true, false]) {
+          const hud = makeHudCase({ cssW, cssH }, panelWidth, goHomeVisible);
+          expect(aloneWaits(hud), hud.label).toEqual(goHomeVisible ? shown : hidden);
+        }
+      }
+    },
+    FIT_TIMEOUT_MS,
+  );
+
   it(
-    'places the highest-priority overlay of every 2 or 3 overlay combination',
+    'gives the highest-priority overlay of every 2 or 3 overlay combination the place it takes alone',
     () => {
-      const sets = expandSets([...idSetsOfSize(2), ...idSetsOfSize(3)], COMBINATION_TREASURES);
-      // A pop-up with Go home visible is unreachable: Go home shows only while swimming in the Home
-      // Spot ring (HudScene), a non-empty bag inside the ring banks in that same step (trip.ts), and
-      // HudScene clears the pop-up on 'banked'. Assertion (a) still covers those cases.
-      const cases = allHudCases().flatMap((hud) =>
-        sets.filter((set) => !(hud.goHomeVisible && set.ids.includes('findPopup'))).map((set) => runCase(hud, set)),
-      );
+      const sets = expandSets([...idSetsOfSize(2), ...idSetsOfSize(3)], COMBINATION_TOASTS);
+      const cases = allHudCases().flatMap((hud) => sets.map((set) => runCase(hud, set)));
       const problems = cases.flatMap((overlayCase) => {
         const top = HUD_OVERLAY_PRIORITY.find((id) => overlayCase.set.ids.includes(id));
         if (top === undefined) return [`${overlayCase.label}: no active overlay`];
-        return unplacedProblems(overlayCase, top);
+        const toast = top === 'findToast' ? overlayCase.set.toast : null;
+        const alone = rectFor(runCase(overlayCase.hud, { ids: [top], toast }), top);
+        const placed = rectFor(overlayCase, top);
+        return JSON.stringify(placed) === JSON.stringify(alone) ? [] : [`${overlayCase.label}: ${top} moved or held`];
       });
       expect(problems).toEqual([]);
     },
@@ -390,23 +456,24 @@ describe('HUD overlay fit', () => {
     { cssW: 800, cssH: 600 },
     { cssW: 1024, cssH: 768 },
   ])(
-    'uses the guide stack for every combination at $cssW x $cssH',
+    'puts every toast on the top edge at the margin at $cssW x $cssH',
     (canvas) => {
-      const sets = allOverlaySets();
+      const sets = allOverlaySets().filter((set) => set.ids.includes('findToast'));
       const cases = canvasHudCases(canvas).flatMap((hud) => sets.map((set) => runCase(hud, set)));
-      expect(cases.flatMap(stackProblems)).toEqual([]);
+      expect(cases.flatMap(topEdgeProblems)).toEqual([]);
     },
     FIT_TIMEOUT_MS,
   );
 
-  it('places the longest pop-up clear of the swim pad and the Dash ring at 460x320 (PR #35 r4309441325)', () => {
-    const treasure = SORTED_TREASURES[0];
+  it('keeps every placed toast clear of the swim pad and the Dash ring at 460x320 (PR #35 r4309441325)', () => {
     for (const panelWidth of PANEL_WIDTHS) {
       const hud = makeHudCase({ cssW: 460, cssH: 320 }, panelWidth, false);
-      const rect = rectFor(runCase(hud, { ids: ['findPopup'], treasure }), 'findPopup');
-      expect(rect).not.toBeNull();
-      if (rect === null) continue;
-      expect(clears(rect, hud.view, [hud.controls.stickBounds, hud.controls.dash.bounds])).toBe(true);
+      const rects = SORTED_TOASTS.map((toast) => rectFor(runCase(hud, { ids: ['findToast'], toast }), 'findToast'));
+      const placed = rects.filter((rect): rect is Rect => rect !== null);
+      expect(placed.length).toBeGreaterThan(0);
+      for (const rect of placed) {
+        expect(clears(rect, hud.view, [hud.controls.stickBounds, hud.controls.dash.bounds])).toBe(true);
+      }
     }
   });
 });

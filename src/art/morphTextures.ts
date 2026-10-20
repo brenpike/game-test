@@ -32,8 +32,8 @@ import { bake, type TexInfo } from './textures';
 // Keys and sizes
 // ---------------------------------------------------------------------------
 
-/** Portrait sizes baked, logical px wide (list row, card, detail view). */
-export const MORPH_PORTRAIT_SIZES = [48, 64, 112] as const;
+/** Portrait sizes baked, logical px wide (find toast, list row, card, detail view). */
+export const MORPH_PORTRAIT_SIZES = [32, 48, 64, 112] as const;
 export type MorphPortraitSize = (typeof MORPH_PORTRAIT_SIZES)[number];
 
 /** Silhouette sizes baked, logical px wide. */
