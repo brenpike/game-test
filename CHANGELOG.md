@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-19
+
+### Added
+
+- Four more real axolotl colours: White albino, Copper, Piebald and Axanthic, so there are eight. Each has its own look, its own badge shape (cloud, leaf, capsule and drop) and a true fun fact in the Collection Book.
+- Pick any of the eight colours for your first axolotl. The other seven are the ones to rescue, one stranded axolotl per trip, and all eight can live in your Home Tank.
+
+### Changed
+
+- The Collection Book has eight morph pages: Leucistic, Wild, Golden albino, White albino, Copper, Piebald, Axanthic and Melanoid.
+
 ## [0.11.1] - 2026-10-19
 
 ### Fixed

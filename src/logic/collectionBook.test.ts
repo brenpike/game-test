@@ -212,7 +212,7 @@ describe('bookListing', () => {
     const sections = bookListing([], false);
     expect(sections.map((section) => section.category)).toEqual(['morph', 'dreamColour', 'factCard']);
     expect(sections.map((section) => section.heading)).toEqual([
-      'Morphs: 0 of 4 found',
+      'Morphs: 0 of 8 found',
       'Dream colours',
       'Fact cards: 0 of 1 found',
     ]);
@@ -220,15 +220,24 @@ describe('bookListing', () => {
 
   it('counts found morphs and fact cards in the headings', () => {
     const [morphs, , factCards] = bookListing(['wild', 'melanoid', 'wild'], true);
-    expect(morphs.heading).toBe('Morphs: 2 of 4 found');
+    expect(morphs.heading).toBe('Morphs: 2 of 8 found');
     expect(factCards.heading).toBe('Fact cards: 1 of 1 found');
-    expect(bookListing(ALL_MORPHS, true)[0].heading).toBe('Morphs: 4 of 4 found');
+    expect(bookListing(ALL_MORPHS, true)[0].heading).toBe('Morphs: 8 of 8 found');
   });
 
-  it('holds exactly the four real morphs and no Dream colour id', () => {
+  it('holds exactly the eight real morphs and no Dream colour id', () => {
     const dreamIds = new Set<string>(DREAM_COLOURS.map((colour) => colour.id));
     for (const [morphs] of everyListing()) {
-      expect(morphs.entries.map((entry) => entry.id)).toEqual(['leucistic', 'wild', 'golden-albino', 'melanoid']);
+      expect(morphs.entries.map((entry) => entry.id)).toEqual([
+        'leucistic',
+        'wild',
+        'golden-albino',
+        'white-albino',
+        'copper',
+        'piebald',
+        'axanthic',
+        'melanoid',
+      ]);
       for (const entry of morphs.entries) expect(dreamIds.has(entry.id)).toBe(false);
     }
   });
@@ -253,6 +262,14 @@ describe('bookListing', () => {
         text: morph.fact,
       })),
     );
+  });
+
+  it('gives the eight found morphs eight distinct badges', () => {
+    const [morphs] = bookListing(ALL_MORPHS, true);
+    const badges = morphs.entries.map((entry) => entry.badge);
+    expect(badges).toHaveLength(8);
+    expect(badges).not.toContain(null);
+    expect(new Set(badges).size).toBe(8);
   });
 
   it('shows an unfound morph as "???" with the hint and no badge', () => {
@@ -309,10 +326,7 @@ describe('bookPages', () => {
     const sections = bookListing(['wild'], true);
     const pages = bookPages(sections, 5);
     expect(pages.map((page) => [page.section.category, page.entries.length])).toEqual([
-      ['morph', 1],
-      ['morph', 1],
-      ['morph', 1],
-      ['morph', 1],
+      ...REAL_MORPHS.map(() => ['morph', 1]),
       ['dreamColour', 5],
       ['dreamColour', 5],
       ['dreamColour', 2],
@@ -324,7 +338,7 @@ describe('bookPages', () => {
   });
 
   it('puts every Dream colour on its own page at one row per page', () => {
-    expect(bookPages(bookListing([], false), 1)).toHaveLength(4 + 12 + 1);
+    expect(bookPages(bookListing([], false), 1)).toHaveLength(REAL_MORPHS.length + 12 + 1);
   });
 
   it('gives an empty section one page', () => {

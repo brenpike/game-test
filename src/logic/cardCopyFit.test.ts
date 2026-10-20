@@ -314,6 +314,11 @@ describe('estimateLines', () => {
 });
 
 describe('card copy fit', () => {
+  it('checks the longest axolotl name, Golden albino axolotl, of all the real morphs', () => {
+    expect(SORTED_AXOLOTL_NAMES).toHaveLength(REAL_MORPHS.length);
+    expect(SORTED_AXOLOTL_NAMES[0]).toBe('Golden albino axolotl');
+  });
+
   it(
     'fits every wording combination on every supported canvas without clipping',
     () => {

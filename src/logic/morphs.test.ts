@@ -32,7 +32,16 @@ const BANNED = [
   'inventory',
 ];
 
-const PRD_ORDER: readonly RealMorphId[] = ['leucistic', 'wild', 'golden-albino', 'melanoid'];
+const PRD_ORDER: readonly RealMorphId[] = [
+  'leucistic',
+  'wild',
+  'golden-albino',
+  'white-albino',
+  'copper',
+  'piebald',
+  'axanthic',
+  'melanoid',
+];
 
 function findBannedWords(text: string): string[] {
   return BANNED.filter((word) => new RegExp(`\\b${word}\\b`, 'i').test(text));
@@ -44,10 +53,14 @@ function collectMorphStrings(): string[] {
 }
 
 describe('REAL_MORPHS', () => {
-  it('lists exactly four unique ids in PRD order', () => {
+  it('lists exactly eight unique ids in PRD order', () => {
     const ids = REAL_MORPHS.map((morph) => morph.id);
     expect(ids).toEqual(PRD_ORDER);
-    expect(new Set(ids).size).toBe(4);
+    expect(new Set(ids).size).toBe(8);
+  });
+
+  it('names every morph "<name> axolotl"', () => {
+    for (const morph of REAL_MORPHS) expect(morph.displayName).toBe(`${morph.name} axolotl`);
   });
 
   it('is frozen', () => {
@@ -65,6 +78,12 @@ describe('REAL_MORPHS', () => {
     for (const badge of badges) {
       expect(['circle', 'diamond', 'shield', 'star', 'swatch']).not.toContain(badge);
     }
+  });
+
+  it('gives the eight morphs eight distinct badges, none a rarity shape', () => {
+    const badges = REAL_MORPHS.map((morph) => morph.badge);
+    expect(new Set(badges).size).toBe(8);
+    for (const badge of badges) expect(['circle', 'diamond', 'shield', 'star']).not.toContain(badge);
   });
 
   it('keeps every fact non-empty and at most 120 characters', () => {
@@ -123,8 +142,23 @@ describe('rescueMorphsIn', () => {
 
 describe('rescuableMorphs', () => {
   it('returns the unowned morphs in PRD order', () => {
-    expect(rescuableMorphs([STARTER_MORPH])).toEqual(['wild', 'golden-albino', 'melanoid']);
-    expect(rescuableMorphs(['melanoid', 'leucistic'])).toEqual(['wild', 'golden-albino']);
+    expect(rescuableMorphs([STARTER_MORPH])).toEqual([
+      'wild',
+      'golden-albino',
+      'white-albino',
+      'copper',
+      'piebald',
+      'axanthic',
+      'melanoid',
+    ]);
+    expect(rescuableMorphs(['melanoid', 'leucistic'])).toEqual([
+      'wild',
+      'golden-albino',
+      'white-albino',
+      'copper',
+      'piebald',
+      'axanthic',
+    ]);
   });
 
   it('never returns an owned morph', () => {

@@ -6,9 +6,9 @@ It is mostly fun, with real axolotl facts along the way.
 
 ## What you can do now
 
-Version 0.11.1 is playable in one canal zone:
+Version 0.12.0 is playable in one canal zone:
 
-- Make your own axolotl the first time you play. Pick its name, eyes, mouth, gills, spots, size, and colour (one of four real morphs), and watch the preview change. Surprise me picks everything at random. The other three colours are the ones you rescue.
+- Make your own axolotl the first time you play. Pick its name, eyes, mouth, gills, spots, size, and colour (one of eight real morphs), and watch the preview change. Surprise me picks everything at random. The other seven colours are the ones you rescue.
 - Type a name, or use the arrows to pick a suggested one, so typing is optional. Names stay on your device.
 - On trips you swim as your own axolotl, with its own look. Size is for looks only: every size swims the same and has the same hit area.
 - Swim with the on-screen swim pad, or the arrow keys or WASD.
@@ -23,7 +23,7 @@ Version 0.11.1 is playable in one canal zone:
 - Your best stars show on the "Area beaten" card and in the Home Tank. They are kept for the session, not saved.
 - Eaten snacks come back after you are carried home or beat the area. They stay eaten after Go home.
 - Bank your finds at the Home Spot to keep them safe.
-- Rescue a stranded axolotl in the canal. Each trip, one real morph you do not have yet (Wild, Golden albino, or Melanoid) waits looking a little lost. Swim to it and it follows you; bring it to the Home Spot or the open exit and it moves into your Home Tank.
+- Rescue a stranded axolotl in the canal. Each trip, one real morph you do not have yet waits looking a little lost. Swim to it and it follows you; bring it to the Home Spot or the open exit and it moves into your Home Tank.
 - Meet the tilapia: the first time you swim near one, a fact card tells you about it.
 - Visit your Home Tank after the title and after every trip. A trip-end message tells you how the trip went.
 - Watch your axolotl swim around the Home Tank. With reduced motion it stays still.
