@@ -571,7 +571,7 @@ Owner request (issue #70): rarer treasures are harder to get, as well as harder 
 Each hiding spot gets a pure, tested risk measure, for example its distance from each tilapia's patrol route and lunge range. Placement picks spots by both how well hidden and how risky they are for the rarity.
 Product owner decisions, 2026-10-20:
 
-- Risk ladder. Common: never within a tilapia's lunge range of its route. Rare: may sit near the edge of a patrol, outside lunge range. Epic: within reach of a patrol, so grabbing it means watching the telegraph. Legendary: within reach of a patrol, and needs Tail Dash, as B6 says.
+- Risk ladder. Common: never within a tilapia's lunge range of its route. Rare: sits near the edge of a patrol, outside lunge range, and always nearer to the patrol than any Common spot in that area (the Rare band is the outside-lunge-range band closest to the route). Epic: within reach of a patrol, so grabbing it means watching the telegraph. Legendary: within reach of a patrol, and needs Tail Dash, as B6 says. A test can prove the Common and Rare rungs differ: the lowest risk among Rare spots is above the highest risk among Common spots.
 - Fairness. Every treasure can always be grabbed without being hit, by timing or Tail Dash. No spot sits where a tilapia rests or turns, so a skilled player never loses a leg by force. It stays kid-safe and never scary.
 - No change to the hint sparkle (B7) or to the rarity glow rule (no glow while hidden).
 - If too few spots meet a rarity's risk rule, more spots are added as area data.
