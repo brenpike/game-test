@@ -14,7 +14,6 @@ import {
   hudControls,
   placeHudOverlays,
   playMiddle,
-  statusPanelsBox,
   type FindToastMeasure,
   type HudControls,
   type HudControlSizes,
@@ -105,10 +104,13 @@ const COMBINATION_TOASTS: readonly ToastText[] = [...new Set([...SORTED_TOASTS.s
 const MOST_SNACKS_LEFT = 16;
 const EXIT_CLOSED_BANNER = exitClosedText(MOST_SNACKS_LEFT);
 
-const BANNER_TEXTS: Readonly<Record<Exclude<HudOverlayId, 'findToast'>, string>> = {
+type BannerId = Exclude<HudOverlayId, 'findToast'>;
+
+const BANNER_TEXTS: Readonly<Record<BannerId, string>> = {
   hint: BANKING_HINT,
   snackBanner: EXIT_CLOSED_BANNER.length > ALL_SNACKS_BANNER.length ? EXIT_CLOSED_BANNER : ALL_SNACKS_BANNER,
 };
+const BANNER_IDS: readonly BannerId[] = ['snackBanner', 'hint'];
 
 const FIT_TIMEOUT_MS = 30000;
 const EPSILON = 1e-6;
@@ -302,38 +304,52 @@ function unplacedProblems(overlayCase: OverlayCase, id: HudOverlayId): string[] 
   return rectFor(overlayCase, id) === null ? [`${overlayCase.label}: ${id} not placed`] : [];
 }
 
-/** Returns the rect grown by `by` on every side. */
-function grownBy(rect: Rect, by: number): Rect {
-  return { x: rect.x - by, y: rect.y - by, w: rect.w + 2 * by, h: rect.h + 2 * by };
+/** Sorted distinct cut points: `lo`, `hi` and every edge strictly between them. */
+function cutsBetween(lo: number, hi: number, edges: readonly number[]): number[] {
+  return [...new Set([lo, hi, ...edges.filter((edge) => edge > lo && edge < hi)])].sort((a, b) => a - b);
 }
 
-/** Whether `rect` lies inside `frame`. */
-function liesInside(rect: Rect, frame: Rect): boolean {
-  return (
-    rect.x >= frame.x - EPSILON &&
-    rect.y >= frame.y - EPSILON &&
-    rect.x + rect.w <= frame.x + frame.w + EPSILON &&
-    rect.y + rect.h <= frame.y + frame.h + EPSILON
-  );
+/**
+ * Whether the part of `rect` inside the play middle lies on the snack counter, legs and Trip Bag
+ * panels themselves (no open water): every cell of the grid cut at the panel edges has its centre
+ * on a panel.
+ */
+function coversOnlyPanelsInMiddle(rect: Rect, view: HudView, controls: HudControls): boolean {
+  const middle = playMiddle(view);
+  const panels = [controls.counter, controls.legs, controls.bag];
+  const left = Math.max(rect.x, middle.x);
+  const right = Math.min(rect.x + rect.w, middle.x + middle.w);
+  const top = Math.max(rect.y, middle.y);
+  const bottom = Math.min(rect.y + rect.h, middle.y + middle.h);
+  if (right - left <= EPSILON || bottom - top <= EPSILON) return true;
+  const xs = cutsBetween(left, right, panels.flatMap((panel) => [panel.x, panel.x + panel.w]));
+  const ys = cutsBetween(top, bottom, panels.flatMap((panel) => [panel.y, panel.y + panel.h]));
+  for (let i = 0; i + 1 < xs.length; i++) {
+    for (let j = 0; j + 1 < ys.length; j++) {
+      if (xs[i + 1] - xs[i] <= EPSILON || ys[j + 1] - ys[j] <= EPSILON) continue;
+      const cx = (xs[i] + xs[i + 1]) / 2;
+      const cy = (ys[j] + ys[j + 1]) / 2;
+      const onPanel = panels.some((p) => cx > p.x && cx < p.x + p.w && cy > p.y && cy < p.y + p.h);
+      if (!onPanel) return false;
+    }
+  }
+  return true;
 }
 
-/** Whether `rect` lies inside the Trip Bag or status panels tier room (each grown by half a gap). */
-function isInPanelRoom(rect: Rect, controls: HudControls): boolean {
-  const rooms = [controls.bag, statusPanelsBox(controls)].map((panel) => grownBy(panel, HUD.gap / 2));
-  return rooms.some((room) => liesInside(rect, room));
-}
-
-/** Problems with one case: a placed rect in the play middle (less than a gap away) outside a panel tier room. */
+/** Problems with one case: a placed rect over open water in the play middle, whatever its place. */
 function middleProblems(overlayCase: OverlayCase): string[] {
   const { view, controls } = overlayCase.hud;
-  const middle = playMiddle(view);
-  return overlayCase.placements.flatMap(({ id, rect, edge }) => {
-    if (rect === null) return [];
-    const above = rect.y + rect.h <= middle.y - HUD.gap + EPSILON;
-    const below = middle.y + middle.h + HUD.gap <= rect.y + EPSILON;
-    if (above || below || (edge === 'panel' && isInPanelRoom(rect, controls))) return [];
-    return [`${overlayCase.label}: ${id} at ${JSON.stringify(rect)} is in the middle`];
+  return overlayCase.placements.flatMap(({ id, rect }) => {
+    if (rect === null || coversOnlyPanelsInMiddle(rect, view, controls)) return [];
+    return [`${overlayCase.label}: ${id} at ${JSON.stringify(rect)} covers open water in the middle`];
   });
+}
+
+/** What waits when shown alone in one HUD state: each held toast by name, then each held banner id. */
+function aloneWaits(hud: HudCase): string[] {
+  const toasts = ALL_TOASTS.filter((toast) => rectFor(runCase(hud, { ids: ['findToast'], toast }), 'findToast') === null);
+  const banners = BANNER_IDS.filter((id) => rectFor(runCase(hud, { ids: [id], toast: null }), id) === null);
+  return [...toasts.map((toast) => `findToast "${toast.name}"`), ...banners];
 }
 
 /** Problems with one case: the toast is not on the top edge at the margin. */
@@ -377,40 +393,66 @@ describe('HUD overlay fit', () => {
   );
 
   it(
-    'places each overlay alone on every supported canvas',
+    'places each overlay alone on every supported canvas at least 480 x 440 or 568 tall',
     () => {
-      // A toast with Go home visible is unreachable: trip.ts banks a non-empty bag inside the ring
-      // in the same step, and HudScene clears the toast on 'banked'.
-      const toastCases = allHudCases()
+      // Below that, some messages have no place outside the open middle and wait (X10); the two
+      // smallest canvases are pinned in the next test. A toast with Go home visible is unreachable:
+      // trip.ts banks a non-empty bag inside the ring in the same step, and HudScene clears the
+      // toast on 'banked'.
+      const roomy = allHudCases().filter(({ view }) => view.cssH >= 568 || (view.cssW >= 480 && view.cssH >= 440));
+      const toastCases = roomy
         .filter((hud) => !hud.goHomeVisible)
         .flatMap((hud) => ALL_TOASTS.map((toast) => runCase(hud, { ids: ['findToast'], toast })));
-      const bannerCases = allHudCases().flatMap((hud) => [
-        runCase(hud, { ids: ['hint'], toast: null }),
-        runCase(hud, { ids: ['snackBanner'], toast: null }),
-      ]);
+      const bannerCases = roomy.flatMap((hud) => BANNER_IDS.map((id) => runCase(hud, { ids: [id], toast: null })));
       const problems = [
         ...toastCases.flatMap((overlayCase) => unplacedProblems(overlayCase, 'findToast')),
         ...bannerCases.flatMap((overlayCase) => unplacedProblems(overlayCase, overlayCase.set.ids[0])),
       ];
+      expect(roomy.length).toBeGreaterThan(0);
       expect(problems).toEqual([]);
     },
     FIT_TIMEOUT_MS,
   );
 
+  it('holds exactly these messages, each shown alone, at 460 x 320 and 320 x 440', () => {
+    const landscapeNarrow = [
+      'findToast "Sunset orange Paint shell"',
+      'findToast "Midnight blue Paint shell"',
+      'findToast "Tie-dye galaxy Paint shell"',
+      'findToast "Golden albino axolotl"',
+      ...BANNER_IDS,
+    ];
+    const landscapeWide = ['findToast "Tie-dye galaxy Paint shell"', ...BANNER_IDS];
+    const portraitAll = [...ALL_TOASTS.map((toast) => `findToast "${toast.name}"`), ...BANNER_IDS];
+    const expected: Readonly<Record<string, Readonly<Record<PanelWidth, readonly string[]>>>> = {
+      '460x320': { narrow: landscapeNarrow, wide: landscapeWide },
+      '320x440': { narrow: portraitAll, wide: portraitAll },
+    };
+    for (const canvas of [
+      { cssW: 460, cssH: 320 },
+      { cssW: 320, cssH: 440 },
+    ]) {
+      for (const panelWidth of PANEL_WIDTHS) {
+        for (const goHomeVisible of [true, false]) {
+          const hud = makeHudCase(canvas, panelWidth, goHomeVisible);
+          expect(aloneWaits(hud), hud.label).toEqual(expected[`${canvas.cssW}x${canvas.cssH}`][panelWidth]);
+        }
+      }
+    }
+  });
+
   it(
-    'places the highest-priority overlay of every 2 or 3 overlay combination',
+    'gives the highest-priority overlay of every 2 or 3 overlay combination the place it takes alone',
     () => {
       const sets = expandSets([...idSetsOfSize(2), ...idSetsOfSize(3)], COMBINATION_TOASTS);
-      // A toast with Go home visible is unreachable: Go home shows only while swimming in the Home
-      // Spot ring (HudScene), a non-empty bag inside the ring banks in that same step (trip.ts), and
-      // HudScene clears the toast on 'banked'. The clearance test still covers those cases.
-      const cases = allHudCases().flatMap((hud) =>
-        sets.filter((set) => !(hud.goHomeVisible && set.ids.includes('findToast'))).map((set) => runCase(hud, set)),
-      );
+      const cases = allHudCases().flatMap((hud) => sets.map((set) => runCase(hud, set)));
       const problems = cases.flatMap((overlayCase) => {
         const top = HUD_OVERLAY_PRIORITY.find((id) => overlayCase.set.ids.includes(id));
         if (top === undefined) return [`${overlayCase.label}: no active overlay`];
-        return unplacedProblems(overlayCase, top);
+        const toast = top === 'findToast' ? overlayCase.set.toast : null;
+        const alone = rectFor(runCase(overlayCase.hud, { ids: [top], toast }), top);
+        const placed = rectFor(overlayCase, top);
+        return JSON.stringify(placed) === JSON.stringify(alone) ? [] : [`${overlayCase.label}: ${top} moved or held`];
       });
       expect(problems).toEqual([]);
     },
@@ -430,14 +472,15 @@ describe('HUD overlay fit', () => {
     FIT_TIMEOUT_MS,
   );
 
-  it('places the longest toast clear of the swim pad and the Dash ring at 460x320 (PR #35 r4309441325)', () => {
-    const toast = SORTED_TOASTS[0];
+  it('keeps every placed toast clear of the swim pad and the Dash ring at 460x320 (PR #35 r4309441325)', () => {
     for (const panelWidth of PANEL_WIDTHS) {
       const hud = makeHudCase({ cssW: 460, cssH: 320 }, panelWidth, false);
-      const rect = rectFor(runCase(hud, { ids: ['findToast'], toast }), 'findToast');
-      expect(rect).not.toBeNull();
-      if (rect === null) continue;
-      expect(clears(rect, hud.view, [hud.controls.stickBounds, hud.controls.dash.bounds])).toBe(true);
+      const rects = SORTED_TOASTS.map((toast) => rectFor(runCase(hud, { ids: ['findToast'], toast }), 'findToast'));
+      const placed = rects.filter((rect): rect is Rect => rect !== null);
+      expect(placed.length).toBeGreaterThan(0);
+      for (const rect of placed) {
+        expect(clears(rect, hud.view, [hud.controls.stickBounds, hud.controls.dash.bounds])).toBe(true);
+      }
     }
   });
 });

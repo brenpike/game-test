@@ -45,7 +45,7 @@ export const FIND_TOAST = Object.freeze({
   nameWrapW: 360,
 });
 
-/** The middle of the play area overlays keep out of, as fractions of the canvas height. */
+/** The middle of the play area, where overlays cover only the status panels, as fractions of the canvas height. */
 export const PLAY_MIDDLE = Object.freeze({ topFraction: 0.3, bottomFraction: 0.7 });
 
 /** Measured sizes of the HUD controls and status panels, in CSS px. */
@@ -264,7 +264,8 @@ export function statusPanelsBox(controls: HudControls): Rect {
 
 /**
  * Returns the middle of the play area: the full margin-inset width, from topFraction to
- * bottomFraction of the canvas height. Overlays keep a gap from it except over the status panels.
+ * bottomFraction of the canvas height. Inside it an overlay may cover only the status panels
+ * themselves, never open water.
  */
 export function playMiddle(view: HudView): Rect {
   const top = PLAY_MIDDLE.topFraction * view.cssH;
@@ -384,35 +385,66 @@ function freeSpans(left: number, right: number, blocks: readonly (readonly [numb
   return spans.filter(([start, end]) => end > start);
 }
 
+/** Returns the sorted distinct top and bottom edges of `frame` and of `blocks`, clamped into `frame`. */
+function rowStops(frame: Rect, blocks: readonly Rect[]): number[] {
+  const top = frame.y;
+  const bottom = bottomOf(frame);
+  return edgeStops([top, bottom, ...blocks.flatMap((rect) => [rect.y, bottomOf(rect)])], top, bottom);
+}
+
+/** Returns the rects in `frame` from `bandTop` to `bandBottom` that no block in that band covers. */
+function freeInBand(frame: Rect, blocks: readonly Rect[], bandTop: number, bandBottom: number): Rect[] {
+  const spans = blocks
+    .filter((rect) => rect.y < bandBottom && bottomOf(rect) > bandTop)
+    .map((rect): [number, number] => [rect.x, rect.x + rect.w]);
+  return freeSpans(frame.x, frame.x + frame.w, spans).map(([left, right]) => ({
+    x: left,
+    y: bandTop,
+    w: right - left,
+    h: bandBottom - bandTop,
+  }));
+}
+
 /**
  * Returns rectangles inside `frame` that touch none of the `grown` obstacles: for each band between
  * two obstacle (or frame) edges, the horizontal spans no obstacle in that band covers.
  */
 function freeRects(frame: Rect, grown: readonly Rect[]): Rect[] {
   if (!(frame.w > 0) || !(frame.h > 0)) return [];
-  const top = frame.y;
-  const bottom = frame.y + frame.h;
-  const stops = edgeStops([top, bottom, ...grown.flatMap((rect) => [rect.y, rect.y + rect.h])], top, bottom);
+  const stops = rowStops(frame, grown);
   const rects: Rect[] = [];
   for (let i = 0; i < stops.length; i++) {
-    for (let j = i + 1; j < stops.length; j++) {
-      const bandTop = stops[i];
-      const bandBottom = stops[j];
-      const blocks = grown
-        .filter((rect) => rect.y < bandBottom && rect.y + rect.h > bandTop)
-        .map((rect): [number, number] => [rect.x, rect.x + rect.w]);
-      for (const [left, right] of freeSpans(frame.x, frame.x + frame.w, blocks)) {
-        rects.push({ x: left, y: bandTop, w: right - left, h: bandBottom - bandTop });
-      }
-    }
+    for (let j = i + 1; j < stops.length; j++) rects.push(...freeInBand(frame, grown, stops[i], stops[j]));
   }
   return rects;
 }
 
 /**
+ * Returns the open water of the play middle: the parts of it the snack counter, legs and Trip Bag
+ * panels do not cover, one rect per span between two panel edges. Overlays never touch these.
+ */
+function openMiddleRects(view: HudView, controls: HudControls): Rect[] {
+  const middle = playMiddle(view);
+  if (!(middle.w > 0) || !(middle.h > 0)) return [];
+  const panels = [controls.counter, controls.legs, controls.bag];
+  const stops = rowStops(middle, panels);
+  const rects: Rect[] = [];
+  for (let i = 0; i + 1 < stops.length; i++) rects.push(...freeInBand(middle, panels, stops[i], stops[i + 1]));
+  return rects;
+}
+
+/** Whether `rect` covers none of the open middle: inside the play middle, only the status panels. */
+function keepsOffOpenMiddle(rect: Rect, openMiddle: readonly Rect[]): boolean {
+  return openMiddle.every((part) => {
+    const overlap = intersectRect(rect, part);
+    return overlap.w <= FIT_EPSILON_PX || overlap.h <= FIT_EPSILON_PX;
+  });
+}
+
+/**
  * Returns the placement tiers in order: the top edge above the middle, the bottom edge below it,
  * over the Trip Bag, then over all the status panels. Each panel room is its panels grown by half
- * a gap, inside the margin frame.
+ * a gap, inside the margin frame; inside the play middle no tier covers open water.
  */
 function overlayTiers(view: HudView, controls: HudControls): OverlayTier[] {
   const frame = overlayFrame(view);
@@ -468,14 +500,24 @@ function isNearer(a: Candidate, b: Candidate): boolean {
   return a.dx < b.dx;
 }
 
-/** Returns the clearing spot nearest the tier anchor among the tier's free rooms, or null. */
-function placeInTier(request: SizedRequest, view: HudView, tier: OverlayTier, obstacles: readonly Rect[]): Rect | null {
+/**
+ * Returns the clearing spot nearest the tier anchor among the tier's free rooms, or null. The open
+ * middle bounds the free rooms as a wall with no gap.
+ */
+function placeInTier(
+  request: SizedRequest,
+  view: HudView,
+  tier: OverlayTier,
+  obstacles: readonly Rect[],
+  openMiddle: readonly Rect[],
+): Rect | null {
   const tierObstacles = [...obstacles, ...tier.extraObstacles];
-  const grown = tierObstacles.map((rect) => growRect(rect, HUD.gap));
+  const walls = [...tierObstacles.map((rect) => growRect(rect, HUD.gap)), ...openMiddle];
   let best: Candidate | null = null;
-  for (const room of freeRects(tier.room, grown)) {
+  for (const room of freeRects(tier.room, walls)) {
     const candidate = candidateIn(room, request, tier.anchorFor);
     if (candidate === null || !clears(candidate.rect, view, tierObstacles)) continue;
+    if (!keepsOffOpenMiddle(candidate.rect, openMiddle)) continue;
     if (best === null || isNearer(candidate, best)) best = candidate;
   }
   return best?.rect ?? null;
@@ -487,9 +529,10 @@ function placeInTiers(
   view: HudView,
   tiers: readonly OverlayTier[],
   obstacles: readonly Rect[],
+  openMiddle: readonly Rect[],
 ): TieredRect | null {
   for (const tier of tiers) {
-    const rect = placeInTier(request, view, tier, obstacles);
+    const rect = placeInTier(request, view, tier, obstacles, openMiddle);
     if (rect !== null) return { rect, edge: tier.edge };
   }
   return null;
@@ -500,12 +543,13 @@ function fitOverlays(
   view: HudView,
   tiers: readonly OverlayTier[],
   keepOuts: readonly Rect[],
+  openMiddle: readonly Rect[],
   ordered: readonly SizedRequest[],
 ): Map<HudOverlayId, TieredRect> {
   const placed = new Map<HudOverlayId, TieredRect>();
   for (const request of ordered) {
     const obstacles = [...keepOuts, ...[...placed.values()].map((entry) => entry.rect)];
-    const tiered = placeInTiers(request, view, tiers, obstacles);
+    const tiered = placeInTiers(request, view, tiers, obstacles, openMiddle);
     if (tiered !== null) placed.set(request.id, tiered);
   }
   return placed;
@@ -514,6 +558,7 @@ function fitOverlays(
 /**
  * Places the requested overlays in priority order, each in the first tier with room: the top edge
  * above the play middle, the bottom edge below it, over the Trip Bag, then over the status panels.
+ * In every tier, inside the play middle an overlay covers only the status panels themselves.
  * Returns one placement per request, in request order; a rect is null when that overlay has no
  * room (or its id was already answered), never clipped.
  */
@@ -525,8 +570,9 @@ export function placeHudOverlays(
 ): HudOverlayPlacement[] {
   const sized = requests.map(memoiseRequest);
   const tiers = overlayTiers(view, controls);
-  const fitted = fitOverlays(view, tiers, keepOuts, orderRequests(sized, HUD_OVERLAY_PRIORITY));
-  const checked = checkPlacements(view, tiers, keepOuts, fitted);
+  const openMiddle = openMiddleRects(view, controls);
+  const fitted = fitOverlays(view, tiers, keepOuts, openMiddle, orderRequests(sized, HUD_OVERLAY_PRIORITY));
+  const checked = checkPlacements(view, keepOuts, openMiddle, fitted);
   const answered = new Set<HudOverlayId>();
   return requests.map((request) => {
     const tiered = answered.has(request.id) ? null : (checked.get(request.id) ?? null);
@@ -535,24 +581,21 @@ export function placeHudOverlays(
   });
 }
 
-/** Whether `rect` keeps a gap from the play middle or lies inside a panel tier's room. */
-function isOutOfMiddle(rect: Rect, view: HudView, tiers: readonly OverlayTier[]): boolean {
-  if (isApart(rect, playMiddle(view), HUD.gap)) return true;
-  return tiers.some((tier) => tier.edge === 'panel' && isInside(rect, tier.room));
-}
-
-/** Re-checks every placed rect with clears() and the middle rule; a rect that fails becomes null. */
+/**
+ * Re-checks every placed rect with clears() and the middle rule (no open middle covered, whatever
+ * the tier); a rect that fails becomes null.
+ */
 function checkPlacements(
   view: HudView,
-  tiers: readonly OverlayTier[],
   keepOuts: readonly Rect[],
+  openMiddle: readonly Rect[],
   placed: ReadonlyMap<HudOverlayId, TieredRect>,
 ): Map<HudOverlayId, TieredRect | null> {
   const rects = [...placed.values()].map((entry) => entry.rect);
   const checked = new Map<HudOverlayId, TieredRect | null>();
   for (const [id, tiered] of placed) {
     const obstacles = [...keepOuts, ...rects.filter((other) => other !== tiered.rect)];
-    const ok = clears(tiered.rect, view, obstacles) && isOutOfMiddle(tiered.rect, view, tiers);
+    const ok = clears(tiered.rect, view, obstacles) && keepsOffOpenMiddle(tiered.rect, openMiddle);
     checked.set(id, ok ? tiered : null);
   }
   return checked;

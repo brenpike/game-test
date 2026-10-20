@@ -137,19 +137,44 @@ function panelsRoom(controls: HudControls): Rect {
   return grownBy(statusPanelsBox(controls), HUD.gap / 2);
 }
 
-/** Whether `rect` keeps at least a gap from the play middle, above or below it. */
-function isClearOfMiddle(rect: Rect, view: HudView): boolean {
-  const middle = playMiddle(view);
-  return rect.y + rect.h <= middle.y - HUD.gap + EPSILON || middle.y + middle.h + HUD.gap <= rect.y + EPSILON;
+/** Sorted distinct cut points: `lo`, `hi` and every edge strictly between them. */
+function cutsBetween(lo: number, hi: number, edges: readonly number[]): number[] {
+  return [...new Set([lo, hi, ...edges.filter((edge) => edge > lo && edge < hi)])].sort((a, b) => a - b);
 }
 
-/** Problems with one placement: in the middle outside a panel room, or over the counter or legs outside T4. */
+/**
+ * Whether the part of `rect` inside the play middle lies on the snack counter, legs and Trip Bag
+ * panels themselves (no open water): every cell of the grid cut at the panel edges has its centre
+ * on a panel.
+ */
+function coversOnlyPanelsInMiddle(rect: Rect, view: HudView, controls: HudControls): boolean {
+  const middle = playMiddle(view);
+  const panels = [controls.counter, controls.legs, controls.bag];
+  const left = Math.max(rect.x, middle.x);
+  const right = Math.min(rect.x + rect.w, middle.x + middle.w);
+  const top = Math.max(rect.y, middle.y);
+  const bottom = Math.min(rect.y + rect.h, middle.y + middle.h);
+  if (right - left <= EPSILON || bottom - top <= EPSILON) return true;
+  const xs = cutsBetween(left, right, panels.flatMap((panel) => [panel.x, panel.x + panel.w]));
+  const ys = cutsBetween(top, bottom, panels.flatMap((panel) => [panel.y, panel.y + panel.h]));
+  for (let i = 0; i + 1 < xs.length; i++) {
+    for (let j = 0; j + 1 < ys.length; j++) {
+      if (xs[i + 1] - xs[i] <= EPSILON || ys[j + 1] - ys[j] <= EPSILON) continue;
+      const cx = (xs[i] + xs[i + 1]) / 2;
+      const cy = (ys[j] + ys[j + 1]) / 2;
+      const onPanel = panels.some((p) => cx > p.x && cx < p.x + p.w && cy > p.y && cy < p.y + p.h);
+      if (!onPanel) return false;
+    }
+  }
+  return true;
+}
+
+/** Problems with one placement: over open water in the middle, or over the counter or legs outside T4. */
 function placementProblems(view: HudView, controls: HudControls, placement: HudOverlayPlacement): string[] {
   const { id, rect, edge } = placement;
   if (rect === null) return edge === null ? [] : [`${id}: edge ${edge} without a rect`];
   const problems: string[] = [];
-  const inPanelRoom = liesInside(rect, bagRoom(controls)) || liesInside(rect, panelsRoom(controls));
-  if (!isClearOfMiddle(rect, view) && !(edge === 'panel' && inPanelRoom)) problems.push(`${id} in the middle`);
+  if (!coversOnlyPanelsInMiddle(rect, view, controls)) problems.push(`${id} over open water in the middle`);
   const overPanels = overlaps(rect, controls.counter) || overlaps(rect, controls.legs);
   if (overPanels && !liesInside(rect, panelsRoom(controls))) problems.push(`${id} over the counter or legs`);
   return problems;
@@ -320,26 +345,68 @@ describe('placeHudOverlays', () => {
     expect(rect.x + rect.w / 2).toBeCloseTo(view.cssW / 2, 9);
   });
 
-  it('puts a short toast over the Trip Bag at 320 x 440', () => {
-    const controls = hudControls(PORTRAIT, SIZES);
+  it('puts a short toast over the Trip Bag when the Trip Bag is above the middle', () => {
+    const view = { cssW: 320, cssH: 800 };
+    const controls = hudControls(view, SIZES);
     const keepOuts = controlKeepOuts(controls, { goHomeVisible: false });
-    const [placed] = placeHudOverlays(PORTRAIT, controls, keepOuts, requestsFor(['findToast'], SMALL_TEXTS));
+    const [placed] = placeHudOverlays(view, controls, keepOuts, requestsFor(['findToast'], SMALL_TEXTS));
+    expect(controls.bag.y + controls.bag.h).toBeLessThanOrEqual(playMiddle(view).y);
     expect(placed.edge).toBe('panel');
     expect(liesInside(placed.rect as Rect, bagRoom(controls))).toBe(true);
     expect(placed.rect).toMatchObject({ x: controls.bag.x, y: controls.bag.y });
   });
 
-  it('puts the toast over the status panels at 460 x 320', () => {
+  it('puts a short toast over the status panels above the middle at 460 x 320', () => {
+    const controls = hudControls(SMALLEST, SIZES);
+    for (const goHomeVisible of [true, false]) {
+      const keepOuts = controlKeepOuts(controls, { goHomeVisible });
+      const [placed] = placeHudOverlays(SMALLEST, controls, keepOuts, requestsFor(['findToast'], SMALL_TEXTS));
+      const rect = placed.rect as Rect;
+      expect(placed.edge).toBe('panel');
+      expect(liesInside(rect, panelsRoom(controls))).toBe(true);
+      expect(rect).toMatchObject({ x: HUD.margin, y: HUD.margin });
+      expect(rect.y + rect.h).toBeLessThanOrEqual(playMiddle(SMALLEST).y);
+    }
+  });
+
+  it('holds a two-line toast at 460 x 320 rather than reach past the legs into the middle', () => {
     const controls = hudControls(SMALLEST, SIZES);
     for (const goHomeVisible of [true, false]) {
       const keepOuts = controlKeepOuts(controls, { goHomeVisible });
       const [placed] = placeHudOverlays(SMALLEST, controls, keepOuts, requestsFor(['findToast'], REAL_TEXTS));
-      const rect = placed.rect as Rect;
-      expect(placed.edge).toBe('panel');
-      expect(liesInside(rect, panelsRoom(controls))).toBe(true);
-      expect(liesInside(rect, bagRoom(controls))).toBe(false);
-      expect(rect).toMatchObject({ x: HUD.margin, y: HUD.margin });
+      expect(placed).toEqual({ id: 'findToast', rect: null, edge: null });
     }
+  });
+
+  it('never puts an overlay over open water in the middle from a panel place (finding a336ac95)', () => {
+    // Before the fix, the status panels place took this box at (16, 79.2): its lower part covered
+    // the middle beside the legs and in the gap above the Trip Bag.
+    const controls = hudControls(PORTRAIT, SIZES);
+    const keepOuts = controlKeepOuts(controls, { goHomeVisible: false });
+    const box = (): Size => ({ w: 206, h: 103 });
+    const [placed] = placeHudOverlays(PORTRAIT, controls, keepOuts, [{ id: 'findToast', boxAt: box }]);
+    expect(placed).toEqual({ id: 'findToast', rect: null, edge: null });
+    const offending = { x: HUD.margin, y: 79.2, w: 206, h: 103 };
+    expect(coversOnlyPanelsInMiddle(offending, PORTRAIT, controls)).toBe(false);
+  });
+
+  it('holds a short toast at 320 x 440: the Trip Bag is in the middle and no room above it fits', () => {
+    const controls = hudControls(PORTRAIT, SIZES);
+    const keepOuts = controlKeepOuts(controls, { goHomeVisible: false });
+    const [placed] = placeHudOverlays(PORTRAIT, controls, keepOuts, requestsFor(['findToast'], SMALL_TEXTS));
+    expect(placed).toEqual({ id: 'findToast', rect: null, edge: null });
+  });
+
+  it('may cover the status panels themselves inside the middle', () => {
+    const view = { cssW: 460, cssH: 320 };
+    const controls = hudControls(view, SIZES);
+    const box = (): Size => ({ w: controls.legs.w, h: controls.legs.y + controls.legs.h - HUD.margin });
+    const [placed] = placeHudOverlays(view, controls, [], [{ id: 'findToast', boxAt: box }]);
+    const rect = placed.rect as Rect;
+    expect(placed.edge).toBe('panel');
+    expect(rect).toEqual({ x: HUD.margin, y: HUD.margin, w: controls.legs.w, h: box().h });
+    expect(rect.y + rect.h).toBeGreaterThan(playMiddle(view).y);
+    expect(coversOnlyPanelsInMiddle(rect, view, controls)).toBe(true);
   });
 
   it('answers in request order', () => {
