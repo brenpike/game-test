@@ -26,6 +26,7 @@ import {
   type HudControls,
   type HudOverlayId,
   type HudOverlayRequest,
+  type OverlayEdge,
   type Rect,
   type Size,
 } from '../logic/hudLayout';
@@ -95,7 +96,7 @@ const BAG_STATUS_PX = 18;
 const BAG_GAP = 6;
 const HINT_HOLD_MS = 6000;
 const HINT_FADE_MS = 400;
-// INVARIANT: the find pop-up sits above the banners and below the banking card.
+// INVARIANT: the find toast sits above the banners and below the banking card.
 const FIND_POPUP_DEPTH = DEPTH.ui + 6;
 const BANKING_CARD_DEPTH = DEPTH.ui + 8;
 const FACT_CARD_DEPTH = DEPTH.ui + 9;
@@ -709,7 +710,7 @@ export class HudScene extends Phaser.Scene {
 
   /**
    * Places the active overlays through placeHudOverlays(), clear of the visible controls: the hint
-   * while active, the snack banner while active and the find pop-up while it has a find. An
+   * while active, the snack banner while active and the find toast while it has a find. An
    * overlay with no room is held: hidden, with its timer paused, until a later call places it.
    */
   private layoutOverlays(): void {
@@ -718,17 +719,25 @@ export class HudScene extends Phaser.Scene {
     const requests: HudOverlayRequest[] = [];
     if (this.hintActive) requests.push(bannerRequest('hint', this.hintText, hintBoxes));
     if (this.bannerActive) requests.push(bannerRequest('snackBanner', this.bannerText, bannerBoxes));
-    if (this.foundPopup.hasFind()) requests.push({ id: 'findPopup', boxAt: (maxW) => this.foundPopup.box(maxW) });
+    if (this.foundPopup.hasFind()) requests.push({ id: 'findToast', boxAt: (maxW) => this.foundPopup.box(maxW) });
     const keepOuts = controlKeepOuts(this.controls, { goHomeVisible: this.goHomeButton.container.visible });
-    for (const { id, rect } of placeHudOverlays(this.view, this.controls, keepOuts, requests)) {
-      this.placeOverlay(id, rect, id === 'hint' ? hintBoxes : bannerBoxes);
+    for (const { id, rect, edge } of placeHudOverlays(this.view, this.controls, keepOuts, requests)) {
+      this.placeOverlay(id, rect, edge, id === 'hint' ? hintBoxes : bannerBoxes);
     }
   }
 
-  /** Draws overlay `id` at `rect`, or holds it when `rect` is null; `boxes` are a banner's measured sizes. */
-  private placeOverlay(id: HudOverlayId, rect: Rect | null, boxes: readonly WrappedBox[]): void {
-    if (id === 'findPopup') {
-      this.foundPopup.place(rect);
+  /**
+   * Draws overlay `id` at `rect` on `edge`, or holds it when `rect` is null; `boxes` are a banner's
+   * measured sizes.
+   */
+  private placeOverlay(
+    id: HudOverlayId,
+    rect: Rect | null,
+    edge: OverlayEdge | null,
+    boxes: readonly WrappedBox[],
+  ): void {
+    if (id === 'findToast') {
+      this.foundPopup.place(rect, edge);
       return;
     }
     if (id === 'hint') {
@@ -962,7 +971,7 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Freezes or thaws every HUD timer and tween (banners, find pop-up, banking card, swim pad and any added later),
+   * Freezes or thaws every HUD timer and tween (banners, find toast, banking card, swim pad and any added later),
    * so pause stops HUD motion as well as the swim scene. The pause overlay and its buttons use neither.
    * Only the scene clock (Clock.paused) changes: a timer an overlay hold paused (TimerEvent.paused)
    * stays paused until its overlay is placed again.
@@ -1112,9 +1121,10 @@ export class HudScene extends Phaser.Scene {
 
   /**
    * Redraws the legs and Trip Bag from the snapshot, announces new finds and a newly following
-   * axolotl, shows the tilapia fact card when it is due, and follows its phase: leaving 'swimming'
-   * drops the swim pad, the hint and the speed-up badge, into 'banked' or 'ended' clears the find
-   * pop-up, into 'banked' shows the banking card, and leaving 'banked' hides it.
+   * axolotl (the rescue wins when both come in one snapshot), shows the tilapia fact card when it
+   * is due, and follows its phase: leaving 'swimming' drops the swim pad, the hint and the speed-up
+   * badge, into 'banked' or 'ended' clears the find toast, into 'banked' shows the banking card,
+   * and leaving 'banked' hides it.
    */
   private handleTripState(snapshot: TripSnapshot): void {
     const previousPhase = this.trip.phase;
@@ -1138,23 +1148,23 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Queues the finds picked up since the last snapshot on the find pop-up, only while swimming.
+   * Shows the latest find picked up since the last snapshot on the find toast, only while swimming.
    * A shorter found list means a new trip, so counting starts again.
    */
   private announceFinds(snapshot: TripSnapshot): void {
     if (snapshot.found.length < this.announcedCount) this.announcedCount = 0;
     if (snapshot.phase === 'swimming') {
-      this.foundPopup.enqueue(snapshot.found.slice(this.announcedCount));
+      this.foundPopup.showFinds(snapshot.found.slice(this.announcedCount));
     }
     this.announcedCount = snapshot.found.length;
   }
 
-  /** Queues the stranded axolotl on the find pop-up when it starts following, only while swimming. */
+  /** Shows the stranded axolotl on the find toast when it starts following, only while swimming. */
   private announceRescue(previous: RescueSnapshot | null, snapshot: TripSnapshot): void {
     const rescue = snapshot.rescue;
     if (snapshot.phase !== 'swimming' || rescue === null || rescue.status !== 'following') return;
     if (previous?.status === 'following') return;
-    this.foundPopup.enqueueRescue(rescue.morph);
+    this.foundPopup.showRescue(rescue.morph);
   }
 
   /** Shows the banking card and captures Tab so it moves focus between the card buttons. */
@@ -1214,7 +1224,7 @@ export class HudScene extends Phaser.Scene {
 
   /**
    * Switches the HUD motion profile. When reduced motion turns on, ends every running motion tween
-   * in this scene at its end state: the banners, the hint, the find pop-up, the banking card and
+   * in this scene at its end state: the banners, the hint, the find toast, the banking card and
    * the swim pad.
    */
   private handleReducedMotion(payload: ReducedMotionPayload): void {

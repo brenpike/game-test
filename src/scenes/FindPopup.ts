@@ -6,15 +6,16 @@ import type { TreasureIconSize, TreasureTextures } from '../art/treasureTextures
 import { ICON_ROW_BOX_PX, ICON_ROW_GAP_PX, iconsPerRow } from '../logic/cardFit';
 import { categoryName, treasureSlug } from '../logic/catalogue';
 import { badgeShape, rarityName } from '../logic/hints';
-import { FIND_POPUP, findPopupBox, type Rect, type Size } from '../logic/hudLayout';
+import { FIND_TOAST, findToastBox, type FindToastBox, type OverlayEdge, type Rect, type Size } from '../logic/hudLayout';
 import { RESCUE_POPUP_DETAIL, morphById, type RealMorphId } from '../logic/morphs';
 import type { MotionProfile } from '../logic/motion';
 import type { FoundInfo } from '../logic/tripEvents';
 import { drawPanel, uiTextStyle, type GameAssets, type SceneView } from './BootScene';
 import { addMotionTween } from './motionTweens';
 
-const FADE_MS = 400;
+const FADE_MS = 250;
 const HOLD_MS = 2000;
+const SLIDE_PX = 16;
 
 /** Adds a centre-anchored image showing `info` at its logical size. */
 function addCentredImage(scene: Phaser.Scene, info: TexInfo): Phaser.GameObjects.Image {
@@ -61,19 +62,13 @@ export function placeIconRows(
 }
 
 
-/** One queued pop-up: a found treasure, or a stranded axolotl now following the player. */
-type PopupItem = { kind: 'treasure'; found: FoundInfo } | { kind: 'axolotl'; morph: RealMorphId };
+/** One toast: a found treasure, or a stranded axolotl now following the player. */
+type ToastItem = { kind: 'treasure'; found: FoundInfo } | { kind: 'axolotl'; morph: RealMorphId };
 
-/** The icon and badge of one pop-up item. */
-interface PopupImages {
+/** The icon and badge of one toast item. */
+interface ToastImages {
   icon: Phaser.GameObjects.Image;
   badge: Phaser.GameObjects.Image;
-}
-
-/** A measured pop-up panel size and the name wrap width that produced it. */
-interface MeasuredBox {
-  size: Size;
-  wrapW: number;
 }
 
 /** Returns the current CSS size of `text`. */
@@ -81,40 +76,51 @@ function textSize(text: Phaser.GameObjects.Text): Size {
   return { w: text.width, h: text.height };
 }
 
+/** Returns the content offset a toast slides in from at `edge`: down from above at the top, up from below at the bottom. */
+function enterOffset(edge: OverlayEdge | null): number {
+  if (edge === 'top') return -SLIDE_PX;
+  if (edge === 'bottom') return SLIDE_PX;
+  return 0;
+}
+
 /**
- * Find pop-up: a white panel with the treasure icon, then its name, category and rarity badge with
- * the rarity name; for a rescued axolotl, its portrait, then its name, the rescue detail and its
- * morph badge with the morph name. The HUD places it through placeHudOverlays(): top-centre under
- * the banners when that clears the controls, otherwise in the free room nearest there. With no room it is held:
- * hidden, with its hold timer paused, until the HUD places it again. Never interactive and has no
- * dim, so presses pass through to the controls. Shows one find at a time from a queue: fades in,
- * holds, fades out on the HUD clock (so pause freezes it); appears and leaves at once under reduced
- * motion, including when reduced motion turns on mid-fade or with finds still queued.
+ * Find toast: a compact white panel with the treasure icon, then its name over its rarity badge and
+ * "<Rarity> <Category>"; for a rescued axolotl, its portrait, then its name over its morph badge
+ * and the rescue detail. The HUD places it through placeHudOverlays() at a screen edge or over the
+ * status panels; with no room it is held: hidden, with its hold timer paused, until the HUD places
+ * it again. Never interactive and has no dim, so presses pass through to the controls. Shows the
+ * latest find only: a new one while a toast is up swaps the content at once at full opacity and
+ * restarts the hold. A toast that enters when none is up slides in from its edge while fading in,
+ * holds, then fades out, all on the HUD clock (so pause freezes it); it appears and leaves at once
+ * under reduced motion, including when reduced motion turns on mid-fade.
  */
 export class FindPopup {
   private readonly scene: Phaser.Scene;
   private readonly treasure: TreasureTextures;
   private readonly morph: MorphTextures;
+  /** Placed at the toast rect by place(). */
   private readonly container: Phaser.GameObjects.Container;
+  /** The panel and content; only its offset and alpha move, so re-layout never fights the slide. */
+  private readonly content: Phaser.GameObjects.Container;
   private readonly panel: Phaser.GameObjects.Graphics;
   private readonly name: Phaser.GameObjects.Text;
-  private readonly category: Phaser.GameObjects.Text;
-  private readonly rarity: Phaser.GameObjects.Text;
+  private readonly detail: Phaser.GameObjects.Text;
   private readonly motion: () => MotionProfile;
   private readonly requestPlacement: () => void;
   private icon: Phaser.GameObjects.Image | null = null;
   private badge: Phaser.GameObjects.Image | null = null;
-  private queue: PopupItem[] = [];
-  private current: PopupItem | null = null;
+  private current: ToastItem | null = null;
   private timer: Phaser.Time.TimerEvent | null = null;
-  /** Whether placement found no room, so the pop-up is hidden and its timer paused. */
+  /** Whether placement found no room, so the toast is hidden and its timer paused. */
   private held = false;
-  /** Sizes box() measured since the last place(), each with the name wrap width that gave it. */
-  private measured: MeasuredBox[] = [];
+  /** The edge of the last place() with a rect, or null before one or when held. */
+  private edge: OverlayEdge | null = null;
+  /** Boxes box() measured since the last place(). */
+  private measured: FindToastBox[] = [];
 
   /**
-   * `requestPlacement` asks the HUD to place the pop-up again (through box() and place()); it runs
-   * when a new find is filled, before it shows, and when the last find leaves.
+   * `requestPlacement` asks the HUD to place the toast again (through box() and place()); it runs
+   * when a new find is filled, before it shows, and when the toast leaves.
    */
   constructor(
     scene: Phaser.Scene,
@@ -131,13 +137,10 @@ export class FindPopup {
     this.morph = assets.morph;
     const dpr = view.fit.dpr;
     this.panel = scene.add.graphics();
-    this.name = scene.add.text(0, 0, '', uiTextStyle(FIND_POPUP.nameTextPx, dpr));
-    this.category = scene.add.text(0, 0, '', uiTextStyle(FIND_POPUP.detailTextPx, dpr, false));
-    this.rarity = scene.add.text(0, 0, '', uiTextStyle(FIND_POPUP.detailTextPx, dpr));
-    this.container = scene.add
-      .container(0, 0, [this.panel, this.name, this.category, this.rarity])
-      .setDepth(depth)
-      .setVisible(false);
+    this.name = scene.add.text(0, 0, '', uiTextStyle(FIND_TOAST.nameTextPx, dpr));
+    this.detail = scene.add.text(0, 0, '', uiTextStyle(FIND_TOAST.detailTextPx, dpr));
+    this.content = scene.add.container(0, 0, [this.panel, this.name, this.detail]);
+    this.container = scene.add.container(0, 0, [this.content]).setDepth(depth).setVisible(false);
   }
 
   /** Whether a find is current: on screen, fading or held. */
@@ -145,64 +148,63 @@ export class FindPopup {
     return this.current !== null;
   }
 
-  /** Queues the finds in order and starts the next one when no find is current. */
-  enqueue(found: readonly FoundInfo[]): void {
-    this.queue.push(...found.map((info): PopupItem => ({ kind: 'treasure', found: info })));
-    if (!this.hasFind()) this.showNext();
+  /** Shows the last of `found`, if any (earlier ones in the same batch are not shown). */
+  showFinds(found: readonly FoundInfo[]): void {
+    const last = found.at(-1);
+    if (last === undefined) return;
+    this.show({ kind: 'treasure', found: last });
   }
 
-  /** Queues the rescued axolotl of `morph` and starts it when no find is current. */
-  enqueueRescue(morph: RealMorphId): void {
-    this.queue.push({ kind: 'axolotl', morph });
-    if (!this.hasFind()) this.showNext();
+  /** Shows the rescued axolotl of `morph`. */
+  showRescue(morph: RealMorphId): void {
+    this.show({ kind: 'axolotl', morph });
   }
 
-  /** Hides the pop-up now and empties the queue, then asks the HUD to place again when a find was current. */
+  /** Hides the toast now, then asks the HUD to place again when a find was current. */
   clear(): void {
     const hadFind = this.hasFind();
-    this.queue = [];
     this.current = null;
-    if (this.timer) this.scene.time.removeEvent(this.timer);
-    this.timer = null;
+    this.stopTimer();
     this.held = false;
-    this.scene.tweens.killTweensOf(this.container);
-    this.container.setVisible(false).setAlpha(1);
+    this.settleContent();
+    this.container.setVisible(false);
     if (hadFind) this.requestPlacement();
   }
 
   setResolution(dpr: number): void {
-    for (const text of [this.name, this.category, this.rarity]) {
+    for (const text of [this.name, this.detail]) {
       text.setResolution(dpr);
     }
   }
 
   /**
    * Returns the panel size of the current find for a panel meant to be at most `maxW` wide (see
-   * findPopupBox(); it is wider than `maxW` when the content cannot fit).
+   * findToastBox(); it is wider than `maxW` when the content cannot fit).
    */
   box(maxW: number): Size {
-    let wrapW: number = FIND_POPUP.nameMinW;
-    const nameAt = (atW: number): Size => {
-      wrapW = atW;
-      return this.measureName(atW);
+    const measure = {
+      nameAt: (wrapW: number): Size => this.wrapText(this.name, wrapW),
+      detailAt: (wrapW: number): Size => this.wrapText(this.detail, wrapW),
     };
-    const size = findPopupBox(maxW, { nameAt, category: textSize(this.category), rarity: textSize(this.rarity) });
-    this.measured.push({ size, wrapW });
-    return size;
+    const measured = findToastBox(maxW, measure);
+    this.measured.push(measured);
+    return { w: measured.w, h: measured.h };
   }
 
   /**
-   * Draws the pop-up at `rect`, a size box() returned; null holds it: hidden, with its hold timer
-   * paused, until a later place() gives it a rect.
+   * Draws the toast at `rect`, a size box() returned, on `edge`; a null rect holds it: hidden, with
+   * its hold timer paused, until a later place() gives it a rect.
    */
-  place(rect: Rect | null): void {
+  place(rect: Rect | null, edge: OverlayEdge | null): void {
     const measured = this.measured;
     this.measured = [];
     this.held = rect === null;
+    this.edge = rect === null ? null : edge;
     if (rect !== null) {
-      const match = measured.find((entry) => entry.size.w === rect.w && entry.size.h === rect.h);
+      const match = measured.find((entry) => entry.w === rect.w && entry.h === rect.h);
       if (match === undefined) throw new Error('FindPopup.place: rect is not a size box() measured');
-      this.measureName(match.wrapW);
+      this.wrapText(this.name, match.nameWrapW);
+      this.wrapText(this.detail, match.detailWrapW);
       this.container.setPosition(rect.x, rect.y);
       this.layoutContent(rect);
     }
@@ -213,39 +215,59 @@ export class FindPopup {
     return this.motion().ambient;
   }
 
-  /** Sets the name to wrap at `wrapW` and returns its size. */
-  private measureName(wrapW: number): Size {
-    this.name.setWordWrapWidth(wrapW, true);
-    return textSize(this.name);
+  /** Sets `text` to wrap at `wrapW` and returns its size. */
+  private wrapText(text: Phaser.GameObjects.Text, wrapW: number): Size {
+    text.setWordWrapWidth(wrapW, true);
+    return textSize(text);
   }
 
-  /** Shows the pop-up only while a find is current and placed, and pauses its timer while held. */
+  /** Shows the toast only while a find is current and placed, and pauses its timer while held. */
   private applyHold(): void {
     this.container.setVisible(this.current !== null && !this.held);
     if (this.timer) this.timer.paused = this.held;
   }
 
+  private stopTimer(): void {
+    if (this.timer) this.scene.time.removeEvent(this.timer);
+    this.timer = null;
+  }
+
+  /** Stops the content's slide or fade and puts it at rest: no offset, full opacity. */
+  private settleContent(): void {
+    this.scene.tweens.killTweensOf(this.content);
+    this.content.setPosition(0, 0).setAlpha(1);
+  }
+
   /**
-   * Shows the next queued find: fills it, has the HUD place it, then fades in unless motion is
-   * reduced and schedules its leaving.
+   * Shows `item`: swaps it in at once at full opacity when a toast is current (entering, holding,
+   * leaving or held), else enters it; either way has the HUD place it and (re)starts the hold.
    */
-  private showNext(): void {
-    const next = this.queue.shift();
-    if (next === undefined) return;
-    const ambient = this.ambient();
-    this.current = next;
-    this.fill(next);
-    this.scene.tweens.killTweensOf(this.container);
-    this.container.setAlpha(ambient ? 0 : 1);
+  private show(item: ToastItem): void {
+    const replacing = this.hasFind();
+    this.stopTimer();
+    this.settleContent();
+    this.current = item;
+    this.fill(item);
+    const enters = !replacing && this.ambient();
+    if (enters) this.content.setAlpha(0);
     this.requestPlacement();
-    if (ambient) {
-      addMotionTween(this.scene, { targets: this.container, props: { alpha: 1 }, duration: FADE_MS });
-    }
-    this.timer = this.scene.time.delayedCall((ambient ? FADE_MS : 0) + HOLD_MS, this.leave, [], this);
+    if (enters) this.enter();
+    this.timer = this.scene.time.delayedCall((enters ? FADE_MS : 0) + HOLD_MS, this.leave, [], this);
     this.applyHold();
   }
 
-  /** Fades the find out (or hides it at once under reduced motion), then shows the next one. */
+  /** Slides the content in from the placed edge while fading it in. */
+  private enter(): void {
+    this.content.setPosition(0, enterOffset(this.edge));
+    addMotionTween(this.scene, {
+      targets: this.content,
+      props: { y: 0, alpha: 1 },
+      duration: FADE_MS,
+      ease: 'Sine.easeOut',
+    });
+  }
+
+  /** Fades the toast out (or hides it at once under reduced motion), then finishes it. */
   private leave(): void {
     this.timer = null;
     if (!this.ambient()) {
@@ -253,77 +275,70 @@ export class FindPopup {
       return;
     }
     addMotionTween(this.scene, {
-      targets: this.container,
+      targets: this.content,
       props: { alpha: 0 },
       duration: FADE_MS,
       onComplete: () => this.finish(),
     });
   }
 
-  /** Hides the find, then shows the next one, or asks the HUD to place again when the queue is empty. */
+  /** Hides the toast and asks the HUD to place again. */
   private finish(): void {
     this.current = null;
     this.held = false;
-    this.container.setVisible(false).setAlpha(1);
-    if (this.queue.length === 0) {
-      this.requestPlacement();
-      return;
-    }
-    this.showNext();
+    this.container.setVisible(false);
+    this.content.setAlpha(1);
+    this.requestPlacement();
   }
 
   /** Replaces the icon, badge and texts with the item's. */
-  private fill(item: PopupItem): void {
+  private fill(item: ToastItem): void {
     this.measured = [];
     this.icon?.destroy();
     this.badge?.destroy();
     const images = item.kind === 'treasure' ? this.fillTreasure(item.found) : this.fillAxolotl(item.morph);
     this.icon = images.icon;
     this.badge = images.badge;
-    this.container.add([images.icon, images.badge]);
+    this.content.add([images.icon, images.badge]);
   }
 
-  /** Sets the treasure's name, category and rarity name; returns its icon and rarity badge. */
-  private fillTreasure(found: FoundInfo): PopupImages {
+  /** Sets the treasure's name and "<Rarity> <Category>"; returns its icon and rarity badge. */
+  private fillTreasure(found: FoundInfo): ToastImages {
     this.name.setText(found.name);
-    this.category.setText(categoryName(found.category));
-    this.rarity.setText(rarityName(found.rarity));
+    this.detail.setText(`${rarityName(found.rarity)} ${categoryName(found.category)}`);
     return {
-      icon: addTreasureIcon(this.scene, this.treasure, FIND_POPUP.iconPx, found.id),
-      badge: addCentredImage(this.scene, this.treasure.badges[FIND_POPUP.badgePx][badgeShape(found.rarity)]),
+      icon: addTreasureIcon(this.scene, this.treasure, FIND_TOAST.iconPx, found.id),
+      badge: addCentredImage(this.scene, this.treasure.badges[FIND_TOAST.badgePx][badgeShape(found.rarity)]),
     };
   }
 
-  /** Sets the axolotl's display name, the rescue detail and the morph name; returns its portrait and morph badge. */
-  private fillAxolotl(morphId: RealMorphId): PopupImages {
+  /** Sets the axolotl's display name and the rescue detail; returns its portrait and morph badge. */
+  private fillAxolotl(morphId: RealMorphId): ToastImages {
     const morph = morphById(morphId);
     this.name.setText(morph.displayName);
-    this.category.setText(RESCUE_POPUP_DETAIL);
-    this.rarity.setText(morph.name);
+    this.detail.setText(RESCUE_POPUP_DETAIL);
     return {
-      icon: addCentredImage(this.scene, this.morph.portraits[morphId][FIND_POPUP.iconPx]),
-      badge: addCentredImage(this.scene, this.morph.badges[FIND_POPUP.badgePx][morph.badge]),
+      icon: addCentredImage(this.scene, this.morph.portraits[morphId][FIND_TOAST.iconPx]),
+      badge: addCentredImage(this.scene, this.morph.badges[FIND_TOAST.badgePx][morph.badge]),
     };
   }
 
   /**
-   * Draws the panel to `rect` (container-local, top-left at 0, 0): icon on the left, then a column of
-   * name, category and the badge row, both centred on the content height.
+   * Draws the panel to `rect` (content-local, top-left at 0, 0): icon on the left, then a column of
+   * the name over the badge and detail line, both centred on the content height.
    */
   private layoutContent(rect: Rect): void {
-    const { pad, iconPx, columnGap, badgePx, badgeGap } = FIND_POPUP;
-    const rarityRowH = Math.max(badgePx, this.rarity.height);
-    const columnH = this.name.height + this.category.height + rarityRowH;
-    const contentH = rect.h - 2 * pad;
+    const { padX, padY, iconPx, columnGap, badgePx, badgeGap } = FIND_TOAST;
+    const detailRowH = Math.max(badgePx, this.detail.height);
+    const columnH = this.name.height + detailRowH;
+    const contentH = rect.h - 2 * padY;
     drawPanel(this.panel, 0, 0, rect.w, rect.h, UI_PANEL);
-    this.icon?.setPosition(pad + iconPx / 2, pad + contentH / 2);
-    const columnX = pad + iconPx + columnGap;
-    let y = pad + (contentH - columnH) / 2;
+    this.icon?.setPosition(padX + iconPx / 2, padY + contentH / 2);
+    const columnX = padX + iconPx + columnGap;
+    let y = padY + (contentH - columnH) / 2;
     this.name.setPosition(columnX, y);
     y += this.name.height;
-    this.category.setPosition(columnX, y);
-    y += this.category.height;
-    this.badge?.setPosition(columnX + badgePx / 2, y + rarityRowH / 2);
-    this.rarity.setPosition(columnX + badgePx + badgeGap, y + (rarityRowH - this.rarity.height) / 2);
+    this.badge?.setPosition(columnX + badgePx / 2, y + detailRowH / 2);
+    this.detail.setPosition(columnX + badgePx + badgeGap, y + (detailRowH - this.detail.height) / 2);
   }
 }
