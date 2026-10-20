@@ -190,7 +190,10 @@ export const LEGS: Readonly<LegTuning> = Object.freeze({
   wobblePeriod: 0.9,
 });
 
-/** Provisional tilapia values; windup floor and cooldown from the PRD Tuning values. */
+/**
+ * Provisional tilapia values; windup floor and cooldown from the PRD Tuning values. Hit and touch
+ * reach match a Medium axolotl at every size (PRD F4).
+ */
 export const TILAPIA: Readonly<TilapiaTuning> = Object.freeze({
   minWindup: 0.8,
   windup: 0.9,
@@ -198,8 +201,8 @@ export const TILAPIA: Readonly<TilapiaTuning> = Object.freeze({
   lungeRange: 140,
   lungeSpeed: 380,
   lungeDuration: 0.4,
-  hitRadius: 30,
-  contactRadius: 34,
+  hitRadius: 26,
+  contactRadius: 29,
   bodyRadius: 24,
   patrolSpeed: 45,
   bumpSpeed: 160,

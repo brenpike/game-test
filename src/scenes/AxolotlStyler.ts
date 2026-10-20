@@ -1,58 +1,75 @@
 import * as Phaser from 'phaser';
-import { AXO_SCENE_SCALE, AXO_TEX, type AxolotlPose } from '../art/drawAxolotl';
+import { AXO_PREVIEW_CROPS, AXO_SCENE_SCALE, AXO_TEX, type AxolotlPose } from '../art/drawAxolotl';
 import { AXO_SIZE_SCALE } from '../art/drawAxolotlParts';
-import { BUTTON_PRESS_OFFSET, ICON_SIZE } from '../art/drawUi';
+import { BUTTON_PRESS_OFFSET, ICON_SIZE, type IconKind } from '../art/drawUi';
 import type { MorphTextures } from '../art/morphTextures';
 import { HOME_TANK_WALL, INK, LW, MORPH_PALETTES, T_STATIC, UI_PANEL, WHITE } from '../art/palette';
 import {
+  bakeAxolotlStill,
   bakeSizedButton,
   buttonKey,
   createAxolotlTexture,
   iconKey,
   type AxolotlTexture,
   type BakedTextures,
+  type ButtonFill,
+  type ButtonShape,
   type ButtonVisual,
   type TexInfo,
 } from '../art/textures';
-import type { AxolotlLook } from '../logic/axolotlLook';
-import { NAME_FIELD_RAW_MAX, fitNameEdit } from '../logic/axolotlNames';
+import type { AxolotlLook, LookField } from '../logic/axolotlLook';
+import { NAME_FIELD_RAW_MAX, fitNameEdit, suggestedNamesFor } from '../logic/axolotlNames';
 import type { Rect, Size } from '../logic/hudLayout';
-import type { RealMorphId } from '../logic/morphs';
+import { morphById, type RealMorphId } from '../logic/morphs';
 import type { MotionProfile } from '../logic/motion';
 import {
-  STYLER_PART_LABELS,
-  createStylerState,
+  chosenIndex,
   reduceStyler,
+  restyleStart,
   setName,
-  stylerChoiceBadge,
-  stylerChoiceLabel,
-  stylerChoiceSteps,
+  stepIndex,
+  stepOptions,
+  withNamesPerPage,
   type StylerAction,
   type StylerAxolotl,
   type StylerEffect,
+  type StylerMode,
+  type StylerOption,
   type StylerState,
 } from '../logic/styler';
+import { MAX_STEP_OPTIONS, STYLER_STEPS, stepLookField, type StylerStep } from '../logic/stylerSteps';
 import {
+  BACK_LABEL,
   CANCEL_LABEL,
-  CREATOR_TITLE,
   DONE_LABEL,
+  MORE_NAMES_LABEL,
   NAME_FIELD_LABEL,
-  RESTYLE_TITLE,
+  NEXT_LABEL,
   SURPRISE_ME_LABEL,
+  stepHeading,
+  stepHelper,
+  stepTabLabel,
+  stepTitle,
 } from '../logic/stylerText';
 import {
+  BACK_BUTTON,
   CANCEL_BUTTON,
-  CHOICE_BADGE_PX,
+  CAPTION_TEXT_PX,
   DONE_BUTTON,
-  STEPPER_PX,
+  HEADING_TEXT_PX,
+  HELPER_TEXT_PX,
+  NAME_TEXT_PX,
+  NEXT_BUTTON,
+  OPTION_LABEL_TEXT_PX,
+  PAGE_BUTTON_PX,
   SURPRISE_BUTTON,
-  VALUE_TEXT_PX,
-  choiceValueContent,
+  TAB_TEXT_PX,
   stylerLayout,
-  type StepperRow,
   type StylerLayout,
   type StylerMeasure,
-  type StylerMode,
+  type StylerNav,
+  type StylerPreview,
+  type StylerScreen,
 } from '../logic/stylerUi';
 import { tankKeyFor } from '../logic/tankUi';
 import { openTextEntry, type TextEntry, type TextEntryRect } from '../platform/textEntry';
@@ -69,7 +86,6 @@ import {
 } from './BootScene';
 
 const TAU = Math.PI * 2;
-const TITLE_PX = 28;
 const BACKDROP_COVER = 8192;
 const MAX_STEP_S = 0.05;
 /** Repaint budget (art guide 9): while the frame rate is under LOW_FPS, the preview repaints at most 30 a second. */
@@ -77,24 +93,48 @@ const LOW_FPS = 45;
 const LOW_FPS_REDRAW_S = 1 / 30;
 const SWIM_PERIOD_S = 1.2;
 const GILL_PERIOD_S = 0.8;
-const VALUE_BOX_RADIUS = 18;
+const BOX_RADIUS = 18;
 /** The largest size scale (art guide 6o): the preview always has room for it. */
 const PREVIEW_LARGEST_SIZE = Math.max(...Object.values(AXO_SIZE_SCALE));
 /** Double focus ring just outside the 3.5 px outline, as on the baked buttons (art guide 8). */
 const RING_LINE = 3;
 const RING_INNER = LW / 2 + 1.5;
 const RING_OUTER = LW / 2 + 4.5;
+/** Chosen option: a thick ink ring just inside the outline, plus the tick badge (shape, not colour). */
+const CHOSEN_RING_W = 5;
+/** Tick badge on the chosen option: a white disc with an ink outline and the tick icon. */
+const TICK_BADGE = Object.freeze({ r: 10, iconPx: 16, outline: 2.6, inset: 3, overhang: 2 });
+/** Room between a picture button's edge and its picture, clear of the outline. */
+const PICTURE_INSET = LW + 1;
+/** The Colour step's morph badge: 24 px, inside the picture button's lower-left corner. */
+const MORPH_BADGE_PX = 24;
+const MORPH_BADGE_INSET = 4;
+/** Progress dots (creator): done is a filled dot, current a bigger ring with a filled centre, to-come a hollow ring. */
+const DOT = Object.freeze({ doneR: 4.5, comeR: 4, comeLine: 2, currentR: 5.75, currentLine: 2.5, centreR: 2.5 });
+/** The current restyle tab's thick ink bar, inside the tab's bottom edge. */
+const TAB_BAR = Object.freeze({ h: 5, inset: 8, bottom: 4 });
+/** Still pose (art guide 9): tail and gills at t = T_STATIC, eyes open. */
+const STILL_POSE: AxolotlPose = Object.freeze({
+  swimPhase: (TAU * T_STATIC) / SWIM_PERIOD_S,
+  gillPhase: (TAU * T_STATIC) / GILL_PERIOD_S,
+  blink: 1,
+  tailAmp: 1,
+  sparkle: 0,
+});
 
-let previewCount = 0;
+let stylerCount = 0;
 
 /** How the styler is used, and who hears when it finishes. */
 export interface AxolotlStylerOptions {
-  /** The first-launch creator, or restyling an owned axolotl (adds Cancel and Escape). */
+  /** The step-by-step character creator, or restyling an owned axolotl (adds tabs, Cancel and Escape). */
   mode: StylerMode;
   /** The current motion profile, read every frame, so turning reduced motion on stills the preview at once. */
   motion: () => MotionProfile;
-  /** The name, look and morph the styler starts from. Restyle shows the morph read-only. */
-  initial: StylerAxolotl;
+  /**
+   * Where the styler starts. Restyle: the owned axolotl's name, look and morph (it starts with
+   * restyleStart()). The creator: a creatorStart() state; a restyle may pass a restyleStart() state too.
+   */
+  initial: StylerAxolotl | StylerState;
   /** Done: the finished name, look and morph (the initial morph in restyle). Called at most once. */
   onDone: (axolotl: StylerAxolotl) => void;
   /** Cancel or Escape in restyle: leave without keeping changes. Required in restyle. Called at most once. */
@@ -104,12 +144,48 @@ export interface AxolotlStylerOptions {
 /** The parts of a keydown the styler reads. */
 export type StylerKeyEvent = Pick<KeyboardEvent, 'key' | 'shiftKey' | 'repeat'>;
 
-/** A 48 px chevron stepper button: a secondary body with a left or right chevron, no label. */
+/** A step button and how it is drawn. */
+type NavControl = keyof StylerNav;
+
+interface NavSpec {
+  fill: ButtonFill;
+  shape: ButtonShape;
+  size: Size;
+  label: string;
+  icon: IconKind;
+}
+
+const NAV_SPECS: Readonly<Record<NavControl, NavSpec>> = Object.freeze({
+  back: { fill: 'secondary', shape: 'square', size: BACK_BUTTON, label: BACK_LABEL, icon: 'left' },
+  next: { fill: 'primary', shape: 'wide', size: NEXT_BUTTON, label: NEXT_LABEL, icon: 'right' },
+  done: { fill: 'primary', shape: 'wide', size: DONE_BUTTON, label: DONE_LABEL, icon: 'check' },
+  surprise: { fill: 'secondary', shape: 'square', size: SURPRISE_BUTTON, label: SURPRISE_ME_LABEL, icon: 'surprise' },
+  cancel: { fill: 'secondary', shape: 'square', size: CANCEL_BUTTON, label: CANCEL_LABEL, icon: 'close' },
+});
+
+const NAV_CONTROLS: Readonly<Record<StylerMode, readonly NavControl[]>> = Object.freeze({
+  creator: ['back', 'surprise', 'next', 'done'],
+  restyle: ['surprise', 'cancel', 'done'],
+});
+
+/** A 48 px chevron page button: a secondary body with a left or right chevron, no label. */
 interface Chevron {
   container: Phaser.GameObjects.Container;
-  setFocused(focused: boolean): void;
   /** Shows the chevron and takes presses, or hides it and ignores them. */
   setEnabled(enabled: boolean): void;
+}
+
+/** One option button's objects: its tap area, picture, label, name text, tick and morph badge. */
+interface OptionSlot {
+  zone: Phaser.GameObjects.Zone;
+  picture: Phaser.GameObjects.Image;
+  label: Phaser.GameObjects.Text;
+  nameText: Phaser.GameObjects.Text;
+  tick: Phaser.GameObjects.Image;
+  badge: Phaser.GameObjects.Image;
+  pictureKey: string;
+  /** What the picture texture shows, or null when it has none. */
+  pictureSig: string | null;
 }
 
 /** Sets `text` to wrap at `wrapW` and returns its size. */
@@ -118,9 +194,31 @@ function wrappedSize(text: Phaser.GameObjects.Text, wrapW: number): Size {
   return { w: text.width, h: text.height };
 }
 
-/** Centres `text` in `rect`. */
-function centreText(text: Phaser.GameObjects.Text, rect: Rect): void {
-  text.setPosition(rect.x + (rect.w - text.width) / 2, rect.y + (rect.h - text.height) / 2);
+/** The largest size of each of `strings` set on `text` and wrapped at `wrapW`; zero when there are none. */
+function largestWrapped(text: Phaser.GameObjects.Text, strings: readonly string[], wrapW: number): Size {
+  let largest: Size = { w: 0, h: 0 };
+  for (const value of strings) {
+    text.setText(value);
+    const size = wrappedSize(text, wrapW);
+    largest = { w: Math.max(largest.w, size.w), h: Math.max(largest.h, size.h) };
+  }
+  return largest;
+}
+
+/** The width of the longest word of `strings` set unwrapped on `text`. */
+function longestWordWidth(text: Phaser.GameObjects.Text, strings: readonly string[]): number {
+  text.setWordWrapWidth(null);
+  let widest = 0;
+  for (const word of strings.flatMap((value) => value.split(/\s+/))) {
+    widest = Math.max(widest, text.setText(word).width);
+  }
+  return widest;
+}
+
+/** Wraps `text` to the measured `rect` (with 1 px slack, so it breaks as measured) and centres it there. */
+function placeTextIn(text: Phaser.GameObjects.Text, rect: Rect): void {
+  text.setWordWrapWidth(rect.w + 1, true);
+  text.setPosition(rect.x + (rect.w - text.width) / 2, rect.y + (rect.h - text.height) / 2).setVisible(true);
 }
 
 /** Strokes the double focus ring (inner white, outer ink) around a rounded box of `radius`. */
@@ -143,9 +241,13 @@ function strokeFocusRing(graphics: Phaser.GameObjects.Graphics, rect: Rect, radi
   );
 }
 
-/** Draws one value box in panel style (white, ink outline), with the focus ring when `focused`. */
-function drawValueBox(graphics: Phaser.GameObjects.Graphics, rect: Rect, focused: boolean): void {
-  const radius = Math.min(rect.h / 2, VALUE_BOX_RADIUS);
+function boxRadius(rect: Rect): number {
+  return Math.min(rect.h / 2, BOX_RADIUS);
+}
+
+/** Draws one box in panel style (white, ink outline), with the focus ring when `focused`. */
+function drawBox(graphics: Phaser.GameObjects.Graphics, rect: Rect, focused: boolean): void {
+  const radius = boxRadius(rect);
   if (focused) strokeFocusRing(graphics, rect, radius);
   graphics.fillStyle(cssColor(UI_PANEL).color, 1);
   graphics.fillRoundedRect(rect.x, rect.y, rect.w, rect.h, radius);
@@ -153,19 +255,94 @@ function drawValueBox(graphics: Phaser.GameObjects.Graphics, rect: Rect, focused
   graphics.strokeRoundedRect(rect.x, rect.y, rect.w, rect.h, radius);
 }
 
+/** Strokes the chosen mark's thick ink ring just inside a box's outline. */
+function strokeChosenRing(graphics: Phaser.GameObjects.Graphics, rect: Rect): void {
+  const inset = LW / 2 + CHOSEN_RING_W / 2;
+  graphics.lineStyle(CHOSEN_RING_W, cssColor(INK).color, 1);
+  graphics.strokeRoundedRect(
+    rect.x + inset,
+    rect.y + inset,
+    rect.w - 2 * inset,
+    rect.h - 2 * inset,
+    Math.max(0, boxRadius(rect) - inset),
+  );
+}
+
 /**
- * Builds a STEPPER_PX square chevron button at (0, 0): the secondary body baked at that size (with
- * its pressed and focused visuals) and the 32 px chevron icon centred on it. Presses on release, as
- * createButton does.
+ * The tick badge centre: inside the top-right corner of a picture button, or over the top-right
+ * corner of a name button, where it stays clear of the name.
  */
-function createChevron(
-  scene: Phaser.Scene,
-  baked: BakedTextures,
-  icon: 'left' | 'right',
-  onPress: () => void,
-): Chevron {
+function tickCentre(rect: Rect, inside: boolean): { x: number; y: number } {
+  if (!inside) return { x: rect.x + rect.w - TICK_BADGE.overhang, y: rect.y + TICK_BADGE.overhang };
+  const offset = TICK_BADGE.inset + TICK_BADGE.r;
+  return { x: rect.x + rect.w - offset, y: rect.y + offset };
+}
+
+/** The picture crop for a step (art guide 6l, 6m): the face for Eyes and Mouth, the gills for Gills, else the whole axolotl. */
+function pictureCropOf(step: StylerStep): keyof typeof AXO_PREVIEW_CROPS {
+  if (step === 'eyes' || step === 'mouth') return 'face';
+  return step === 'gills' ? 'gills' : 'whole';
+}
+
+/** `look` with `field` set to the option `id` (an id of LOOK_FIELD_OPTIONS[field]). */
+function lookWithOption(look: AxolotlLook, field: LookField, id: string): AxolotlLook {
+  return { ...look, [field]: id } as AxolotlLook;
+}
+
+/** True when the styler was handed a whole state (creatorStart or restyleStart), not only an axolotl. */
+function isStylerState(initial: StylerAxolotl | StylerState): initial is StylerState {
+  return 'step' in initial;
+}
+
+/** The starting state for `options`: the state handed in, or a restyle of the axolotl handed in. */
+function startStateOf(options: AxolotlStylerOptions): StylerState {
+  const { initial, mode } = options;
+  if (isStylerState(initial)) {
+    if (initial.mode !== mode) throw new Error(`AxolotlStyler: a ${initial.mode} state in ${mode} mode`);
+    return initial;
+  }
+  if (mode === 'restyle') return restyleStart(initial);
+  throw new Error('AxolotlStyler: the creator starts from a creatorStart() state');
+}
+
+function screenKeyOf(screen: StylerScreen): string {
+  return `${screen.mode}|${screen.step}|${screen.optionCount}|${screen.tabPage}`;
+}
+
+/** A press and release on the zone calls `onTap`, inside the pointer handler (so a text field can open). */
+function createTapZone(scene: Phaser.Scene, onTap: () => void): Phaser.GameObjects.Zone {
+  const zone = scene.add.zone(0, 0, 1, 1).setOrigin(0, 0).setInteractive({ useHandCursor: true });
+  let pressed = false;
+  zone.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
+    pressed = true;
+  });
+  zone.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
+    pressed = false;
+  });
+  zone.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => {
+    const wasPressed = pressed;
+    pressed = false;
+    if (wasPressed) onTap();
+  });
+  return zone;
+}
+
+/** Moves a tap zone over `rect` and shows it, or hides it (no presses) when `rect` is null. */
+function placeZone(zone: Phaser.GameObjects.Zone, rect: Rect | null): void {
+  if (rect === null) {
+    zone.setVisible(false);
+    return;
+  }
+  zone.setPosition(rect.x, rect.y).setSize(rect.w, rect.h).setVisible(true);
+}
+
+/**
+ * Builds a PAGE_BUTTON_PX square chevron button at (0, 0): the secondary body baked at that size (with
+ * its pressed visual) and the 32 px chevron icon centred on it. Presses on release, as createButton does.
+ */
+function createChevron(scene: Phaser.Scene, baked: BakedTextures, icon: 'left' | 'right', onPress: () => void): Chevron {
   const bakeScale = baked.info[buttonKey('secondary', 'square', 'normal')].scale;
-  const bodies = bakeSizedButton(scene, 'secondary', STEPPER_PX, STEPPER_PX, bakeScale);
+  const bodies = bakeSizedButton(scene, 'secondary', PAGE_BUTTON_PX, PAGE_BUTTON_PX, bakeScale);
   const body = scene.add
     .image(0, 0, bodies.normal.key)
     .setOrigin(bodies.normal.originNormX, bodies.normal.originNormY)
@@ -175,12 +352,11 @@ function createChevron(
     .setOrigin(0, 0)
     .setScale(1 / baked.icons[icon].scale);
   const container = scene.add.container(0, 0, [body, iconImage]);
-  const inset = (STEPPER_PX - ICON_SIZE) / 2;
-  let focused = false;
+  const inset = (PAGE_BUTTON_PX - ICON_SIZE) / 2;
   let pressed = false;
 
   const refresh = (): void => {
-    const visual: ButtonVisual = pressed ? 'pressed' : focused ? 'focused' : 'normal';
+    const visual: ButtonVisual = pressed ? 'pressed' : 'normal';
     body.setTexture(bodies[visual].key);
     iconImage.setPosition(inset, inset + (pressed ? BUTTON_PRESS_OFFSET : 0));
   };
@@ -206,19 +382,10 @@ function createChevron(
 
   return {
     container,
-    setFocused(next: boolean): void {
-      focused = next;
-      refresh();
-    },
     setEnabled(enabled: boolean): void {
       if (enabled === container.visible) return;
       container.setVisible(enabled);
-      if (enabled) {
-        body.setInteractive({ useHandCursor: true });
-        return;
-      }
-      body.disableInteractive(true);
-      release();
+      if (!enabled) release();
     },
   };
 }
@@ -237,26 +404,21 @@ function placeBadge(badge: Phaser.GameObjects.Image, info: TexInfo | null, rect:
     .setVisible(true);
 }
 
-/** Places a stepper row's chevrons. */
-function placeChevrons(row: StepperRow, back: Chevron, next: Chevron): void {
-  back.container.setPosition(row.back.x, row.back.y);
-  next.container.setPosition(row.next.x, row.next.y);
-}
-
 /**
- * The axolotl styler, shared by the character creator (PRD F1 to F3) and the restyle screen (PRD
- * F6): an opaque #fff1d6 backdrop that takes every press, a white panel with the title, the live
- * preview, the part stepper (which part) and the choice stepper (that part's choice, or the name),
- * Surprise me, Done, and Cancel in restyle only, placed by stylerLayout(). Every option shows as text
- * (PRD F16); the Colour choice also shows its morph badge, so it never relies on colour alone. In
- * restyle the Colour choice is read-only: its chevrons are hidden. Every press and key goes through
- * reduceStyler(); option changes show at once, with no tweens. The preview paints in the chosen
- * morph's palette, idles (tail, gills, blink, no bob) and is a still pose under reduced motion.
- * Pressing the name value, or Enter on it, opens the name text field over the choice value box.
- * After Done or Cancel the styler ignores further input; the owner destroys it.
+ * The axolotl styler, shared by the step-by-step character creator (PRD F1 to F3, F17) and the
+ * restyle screen (PRD F6): an opaque #fff1d6 backdrop that takes every press and a white panel laid
+ * out by stylerLayout(). Each step screen has its heading, the progress dots (creator) or the tab row
+ * (restyle), the helper line, the live preview and the step's picture buttons (or, on Name, the name
+ * box, the suggested names and More names), then Back, Next or Done, Surprise me, and Cancel in
+ * restyle. Every press and key goes through reduceStyler(); changes show at once, with no tweens.
+ * Each picture button is a still bake of the look so far with its option applied, repainted only
+ * when the look or morph changes. The chosen option has a thick ink ring and a tick; the focused
+ * control the double focus ring (PRD F16). The preview idles, and is a still pose under reduced
+ * motion. After Done or Cancel the styler ignores further input; the owner destroys it.
  */
 export class AxolotlStyler {
   private readonly scene: Phaser.Scene;
+  private readonly baked: BakedTextures;
   private readonly baseBakeScale: number;
   private readonly motion: () => MotionProfile;
   private readonly onDone: (axolotl: StylerAxolotl) => void;
@@ -264,21 +426,25 @@ export class AxolotlStyler {
   private readonly previewKey: string;
   private readonly container: Phaser.GameObjects.Container;
   private readonly panel: Phaser.GameObjects.Graphics;
-  private readonly valueBoxes: Phaser.GameObjects.Graphics;
+  private readonly boxes: Phaser.GameObjects.Graphics;
+  private readonly marks: Phaser.GameObjects.Graphics;
   private readonly previewImage: Phaser.GameObjects.Image;
-  private readonly title: Phaser.GameObjects.Text;
-  private readonly partText: Phaser.GameObjects.Text;
-  private readonly choiceText: Phaser.GameObjects.Text;
-  private readonly choiceBadge: Phaser.GameObjects.Image;
-  private readonly morphBadges: MorphTextures['badges'][typeof CHOICE_BADGE_PX];
-  private readonly choiceHit: Phaser.GameObjects.Zone;
-  private readonly partBack: Chevron;
-  private readonly partNext: Chevron;
-  private readonly choiceBack: Chevron;
-  private readonly choiceNext: Chevron;
-  private readonly surpriseButton: UiButton;
-  private readonly doneButton: UiButton;
-  private readonly cancelButton: UiButton | null;
+  private readonly heading: Phaser.GameObjects.Text;
+  private readonly helper: Phaser.GameObjects.Text;
+  private readonly caption: Phaser.GameObjects.Text;
+  private readonly labelProbe: Phaser.GameObjects.Text;
+  private readonly morphBadges: MorphTextures['badges'][typeof MORPH_BADGE_PX];
+  private readonly slots: OptionSlot[];
+  private readonly tabTexts: Phaser.GameObjects.Text[];
+  private readonly tabZones: Phaser.GameObjects.Zone[];
+  private readonly prevPage: Chevron;
+  private readonly nextPage: Chevron;
+  private readonly nameBoxText: Phaser.GameObjects.Text;
+  private readonly nameBoxZone: Phaser.GameObjects.Zone;
+  private readonly moreNamesText: Phaser.GameObjects.Text;
+  private readonly moreNamesZone: Phaser.GameObjects.Zone;
+  private readonly buttons: Partial<Record<NavControl, UiButton>>;
+  private readonly texts: Phaser.GameObjects.Text[];
   private preview: AxolotlTexture;
   private shownLook: AxolotlLook;
   private lastPose: AxolotlPose | null = null;
@@ -288,8 +454,10 @@ export class AxolotlStyler {
   private view: SceneView;
   private dpr: number;
   private placed: StylerLayout | null = null;
+  private screenKey = '';
+  private tabPage: number | null = null;
+  private pictureStep: StylerStep | null = null;
   private clock = 0;
-  private choicePressed = false;
   private entry: TextEntry | null = null;
   private nameBeforeTyping = '';
   private captureWasOn = false;
@@ -300,57 +468,73 @@ export class AxolotlStyler {
       throw new Error('AxolotlStyler: restyle needs onCancel');
     }
     this.scene = scene;
+    this.baked = assets.baked;
     this.view = view;
     this.dpr = view.fit.dpr;
     this.motion = options.motion;
     this.onDone = options.onDone;
     this.onCancel = options.onCancel;
-    this.state = createStylerState(options.mode, options.initial);
+    this.state = startStateOf(options);
     this.baseBakeScale = assets.axolotl.bakeScale;
-    this.previewKey = `styler-preview-${previewCount++}`;
+    const id = stylerCount++;
+    this.previewKey = `styler-preview-${id}`;
     this.shownLook = this.state.look;
     this.preview = createAxolotlTexture(scene, this.previewKey, this.baseBakeScale, this.shownLook);
+    this.morphBadges = assets.morph.badges[MORPH_BADGE_PX];
 
     const backdrop = scene.add
       .rectangle(-BACKDROP_COVER / 2, -BACKDROP_COVER / 2, BACKDROP_COVER, BACKDROP_COVER, cssColor(HOME_TANK_WALL).color, 1)
       .setOrigin(0, 0)
       .setInteractive();
     this.panel = scene.add.graphics();
-    this.valueBoxes = scene.add.graphics();
+    this.boxes = scene.add.graphics();
+    this.marks = scene.add.graphics();
     this.previewImage = scene.add.image(0, 0, this.previewKey);
-    const titleText = options.mode === 'restyle' ? RESTYLE_TITLE : CREATOR_TITLE;
-    this.title = scene.add.text(0, 0, titleText, { ...uiTextStyle(TITLE_PX, this.dpr), align: 'center' });
-    this.partText = scene.add.text(0, 0, '', uiTextStyle(VALUE_TEXT_PX, this.dpr));
-    this.choiceText = scene.add.text(0, 0, '', uiTextStyle(VALUE_TEXT_PX, this.dpr));
-    this.morphBadges = assets.morph.badges[CHOICE_BADGE_PX];
-    this.choiceBadge = scene.add.image(0, 0, this.morphBadges.triangle.key).setVisible(false);
-    this.choiceHit = scene.add.zone(0, 0, 1, 1).setOrigin(0, 0).setInteractive({ useHandCursor: true });
-    this.bindChoiceHit();
-    const { baked } = assets;
-    this.partBack = createChevron(scene, baked, 'left', () => this.dispatch({ type: 'partBack' }));
-    this.partNext = createChevron(scene, baked, 'right', () => this.dispatch({ type: 'partNext' }));
-    this.choiceBack = createChevron(scene, baked, 'left', () => this.dispatch({ type: 'choiceBack' }));
-    this.choiceNext = createChevron(scene, baked, 'right', () => this.dispatch({ type: 'choiceNext' }));
-    this.surpriseButton = this.createStylerButton(baked, 'surprise');
-    this.doneButton = this.createStylerButton(baked, 'done');
-    this.cancelButton = options.mode === 'restyle' ? this.createStylerButton(baked, 'cancel') : null;
+    this.heading = this.addText(HEADING_TEXT_PX, true);
+    this.helper = this.addText(HELPER_TEXT_PX, false);
+    this.caption = this.addText(CAPTION_TEXT_PX, true);
+    this.labelProbe = this.addText(OPTION_LABEL_TEXT_PX, true).setVisible(false);
+    this.slots = Array.from({ length: MAX_STEP_OPTIONS }, (_unused, index) => this.createSlot(id, index));
+    this.tabTexts = STYLER_STEPS.map((step) => this.addText(TAB_TEXT_PX, true).setText(stepTabLabel(step)));
+    this.tabZones = STYLER_STEPS.map((step) => createTapZone(scene, () => this.dispatch({ type: 'tab', step })));
+    this.prevPage = createChevron(scene, this.baked, 'left', () => this.turnTabPage(-1));
+    this.nextPage = createChevron(scene, this.baked, 'right', () => this.turnTabPage(1));
+    this.nameBoxText = this.addText(NAME_TEXT_PX, true);
+    this.nameBoxZone = createTapZone(scene, () => this.dispatch({ type: 'nameTap' }));
+    this.moreNamesText = this.addText(NAME_TEXT_PX, true).setText(MORE_NAMES_LABEL);
+    this.moreNamesZone = createTapZone(scene, () => this.pressMoreNames());
+    this.buttons = {};
+    for (const control of NAV_CONTROLS[options.mode]) {
+      this.buttons[control] = this.createNavButton(control);
+    }
+    this.texts = [
+      this.heading,
+      this.helper,
+      this.caption,
+      this.labelProbe,
+      ...this.slots.flatMap((slot) => [slot.label, slot.nameText]),
+      ...this.tabTexts,
+      this.nameBoxText,
+      this.moreNamesText,
+    ];
 
-    const buttons = [this.surpriseButton, this.doneButton, this.cancelButton].filter(
-      (button): button is UiButton => button !== null,
-    );
     this.container = scene.add
       .container(0, 0, [
         backdrop,
         this.panel,
-        this.valueBoxes,
+        this.boxes,
         this.previewImage,
-        this.title,
-        this.partText,
-        this.choiceText,
-        this.choiceBadge,
-        this.choiceHit,
-        ...[this.partBack, this.partNext, this.choiceBack, this.choiceNext].map((chevron) => chevron.container),
-        ...buttons.map((button) => button.container),
+        ...this.slots.map((slot) => slot.picture),
+        this.marks,
+        ...this.slots.flatMap((slot) => [slot.tick, slot.badge]),
+        ...this.texts,
+        ...this.slots.map((slot) => slot.zone),
+        ...this.tabZones,
+        this.nameBoxZone,
+        this.moreNamesZone,
+        this.prevPage.container,
+        this.nextPage.container,
+        ...Object.values(this.buttons).map((button) => button.container),
       ])
       .setDepth(depth);
     this.layout(view);
@@ -362,124 +546,199 @@ export class AxolotlStyler {
   }
 
   /**
-   * Handles a keydown through the styler reducer: Tab, Shift+Tab, up and down move focus; left and
-   * right step the focused row; Enter and Space press, ignoring key repeat; Escape cancels in
-   * restyle. Ignored while typing and after Done or Cancel.
+   * Handles a keydown through the styler reducer: Tab and Shift+Tab move the focus; arrows move in the
+   * picture buttons (by the layout's columns) or through the restyle tabs; Enter and Space press,
+   * ignoring key repeat; Escape cancels in restyle. Ignored while typing and after Done or Cancel.
    */
   handleKey(event: StylerKeyEvent): void {
     if (this.finished || this.entry !== null) return;
     if (event.repeat && tankKeyFor(event.key, event.shiftKey) === 'confirm') return;
-    this.dispatch({ type: 'key', key: event.key, shiftKey: event.shiftKey });
+    this.dispatch({ type: 'key', key: event.key, shiftKey: event.shiftKey, columns: this.gridColumns() });
   }
 
   /** Advances the preview idle by `deltaMs`; under reduced motion it holds the still pose. Call every frame. */
   update(_time: number, deltaMs: number): void {
     const dt = Math.min(Math.max(deltaMs / 1000, 0), MAX_STEP_S);
     this.clock += dt;
-    this.renderPreview(dt);
+    if (this.placed?.preview) this.renderPreview(dt);
   }
 
   /**
-   * Lays the styler out for `view` with stylerLayout(): panel, title (hidden when it does not fit),
-   * preview, steppers and buttons. Re-bakes the preview when it would otherwise be upscaled, and
-   * moves an open name field to the new choice value box.
+   * Lays the current step screen out for `view` with stylerLayout() and redraws it. Re-bakes the
+   * picture buttons and the preview when their size changed (never upscaled), and moves an open name
+   * field to the name box.
    */
   layout(view: SceneView): void {
     this.view = view;
-    const measure: StylerMeasure = {
-      titleAt: (wrapW) => wrappedSize(this.title, wrapW),
-      previewFrame: AXO_TEX,
-      previewLargestSize: PREVIEW_LARGEST_SIZE,
-    };
-    const placed = stylerLayout(view, measure, this.state.mode);
-    this.placed = placed;
-    const { panel } = placed;
-    drawPanel(this.panel, panel.x, panel.y, panel.w, panel.h, UI_PANEL);
-    this.title.setVisible(placed.title !== null);
-    if (placed.title !== null) this.title.setPosition(placed.title.x, placed.title.y);
-    placeChevrons(placed.part, this.partBack, this.partNext);
-    placeChevrons(placed.choice, this.choiceBack, this.choiceNext);
-    const value = placed.choice.value;
-    this.choiceHit.setPosition(value.x, value.y).setSize(value.w, value.h);
-    this.surpriseButton.container.setPosition(placed.surprise.x, placed.surprise.y);
-    this.doneButton.container.setPosition(placed.done.x, placed.done.y);
-    if (this.cancelButton !== null && placed.cancel !== null) {
-      this.cancelButton.container.setPosition(placed.cancel.x, placed.cancel.y);
-    }
-    this.ensurePreviewBake();
-    this.refresh();
-    this.renderPreview();
-    this.placeEntry();
+    this.relayout();
   }
 
-  /** Sets the text and button resolution to `dpr`, and re-bakes the preview for it. */
+  /** Sets the text and button resolution to `dpr`, and re-bakes the preview and picture buttons for it. */
   setResolution(dpr: number): void {
     this.dpr = dpr;
-    for (const text of [this.title, this.partText, this.choiceText]) {
+    for (const text of this.texts) {
       text.setResolution(dpr);
     }
-    for (const button of [this.surpriseButton, this.doneButton, this.cancelButton]) {
-      button?.setResolution(dpr);
+    for (const button of Object.values(this.buttons)) {
+      button.setResolution(dpr);
     }
     if (this.placed === null) return;
-    this.ensurePreviewBake();
-    this.placePreview(this.placed);
-    this.renderPreview();
+    this.ensurePreviewBake(this.placed.preview);
+    this.lastPose = null;
+    this.refresh();
   }
 
-  /** Closes the name field without callbacks, then removes every object and the preview texture. */
+  /** Closes the name field without callbacks, then removes every object, the preview and the picture textures. */
   destroy(): void {
     this.finished = true;
     this.closeEntry();
     this.container.destroy();
     if (this.scene.textures.exists(this.previewKey)) this.scene.textures.remove(this.previewKey);
+    for (const slot of this.slots) {
+      if (this.scene.textures.exists(slot.pictureKey)) this.scene.textures.remove(slot.pictureKey);
+    }
   }
 
-  private createStylerButton(baked: BakedTextures, control: 'surprise' | 'done' | 'cancel'): UiButton {
-    const done = control === 'done';
-    const tile = control === 'surprise' ? SURPRISE_BUTTON : CANCEL_BUTTON;
-    return createButton(this.scene, baked, {
-      fill: done ? 'primary' : 'secondary',
-      shape: done ? 'wide' : 'square',
+  private addText(sizePx: number, bold: boolean): Phaser.GameObjects.Text {
+    return this.scene.add.text(0, 0, '', { ...uiTextStyle(sizePx, this.dpr, bold), align: 'center' });
+  }
+
+  private createSlot(id: number, index: number): OptionSlot {
+    const checkInfo = this.baked.icons.check;
+    return {
+      zone: createTapZone(this.scene, () => this.dispatch({ type: 'pick', index })),
+      picture: this.scene.add.image(0, 0, '__DEFAULT').setVisible(false),
+      label: this.addText(OPTION_LABEL_TEXT_PX, true),
+      nameText: this.addText(NAME_TEXT_PX, true),
+      tick: this.scene.add
+        .image(0, 0, checkInfo.key)
+        .setOrigin(0, 0)
+        .setScale(TICK_BADGE.iconPx / ICON_SIZE / checkInfo.scale)
+        .setVisible(false),
+      badge: this.scene.add.image(0, 0, this.morphBadges.triangle.key).setVisible(false),
+      pictureKey: `styler-picture-${id}-${index}`,
+      pictureSig: null,
+    };
+  }
+
+  private createNavButton(control: NavControl): UiButton {
+    const spec = NAV_SPECS[control];
+    return createButton(this.scene, this.baked, {
+      fill: spec.fill,
+      shape: spec.shape,
       size: 1,
-      width: done ? DONE_BUTTON.w : tile.w,
-      label: control === 'surprise' ? SURPRISE_ME_LABEL : done ? DONE_LABEL : CANCEL_LABEL,
-      icon: control === 'surprise' ? 'surprise' : done ? 'check' : 'close',
+      width: spec.size.w,
+      label: spec.label,
+      icon: spec.icon,
       dpr: this.dpr,
       pressOnDown: false,
       onPress: () => this.dispatch({ type: control }),
     });
   }
 
-  /** A press and release on the choice value is a name tap (it opens the name field on the Name part). */
-  private bindChoiceHit(): void {
-    this.choiceHit.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
-      this.choicePressed = true;
-    });
-    this.choiceHit.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
-      this.choicePressed = false;
-    });
-    this.choiceHit.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.releaseChoice());
+  /** The step screen stylerLayout() lays out: on Name, the option count is every suggested name that fits. */
+  private screenOf(): StylerScreen {
+    const { mode, step } = this.state;
+    const optionCount =
+      step === 'name' ? suggestedNamesFor(this.state.look.sex).length : stepOptions(this.state).length;
+    return { mode, step, optionCount, tabPage: this.tabPage };
   }
 
-  /** Taps the name value when the press began on it. Runs inside the pointer handler, so the field can open. */
-  private releaseChoice(): void {
-    const wasPressed = this.choicePressed;
-    this.choicePressed = false;
-    if (wasPressed) this.dispatch({ type: 'nameTap' });
+  /** The heading text: "Step N of 11: ..." when `full` in the creator, else the step title. */
+  private headingText(full: boolean): string {
+    const { mode, step } = this.state;
+    if (mode === 'creator' && full) return stepHeading(stepIndex(this.state), STYLER_STEPS.length, step);
+    return stepTitle(step);
+  }
+
+  private measureFor(): StylerMeasure {
+    const labels = this.state.step === 'name' ? [] : stepOptions(this.state).map((option) => option.label);
+    return {
+      headingAt: (wrapW, full) => wrappedSize(this.heading.setText(this.headingText(full)), wrapW),
+      helperAt: (wrapW) => wrappedSize(this.helper.setText(stepHelper(this.state.mode, this.state.step)), wrapW),
+      captionAt: (wrapW) => largestWrapped(this.caption, labels, wrapW),
+      optionLabelAt: (wrapW) => largestWrapped(this.labelProbe, labels, wrapW),
+      optionLabelMinW: longestWordWidth(this.labelProbe, labels),
+      previewFrame: AXO_TEX,
+      previewLargestSize: PREVIEW_LARGEST_SIZE,
+    };
+  }
+
+  /**
+   * Lays out the current step screen, fits the names per page to it on Name, places the panel, the
+   * heading, the helper and the step buttons, then redraws everything else.
+   */
+  private relayout(): void {
+    const screen = this.screenOf();
+    const placed = stylerLayout(this.view, screen, this.measureFor());
+    this.placed = placed;
+    this.screenKey = screenKeyOf(screen);
+    if (placed.name !== null) this.state = withNamesPerPage(this.state, placed.name.namesPerPage);
+    const { panel } = placed;
+    drawPanel(this.panel, panel.x, panel.y, panel.w, panel.h, UI_PANEL);
+    this.placeHeading(placed);
+    this.helper.setText(stepHelper(this.state.mode, this.state.step));
+    if (placed.helper === null) this.helper.setVisible(false);
+    else placeTextIn(this.helper, placed.helper);
+    for (const control of Object.keys(this.buttons) as NavControl[]) {
+      this.placeNavButton(control, placed.nav[control]);
+    }
+    this.ensurePreviewBake(placed.preview);
+    this.refresh();
+    this.placeEntry();
+  }
+
+  /** The heading, as the layout shows it; none when the layout hides it (restyle fit step 6). */
+  private placeHeading(placed: StylerLayout): void {
+    this.heading.setText(this.headingText(placed.headingFull));
+    if (placed.heading === null) {
+      this.heading.setVisible(false);
+      return;
+    }
+    placeTextIn(this.heading, placed.heading);
+  }
+
+  private placeNavButton(control: NavControl, rect: Rect | null): void {
+    const button = this.buttons[control];
+    if (button === undefined) return;
+    button.container.setVisible(rect !== null);
+    if (rect !== null) button.container.setPosition(rect.x, rect.y);
+  }
+
+  /** Columns of the option grid for up and down: the picture columns, or the name buttons in the first row. */
+  private gridColumns(): number {
+    const placed = this.placed;
+    if (placed === null) return 1;
+    if (placed.columns > 0) return placed.columns;
+    const tiles = placed.name?.tiles ?? [];
+    return Math.max(1, tiles.filter((tile) => tile.y === tiles[0].y).length);
   }
 
   /**
    * Runs one action through the reducer, redraws, and acts on its effect. A press while typing
-   * keeps the typed name first.
+   * keeps the typed name first. The tab row goes back to the page holding the current step.
    */
   private dispatch(action: StylerAction): void {
     if (this.finished) return;
     this.closeEntry();
     const result = reduceStyler(this.state, action, Math.random);
     this.state = result.state;
+    this.tabPage = null;
     this.refresh();
     this.applyEffect(result.effect);
+  }
+
+  private pressMoreNames(): void {
+    this.dispatch({ type: 'moreNames', perPage: this.placed?.name?.namesPerPage ?? this.state.namesPerPage });
+  }
+
+  /** A page button: shows the next or previous page of restyle tabs, wrapping. Focus stays. */
+  private turnTabPage(offset: number): void {
+    const tabs = this.placed?.tabs;
+    if (this.finished || !tabs) return;
+    this.closeEntry();
+    this.tabPage = tabs.page + offset;
+    this.relayout();
   }
 
   private applyEffect(effect: StylerEffect | undefined): void {
@@ -498,8 +757,8 @@ export class AxolotlStyler {
   }
 
   /**
-   * Opens the name field over the choice value box, synchronously, so a pointer or key gesture can
-   * raise the on-screen keyboard. Phaser's global key capture pauses so Space and Backspace type.
+   * Opens the name field over the name box, synchronously, so a pointer or key gesture can raise
+   * the on-screen keyboard. Phaser's global key capture pauses so Space and Backspace type.
    */
   private startTyping(): void {
     const keyboard = this.scene.input.keyboard;
@@ -549,10 +808,11 @@ export class AxolotlStyler {
     if (this.captureWasOn) this.scene.input.keyboard?.enableGlobalCapture();
   }
 
-  /** Moves an open name field over the choice value box, mapped from canvas CSS px to client px. */
+  /** Moves an open name field over the name box, mapped from canvas CSS px to client px. */
   private placeEntry(): void {
-    if (this.entry === null || this.placed === null) return;
-    this.entry.place(this.clientRectOf(this.placed.choice.value));
+    const box = this.placed?.name?.box;
+    if (this.entry === null || box === undefined) return;
+    this.entry.place(this.clientRectOf(box));
   }
 
   private clientRectOf(rect: Rect): TextEntryRect {
@@ -568,71 +828,278 @@ export class AxolotlStyler {
   }
 
   /**
-   * Redraws the state: part and choice text, the Colour badge, value boxes with the focus ring, the
-   * choice chevrons (hidden while the choice does not step), button focus, and the preview look and morph.
+   * Redraws the state, laying the screen out again first when the step, its option count or the tab
+   * page changed: dots or tabs, option buttons with their pictures, labels or caption, the Name
+   * controls, the step buttons' focus, and the preview look and morph.
    */
   private refresh(): void {
     const placed = this.placed;
     if (placed === null) return;
-    const focus = this.state.focus;
-    const steps = stylerChoiceSteps(this.state);
-    this.partText.setText(STYLER_PART_LABELS[this.state.part]);
-    this.choiceText.setText(stylerChoiceLabel(this.state));
-    centreText(this.partText, placed.part.value);
-    this.placeChoiceContent(placed);
-    this.valueBoxes.clear();
-    drawValueBox(this.valueBoxes, placed.part.value, focus === 'part');
-    drawValueBox(this.valueBoxes, placed.choice.value, focus === 'choice');
-    this.partBack.setFocused(focus === 'part');
-    this.partNext.setFocused(focus === 'part');
-    this.choiceBack.setEnabled(steps);
-    this.choiceNext.setEnabled(steps);
-    this.choiceBack.setFocused(steps && focus === 'choice');
-    this.choiceNext.setFocused(steps && focus === 'choice');
-    this.surpriseButton.setFocused(focus === 'surprise');
-    this.doneButton.setFocused(focus === 'done');
-    this.cancelButton?.setFocused(focus === 'cancel');
-    if (this.state.look !== this.shownLook) {
-      this.shownLook = this.state.look;
-      this.preview.setLook(this.shownLook);
+    if (screenKeyOf(this.screenOf()) !== this.screenKey) {
+      this.relayout();
+      return;
     }
-    this.placePreview(placed);
-    this.renderPreview();
+    this.boxes.clear();
+    this.marks.clear();
+    this.drawDots(placed.dots);
+    this.drawTabs(placed);
+    this.drawOptions(placed);
+    this.drawNameControls(placed);
+    for (const [control, button] of Object.entries(this.buttons)) {
+      button.setFocused(this.state.focus.kind === control);
+    }
+    this.refreshPreview(placed.preview);
   }
 
-  /** Places the choice text and, on the Colour part, its CHOICE_BADGE_PX morph badge, by choiceValueContent(). */
-  private placeChoiceContent(placed: StylerLayout): void {
-    const shape = stylerChoiceBadge(this.state);
-    const textSize: Size = { w: this.choiceText.width, h: this.choiceText.height };
-    const content = choiceValueContent(placed.choice.value, textSize, shape !== null);
-    this.choiceText.setPosition(content.text.x, content.text.y);
-    placeBadge(this.choiceBadge, shape === null ? null : this.morphBadges[shape], content.badge);
+  /** Progress dots (creator): done a filled dot, current a bigger ring with a filled centre, to come a hollow ring. */
+  private drawDots(dots: Rect[] | null): void {
+    if (dots === null) return;
+    const current = stepIndex(this.state);
+    const ink = cssColor(INK).color;
+    dots.forEach((dot, index) => {
+      const x = dot.x + dot.w / 2;
+      const y = dot.y + dot.h / 2;
+      if (index < current) {
+        this.boxes.fillStyle(ink, 1).fillCircle(x, y, DOT.doneR);
+      } else if (index === current) {
+        this.boxes.lineStyle(DOT.currentLine, ink, 1).strokeCircle(x, y, DOT.currentR);
+        this.boxes.fillStyle(ink, 1).fillCircle(x, y, DOT.centreR);
+      } else {
+        this.boxes.lineStyle(DOT.comeLine, ink, 1).strokeCircle(x, y, DOT.comeR);
+      }
+    });
   }
 
   /**
-   * Re-creates the preview texture at previewScale x DPR texture px per local unit when that is
+   * The restyle tab row: each tab on the shown page as a box with its label; the current tab's label
+   * is bold over a thick ink bar. Page buttons show only when the tabs page.
+   */
+  private drawTabs(placed: StylerLayout): void {
+    const strip = placed.tabs;
+    this.tabTexts.forEach((text) => text.setVisible(false));
+    this.tabZones.forEach((zone) => placeZone(zone, null));
+    this.placePageButton(this.prevPage, strip?.prevPage ?? null);
+    this.placePageButton(this.nextPage, strip?.nextPage ?? null);
+    if (!strip) return;
+    const focus = this.state.focus;
+    for (const tab of strip.tabs) {
+      const index = STYLER_STEPS.indexOf(tab.step);
+      const current = tab.step === this.state.step;
+      drawBox(this.boxes, tab.rect, focus.kind === 'tab' && focus.step === tab.step);
+      const text = this.tabTexts[index].setFontStyle(current ? 'bold' : 'normal');
+      placeTextIn(text, tab.rect);
+      placeZone(this.tabZones[index], tab.rect);
+      if (current) this.drawTabBar(tab.rect);
+    }
+  }
+
+  private drawTabBar(rect: Rect): void {
+    this.marks.fillStyle(cssColor(INK).color, 1);
+    this.marks.fillRect(
+      rect.x + TAB_BAR.inset,
+      rect.y + rect.h - TAB_BAR.bottom - TAB_BAR.h,
+      rect.w - 2 * TAB_BAR.inset,
+      TAB_BAR.h,
+    );
+  }
+
+  private placePageButton(chevron: Chevron, rect: Rect | null): void {
+    chevron.setEnabled(rect !== null);
+    if (rect !== null) chevron.container.setPosition(rect.x, rect.y);
+  }
+
+  /**
+   * The option buttons: picture buttons (with labels under them, else the caption) or, on Name, the
+   * suggested-name buttons. Each is a panel-style box with the focus ring when focused, and the
+   * chosen one has the thick ring and the tick badge.
+   */
+  private drawOptions(placed: StylerLayout): void {
+    const isName = this.state.step === 'name';
+    const options = stepOptions(this.state);
+    const rects = isName ? (placed.name?.tiles ?? []) : placed.options;
+    const chosen = chosenIndex(this.state);
+    const focus = this.state.focus;
+    this.syncPictureStep(isName);
+    this.slots.forEach((slot, index) => {
+      const option = options[index];
+      const rect = rects[index];
+      if (option === undefined || rect === undefined) {
+        this.hideSlot(slot);
+        return;
+      }
+      drawBox(this.boxes, rect, focus.kind === 'option' && focus.index === index);
+      placeZone(slot.zone, rect);
+      this.placeTick(slot, rect, index === chosen, !isName);
+      if (isName) this.showNameOption(slot, option, rect);
+      else this.showPictureOption(slot, option, index, placed);
+    });
+    this.drawCaption(placed, options, chosen);
+  }
+
+  private hideSlot(slot: OptionSlot): void {
+    placeZone(slot.zone, null);
+    slot.picture.setVisible(false);
+    slot.label.setVisible(false);
+    slot.nameText.setVisible(false);
+    slot.tick.setVisible(false);
+    slot.badge.setVisible(false);
+  }
+
+  /** The chosen mark (thick ring and tick badge) on `rect`, or none. */
+  private placeTick(slot: OptionSlot, rect: Rect, chosen: boolean, inside: boolean): void {
+    slot.tick.setVisible(chosen);
+    if (!chosen) return;
+    strokeChosenRing(this.marks, rect);
+    const centre = tickCentre(rect, inside);
+    this.marks.fillStyle(cssColor(WHITE).color, 1).fillCircle(centre.x, centre.y, TICK_BADGE.r);
+    this.marks.lineStyle(TICK_BADGE.outline, cssColor(INK).color, 1).strokeCircle(centre.x, centre.y, TICK_BADGE.r);
+    slot.tick.setPosition(centre.x - TICK_BADGE.iconPx / 2, centre.y - TICK_BADGE.iconPx / 2);
+  }
+
+  private showNameOption(slot: OptionSlot, option: StylerOption, rect: Rect): void {
+    slot.picture.setVisible(false);
+    slot.label.setVisible(false);
+    slot.badge.setVisible(false);
+    placeTextIn(slot.nameText.setText(option.label), rect);
+  }
+
+  /** A picture button: its still picture (re-baked when it shows something new), its label and the Colour badge. */
+  private showPictureOption(slot: OptionSlot, option: StylerOption, index: number, placed: StylerLayout): void {
+    const rect = placed.options[index];
+    slot.nameText.setVisible(false);
+    this.bakePicture(slot, option, rect);
+    const centre = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
+    slot.picture.setTexture(slot.pictureKey).setOrigin(0.5, 0.5).setPosition(centre.x, centre.y);
+    slot.picture.setScale(1 / this.dpr).setVisible(true);
+    const labelRect = placed.labelsShown ? placed.optionLabels[index] : undefined;
+    if (labelRect === undefined) slot.label.setVisible(false);
+    else placeTextIn(slot.label.setText(option.label), labelRect);
+    const badgeInfo = this.state.step === 'colour' ? this.morphBadges[morphById(option.id as RealMorphId).badge] : null;
+    const badgeRect: Rect = {
+      x: rect.x + MORPH_BADGE_INSET,
+      y: rect.y + rect.h - MORPH_BADGE_INSET - MORPH_BADGE_PX,
+      w: MORPH_BADGE_PX,
+      h: MORPH_BADGE_PX,
+    };
+    placeBadge(slot.badge, badgeInfo, badgeRect);
+  }
+
+  /** The caption names the focused option, else the chosen one, once the labels hide. */
+  private drawCaption(placed: StylerLayout, options: readonly StylerOption[], chosen: number): void {
+    const rect = placed.caption;
+    if (rect === null || placed.labelsShown) {
+      this.caption.setVisible(false);
+      return;
+    }
+    const focus = this.state.focus;
+    const index = focus.kind === 'option' ? focus.index : chosen;
+    this.caption.setText(options[index]?.label ?? '');
+    placeTextIn(this.caption, rect);
+  }
+
+  /** The Name step's name box (showing the name) and More names, or neither on other steps. */
+  private drawNameControls(placed: StylerLayout): void {
+    const name = placed.name;
+    const focus = this.state.focus.kind;
+    placeZone(this.nameBoxZone, name?.box ?? null);
+    placeZone(this.moreNamesZone, name?.moreNames ?? null);
+    if (name === null) {
+      this.nameBoxText.setVisible(false);
+      this.moreNamesText.setVisible(false);
+      return;
+    }
+    drawBox(this.boxes, name.box, focus === 'nameBox');
+    placeTextIn(this.nameBoxText.setText(this.state.name), name.box);
+    if (name.moreNames === null) {
+      this.moreNamesText.setVisible(false);
+      return;
+    }
+    drawBox(this.boxes, name.moreNames, focus === 'moreNames');
+    placeTextIn(this.moreNamesText, name.moreNames);
+  }
+
+  /** On a new step (or on Name, which has no pictures), removes every picture texture. */
+  private syncPictureStep(isName: boolean): void {
+    const step = isName ? null : this.state.step;
+    if (step === this.pictureStep) return;
+    this.pictureStep = step;
+    for (const slot of this.slots) {
+      this.releasePicture(slot);
+    }
+  }
+
+  private releasePicture(slot: OptionSlot): void {
+    slot.picture.setTexture('__DEFAULT').setVisible(false);
+    slot.pictureSig = null;
+    if (this.scene.textures.exists(slot.pictureKey)) this.scene.textures.remove(slot.pictureKey);
+  }
+
+  /**
+   * Bakes the picture of `option` when it would show something new: the look so far with the option
+   * applied (on Colour, in that morph's palette), at the still pose, cropped for the step and sized
+   * to fill the button inside its outline at the device pixel ratio. Whole-axolotl pictures are drawn
+   * at their size factor, so Size options look different.
+   */
+  private bakePicture(slot: OptionSlot, option: StylerOption, rect: Rect): void {
+    const { step, look, morph } = this.state;
+    const field = stepLookField(step);
+    const pictureLook = field === null ? look : lookWithOption(look, field, option.id);
+    const pictureMorph = step === 'colour' ? (option.id as RealMorphId) : morph;
+    const cropName = pictureCropOf(step);
+    const crop = AXO_PREVIEW_CROPS[cropName];
+    const inner = Math.max(1, rect.w - 2 * PICTURE_INSET);
+    const unit = inner / Math.max(crop.maxX - crop.minX, crop.maxY - crop.minY);
+    const scale = unit * this.dpr;
+    const sizeFactor = cropName === 'whole' ? AXO_SIZE_SCALE[pictureLook.size] : 1;
+    const sig = JSON.stringify([pictureLook, pictureMorph, cropName, scale]);
+    if (sig === slot.pictureSig) return;
+    bakeAxolotlStill(this.scene, slot.pictureKey, {
+      look: pictureLook,
+      palette: MORPH_PALETTES[pictureMorph],
+      pose: STILL_POSE,
+      crop,
+      scale,
+      sizeFactor,
+    });
+    slot.pictureSig = sig;
+  }
+
+  /**
+   * Re-creates the preview texture at the preview scale x DPR texture px per local unit when that is
    * above the boot bake scale and differs from the current bake, so the preview is never upscaled.
    */
-  private ensurePreviewBake(): void {
-    if (this.placed === null) return;
-    const wanted = Math.max(this.baseBakeScale, this.placed.previewScale * this.dpr);
+  private ensurePreviewBake(preview: StylerPreview | null): void {
+    if (preview === null) return;
+    const wanted = Math.max(this.baseBakeScale, preview.scale * this.dpr);
     if (Math.abs(wanted - this.preview.bakeScale) < 1e-6) return;
     this.preview = createAxolotlTexture(this.scene, this.previewKey, wanted, this.shownLook);
     this.lastPose = null;
   }
 
+  /** Shows the look on the preview and places it, or hides it when the layout has no preview. */
+  private refreshPreview(preview: StylerPreview | null): void {
+    if (this.state.look !== this.shownLook) {
+      this.shownLook = this.state.look;
+      this.preview.setLook(this.shownLook);
+    }
+    this.previewImage.setVisible(preview !== null);
+    if (preview === null) return;
+    this.placePreview(preview);
+    this.renderPreview();
+  }
+
   /**
-   * Shows the preview texture with local (0,0) at previewAnchor, at previewScale CSS px per local
+   * Shows the preview texture with local (0,0) at the anchor, at the preview scale CSS px per local
    * unit times the size scale (displayScale works in AXO_SCENE_SCALE units). A size change re-bakes
    * the texture, so the texture, origin and scale are applied every time.
    */
-  private placePreview(placed: StylerLayout): void {
+  private placePreview(preview: StylerPreview): void {
     const { info } = this.preview;
     this.previewImage
       .setTexture(this.preview.key)
       .setOrigin(info.originNormX, info.originNormY)
-      .setPosition(placed.previewAnchor.x, placed.previewAnchor.y)
-      .setScale(this.preview.displayScale(placed.previewScale / AXO_SCENE_SCALE));
+      .setPosition(preview.anchor.x, preview.anchor.y)
+      .setScale(this.preview.displayScale(preview.scale / AXO_SCENE_SCALE));
   }
 
   /**

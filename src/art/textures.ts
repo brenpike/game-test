@@ -10,7 +10,7 @@
 import * as Phaser from 'phaser';
 import { beginDraw, clearAll, type TexSize } from './canvasKit';
 import { AXO_REST_POSE, AXO_SCENE_SCALE, AXO_TEX, drawAxolotl, type AxolotlPose } from './drawAxolotl';
-import { AXO_SIZE_SCALE, DEFAULT_ART_LOOK, type AxolotlArtLook } from './drawAxolotlParts';
+import { AXO_SIZE_SCALE, DEFAULT_ART_LOOK, type AxolotlArtLook, type Bounds } from './drawAxolotlParts';
 import {
   CAVE_TEX,
   CURRENT_MARKER_TEX,
@@ -400,6 +400,47 @@ export function bakeSizedButton(
         );
   }
   return bodies;
+}
+
+// ---------------------------------------------------------------------------
+// Axolotl still pictures (styler picture buttons)
+// ---------------------------------------------------------------------------
+
+/** One still axolotl picture: the look, its morph palette, the pose, the crop and the bake. */
+export interface AxolotlStill {
+  readonly look: AxolotlArtLook;
+  readonly palette: MorphPalette;
+  readonly pose: AxolotlPose;
+  /** The part of the axolotl to keep, in local units (see AXO_PREVIEW_CROPS). */
+  readonly crop: Bounds;
+  /** Texture pixels per local unit. */
+  readonly scale: number;
+  /** Size factor (AXO_SIZE_SCALE) the axolotl is drawn at, about the crop centre. */
+  readonly sizeFactor: number;
+}
+
+/**
+ * Bake (or re-bake under the same key) one still axolotl picture, cropped to
+ * `still.crop`. The logical size is the crop; the anchor is local (0, 0).
+ * Painted once: callers re-bake only when the look, morph, crop or scale
+ * changes, so it never takes from the live repaint budget.
+ */
+export function bakeAxolotlStill(scene: Phaser.Scene, key: string, still: AxolotlStill): TexInfo {
+  const { crop } = still;
+  const size: TexSize = {
+    w: crop.maxX - crop.minX,
+    h: crop.maxY - crop.minY,
+    originX: -crop.minX,
+    originY: -crop.minY,
+  };
+  const centreX = (crop.minX + crop.maxX) / 2;
+  const centreY = (crop.minY + crop.maxY) / 2;
+  return bake(scene, key, size, still.scale, (ctx) => {
+    ctx.translate(centreX, centreY);
+    ctx.scale(still.sizeFactor, still.sizeFactor);
+    ctx.translate(-centreX, -centreY);
+    drawAxolotl(ctx, still.pose, still.palette, still.look);
+  });
 }
 
 // ---------------------------------------------------------------------------

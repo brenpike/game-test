@@ -8,11 +8,12 @@ import { CARD, cardTextWidth, fitCard, homeTitleWrapWidth, iconRowsSize } from '
 import { treasureById } from '../logic/catalogue';
 import type { MotionProfile } from '../logic/motion';
 import { morphById, rescueMorphsIn } from '../logic/morphs';
+import type { WaitingStranded } from '../logic/rescue';
 import { NO_STARS, type AreaStars } from '../logic/stars';
 import { STAR_ROW, starRowSize } from '../logic/starsUi';
 import { foundInfos } from '../logic/trip';
 import type { TripEnding } from '../logic/tripEvents';
-import { ARRIVAL_OK_LABEL, arrivalText, type ArrivalStars } from '../logic/tripText';
+import { ARRIVAL_OK_LABEL, arrivalText, type ArrivalStars, type WaitingAxolotl } from '../logic/tripText';
 import { addAreaStar, showAreaStar, starFlags, type AreaStarTextures } from './AreaStarsBadge';
 import {
   createButton,
@@ -67,6 +68,21 @@ function arrivalStars(ending: TripEnding, areaStars: ArrivalAreaStars | undefine
 /** Display names of the rescued axolotls among find ids, e.g. 'Wild axolotl'; other ids are ignored. */
 function rescuedDisplayNames(ids: readonly string[]): string[] {
   return rescueMorphsIn(ids).map((morph) => morphById(morph).displayName);
+}
+
+/**
+ * The axolotls carried home that swam back to where they were found: each rescued axolotl among the
+ * returned ids, with its display name and the sex from the waiting record. Empty unless carried
+ * home. Throws when a returned axolotl has no matching waiting record.
+ */
+function waitingAxolotls(ending: TripEnding, waiting: WaitingStranded | null): WaitingAxolotl[] {
+  if (ending.reason !== 'carriedHome') return [];
+  return rescueMorphsIn(ending.returned).map((morph) => {
+    if (waiting === null || waiting.morph !== morph) {
+      throw new Error(`TankArrivalCard: returned axolotl ${morph} has no waiting record`);
+    }
+    return { name: morphById(morph).displayName, sex: waiting.sex };
+  });
 }
 
 /** Number of wrapped lines `text` would draw for `content` at its current wrap width; 0 for no text. */
@@ -170,10 +186,17 @@ export class TankArrivalCard {
 
   /**
    * Shows the card for a trip ending and the banked total, faded in unless motion is reduced. After
-   * beating the area, `areaStars` gives the area and its best stars. Throws when the area was beaten
-   * without `areaStars` or the ending's stars.
+   * beating the area, `areaStars` gives the area and its best stars. `waiting` is the stranded
+   * axolotl left waiting after the trip, which gives the sex of a returned axolotl. Throws when the
+   * area was beaten without `areaStars` or the ending's stars, or a returned axolotl has no matching
+   * waiting record.
    */
-  show(ending: TripEnding, bankedTotal: number, areaStars?: ArrivalAreaStars): void {
+  show(
+    ending: TripEnding,
+    bankedTotal: number,
+    areaStars: ArrivalAreaStars | undefined,
+    waiting: WaitingStranded | null,
+  ): void {
     const stars = arrivalStars(ending, areaStars);
     const text = arrivalText({
       reason: ending.reason,
@@ -181,7 +204,7 @@ export class TankArrivalCard {
       bankedThisTripNames: foundInfos(ending.bankedThisTrip).map((info) => info.name),
       bankedTotal,
       rescuedNames: rescuedDisplayNames(ending.bankedThisTrip),
-      waitingNames: ending.reason === 'carriedHome' ? rescuedDisplayNames(ending.returned) : [],
+      waiting: waitingAxolotls(ending, waiting),
       stars,
     });
     this.showStars(stars);

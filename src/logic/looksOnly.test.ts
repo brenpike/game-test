@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_LOOK, SIZE_OPTIONS, surpriseLook, type AxolotlLook } from './axolotlLook';
-import { collectSnacksAtHead, createCollectibles, headPoint, type SnackFrame } from './collectibles';
+import {
+  DEFAULT_LOOK,
+  LOOK_FIELDS,
+  LOOK_FIELD_OPTIONS,
+  surpriseLook,
+  type AxolotlLook,
+  type LookField,
+  type LookOption,
+} from './axolotlLook';
+import { collectSnacksAtHead, createCollectibles, headPoint, type DrawnBody, type SnackFrame } from './collectibles';
 import { currentAt, reedDragAt } from './environment';
 import { legSwimTuning, presentCount } from './legs';
 import { mulberry32 } from './rng';
@@ -18,9 +26,45 @@ const SAMPLE_SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
 const zone = buildCanalZone();
 const ctx = createTripContext();
 
-/** Every body size on the default look, then random looks of every kind (PRD F2 options). */
+/** Snacks drawn on their base points: no drift and no bob. */
+const STILL_FRAME: SnackFrame = {
+  driftT: 0,
+  bobT: 0,
+  bobbing: false,
+  drift: { amplitudeX: 0, amplitudeY: 0, periodX: 1, periodY: 1 },
+  bounds: swimBounds(),
+};
+
+/** The drawn head ellipse in art local units, mirroring HEAD_ELLIPSE (src/art/drawAxolotl.ts); age does not move it. */
+const HEAD = Object.freeze({ cx: 26, cy: -1, rx: 27, ry: 22 });
+
+/** Ink past the head edge, mirroring LW (src/art/palette.ts). */
+const HEAD_INK = 3.5;
+
+/** Art local units to scene px, mirroring AXO_SCENE_SCALE (src/art/drawAxolotl.ts). */
+const SCENE_SCALE = 0.95;
+
+/** Size factor per body size, mirroring AXO_SIZE_SCALE (src/art/drawAxolotlParts.ts). */
+const SIZE_FACTORS: Readonly<Record<AxolotlLook['size'], number>> = Object.freeze({
+  small: 0.72,
+  medium: 0.85,
+  large: 1,
+});
+
+/** The option ids of `field`. */
+function optionIds(field: LookField): string[] {
+  const options: readonly LookOption<string>[] = LOOK_FIELD_OPTIONS[field];
+  return options.map((option) => option.id);
+}
+
+/** The default look with `field` set to each of its options in turn. */
+function looksForField(field: LookField): AxolotlLook[] {
+  return optionIds(field).map((id): AxolotlLook => ({ ...DEFAULT_LOOK, [field]: id }));
+}
+
+/** Every option of every field on the default look, then random looks of every kind (PRD F2 options). */
 const LOOKS: readonly AxolotlLook[] = [
-  ...SIZE_OPTIONS.map((option): AxolotlLook => ({ ...DEFAULT_LOOK, size: option.id })),
+  ...LOOK_FIELDS.flatMap(looksForField),
   ...SAMPLE_SEEDS.map((seed) => surpriseLook(mulberry32(seed))),
 ];
 
@@ -100,16 +144,9 @@ function hitAreaProbe(session: Session): boolean[] {
     touching(patrolling, { x: centre.x, y: centre.y + dy }),
   );
   const snack = createCollectibles(zone.collectibles.slice(0, 1));
-  const still: SnackFrame = {
-    driftT: 0,
-    bobT: 0,
-    bobbing: false,
-    drift: { amplitudeX: 0, amplitudeY: 0, periodX: 1, periodY: 1 },
-    bounds: swimBounds(),
-  };
   const snacks = aroundRadius(SNACK_REACH.radius).map((dy) => {
     const body = { x: snack[0].x - SNACK_REACH.headAhead, y: snack[0].y - dy, facing: 1 as const, rotation: 0 };
-    return collectSnacksAtHead(snack, headPoint(body), still) !== null;
+    return collectSnacksAtHead(snack, headPoint(body), STILL_FRAME) !== null;
   });
   const find = trip.placed.find((placed) => !placed.sealed);
   if (find === undefined) throw new Error('no open find placed');
@@ -120,12 +157,37 @@ function hitAreaProbe(session: Session): boolean[] {
   return [...lunges, ...touches, ...snacks, ...pickups];
 }
 
+/** The drawn head, ink included, in art local units: its centre and 16 points round its edge. */
+function drawnHeadLocalPoints(): Point[] {
+  const points: Point[] = [{ x: HEAD.cx, y: HEAD.cy }];
+  for (let k = 0; k < 16; k++) {
+    const angle = (2 * Math.PI * k) / 16;
+    points.push({
+      x: HEAD.cx + (HEAD.rx + HEAD_INK) * Math.cos(angle),
+      y: HEAD.cy + (HEAD.ry + HEAD_INK) * Math.sin(angle),
+    });
+  }
+  return points;
+}
+
+/** Whether one reach eats a snack under each drawn head point of `look`, the body at `body` (unrotated). */
+function headOverSnackEats(look: AxolotlLook, body: DrawnBody): boolean[] {
+  const scale = SCENE_SCALE * SIZE_FACTORS[look.size];
+  const [base] = createCollectibles(zone.collectibles.slice(0, 1));
+  return drawnHeadLocalPoints().map((local) => {
+    const snack = { ...base, x: body.x + body.facing * local.x * scale, y: body.y + local.y * scale };
+    return collectSnacksAtHead([snack], headPoint(body), STILL_FRAME) !== null;
+  });
+}
+
 describe('F4: size and every other look option are for looks only', () => {
   const baseline = sessionWithLook(DEFAULT_LOOK);
 
-  it('covers every size and only the explorer look differs between the sessions', () => {
-    const sizes = new Set(LOOKS.map((look) => look.size));
-    expect([...sizes].sort()).toEqual(SIZE_OPTIONS.map((option) => option.id).sort());
+  it('covers every option of every field and only the explorer look differs between the sessions', () => {
+    for (const field of LOOK_FIELDS) {
+      const chosen = new Set(LOOKS.map((look) => look[field]));
+      expect([...chosen].sort()).toEqual(optionIds(field).sort());
+    }
     for (const look of LOOKS) {
       const session = sessionWithLook(look);
       expect(explorerAxolotl(session).look).toEqual(look);
@@ -165,11 +227,24 @@ describe('F4: size and every other look option are for looks only', () => {
     for (const look of LOOKS) expect(hitAreaProbe(sessionWithLook(look))).toEqual(expected);
   });
 
-  it('keeps hit-area and speed tuning free of any size', () => {
-    const sizeIds = SIZE_OPTIONS.map((option) => option.id);
+  it('eats a snack under the drawn head at every size and as a Baby, with one reach', () => {
+    const sizedLooks = LOOK_FIELD_OPTIONS.size.flatMap((option): AxolotlLook[] => [
+      { ...DEFAULT_LOOK, size: option.id },
+      { ...DEFAULT_LOOK, size: option.id, age: 'baby' },
+    ]);
+    for (const look of [...sizedLooks, ...LOOKS]) {
+      for (const facing of [1, -1] as const) {
+        const eats = headOverSnackEats(look, { x: 500, y: 300, facing, rotation: 0 });
+        expect(eats.every(Boolean)).toBe(true);
+      }
+    }
+  });
+
+  it('keeps hit-area and speed tuning free of any size or other look option', () => {
+    const forbidden = [...LOOK_FIELDS.flatMap(optionIds), 'size', 'look'].map((word) => word.toLowerCase());
     for (const tuning of [SWIM, LEGS, TILAPIA, FINDS, legSwimTuning(LEGS.count)]) {
       const keys = Object.keys(tuning).join(' ').toLowerCase();
-      for (const size of [...sizeIds, 'size', 'look']) expect(keys).not.toContain(size);
+      for (const word of forbidden) expect(keys).not.toContain(word);
     }
   });
 });

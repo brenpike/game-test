@@ -459,7 +459,7 @@ export class HomeTankScene extends Phaser.Scene {
       ending.reason === 'areaBeaten'
         ? { area: this.area, best: bestStars(this.session, this.area.id), rescueOpen: canRescueMore(this.session) }
         : undefined;
-    this.arrivalCard.show(ending, this.session.hub.banked.length, areaStars);
+    this.arrivalCard.show(ending, this.session.hub.banked.length, areaStars, this.session.canal.waitingStranded);
     this.refreshHubFocus();
   }
 

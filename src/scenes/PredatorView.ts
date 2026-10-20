@@ -1,11 +1,12 @@
 import * as Phaser from 'phaser';
-import { AXO_LEG_ROOTS } from '../art/drawAxolotl';
+import { AXO_SCENE_SCALE, axolotlLegRoots } from '../art/drawAxolotl';
 import type { TilapiaPose } from '../art/drawTilapia';
 import { DEPTH } from '../art/layers';
-import type { TexInfo } from '../art/textures';
+import type { AxolotlTexture, TexInfo } from '../art/textures';
 import type { EncounterState } from '../logic/encounter';
 import { isProtected } from '../logic/legs';
 import type { MotionProfile } from '../logic/motion';
+import { anchorWorld } from '../logic/spriteAnchor';
 import { phaseProgress, type TilapiaPhase, type TilapiaState } from '../logic/tilapia';
 import type { TripEvent } from '../logic/trip';
 import type { TripPhase } from '../logic/tripEvents';
@@ -76,20 +77,24 @@ function createLegEffect(image: Phaser.GameObjects.Image, life: number): LegEffe
   return { image: image.setVisible(false), leg: 0, age: life, life, offset: { x: 0, y: 0 } };
 }
 
-/** World position of an axolotl leg root, following the sprite's position, scale, flip and rotation. */
-function legRootWorld(axolotl: Phaser.GameObjects.Image, leg: number): Vec2 {
-  const root = AXO_LEG_ROOTS[leg];
+/**
+ * World position of an axolotl leg root for the look the texture currently paints, following the
+ * sprite's position, scale, flip and rotation.
+ */
+function legRootWorld(axolotl: Phaser.GameObjects.Image, texture: AxolotlTexture, leg: number): Vec2 {
+  const root = axolotlLegRoots(texture.look)[leg];
   if (!root) {
     throw new Error(`PredatorView: no leg root for leg ${leg}`);
   }
-  const localX = root.x * axolotl.scaleX * (axolotl.flipX ? -1 : 1);
-  const localY = root.y * axolotl.scaleY;
-  const cos = Math.cos(axolotl.rotation);
-  const sin = Math.sin(axolotl.rotation);
-  return {
-    x: axolotl.x + localX * cos - localY * sin,
-    y: axolotl.y + localX * sin + localY * cos,
-  };
+  return anchorWorld(axolotl, texture.scale, root);
+}
+
+/**
+ * The axolotl's on-screen size factor (1 at Large), from the sprite's unsquashed scale and the
+ * texture's pixels per local unit.
+ */
+function axolotlSizeFactor(axolotl: Phaser.GameObjects.Image, texture: AxolotlTexture): number {
+  return (axolotl.scaleY * texture.scale) / AXO_SCENE_SCALE;
 }
 
 /**
@@ -209,18 +214,29 @@ export class PredatorView {
     return tilapia.facing;
   }
 
+  /** The halo is sized at Large and scales with the axolotl's size factor, so it keeps its clearance. */
   private renderHalo(frame: PredatorFrame): void {
     const visible = frame.phase === 'swimming' && isProtected(frame.encounter.legs);
-    this.halo.setVisible(visible).setPosition(frame.axolotl.x, frame.axolotl.y).setRotation(frame.axolotl.rotation);
+    const sizeFactor = axolotlSizeFactor(frame.axolotl, this.assets.axolotl);
+    this.halo
+      .setVisible(visible)
+      .setPosition(frame.axolotl.x, frame.axolotl.y)
+      .setRotation(frame.axolotl.rotation)
+      .setScale(sizeFactor / this.assets.predator.halo.scale);
   }
 
   /**
-   * The carry bubble shows only in the 'carrying' phase, centred on the axolotl. Under reduced
-   * motion the trip holds the axolotl still, so the bubble is static too.
+   * The carry bubble shows only in the 'carrying' phase, centred on the axolotl and scaled with its
+   * size factor (sized at Large). Under reduced motion the trip holds the axolotl still, so the
+   * bubble is static too.
    */
   private renderCarryBubble(frame: PredatorFrame): void {
     const visible = frame.phase === 'carrying';
-    this.carryBubble.setVisible(visible).setPosition(frame.axolotl.x, frame.axolotl.y);
+    const sizeFactor = axolotlSizeFactor(frame.axolotl, this.assets.axolotl);
+    this.carryBubble
+      .setVisible(visible)
+      .setPosition(frame.axolotl.x, frame.axolotl.y)
+      .setScale(sizeFactor / this.assets.predator.carryBubble.scale);
   }
 
   private startPoof(leg: number): void {
@@ -323,7 +339,7 @@ export class PredatorView {
       effect.image.setVisible(false);
       return null;
     }
-    const root = legRootWorld(frame.axolotl, effect.leg);
+    const root = legRootWorld(frame.axolotl, this.assets.axolotl, effect.leg);
     effect.image.setVisible(true).setPosition(root.x + effect.offset.x, root.y + effect.offset.y);
     return life;
   }
