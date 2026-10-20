@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-20
+
+### Added
+
+- Put a banked Dream colour on any owned axolotl, or take it off, from a new Dream colour tab on the restyle screen, by touch or keyboard. One colour can be on many axolotls, and spots draw on top. The real morph, boy or girl and Collection Book never change (#17).
+- Each Dream colour is drawn with its pattern, the Dream marker stars on the tail fin, and the rim light and eye ring where needed. Iridescent's sheen glides, and stays still with reduced motion (#17).
+- Dream colours show in the Home Tank, on trips, and in the restyle preview and picture buttons (#17).
+- "More colours" pages on the Dream colour tab, with name labels that always show (#17).
+
 ## [0.14.1] - 2026-10-20
 
 ### Fixed
