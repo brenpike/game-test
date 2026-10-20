@@ -44,5 +44,24 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - id: head
+        name: Check this commit is still the head of main
+        env:
+          GIT_TERMINAL_PROMPT: '0'
+        run: |
+          if ! remote=$(timeout 30 git ls-remote "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" refs/heads/main); then
+            echo "::warning::Could not check the head of main (git ls-remote failed). Deploying this commit anyway."
+            exit 0
+          fi
+          head=$(printf '%s\n' "$remote" | awk '$2 == "refs/heads/main" { print $1 }')
+          if [ -z "$head" ]; then
+            echo "::warning::Could not check the head of main (no refs/heads/main in the git ls-remote output). Deploying this commit anyway."
+            exit 0
+          fi
+          if [ "$head" != "$GITHUB_SHA" ]; then
+            echo "::notice::Skipping deploy. $GITHUB_SHA is no longer the head of main ($head is). The run for the newer commit will deploy."
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          fi
       - id: deployment
+        if: steps.head.outputs.stale != 'true'
         uses: actions/deploy-pages@v5
