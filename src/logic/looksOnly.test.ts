@@ -208,13 +208,16 @@ describe('F4: size and every other look option are for looks only', () => {
     }
   });
 
+  // The scripted run simulates every frame of a full swim for each look. It used about 95% of
+  // the 5000 ms default on main under full-suite load, and fewer treasures per trip (#39)
+  // change the scripted route so it simulates more frames.
   it('swims, gets hit, picks up and goes home exactly the same whatever the look', () => {
     const expected = scriptedRun(baseline);
     const types = new Set(expected.events.map((event) => event.type));
     expect(types.has('pickedUp')).toBe(true);
     expect(types.has('hit')).toBe(true);
     for (const look of LOOKS) expect(scriptedRun(sessionWithLook(look))).toEqual(expected);
-  });
+  }, 15000);
 
   it('has the same hit area, touch area, snack reach and pickup reach whatever the look', () => {
     const expected = hitAreaProbe(baseline);
