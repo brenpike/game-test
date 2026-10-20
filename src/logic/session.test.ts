@@ -105,17 +105,24 @@ function carriedHome(trip: TripState, skip: readonly string[]): { ended: TripSta
   return { ended, id: find.id };
 }
 
-/** The trip a session starts with no trip options, as the in-place `newTrip` flow builds it. */
+/** The trip a session starts with only its lost treasures, as the in-place `newTrip` flow builds it. */
 function startTrip(session: Session, freshSeed: number): TripState {
   const start = tripStart(session, freshSeed);
-  return createTrip(zone, LEGS, start.banked, start.tripSeed);
+  return createTrip(zone, LEGS, start.banked, start.tripSeed, { returnedFinds: start.returnedFinds });
 }
 
-/** The trip a session starts with its stranded axolotl and tilapia card state, as the scene flow builds it. */
+/**
+ * The trip a session starts with its stranded axolotl, tilapia card state and lost treasures, as the
+ * scene flow builds it.
+ */
 function startRescueTrip(session: Session, freshSeed: number): TripState {
   const start = tripStart(session, freshSeed);
   const stranding = pickStranding(start.ownedMorphs, start.waitingStranded, zone.strandingPlaces, start.tripSeed);
-  return createTrip(zone, LEGS, start.banked, start.tripSeed, { stranding, tilapiaCardSeen: start.tilapiaCardSeen });
+  return createTrip(zone, LEGS, start.banked, start.tripSeed, {
+    stranding,
+    tilapiaCardSeen: start.tilapiaCardSeen,
+    returnedFinds: start.returnedFinds,
+  });
 }
 
 /** The trip's stranded axolotl. Throws when it has none. */
@@ -165,11 +172,11 @@ function eatSnacks(snacks: Collectible[], count: number): Collectible[] {
 
 /** The next trip the session would start from `record`, as the old in-place `newTrip` flow did. */
 function nextFromRecord(record: TripEndRecord): TripState {
-  return createTrip(zone, LEGS, record.banked, nextTripSeed(record.tripSeed));
+  return createTrip(zone, LEGS, record.banked, nextTripSeed(record.tripSeed), { returnedFinds: record.returnedFinds });
 }
 
 function record(banked: string[], tripSeed: number, eatenSnacks: string[] = []): TripEndRecord {
-  return { banked, rescued: [], eatenSnacks, tripSeed, waitingStranded: null, metTilapia: false };
+  return { banked, rescued: [], eatenSnacks, tripSeed, waitingStranded: null, metTilapia: false, returnedFinds: [] };
 }
 
 const SPECIAL = { specialTreasureId: CANAL_AREA.specialTreasureId };
@@ -233,7 +240,7 @@ describe('createSession', () => {
         book: { foundMorphs: [], tilapiaCard: false },
         stars: {},
       },
-      canal: { eatenSnacks: [], lastTripSeed: null, waitingStranded: null },
+      canal: { eatenSnacks: [], lastTripSeed: null, waitingStranded: null, returnedFinds: [] },
     });
     expect(STARTER_AXOLOTL_ID).toBe('starter');
   });
@@ -273,6 +280,7 @@ describe('tripStart seeds (B4)', () => {
       ownedMorphs: [STARTER_MORPH],
       waitingStranded: null,
       tilapiaCardSeen: false,
+      returnedFinds: [],
     });
   });
 
@@ -286,22 +294,29 @@ describe('tripStart seeds (B4)', () => {
       ownedMorphs: [STARTER_MORPH],
       waitingStranded: null,
       tilapiaCardSeen: false,
+      returnedFinds: [],
     });
     expect(tripStart(session, 5).tripSeed).toBe(start.tripSeed);
   });
 
   it('hands out copies, so changing them leaves the session alone', () => {
     const session = recordTripEnd(withStarter(), record([PLANT], 1, ['snack-1']));
-    const waiting = recordTripEnd(session, { ...record([], 2), waitingStranded: { morph: 'wild', sex: 'girl', placeId: 'p' } });
+    const waiting = recordTripEnd(session, {
+      ...record([], 2),
+      waitingStranded: { morph: 'wild', sex: 'girl', placeId: 'p' },
+      returnedFinds: [BOAT],
+    });
     const start = tripStart(waiting, 2);
     start.banked.push(HAT);
     start.eatenSnacks.push('snack-2');
     start.ownedMorphs.push('wild');
     if (start.waitingStranded) start.waitingStranded.placeId = 'q';
+    start.returnedFinds.push(HAT);
     expect(waiting.hub.banked).toEqual([PLANT]);
     expect(waiting.canal.eatenSnacks).toEqual([]);
     expect(waiting.hub.axolotls).toEqual([starterOf()]);
     expect(waiting.canal.waitingStranded).toEqual({ morph: 'wild', sex: 'girl', placeId: 'p' });
+    expect(waiting.canal.returnedFinds).toEqual([BOAT]);
   });
 });
 
@@ -336,6 +351,7 @@ describe('tripEndRecord', () => {
       tripSeed: FIRST_SEED,
       waitingStranded: null,
       metTilapia: ended.metTilapia,
+      returnedFinds: [],
     });
   });
 
@@ -349,9 +365,13 @@ describe('tripEndRecord', () => {
     expect(rec.banked).toEqual([first.id]);
     expect(rec.banked).not.toContain(lost.id);
     expect(rec.eatenSnacks).toEqual([]);
+    expect(rec.returnedFinds).toEqual([lost.id]);
     const after = recordTripEnd(session, rec);
     expect(after.hub.banked).toEqual([first.id]);
     expect(after.canal.lastTripSeed).toBe(nextTripSeed(FIRST_SEED));
+    expect(after.canal.returnedFinds).toEqual([lost.id]);
+    expect(after.canal.returnedFinds).not.toBe(rec.returnedFinds);
+    expect(tripStart(after, 0).returnedFinds).toEqual([lost.id]);
   });
 });
 
@@ -367,7 +387,12 @@ describe('recordTripEnd', () => {
   it('stores the eaten snacks and the trip seed, and leaves the input session alone', () => {
     const session = withStarter();
     const next = recordTripEnd(session, record([PLANT], 42, ['snack-1', 'snack-2']));
-    expect(next.canal).toEqual({ eatenSnacks: ['snack-1', 'snack-2'], lastTripSeed: 42, waitingStranded: null });
+    expect(next.canal).toEqual({
+      eatenSnacks: ['snack-1', 'snack-2'],
+      lastTripSeed: 42,
+      waitingStranded: null,
+      returnedFinds: [],
+    });
     expect(session).toEqual(withStarter());
   });
 
@@ -469,6 +494,51 @@ describe('session trips match the in-place newTrip flow (regression)', () => {
     const placedIds = thirdTrip.placed.map((find) => find.id);
     expect(placedIds).toContain(lost.id);
     for (const id of session.hub.banked) expect(placedIds).not.toContain(id);
+  });
+});
+
+describe('lost treasures next trip (A12, B9)', () => {
+  /** A session whose last trip was carried home losing one treasure. Returns it and the lost id. */
+  function afterLosing(): { session: Session; lostId: string } {
+    const first = wentHome(startTrip(withStarter(), FIRST_SEED));
+    const session = recordTripEnd(withStarter(), tripEndRecord(first.ended, []));
+    const lost = carriedHome(startTrip(session, 0), [first.id]);
+    return { session: recordTripEnd(session, tripEndRecord(lost.ended, [])), lostId: lost.id };
+  }
+
+  it('places the treasures lost when carried home on the next trip, whatever its seed', () => {
+    const { session, lostId } = afterLosing();
+    const start = tripStart(session, 0);
+    expect(start.returnedFinds).toEqual([lostId]);
+    expect(startTrip(session, 0).placed.map((find) => find.id)).toContain(lostId);
+    for (let seed = 1; seed <= 50; seed++) {
+      const trip = createTrip(zone, LEGS, start.banked, seed, { returnedFinds: start.returnedFinds });
+      expect(trip.placed.map((find) => find.id)).toContain(lostId);
+    }
+  });
+
+  it('clears them after the next ending without losses', () => {
+    const { session } = afterLosing();
+    const went = recordTripEnd(session, tripEndRecord(wentHome(startTrip(session, 0)).ended, []));
+    expect(went.canal.returnedFinds).toEqual([]);
+    expect(tripStart(went, 0).returnedFinds).toEqual([]);
+    const beaten = recordTripEnd(session, tripEndRecord(beatArea(startTrip(session, 0), SPECIAL).state, []));
+    expect(beaten.canal.returnedFinds).toEqual([]);
+    expect(tripStart(beaten, 0).returnedFinds).toEqual([]);
+  });
+
+  it('never keeps the id of a following axolotl carried home, which waits instead (C5)', () => {
+    const trip = startRescueTrip(withStarter(), FIRST_SEED);
+    const { morph } = rescueOf(trip);
+    const find = openFind(trip);
+    const ended = carriedHomeFrom(reachRescue(stepAt(trip, find)));
+    expect(ended.ending?.returned).toEqual([find.id, axolotlFindId(morph)]);
+    const rec = tripEndRecord(ended, []);
+    expect(rec.returnedFinds).toEqual([find.id]);
+    const after = recordTripEnd(withStarter(), rec);
+    expect(after.canal.returnedFinds).toEqual([find.id]);
+    expect(after.canal.waitingStranded?.morph).toBe(morph);
+    expect(startRescueTrip(after, 0).placed.map((placed) => placed.id)).toContain(find.id);
   });
 });
 
@@ -619,6 +689,7 @@ describe('area beaten (H5, H6, H7, A12, open question 14)', () => {
       tripSeed: FIRST_SEED,
       waitingStranded: null,
       metTilapia: ended.metTilapia,
+      returnedFinds: [],
       stars: { areaId: CANAL_AREA_ID, earned: ended.ending?.stars },
     });
     expect(rec.stars?.earned).not.toBe(ended.ending?.stars);

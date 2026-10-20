@@ -1,3 +1,4 @@
+import { areaById } from './areas';
 import { treasureById } from './catalogue';
 import {
   createEncounter,
@@ -34,7 +35,7 @@ import {
   type Holdings,
 } from './tripBag';
 import type { FoundInfo, LegsSnapshot, RescueSnapshot, TripEnding, TripPhase, TripSnapshot } from './tripEvents';
-import { CARRY, FINDS, LEGS, SWIM, type CarryTuning, type FindTuning, type LegTuning } from './tuning';
+import { CARRY, FINDS, LEGS, SWIM, tripTreasureTuning, type CarryTuning, type FindTuning, type LegTuning } from './tuning';
 import type { Vec2 } from './vec';
 import {
   inHomeSpot as isInHomeSpot,
@@ -49,10 +50,11 @@ import {
 export const LEG_PROGRESS_STEPS = 10;
 
 /**
- * The zone parts a trip is built from: the encounter parts, the Home Spot start point and ring,
- * the finds (treasure pools) and the hiding spots.
+ * The zone parts a trip is built from: the encounter parts, the area id, the Home Spot start point
+ * and ring, the finds (treasure pools), the hiding spots and the main swim path.
  */
-export type TripSource = EncounterSource & Pick<ZoneLayout, 'start' | 'homeSpot' | 'finds' | 'spots'>;
+export type TripSource = EncounterSource &
+  Pick<ZoneLayout, 'areaId' | 'start' | 'homeSpot' | 'finds' | 'spots' | 'mainPath'>;
 
 /**
  * The carried-home transition. `pos` is the axolotl centre, moving from `from` to `to`
@@ -71,8 +73,9 @@ export interface CarryState {
 /**
  * One trip. Immutable: `stepTrip` returns a new object.
  * `carry` is null while swimming and set once the carry starts.
- * `finds` is the treasure pools and `spots` the hiding spots; `tripSeed` picked this trip's
- * `placed` treasures, one per unbanked find, each with its Dash pot state. `touchingPots` is the
+ * `areaId` is the trip's area and `mainPath` its main swim path. `finds` is the treasure pools and
+ * `spots` the hiding spots; `tripSeed` picked this trip's `placed` treasures, the treasures picked
+ * for this trip, each with its Dash pot state. `touchingPots` is the
  * ids of the sealed pots the axolotl touched on the latest swimming step. `found` is every id
  * picked up this trip, in pickup order, including ones banked since.
  * `holdings` is the Trip Bag and the banked finds. `inHomeSpot` is whether the axolotl centre was
@@ -90,6 +93,8 @@ export interface TripState {
   encounter: EncounterState;
   carry: CarryState | null;
   homeSpot: HomeSpot;
+  areaId: string;
+  mainPath: Point[];
   finds: FindSpawn[];
   spots: HidingSpot[];
   tripSeed: number;
@@ -109,12 +114,14 @@ export interface TripState {
 }
 
 /**
- * Optional trip start data: this trip's stranded axolotl (none by default) and whether the tilapia
- * fact card was already seen (false by default).
+ * Optional trip start data: this trip's stranded axolotl (none by default), whether the tilapia
+ * fact card was already seen (false by default) and the treasures lost on the last trip
+ * (`returnedFinds`, none by default), which are always placed this trip (PRD A12, B9).
  */
 export interface TripOptions {
   stranding?: Stranding | null;
   tilapiaCardSeen?: boolean;
+  returnedFinds?: readonly FindId[];
 }
 
 /**
@@ -181,9 +188,12 @@ export function createTripContext(overrides: Partial<TripContext> = {}): TripCon
 
 /**
  * Starts a trip: swimming from the Home Spot with a fresh encounter, an empty Trip Bag and the
- * given `banked` find ids (de-duplicated). Every unbanked find is placed in a spot from its pool
- * picked by `tripSeed`, with every Dash pot sealed. `options.stranding` sets this trip's stranded
- * axolotl, waiting at its place; it never changes the placement. Throws when a pool cannot be placed.
+ * given `banked` find ids (de-duplicated). `tripSeed` picks a few unbanked treasures for this trip
+ * with the area's trip treasure tuning, and places each in a spot from its pool, with every Dash
+ * pot sealed (PRD B4). `options.returnedFinds`, the treasures lost on the last trip, are always
+ * placed; the area's special treasure is always placed while unbanked, outside the mix (B9, H6).
+ * `options.stranding` sets this trip's stranded axolotl, waiting at its place; it never changes the
+ * placement. Throws when a pool cannot be placed.
  */
 export function createTrip(
   source: TripSource,
@@ -193,16 +203,25 @@ export function createTrip(
   options: TripOptions = {},
 ): TripState {
   const holdings = createHoldings(banked);
+  const special = areaById(source.areaId)?.specialTreasureId;
+  const placed = placeTreasures(source.finds, source.spots, holdings.banked, tripSeed, {
+    mustPlace: options.returnedFinds ?? [],
+    extras: special ? [special] : [],
+    tuning: tripTreasureTuning(source.areaId),
+    mainPath: source.mainPath,
+  });
   return {
     phase: 'swimming',
     home: { x: source.start.x, y: source.start.y },
     encounter: createEncounter(source, legTuning),
     carry: null,
     homeSpot: { x: source.homeSpot.x, y: source.homeSpot.y, radius: source.homeSpot.radius },
+    areaId: source.areaId,
+    mainPath: source.mainPath.map((point) => ({ x: point.x, y: point.y })),
     finds: source.finds.map((find) => ({ id: find.id, pool: [...find.pool] })),
     spots: source.spots.map((spot) => ({ ...spot })),
     tripSeed,
-    placed: placeTreasures(source.finds, source.spots, holdings.banked, tripSeed),
+    placed,
     touchingPots: [],
     found: [],
     holdings,
@@ -219,20 +238,30 @@ export function createTrip(
 }
 
 /**
- * Starts the next trip from an ended one, with the same Home Spot, routes, finds, spots, leg count
- * and banked finds, an empty Trip Bag and nothing found. Every unbanked treasure, including ones
- * returned when carried home, gets a fresh pick from its pool by `tripSeed` (default: the seed
- * after this trip's), and every Dash pot is sealed again. It passes no trip options, so the new
- * trip has no stranded axolotl and the tilapia card counts as unseen. Any other phase returns the
- * input state unchanged.
+ * Starts the next trip from an ended one, with the same area, Home Spot, routes, finds, spots, main
+ * swim path, leg count and banked finds, an empty Trip Bag and nothing found. `tripSeed` (default:
+ * the seed after this trip's) picks this trip's treasures afresh, and every Dash pot is sealed
+ * again. The treasures returned when carried home (`ending.returned`) come back this trip, always
+ * placed, and the area's special treasure is always placed while unbanked, outside the mix. It
+ * passes no other trip options, so the new trip has no stranded axolotl and the tilapia card counts
+ * as unseen. Any other phase returns the input state unchanged.
  */
 export function newTrip(state: TripState, tripSeed: number = nextTripSeed(state.tripSeed)): TripState {
   if (state.phase !== 'ended') return state;
   return createTrip(
-    { ...state.encounter, start: state.home, homeSpot: state.homeSpot, finds: state.finds, spots: state.spots },
+    {
+      ...state.encounter,
+      areaId: state.areaId,
+      start: state.home,
+      homeSpot: state.homeSpot,
+      finds: state.finds,
+      spots: state.spots,
+      mainPath: state.mainPath,
+    },
     { count: state.encounter.legs.slots.length },
     state.holdings.banked,
     tripSeed,
+    { returnedFinds: state.ending?.returned ?? [] },
   );
 }
 
@@ -727,7 +756,7 @@ function carryPos(carry: CarryState, progress: number): Point {
  * Ends the carry at the canal Home Spot (`zone.start`) with every leg back: present,
  * not protected, nothing regrowing. Unbanked Trip Bag finds go back to the world: the bag empties,
  * banked finds stay, and the returned ids ride on `arrivedHome` and the ending. They reappear
- * next trip in freshly picked spots, since `newTrip` places every unbanked treasure again.
+ * next trip in freshly picked spots, since `newTrip` always places the returned treasures.
  * Arrival now leads to the Home Tank through the scene flow. Snacks are not trip finds and are not
  * in trip state, so arrival leaves them; the session clears every eaten snack when it records a
  * carried-home ending (`tripEndRecord`, PRD A12, ADR 0010).

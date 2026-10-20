@@ -61,7 +61,7 @@ A stretch of flowing water in an area that pushes the axolotl, and that rarer tr
 The axolotl's first power, a short burst of speed that works with any number of legs and is the only way to break a Dash pot.
 
 **Hiding spot**:
-A place in an area where a treasure can hide, picked fresh each trip for every unbanked treasure from that treasure's pool.
+A place in an area where a treasure can hide, picked fresh each trip for each treasure picked for that trip, from that treasure's pool.
 
 **Dash pot**:
 A pot only Tail Dash can break, where Legendary treasures hide.
@@ -223,7 +223,7 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - **Carried home** sends every unbanked **Trip find** back into the **Area** and starts the **Snacks** over; banked items and **Stars** are untouched
 - An **Area** has exactly one **Exit**, one **Special treasure**, many **Snacks**, many **Hiding spots**, and up to 3 **Stars**
 - The **Exit** opens only when every **Snack** in its **Area** is eaten
-- Each **Trip** picks one **Hiding spot** per unbanked **Treasure** from that **Treasure**'s pool; no two **Treasures** share a spot in one **Trip**
+- Each **Trip** picks a few unbanked **Treasures** and one **Hiding spot** per **Treasure** picked for that **Trip**, from that **Treasure**'s pool; no two **Treasures** share a spot in one **Trip**
 - A Legendary **Treasure** always hides in a **Dash pot**, which only **Tail Dash** can break
 - A **Hint sparkle** marks a hidden **Treasure** when the axolotl is near, and each of the last 3 **Snacks**
 - A **Tilapia** is a **Hazard**; its **Telegraph** always comes before a **Lunge**
