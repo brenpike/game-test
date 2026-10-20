@@ -28,7 +28,12 @@ const SEED_COUNT = 500;
 
 const OPTION_LISTS: readonly [LookField, readonly LookOption<string>[], readonly string[], readonly string[]][] = [
   ['eyes', EYE_OPTIONS, ['happy', 'sleepy', 'determined', 'curious', 'grumpy'], ['Happy', 'Sleepy', 'Determined', 'Curious', 'Grumpy']],
-  ['mouth', MOUTH_OPTIONS, ['smile', 'openD', 'tongueOut', 'smallO'], ['Smile', 'Open D', 'Tongue out', 'Small o']],
+  [
+    'mouth',
+    MOUTH_OPTIONS,
+    ['smile', 'openD', 'tongueOut', 'smallO', 'bigGrin', 'catSmile', 'smirk', 'tongueTip'],
+    ['Smile', 'Open D', 'Tongue out', 'Small o', 'Big grin', 'Cat smile', 'Smirk', 'Blep'],
+  ],
   ['gills', GILL_OPTIONS, ['fluffy', 'long', 'short'], ['Fluffy', 'Long', 'Short']],
   ['spots', SPOT_OPTIONS, ['none', 'freckles', 'dots', 'patches'], ['None', 'Freckles', 'Dots', 'Patches']],
   ['size', SIZE_OPTIONS, ['small', 'medium', 'large'], ['Small', 'Medium', 'Large']],
@@ -240,7 +245,7 @@ describe('stepOption', () => {
   });
 
   it('wraps past the first option to the last', () => {
-    expect(stepOption(MOUTH_OPTIONS, 'smile', -1)).toBe('smallO');
+    expect(stepOption(MOUTH_OPTIONS, 'smile', -1)).toBe('tongueTip');
     expect(stepOption(GILL_OPTIONS, 'fluffy', -1)).toBe('short');
   });
 

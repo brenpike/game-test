@@ -103,17 +103,60 @@ export const SURPRISE_BUTTON: Size = Object.freeze(labelTileButton(SURPRISE_ME_L
 /** Cancel (restyle only): a secondary tile. */
 export const CANCEL_BUTTON: Size = Object.freeze(labelTileButton(CANCEL_LABEL));
 
+/** Side of the square pencil icon at the right end of the name box, in CSS px. */
+export const NAME_PENCIL_PX = 20;
+
 /**
- * The name box on the Name step: a NAME_MAX-character name with UI.pad each side.
- * The box is sized from the 0.6 em bold estimate (12 name characters at bold 20 px plus padding), so a
- * name of wide letters (full-width or CJK, or many W's) can wrap to two lines inside the box width, and
+ * The name box on the Name step: a NAME_MAX-character name, then TEXT_GAP and the pencil icon, with
+ * UI.pad each side.
+ * The text room is sized from the 0.6 em bold estimate (12 name characters at bold 20 px), so a name
+ * of wide letters (full-width or CJK, or many W's) can wrap to two lines inside the text room, and
  * stacked combining marks (up to NAME_MARKS_MAX) can reach above or below the box. See the recorded
  * residual "Wide or heavily accented names in the Name box" in docs/art-style-guide.md section 12.
  */
 export const NAME_BOX: Size = Object.freeze({
-  w: wholePxUp(boldTextW(NAME_MAX, NAME_TEXT_PX) + 2 * UI.pad),
+  w: wholePxUp(boldTextW(NAME_MAX, NAME_TEXT_PX) + 2 * UI.pad + NAME_PENCIL_PX + TEXT_GAP),
   h: MIN_TARGET_PX,
 });
+
+/** The parts of the name box at `box`: the name text room and the pencil icon. */
+export interface NameBoxParts {
+  text: Rect;
+  pencil: Rect;
+}
+
+/**
+ * The name box parts: the pencil icon NAME_PENCIL_PX square, UI.pad in from the right edge and centred
+ * down the box; the text room from UI.pad in from the left edge to TEXT_GAP before the pencil, the full
+ * box height.
+ */
+export function nameBoxParts(box: Rect): NameBoxParts {
+  const pencil: Rect = {
+    x: box.x + box.w - UI.pad - NAME_PENCIL_PX,
+    y: box.y + (box.h - NAME_PENCIL_PX) / 2,
+    w: NAME_PENCIL_PX,
+    h: NAME_PENCIL_PX,
+  };
+  const textX = box.x + UI.pad;
+  return {
+    text: { x: textX, y: box.y, w: Math.max(0, pencil.x - TEXT_GAP - textX), h: box.h },
+    pencil,
+  };
+}
+
+/** The name box text cursor blink: shown for `onS` seconds, then hidden for `offS` seconds. */
+export const NAME_CURSOR = Object.freeze({ onS: 0.5, offS: 0.5 });
+
+/**
+ * True when the name box text cursor shows at `seconds` into the blink: the first NAME_CURSOR.onS of
+ * each period. Always true when `blinking` is false (reduced motion: a steady cursor), and when
+ * `seconds` is negative or not a finite number.
+ */
+export function nameCursorShown(seconds: number, blinking: boolean): boolean {
+  if (!blinking || !Number.isFinite(seconds) || seconds < 0) return true;
+  const periodS = NAME_CURSOR.onS + NAME_CURSOR.offS;
+  return seconds % periodS < NAME_CURSOR.onS;
+}
 
 /** One suggested-name tile: every tile is as wide as the longest suggested name, so no name is cut. */
 export const NAME_TILE: Size = Object.freeze({

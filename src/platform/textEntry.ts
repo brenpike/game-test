@@ -45,6 +45,14 @@ export interface TextEntryOptions {
   readonly ariaLabel: string;
   /** CSS font-family. Defaults to the rounded system stack (art guide 8); never a webfont. */
   readonly font?: string;
+  /** Hint shown while the field is empty. Omitted: no placeholder. */
+  readonly placeholder?: string;
+  /**
+   * Caret blink, where the browser supports `caret-animation`: a number is how long the caret
+   * shows each blink, in ms (it hides for the same time); `null` keeps the caret steady. Omitted,
+   * or in a browser without `caret-animation`: the browser's own caret. Must be finite and above 0.
+   */
+  readonly caretBlinkMs?: number | null;
   /**
    * The text the field keeps (`fitEdit`'s value), after each edit that changes it; held back while
    * an IME composition is in progress. Not called for the starting text.
@@ -66,6 +74,11 @@ export interface TextEntry {
    * resize or scroll; pass a fresh rect after your own layout changes.
    */
   place(rect?: TextEntryRect): void;
+  /**
+   * Changes the caret blink of the open field, as `caretBlinkMs` in the options: a number blinks,
+   * `null` keeps it steady. Call when reduced motion is turned on or off while the field is open.
+   */
+  setCaretBlink(caretBlinkMs: number | null): void;
   /** Removes the field and every listener without calling any callback. Safe to call again. */
   close(): void;
 }
@@ -77,10 +90,31 @@ const INK = '#2b2350';
 const WHITE = '#ffffff';
 /** At least 16 px, so iOS Safari does not zoom the page when the field takes focus. */
 const FONT_SIZE_PX = 22;
+/** Same values as NAME_FIELD in src/art/drawUi.ts; platform code must not import src/art. */
+const FIELD_FILL = '#f6f3fd';
+const FIELD_INSET = '#c9c2e0';
+const FIELD_PLACEHOLDER = '#6e6790';
 const BORDER_PX = 3.5;
-const RADIUS_PX = 16;
+const RADIUS_PX = 8;
+const PADDING_X_PX = 12;
+/** Light inset along the top and left inner edges, like the canvas name box. */
+const INSET_SHADOW = `inset 3px 3px 0 0 ${FIELD_INSET}`;
 /** Double focus ring (art guide 8): 3 px white, then 3 px ink, just outside the outline. */
 const FOCUS_RING_SHADOW = `0 0 0 3px ${WHITE}, 0 0 0 6px ${INK}`;
+/** One injected stylesheet for what inline styles cannot set: placeholder colour and caret blink. */
+const STYLE_ELEMENT_ID = 'glam-gills-text-entry-style';
+const FIELD_CLASS = 'glam-gills-text-entry';
+const CARET_STEADY_CLASS = `${FIELD_CLASS}-caret-steady`;
+const CARET_BLINK_CLASS = `${FIELD_CLASS}-caret-blink`;
+const CARET_BLINK_KEYFRAMES = `${FIELD_CLASS}-caret-blink`;
+const FIELD_STYLESHEET = [
+  `.${FIELD_CLASS}::placeholder { color: ${FIELD_PLACEHOLDER}; opacity: 1; font-weight: normal; }`,
+  `@keyframes ${CARET_BLINK_KEYFRAMES} { 0%, 100% { caret-color: ${INK}; } 50% { caret-color: transparent; } }`,
+  '@supports (caret-animation: manual) {',
+  `  .${CARET_STEADY_CLASS} { caret-animation: manual; }`,
+  `  .${CARET_BLINK_CLASS} { caret-animation: manual; animation: ${CARET_BLINK_KEYFRAMES} 1s step-end infinite; }`,
+  '}',
+].join('\n');
 /** Edge margin from the visible viewport, CSS px. */
 const EDGE_MARGIN_PX = 16;
 /** Default field size, CSS px; the height is also the smallest allowed (touch target). */
@@ -180,18 +214,54 @@ function createInput(options: TextEntryOptions, startingText: string): HTMLInput
   input.setAttribute('enterkeyhint', 'done');
   input.setAttribute('inputmode', 'text');
   input.setAttribute('aria-label', options.ariaLabel);
+  if (options.placeholder !== undefined) input.placeholder = options.placeholder;
   styleInput(input, options.font ?? DEFAULT_FONT_FAMILY);
+  styleCaret(input, options.caretBlinkMs);
   return input;
 }
 
-/** Ink on white, 3.5 px ink outline, radius 16, always-on double focus ring (art guide 8). */
+/** Adds the field stylesheet to the document head unless an earlier field already did. */
+function ensureFieldStylesheet(): void {
+  if (document.getElementById(STYLE_ELEMENT_ID) !== null) return;
+  const styleElement = document.createElement('style');
+  styleElement.id = STYLE_ELEMENT_ID;
+  styleElement.textContent = FIELD_STYLESHEET;
+  document.head.appendChild(styleElement);
+}
+
+/**
+ * Picks the caret look: blinking `caretBlinkMs` on and off, steady for `null`, or the browser's
+ * own caret when omitted. The stylesheet applies either class only where `caret-animation` works.
+ */
+function styleCaret(input: HTMLInputElement, caretBlinkMs: number | null | undefined): void {
+  if (caretBlinkMs === undefined) return;
+  if (caretBlinkMs === null) {
+    input.classList.remove(CARET_BLINK_CLASS);
+    input.style.removeProperty('animation-duration');
+    input.classList.add(CARET_STEADY_CLASS);
+    return;
+  }
+  if (!Number.isFinite(caretBlinkMs) || caretBlinkMs <= 0) {
+    throw new RangeError(`caretBlinkMs must be finite and above 0, got ${caretBlinkMs}`);
+  }
+  input.classList.remove(CARET_STEADY_CLASS);
+  input.classList.add(CARET_BLINK_CLASS);
+  input.style.setProperty('animation-duration', `${2 * caretBlinkMs}ms`);
+}
+
+/**
+ * Ink on the light name-box fill with its top-left inset, 3.5 px ink outline, radius 8, and the
+ * always-on double focus ring (art guide 8), matching NAME_FIELD in src/art/drawUi.ts.
+ */
 function styleInput(input: HTMLInputElement, fontFamily: string): void {
+  ensureFieldStylesheet();
+  input.classList.add(FIELD_CLASS);
   const style = input.style;
   style.setProperty('position', 'fixed');
   style.setProperty('z-index', '10');
   style.setProperty('box-sizing', 'border-box');
   style.setProperty('margin', '0');
-  style.setProperty('padding', '0 16px');
+  style.setProperty('padding', `0 ${PADDING_X_PX}px`);
   style.setProperty('appearance', 'none');
   style.setProperty('-webkit-appearance', 'none');
   style.setProperty('font-family', fontFamily);
@@ -199,11 +269,11 @@ function styleInput(input: HTMLInputElement, fontFamily: string): void {
   style.setProperty('font-weight', '700');
   style.setProperty('color', INK);
   style.setProperty('caret-color', INK);
-  style.setProperty('background', WHITE);
+  style.setProperty('background', FIELD_FILL);
   style.setProperty('border', `${BORDER_PX}px solid ${INK}`);
   style.setProperty('border-radius', `${RADIUS_PX}px`);
   style.setProperty('outline', 'none');
-  style.setProperty('box-shadow', FOCUS_RING_SHADOW);
+  style.setProperty('box-shadow', `${INSET_SHADOW}, ${FOCUS_RING_SHADOW}`);
   style.setProperty('user-select', 'text');
   style.setProperty('-webkit-user-select', 'text');
   style.setProperty('-webkit-touch-callout', 'default');
@@ -370,6 +440,9 @@ export function openTextEntry(options: TextEntryOptions): TextEntry {
     place: (rect?: TextEntryRect) => {
       session.rect = rect;
       if (!session.closed) placeSession(session);
+    },
+    setCaretBlink: (caretBlinkMs: number | null) => {
+      if (!session.closed) styleCaret(input, caretBlinkMs);
     },
     close: () => closeSession(session),
   };

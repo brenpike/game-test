@@ -8,7 +8,7 @@ import {
   axolotlLegRoots,
   drawAxolotl,
 } from './drawAxolotl';
-import { LEUCISTIC, WHITE } from './palette';
+import { LEUCISTIC, T_STATIC, WHITE } from './palette';
 import {
   AXO_AGES,
   AXO_BODIES,
@@ -27,6 +27,7 @@ import {
   GILL_STYLES,
   GILL_STYLE_IDS,
   HEAD_ELLIPSE,
+  LASH_REACH,
   MOUTH_VARIANTS,
   NEAR_EYE,
   NEAR_GILL_ROOTS,
@@ -35,17 +36,20 @@ import {
   PROTOTYPE_TORSO,
   SPOTS_OPTIONS,
   SPOT_SETS,
-  TAIL_FIN_START,
   TAIL_SEGMENTS,
   TAIL_SLOT_POINT,
   axolotlBodyGeometry,
+  boundsOfPoints,
   eyeMarks,
   eyelashMarks,
   gillGeometry,
   gillInkBounds,
   gillSpecs,
   mouthInkBounds,
+  MOUTH_INK,
+  MOUTH_TICK_INK,
   paintEye,
+  paintMouth,
   quadBounds,
   spotMarks,
   tailPointAt,
@@ -59,6 +63,8 @@ import {
   type EyeSpot,
   type GillRoot,
   type LocalPoint,
+  type MouthVariant,
+  type SpotsOption,
 } from './drawAxolotlParts';
 
 const TAU = Math.PI * 2;
@@ -115,7 +121,15 @@ const LASH_BLINKS = [1, 0.5, 0.12] as const;
 /** Both lash strokes: the white under-stroke and the ink. */
 const LASH_WIDTHS = [EYELASH_UNDER, EYELASH_INK] as const;
 /** Lash readability floor: centre-line length clear of the bead. */
-const MIN_LASH_INK_PAST_BEAD = 0.9;
+const MIN_LASH_INK_PAST_BEAD = 2.5;
+/** Lash ends sit on the lash reach circle, this far inside r + LASH_REACH. */
+const LASH_REACH_INSET = 0.05;
+/** Lash corners stay right of this x, clear of the gill stems (stem ink ends at x 15.5). */
+const LASH_MIN_X = 16.5;
+/** Lash corners stay below this y: the Head slot's lowest painted point (guide 6i). */
+const LASH_MIN_Y = -19.5;
+/** Smallest drawn scale, in CSS px per local unit: Small (0.72) in the shrunk creator preview (0.6, PREVIEW_SCALE). */
+const SMALLEST_PX_PER_UNIT = 0.72 * 0.6;
 
 /**
  * Corners of a lash's butt-capped stroke `width` wide (its ends offset by half
@@ -134,16 +148,36 @@ function lashStrokeCorners(lash: EyeLash, width: number, blink: number): LocalPo
   ];
 }
 
-/** Whether every corner of both lash strokes lies inside the circle of radius `zoneR` about the eye centre, at every blink. */
-function lashPaintInZone(lash: EyeLash, zoneR: number): boolean {
-  for (const blink of LASH_BLINKS) {
-    for (const width of LASH_WIDTHS) {
-      for (const corner of lashStrokeCorners(lash, width, blink)) {
-        if (Math.hypot(corner.x, corner.y) > zoneR) return false;
-      }
-    }
-  }
-  return true;
+/** Every corner of both lash strokes at every blink, relative to the eye centre. */
+function allLashCorners(lash: EyeLash): LocalPoint[] {
+  return LASH_BLINKS.flatMap((blink) => LASH_WIDTHS.flatMap((width) => lashStrokeCorners(lash, width, blink)));
+}
+
+/** Radius of the lash reach circle about an eye centre: every lash corner stays inside it. */
+function lashReachR(spot: EyeSpot): number {
+  return spot.r + LASH_REACH - LASH_REACH_INSET;
+}
+
+/** Whether a local point lies inside an axis-aligned ellipse. */
+function isInEllipse(p: LocalPoint, e: BodyEllipse): boolean {
+  return ((p.x - e.cx) / e.rx) ** 2 + ((p.y - e.cy) / e.ry) ** 2 <= 1;
+}
+
+/**
+ * Whether every corner of both lash strokes, at every blink, lies inside the
+ * lash reach circle and the head, right of LASH_MIN_X and below LASH_MIN_Y.
+ */
+function lashPaintHolds(lash: EyeLash, spot: EyeSpot): boolean {
+  const reachR = lashReachR(spot) + 1e-9;
+  return allLashCorners(lash).every((corner) => {
+    const local = { x: spot.x + corner.x, y: spot.y + corner.y };
+    return (
+      Math.hypot(corner.x, corner.y) <= reachR &&
+      isInEllipse(local, HEAD_ELLIPSE) &&
+      local.x >= LASH_MIN_X &&
+      local.y >= LASH_MIN_Y
+    );
+  });
 }
 
 /** Length of a lash's centre line outside the bead circle: ink the bead never paints over. */
@@ -230,10 +264,83 @@ function markInsideEllipse(m: BodyMark, e: BodyEllipse): boolean {
   return true;
 }
 
+/** Still pose (guide 9): tail and gills at t = T_STATIC, as the picture buttons draw them. */
+const STILL_SWIM = (TAU * T_STATIC) / 1.2;
+const STILL_GILL = (TAU * T_STATIC) / 0.8;
+/** Near gill stem ink half-width: colour half-width plus outline (guide 6d). */
+const STEM_INK_HALF = GILL_STEM_W / 2 + GILL_STEM_OL;
+/**
+ * Least share of each spot option's area left in view by the near gill stems
+ * at the still pose, on every look. Patches ask less: on a Baby Slim with
+ * Long gills the stems cover most of the back, and a blotch of area 110 or
+ * more cannot fit clear of them, nor move further down a tail too thin to hold it.
+ */
+const SPOT_CLEAR_SHARE: Readonly<Record<SpotsOption, number>> = { none: 1, freckles: 0.7, dots: 0.7, patches: 0.5 };
+
+function markArea(m: { readonly rx: number; readonly ry: number }): number {
+  return Math.PI * m.rx * m.ry;
+}
+
+/** Smallest edge-to-edge gap between any two marks, as circles of their larger radius. */
+function smallestEdgeGap(marks: readonly BodyMark[]): number {
+  let gap = Infinity;
+  for (let i = 0; i < marks.length; i++) {
+    for (let j = i + 1; j < marks.length; j++) {
+      const reach = Math.max(marks[i].rx, marks[i].ry) + Math.max(marks[j].rx, marks[j].ry);
+      gap = Math.min(gap, Math.hypot(marks[i].x - marks[j].x, marks[i].y - marks[j].y) - reach);
+    }
+  }
+  return gap;
+}
+
+/** Points along the centre lines of the three near gill stems of a look at the still pose. */
+function nearStemPoints(look: AxolotlArtLook): [number, number][] {
+  const points: [number, number][] = [];
+  for (const spec of gillSpecs(look.gills, 'near', axolotlBodyGeometry(look).gillLength)) {
+    const g = gillGeometry(spec, look.gills, STILL_GILL);
+    for (let i = 0; i <= 60; i++) {
+      const u = i / 60;
+      const m = 1 - u;
+      points.push([m * m * g.bx + 2 * u * m * g.cx + u * u * g.tx, m * m * g.by + 2 * u * m * g.cy + u * u * g.ty]);
+    }
+  }
+  return points;
+}
+
+/** Points filling a (rotated) mark ellipse, on a 0.2 grid of its unit disc. */
+function markFillPoints(m: BodyMark): [number, number][] {
+  const points: [number, number][] = [];
+  for (let i = -5; i <= 5; i++) {
+    for (let j = -5; j <= 5; j++) {
+      if (i * i + j * j > 25) continue;
+      const lx = (i / 5) * m.rx;
+      const ly = (j / 5) * m.ry;
+      points.push([m.x + lx * Math.cos(m.rot) - ly * Math.sin(m.rot), m.y + lx * Math.sin(m.rot) + ly * Math.cos(m.rot)]);
+    }
+  }
+  return points;
+}
+
+/** Share of the marks' area outside the stem ink, sampled per mark and weighted by mark area. 1 for no marks. */
+function clearAreaShare(marks: readonly BodyMark[], stems: readonly (readonly [number, number])[]): number {
+  if (marks.length === 0) return 1;
+  let clear = 0;
+  let total = 0;
+  for (const m of marks) {
+    const points = markFillPoints(m);
+    const inView = points.filter(([px, py]) =>
+      stems.every(([sx, sy]) => Math.hypot(sx - px, sy - py) >= STEM_INK_HALF),
+    ).length;
+    clear += (markArea(m) * inView) / points.length;
+    total += markArea(m);
+  }
+  return clear / total;
+}
+
 describe('creator look ids', () => {
   it('lists every option of guide 6l to 6o, plus Boy or girl, Tail, Body and Age', () => {
     expect(EYE_VARIANTS).toEqual(['happy', 'sleepy', 'determined', 'curious', 'grumpy']);
-    expect(MOUTH_VARIANTS).toEqual(['smile', 'openD', 'tongueOut', 'smallO']);
+    expect(MOUTH_VARIANTS).toEqual(['smile', 'openD', 'tongueOut', 'smallO', 'bigGrin', 'catSmile', 'smirk', 'tongueTip']);
     expect(GILL_STYLE_IDS).toEqual(['fluffy', 'long', 'short']);
     expect(SPOTS_OPTIONS).toEqual(['none', 'freckles', 'dots', 'patches']);
     expect(AXO_SIZES).toEqual(['small', 'medium', 'large']);
@@ -264,16 +371,39 @@ describe('sizes (guide 6o)', () => {
   });
 });
 
+/** Neighbouring Bodies: depth differs by at least this, and the deeper is at least this share deeper. */
+const MIN_BODY_DEPTH_GAP = 8;
+const MIN_BODY_DEPTH_SHARE = 0.2;
+/** Same Body and Age: a Girl is at least this much deeper, her belly y radius at least this much bigger. */
+const MIN_GIRL_DEPTH_GAIN = 6;
+const MIN_GIRL_BELLY_GAIN = 3;
+/** A Boy's peak fin reach over a Girl's, top and bottom. */
+const MIN_BOY_FIN_RATIO = 1.45;
+
+/** Body depth: the torso's full height, 2 x its y radius. */
+function bodyDepth(look: AxolotlArtLook): number {
+  return 2 * axolotlBodyGeometry(look).torso.ry;
+}
+
+/** Peak fin reach beyond the core (2-unit fin base plus fin x the largest rise), top and bottom, over the painted tail points. */
+function peakFinReach(look: AxolotlArtLook): { top: number; bottom: number } {
+  const samples = tailSamples(axolotlBodyGeometry(look).tail, 0, 1);
+  return {
+    top: Math.max(...samples.map((tp) => tp.finTop)),
+    bottom: Math.max(...samples.map((tp) => tp.finBottom)),
+  };
+}
+
 describe('body proportions (Boy or girl, Tail, Body, Age)', () => {
   const look = (over: Partial<AxolotlArtLook>): AxolotlArtLook => ({ ...DEFAULT_ART_LOOK, sex: 'girl', ...over });
 
   it('paint the prototype torso, belly and tail for a Young Regular Medium-tail Girl, bar the Girl cue', () => {
     const geo = axolotlBodyGeometry(look({}));
-    expect(geo.torso).toEqual({ ...PROTOTYPE_TORSO, ry: PROTOTYPE_TORSO.ry + 1.5 });
-    expect(geo.belly.rx).toBe(PROTOTYPE_BELLY.rx);
-    expect(geo.belly.ry).toBeCloseTo(PROTOTYPE_BELLY.ry + 1.5, 9);
+    expect(geo.torso).toEqual({ ...PROTOTYPE_TORSO, ry: PROTOTYPE_TORSO.ry + 3 });
+    expect(geo.belly.rx).toBe(PROTOTYPE_BELLY.rx + 2);
+    expect(geo.belly.ry).toBeCloseTo(PROTOTYPE_BELLY.ry + 3, 9);
     expect(geo.tail.length).toBe(PROTOTYPE_TAIL.length);
-    expect([geo.tail.rootX, geo.tail.finTop, geo.tail.finBottom]).toEqual([-30, 9, 7]);
+    expect([geo.tail.rootX, geo.tail.finTop, geo.tail.finBottom, geo.tail.finStart]).toEqual([-30, 9, 7, 3]);
     expect(geo.gillLength).toBe(1);
     expect(geo.legLengths).toEqual([14, 14, 15, 15]);
     expect(geo.toeLength).toBe(8.5);
@@ -283,7 +413,7 @@ describe('body proportions (Boy or girl, Tail, Body, Age)', () => {
     const geo = axolotlBodyGeometry(DEFAULT_ART_LOOK);
     expect(geo.torso).toEqual(PROTOTYPE_TORSO);
     expect(geo.belly).toEqual(PROTOTYPE_BELLY);
-    expect(geo.tail).toEqual({ ...PROTOTYPE_TAIL, length: 48, finTop: 9 * 1.2, finBottom: 7 * 1.2 });
+    expect(geo.tail).toEqual({ ...PROTOTYPE_TAIL, length: 48, finTop: 9 * 1.6, finBottom: 7 * 1.6, finStart: 1 });
   });
 
   it('set the tail core length by Tail, plus 4 for a Boy, x0.85 for a Baby', () => {
@@ -300,9 +430,9 @@ describe('body proportions (Boy or girl, Tail, Body, Age)', () => {
 
   it('set torso and belly by Body', () => {
     const slim = axolotlBodyGeometry(look({ sex: 'boy', body: 'slim' }));
-    expect([slim.torso.rx, slim.torso.ry, slim.belly.rx, slim.belly.ry]).toEqual([37, 16.5, 26, 5.2]);
+    expect([slim.torso.rx, slim.torso.ry, slim.belly.rx, slim.belly.ry]).toEqual([37, 15, 26, 4.2]);
     const chubby = axolotlBodyGeometry(look({ sex: 'boy', body: 'chubby' }));
-    expect([chubby.torso.rx, chubby.torso.ry, chubby.belly.rx, chubby.belly.ry]).toEqual([39, 22, 28, 8]);
+    expect([chubby.torso.rx, chubby.torso.ry, chubby.belly.rx, chubby.belly.ry]).toEqual([39, 24, 28, 9.5]);
   });
 
   it('change only proportions by Age, keeping the head joint', () => {
@@ -323,13 +453,82 @@ describe('body proportions (Boy or girl, Tail, Body, Age)', () => {
     expect(baby.legRoots[2]).toEqual(young.legRoots[2]);
   });
 
-  it('give a Boy taller fins and a Girl a rounder torso and belly', () => {
+  it('give a Boy taller fins starting nearer the body, and a Girl a rounder torso and a rounder, wider belly', () => {
     const boy = axolotlBodyGeometry(look({ sex: 'boy' }));
     const girl = axolotlBodyGeometry(look({}));
-    expect(boy.tail.finTop).toBeCloseTo(girl.tail.finTop * 1.2, 9);
-    expect(boy.tail.finBottom).toBeCloseTo(girl.tail.finBottom * 1.2, 9);
-    expect(girl.torso.ry - boy.torso.ry).toBeCloseTo(1.5, 9);
-    expect(girl.belly.ry - boy.belly.ry).toBeCloseTo(1.5, 9);
+    expect(boy.tail.finTop).toBeCloseTo(girl.tail.finTop * 1.6, 9);
+    expect(boy.tail.finBottom).toBeCloseTo(girl.tail.finBottom * 1.6, 9);
+    expect([boy.tail.finStart, girl.tail.finStart]).toEqual([1, 3]);
+    expect(girl.torso.ry - boy.torso.ry).toBeCloseTo(3, 9);
+    expect(girl.belly.ry - boy.belly.ry).toBeCloseTo(3, 9);
+    expect(girl.belly.rx - boy.belly.rx).toBeCloseTo(2, 9);
+  });
+
+  it('make each Body clearly deeper than the last: 8 or more and 20% or more, as a Boy or a Girl, at every Age', () => {
+    for (const sex of AXO_SEXES) {
+      for (const age of AXO_AGES) {
+        const depths = AXO_BODIES.map((body) => bodyDepth(look({ sex, body, age })));
+        for (let i = 1; i < depths.length; i++) {
+          expect(depths[i] - depths[i - 1]).toBeGreaterThanOrEqual(MIN_BODY_DEPTH_GAP);
+          expect(depths[i] / depths[i - 1]).toBeGreaterThanOrEqual(1 + MIN_BODY_DEPTH_SHARE);
+        }
+      }
+    }
+  });
+
+  it('make a Girl clearly rounder than a Boy: 6 or more deeper, belly y radius 3 or more bigger, same Body and Age', () => {
+    for (const body of AXO_BODIES) {
+      for (const age of AXO_AGES) {
+        const boy = axolotlBodyGeometry(look({ sex: 'boy', body, age }));
+        const girl = axolotlBodyGeometry(look({ body, age }));
+        expect(2 * girl.torso.ry).toBeGreaterThanOrEqual(2 * boy.torso.ry + MIN_GIRL_DEPTH_GAIN);
+        expect(girl.belly.ry).toBeGreaterThanOrEqual(boy.belly.ry + MIN_GIRL_BELLY_GAIN);
+      }
+    }
+  });
+
+  it('give a Boy at least 1.45x the peak fin reach of a Girl, top and bottom, and an earlier fin start, at every Tail, Body and Age', () => {
+    for (const tail of AXO_TAILS) {
+      for (const body of AXO_BODIES) {
+        for (const age of AXO_AGES) {
+          const boy = peakFinReach(look({ sex: 'boy', tail, body, age }));
+          const girl = peakFinReach(look({ tail, body, age }));
+          expect(boy.top).toBeGreaterThanOrEqual(MIN_BOY_FIN_RATIO * girl.top);
+          expect(boy.bottom).toBeGreaterThanOrEqual(MIN_BOY_FIN_RATIO * girl.bottom);
+          const boyStart = axolotlBodyGeometry(look({ sex: 'boy', tail, body, age })).tail.finStart;
+          expect(boyStart).toBeLessThan(axolotlBodyGeometry(look({ tail, body, age })).tail.finStart);
+        }
+      }
+    }
+  });
+
+  it('read at the smallest drawn scale (Small in the shrunk preview, 0.432 px per unit)', () => {
+    const px = (units: number): number => units * SMALLEST_PX_PER_UNIT;
+    expect(SMALLEST_PX_PER_UNIT).toBeCloseTo(0.432, 9);
+    for (const tail of AXO_TAILS) {
+      for (const body of AXO_BODIES) {
+        for (const age of AXO_AGES) {
+          const boy = peakFinReach(look({ sex: 'boy', tail, body, age }));
+          const girl = peakFinReach(look({ tail, body, age }));
+          expect(px(boy.top - girl.top)).toBeGreaterThanOrEqual(2);
+          expect(px(boy.top + boy.bottom - girl.top - girl.bottom)).toBeGreaterThanOrEqual(2);
+          const boyDepth = bodyDepth(look({ sex: 'boy', tail, body, age }));
+          expect(px(bodyDepth(look({ tail, body, age })) - boyDepth)).toBeGreaterThanOrEqual(2);
+        }
+      }
+    }
+    for (const sex of AXO_SEXES) {
+      for (const age of AXO_AGES) {
+        const depths = AXO_BODIES.map((body) => bodyDepth(look({ sex, body, age })));
+        for (let i = 1; i < depths.length; i++) expect(px(depths[i] - depths[i - 1])).toBeGreaterThanOrEqual(3);
+      }
+    }
+    for (const variant of EYE_VARIANTS) {
+      for (const spot of [NEAR_EYE, FAR_EYE]) {
+        const beadR = eyeMarks(variant, spot.r).beadR;
+        for (const lash of eyelashMarks(variant, spot.r)) expect(px(inkPastBead(lash, beadR))).toBeGreaterThanOrEqual(1);
+      }
+    }
   });
 
   it('never move the head', () => {
@@ -649,7 +848,228 @@ describe('eye ring (guide 3b)', () => {
   });
 });
 
+/** The morph mouth slot fill handed to paintMouth when recording. */
+const MOUTH_SLOT = '#123456';
+/** Tongue fill (guide 3g, 6l). */
+const TONGUE_FILL = '#ff9fb5';
+/** Envelope bin width, in local units. */
+const ENVELOPE_BIN = 0.25;
+/** A dip counts once the lower edge rises and falls back by this much. */
+const DIP_DEPTH = 1;
+/** One-sided: the two ends of the mouth line differ in height by at least this much. */
+const ONE_SIDED_DROP = 4;
+/** Ink box width, height or lowest point must differ by at least this much to tell two mouths apart. */
+const BOX_TRAIT_GAP = 2;
+
+type MouthPathCommand =
+  | { readonly op: 'move' | 'line'; readonly x: number; readonly y: number }
+  | { readonly op: 'quad'; readonly cx: number; readonly cy: number; readonly x: number; readonly y: number }
+  | { readonly op: 'ellipse'; readonly x: number; readonly y: number; readonly rx: number; readonly ry: number }
+  | { readonly op: 'close' };
+
+class RecordingMouthPath {
+  readonly commands: MouthPathCommand[] = [];
+  moveTo(x: number, y: number): void {
+    this.commands.push({ op: 'move', x, y });
+  }
+  lineTo(x: number, y: number): void {
+    this.commands.push({ op: 'line', x, y });
+  }
+  quadraticCurveTo(cx: number, cy: number, x: number, y: number): void {
+    this.commands.push({ op: 'quad', cx, cy, x, y });
+  }
+  ellipse(x: number, y: number, rx: number, ry: number): void {
+    this.commands.push({ op: 'ellipse', x, y, rx, ry });
+  }
+  closePath(): void {
+    this.commands.push({ op: 'close' });
+  }
+}
+
+/** One fill or stroke paintMouth made, with the style and width it used. */
+interface MouthPaint {
+  readonly kind: 'fill' | 'stroke';
+  readonly style: string;
+  readonly lineWidth: number;
+  readonly path: RecordingMouthPath;
+}
+
+/** Every fill and stroke paintMouth makes for `variant`, in order. */
+function recordMouthPaint(variant: MouthVariant): MouthPaint[] {
+  const paints: MouthPaint[] = [];
+  const state = { fillStyle: '', strokeStyle: '', lineWidth: 0 };
+  const ctx = {
+    fill: (path: RecordingMouthPath) =>
+      paints.push({ kind: 'fill', style: state.fillStyle, lineWidth: state.lineWidth, path }),
+    stroke: (path: RecordingMouthPath) =>
+      paints.push({ kind: 'stroke', style: state.strokeStyle, lineWidth: state.lineWidth, path }),
+    set fillStyle(v: string) {
+      state.fillStyle = v;
+    },
+    set strokeStyle(v: string) {
+      state.strokeStyle = v;
+    },
+    set lineWidth(v: number) {
+      state.lineWidth = v;
+    },
+  } as unknown as CanvasRenderingContext2D;
+  vi.stubGlobal('Path2D', RecordingMouthPath);
+  try {
+    paintMouth(ctx, variant, MOUTH_SLOT);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  return paints;
+}
+
+/** Centre-line sample points of recorded path commands. */
+function samplePath(commands: readonly MouthPathCommand[]): LocalPoint[] {
+  const points: LocalPoint[] = [];
+  let pen: LocalPoint = { x: 0, y: 0 };
+  for (const cmd of commands) {
+    if (cmd.op === 'move' || cmd.op === 'line') {
+      pen = { x: cmd.x, y: cmd.y };
+      points.push(pen);
+    } else if (cmd.op === 'quad') {
+      for (let k = 1; k <= 128; k++) {
+        const u = k / 128;
+        const m = 1 - u;
+        points.push({
+          x: m * m * pen.x + 2 * u * m * cmd.cx + u * u * cmd.x,
+          y: m * m * pen.y + 2 * u * m * cmd.cy + u * u * cmd.y,
+        });
+      }
+      pen = { x: cmd.x, y: cmd.y };
+    } else if (cmd.op === 'ellipse') {
+      for (let k = 0; k < 256; k++) {
+        const a = (k / 256) * TAU;
+        points.push({ x: cmd.x + Math.cos(a) * cmd.rx, y: cmd.y + Math.sin(a) * cmd.ry });
+      }
+    }
+  }
+  return points;
+}
+
+/** The lowest sample (largest y) of a set of points. */
+function lowestPoint(points: readonly LocalPoint[]): LocalPoint {
+  return points.reduce((low, p) => (p.y > low.y ? p : low));
+}
+
+/** Whether a recorded path is an open line: no ellipse and no closePath. */
+function isOpenLine(path: RecordingMouthPath): boolean {
+  return path.commands.every((cmd) => cmd.op !== 'ellipse' && cmd.op !== 'close');
+}
+
+/** The first mouth-ink stroke that is an open line, or null for mouths drawn as closed shapes only. */
+function mouthLineOf(paints: readonly MouthPaint[]): RecordingMouthPath | null {
+  const found = paints.find((p) => p.kind === 'stroke' && p.lineWidth === MOUTH_INK && isOpenLine(p.path));
+  return found ? found.path : null;
+}
+
+/** First and last points of an open line. */
+function lineEnds(path: RecordingMouthPath): [LocalPoint, LocalPoint] {
+  const points = samplePath(path.commands);
+  return [points[0], points[points.length - 1]];
+}
+
+/** The slot-filled shape of a mouth, or null when it has none. */
+function slotFillOf(paints: readonly MouthPaint[]): RecordingMouthPath | null {
+  const found = paints.find((p) => p.kind === 'fill' && p.style === MOUTH_SLOT);
+  return found ? found.path : null;
+}
+
+/** Ellipses filled with anything but the mouth slot: the tongues. */
+function tongueEllipsesOf(paints: readonly MouthPaint[]): { x: number; y: number; rx: number; ry: number }[] {
+  return paints
+    .filter((p) => p.kind === 'fill' && p.style !== MOUTH_SLOT)
+    .flatMap((p) => p.path.commands.flatMap((cmd) => (cmd.op === 'ellipse' ? [cmd] : [])));
+}
+
+/** Largest y of the mouth-ink centre lines in each ENVELOPE_BIN column, left to right. */
+function lowerEnvelope(paints: readonly MouthPaint[]): number[] {
+  const columns = new Map<number, number>();
+  for (const paint of paints) {
+    if (paint.kind !== 'stroke' || paint.lineWidth !== MOUTH_INK) continue;
+    for (const p of samplePath(paint.path.commands)) {
+      const column = Math.floor(p.x / ENVELOPE_BIN);
+      columns.set(column, Math.max(columns.get(column) ?? -Infinity, p.y));
+    }
+  }
+  return [...columns.keys()].sort((a, b) => a - b).map((column) => columns.get(column)!);
+}
+
+/** Lobes of the lower edge: a new dip starts only after it rises DIP_DEPTH and falls DIP_DEPTH again. */
+function countDips(envelope: readonly number[]): number {
+  let dips = 1;
+  let high = envelope[0];
+  let low = Infinity;
+  let inDip = true;
+  for (const y of envelope) {
+    if (inDip) {
+      high = Math.max(high, y);
+      if (y <= high - DIP_DEPTH) {
+        inDip = false;
+        low = y;
+      }
+    } else {
+      low = Math.min(low, y);
+      if (y >= low + DIP_DEPTH) {
+        inDip = true;
+        high = y;
+        dips++;
+      }
+    }
+  }
+  return dips;
+}
+
+/** What tells a mouth apart, measured from paintMouth and mouthInkBounds. */
+interface MouthTraits {
+  readonly filled: boolean;
+  readonly tongueArea: number | null;
+  readonly oneSided: boolean;
+  readonly dips: number;
+  readonly width: number;
+  readonly height: number;
+  readonly lowest: number;
+}
+
+function mouthTraits(variant: MouthVariant): MouthTraits {
+  const paints = recordMouthPaint(variant);
+  const tongues = tongueEllipsesOf(paints);
+  const line = mouthLineOf(paints);
+  const ends = line ? lineEnds(line) : null;
+  const box = mouthInkBounds(variant);
+  return {
+    filled: slotFillOf(paints) !== null,
+    tongueArea: tongues.length === 0 ? null : tongues.reduce((sum, t) => sum + Math.PI * t.rx * t.ry, 0),
+    oneSided: ends !== null && Math.abs(ends[0].y - ends[1].y) >= ONE_SIDED_DROP,
+    dips: countDips(lowerEnvelope(paints)),
+    width: box.maxX - box.minX,
+    height: box.maxY - box.minY,
+    lowest: box.maxY,
+  };
+}
+
+/** Whether two mouths differ in at least one trait. */
+function mouthsDiffer(a: MouthTraits, b: MouthTraits): boolean {
+  if (a.filled !== b.filled || a.oneSided !== b.oneSided || a.dips !== b.dips) return true;
+  if ((a.tongueArea === null) !== (b.tongueArea === null)) return true;
+  if (a.tongueArea !== null && b.tongueArea !== null) {
+    if (Math.max(a.tongueArea, b.tongueArea) >= 2 * Math.min(a.tongueArea, b.tongueArea)) return true;
+  }
+  return (
+    Math.abs(a.width - b.width) >= BOX_TRAIT_GAP ||
+    Math.abs(a.height - b.height) >= BOX_TRAIT_GAP ||
+    Math.abs(a.lowest - b.lowest) >= BOX_TRAIT_GAP
+  );
+}
+
 describe('mouth variants (guide 6l)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('stay inside the mouth zone under the corner ticks', () => {
     for (const variant of MOUTH_VARIANTS) {
       const b = mouthInkBounds(variant);
@@ -681,16 +1101,131 @@ describe('mouth variants (guide 6l)', () => {
     expect(tongueBottom - lip).toBeGreaterThan(3.5);
     expect(tongueBottom - lip).toBeLessThan(4.5);
   });
+
+  it('Big grin opens at least 2 wider than the Open D, its lower lip at least 1 lower', () => {
+    const openD = slotFillOf(recordMouthPaint('openD'))!;
+    const bigGrin = slotFillOf(recordMouthPaint('bigGrin'))!;
+    const opening = (path: RecordingMouthPath): number => {
+      const xs = path.commands.flatMap((cmd) => (cmd.op === 'move' || cmd.op === 'quad' ? [cmd.x] : []));
+      return Math.max(...xs) - Math.min(...xs);
+    };
+    expect(opening(openD)).toBe(21);
+    expect(opening(bigGrin)).toBeGreaterThanOrEqual(opening(openD) + 2);
+    const openDLip = lowestPoint(samplePath(openD.commands)).y;
+    expect(openDLip).toBeCloseTo(15.3, 1);
+    expect(lowestPoint(samplePath(bigGrin.commands)).y).toBeGreaterThanOrEqual(openDLip + 1);
+  });
+
+  it('Cat smile is an unfilled "w": two dips at least 4 apart, the middle at least 1.5 higher', () => {
+    const paints = recordMouthPaint('catSmile');
+    expect(slotFillOf(paints)).toBeNull();
+    const line = mouthLineOf(paints)!;
+    const [move, first, second] = line.commands;
+    expect(line.commands.map((cmd) => cmd.op)).toEqual(['move', 'quad', 'quad']);
+    if (move.op !== 'move' || first.op !== 'quad' || second.op !== 'quad') throw new Error('not a w');
+    const firstLow = lowestPoint(samplePath([move, first]));
+    const secondLow = lowestPoint(samplePath([{ op: 'move', x: first.x, y: first.y }, second]));
+    expect(Math.abs(secondLow.x - firstLow.x)).toBeGreaterThanOrEqual(4);
+    expect(Math.min(firstLow.y, secondLow.y) - first.y).toBeGreaterThanOrEqual(1.5);
+    expect(countDips(lowerEnvelope(paints))).toBe(2);
+  });
+
+  it('Smirk is one-sided, lowest near its low end, with one tick at its raised end', () => {
+    const paints = recordMouthPaint('smirk');
+    expect(slotFillOf(paints)).toBeNull();
+    const line = mouthLineOf(paints)!;
+    const [start, end] = lineEnds(line);
+    expect(Math.abs(start.y - end.y)).toBeGreaterThanOrEqual(ONE_SIDED_DROP);
+    const [lowEnd, raisedEnd] = start.y > end.y ? [start, end] : [end, start];
+    const lowest = lowestPoint(samplePath(line.commands));
+    expect(Math.abs(lowest.x - lowEnd.x) / Math.abs(raisedEnd.x - lowEnd.x)).toBeLessThanOrEqual(0.4);
+    const ticks = paints.filter((p) => p.kind === 'stroke' && p.lineWidth === MOUTH_TICK_INK);
+    expect(ticks).toHaveLength(1);
+    const tickStarts = ticks[0].path.commands.filter((cmd) => cmd.op === 'move');
+    expect(tickStarts).toEqual([{ op: 'move', x: raisedEnd.x, y: raisedEnd.y }]);
+  });
+
+  it('Blep is the Smile line plus a small tongue poking at least 1.5 below it', () => {
+    const tongueTip = recordMouthPaint('tongueTip');
+    const smileLine = mouthLineOf(recordMouthPaint('smile'))!;
+    expect(mouthLineOf(tongueTip)!.commands).toEqual(smileLine.commands);
+    expect(slotFillOf(tongueTip)).toBeNull();
+    expect(tongueTip.filter((p) => p.kind === 'fill').map((p) => p.style)).toEqual([TONGUE_FILL]);
+    const [tongue] = tongueEllipsesOf(tongueTip);
+    const [bigTongue] = tongueEllipsesOf(recordMouthPaint('tongueOut'));
+    expect(tongue.rx * tongue.ry).toBeLessThanOrEqual(0.5 * bigTongue.rx * bigTongue.ry);
+    expect(tongue.y + tongue.ry - lowestPoint(samplePath(smileLine.commands)).y).toBeGreaterThanOrEqual(1.5);
+  });
+
+  it('never paint white: no teeth (guide 6l)', () => {
+    for (const variant of MOUTH_VARIANTS) {
+      for (const paint of recordMouthPaint(variant)) expect(paint.style).not.toBe(WHITE);
+    }
+  });
+
+  it('every pair of mouths differs in at least one trait', () => {
+    const traits = MOUTH_VARIANTS.map(mouthTraits);
+    const pairs: string[] = [];
+    const alike: string[] = [];
+    for (let i = 0; i < MOUTH_VARIANTS.length; i++) {
+      for (let j = i + 1; j < MOUTH_VARIANTS.length; j++) {
+        pairs.push(`${MOUTH_VARIANTS[i]} ${MOUTH_VARIANTS[j]}`);
+        if (!mouthsDiffer(traits[i], traits[j])) alike.push(`${MOUTH_VARIANTS[i]} ${MOUTH_VARIANTS[j]}`);
+      }
+    }
+    expect(traits.every((t) => !mouthsDiffer(t, t))).toBe(true);
+    expect(pairs).toHaveLength(28);
+    expect(alike).toEqual([]);
+  });
 });
 
 describe('spots (guide 6n)', () => {
-  it('Freckles are the prototype three (guide 6g)', () => {
-    expect(spotMarks('freckles', 0, 1)).toEqual([
-      { x: -20, y: 1, rx: 1.7, ry: 1.7, rot: 0 },
-      { x: -29, y: -4, rx: 1.5, ry: 1.5, rot: 0 },
-      { x: -12, y: 5, rx: 1.4, ry: 1.4, rot: 0 },
-    ]);
+  it('Freckles are ten tiny round specks in one shoulder cluster, no bigger than 15 x 9', () => {
+    const marks = spotMarks('freckles', STILL_SWIM, 1);
+    expect(marks).toHaveLength(10);
+    expect(SPOT_SETS.freckles.tail).toEqual([]);
+    for (const m of marks) {
+      expect(m.ry).toBe(m.rx);
+      expect(m.rx).toBeGreaterThanOrEqual(0.8);
+      expect(m.rx).toBeLessThanOrEqual(1.2);
+    }
+    expect(smallestEdgeGap(marks)).toBeGreaterThanOrEqual(0.8);
+    const box = boundsOfPoints(marks.map((m): [number, number] => [m.x, m.y]), 0);
+    expect(box.maxX - box.minX).toBeLessThanOrEqual(15);
+    expect(box.maxY - box.minY).toBeLessThanOrEqual(9);
+    expect(isInside(box, { minX: -35, minY: -11, maxX: -15, maxY: -2 })).toBe(true);
     expect(spotMarks('none', 0, 1)).toEqual([]);
+  });
+
+  it('Dots are six even, medium round dots along the back, then down the tail centre', () => {
+    const set = SPOT_SETS.dots;
+    expect(set.body.length + set.tail.length).toBe(6);
+    expect(set.body.length).toBeGreaterThanOrEqual(2);
+    expect(set.body.length).toBeLessThanOrEqual(3);
+    for (const m of [...set.body, ...set.tail]) expect([m.rx, m.ry]).toEqual([2.8, 2.8]);
+    for (const m of set.tail) {
+      expect(m.s).toBeLessThanOrEqual(0.7);
+      expect(Math.abs(m.v)).toBeLessThanOrEqual(0.1);
+    }
+    const geo = axolotlBodyGeometry(DEFAULT_ART_LOOK);
+    const marks = spotMarks('dots', STILL_SWIM, 1, geo.tail, geo.torso);
+    const steps = marks.slice(1).map((m, i) => Math.hypot(m.x - marks[i].x, m.y - marks[i].y));
+    const meanStep = steps.reduce((sum, step) => sum + step, 0) / steps.length;
+    for (const step of steps) expect(Math.abs(step / meanStep - 1)).toBeLessThanOrEqual(0.2);
+    expect(steps.every((_, i) => marks[i + 1].x < marks[i].x)).toBe(true);
+  });
+
+  it('Patches are three big, soft blotches over the back and tail, each of area 110 or more', () => {
+    const set = SPOT_SETS.patches;
+    expect([[2, 1], [1, 2]]).toContainEqual([set.body.length, set.tail.length]);
+    for (const m of [...set.body, ...set.tail]) expect(markArea(m)).toBeGreaterThanOrEqual(110);
+  });
+
+  it('step up in size: 10 Freckles, 6 Dots each 4 Freckles or more, 3 Patches each 4 Dots or more', () => {
+    const areasOf = (option: SpotsOption): number[] => [...SPOT_SETS[option].body, ...SPOT_SETS[option].tail].map(markArea);
+    expect(SPOTS_OPTIONS.map((option) => areasOf(option).length)).toEqual([0, 10, 6, 3]);
+    expect(Math.min(...areasOf('dots'))).toBeGreaterThanOrEqual(4 * Math.max(...areasOf('freckles')));
+    expect(Math.min(...areasOf('patches'))).toBeGreaterThanOrEqual(4 * Math.max(...areasOf('dots')));
   });
 
   it('never land on the head (x > 0) at any swim phase or tail amplitude', () => {
@@ -709,9 +1244,10 @@ describe('spots (guide 6n)', () => {
     for (const swim of [0, 1, 2.5, 4]) {
       for (const option of ['dots', 'patches'] as const) {
         const marks = spotMarks(option, swim, 1.6);
-        const bodyCount = option === 'dots' ? 3 : 2;
+        const bodyCount = option === 'dots' ? 3 : 1;
         const tail = marks.slice(bodyCount);
-        const specs = option === 'dots' ? [0.15, 0.35, 0.55, 0.75] : [0.45];
+        const specs = option === 'dots' ? [0.34, 0.54, 0.7] : [0.2, 0.47];
+        expect(tail).toHaveLength(specs.length);
         tail.forEach((m, i) => {
           const tp = tailPointAt(specs[i], swim, 1.6);
           expect(m.x).toBeCloseTo(tp.x, 9);
@@ -723,24 +1259,48 @@ describe('spots (guide 6n)', () => {
 });
 
 describe('eyelashes (Girl cue)', () => {
-  const eyes: readonly [EyeSpot, { x: number; y: number; r: number }][] = [
-    [NEAR_EYE, NEAR_EYE_ZONE],
-    [FAR_EYE, FAR_EYE_ZONE],
-  ];
+  const eyes = [NEAR_EYE, FAR_EYE] as const;
 
-  it('are three lashes per eye, every corner of both butt-capped strokes inside the eye zone at every blink', () => {
+  it('are ink 2.0 over a white 3.6 under-stroke, reaching 4 past the bead radius', () => {
+    expect([EYELASH_INK, EYELASH_UNDER, LASH_REACH]).toEqual([2, 3.6, 4]);
+  });
+
+  it('are three lashes per eye, every corner of both butt-capped strokes inside the lash reach circle at every blink', () => {
     for (const variant of EYE_VARIANTS) {
-      for (const [spot, zone] of eyes) {
+      for (const spot of eyes) {
         const lashes = eyelashMarks(variant, spot.r);
         expect(lashes).toHaveLength(3);
         for (const lash of lashes) {
           expect(Math.hypot(lash.x2 - lash.x1, lash.y2 - lash.y1)).toBeGreaterThan(1.2);
-          for (const blink of LASH_BLINKS) {
-            for (const width of LASH_WIDTHS) {
-              for (const corner of lashStrokeCorners(lash, width, blink)) {
-                expect(Math.hypot(corner.x, corner.y)).toBeLessThanOrEqual(zone.r);
-              }
-            }
+          for (const corner of allLashCorners(lash)) {
+            expect(Math.hypot(corner.x, corner.y)).toBeLessThanOrEqual(lashReachR(spot) + 1e-9);
+          }
+        }
+      }
+    }
+  });
+
+  it('end on the lash reach circle at the same three angles on every variant', () => {
+    for (const variant of EYE_VARIANTS) {
+      for (const spot of eyes) {
+        const lashes = eyelashMarks(variant, spot.r);
+        const firstCornerOut = lashes.map((lash) =>
+          Math.max(...lashStrokeCorners(lash, EYELASH_UNDER, 1).map((c) => Math.hypot(c.x, c.y))),
+        );
+        for (const reach of firstCornerOut) expect(reach).toBeCloseTo(lashReachR(spot), 6);
+      }
+    }
+  });
+
+  it('keep every corner inside the head, right of x 16.5 (clear of the gill stems) and below y -19.5 (the Head slot)', () => {
+    for (const variant of EYE_VARIANTS) {
+      for (const spot of eyes) {
+        for (const lash of eyelashMarks(variant, spot.r)) {
+          for (const corner of allLashCorners(lash)) {
+            const local = { x: spot.x + corner.x, y: spot.y + corner.y };
+            expect(isInEllipse(local, HEAD_ELLIPSE)).toBe(true);
+            expect(local.x).toBeGreaterThanOrEqual(LASH_MIN_X);
+            expect(local.y).toBeGreaterThanOrEqual(LASH_MIN_Y);
           }
         }
       }
@@ -749,7 +1309,7 @@ describe('eyelashes (Girl cue)', () => {
 
   it('sit at the upper back of the bead, past its edge', () => {
     for (const variant of EYE_VARIANTS) {
-      for (const [spot] of eyes) {
+      for (const spot of eyes) {
         const beadR = eyeMarks(variant, spot.r).beadR;
         for (const lash of eyelashMarks(variant, spot.r)) {
           expect(lash.x2).toBeLessThan(0);
@@ -760,9 +1320,9 @@ describe('eyelashes (Girl cue)', () => {
     }
   });
 
-  it('show at least 0.9 of ink past the bead on every variant', () => {
+  it('show at least 2.5 of ink past the bead on every variant and both eyes', () => {
     for (const variant of EYE_VARIANTS) {
-      for (const [spot] of eyes) {
+      for (const spot of eyes) {
         const beadR = eyeMarks(variant, spot.r).beadR;
         for (const lash of eyelashMarks(variant, spot.r)) {
           expect(inkPastBead(lash, beadR)).toBeGreaterThanOrEqual(MIN_LASH_INK_PAST_BEAD);
@@ -773,7 +1333,7 @@ describe('eyelashes (Girl cue)', () => {
 
   it('keep both root corners inside the bead, so the bead covers every root below the lid', () => {
     for (const variant of EYE_VARIANTS) {
-      for (const [spot] of eyes) {
+      for (const spot of eyes) {
         const beadR = eyeMarks(variant, spot.r).beadR;
         for (const lash of eyelashMarks(variant, spot.r)) {
           for (const corner of lashStrokeCorners(lash, EYELASH_UNDER, 1).slice(0, 2)) {
@@ -786,7 +1346,7 @@ describe('eyelashes (Girl cue)', () => {
 
   it('root on the back half of the lid line inside the bead and rise above it on lidded eyes', () => {
     for (const variant of ['sleepy', 'determined', 'grumpy'] as const) {
-      for (const [spot] of eyes) {
+      for (const spot of eyes) {
         const marks = eyeMarks(variant, spot.r);
         const lid = marks.lid!;
         for (const lash of eyelashMarks(variant, spot.r)) {
@@ -851,6 +1411,38 @@ describe('eyelashes (Girl cue)', () => {
     expect(state.lineCap).toBe('round');
     expect(saved).toEqual([]);
   });
+
+  it('paint on layer 12, after every layer 11 mouth stroke, so no Wearable (layers 8.5 to 11.5) can cover them', () => {
+    class StubPath2D {
+      moveTo(): void {}
+      lineTo(): void {}
+      quadraticCurveTo(): void {}
+      closePath(): void {}
+      ellipse(): void {}
+      arc(): void {}
+    }
+    vi.stubGlobal('Path2D', StubPath2D);
+    const state: Record<string, unknown> = { lineWidth: 0, strokeStyle: '', lineCap: '' };
+    const strokes: Record<string, unknown>[] = [];
+    const ctx = new Proxy(
+      {},
+      {
+        get: (_target, key) => (key === 'stroke' ? () => strokes.push({ ...state }) : () => {}),
+        set: (_target, key, value: unknown) => {
+          if (typeof key === 'string' && key in state) state[key] = value;
+          return true;
+        },
+      },
+    ) as CanvasRenderingContext2D;
+    drawAxolotl(ctx, AXO_REST_POSE, LEUCISTIC, { ...DEFAULT_ART_LOOK, sex: 'girl' });
+    vi.unstubAllGlobals();
+    const isLash = (stroke: Record<string, unknown>): boolean =>
+      stroke.lineCap === 'butt' && (stroke.lineWidth === EYELASH_UNDER || stroke.lineWidth === EYELASH_INK);
+    const lastMouth = strokes.map((stroke) => stroke.lineWidth).lastIndexOf(MOUTH_INK);
+    expect(strokes.filter(isLash)).toHaveLength(4);
+    expect(lastMouth).toBeGreaterThanOrEqual(0);
+    expect(strokes.findIndex(isLash)).toBeGreaterThan(lastMouth);
+  });
 });
 
 describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)', () => {
@@ -860,7 +1452,7 @@ describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)',
   }
 
   it('enumerates every combination', () => {
-    expect(EVERY_LOOK).toHaveLength(5 * 4 * 3 * 4 * 2 * 3 * 3 * 3);
+    expect(EVERY_LOOK).toHaveLength(5 * 8 * 3 * 4 * 2 * 3 * 3 * 3);
   });
 
   it('fits AXO_TEX with padding at sampled flutter phases and tail amplitudes 1 and 1.6', () => {
@@ -879,19 +1471,22 @@ describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)',
     expect(failingLooks(fits)).toEqual([]);
   }, ENUMERATION_TIMEOUT_MS);
 
-  it('keeps eye marks and lashes inside the eye zones', () => {
+  it('keeps eye marks inside the eye zones, and lashes inside the lash reach circle and the head, clear of the gill stems and Head slot', () => {
     const zones = [
       [NEAR_EYE, NEAR_EYE_ZONE],
       [FAR_EYE, FAR_EYE_ZONE],
     ] as const;
-    const eyesHold = (look: AxolotlArtLook): boolean =>
-      zones.every(([spot, zone]) => {
-        const marks = eyeMarks(look.eyes, spot.r);
-        const glintsIn = marks.glints.every((g) => Math.hypot(g.x, g.y) + g.r <= marks.beadR + 1e-9);
-        const lashes = look.sex === 'girl' ? eyelashMarks(look.eyes, spot.r) : [];
-        const lashesIn = lashes.every((lash) => lashPaintInZone(lash, zone.r));
-        return marks.beadR <= zone.r && glintsIn && lashesIn;
-      });
+    const eyesHold = memoBy(
+      (look) => `${look.eyes}|${look.sex}`,
+      (look) =>
+        zones.every(([spot, zone]) => {
+          const marks = eyeMarks(look.eyes, spot.r);
+          const glintsIn = marks.glints.every((g) => Math.hypot(g.x, g.y) + g.r <= marks.beadR + 1e-9);
+          const lashes = look.sex === 'girl' ? eyelashMarks(look.eyes, spot.r) : [];
+          const lashesIn = lashes.every((lash) => lashPaintHolds(lash, spot));
+          return marks.beadR <= zone.r && glintsIn && lashesIn;
+        }),
+    );
     expect(failingLooks(eyesHold)).toEqual([]);
   });
 
@@ -955,6 +1550,19 @@ describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)',
     expect(failingLooks(spotsHold)).toEqual([]);
   });
 
+  it('keeps most of each spot option in view past the near gill stems at the still pose', () => {
+    const stemsOf = memoBy((look) => `${look.gills}|${look.age}`, nearStemPoints);
+    const clearHolds = memoBy(
+      (look) => [look.spots, look.gills, look.sex, look.tail, look.body, look.age].join('|'),
+      (look) => {
+        const geo = axolotlBodyGeometry(look);
+        const marks = spotMarks(look.spots, STILL_SWIM, 1, geo.tail, geo.torso);
+        return clearAreaShare(marks, stemsOf(look)) >= SPOT_CLEAR_SHARE[look.spots];
+      },
+    );
+    expect(failingLooks(clearHolds)).toEqual([]);
+  }, ENUMERATION_TIMEOUT_MS);
+
   it('puts the Tail slot anchor on the core top at tail point 4, with its footprint in the frame', () => {
     const inner = frameInner(0);
     const anchorHolds = memoBy(
@@ -975,7 +1583,7 @@ describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)',
       },
     );
     expect(TAIL_SLOT_POINT).toBe(4);
-    expect(TAIL_SLOT_POINT).toBeGreaterThan(TAIL_FIN_START);
+    expect(failingLooks((look) => TAIL_SLOT_POINT > axolotlBodyGeometry(look).tail.finStart)).toEqual([]);
     expect(failingLooks(anchorHolds)).toEqual([]);
   });
 });
@@ -1005,6 +1613,22 @@ describe('AXO_TEX and preview crops', () => {
         for (const t of PHASES) expectInside(gillInkBounds(style, t, k), AXO_PREVIEW_CROPS.gills);
       }
     }
+  });
+
+  it('crops the spots round every spot mark of every look at sampled swim phases, padded, with the back of the head', () => {
+    const boxes: Bounds[] = [];
+    const spotLooks = EVERY_LOOK.filter((look) => look.eyes === 'happy' && look.mouth === 'smile' && look.gills === 'fluffy');
+    for (const look of spotLooks) {
+      const geo = axolotlBodyGeometry(look);
+      for (const swim of SWIM_SAMPLES) {
+        for (const m of spotMarks(look.spots, swim, 1, geo.tail, geo.torso)) {
+          boxes.push(boundsOfPoints([[m.x, m.y]], Math.max(m.rx, m.ry) + FRAME_PAD));
+        }
+      }
+    }
+    expect(spotLooks).toHaveLength(4 * 2 * 3 * 3 * 3);
+    expectInside(unionBounds(boxes), AXO_PREVIEW_CROPS.spots);
+    expect(AXO_PREVIEW_CROPS.spots.maxX).toBeGreaterThanOrEqual(6);
   });
 
   it('crops the whole axolotl to the AXO_TEX frame, and every crop sits in the frame', () => {

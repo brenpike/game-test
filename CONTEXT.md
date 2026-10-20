@@ -142,6 +142,9 @@ The step-by-step screens at first launch where the player makes a starter axolot
 **Picture button**:
 A big button on a creator or restyle step that shows one option as a small preview on the axolotl so far.
 
+**Name box**:
+The field on the Name step where the player types the axolotl's name; it looks typeable, with a light inset field, a pencil, the "Type a name" placeholder, and a blinking cursor while focused.
+
 **Restyle**:
 Changing an owned axolotl's look and name in the Home Tank, on the creator's step screens with tabs; Colour and **Boy or girl** cannot change.
 

@@ -23,6 +23,8 @@ import {
   DONE_BUTTON,
   MORE_NAMES_BUTTON,
   NAME_BOX,
+  NAME_CURSOR,
+  NAME_PENCIL_PX,
   NAME_TEXT_PX,
   NAME_TILE,
   NEXT_BUTTON,
@@ -32,6 +34,8 @@ import {
   TAB_H,
   TAB_TEXT_PX,
   TEXT_GAP,
+  nameBoxParts,
+  nameCursorShown,
   stylerLayout,
   tabWidth,
   type StylerLayout,
@@ -56,7 +60,7 @@ const CAPTION_PX = 18;
 const OPTION_LABEL_PX = 18;
 
 /** The axolotl texture frame, mirroring AXO_TEX (src/art/drawAxolotl.ts). */
-const PREVIEW_FRAME = Object.freeze({ w: 166, h: 139, originX: 102, originY: 79 });
+const PREVIEW_FRAME = Object.freeze({ w: 166, h: 142, originX: 102, originY: 79 });
 
 /** The largest size scale, mirroring AXO_SIZE_SCALE.large (src/art/drawAxolotlParts.ts); sizes are 0.72, 0.85 and 1. */
 const PREVIEW_LARGEST_SIZE = 1;
@@ -327,6 +331,12 @@ describe('styler sizes', () => {
     for (const size of [NAME_BOX, NAME_TILE, MORE_NAMES_BUTTON]) expect(size.h).toBeGreaterThanOrEqual(MIN_TARGET_PX);
   });
 
+  it('widens the name box to hold the pencil icon beside a 12-character name', () => {
+    expect(NAME_PENCIL_PX).toBe(20);
+    expect(NAME_BOX).toEqual({ w: 192, h: MIN_TARGET_PX });
+    expect(NAME_BOX.w).toBeGreaterThanOrEqual(NAME_MAX * BOLD_EM * NAME_TEXT_PX + 2 * UI.pad + NAME_PENCIL_PX + TEXT_GAP);
+  });
+
   it('fits each tab label in its tab, 48 px tall or more', () => {
     expect(TAB_H).toBeGreaterThanOrEqual(MIN_TARGET_PX);
     for (const step of STYLER_STEPS) {
@@ -514,5 +524,77 @@ describe('stylerLayout', () => {
     expect(() => stylerLayout(view, { mode: 'creator', step: 'eyes', optionCount: 0, tabPage: null }, measure)).toThrow(RangeError);
     expect(() => stylerLayout(view, { mode: 'creator', step: 'eyes', optionCount: 9, tabPage: null }, measure)).toThrow(RangeError);
     expect(() => stylerLayout(view, { mode: 'restyle', step: 'eyes', optionCount: 3, tabPage: 0.5 }, measure)).toThrow(RangeError);
+  });
+});
+
+describe('nameBoxParts', () => {
+  /** Name boxes to split: the bare size at the origin, off whole px, and every laid-out name box on the smallest canvases. */
+  function nameBoxes(): Rect[] {
+    const laidOut = SMALLEST.flatMap((view) => MODES.map((mode) => layoutFor(view, mode, 'name', NAME_COUNT).name?.box));
+    return [
+      { x: 0, y: 0, ...NAME_BOX },
+      { x: 37.5, y: 101.25, ...NAME_BOX },
+      ...laidOut.filter((box): box is Rect => box !== undefined),
+    ];
+  }
+
+  it('leaves room for a 12-character name at 20 px', () => {
+    for (const box of nameBoxes()) {
+      const { text } = nameBoxParts(box);
+      expect(text.w).toBeGreaterThanOrEqual(NAME_MAX * BOLD_EM * NAME_TEXT_PX - 1e-9);
+      expect(text.x).toBeCloseTo(box.x + UI.pad);
+      expect(text.y).toBe(box.y);
+      expect(text.h).toBe(box.h);
+    }
+  });
+
+  it('puts a 20 px pencil inside the box, UI.pad in from the right edge and centred down it', () => {
+    for (const box of nameBoxes()) {
+      const { pencil } = nameBoxParts(box);
+      expect(pencil.w).toBe(NAME_PENCIL_PX);
+      expect(pencil.h).toBe(NAME_PENCIL_PX);
+      expect(isInside(pencil, box)).toBe(true);
+      expect(pencil.x + pencil.w).toBeCloseTo(box.x + box.w - UI.pad);
+      expect(pencil.y + pencil.h / 2).toBeCloseTo(box.y + box.h / 2);
+    }
+  });
+
+  it('keeps the text and the pencil at least TEXT_GAP apart, never overlapping', () => {
+    for (const box of nameBoxes()) {
+      const { text, pencil } = nameBoxParts(box);
+      expect(isInside(text, box)).toBe(true);
+      expect(clearance(text, pencil)).toBeGreaterThanOrEqual(TEXT_GAP - 1e-9);
+      expect(clearance(text, pencil)).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('nameCursorShown', () => {
+  it('blinks at 1 Hz, under 3 flashes a second', () => {
+    expect(NAME_CURSOR).toEqual({ onS: 0.5, offS: 0.5 });
+    expect(Object.isFrozen(NAME_CURSOR)).toBe(true);
+    const periodS = NAME_CURSOR.onS + NAME_CURSOR.offS;
+    expect(1 / periodS).toBe(1);
+    expect(1 / periodS).toBeLessThan(3);
+  });
+
+  it('shows the cursor for the first half of each second', () => {
+    for (const start of [0, 1, 7]) {
+      for (const seconds of [0, 0.1, 0.25, 0.4, 0.49]) expect(nameCursorShown(start + seconds, true)).toBe(true);
+    }
+  });
+
+  it('hides the cursor for the second half of each second', () => {
+    for (const start of [0, 1, 7]) {
+      for (const seconds of [0.5, 0.6, 0.75, 0.9, 0.99]) expect(nameCursorShown(start + seconds, true)).toBe(false);
+    }
+  });
+
+  it('keeps the cursor steady when not blinking', () => {
+    for (const seconds of [0, 0.25, 0.5, 0.75, 0.99, 3.6]) expect(nameCursorShown(seconds, false)).toBe(true);
+  });
+
+  it('shows the cursor at a negative or not-a-number time', () => {
+    for (const seconds of [-0.75, -0.25, Number.NaN, Number.POSITIVE_INFINITY]) expect(nameCursorShown(seconds, true)).toBe(true);
   });
 });

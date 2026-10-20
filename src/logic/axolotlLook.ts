@@ -9,7 +9,7 @@ import { nextFocusIndex } from './tankUi';
 export type EyeStyle = 'happy' | 'sleepy' | 'determined' | 'curious' | 'grumpy';
 
 /** A mouth variant (art style guide 6l). */
-export type MouthStyle = 'smile' | 'openD' | 'tongueOut' | 'smallO';
+export type MouthStyle = 'smile' | 'openD' | 'tongueOut' | 'smallO' | 'bigGrin' | 'catSmile' | 'smirk' | 'tongueTip';
 
 /** A gill style (art style guide 6m). */
 export type GillStyle = 'fluffy' | 'long' | 'short';
@@ -73,6 +73,10 @@ export const MOUTH_OPTIONS = freezeOptions<MouthStyle>([
   { id: 'openD', label: 'Open D' },
   { id: 'tongueOut', label: 'Tongue out' },
   { id: 'smallO', label: 'Small o' },
+  { id: 'bigGrin', label: 'Big grin' },
+  { id: 'catSmile', label: 'Cat smile' },
+  { id: 'smirk', label: 'Smirk' },
+  { id: 'tongueTip', label: 'Blep' },
 ]);
 
 /** Gill style options in PRD F2 order. */

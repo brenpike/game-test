@@ -28,7 +28,6 @@ import {
   FAR_EYE,
   HEAD_ELLIPSE,
   NEAR_EYE,
-  TAIL_FIN_START,
   TAIL_SEGMENTS,
   axolotlBodyGeometry,
   boundsOfPoints,
@@ -54,21 +53,26 @@ import {
  * padding on every side (guide 11): see axolotlInkBounds(). The far left is
  * a Grown-up Chubby Boy's Long tail tip (x -97.5); the top is Grown-up Long
  * gill ink (about y -74.4); the bottom is a regrowing rear leg's glints on a
- * Chubby Girl (about y 55.7); the right is the snout ink (x 56.5), with the
- * prototype frame's slack kept. Size (guide 6o) scales the bake, not this
- * frame. Local x = 0 sits originX from the left; local y = 0 sits originY
- * from the top.
+ * Chubby Girl, whose deeper torso lowers the leg roots (about y 58.05); the
+ * right is the snout ink (x 56.5), with the prototype frame's slack kept. Only
+ * the bottom grew for the clearer Body and Boy or girl shapes. Size (guide 6o)
+ * scales the bake, not this frame. Local x = 0 sits originX from the left;
+ * local y = 0 sits originY from the top.
  */
-export const AXO_TEX: TexSize = { w: 166, h: 139, originX: 102, originY: 79 };
+export const AXO_TEX: TexSize = { w: 166, h: 142, originX: 102, originY: 79 };
 
 /**
  * Picture-button crops in local units: `face` for Eyes and Mouth (both eye
  * zones, every mouth, the snout), `gills` for Gills (every gill style at every
- * flutter phase and Age), `whole` (the AXO_TEX frame) for every other option.
+ * flutter phase and Age), `spots` for Spots (every spot mark of every Boy or
+ * girl, Tail, Body and Age at every swim phase at tail amplitude 1, with 4
+ * units of padding, plus the back of the head to x 7), `whole` (the AXO_TEX
+ * frame) for every other option.
  */
-export const AXO_PREVIEW_CROPS: Readonly<Record<'face' | 'gills' | 'whole', Bounds>> = {
+export const AXO_PREVIEW_CROPS: Readonly<Record<'face' | 'gills' | 'spots' | 'whole', Bounds>> = {
   face: { minX: 14, minY: -20, maxX: 58, maxY: 24 },
   gills: { minX: -63, minY: -77, maxX: 25, maxY: 22 },
+  spots: { minX: -85, minY: -22, maxX: 7, maxY: 20 },
   whole: {
     minX: -AXO_TEX.originX,
     minY: -AXO_TEX.originY,
@@ -434,7 +438,7 @@ function upperOutline(
 /**
  * Rim light: a stroke centred on the upper outline, clipped to the silhouette,
  * so `rim.width` px show just inside the ink. Never touches the lower edge.
- * `endIndex` is the last tail point: the fin band start, or the tail tip.
+ * `endIndex` is the last tail point: the look's fin band start, or the tail tip.
  */
 function paintMorphRim(
   ctx: CanvasRenderingContext2D,
@@ -605,8 +609,8 @@ export function drawAxolotl(
   ell(sil, HEAD_ELLIPSE.cx, HEAD_ELLIPSE.cy, HEAD_ELLIPSE.rx, HEAD_ELLIPSE.ry);
   blob(ctx, sil, palette.body, LW);
 
-  // 5. fin bands, fin rays, core edge
-  const i0 = TAIL_FIN_START;
+  // 5. fin bands, fin rays, core edge (from the look's fin start: nearer the body on a Boy)
+  const i0 = geo.tail.finStart;
   const bandT = new Path2D();
   const bandB = new Path2D();
   bandT.moveTo(topC[i0][0], topC[i0][1]);
@@ -672,7 +676,7 @@ export function drawAxolotl(
   if (extras?.flecks) paintMorphDots(ctx, sil, tail, torso, extras.flecks);
   if (extras?.shimmer) paintMorphShimmer(ctx, sil, tail, torso, extras.shimmer);
 
-  // 8. spots (spot colour per morph, guide 3b; the prototype's freckles are the Freckles option)
+  // 8. spots (spot colour per morph, guide 3b; the player's Spots option, guide 6n)
   const spot = extras?.spot === undefined ? FRECKLE : extras.spot;
   if (spot !== null) paintSpots(ctx, look.spots, swim, pose.tailAmp, spot, geo.tail, torso);
 

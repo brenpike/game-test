@@ -29,6 +29,9 @@ export const MORE_NAMES_LABEL = 'More names';
 /** Accessible label of the name text field. */
 export const NAME_FIELD_LABEL = 'Axolotl name';
 
+/** Placeholder in the empty name box, so it looks typeable. */
+export const NAME_PLACEHOLDER = 'Type a name';
+
 /** Helper line on a creator step the player can change later in the Home Tank. */
 export const CREATOR_HELPER = 'Tap a picture to try it on. You can change it later in your Home Tank.';
 

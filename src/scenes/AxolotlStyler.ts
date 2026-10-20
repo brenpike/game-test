@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { AXO_PREVIEW_CROPS, AXO_SCENE_SCALE, AXO_TEX, type AxolotlPose } from '../art/drawAxolotl';
 import { AXO_SIZE_SCALE } from '../art/drawAxolotlParts';
-import { BUTTON_PRESS_OFFSET, ICON_SIZE, type IconKind } from '../art/drawUi';
+import { BUTTON_PRESS_OFFSET, ICON_SIZE, NAME_FIELD, type IconKind } from '../art/drawUi';
 import type { MorphTextures } from '../art/morphTextures';
 import { HOME_TANK_WALL, INK, LW, MORPH_PALETTES, T_STATIC, UI_PANEL, WHITE } from '../art/palette';
 import {
@@ -17,7 +17,7 @@ import {
   type ButtonVisual,
   type TexInfo,
 } from '../art/textures';
-import type { AxolotlLook, LookField } from '../logic/axolotlLook';
+import type { AxolotlLook, AxolotlSex, LookField } from '../logic/axolotlLook';
 import { NAME_FIELD_RAW_MAX, fitNameEdit, suggestedNamesFor } from '../logic/axolotlNames';
 import type { Rect, Size } from '../logic/hudLayout';
 import { morphById, type RealMorphId } from '../logic/morphs';
@@ -44,6 +44,7 @@ import {
   DONE_LABEL,
   MORE_NAMES_LABEL,
   NAME_FIELD_LABEL,
+  NAME_PLACEHOLDER,
   NEXT_LABEL,
   SURPRISE_ME_LABEL,
   stepHeading,
@@ -58,12 +59,16 @@ import {
   DONE_BUTTON,
   HEADING_TEXT_PX,
   HELPER_TEXT_PX,
+  NAME_CURSOR,
+  NAME_PENCIL_PX,
   NAME_TEXT_PX,
   NEXT_BUTTON,
   OPTION_LABEL_TEXT_PX,
   PAGE_BUTTON_PX,
   SURPRISE_BUTTON,
   TAB_TEXT_PX,
+  nameBoxParts,
+  nameCursorShown,
   stylerLayout,
   type StylerLayout,
   type StylerMeasure,
@@ -109,6 +114,8 @@ const PICTURE_INSET = LW + 1;
 /** The Colour step's morph badge: 24 px, inside the picture button's lower-left corner. */
 const MORPH_BADGE_PX = 24;
 const MORPH_BADGE_INSET = 4;
+/** The Boy or girl step's symbol, in the morph badge's spot: a white disc with an ink ring and the boy or girl icon. */
+const SEX_SYMBOL = Object.freeze({ r: 12, outline: 2.6, iconPx: 18 });
 /** Progress dots (creator): done is a filled dot, current a bigger ring with a filled centre, to-come a hollow ring. */
 const DOT = Object.freeze({ doneR: 4.5, comeR: 4, comeLine: 2, currentR: 5.75, currentLine: 2.5, centreR: 2.5 });
 /** The current restyle tab's thick ink bar, inside the tab's bottom edge. */
@@ -175,7 +182,7 @@ interface Chevron {
   setEnabled(enabled: boolean): void;
 }
 
-/** One option button's objects: its tap area, picture, label, name text, tick and morph badge. */
+/** One option button's objects: its tap area, picture, label, name text, tick, morph badge and sex symbol. */
 interface OptionSlot {
   zone: Phaser.GameObjects.Zone;
   picture: Phaser.GameObjects.Image;
@@ -183,6 +190,7 @@ interface OptionSlot {
   nameText: Phaser.GameObjects.Text;
   tick: Phaser.GameObjects.Image;
   badge: Phaser.GameObjects.Image;
+  symbol: Phaser.GameObjects.Image;
 }
 
 /** Sets `text` to wrap at `wrapW` and returns its size. */
@@ -216,6 +224,12 @@ function longestWordWidth(text: Phaser.GameObjects.Text, strings: readonly strin
 function placeTextIn(text: Phaser.GameObjects.Text, rect: Rect): void {
   text.setWordWrapWidth(rect.w + 1, true);
   text.setPosition(rect.x + (rect.w - text.width) / 2, rect.y + (rect.h - text.height) / 2).setVisible(true);
+}
+
+/** Wraps `text` to `rect` (with 1 px slack) and places it at the left edge of `rect`, centred down it. */
+function placeTextLeftIn(text: Phaser.GameObjects.Text, rect: Rect): void {
+  text.setWordWrapWidth(rect.w + 1, true);
+  text.setPosition(rect.x, rect.y + (rect.h - text.height) / 2).setVisible(true);
 }
 
 /** Strokes the double focus ring (inner white, outer ink) around a rounded box of `radius`. */
@@ -252,6 +266,34 @@ function drawBox(graphics: Phaser.GameObjects.Graphics, rect: Rect, focused: boo
   graphics.strokeRoundedRect(rect.x, rect.y, rect.w, rect.h, radius);
 }
 
+/**
+ * Draws the name box (NAME_FIELD): the fill, the inset band along the top and left inside the outline,
+ * then the ink outline, with the focus ring when `focused`.
+ */
+function drawNameBox(graphics: Phaser.GameObjects.Graphics, rect: Rect, focused: boolean): void {
+  const { radius, insetW, outlineW } = NAME_FIELD;
+  if (focused) strokeFocusRing(graphics, rect, radius);
+  const edge = outlineW / 2;
+  const innerR = Math.max(0, radius - edge);
+  const inner: Rect = { x: rect.x + edge, y: rect.y + edge, w: rect.w - 2 * edge, h: rect.h - 2 * edge };
+  graphics.fillStyle(cssColor(NAME_FIELD.inset).color, 1);
+  graphics.fillRoundedRect(inner.x, inner.y, inner.w, inner.h, innerR);
+  graphics.fillStyle(cssColor(NAME_FIELD.fill).color, 1);
+  graphics.fillRoundedRect(inner.x + insetW, inner.y + insetW, inner.w - insetW, inner.h - insetW, innerR);
+  graphics.lineStyle(outlineW, cssColor(NAME_FIELD.outline).color, 1);
+  graphics.strokeRoundedRect(rect.x, rect.y, rect.w, rect.h, radius);
+}
+
+/** The Colour step's morph badge spot (and the Boy or girl step's symbol): inside a picture button's lower-left corner. */
+function cornerBadgeRect(rect: Rect): Rect {
+  return {
+    x: rect.x + MORPH_BADGE_INSET,
+    y: rect.y + rect.h - MORPH_BADGE_INSET - MORPH_BADGE_PX,
+    w: MORPH_BADGE_PX,
+    h: MORPH_BADGE_PX,
+  };
+}
+
 /** Strokes the chosen mark's thick ink ring just inside a box's outline. */
 function strokeChosenRing(graphics: Phaser.GameObjects.Graphics, rect: Rect): void {
   const inset = LW / 2 + CHOSEN_RING_W / 2;
@@ -275,9 +317,13 @@ function tickCentre(rect: Rect, inside: boolean): { x: number; y: number } {
   return { x: rect.x + rect.w - offset, y: rect.y + offset };
 }
 
-/** The picture crop for a step (art guide 6l, 6m): the face for Eyes and Mouth, the gills for Gills, else the whole axolotl. */
+/**
+ * The picture crop for a step (art guide 6l, 6m): the face for Eyes and Mouth, the gills for Gills, the
+ * spotted flank for Spots, else the whole axolotl.
+ */
 function pictureCropOf(step: StylerStep): keyof typeof AXO_PREVIEW_CROPS {
   if (step === 'eyes' || step === 'mouth') return 'face';
+  if (step === 'spots') return 'spots';
   return step === 'gills' ? 'gills' : 'whole';
 }
 
@@ -442,6 +488,8 @@ export class AxolotlStyler {
   private readonly prevPage: Chevron;
   private readonly nextPage: Chevron;
   private readonly nameBoxText: Phaser.GameObjects.Text;
+  private readonly nameBoxPencil: Phaser.GameObjects.Image;
+  private readonly nameCursor: Phaser.GameObjects.Rectangle;
   private readonly nameBoxZone: Phaser.GameObjects.Zone;
   private readonly moreNamesText: Phaser.GameObjects.Text;
   private readonly moreNamesZone: Phaser.GameObjects.Zone;
@@ -459,7 +507,11 @@ export class AxolotlStyler {
   private screenKey = '';
   private tabPage: number | null = null;
   private clock = 0;
+  /** Real elapsed seconds (no MAX_STEP_S cap), so the name box cursor blinks on time at a low frame rate. */
+  private cursorClock = 0;
   private entry: TextEntry | null = null;
+  /** Whether the open name field's caret was last styled blinking (ambient motion) or steady. */
+  private entryCaretBlinks = false;
   private nameBeforeTyping = '';
   private captureWasOn = false;
   private finished = false;
@@ -501,7 +553,17 @@ export class AxolotlStyler {
     this.tabZones = STYLER_STEPS.map((step) => createTapZone(scene, () => this.dispatch({ type: 'tab', step })));
     this.prevPage = createChevron(scene, this.baked, 'left', () => this.turnTabPage(-1));
     this.nextPage = createChevron(scene, this.baked, 'right', () => this.turnTabPage(1));
-    this.nameBoxText = this.addText(NAME_TEXT_PX, true);
+    this.nameBoxText = this.addText(NAME_TEXT_PX, true).setAlign('left');
+    const pencilInfo = this.baked.icons.pencil;
+    this.nameBoxPencil = scene.add
+      .image(0, 0, pencilInfo.key)
+      .setOrigin(0, 0)
+      .setScale(NAME_PENCIL_PX / ICON_SIZE / pencilInfo.scale)
+      .setVisible(false);
+    this.nameCursor = scene.add
+      .rectangle(0, 0, NAME_FIELD.cursorW, NAME_FIELD.cursorH, cssColor(NAME_FIELD.cursor).color, 1)
+      .setOrigin(0, 0)
+      .setVisible(false);
     this.nameBoxZone = createTapZone(scene, () => this.dispatch({ type: 'nameTap' }));
     this.moreNamesText = this.addText(NAME_TEXT_PX, true).setText(MORE_NAMES_LABEL);
     this.moreNamesZone = createTapZone(scene, () => this.pressMoreNames());
@@ -528,8 +590,10 @@ export class AxolotlStyler {
         this.previewImage,
         ...this.slots.map((slot) => slot.picture),
         this.marks,
-        ...this.slots.flatMap((slot) => [slot.tick, slot.badge]),
+        ...this.slots.flatMap((slot) => [slot.tick, slot.badge, slot.symbol]),
         ...this.texts,
+        this.nameBoxPencil,
+        this.nameCursor,
         ...this.slots.map((slot) => slot.zone),
         ...this.tabZones,
         this.nameBoxZone,
@@ -560,9 +624,13 @@ export class AxolotlStyler {
 
   /** Advances the preview idle by `deltaMs`; under reduced motion it holds the still pose. Call every frame. */
   update(_time: number, deltaMs: number): void {
-    const dt = Math.min(Math.max(deltaMs / 1000, 0), MAX_STEP_S);
+    const realDt = Math.max(deltaMs / 1000, 0);
+    const dt = Math.min(realDt, MAX_STEP_S);
     this.clock += dt;
+    this.cursorClock += realDt;
     if (this.placed?.preview) this.renderPreview(dt);
+    this.restyleEntryCaret();
+    this.blinkNameCursor();
   }
 
   /**
@@ -619,6 +687,7 @@ export class AxolotlStyler {
         .setScale(TICK_BADGE.iconPx / ICON_SIZE / checkInfo.scale)
         .setVisible(false),
       badge: this.scene.add.image(0, 0, this.morphBadges.triangle.key).setVisible(false),
+      symbol: this.scene.add.image(0, 0, this.baked.icons.boy.key).setOrigin(0, 0).setVisible(false),
     };
   }
 
@@ -749,6 +818,7 @@ export class AxolotlStyler {
       return;
     }
     this.finished = true;
+    this.blinkNameCursor();
     if (effect.type === 'done') {
       this.onDone({ name: effect.name, look: effect.look, morph: effect.morph });
       return;
@@ -766,16 +836,33 @@ export class AxolotlStyler {
     this.captureWasOn = keyboard?.manager.preventDefault === true;
     keyboard?.disableGlobalCapture();
     this.nameBeforeTyping = this.state.name;
+    this.entryCaretBlinks = this.motion().ambient;
     this.entry = openTextEntry({
       value: this.state.name,
       maxRawLength: NAME_FIELD_RAW_MAX,
       fitEdit: fitNameEdit,
       ariaLabel: NAME_FIELD_LABEL,
+      placeholder: NAME_PLACEHOLDER,
+      caretBlinkMs: this.caretBlinkMs(this.entryCaretBlinks),
       onInput: (raw) => this.showTypedName(raw),
       onCommit: (raw) => this.commitTypedName(raw),
       onCancel: () => this.cancelTyping(),
     });
     this.placeEntry();
+    this.blinkNameCursor();
+  }
+
+  /** The name field caret blink: the cursor's on time in ms when `blinking`, else null for a steady caret. */
+  private caretBlinkMs(blinking: boolean): number | null {
+    return blinking ? NAME_CURSOR.onS * 1000 : null;
+  }
+
+  /** Restyles an open name field's caret when reduced motion was turned on or off while it is open. */
+  private restyleEntryCaret(): void {
+    const blinking = this.motion().ambient;
+    if (this.entry === null || blinking === this.entryCaretBlinks) return;
+    this.entryCaretBlinks = blinking;
+    this.entry.setCaretBlink(this.caretBlinkMs(blinking));
   }
 
   /** The styler with `raw` cleaned as its name, or the name from before typing when it cleans to nothing. */
@@ -943,6 +1030,7 @@ export class AxolotlStyler {
     slot.nameText.setVisible(false);
     slot.tick.setVisible(false);
     slot.badge.setVisible(false);
+    slot.symbol.setVisible(false);
   }
 
   /** The chosen mark (thick ring and tick badge) on `rect`, or none. */
@@ -960,10 +1048,14 @@ export class AxolotlStyler {
     slot.picture.setVisible(false);
     slot.label.setVisible(false);
     slot.badge.setVisible(false);
+    slot.symbol.setVisible(false);
     placeTextIn(slot.nameText.setText(option.label), rect);
   }
 
-  /** A picture button: its still picture (re-baked when it shows something new), its label and the Colour badge. */
+  /**
+   * A picture button: its still picture (re-baked when it shows something new), its label, the Colour
+   * step's morph badge and the Boy or girl step's symbol.
+   */
   private showPictureOption(slot: OptionSlot, option: StylerOption, index: number, placed: StylerLayout): void {
     const rect = placed.options[index];
     slot.nameText.setVisible(false);
@@ -975,13 +1067,26 @@ export class AxolotlStyler {
     if (labelRect === undefined) slot.label.setVisible(false);
     else placeTextIn(slot.label.setText(option.label), labelRect);
     const badgeInfo = this.state.step === 'colour' ? this.morphBadges[morphById(option.id as RealMorphId).badge] : null;
-    const badgeRect: Rect = {
-      x: rect.x + MORPH_BADGE_INSET,
-      y: rect.y + rect.h - MORPH_BADGE_INSET - MORPH_BADGE_PX,
-      w: MORPH_BADGE_PX,
-      h: MORPH_BADGE_PX,
-    };
+    const badgeRect = cornerBadgeRect(rect);
     placeBadge(slot.badge, badgeInfo, badgeRect);
+    this.placeSexSymbol(slot, option, badgeRect);
+  }
+
+  /** On the Boy or girl step, the white disc with an ink ring and the boy or girl icon centred in `rect`; else hidden. */
+  private placeSexSymbol(slot: OptionSlot, option: StylerOption, rect: Rect): void {
+    if (this.state.step !== 'sex') {
+      slot.symbol.setVisible(false);
+      return;
+    }
+    const centre = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
+    this.marks.fillStyle(cssColor(WHITE).color, 1).fillCircle(centre.x, centre.y, SEX_SYMBOL.r);
+    this.marks.lineStyle(SEX_SYMBOL.outline, cssColor(INK).color, 1).strokeCircle(centre.x, centre.y, SEX_SYMBOL.r);
+    const info = this.baked.icons[option.id as AxolotlSex];
+    slot.symbol
+      .setTexture(info.key)
+      .setScale(SEX_SYMBOL.iconPx / ICON_SIZE / info.scale)
+      .setPosition(centre.x - SEX_SYMBOL.iconPx / 2, centre.y - SEX_SYMBOL.iconPx / 2)
+      .setVisible(true);
   }
 
   /** The caption names the focused option, else the chosen one, once the labels hide. */
@@ -997,7 +1102,10 @@ export class AxolotlStyler {
     placeTextIn(this.caption, rect);
   }
 
-  /** The Name step's name box (showing the name) and More names, or neither on other steps. */
+  /**
+   * The Name step's name box (the name, or the placeholder when empty, the pencil and the text cursor)
+   * and More names, or neither on other steps.
+   */
   private drawNameControls(placed: StylerLayout): void {
     const name = placed.name;
     const focus = this.state.focus.kind;
@@ -1005,17 +1113,49 @@ export class AxolotlStyler {
     placeZone(this.moreNamesZone, name?.moreNames ?? null);
     if (name === null) {
       this.nameBoxText.setVisible(false);
+      this.nameBoxPencil.setVisible(false);
+      this.nameCursor.setVisible(false);
       this.moreNamesText.setVisible(false);
       return;
     }
-    drawBox(this.boxes, name.box, focus === 'nameBox');
-    placeTextIn(this.nameBoxText.setText(this.state.name), name.box);
+    drawNameBox(this.boxes, name.box, focus === 'nameBox');
+    this.placeNameBoxParts(name.box);
     if (name.moreNames === null) {
       this.moreNamesText.setVisible(false);
       return;
     }
     drawBox(this.boxes, name.moreNames, focus === 'moreNames');
     placeTextIn(this.moreNamesText, name.moreNames);
+  }
+
+  /**
+   * The name box's parts: the name left-aligned in the text room and centred down it (else the
+   * placeholder, normal weight, in the placeholder colour), the pencil icon, and the text cursor at the
+   * end of the name (the start of the text room when empty).
+   */
+  private placeNameBoxParts(box: Rect): void {
+    const parts = nameBoxParts(box);
+    const empty = this.state.name === '';
+    this.nameBoxText
+      .setText(empty ? NAME_PLACEHOLDER : this.state.name)
+      .setColor(empty ? NAME_FIELD.placeholder : INK)
+      .setFontStyle(empty ? 'normal' : 'bold');
+    placeTextLeftIn(this.nameBoxText, parts.text);
+    this.nameBoxPencil.setPosition(parts.pencil.x, parts.pencil.y).setVisible(true);
+    const textEnd = empty ? parts.text.x : this.nameBoxText.x + this.nameBoxText.width;
+    const cursorX = Math.min(textEnd, parts.text.x + parts.text.w);
+    this.nameCursor.setPosition(cursorX, box.y + (box.h - NAME_FIELD.cursorH) / 2);
+    this.blinkNameCursor();
+  }
+
+  /**
+   * Shows the name box text cursor while the name box has the focus on the Name step, the name field
+   * is closed and the styler is not finished: blinking with ambient motion, steady under reduced motion.
+   */
+  private blinkNameCursor(): void {
+    const onNameStep = this.placed !== null && this.placed.name !== null;
+    const active = onNameStep && !this.finished && this.entry === null && this.state.focus.kind === 'nameBox';
+    this.nameCursor.setVisible(active && nameCursorShown(this.cursorClock, this.motion().ambient));
   }
 
   /**

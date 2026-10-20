@@ -170,6 +170,12 @@ describe('stepOptions', () => {
     expect(stepOptions(creatorOn(step))).toEqual(LOOK_FIELD_OPTIONS[field]);
   });
 
+  it('Mouth offers all 8 mouths in PRD order in the creator and restyle', () => {
+    const mouths = ['smile', 'openD', 'tongueOut', 'smallO', 'bigGrin', 'catSmile', 'smirk', 'tongueTip'];
+    expect(optionIds(creatorOn('mouth'))).toEqual(mouths);
+    expect(optionIds(restyleOn('mouth'))).toEqual(mouths);
+  });
+
   it.each<AxolotlSex>(['boy', 'girl'])('Name offers the first page of names fitting a %s', (sex) => {
     const state = creatorOn('name', { look: { ...DEFAULT_LOOK, sex }, name: 'Bubbles' });
     expect(optionIds(state)).toEqual(suggestedNamesFor(sex).slice(0, MAX_STEP_OPTIONS));
@@ -609,6 +615,21 @@ describe('surprise', () => {
         JSON.stringify(after.look) === JSON.stringify(before.look);
       expect(same).toBe(false);
     }
+  });
+
+  it('reaches every mouth in the creator and restyle', () => {
+    const creatorMouths = new Set<string>();
+    const restyleMouths = new Set<string>();
+    const creatorBefore = creatorOn('mouth');
+    const restyleBefore = restyleOn('mouth');
+    for (let seed = 1; seed <= SEED_COUNT; seed++) {
+      creatorMouths.add(reduceStyler(creatorBefore, { type: 'surprise' }, mulberry32(seed)).state.look.mouth);
+      restyleMouths.add(surprise(restyleBefore, mulberry32(seed)).look.mouth);
+    }
+    const allMouths = new Set(LOOK_FIELD_OPTIONS.mouth.map((option) => option.id));
+    expect(allMouths.size).toBe(8);
+    expect(creatorMouths).toEqual(allMouths);
+    expect(restyleMouths).toEqual(allMouths);
   });
 
   it('steps the name after SURPRISE_ROLLS matching rolls', () => {
