@@ -41,7 +41,7 @@ Markdown-only changes have no self-check.
 - Stay on Phaser 3. Do not upgrade to Phaser 4 unless asked.
 - Art follows [`docs/art-style-guide.md`](docs/art-style-guide.md).
 - Requirements live in the PRD, [`docs/prds/axolotl-mvp.md`](docs/prds/axolotl-mvp.md). Any requirement change updates the PRD in the same PR. Issues link to PRD IDs (such as B4) instead of restating requirements.
-- `src/platform/` holds browser glue: network, page location, and build-time constants. Build-time constants (`__APP_VERSION__`, `__BUILD_ID__`) never appear in `src/logic/`; pass them in as arguments.
+- `src/platform/` holds browser glue: network, page location, text entry, and build-time constants. Build-time constants (`__APP_VERSION__`, `__BUILD_ID__`) never appear in `src/logic/`; pass them in as arguments.
 - Do not add dependencies except in a planned scaffold step.
 - No ads, chat, in-app purchases, analytics, accounts, or network requests (including CDNs and webfonts). See [ADR 0007](docs/adr/0007-kid-safety-and-privacy.md). The one exception is the first-party update check in [ADR 0009](docs/adr/0009-update-check.md).
 

@@ -2,6 +2,8 @@
  * The play session across trips: what the Home Tank hub owns and what the canal remembers between
  * trips. `hub` is the part a save would hold (#15); `canal` is session-only and never saved.
  */
+import { DEFAULT_LOOK, isAxolotlLook, type AxolotlLook } from './axolotlLook';
+import { cleanName, isValidName, unusedSuggestedName } from './axolotlNames';
 import { createCollectibles, type Collectible } from './collectibles';
 import { REAL_MORPHS, STARTER_MORPH, axolotlFindId, isAxolotlFindId, rescuableMorphs, rescueMorphsIn, type RealMorphId } from './morphs';
 import { nextTripSeed } from './placement';
@@ -18,10 +20,18 @@ export const SESSION_REGISTRY_KEY = 'session';
 /** Id of the axolotl the player starts with. */
 export const STARTER_AXOLOTL_ID = 'starter';
 
-/** One owned axolotl and its real morph. */
+/** One owned axolotl: its id, its real morph, its name and its player-chosen look (PRD F1, F6). */
 export interface OwnedAxolotl {
   id: string;
   morph: RealMorphId;
+  name: string;
+  look: AxolotlLook;
+}
+
+/** What the player picks in the character creator or a restyle: a name and a look (PRD F1, F6). */
+export interface AxolotlStyle {
+  name: string;
+  look: AxolotlLook;
 }
 
 /**
@@ -95,21 +105,75 @@ export interface TripEndRecord {
 }
 
 /**
- * A new session: nothing banked, the starter axolotl of `starterMorph` with its morph found in the
- * Collection Book (PRD C1), an empty tank, no stars, no snacks eaten, no trip yet and no axolotl
- * waiting.
+ * A new session: nothing banked, no axolotl yet, an empty tank, an empty Collection Book, no stars,
+ * no snacks eaten, no trip yet and no axolotl waiting. The character creator adds the starter with
+ * `addStarter` (PRD F1), which finds its morph in the Collection Book (PRD C1).
  */
-export function createSession(starterMorph: RealMorphId = STARTER_MORPH): Session {
+export function createSession(): Session {
   return {
     hub: {
       banked: [],
-      axolotls: [{ id: STARTER_AXOLOTL_ID, morph: starterMorph }],
+      axolotls: [],
       tank: createTankLayout(),
-      book: { foundMorphs: [starterMorph], tilapiaCard: false },
+      book: { foundMorphs: [], tilapiaCard: false },
       stars: {},
     },
     canal: { eatenSnacks: [], lastTripSeed: null, waitingStranded: null },
   };
+}
+
+/** Whether the character creator must make a starter first: true while no axolotl is owned (PRD F1). */
+export function needsStarter(session: Session): boolean {
+  return session.hub.axolotls.length === 0;
+}
+
+/**
+ * `style` with its name cleaned and only the five look fields copied. Throws when the cleaned name or
+ * the look is invalid.
+ */
+function checkedStyle(caller: string, style: AxolotlStyle): AxolotlStyle {
+  const name = cleanName(style.name);
+  if (!isValidName(name)) throw new Error(`${caller}: invalid name ${JSON.stringify(style.name)}`);
+  if (!isAxolotlLook(style.look)) throw new Error(`${caller}: invalid look`);
+  const { eyes, mouth, gills, spots, size } = style.look;
+  return { name, look: { eyes, mouth, gills, spots, size } };
+}
+
+/**
+ * The session with the starter axolotl made in the character creator: id `STARTER_AXOLOTL_ID`, real
+ * morph `starterMorph`, the cleaned name and a copy of the look (PRD F1). Its morph is found in the
+ * Collection Book, kept in REAL_MORPHS order (PRD C1). Throws when an axolotl is already owned, or
+ * when the cleaned name or the look is invalid.
+ */
+export function addStarter(session: Session, style: AxolotlStyle, starterMorph: RealMorphId = STARTER_MORPH): Session {
+  if (!needsStarter(session)) throw new Error('addStarter: an axolotl is already owned');
+  const starter: OwnedAxolotl = { id: STARTER_AXOLOTL_ID, morph: starterMorph, ...checkedStyle('addStarter', style) };
+  const { book } = session.hub;
+  const found = new Set<RealMorphId>([...book.foundMorphs, starterMorph]);
+  const foundMorphs = REAL_MORPHS.map((morph) => morph.id).filter((id) => found.has(id));
+  return { ...session, hub: { ...session.hub, axolotls: [starter], book: { ...book, foundMorphs } } };
+}
+
+/**
+ * The session with axolotl `id` renamed and restyled (PRD F6). Only the name and the look change;
+ * every other field of that axolotl is kept. The name is cleaned and the look copied. Throws when no
+ * owned axolotl has `id`, or when the cleaned name or the look is invalid.
+ */
+export function restyleAxolotl(session: Session, id: string, style: AxolotlStyle): Session {
+  if (!session.hub.axolotls.some((axolotl) => axolotl.id === id)) {
+    throw new Error(`restyleAxolotl: no owned axolotl has id ${id}`);
+  }
+  const checked = checkedStyle('restyleAxolotl', style);
+  const axolotls = session.hub.axolotls.map((axolotl) => (axolotl.id === id ? { ...axolotl, ...checked } : axolotl));
+  return { ...session, hub: { ...session.hub, axolotls } };
+}
+
+/**
+ * A newly owned axolotl of real morph `morph`, such as a rescued one: the first suggested name no
+ * owned axolotl uses and a copy of the default look. The player can restyle it later (PRD F6).
+ */
+export function newOwnedAxolotl(id: string, morph: RealMorphId, owned: readonly OwnedAxolotl[]): OwnedAxolotl {
+  return { id, morph, name: unusedSuggestedName(owned.map((axolotl) => axolotl.name)), look: { ...DEFAULT_LOOK } };
 }
 
 /**
@@ -189,7 +253,8 @@ export function tripEndRecord(
 export function recordTripEnd(session: Session, record: TripEndRecord): Session {
   const { hub } = session;
   const banked = [...new Set([...hub.banked, ...record.banked])].filter((id) => !isAxolotlFindId(id));
-  const axolotls = [...hub.axolotls.map((axolotl) => ({ ...axolotl })), ...adoptRescued(hub.axolotls, record.rescued)];
+  const kept = hub.axolotls.map((axolotl) => ({ ...axolotl, look: { ...axolotl.look } }));
+  const axolotls = [...kept, ...adoptRescued(hub.axolotls, record.rescued)];
   const found = new Set<RealMorphId>([...hub.book.foundMorphs, ...record.rescued]);
   const book: CollectionBookState = {
     foundMorphs: REAL_MORPHS.map((morph) => morph.id).filter((id) => found.has(id)),
@@ -216,12 +281,18 @@ export function bestStars(session: Session, areaId: string): AreaStars {
   return bestStarsFor(session.hub.stars, areaId);
 }
 
-/** One owned axolotl per morph in `rescued` not owned yet, de-duplicated, in `rescued` order. */
+/**
+ * One owned axolotl per morph in `rescued` not owned yet, de-duplicated, in `rescued` order, each
+ * made by `newOwnedAxolotl` so its suggested name is unused by the owned and the earlier adopted ones.
+ */
 function adoptRescued(owned: readonly OwnedAxolotl[], rescued: readonly RealMorphId[]): OwnedAxolotl[] {
   const ownedMorphs = new Set(owned.map((axolotl) => axolotl.morph));
-  return [...new Set(rescued)]
-    .filter((morph) => !ownedMorphs.has(morph))
-    .map((morph) => ({ id: axolotlFindId(morph), morph }));
+  const adopted: OwnedAxolotl[] = [];
+  for (const morph of new Set(rescued)) {
+    if (ownedMorphs.has(morph)) continue;
+    adopted.push(newOwnedAxolotl(axolotlFindId(morph), morph, [...owned, ...adopted]));
+  }
+  return adopted;
 }
 
 function copyWaiting(waiting: WaitingStranded | null): WaitingStranded | null {
@@ -240,14 +311,19 @@ export function setTankLayout(session: Session, layout: TankLayout): Session {
 }
 
 /**
- * Id of the axolotl that goes exploring: the first owned axolotl, the starter. Choosing the explorer
- * is #16. Throws when no axolotl is owned.
+ * The axolotl that goes exploring: the first owned axolotl, the starter. Choosing the explorer is
+ * #16. Throws when no axolotl is owned.
  */
+export function explorerAxolotl(session: Session): OwnedAxolotl {
+  return findExplorer(session, 'explorerAxolotl');
+}
+
+/** Id of the axolotl that goes exploring (`explorerAxolotl`). Throws when no axolotl is owned. */
 export function explorerId(session: Session): string {
   return findExplorer(session, 'explorerId').id;
 }
 
-/** Morph of the axolotl that goes exploring (`explorerId`). Throws when no axolotl is owned. */
+/** Morph of the axolotl that goes exploring (`explorerAxolotl`). Throws when no axolotl is owned. */
 export function explorerMorph(session: Session): RealMorphId {
   return findExplorer(session, 'explorerMorph').morph;
 }

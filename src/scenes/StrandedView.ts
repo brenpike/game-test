@@ -58,7 +58,7 @@ export class StrandedView {
 
   constructor(scene: Phaser.Scene, assets: GameAssets) {
     this.scene = scene;
-    this.texture = createAxolotlTexture(scene, TEXTURE_KEY, assets.axolotl.scale);
+    this.texture = createAxolotlTexture(scene, TEXTURE_KEY, assets.axolotl.bakeScale);
     const info = this.texture.info;
     this.body = scene.add
       .image(0, 0, this.texture.key)

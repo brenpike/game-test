@@ -35,6 +35,7 @@ export const SCENE_KEYS = Object.freeze({
   homeTank: 'HomeTank',
   swim: 'Swim',
   hud: 'Hud',
+  creator: 'Creator',
 } as const);
 
 /** Everything the boot scene prepares, handed from scene to scene as start data. */

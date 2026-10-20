@@ -45,7 +45,8 @@ export type IconKind =
   | 'right'
   | 'check'
   | 'putAway'
-  | 'book';
+  | 'book'
+  | 'surprise';
 
 /**
  * House icon (guide 7d), shared by the Home Spot flag and every "go home" UI.
@@ -91,6 +92,44 @@ export function strokeHouseIcon(ctx: CanvasRenderingContext2D, cx: number, cy: n
   ctx.strokeStyle = INK;
   ctx.stroke(p);
   ctx.restore();
+}
+
+/** Surprise icon star geometry (guide 4e): inner radius and tip rounding as fractions of R. */
+const SURPRISE_STAR_INNER = 0.38;
+const SURPRISE_STAR_ROUND = 0.15;
+
+/**
+ * Concave 4-point star centred on (cx, cy), outer radius r (guide 4e): sharp
+ * inner corners, tips rounded by a quadratic cut. Outline only.
+ */
+function surpriseStarPath(cx: number, cy: number, r: number): Path2D {
+  const pts: { x: number; y: number }[] = [];
+  for (let k = 0; k < 8; k++) {
+    const ang = -Math.PI / 2 + (k * Math.PI) / 4;
+    const rad = k % 2 === 0 ? r : r * SURPRISE_STAR_INNER;
+    pts.push({ x: cx + rad * Math.cos(ang), y: cy + rad * Math.sin(ang) });
+  }
+  const cut = r * SURPRISE_STAR_ROUND;
+  // point `cut` px from `from` towards `to`
+  const towards = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    const len = Math.hypot(to.x - from.x, to.y - from.y);
+    return { x: from.x + ((to.x - from.x) * cut) / len, y: from.y + ((to.y - from.y) * cut) / len };
+  };
+  const p = new Path2D();
+  for (let k = 0; k < 8; k++) {
+    const pt = pts[k];
+    if (k % 2 === 1) {
+      p.lineTo(pt.x, pt.y);
+      continue;
+    }
+    const a = towards(pt, pts[(k + 7) % 8]);
+    const b = towards(pt, pts[(k + 1) % 8]);
+    if (k === 0) p.moveTo(a.x, a.y);
+    else p.lineTo(a.x, a.y);
+    p.quadraticCurveTo(pt.x, pt.y, b.x, b.y);
+  }
+  p.closePath();
+  return p;
 }
 
 export interface ButtonState {
@@ -381,6 +420,13 @@ export function paintIcon(ctx: CanvasRenderingContext2D, kind: IconKind, size: n
       book.moveTo(19.5, 15.5);
       book.lineTo(22.5, 15.5);
       ctx.stroke(book);
+      break;
+    }
+    case 'surprise': {
+      // Surprise me: a big and a small 4-point star, outline only
+      ctx.lineWidth = 3;
+      ctx.stroke(surpriseStarPath(14, 18, 10));
+      ctx.stroke(surpriseStarPath(25, 8, 5));
       break;
     }
   }

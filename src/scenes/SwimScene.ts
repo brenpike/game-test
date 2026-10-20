@@ -1,5 +1,6 @@
 import * as Phaser from 'phaser';
-import { AXO_MAX_TAIL_AMP, AXO_SCENE_SCALE, type AxolotlPose } from '../art/drawAxolotl';
+import { AXO_MAX_TAIL_AMP, type AxolotlPose } from '../art/drawAxolotl';
+import { AXO_SIZE_SCALE } from '../art/drawAxolotlParts';
 import { DEPTH } from '../art/layers';
 import {
   HAZE,
@@ -42,7 +43,7 @@ import { legSwimTuning, legWobble } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { mulberry32 } from '../logic/rng';
 import { pickStranding } from '../logic/rescue';
-import { explorerMorph, restoreSnacks, tripStart } from '../logic/session';
+import { explorerAxolotl, restoreSnacks, tripStart } from '../logic/session';
 import { steerFromKeys, type KeyState } from '../logic/steering';
 import { startDashVelocity, stepSwim, swimIntensity, type SwimBounds, type SwimState } from '../logic/swimPhysics';
 import { createDash, dashCharge, tryStartDash, updateDash, type DashState } from '../logic/tailDash';
@@ -285,7 +286,9 @@ export class SwimScene extends Phaser.Scene {
     // trips use nextTripSeed of the last trip's seed (tripStart).
     const session = readSession(this.registry);
     const start = tripStart(session, Math.floor(Math.random() * 0x100000000) >>> 0);
-    this.explorerPalette = MORPH_PALETTES[explorerMorph(session)];
+    const explorer = explorerAxolotl(session);
+    this.explorerPalette = MORPH_PALETTES[explorer.morph];
+    this.assets.axolotl.setLook(explorer.look);
     this.setItems(restoreSnacks(zone.collectibles, start.eatenSnacks));
     this.allDone = this.snackTally.left === 0;
     const stranding = pickStranding(start.ownedMorphs, start.waitingStranded, zone.strandingPlaces, start.tripSeed);
@@ -857,7 +860,7 @@ export class SwimScene extends Phaser.Scene {
     };
     this.redrawAxolotl(pose, dt);
 
-    const baseScale = AXO_SCENE_SCALE / this.assets.axolotl.scale;
+    const baseScale = this.assets.axolotl.displayScale(1);
     const bob = this.motion.bob * BOB_SHARE * (1 - intensity) * Math.sin((TAU * t) / 3);
     const swimTilt = Phaser.Math.Clamp(this.swim.vy / SWIM.maxSpeed, -1, 1) * MAX_TILT;
     const idleTilt = this.motion.ambient ? IDLE_TILT * (1 - intensity) * Math.cos((TAU * t) / 3) : 0;
@@ -986,9 +989,15 @@ export class SwimScene extends Phaser.Scene {
     }
   }
 
+  /** The explorer's size factor: art-anchored offsets scale with it so they stay on the body (PRD F4). */
+  private axolotlSize(): number {
+    return AXO_SIZE_SCALE[this.assets.axolotl.look.size];
+  }
+
   private renderBubbles(dt: number): void {
+    const size = this.axolotlSize();
     const emitter = this.motion.bubbles
-      ? { x: this.axolotl.x + this.swim.facing * MOUTH_X, y: this.axolotl.y + MOUTH_Y }
+      ? { x: this.axolotl.x + this.swim.facing * MOUTH_X * size, y: this.axolotl.y + MOUTH_Y * size }
       : null;
     this.bubbles = updateBubbles(this.bubbles, dt, emitter, this.rand);
     const baked = this.assets.baked.bubbles;
@@ -1036,10 +1045,11 @@ export class SwimScene extends Phaser.Scene {
     const sparkle = this.sparkles[this.sparkleCursor];
     this.sparkleCursor = (this.sparkleCursor + 1) % this.sparkles.length;
     sparkle.age = 0;
+    const size = this.axolotlSize();
     sparkle.image
       .setPosition(
-        this.axolotl.x - this.swim.facing * SPARKLE_TAIL_X + (this.rand() - 0.5) * 10,
-        this.axolotl.y + (this.rand() - 0.5) * 14,
+        this.axolotl.x + size * (-this.swim.facing * SPARKLE_TAIL_X + (this.rand() - 0.5) * 10),
+        this.axolotl.y + size * (this.rand() - 0.5) * 14,
       )
       .setVisible(true);
   }

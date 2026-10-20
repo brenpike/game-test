@@ -6,8 +6,11 @@ It is mostly fun, with real axolotl facts along the way.
 
 ## What you can do now
 
-Version 0.10.0 is playable in one canal zone:
+Version 0.11.0 is playable in one canal zone:
 
+- Make your own axolotl the first time you play. Pick its name, eyes, mouth, gills, spots, size, and colour (one of four real morphs), and watch the preview change. Surprise me picks everything at random. The other three colours are the ones you rescue.
+- Type a name, or use the arrows to pick a suggested one, so typing is optional. Names stay on your device.
+- On trips you swim as your own axolotl, with its own look. Size is for looks only: every size swims the same and has the same hit area.
 - Swim with the on-screen swim pad, or the arrow keys or WASD.
 - Use Tail Dash, ride the current, and eat snacks.
 - Dodge three tilapia. A hit costs a leg, and legs regrow. If you lose all four, you are carried home, you lose the finds you had not banked, and the snacks start over.
@@ -24,6 +27,7 @@ Version 0.10.0 is playable in one canal zone:
 - Meet the tilapia: the first time you swim near one, a fact card tells you about it.
 - Visit your Home Tank after the title and after every trip. A trip-end message tells you how the trip went.
 - Watch your axolotl swim around the Home Tank. With reduced motion it stays still.
+- Rename and restyle your axolotl from the Home Tank: tap it, or move the focus to it (its name shows) and press Enter. Its colour shows but cannot change. Cancel leaves without keeping the changes.
 - Decorate your Home Tank with the Decorations you banked, by touch or keyboard.
 - Open the Treasure Chest to see the Decorations, Wearables, and Dream colours you banked.
 - Open the Collection Book to see the morphs you rescued, with a fun fact for each, the Dream colours, and the tilapia fact card.
@@ -31,7 +35,7 @@ Version 0.10.0 is playable in one canal zone:
 ## Coming next
 
 The Axolotl MVP is in progress ([epic #6](https://github.com/brenpike/glam-gills/issues/6)).
-Next up: a character creator, saving, outfits with 8 wearable slots, and Dream colours.
+Next up: saving, outfits with 8 wearable slots, and Dream colours.
 The [PRD](docs/prds/axolotl-mvp.md) is the source of truth.
 
 After the MVP: the Tank Top Model fashion show, more real freshwater areas, and building a safe refuge for axolotls.
@@ -64,7 +68,9 @@ npm install
 
 | Action | Touch | Keyboard |
 |---|---|---|
-| Start (opens the Home Tank) | Tap | Enter or Space |
+| Start (opens the character creator the first time, then the Home Tank) | Tap | Enter or Space |
+| Make your axolotl (first time) | Arrow buttons beside the part and the choice, Surprise me button, Done button | Tab/Shift+Tab or Up/Down to move the focus, Left/Right to change the focused part or choice, Enter or Space to press |
+| Type a name | On the Name part, tap the name, type, then press Enter or tap elsewhere to keep it | On the Name part, focus the name and press Enter or Space, type, Enter to keep it, Esc to undo the typing |
 | Swim | Drag the swim pad in the bottom-left corner | Arrow keys or WASD |
 | Tail Dash | Dash button (bottom-right) | Space or Shift |
 | Pause | Pause button | P or Esc |
@@ -73,6 +79,8 @@ npm install
 | Go home from the Home Spot | Go home button (top-right, at the Home Spot) | H |
 | Go exploring (from the Home Tank) | Go exploring button | Tab/Shift+Tab or arrow keys to choose a hub button, Enter or Space to press |
 | Beat Area 1 | Swim into the open exit at the far end of the canal | Swim into the open exit at the far end of the canal |
+| Pick an axolotl (Home Tank) | Tap the axolotl | Tab/Shift+Tab or arrow keys past the hub buttons to focus it and show its name, Enter or Space to restyle it |
+| Rename and restyle | Same as making your axolotl, plus the Cancel button | Same as making your axolotl, plus Esc to cancel |
 | Close the trip-end message (also the "Area beaten" message) | OK button | Enter or Space |
 | Close the tilapia fact card | OK button | Enter, Space, P, or Esc |
 | Treasure Chest | Back, Next, and Close buttons | Left/Right to turn pages, Tab/Shift+Tab to move focus, Enter or Space to press, Esc to close |

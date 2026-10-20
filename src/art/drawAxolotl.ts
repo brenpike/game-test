@@ -17,22 +17,33 @@ import {
   LW,
   SUN,
   WHITE,
-  type MorphEyeRing,
   type MorphExtras,
   type MorphMark,
   type MorphMarkSet,
   type MorphPalette,
   type MorphRim,
 } from './palette';
+import {
+  DEFAULT_ART_LOOK,
+  FAR_EYE,
+  NEAR_EYE,
+  paintEye,
+  paintGills,
+  paintMouth,
+  paintSpots,
+  tailPointAt,
+  type AxolotlArtLook,
+} from './drawAxolotlParts';
 
 /**
  * Texture frame in logical units. Covers snout, the whole tail at the largest
- * tail amplitude (1.6), the tail fin, all gills at every flutter phase, legs,
- * regeneration glints and the outline, with at least 6 logical px of padding
- * on every side (guide asks for 4 px at 1x).
+ * tail amplitude (1.6), the tail fin, all gills of every style at every flutter
+ * phase (Long gill tips with ink reach about y -68, guide 6m and 11), legs,
+ * regeneration glints and the outline, with at least 4 logical px of padding
+ * on every side (guide 11). Size (guide 6o) scales the bake, not this frame.
  * Local x = 0 sits originX from the left; local y = 0 sits originY from the top.
  */
-export const AXO_TEX: TexSize = { w: 148, h: 116, originX: 84, originY: 64 };
+export const AXO_TEX: TexSize = { w: 148, h: 125, originX: 84, originY: 73 };
 
 /** Local units are drawn at this scale in the scene (guide 6a). */
 export const AXO_SCENE_SCALE = 0.95;
@@ -92,74 +103,6 @@ export const AXO_REST_POSE: AxolotlPose = {
   tailAmp: 1,
   sparkle: 0,
 };
-
-interface GillSpec {
-  readonly bx: number;
-  readonly by: number;
-  /** Angle offset from straight back (added to pi). */
-  readonly off: number;
-  readonly len: number;
-  readonly bend: number;
-  readonly phase: number;
-}
-
-// Guide 6d. Far gills first (drawn behind everything), then near gills.
-const FAR_GILLS: readonly GillSpec[] = [
-  { bx: 6, by: -16, off: 1.4, len: 28, bend: 4, phase: 0.3 },
-  { bx: 4, by: -8, off: 0.95, len: 32, bend: 4, phase: 1.6 },
-  { bx: 6, by: 0, off: 0.5, len: 26, bend: 4, phase: 2.9 },
-];
-const NEAR_GILLS: readonly GillSpec[] = [
-  { bx: 3, by: -12, off: 1.15, len: 34, bend: 5, phase: 0.0 },
-  { bx: 1, by: -3, off: 0.65, len: 37, bend: 5, phase: 1.2 },
-  { bx: 3, by: 7, off: 0.15, len: 31, bend: 5, phase: 2.4 },
-];
-
-function gill(
-  ctx: CanvasRenderingContext2D,
-  g: GillSpec,
-  tfl: number,
-  stemColour: string,
-  filamentColour: string,
-): void {
-  const { bx, by, len, bend, phase } = g;
-  const a = Math.PI + g.off + 0.13 * Math.sin(tfl + phase);
-  const tx = bx + Math.cos(a) * len;
-  const ty = by + Math.sin(a) * len;
-  const nx = -Math.sin(a);
-  const ny = Math.cos(a);
-  const b = bend + 3 * Math.sin(tfl + phase + 1.2);
-  const cx = (bx + tx) / 2 + nx * b;
-  const cy = (by + ty) / 2 + ny * b;
-
-  const stem = new Path2D();
-  stem.moveTo(bx, by);
-  stem.quadraticCurveTo(cx, cy, tx, ty);
-  const segs: Seg[] = [seg(stem, 6, stemColour, 3)];
-
-  const pt = (u: number): [number, number] => {
-    const m = 1 - u;
-    return [m * m * bx + 2 * u * m * cx + u * u * tx, m * m * by + 2 * u * m * cy + u * u * ty];
-  };
-  const tan = (u: number): number =>
-    Math.atan2(2 * (1 - u) * (cy - by) + 2 * u * (ty - cy), 2 * (1 - u) * (cx - bx) + 2 * u * (tx - cx));
-
-  for (const u of [0.35, 0.6, 0.82]) {
-    const p0 = pt(u);
-    for (const sd of [-1, 1]) {
-      const fa = tan(u) + sd * (0.95 - 0.25 * u) + 0.22 * Math.sin(tfl + phase + u * 4 + sd);
-      const fl = 13 * (1.05 - u * 0.55);
-      segs.push(
-        seg(line(p0[0], p0[1], p0[0] + Math.cos(fa) * fl, p0[1] + Math.sin(fa) * fl), 3.2, filamentColour, 2.4),
-      );
-    }
-  }
-  for (const sd of [-1, 1]) {
-    const fa = tan(1) + sd * 0.38 + 0.18 * Math.sin(tfl + phase + 5 + sd);
-    segs.push(seg(line(tx, ty, tx + Math.cos(fa) * 8, ty + Math.sin(fa) * 8), 3.2, filamentColour, 2.4));
-  }
-  inkMany(ctx, segs);
-}
 
 /**
  * `k` (0..1, default 1) scales a growing leg; k = 1 is the normal leg, unchanged.
@@ -243,40 +186,6 @@ function legProgress(look: LegLook): number {
   return Number.isFinite(p) ? Math.min(1, Math.max(0, p)) : 0;
 }
 
-function eye(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  r: number,
-  blink: number,
-  colour: string,
-  ring?: MorphEyeRing,
-): void {
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.scale(1, blink);
-  const bead = new Path2D();
-  ell(bead, 0, 0, r, r);
-  ctx.fillStyle = colour;
-  ctx.fill(bead);
-  if (ring) {
-    // Morph eye ring (guide 3b): drawn inside the bead edge so the eye keeps its size.
-    const rr = new Path2D();
-    ell(rr, 0, 0, r - ring.width / 2, r - ring.width / 2);
-    ctx.lineWidth = ring.width;
-    ctx.strokeStyle = ring.colour;
-    ctx.stroke(rr);
-  }
-  const g1 = new Path2D();
-  ell(g1, r * 0.3, -r * 0.35, r * 0.38, r * 0.38);
-  ctx.fillStyle = WHITE;
-  ctx.fill(g1);
-  const g2 = new Path2D();
-  ell(g2, -r * 0.35, r * 0.35, r * 0.17, r * 0.17);
-  ctx.fill(g2);
-  ctx.restore();
-}
-
 /** Tail geometry: 14 segments, wave travels body to tip (guide 6f). */
 const TAIL_N = 14;
 
@@ -291,12 +200,7 @@ function tailPoints(swim: number, tailAmp: number): TailPoint[] {
   const pts: TailPoint[] = [];
   for (let i = 0; i <= TAIL_N; i++) {
     const s = i / TAIL_N;
-    pts.push({
-      s,
-      x: -30 - 44 * s,
-      cy: 4 + 11 * tailAmp * s * Math.sin(swim - 4.5 * s),
-      hc: 2 + 11 * Math.pow(1 - s, 1.1),
-    });
+    pts.push({ s, ...tailPointAt(s, swim, tailAmp) });
   }
   return pts;
 }
@@ -531,19 +435,22 @@ function bodyShineColour(extras: MorphExtras | undefined): string {
 
 /**
  * Paint the axolotl in local units, facing right, origin at local (0, 0).
- * The caller sets the transform (see AXO_TEX for the frame).
+ * The caller sets the transform (see AXO_TEX for the frame). `look` picks the
+ * creator parts (guide 6l to 6n); the default paints the prototype. Size is
+ * not painted here: the caller bakes and scales by AXO_SIZE_SCALE (guide 6o).
  */
 export function drawAxolotl(
   ctx: CanvasRenderingContext2D,
   pose: AxolotlPose,
   palette: MorphPalette = LEUCISTIC,
+  look: AxolotlArtLook = DEFAULT_ART_LOOK,
 ): void {
   const swim = pose.swimPhase;
   const tfl = pose.gillPhase;
   const extras = palette.extras;
 
   // 1. far gills (behind everything)
-  for (const g of FAR_GILLS) gill(ctx, g, tfl, palette.gillFarStem, palette.gillFarFilament);
+  paintGills(ctx, 'far', look.gills, tfl, palette.gillFarStem, palette.gillFarFilament);
 
   // 2-3. legs behind the body: far pair darker, then near pair
   // Order matches AXO_LEG_ROOTS: far-front, far-rear, near-front, near-rear.
@@ -661,23 +568,12 @@ export function drawAxolotl(
   if (extras?.flecks) paintMorphDots(ctx, sil, tail, extras.flecks);
   if (extras?.shimmer) paintMorphShimmer(ctx, sil, tail, extras.shimmer);
 
-  // 8. freckles (spot colour per morph, guide 3b)
+  // 8. spots (spot colour per morph, guide 3b; the prototype's freckles are the Freckles option)
   const spot = extras?.spot === undefined ? FRECKLE : extras.spot;
-  if (spot !== null) {
-    ctx.fillStyle = spot;
-    for (const [fx, fy, fr] of [
-      [-20, 1, 1.7],
-      [-29, -4, 1.5],
-      [-12, 5, 1.4],
-    ]) {
-      p = new Path2D();
-      ell(p, fx, fy, fr, fr);
-      ctx.fill(p);
-    }
-  }
+  if (spot !== null) paintSpots(ctx, look.spots, swim, pose.tailAmp, spot);
 
   // 9. near gills (in front of the body, sprouting from the cheek)
-  for (const g of NEAR_GILLS) gill(ctx, g, tfl, palette.gillNearStem, palette.gillNearFilament);
+  paintGills(ctx, 'near', look.gills, tfl, palette.gillNearStem, palette.gillNearFilament);
 
   // 10. blush
   if (extras?.blush !== false) {
@@ -688,28 +584,12 @@ export function drawAxolotl(
     ctx.fill(p);
   }
 
-  // 11. mouth: fill, outline, corner ticks
-  const mouth = new Path2D();
-  mouth.moveTo(28, 10);
-  mouth.quadraticCurveTo(38, 13, 49, 7);
-  mouth.quadraticCurveTo(38, 22, 28, 10);
-  mouth.closePath();
-  ctx.fillStyle = palette.mouth;
-  ctx.fill(mouth);
-  ctx.lineWidth = 2.4;
-  ctx.strokeStyle = INK;
-  ctx.stroke(mouth);
-  const ticks = new Path2D();
-  ticks.moveTo(28, 10);
-  ticks.lineTo(26.4, 7.6);
-  ticks.moveTo(49, 7);
-  ticks.lineTo(50.4, 4.6);
-  ctx.lineWidth = 2;
-  ctx.stroke(ticks);
+  // 11. mouth
+  paintMouth(ctx, look.mouth, palette.mouth);
 
   // 12. eyes
-  eye(ctx, 28, -6, 6.4, pose.blink, palette.eye, extras?.eyeRing);
-  eye(ctx, 42, -7, 5.3, pose.blink, palette.eye, extras?.eyeRing);
+  paintEye(ctx, look.eyes, NEAR_EYE, pose.blink, palette.eye, extras?.eyeRing);
+  paintEye(ctx, look.eyes, FAR_EYE, pose.blink, palette.eye, extras?.eyeRing);
 
   // regeneration glints sit on top of everything
   paintRegenGlints(ctx, tail, pose);

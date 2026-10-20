@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-19
+
+### Added
+
+- Character creator on first play: pick your axolotl's name, eyes, mouth, gills, spots, size and colour, with a live preview, Surprise me and Done. The colour is one of the four real colours, shown with its name and badge, and Surprise me picks one too. It starts with a suggested name and the Leucistic colour, so Done works at once. Works with touch and keyboard, and the preview stays still with reduced motion.
+- Names: type one, or use the arrows to pick from 16 suggested names. Names are 1 to 12 characters and stay on the device (ADR 0011).
+- Rename and restyle any axolotl in the Home Tank: tap it, or move the focus to it to see its name tag and press Enter. The colour is shown there but never changes. Cancel or Esc leaves without keeping the changes.
+- The colour you choose is the colour of your first axolotl, and it is in the Collection Book from the start. The other three colours are the ones to rescue.
+- Size is for looks only: small, medium and large axolotls have the same hit area and the same speed.
+- Your axolotl is drawn with its own look on trips and in the Home Tank.
+
 ## [0.10.0] - 2026-10-19
 
 ### Added
