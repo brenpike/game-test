@@ -234,15 +234,17 @@ describe('stepFindToast clear', () => {
 });
 
 describe('stepFindToast reduced motion', () => {
-  it('turning on mid-enter shows in full at once with the leave time unchanged', () => {
+  it('turning on mid-enter shows in full at once and holds exactly 2000 ms', () => {
     const entering = stateInPhase('entering');
     const settled = stepFindToast(entering, tick(0, false));
     expect(settled.placementRequested).toBe(false);
-    expect(settled.state.phase).toBe('holding');
+    expect(settled.state).toMatchObject({ phase: 'holding', remainingMs: FIND_TOAST_HOLD_MS });
     expect(describeFindToastFrame(settled.state)).toEqual({ visible: true, alpha: 1, offsetY: 0 });
-    const motionLeaveMs = FIND_TOAST_FADE_MS - 100 + FIND_TOAST_HOLD_MS;
-    expect(stateAfter(settled.state, [tick(motionLeaveMs - 1, false)]).phase).toBe('holding');
-    expect(stepFindToast(stateAfter(settled.state, [tick(motionLeaveMs - 1, false)]), tick(1, false)).state.phase).toBe('idle');
+    expect(stateAfter(settled.state, [tick(FIND_TOAST_HOLD_MS - 1, false)]).phase).toBe('holding');
+    const step = stepFindToast(stateAfter(settled.state, [tick(FIND_TOAST_HOLD_MS - 1, false)]), tick(1, false));
+    expect(step.state.phase).toBe('idle');
+    expect(step.placementRequested).toBe(true);
+    expect(msUntilFinished(settled.state, false)).toBe(FIND_TOAST_HOLD_MS);
   });
 
   it('turning on mid-hold finishes at once when the hold ends', () => {

@@ -103,12 +103,12 @@ function clearToast(state: FindToastState): FindToastStep {
 }
 
 /**
- * Applies reduced motion: an entering toast shows in full at once with its leave time unchanged,
- * and a leaving toast finishes at once.
+ * Applies reduced motion: an entering toast shows in full at once and holds for the full
+ * FIND_TOAST_HOLD_MS (the rest of its entry is skipped), and a leaving toast finishes at once.
  */
 function settleReducedMotion(state: FindToastState): FindToastStep {
   if (state.phase === 'entering') {
-    return keepPlacement({ ...state, phase: 'holding', remainingMs: state.remainingMs + FIND_TOAST_HOLD_MS });
+    return keepPlacement({ ...state, phase: 'holding', remainingMs: FIND_TOAST_HOLD_MS });
   }
   if (state.phase === 'leaving') return finishToast(state);
   return keepPlacement(state);
