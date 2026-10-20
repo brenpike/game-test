@@ -3,6 +3,7 @@ import { createEncounter, createEncounterContext } from './encounter';
 import { GAME_EVENTS, REGISTRY_KEYS } from './gameEvents';
 import { createLegs, isProtected, presentCount, tryHit, type LegsState } from './legs';
 import { CANAL_AREA } from './areas';
+import { treasureById } from './catalogue';
 import {
   LEG_PROGRESS_STEPS,
   beatArea,
@@ -33,7 +34,7 @@ import { axolotlFindId, type RealMorphId } from './morphs';
 import { DEFAULT_TRIP_SEED, nextTripSeed, type PlacedFind } from './placement';
 import { RESCUE, pickStranding, type Stranding } from './rescue';
 import { TRIP_EVENTS, TRIP_REGISTRY_KEYS, type TripSnapshot } from './tripEvents';
-import { CARRY, FINDS, LEGS, SWIM } from './tuning';
+import { CARRY, FINDS, LEGS, SWIM, treasuresPerTrip, tripTreasureTuning } from './tuning';
 import { buildCanalZone, swimBounds, type HidingSpot, type Point } from './zone';
 
 const DT = 1 / 60;
@@ -410,6 +411,84 @@ describe('per-trip placement', () => {
   });
 });
 
+describe('treasures per trip (B4, B9, H6)', () => {
+  const SEEDS = Array.from({ length: 200 }, (_, i) => i + 1);
+  const SPECIAL = CANAL_AREA.specialTreasureId;
+  const perTrip = treasuresPerTrip(tripTreasureTuning(zone.areaId));
+
+  function placedIds(trip: TripState): string[] {
+    return trip.placed.map((find) => find.id);
+  }
+
+  function commonsPastShare(): string[] {
+    const commons = zone.finds.map((find) => find.id).filter((id) => treasureById(id)?.rarity === 'common');
+    return commons.slice(0, tripTreasureTuning(zone.areaId).mix.common + 1);
+  }
+
+  it('places the treasures per trip plus the unbanked special, and no more than the returned overflow', () => {
+    const returned = commonsPastShare();
+    for (const seed of SEEDS) {
+      expect(createTrip(zone, LEGS, [], seed).placed).toHaveLength(perTrip + 1);
+      const withReturned = createTrip(zone, LEGS, [], seed, { returnedFinds: returned }).placed;
+      expect(withReturned.length).toBeGreaterThanOrEqual(perTrip + 1);
+      expect(withReturned.length).toBeLessThanOrEqual(perTrip + 1 + returned.length);
+    }
+  });
+
+  it('places the special on every trip until it is banked, then exactly the treasures per trip', () => {
+    for (const seed of SEEDS) {
+      expect(placedIds(createTrip(zone, LEGS, [], seed))).toContain(SPECIAL);
+      const afterBanking = createTrip(zone, LEGS, [SPECIAL], seed);
+      expect(placedIds(afterBanking)).not.toContain(SPECIAL);
+      expect(afterBanking.placed).toHaveLength(perTrip);
+    }
+  });
+
+  it('always places the returned treasures, even several of one rarity past its share', () => {
+    const returned = commonsPastShare();
+    expect(returned.length).toBeGreaterThan(tripTreasureTuning(zone.areaId).mix.common);
+    for (const seed of SEEDS) {
+      const ids = placedIds(createTrip(zone, LEGS, [], seed, { returnedFinds: returned }));
+      for (const id of returned) expect(ids).toContain(id);
+    }
+  });
+
+  it('places a treasure lost on the last trip when newTrip starts the next one', () => {
+    const seed = 42;
+    const left = zone.finds.map((find) => find.id).find((id) => !placedIds(createTrip(zone, LEGS, [], seed)).includes(id));
+    expect(left).toBeDefined();
+    const lost = left as string;
+    const start = createTrip(zone, LEGS, [], DEFAULT_TRIP_SEED);
+    const done: TripState = { ...start, phase: 'ended', ending: { reason: 'carriedHome', returned: [lost], bankedThisTrip: [] } };
+    const next = newTrip(done, seed);
+    expect(placedIds(next)).toContain(lost);
+    expect(next).toEqual(createTrip(zone, LEGS, [], seed, { returnedFinds: [lost] }));
+  });
+
+  it('ignores axolotl ids in the returned treasures', () => {
+    const wild = axolotlFindId('wild');
+    for (const seed of SEEDS) {
+      const trip = createTrip(zone, LEGS, [], seed, { returnedFinds: [wild] });
+      expect(trip.placed).toEqual(createTrip(zone, LEGS, [], seed).placed);
+    }
+  });
+
+  it('takes the special from the area, with none for an area that has no data', () => {
+    const otherArea: TripSource = { ...zone, areaId: 'test/area-2' };
+    const seedsWithout = SEEDS.filter((seed) => !placedIds(createTrip(otherArea, LEGS, [], seed)).includes(SPECIAL));
+    expect(seedsWithout.length).toBeGreaterThan(0);
+  });
+
+  it('weights the spots by the main swim path of the source', () => {
+    const movedPath: TripSource = { ...zone, mainPath: [{ x: 120, y: 40 }, { x: 1840, y: 40 }] };
+    const differs = SEEDS.some((seed) => {
+      const moved = createTrip(movedPath, LEGS, [], seed).placed;
+      return JSON.stringify(moved) !== JSON.stringify(createTrip(zone, LEGS, [], seed).placed);
+    });
+    expect(differs).toBe(true);
+  });
+});
+
 describe('found treasures', () => {
   it('carries the pop-up data on pickedUp and in the snapshot, kept after banking', () => {
     const plant = { id: PLANT, name: 'Pond plant', category: 'decoration', rarity: 'common' };
@@ -530,7 +609,7 @@ describe('snacks are not finds (A19)', () => {
     const snackIds = new Set(zone.collectibles.map((snack) => snack.id));
     const placed = createTrip(zone).placed;
     const findIds = placed.map((find) => find.id);
-    expect(findIds.length).toBe(zone.finds.length);
+    expect(findIds.length).toBeGreaterThan(0);
     const path: Point[] = [...zone.collectibles, ...placed];
     const swum = walk(createTrip(zone), path, true);
     expect(swum.state.phase).toBe('swimming');

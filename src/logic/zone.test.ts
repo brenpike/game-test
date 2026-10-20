@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { areaById } from './areas';
 import { CANAL_TREASURES, treasureById } from './catalogue';
 import { coversAt, isDeep, spotMatchesLabels } from './hiding';
 import { inSafeArea } from './tilapia';
-import { FINDS, TILAPIA } from './tuning';
+import { FINDS, TILAPIA, treasuresPerTrip, tripTreasureTuning } from './tuning';
 import {
   BED_TOP,
   CANAL_AREA_ID,
@@ -374,16 +375,24 @@ describe('finds', () => {
     }
   });
 
-  it.each(ALL_SEEDS)('gives every find a large enough pool of matching spots for seed %i', (seed) => {
+  it.each(ALL_SEEDS)('fits in each pool the most treasures of one rarity a trip can place, plus one spare, for seed %i', (seed) => {
     const zone = buildCanalZone(seed);
     const spotById = new Map(zone.spots.map((spot) => [spot.id, spot]));
+    const perTrip = treasuresPerTrip(tripTreasureTuning(zone.areaId));
+    const specialId = areaById(zone.areaId)?.specialTreasureId;
     for (const find of zone.finds) {
       const treasure = treasureById(find.id);
       expect(treasure).toBeDefined();
       const rarity = treasure?.rarity;
-      const sameRarity = CANAL_TREASURES.filter((other) => other.rarity === rarity).length;
+      const sameRarity = zone.finds.filter((other) => treasureById(other.id)?.rarity === rarity).length;
+      const specialOfRarity = zone.finds.some((other) => other.id === specialId && treasureById(other.id)?.rarity === rarity) ? 1 : 0;
+      // INVARIANT: the base share is not the cap. Missed rarer shares pass down to Common and
+      // shares above what is left pass to any rarity with room, so one rarity can take every
+      // treasure per trip; lost treasures never exceed what the last trip placed, and the special
+      // treasure is placed outside the mix, so it adds one more.
+      const mostOfRarity = Math.min(perTrip + specialOfRarity, sameRarity);
       expect(find.pool.length).toBeGreaterThan(0);
-      expect(find.pool.length).toBeGreaterThanOrEqual(sameRarity + 1);
+      expect(find.pool.length).toBeGreaterThanOrEqual(mostOfRarity + 1);
       for (const spotId of find.pool) {
         expect(spotById.get(spotId)?.rarity).toBe(rarity);
       }
