@@ -587,7 +587,6 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | [Art style guide](../art-style-guide.md) (6i) has four Wearable slots and layers 8.5 to 11.5. Its Wearable test pose (6k) checks four slots. | F8 now has eight slots, layering, and the feet rule. | Art style guide follow-up with issue #16: anchors, footprints, layers, and keep-clear zones for Shirt, Back, Socks, and Feet, plus how socks and shoes hide on a lost leg. |
 | [ADR 0008](../adr/0008-gentle-fail-state.md) says only unbanked trip finds are lost when carried home. | A12 also starts the snacks over. | Snacks are not banked progress, so ADR 0008's guarantee holds. Amended by [ADR 0010](../adr/0010-carried-home-full-reset.md): being carried home is a full trip reset, snacks included (issue #31). |
 | [Art style guide](../art-style-guide.md) (7e) says the hint star is the cue for a hidden treasure. | H3 also uses it on the last 3 snacks. | Art style guide follow-up with issue #31. |
-| [Art style guide](../art-style-guide.md) (4a, 6o) scales sizes by x0.85 / x1.00 / x1.15, and has no Tail, Body, Age, or boy and girl cues. | F4 now scales sizes by 0.72 / 0.85 / 1.00, and F2 adds Boy or girl, Tail, Body, and Age. | Art style guide follow-up with issue #52 (open question 35). |
 
 ### Feature priority order
 

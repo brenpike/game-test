@@ -26,7 +26,7 @@ Design language for the axolotl kids game (ages 8-12, web first, then mobile). T
 | Reference viewport | 480 x 360, 4:3. Canvas is contain-fit and centred; the leftover area (letterbox) is filled with the colour in the palette (3a). | `cartoon.js`, `cartoon.html` |
 | Water line (SURF) | y = 80 logical px | `cartoon.js` |
 | Pixel density | Device pixel ratio capped at 2 | `cartoon.js` |
-| Smallest supported canvas | 460 x 320 CSS px landscape, 320 x 440 portrait. The banking card, the tank arrival card, the Home Tank hub and decorate controls, the Treasure Chest, and the character creator and restyle screens show all their text at or above it (the Home Tank name panel, the decorate caption and the creator and restyle title show only when they fit, 8); below it, the buttons still stay on the canvas. The HUD overlays never cover the controls at any size; at or above it the highest-priority overlay always shows (8, HUD overlay fit). | `derived (provisional)` |
+| Smallest supported canvas | 460 x 320 CSS px landscape, 320 x 440 portrait. The banking card, the tank arrival card, the Home Tank hub and decorate controls, the Treasure Chest, and the character creator and restyle step screens show all their text at or above it (the Home Tank name panel and the decorate caption show only when they fit; on a step screen the helper line, the picture button labels and the creator heading's "Step N of 11:" start show only when they fit, the preview shrinks to 0.6 and then hides with the chosen picture button as the preview, and the restyle heading may hide while the bold current tab names the step, 8); below it, the buttons still stay on the canvas. The HUD overlays never cover the controls at any size; at or above it the highest-priority overlay always shows (8, HUD overlay fit). | `derived (provisional)` |
 
 **Reconciliation notes (code wins over any earlier written spec):**
 
@@ -46,6 +46,7 @@ Design language for the axolotl kids game (ages 8-12, web first, then mobile). T
 | No Wearable slot anchors, no face, gill, or spot variants, and no Dream colour patterns | Slot anchors 6i. Face, gill, and spot variants 6l, 6m, 6n, 6o. Dream colours 3f and patterns 6p. |
 | Non-art rows: ADR 0007 "No harsh fail states" (now amended by ADR 0008), and "no network requests" | No guide change. Leg-loss art stays gentle (6q). |
 | PRD open question 4: Home Spot, burrow or buoy | Burrow (7d). |
+| Sections 4a and 6o scaled sizes by x0.85 / x1.00 / x1.15, and there were no Tail, Body, Age, or boy and girl cues (PRD F2, F4, open question 35) | Sizes x0.72 / x0.85 / x1.00, with Large at the prototype scale (4a, 6o). Tail length 6r, Body 6s, Age 6t, Boy or girl cues 6u. |
 
 ---
 
@@ -444,7 +445,7 @@ Each colour is two picks (body and gill) plus fixed sRGB mixes:
 | Main line width (LW) | 3.5 logical px | `cartoon.js` |
 | Line join and cap | Round, round | `cartoon.js` |
 | Outline weight vs object size | Constant. A small object keeps the same line as a big one. Clouds are scaled, so they draw their line at LW / cloud scale to stay 3.5 px on screen. | `cartoon.js` |
-| Size variants | Small, Medium and Large (6o) are a uniform scale of the whole axolotl, ink, wearables and Dream overlay included (x0.85 / x1.00 / x1.15). This is the one exception to the constant-outline rule. It keeps every clearance in 6i true at every size (PRD F13). | `derived (provisional)` |
+| Size variants | Small, Medium and Large (6o) are a uniform scale of the whole axolotl, ink, wearables and Dream overlay included (x0.72 / x0.85 / x1.00; Large is the prototype scale). This is the one exception to the constant-outline rule. It keeps every clearance in 6i true at every size (PRD F13). | `derived (provisional)` |
 | Corners | Rounded everywhere (ellipses and smooth curves) | `cartoon.js` |
 | Pixel density | Draw at device pixel ratio, capped at 2 | `cartoon.js` |
 
@@ -584,7 +585,9 @@ Neither shape ever blinks. Only slow size or position changes are allowed (secti
 
 ### 6a. Construction and layer order
 
-The axolotl is authored **facing right** in local units, then drawn at x0.95 in the scene. Mirroring for left-facing is allowed. Snout-to-tail length **L = 127 local units** (about 121 px in the scene, about 25% of the 480 px width). Source: `cartoon.js`.
+The axolotl is authored **facing right** in local units, then drawn at x0.95 in the scene. Mirroring for left-facing is allowed. Snout-to-tail length **L = 127 local units** (about 121 px in the scene at Large, about 25% of the 480 px width). Source: `cartoon.js`.
+
+L = 127 is the prototype proportions: Young, Regular, a Medium tail and no Boy cue. Tail, Body, Age and Boy or girl (6r to 6u) change the torso, belly, tail, legs and gills, so L runs from 101.6 to 147 local units; the default Boy is 131. The head, the face, the gill roots and the Head, Neck and Face anchors never move. Source: `derived (provisional)`.
 
 Layer order, back to front (each layer is its own animated part in production):
 
@@ -606,14 +609,17 @@ Layer order, back to front (each layer is its own animated part in production):
 | 10.5 | Head item | Wearable, Head slot (6i) | `derived (provisional)` |
 | 11 | Mouth | Fill, outline, corner ticks | `cartoon.js` |
 | 11.5 | Face item | Wearable, Face slot (6i). It sits below the eyes on purpose: eyes always paint last, so no Face item can cover them. | `derived (provisional)` |
-| 12 | Eyes | Bead plus two glints | `cartoon.js` |
+| 12 | Eyes | Bead plus two glints. Far eye first, then near. A Girl's three eyelashes per eye (6u) paint on this layer, inside each eye's blink squash and just before its bead, so the bead covers the lash roots and the near bead covers any far lash that reaches it. | `cartoon.js`, `derived (provisional)` |
 
 Notes:
 
 - Decimal rows are new. Whole numbers keep the prototype numbering, because code comments use them.
+- Layers 2 to 8 follow the look's legs, torso, belly and tail (6r to 6u). The gills (layers 1 and 9) keep their roots and change only their length, with Age (6t). Layers 10 to 12 sit on the head and never move.
 - Effects draw after the axolotl: the leg-loss puff, regrowth twinkles, and the protected ring (6q).
 
 ### 6b. Proportions (relative to L = 127)
+
+The table is the prototype proportions: Young (6t), Regular (6s), a Medium tail (6r), and no Boy or girl cue (6u). The Options row at the end lists what those options change; the head and face rows hold for every option.
 
 | Part | Local geometry | Relative to L | Source |
 |---|---|---|---|
@@ -628,7 +634,8 @@ Notes:
 | Near eye | Radius 6.4 (diameter 12.8) | About 24% of head length | `cartoon.js` |
 | Far eye | Radius 5.3 | 83% of the near eye (3/4 view) | `cartoon.js` |
 | Mouth | Width 21 (x 28 to 49) | About 39% of head length | `cartoon.js` |
-| Scene scale | Local units drawn x0.95 | - | `cartoon.js` |
+| Scene scale | Local units drawn x0.95, times the size scale (6o) | - | `cartoon.js`, `derived (provisional)` |
+| Options | Tail length (6r), Body (6s), Age (6t) and Boy or girl (6u) change the torso, belly, tail core and fins, leg roots and lengths, and gill lengths. The head ellipse (26,-1) 27 x 22, the eyes, the mouth, the blush, the head shine and the gill roots never change. The torso's front end (the head joint) stays at x 29. | L 101.6 to 147 | `derived (provisional)` |
 
 ### 6c. Face
 
@@ -639,7 +646,8 @@ Notes:
 | Blush | rgba(255,100,148,0.5): ellipses at (27,9) 5 x 3.3 and (44,8) 4 x 2.7 | `cartoon.js` |
 | Mouth | Open "D" smile in #e8567e: from (28,10) to (49,7), lower curve through (38,22), outline 2.4 px in ink | `cartoon.js` |
 | Mouth ticks | Width 2.0 px: (28,10) to (26.4,7.6) and (49,7) to (50.4,4.6) | `cartoon.js` |
-| Blink | Eye squashed to 12% height | `cartoon.js` |
+| Blink | Eye squashed to 12% height. A Girl's eyelashes squash with it (6u). | `cartoon.js` |
+| Every option | The eye centres, glints, blush and mouth never move for any Tail, Body, Age or Boy or girl. Size scales them with the whole axolotl (6o). A Girl adds three eyelashes per eye (6u). | `derived (provisional)` |
 
 ### 6d. Gills
 
@@ -668,18 +676,19 @@ Three gills per side. They fan from straight up (top gill) to straight back (bot
 | Detail | Value | Source |
 |---|---|---|
 | Count | 4, all drawn **behind** the body | `cartoon.js` |
-| Leg | Width 8, length 14 (far) or 15 (near); tube outline 3.1 | `cartoon.js` |
-| Toes | 3 per leg, width 4.2, length 8.5, splay +/- 0.6 rad; tube outline 2.6 | `cartoon.js` |
+| Leg | Width 8, length 14 (far) or 15 (near); tube outline 3.1. A Baby's legs are x0.7 long (6t); widths never change. | `cartoon.js` |
+| Toes | 3 per leg, width 4.2, length 8.5 (x0.7 on a Baby), splay +/- 0.6 rad; tube outline 2.6 | `cartoon.js` |
 | Colour | Near pair: body #ffb7cf. Far pair: far-side #f58fb0. | `cartoon.js` |
-| Roots (local) | Far: (8,15) and (-14,17). Near: (18,15) and (-24,17). | `cartoon.js` |
+| Roots (local) | Far: (8,15) and (-14,17). Near: (18,15) and (-24,17). These are the prototype torso's roots. | `cartoon.js` |
+| Roots on every look | The roots follow the look's torso (6s, 6t, 6u): a root behind x 0 moves x by the torso's back end over the prototype's (back end x / -45); y scales about the torso centre line (y 4) by torso ry / 19. Roots at x 0 or more keep their x. Every root stays inside the torso. Effects at a leg (6q) use these roots. | `derived (provisional)` |
 
 ### 6f. Tail
 
 | Detail | Value | Source |
 |---|---|---|
-| Core | x = -30 to -74, 14 segments, centreline sways with a travelling wave | `cartoon.js` |
-| Half-height | 13 at the root, tapering to 2 at the tip | `cartoon.js` |
-| Fin | Top and bottom bands in #ffd9e6, with three internal ray lines per band and a core edge line, all in rgba(236,120,160,0.65) at 1.5 px | `cartoon.js` |
+| Core | x = -30 to -74, 14 segments, centreline sways with a travelling wave. Tail length, Body, Age and the Boy cue move the root and change the length (6r). | `cartoon.js` |
+| Half-height | 13 at the root, tapering to 2 at the tip. The root value scales with the torso height (13 x torso ry / 19, 6s). | `cartoon.js` |
+| Fin | Top and bottom bands in #ffd9e6, with three internal ray lines per band and a core edge line, all in rgba(236,120,160,0.65) at 1.5 px. A Boy's fin reach is x1.2 (6u). | `cartoon.js` |
 | Wave | Amplitude 11 x s (grows from root to tip), see section 9 | `cartoon.js` |
 
 ### 6g. Belly, shines, freckles
@@ -690,6 +699,7 @@ Three gills per side. They fan from straight up (top gill) to straight back (bot
 | Body shine | rgba(255,255,255,0.75) ellipse (-16,-9) 12 x 3 | `cartoon.js` |
 | Head shine | rgba(255,255,255,0.75) ellipse (17,-16) 7 x 2.8 | `cartoon.js` |
 | Freckles | rgba(236,120,160,0.55): three dots at (-20,1) r 1.7, (-29,-4) r 1.5, (-12,5) r 1.4 | `cartoon.js` |
+| Every look | The values above are on the prototype torso. The belly follows Body, Age and the Girl cue (6s to 6u). The body shine and every body mark (freckles, spots, morph marks) move onto the look's torso the same way as the leg roots (6e); the body shine's x radius stretches with the torso's back end too. The head shine never moves. | `derived (provisional)` |
 
 ### 6h. Morph application
 
@@ -718,8 +728,9 @@ PRD C10, F8, F13. All values are in the axolotl's local units, facing right (L =
 | Line rules | Wearable silhouettes use 2.8 (`shape`). Tubes are 3.2 with `ol` 2.4. The glasses band is 3.5. Same ink colour as the rest of the art. | `derived (provisional)` |
 | Facing | Authored facing right. Mirrors with the character. | `derived (provisional)` |
 | Scale | Drawn in the axolotl's local units and scaled with it, so every clearance holds at every size (6o, 4a). | `derived (provisional)` |
+| Every option | The Head, Neck and Face anchors, the eye zones, the gill-root zone and the mouth zone sit on the head, which never moves, so they hold for every Boy or girl, Tail, Body and Age (6r to 6u) as well as every size. Only the Tail anchor moves: it rides the look's tail (Tail slot below). | `derived (provisional)` |
 | One item per slot | An axolotl wears at most one item in each slot. | `derived (provisional)` |
-| Keep clear | Never cover the eyes or the gill roots, in any slot, at any size. | `derived (provisional)` |
+| Keep clear | Never cover the eyes or the gill roots, in any slot, at any size, Boy or girl, Tail, Body or Age (PRD F13). | `derived (provisional)` |
 
 **Keep-clear zones**
 
@@ -730,7 +741,7 @@ PRD C10, F8, F13. All values are in the axolotl's local units, facing right (L =
 | Gill-root zone | Box, x -5 to 12, y -22 to 13. It holds all six roots of 6d plus the stem ink. | `derived (provisional)` |
 | Mouth zone | The ink of every mouth variant (6l) plus 1 unit. Its highest points are the corner ticks at (26.4,7.6) and (50.4,4.6). | `derived (provisional)` |
 
-No wearable paint goes inside any zone. The one exception is the clear lens tint over the eye zones. Eye variants (6l) stay inside the eye zones.
+No wearable paint goes inside any zone. The one exception is the clear lens tint over the eye zones. Eye variants (6l) stay inside the eye zones. A Girl's eyelash lines (6u) start and end inside them, on every eye variant.
 
 **Slots**
 
@@ -739,14 +750,14 @@ No wearable paint goes inside any zone. The one exception is the clear lens tint
 | Head | Hats, flowers, crowns | (26,-23), the head top (existing anchor) | x 16 to 36. Rests on the head outline. Lowest painted point no lower than y -19.5. Top no higher than y -46. | 10.5 | Head | `derived (provisional)` |
 | Neck | Necklaces, scarves | (17,16), the throat | x 13 to 22, y 11 to 21, inside the silhouette. Nothing hangs below the silhouette, so the front legs stay visible. | 9.5 | Head and body | `derived (provisional)` |
 | Face | Glasses | (35,-6.5), between the eyes | x 14 to 54, y -18 to 6. Outside both eye zones and at least 1 unit from the mouth zone. | 11.5 | Head | `derived (provisional)` |
-| Tail | Bows, ribbons | Top edge of the tail core at tail point 4 of 14 (s about 0.29). It is (-42.6,-5.6) when the tail is straight. | Within 9 units of the anchor. Rotates with the local tail direction. | 8.5 | Tail wave | `derived (provisional)` |
+| Tail | Bows, ribbons | Top edge of the tail core at tail point 4 of 14 (s about 0.29) of the look's tail (6r). It is (-42.6,-5.6) on the straight prototype tail and (-43.7,-5.6) on the default Boy's straight tail. | Within 9 units of the anchor. Rotates with the local tail direction. | 8.5 | Tail wave | `derived (provisional)` |
 
-**Tail space.** Marks on the tail use two numbers. s runs from 0 at the tail root (x -30) to 1 at the tip (x -74). v is the offset from the tail centreline as a fraction of the local tail half-height, and + is down. Tail-space marks move with the tail wave. 6n, 6p, and the Tail slot use it.
+**Tail space.** Marks on the tail use two numbers. s runs from 0 at the tail root (x -30 on the prototype tail) to 1 at the tip (x -74); on every look it runs over that look's tail (6r). v is the offset from the tail centreline as a fraction of the local tail half-height, and + is down. Tail-space marks move with the tail wave. 6n, 6p, and the Tail slot use it.
 
 **Clearance notes**
 
 - The Head item to glasses gap is 1.8 units (glasses top at y -17.7).
-- Gill stems of every style stay left of about x 15.5 (the far top stem at full flutter), so Head items (x 16 or more) never cover a stem. They may overlap far gill filament tips, which draw behind everything.
+- Gill stems of every style and every Age (6t) stay left of about x 15.5 (the far top stem at full flutter), so Head items (x 16 or more) never cover a stem. They may overlap far gill filament tips, which draw behind everything.
 
 **Glasses construction**
 
@@ -803,7 +814,7 @@ Only "happy" and "blink" exist in the prototype. Others are to be designed using
 | Rest on bed | To design | `derived (provisional)` |
 | Nudge / interact | To design | `derived (provisional)` |
 | Front 3/4 card portrait | To design | `derived (provisional)` |
-| Wearable test pose | Check all four slots together at Small and Large, with Long gills and every eye and mouth variant (6i, 6l to 6o). To design. | `derived (provisional)` |
+| Wearable test pose | Check all four slots together at Small and Large, with Long gills and every eye and mouth variant, as a Boy and as a Girl, at every Tail, Body and Age (6i, 6l to 6u). To design. | `derived (provisional)` |
 
 ### 6l. Face variants
 
@@ -823,8 +834,9 @@ Character creator options (PRD F2, F6). r is the eye radius: near 6.4, far 5.3. 
 
 | Rule | Detail | Source |
 |---|---|---|
-| Zones | All eye marks stay inside the eye zones (6i). | `derived (provisional)` |
+| Zones | All eye marks stay inside the eye zones (6i). A Girl's eyelash lines start and end inside them too (6u). | `derived (provisional)` |
 | Shape | No brows or sharp shapes. | `derived (provisional)` |
+| Eyelashes (Girl) | Every eye variant carries a Girl's three eyelashes (6u): three short separate strokes at the bead's upper back, or fanned from the back end of the lid line on Sleepy, Determined and Grumpy. They are not brows: no stroke runs across the top of the eye, and the lid lines stay as above. | `derived (provisional)` |
 | Visible bead | Never less than about 45% of the round bead area. | `derived (provisional)` |
 | Colour | The morph eye colour and any ring (3b, 3f) apply to every variant. | `derived (provisional)` |
 
@@ -853,7 +865,7 @@ Rules:
 
 - Roots, angles, widths, colours, and flutter never change. So the gill-root zone (6i) is the same for every style.
 - Styles read by silhouette: length and filament count.
-- Long tips reach about y -63 local. This sets the texture frame (section 11).
+- Long tips reach about y -63 local at Young. Age scales stems, filaments and tip pairs (6t): Grown-up Long gill ink reaches about y -74.4, which sets the top of the texture frame (section 11).
 
 Source for the rules: `derived (provisional)`.
 
@@ -872,19 +884,24 @@ Spots draw on top of any Dream colour (PRD F14). Wild's own speckles and flecks 
 
 ### 6o. Sizes
 
-Character creator option (PRD F2, F4).
+Character creator option (PRD F2, F4). Large is the old Medium and the prototype scale; Medium is the old Small.
 
-| Size | Scale | Length in the scene | Source |
+| Size | Scale | Length in the scene (L = 127 x 0.95 x scale) | Source |
 |---|---|---|---|
-| Small | x0.85 | About 103 px | `derived (provisional)` |
-| Medium (default) | x1.00 (prototype) | About 121 px | `cartoon.js` |
-| Large | x1.15 | About 139 px | `derived (provisional)` |
+| Small | x0.72 | About 87 px | `derived (provisional)` |
+| Medium (default) | x0.85 | About 103 px | `derived (provisional)` |
+| Large | x1.00 (prototype) | About 121 px | `cartoon.js` |
+
+Lengths are for the prototype proportions (L = 127). The default Boy (L 131) is about 90 / 106 / 124 px. Over every Tail, Body, Age and Boy or girl (L 101.6 to 147), lengths run from about 70 px (a Small Baby Girl with a Short tail) to about 140 px (a Large Grown-up Chubby Boy with a Long tail).
 
 Rules:
 
 - Uniform scale about local (0,0), including ink, wearables, and the Dream overlay (the 4a exception).
 - Size is looks only. The hit area and speed never change (PRD F4).
+- Age changes proportions only, never this scale (6t).
 - Every 6i clearance holds at every size, because it is defined in local units.
+- The live axolotl texture is baked at its base bake scale times this scale, so a Large axolotl is baked big, never upscaled. A size change re-bakes it (section 11).
+- Effects follow the size: the leg-loss puff, regrowth twinkles and snack speed-up star sit on the look's leg roots at every size, and the protected ring and carry bubble scale with it (6q).
 
 Source for the rules: `derived (provisional)`.
 
@@ -932,6 +949,8 @@ PRD F14, F15. Slot colours and contrast checks are in 3f. Tail marks use tail sp
 
 PRD A5 to A8, ADR 0008. Always gentle: sparkles and outlines, never gore.
 
+**Leg-root effects at every look (PRD F4, issue #49).** The leg-loss puff, the regrowth twinkles and the snack speed-up star are placed at the look's own leg root (6e), taken from the look the axolotl texture currently paints and mapped to the world through the sprite's position, scale, facing and rotation. So they sit on the leg root at every size, Age, Body and Boy or girl. The puff, twinkles and star keep their own size; only their place follows the look. Source: `derived (provisional)`.
+
 **Legs on the body**
 
 | State | Look | Source |
@@ -939,10 +958,10 @@ PRD A5 to A8, ADR 0008. Always gentle: sparkles and outlines, never gore.
 | Present | Normal leg (6e). | `cartoon.js` |
 | Lost | A ghost outline of the leg-and-toes tube shape: dashed ink rgba(43,35,80,0.55), 1.5 wide, dash 2.5, gap 2.5, no fill. It paddles like a normal leg. Faint on purpose: not a cue object (section 10); the legs display shows leg state. | `derived (provisional)` |
 | Regrowing | The slot fill (body colour for near legs, far side for far legs) grows from the leg root to the toe tips with progress. The regrown part has its normal tube outline. The rest stays ghost. Two twinkles (R 3) sit at the growth front. At 100% there is a short burst of three twinkles. | `derived (provisional)` |
-| Snack speed-up | A 4-point star R 7 (white, ink 1.8) at the helped leg's root, drawn after the axolotl. It is a cue object (section 10): ink at alpha 1.0 while shown, and it never blinks. It is not shown with four legs. It is hidden once the trip leaves swimming. A leg a snack finishes also gets the normal regrown burst. Motion in section 9. | `derived (provisional)` |
+| Snack speed-up | A 4-point star R 7 (white, ink 1.8) at the helped leg's root (the look's root, above), drawn after the axolotl. It is a cue object (section 10): ink at alpha 1.0 while shown, and it never blinks. It is not shown with four legs. It is hidden once the trip leaves swimming. A leg a snack finishes also gets the normal regrown burst. Motion in section 9. | `derived (provisional)` |
 | Never | Blood, a wound, a stump, or a detached limb. The leg never falls off. | `derived (provisional)` |
 
-**Leg-loss puff.** At the lost leg's root (6e roots): three overlapping white circles r 7, 6, and 5, drawn as a `blob` with ink 3.5, plus four twinkles R 4 to 6. The puff covers the switch to the ghost outline. Colours are always white and sun yellow, never red. Source: `derived (provisional)`.
+**Leg-loss puff.** At the lost leg's root (the look's root, 6e): three overlapping white circles r 7, 6, and 5, drawn as a `blob` with ink 3.5, plus four twinkles R 4 to 6. The puff covers the switch to the ghost outline. Colours are always white and sun yellow, never red. Source: `derived (provisional)`.
 
 **Legs display (HUD).** Four leg icons in a row in a white #ffffff panel (section 8 panel style), under the snack counter at top-left. Source: `derived (provisional)`.
 
@@ -969,7 +988,87 @@ In greyscale, fill against empty is 3.46:1, solid and dashed outlines differ, an
 | Motion | Only the glint arc moves (section 9). Everything is static under reduced motion. | `derived (provisional)` |
 | Cue | The ring shape is the greyscale cue. | `derived (provisional)` |
 | Layer | Draws after the axolotl. | `derived (provisional)` |
+| Size | Sized at Large, then scaled by the axolotl's size factor (x0.72 / x0.85 / x1.00, 6o), so it keeps its clearance at every size; at Large it is unchanged. The carry-home bubble scales the same way. Both are measured from the sprite's scale and the texture's bake scale. | `derived (provisional)` |
 | Distinct | Must stay distinct from any future carried-home bubble. | `derived (provisional)` |
+
+### 6r. Tail length
+
+Character creator option (PRD F2). Looks only. All values are `derived (provisional)` except the prototype Medium tail (`cartoon.js`).
+
+| Tail | Core length, root to tip | With the Boy cue (6u) | Source |
+|---|---|---|---|
+| Short | 36 | 40 | `derived (provisional)` |
+| Medium (default) | 44 (prototype: x -30 to -74) | 48 | `cartoon.js`, `derived (provisional)` |
+| Long | 52 | 56 | `derived (provisional)` |
+
+**Rules**
+
+| Rule | Detail | Source |
+|---|---|---|
+| Baby | A Baby's core length is x0.85 (6t), after the Boy cue. The shortest core is a Baby Girl's Short tail (30.6); the longest is a Boy's Long tail at Young or Grown-up (56). | `derived (provisional)` |
+| Root | The tail root sits 15 units in front of the torso's back end (x -30 on the prototype torso, whose back end is x -45). So Body and Age move it: x -30 for Slim and Regular, -34 for Chubby at Young; Baby and Grown-up per 6t. | `derived (provisional)` |
+| Half-height | 13 x torso ry / 19 at the root (13 on the prototype torso; 6s), tapering to 2 at the tip with the prototype curve. | `derived (provisional)` |
+| Fins | The fin band start (tail point 3 of 14), the rays (points 5, 8, 11) and the fin reach (2 plus 9 top, 2 plus 7 bottom) are the prototype's at every length. A Boy's reach is x1.2 (6u). | `cartoon.js`, `derived (provisional)` |
+| Wave | Amplitude 11 x s, as the prototype, over the look's tail. | `cartoon.js` |
+| Tail space | s runs over the look's tail, so tail marks (spots, morph marks, the Tail slot anchor) stay on the core at every length (6i). | `derived (provisional)` |
+| Greyscale | Length reads by silhouette. | `derived (provisional)` |
+
+### 6s. Body
+
+Character creator option (PRD F2). Looks only. All values `derived (provisional)` except Regular (`cartoon.js`).
+
+| Body | Torso radii (Young) | Torso centre (Young) | Belly radii (Young) | Belly centre (Young) | Source |
+|---|---|---|---|---|---|
+| Slim | 37 x 16.5 | (-8,4) | 26 x 5.2 | (-6,12.5) | `derived (provisional)` |
+| Regular (default) | 37 x 19 (prototype) | (-8,4) | 26 x 6.2 (prototype) | (-6,14) | `cartoon.js` |
+| Chubby | 39 x 22 | (-10,4) | 28 x 8 | (-8,15.2) | `derived (provisional)` |
+
+**Rules**
+
+| Rule | Detail | Source |
+|---|---|---|
+| Head joint | The torso's front end stays at x 29 for every option, so the torso centre x is 29 - rx, and a wider torso grows only toward the tail. The head never moves. | `derived (provisional)` |
+| Torso centre line | y 4 for every option. | `cartoon.js` |
+| Belly | Its x radius and its offset from the torso centre (+2) stretch with Age (6t). Its bottom edge stays 2.8 above the torso's lowest point, so a taller belly grows upward. A Girl adds 1.5 to both the torso and belly y radii (6u). The belly always stays inside the torso. | `derived (provisional)` |
+| Marks and legs | Leg roots, body marks and the body shine move onto the look's torso (6e, 6g). | `derived (provisional)` |
+| Tail | The tail root and its half-height follow the torso (6r). | `derived (provisional)` |
+| Greyscale | Body reads by silhouette depth. | `derived (provisional)` |
+
+### 6t. Age
+
+Character creator option (PRD F2). Age changes proportions only, never the size scale (6o). The head, face, gill roots and the Head, Neck and Face anchors never move, so a Baby's head looks bigger from its shorter body, tail and gills. All values `derived (provisional)` except Young (`cartoon.js`).
+
+| Age | Torso x radius | Tail core length | Gill length | Legs and toes | Source |
+|---|---|---|---|---|---|
+| Baby | Body value - 6 (31 for Slim and Regular, 33 for Chubby) | x0.85 | x0.8 | x0.7 long (widths kept) | `derived (provisional)` |
+| Young (default) | Body value (prototype) | x1 | x1 | x1 | `cartoon.js` |
+| Grown-up | Body value + 2 (39 for Slim and Regular, 41 for Chubby) | x1 | x1.12 | x1 | `derived (provisional)` |
+
+**Rules**
+
+| Rule | Detail | Source |
+|---|---|---|
+| Torso | The head joint stays at x 29 (6s): the Baby torso's back end moves forward (x -33 for Regular, tail root -18), the Grown-up's back (x -49, tail root -34). The torso y radius comes from Body and the Girl cue only. | `derived (provisional)` |
+| Belly | Its x radius and its +2 offset from the torso centre scale by the torso x radius over the Body value. | `derived (provisional)` |
+| Gills | The factor scales every stem, side filament and tip pair. Roots, angles, bends, widths, colours and flutter never change, so the gill-root zone (6i) holds. Grown-up Long gill ink reaches about y -74.4 (section 11). | `derived (provisional)` |
+| Legs | Leg and toe lengths only; tube widths and outlines stay as 6e. | `derived (provisional)` |
+| Greyscale | Age reads by proportion: head size against body, tail, gill and leg length. | `derived (provisional)` |
+
+### 6u. Boy or girl cues
+
+Character creator option (PRD F2): Boy or Girl, always set, fixed after creation. Looks only. Text about one axolotl says "he" or "she" to match (8, tank arrival message). All values `derived (provisional)`.
+
+| Cue | Construction | Source |
+|---|---|---|
+| Boy: longer tail | Tail core +4 (6r), before any Baby factor. | `derived (provisional)` |
+| Boy: taller fins | Top and bottom fin reach x1.2: peaks 2 + 10.8 = 12.8 (top) and 2 + 8.4 = 10.4 (bottom) beyond the core. Fin band start and rays as 6r. | `derived (provisional)` |
+| Girl: rounder torso and belly | Torso y radius +1.5 and belly y radius +1.5 (6s). The tail root half-height grows with the torso (6r). | `derived (provisional)` |
+| Girl: eyelashes | Three short lashes per eye, on every eye variant (6l), on the eye layer (6a layer 12). Each is an ink line 1.4 wide over a white under-stroke 3.0 wide (0.8 of white shows each side), round caps, painted inside the eye's blink squash, so a blink squashes them too. Each lash line is up to 3.2 long, cut short so its end stays at least 0.15 inside the eye zone edge (eye radius + 1.8, 6i). As built, the round caps let the white under-stroke reach up to 1.35 past the zone edge and the ink up to 0.55 (section 12). | `derived (provisional)` |
+| Lashes on open eyes | Happy and Curious: roots 1 inside the bead edge at angles pi + 0.5, pi + 0.85 and pi + 1.2 (the upper back of the bead, facing right, y down), each lash turned 0.5 rad further toward the back. The bead paints after the lashes and covers their roots. | `derived (provisional)` |
+| Lashes on lidded eyes | Sleepy, Determined and Grumpy: all three start where the lid line meets the bead edge at its back end, fanned at pi + 0.15, pi + 0.55 and pi + 0.95. | `derived (provisional)` |
+| Lash contrast | The white under-stroke is there because ink on the Melanoid body #4f4a6e is only 1.74:1. Ink vs white is 14.39:1, and white vs the Melanoid body is 8.28:1, so a lash reads on every morph: the ink carries it on light bodies (ink vs Leucistic body 8.86:1) and the white edge on Melanoid. | `derived (provisional)` |
+| Not brows | Lashes sit at the back of each eye as separate short strokes, never one line across the top (6l). | `derived (provisional)` |
+| Greyscale | Boy: longer tail and taller fins. Girl: eyelashes and a rounder belly. On the Boy or girl step each picture button also has its label, "Boy" or "Girl" (8). | `derived (provisional)` |
 
 ---
 
@@ -1242,7 +1341,7 @@ PRD C7 to C9. UI text says "Home Tank", never "fish tank". Layout at the 480 x 3
 | Ink | Standard ink rules (4a to 4c) | `derived (provisional)` |
 | Motion | The Pond plant sways about its base point (section 9). Everything else is still. | `derived (provisional)` |
 | Castles | Rounded towers, round windows, rounded crenellations | `derived (provisional)` |
-| Axolotls | Same construction at scene scale 0.95, times the tank frame scale, each in its own look (6l to 6o). The size factor (6o) is applied everywhere the axolotl is drawn: on trips, in the Home Tank and in the creator and restyle preview. On trips the mouth bubble spawn and the tail sparkles scale with it, so they stay on the body. | `derived (provisional)` |
+| Axolotls | Same construction at scene scale 0.95, times the tank frame scale, each in its own look (6l to 6u) at its own size: x0.72, x0.85 or x1.00, about 87, 103 or 121 px long at tank frame scale 1 for the prototype proportions (6o). A rescued axolotl arrives in the default look at Medium with its boy or girl cues, until it is restyled. The size factor (6o) is applied everywhere the axolotl is drawn: on trips, in the Home Tank and in the creator and restyle preview. On trips the mouth bubble spawn and the tail sparkles scale with it, so they stay on the body. | `derived (provisional)` |
 | Axolotl swim | Every owned axolotl laps the tank on its own: x 88 to 392 and back, eased at each end, facing flips at each end. Lap period 16 to 24 s, fixed per axolotl. Each axolotl has its own lane, spread through y 84 to 264 so the bob stays in the water, a hover bob of +/-6 px over 3 s and a tilt of up to 0.12 rad that follows the bob. Under reduced motion each stands still in its lane, spread along the lap, facing right and left in turn, with no tilt (section 9). | `derived (provisional)` |
 
 **Placement**
@@ -1329,7 +1428,7 @@ All values in this section are `derived (provisional)` unless the row says other
 | Panel style | Fill, ink 3.5 outline, corner radius min(height / 2, 18). | `derived (provisional)` |
 | Banking card (A14) | Dim the game behind (ink at 0.45). White panel, padding 24 (12 on short screens, per Card fit), centred. Title in bold ink 34 px ("Safe at the Home Spot!"). The treasure icons (each treasure's icon in a 32 px box, gap 8), in wrapping rows, above the description text (20 px, max width 420). The banked total as text, 20 px. A rescued axolotl banked with the finds is named first in the description by its display name (for example "Wild axolotl is safe now!"); the short wording calls it "Your axolotl friend". The icon row and the banked total count treasures only. Two wide buttons, both 64 px tall with a 12 px gap: Keep exploring (primary #ffe14a, play icon) and Go home (secondary #55e4d8, house icon). Side by side, Keep exploring on the left; stacked, Keep exploring on top, when the canvas is under 460 CSS px wide. | `derived (provisional)` |
 | Go home button (contextual) | Wide secondary #55e4d8 button, 64 px tall, house icon and the label "Go home", top-right under the Pause button with a 12 px gap. Shown only at the Home Spot. | `derived (provisional)` |
-| Tank arrival message | Shown over the Home Tank after every trip, in place of the carried-home card and the old interim screen. Dim the Home Tank behind (ink at 0.45); the dim takes every press. White panel, padding 24 (12 on short screens, per Card fit), centred, with the house icon (32 px) 12 px left of the title (bold ink 34 px), then one 20 px text block (max width 420) holding the body text and the banked line on its own line, an icon row of the treasures the body names (each treasure icon in a 32 px box, gap 8), and one wide primary #ffe14a button, 64 px tall, with the tick icon and the label "OK". OK always shows the focus ring. It ignores presses for the first 0.8 s the card shows. The hub buttons stay drawn under the dim, unfocused. Fits the canvas per Card fit. Motion in section 9. The body names a rescued axolotl banked this trip by its display name, now in the Home Tank ("Wild axolotl moved into your Home Tank!"). After a carried-home trip it names a following axolotl that swam back, with the waiting message ("Wild axolotl swam back to where you found it. It's waiting for you!"). The short wording says "Your axolotl friend". The icon row shows treasures only. | `derived (provisional)` |
+| Tank arrival message | Shown over the Home Tank after every trip, in place of the carried-home card and the old interim screen. Dim the Home Tank behind (ink at 0.45); the dim takes every press. White panel, padding 24 (12 on short screens, per Card fit), centred, with the house icon (32 px) 12 px left of the title (bold ink 34 px), then one 20 px text block (max width 420) holding the body text and the banked line on its own line, an icon row of the treasures the body names (each treasure icon in a 32 px box, gap 8), and one wide primary #ffe14a button, 64 px tall, with the tick icon and the label "OK". OK always shows the focus ring. It ignores presses for the first 0.8 s the card shows. The hub buttons stay drawn under the dim, unfocused. Fits the canvas per Card fit. Motion in section 9. The body names a rescued axolotl banked this trip by its display name, now in the Home Tank ("Wild axolotl moved into your Home Tank!"). After a carried-home trip it names a following axolotl that swam back, with the waiting message in "he" or "she" to match its boy or girl ("Wild axolotl swam back to where you found him. He's waiting for you!" or "... found her. She's waiting for you!"; more than one: "... found them. They're waiting for you!"). The short wording says "Your axolotl friend". The icon row shows treasures only. | `derived (provisional)` |
 | Tilapia fact card (A21) | Shown over the paused swim the first time the axolotl meets a tilapia (outside the safe area, within 180 px, tuning), once per trip until it is seen. Play pauses under it and the Pause button hides. Dim the game behind (ink at 0.45); the dim takes every press. White panel, padding 24 (12 on short screens, per Card fit), centred. Title "Meet the tilapia" in bold ink 34 px, centred. The fact as one centred 20 px text block (max width 420). One wide primary #ffe14a button, 64 px tall, with the tick icon and the label "OK"; it always shows the focus ring and ignores presses for the first 0.8 s the card shows. Enter, Space, P, or Esc press OK. No picture on the card; the tilapia picture is on its Collection Book page. Fits the canvas per Card fit. Motion in section 9. | `derived (provisional)` |
 | Title screen | White panel (panel style, padding 16) at top-centre with the name "Glam Gills" in bold ink 34 px, the subtitle "Find Your Flair" in bold ink 22 px 4 px below it, the controls text 18 px, and the version label in small text. When the panel would not fit above the Start button and update prompt, the controls text hides first. The name, subtitle and version always show. | `derived (provisional)` |
 | Card fit (banking card, tank arrival card) | The buttons sit at the panel bottom, and the panel is never taller than the canvas minus the 16 px margins. When the content does not fit: padding 24 to 12, then fewer treasure icon rows (whole rows, from the end), then no icons, then the short wording (a count instead of names; icons come back if they fit). Below the smallest supported canvas (1), the text is cut to whole lines. Text and buttons never shrink (body 20 px, title 34 px, buttons 64 px). | `derived (provisional)` |
@@ -1338,9 +1437,9 @@ All values in this section are `derived (provisional)` unless the row says other
 | Home Tank axolotl picking (PRD F6) | After the hub buttons, the hub focus runs on through each owned axolotl, then wraps. A focused axolotl shows the double focus ring round its sprite bounds (as on a decorate footprint, 7f: 3 px lines, inner white 3.25 px and outer ink 6.25 px outside the bounds, corner radius 18 plus the offset, both opaque) and a name tag: a white panel (panel style), padding 12, with the name in bold ink 18 px. The tag is centred across the axolotl 12 px above its sprite bounds, or 12 px below when above would cross the 16 px top margin, and stays inside the canvas margins. Ring and tag follow the axolotl every frame and show only while the hub has the input. Each axolotl's tap area is its texture frame, grown about its centre to at least 48 x 48 CSS px. A press and release on an axolotl, or Enter or Space on a focused one (ignoring key repeat), opens the restyle screen for it. Axolotls take taps only in the hub, so they never block a decorate press. Done or Cancel goes back to the hub with that axolotl focused. | `derived (provisional)` |
 | Decorate controls | A toolbar in place of the hub buttons, flowed the same way (centred rows from the top margin, 12 px gaps): one 64 px tray square per owned Decoration not yet placed (white panel, panel style, with its 48 px treasure icon centred), then Put away, then Done. Put away is a wide secondary button at size 0.8 (160 x 51.2, put away icon, 22 px label); its slot is always kept, but it shows only while a Decoration is selected. Done is a wide primary button, 200 x 64, with the tick icon. The caption, ink 18 px, centred, wraps at the canvas width less the margins and sits 12 px below the controls, only when it fits across and ends 12 px above the Decoration band. It names the focused Decoration; otherwise it shows the hint, or the message for no Decorations owned or for all of them placed. Focus order: tray squares, placed Decorations back to front, Put away while shown, Done; there is no focus until the first key. Enter or a tap on a tray square places that Decoration (7f, New placement) and selects it; on a placed Decoration it selects it. Arrows move a focused placed Decoration (7f); otherwise left and right step the focus. Delete and Backspace put the selection away; Escape is Done. Placement looks are in 7f. | `derived (provisional)` |
 | Treasure Chest (C11) | Opaque #fff1d6 backdrop (3g) that takes every press, and a white panel (panel style) inside the 16 px margins, padding 12. At the top left, the title "Treasure Chest" in bold ink 28 px, then 12 px below it the section heading in bold ink 18 px, the section name with its count ("Decorations: 2 of 4 found"; sections Decorations, Wearables, Dream colours), then 12 px below that the entry list. Landscape (canvas wider than tall): a right column as wide as the widest button, Close at its top and Back over Next at its bottom, 12 px apart; the page text is centred under the list. Portrait: the page text is centred above a bottom row of Back, Next and Close, wrapping when it must. Entry row: the 32 px lead (the treasure icon, or the Dream swatch tile for a Dream colour) at the left, then 8 px to the name in bold ink 20 px; the 24 px rarity badge, 6 px, and the rarity name in bold ink 18 px follow the name on its line (8 px after it) when they fit, else go under it; the detail line, ink 18 px, goes below, beside the lead or under it across the row, whichever ends higher. Details: a Wearable shows its slot and its perk with its value as text on one line (text only until the perk icons, #16); a Dream colour shows the label "Dream colour - not found in nature" (the build text uses the PRD em dash, see Dream colour display); a Decoration has none. Rows are 12 px apart and all as tall as the tallest entry row; each page holds as many whole rows as fit (at least one); a section with no finds shows its empty text, ink 18 px. Pages run through the sections in order, each section at least one page, and wrap at both ends. The page text, ink 18 px, reads "Page 1 of 3". Back (left chevron), Close (close icon) and Next (right chevron) are secondary square tiles sharing one size, 78 x 64, wide enough for the widest label. Focus starts on Next; Tab and Shift+Tab move it over Back, Close and Next; left and right turn the page; Enter and Space press; Escape closes. Appears and leaves at once (9). | `derived (provisional)` |
-| Collection Book (C12, C13, C14) | Opened from its hub tile. Same frame as the Treasure Chest: opaque #fff1d6 backdrop (3g) that takes every press, white panel, title "Collection Book" in bold ink 28 px, section heading in bold ink 18 px, page text in ink 18 px, and the same Back, Close and Next tiles (78 x 64), placement, focus and keys. Sections in order, each starting a new page, paging wrapping at both ends: Morphs (heading with its count, "Morphs: 2 of 8 found"), Dream colours (heading "Dream colours", no count), Fact cards ("Fact cards: 1 of 1 found"). It opens on the first Morphs page with Next focused; Close returns focus to the Collection Book hub tile. **Morph pages**: one morph per page, in the order Leucistic, Wild, Golden albino, White albino, Copper, Piebald, Axanthic, Melanoid. Found: the rest-pose portrait in its morph colours (ink scaled with the portrait, 4d), the morph name in bold ink 22 px, the 24 px morph badge 8 px after the name, and the fun fact in ink 18 px. Unfound: the silhouette (3g) in place of the portrait, the name "???", and the hint "Rescue me in the canal!"; no badge. **Featured layout** (morph and fact card pages): a square picture 112 px, else 64 px; first the text in a column beside the picture under the name row, else the picture and name row side by side with the text full width below. Picture gap 12, name-to-text gap 8. Text never shrinks; it is cut to whole lines only when nothing fits. **Dream colours section**: all twelve, apart from the morphs, in catalogue order, as many rows per page as fit, 12 px apart, all as tall as the tallest row. Row: the 32 px Dream swatch tile, 8 px, the name in bold ink 20 px, and under it the label "Dream colour - not found in nature" in ink 18 px (the build text uses the PRD em dash, see Dream colour display). **Fact cards section**: one card per page. Found: the tilapia picture (its swim pose with a calm smile, ink scaled with it), the name "Tilapia", and the fact. Unfound: "???" and the hint "Explore the canal to find this card.", with no picture. Appears and leaves at once (9). | `derived (provisional)` |
-| Character creator and restyle screen (PRD F1 to F3, F6) | One layout for both. Opaque #fff1d6 backdrop (3g) that takes every press, and a white panel (panel style) inside the 16 px margins, padding 12. The title in bold ink 28 px, centred at the top: "Make your axolotl" in the creator, "Change your axolotl" in restyle. Then, 12 px apart: the live preview, the part stepper (which part: Name, Eyes, Mouth, Gills, Spots, Size, Colour) and the choice stepper (that part's choice, or the name). The preview box holds a Large axolotl with Long gills, sized from the axolotl texture frame 148 x 125 (11), which the scene passes in; the preview is drawn in the morph's colours (3b); a Medium axolotl shows at 1.4 CSS px per local unit when there is room, and never under 0.75 before the choice row stacks. Each stepper row is a back chevron, a value box and a next chevron. The chevrons are 48 x 48 secondary #55e4d8 buttons with the left or right chevron icon (32 px) and no label. The value boxes are white (panel style), 48 px tall, with the value centred in bold ink 20 px; the part box is 96 wide and the choice box 212 wide (room for a 12-character name, or for the longest morph name with a 24 px morph badge 8 px after it, centred in the box). The Colour choice steps the four real morphs by name plus that badge (the badge shapes of the Collection Book, 8), starting on Leucistic. In restyle, Colour shows the morph's name and badge, read-only: its chevrons are hidden and the morph never changes. Buttons: Surprise me (secondary square tile, 158 x 64, Surprise icon), Done (wide primary #ffe14a, 200 x 64, tick icon) and, in restyle only, Cancel (secondary square tile, 92 x 64, close icon). Landscape (canvas wider than tall): the preview on the left above Surprise me (and Cancel), and a right column with the part and choice steppers at its top and Done at its bottom. Portrait: the part stepper, the choice stepper, the preview, then Surprise me, Cancel and Done in centred rows at the bottom. When the screen is tight, in order: the title hides, the preview shrinks to its minimum, then the choice value moves up under the part stepper and the choice chevrons go under it (landscape) or either side of the preview, centred on it (portrait). Text and buttons never shrink. Focus order: part row, choice row, Surprise me, Done, then Cancel in restyle. Focus starts on the part row and always shows: a focused row has the double focus ring round its value box and on both its chevrons. Tab, Shift+Tab, up and down move the focus, wrapping; left and right step the focused row; Enter and Space press, ignoring key repeat; Escape is Cancel in restyle and does nothing in the creator. Every option shows as words in the value boxes, and every change shows in the preview at once. Pressing the name value, or Enter on it, opens the name entry field. Surprise me picks a new look and a suggested name, and in the creator also a colour. Appears and leaves at once (9). | `derived (provisional)` |
-| Name entry field | A real text field over the canvas (browser glue, [ADR 0011](adr/0011-name-entry-stays-on-device.md)), placed over the choice value box and kept 16 px inside the visible viewport; until it has that box, it sits centred at the top of the visible viewport, 420 wide. At least 56 px tall. White fill, ink text in bold 22 px in the rounded UI font stack (never a webfont; 16 px or more, so phones do not zoom in), ink border 3.5 px, corner radius 16, 16 px padding across, and the double focus ring always on (3 px white, then 3 px ink, outside the border). Holds only name characters, through `fitNameEdit`, the same rule as the cleaning (a letter with its accents is one character). Anything a name cannot hold is dropped as it is typed or pasted, with no extra cue. Space runs become one space and a leading space is dropped. A trailing space stays while typing and is trimmed when the name is kept. Typing past 12 does nothing, and a longer paste keeps the start that fits, with the caret after the kept text. During an IME composition the field is left alone; the rule applies when the composition ends, on Enter, or when the field loses focus. The browser `maxlength` is only a raw ceiling (`NAME_FIELD_RAW_MAX`), never the name limit. The choice value shows the cleaned name as it is typed. Enter or tapping elsewhere keeps the name; Escape puts back the name from before typing; a name that cleans to nothing keeps the old name. | `derived (provisional)` |
+| Collection Book (C12, C13, C14) | Opened from its hub tile. Same frame as the Treasure Chest: opaque #fff1d6 backdrop (3g) that takes every press, white panel, title "Collection Book" in bold ink 28 px, section heading in bold ink 18 px, page text in ink 18 px, and the same Back, Close and Next tiles (78 x 64), placement, focus and keys. Sections in order, each starting a new page, paging wrapping at both ends: Morphs (heading with its count, "Morphs: 2 of 8 found"), Dream colours (heading "Dream colours", no count), Fact cards ("Fact cards: 1 of 2 found"). It opens on the first Morphs page with Next focused; Close returns focus to the Collection Book hub tile. **Morph pages**: one morph per page, in the order Leucistic, Wild, Golden albino, White albino, Copper, Piebald, Axanthic, Melanoid. Found: the rest-pose portrait in its morph colours (ink scaled with the portrait, 4d), the morph name in bold ink 22 px, the 24 px morph badge 8 px after the name, and the fun fact in ink 18 px. Unfound: the silhouette (3g) in place of the portrait, the name "???", and the hint "Rescue me in the canal!"; no badge. **Featured layout** (morph and fact card pages): a square picture 112 px, else 64 px; first the text in a column beside the picture under the name row, else the picture and name row side by side with the text full width below. Picture gap 12, name-to-text gap 8. Text never shrinks; it is cut to whole lines only when nothing fits. **Dream colours section**: all twelve, apart from the morphs, in catalogue order, as many rows per page as fit, 12 px apart, all as tall as the tallest row. Row: the 32 px Dream swatch tile, 8 px, the name in bold ink 20 px, and under it the label "Dream colour - not found in nature" in ink 18 px (the build text uses the PRD em dash, see Dream colour display). **Fact cards section**: one card per page, the tilapia card then the Boy or girl card. Tilapia found: the tilapia picture (its swim pose with a calm smile, ink scaled with it), the name "Tilapia", and the fact. Tilapia unfound: "???" and the hint "Explore the canal to find this card.", with no picture. The Boy or girl card is always found and has no picture: the name "Boy or girl?" at the top and the fact below it. Appears and leaves at once (9). | `derived (provisional)` |
+| Character creator and restyle screen (PRD F1 to F3, F6, F16, F17) | One step screen per step, one choice per screen, the same screens for both. The 11 steps in order: Colour, Boy or girl, Eyes, Mouth, Gills, Spots, Tail, Body, Age, Size and Name. Opaque #fff1d6 backdrop (3g) that takes every press, and a white panel (panel style) inside the 16 px margins, padding 12. From the top: the heading in bold ink 28 px, centred ("Step 3 of 11: Pick your eyes!" in the creator; the step title, such as "Pick your eyes!", in restyle); 4 px under it the creator's progress dots or the restyle tab row; then the helper line (ink 18 px), the live preview and the step's picture buttons, or the Name step controls; and the step buttons at the bottom. **Progress dots** (creator): one 14 px slot per step, 6 px apart, centred. A done step is a filled ink dot r 4.5; the current step is a bigger ink ring r 5.75 (line 2.5) with a filled ink centre r 2.5; a step to come is a hollow ink ring r 4 (line 2). Shape and fill, never colour. **Tab row** (restyle): one tab per step, panel style, 48 px tall, each as wide as its bold 18 px label plus 6 px each side (at least 48), 12 px apart. The current tab's label is bold over a thick ink bar (5 px tall, 8 px in from each side, 4 px above the bottom edge); the other labels are normal weight. When the tabs do not fit across, they split into pages between two 48 x 48 secondary page buttons with the left and right chevron icons (32 px) and no label; the pages wrap, and the focus stays where it is. The Colour and Boy or girl tabs open read-only screens: one picture button showing the current value, chosen, with the helper "This stays the same after you make your axolotl."; picks do nothing. **Picture buttons**: every option of the step at once (up to 8), square, panel style, the largest whole side from 48 to 96 px that fits, in the fewest balanced rows, 12 px apart, each with its label (bold ink 18 px) 4 px under it. Each picture is a still of the look so far with that option on, in the morph's colours (on Colour, in that option's morph), at the still pose (9), cropped by step: the face for Eyes and Mouth, the gills for Gills, and the whole axolotl for every other step (11). Whole pictures draw at the option's size factor, so the Size options differ. The picture fills the button 4.5 px inside its edge. The chosen option has a 5 px ink ring just inside the outline and a tick badge: a white disc r 10 with an ink ring 2.6 and the 16 px tick icon, centred 13 px in from the top-right corner. On Colour, the 24 px morph badge sits 4 px inside the lower-left corner (badge shapes below). There are no arrows to step through options. **Name step**: the name box (panel style, 168 x 48, the name in bold ink 20 px), the suggested-name buttons (panel style, 120 x 48 each, bold ink 20 px; names that fit the axolotl's boy or girl, as many to a page as fit, up to 8, 12 px apart), and More names (panel style, 132 x 48, bold ink 20 px) when the names take more than one page: beside the name box when both fit across, else after the names. A chosen name button has the 5 px ring and the tick badge, centred 2 px in from its top-right corner so it overhangs the corner and stays clear of the name. Pressing the name box, or Enter on it, opens the name entry field. **Step buttons**, label-sized (Button width, but without the 200 px wide-button minimum): in the creator, Back (secondary square tile 65 x 64, left chevron; from step 2, its place kept on step 1 so nothing moves), Surprise me (secondary tile 158 x 64, Surprise icon), and Next (primary wide 110 x 64, right chevron), or Done (primary wide 110 x 64, tick icon) on the last step, in centred rows at the bottom. In restyle, Surprise me, Cancel (secondary tile 92 x 64, close icon) and Done on every step: in centred rows at the bottom in portrait, or in landscape (canvas wider than tall) stacked 12 px apart in a right column under the tab row, with Done at the bottom. **Preview**: sized for a Large axolotl in the 166 x 139 texture frame (11): 1 CSS px per local unit (166 x 139 px) times the look's size factor, in the morph's colours. It sits above the picture buttons or beside them, 4 px away, whichever fits. **Fit**: 12 px between touch targets, 4 px between text (or the dots or the preview) and anything. Touch targets stay at least 48 x 48 and primary buttons at least 64 tall; text never shrinks. When a step does not fit, in order: 1. the helper line hides; 2. the picture button labels hide, and one caption (bold ink 18 px) under the buttons names the focused option, else the chosen one; 3. the preview shrinks to 0.6 (99.6 x 83.4 px); 4. the creator heading drops its "Step N of 11:" start; 5. the preview hides, and the chosen picture button is the preview; 6. restyle only: the heading hides, and the bold current tab names the step. Restyle then tries Cancel at the end of the tab row. Every step fits the smallest canvases (1); below them the last try may overflow. **Focus and keys**: focus starts on the chosen option (on Name, the chosen name, else the name box) and always shows the double focus ring outside the focused control (inner white 3.25 px and outer ink 6.25 px outside the box, 3 px lines). Tab and Shift+Tab move one stop at a time, wrapping. Creator order: the picture buttons, Back (not on step 1), Surprise me, then Next or Done. Restyle order: the tabs, the picture buttons, Surprise me, Cancel, Done. On Name the picture buttons are replaced by the name box, the name buttons and More names. Arrows move in the picture buttons (left and right by one, up and down by a row, stopping at the ends); left and right on a focused tab open the tab before or after, wrapping. Enter and Space press, ignoring key repeat; Escape is Cancel in restyle and does nothing in the creator. Every change shows in the preview and on the picture buttons at once. Surprise me picks every option at random and a suggested name that fits the boy or girl; in the creator also the colour and the boy or girl; in restyle never the colour or the boy or girl. Appears and leaves at once (9). | `derived (provisional)` |
+| Name entry field | A real text field over the canvas (browser glue, [ADR 0011](adr/0011-name-entry-stays-on-device.md)), placed over the Name step's name box and kept 16 px inside the visible viewport; until it has that box, it sits centred at the top of the visible viewport, 420 wide. At least 56 px tall. White fill, ink text in bold 22 px in the rounded UI font stack (never a webfont; 16 px or more, so phones do not zoom in), ink border 3.5 px, corner radius 16, 16 px padding across, and the double focus ring always on (3 px white, then 3 px ink, outside the border). Holds only name characters, through `fitNameEdit`, the same rule as the cleaning (a letter with its accents is one character). Anything a name cannot hold is dropped as it is typed or pasted, with no extra cue. Space runs become one space and a leading space is dropped. A trailing space stays while typing and is trimmed when the name is kept. Typing past 12 does nothing, and a longer paste keeps the start that fits, with the caret after the kept text. During an IME composition the field is left alone; the rule applies when the composition ends, on Enter, or when the field loses focus. The browser `maxlength` is only a raw ceiling (`NAME_FIELD_RAW_MAX`), never the name limit. The name box shows the cleaned name as it is typed. Enter or tapping elsewhere keeps the name; Escape puts back the name from before typing; a name that cleans to nothing keeps the old name. | `derived (provisional)` |
 | First-trip hint banner | Soft pink #ffd9e6 panel (panel style), padding 12, placed per HUD overlay fit, ink text 24 px: "Bring finds to the Home Spot to keep them safe." No icon needed: the text carries it. | `derived (provisional)` |
 | HUD overlay fit (find pop-up, all-snacks banner, first-trip hint) | Keep-outs: the Pause button; the Go home button while it shows; the Dash button with its ring; the swim pad base plus the knob reach. Clearance is at least 12 px from the controls and from other overlays, and the 16 px edge margin holds. Normal case: the usual top-centre stack (hint, then all-snacks banner, then find pop-up) is used when it clears the controls. Fallback: overlays are placed in priority order find pop-up, all-snacks banner, hint, each in the free space nearest top-centre; first clear of the snack counter, legs display and Trip Bag panels, then over those panels. Text wraps narrower (pop-up name and banner text stay at least 120 px wide) but never shrinks (name 22, category and rarity 18, banner 24, badge 32, icon 48). An overlay with no room waits off screen with its timer stopped. No UI scale-down. | `derived (provisional)` |
 
@@ -1427,10 +1526,10 @@ Everything is soft, slow, and looping. Times are periods (one full cycle).
 | Treasure Chest | Appears and leaves at once. No motion. | Same. |
 | Collection Book | Appears and leaves at once. Page turns are instant. No motion. | Same. |
 | Tilapia fact card | Dim and card appear at once and leave at once on OK. OK ignores presses for the first 0.8 s. | Same. |
-| Stranded axolotl, waiting ("a little lost") | At its stranding place in its morph colours, all four legs, no marks. It looks around: facing flips every 2.4 s, starting left. Waiting bob +/-3 px over 3 s. Gills flutter at 0.6x speed; tail and legs paddle at 0.3x. Blinks as the hero. The lost thought bubble sits 52 px above it, shifted 18 px toward the way it faces, and moves with the bob and the turns. Drawn at depth 39 (`friend`), behind the hero; the bubble at depth 80 (`fx`). | Still frame (t = 1.0 s), facing left, no bob, eyes open, bubble shown. |
+| Stranded axolotl, waiting ("a little lost") | At its stranding place in its morph colours, in the rescued look (the default look at Medium, x0.85, with its boy or girl cues, 6u), all four legs, no marks. It looks around: facing flips every 2.4 s, starting left. Waiting bob +/-3 px over 3 s. Gills flutter at 0.6x speed; tail and legs paddle at 0.3x. Blinks as the hero. The lost thought bubble sits 52 px above it, shifted 18 px toward the way it faces, both offsets times its size factor (about 44.2 px and 15.3 px at Medium), and moves with the bob and the turns. The bubble itself keeps its size. Drawn at depth 39 (`friend`), behind the hero; the bubble at depth 80 (`fx`). | Still frame (t = 1.0 s), facing left, no bob, eyes open, bubble shown. |
 | Stranded axolotl, following | Trails the player along the player's path, 44 px behind (at most 90 px in a straight line, up to 400 px/s, so it keeps up with Tail Dash). Faces the way it moves. Tail, legs and gills at full speed. No bob, no bubble. Once banked it rests by the Home Spot with a slow paddle and no bubble. | Still frame (t = 1.0 s), no bubble. It still moves and turns with the player (gameplay). |
-| Axolotl repaint budget | Each scene's main axolotl (the canal explorer, the title axolotl, the first Home Tank axolotl, the creator and restyle preview) repaints its pose every frame, 30 a second at most while the frame rate is under 45. Every other axolotl on screen (the stranded axolotl, rescued Home Tank axolotls) shares one repaint budget: at most one of them repaints per frame, each at least 0.03 s apart (about 30 a second), longest wait first. Position, facing, bob and tilt still update every frame. A first paint and a new morph paint at once. While the restyle screen covers the Home Tank, the tank axolotls do not move or repaint; they carry on from where they were when it closes. Live per-pose repaints stay for now; pre-baked frames or atlases ([ADR 0004](adr/0004-art-pipeline.md)) are tracked in [issue #46](https://github.com/brenpike/glam-gills/issues/46) (high priority, must-have for the MVP), and with the character creator they must be keyed by look, morph and size or built from part layers (section 11). | Still poses paint at once, then never repaint. |
-| Character creator and restyle screen | Appears and leaves at once. An option change shows at once, with no tween. | Same. |
+| Axolotl repaint budget | Each scene's main axolotl (the canal explorer, the title axolotl, the first Home Tank axolotl, the creator and restyle preview) repaints its pose every frame, 30 a second at most while the frame rate is under 45. Every other axolotl on screen (the stranded axolotl, rescued Home Tank axolotls) shares one repaint budget: at most one of them repaints per frame, each at least 0.03 s apart (about 30 a second), longest wait first. Position, facing, bob and tilt still update every frame. A first paint and a new morph paint at once. While the restyle screen covers the Home Tank, the tank axolotls do not move or repaint; they carry on from where they were when it closes. Live per-pose repaints stay for now; pre-baked frames or atlases ([ADR 0004](adr/0004-art-pipeline.md)) are tracked in [issue #46](https://github.com/brenpike/glam-gills/issues/46) (high priority, must-have for the MVP), and with the character creator they must be keyed by look (eyes, mouth, gills, spots, boy or girl, tail, body and age), morph and size, or built from part layers (section 11). The creator and restyle picture buttons are not in this budget: each is a still bake at the still pose (t = 1.0 s, eyes open), painted once and baked again only when its look, morph, crop or bake scale changes (11). | Still poses paint at once, then never repaint. |
+| Character creator and restyle screen | Appears and leaves at once. An option pick, a step change (Back, Next, a tab) and a tab page turn show at once, with no tween. The picture buttons are still pictures (t = 1.0 s, eyes open) and never move. | Same. |
 | Creator and restyle preview | Idles in place: tail wave, legs, gill flutter and blink as the canal hero. No bob, no tilt, no swim lap. | A still pose: tail and gills at the still frame (t = 1.0 s), eyes open. Turning reduced motion on takes effect at once (PRD F3). |
 | Invalid-move ghost (7f) | After a keyboard move to an invalid point, the ghost, dashed outline and "no" icon hold still for 0.7 s, then go at once. No fade. | Same. |
 | First-trip hint banner | Fades in and out over 0.4 s. Holds still while shown. | Appears and leaves at once. |
@@ -1487,6 +1586,7 @@ The worst background is the middle one and gets exactly the square root of P.
 | Ink vs Wild rim #e2e4b8 | 10.98 | 3.31 | Passes | `derived (provisional)` |
 | Ink vs Melanoid body #4f4a6e | 1.74 | 1.32 | Fails alone; the rim light is **required** | `derived (provisional)` |
 | Ink vs rim light #cec9f0 | 9.07 | 3.01 | Passes (Melanoid, Rainbow, dark Dream colours) | `derived (provisional)` |
+| Girl eyelashes (6u): ink vs white under-stroke, and white vs Melanoid body #4f4a6e | 14.39, 8.28 | - | Passes. The lash is inside the head, so its partner is the body, not the water. Ink alone on Melanoid is 1.74, so the white under-stroke carries the lash there; on light bodies the ink carries it (Leucistic 8.86). | `derived (provisional)` |
 | Dream colours | See 3f | - | - | `derived (provisional)` |
 | Ink vs tilapia body #c2d2bb | 9.07 | 3.01 | Passes | `derived (provisional)` |
 | Ink vs tilapia fin #d4e0d0 | 10.54 | 3.25 | Passes | `derived (provisional)` |
@@ -1528,8 +1628,8 @@ Golden albino and GFP pass on any background. Melanoid passes with its rim light
 | Collection Book found vs unfound | Unfound: the flat silhouette with its "?", the name "???", and the hint text. Found: the portrait, the morph name, and the badge shape. Unfound fact cards show "???" and the hint with no picture. The Morphs and Fact cards headings carry their counts as text. | `derived (provisional)` |
 | Home Tank hub buttons | Each button has its own icon and label (play icon plus "Go exploring", sprig plus "Decorate", chest plus "Treasure Chest", book plus "Collection Book"). The primary also differs by shape: a wide button against square tiles, not only fill. | `derived (provisional)` |
 | Home Tank axolotl picking | The focused axolotl has the double focus ring and a name tag with its name as text. | `derived (provisional)` |
-| Character creator | Every option shows as words: the part name and the choice in the value boxes (for example "Eyes" and "Sleepy"), as well as in the preview. Colour shows the morph name plus its badge shape, never colour alone. Each button has its own icon and label (Surprise icon plus "Surprise me", tick plus "Done"); Done also differs by shape, a wide button against a square tile. Focus is the double ring. | `derived (provisional)` |
-| Restyle screen | As the character creator, plus the title "Change your axolotl" and the Cancel tile (close icon plus "Cancel"). Colour shows the morph name plus its badge shape, with no arrows. | `derived (provisional)` |
+| Character creator | Every option is a picture button with its name as a label under it, or the caption once the labels hide (8), and the heading names the step as text ("Step 3 of 11: Pick your eyes!"). The chosen option is marked by shape, not colour: a thick 5 px ink ring inside the outline plus the tick badge (white disc, ink ring, tick). The progress dots show done, current and to come by shape and fill: a filled dot, a bigger ring with a filled centre, and a hollow ring. On Colour each picture also has its morph badge shape (8) and the morph name. On Boy or girl the pictures show the shape cues (eyelashes and a rounder belly; a longer tail and taller fins, 6u) and the labels "Boy" and "Girl". Tail, Body, Age and Size read by silhouette and proportion, with their labels. Each step button has its own icon and label (left chevron plus "Back", Surprise icon plus "Surprise me", right chevron plus "Next", tick plus "Done"); Next and Done also differ by shape, a wide button against square tiles. Focus is the double ring. A Girl's eyelashes read on every morph: ink over a white under-stroke (the Girl eyelashes pair in the table above). | `derived (provisional)` |
+| Restyle screen | As the character creator, with the tab row in place of the progress dots and Back and Next. The current tab is marked by a bold label and a thick ink bar, not by colour; every tab has its step name as text. The tab page buttons are chevron shapes. The Cancel tile has the close icon plus "Cancel". The read-only Colour and Boy or girl screens show one chosen picture with its label (and, on Colour, the morph badge shape), plus the helper text. When the heading hides (8, fit step 6), the bold current tab names the step. | `derived (provisional)` |
 | Decoration placement states | Selected: the double focus ring. Valid move: the half-alpha ghost inside the ring. Invalid move: the dashed ink outline plus the "no" icon (disc and bar). Each state adds a shape, never only a colour. | `derived (provisional)` |
 
 **Checklist**
@@ -1539,7 +1639,7 @@ Golden albino and GFP pass on any background. Melanoid passes with its rim light
 | Text contrast | 4.5:1 for text under 18 pt (14 pt bold); 3:1 for larger text and for icons | `derived (provisional)` |
 | Focus | Every interactive element has a visible double-ring focus indicator (section 8) | `derived (provisional)` |
 | Touch targets | At least 48 x 48 CSS px; primary at least 64 px tall | `derived (provisional)` |
-| Non-colour meaning | Morph, water state, hazard, disabled state, rarity, legs, telegraph, protected time, Dream colours, perks, the Home Spot, finds, and the Trip Bag all have a shape, text, or motion cue (see the greyscale check above) | `derived (provisional)` |
+| Non-colour meaning | Morph, water state, hazard, disabled state, rarity, legs, telegraph, protected time, Dream colours, perks, the Home Spot, finds, the Trip Bag, and the creator and restyle chosen option, progress dots, current tab and boy or girl all have a shape, text, or motion cue (see the greyscale check above) | `derived (provisional)` |
 | Themes | There is one theme today. If more are added, re-check every pair above. | `derived (provisional)` |
 
 ---
@@ -1557,12 +1657,14 @@ Engine-agnostic. Do not commit to an engine or file format yet. All items `deriv
 | Morphs | Palette swap through role slots (3b), plus a pattern overlay and an eye variant where needed. Never redraw per morph. |
 | Naming | Name layers by slot role (for example `body`, `far-side`, `gill-near-stem`) so a swap can find them. |
 | Outline | Bake the ink outline into the art at the widths in section 4, or draw it by the three techniques. Keep it #2b2350 (`derived (provisional)`). |
-| Wearables | One layer per slot (`wear-tail`, `wear-neck`, `wear-head`, `wear-face` at 8.5, 9.5, 10.5, 11.5), authored in axolotl local units at Medium, facing right. |
+| Wearables | One layer per slot (`wear-tail`, `wear-neck`, `wear-head`, `wear-face` at 8.5, 9.5, 10.5, 11.5), authored in axolotl local units at Large (x1.00, the prototype scale), facing right, and checked on every Boy or girl, Tail, Body and Age (6u, 6r to 6t). |
 | Dream colours | Slot swap plus one `dream-overlay` layer (pattern, marker, rim light), clipped to the silhouette and fin fill (inset per 6p). |
 | Spots | Layer `spots`. |
-| Face variants and gill styles | Separate parts, so creator previews can swap them. |
-| Texture frames | Must include Long gill tips (to about y -63), Head items (to y -46), the Large size (x1.15), and the existing padding. The protected ring and effects are separate sprites. |
-| Axolotl texture frame (as built) | 148 x 125 local units, with local (0,0) at 84 from the left and 73 from the top. It holds every gill style at every flutter phase: Long gill ink reaches y -68.14, leaving 4.86 units of padding at the top. Size (6o) changes the bake scale, not the frame: a size change re-bakes the texture at the new scale under the same key. |
+| Face variants and gill styles | Separate parts, so creator previews can swap them. A Girl's eyelashes are part of the eye. Tail, Body and Age are proportions of the one body geometry (6r to 6t), not separate art. |
+| Texture frames | Must include Grown-up Long gill tips (ink to about y -74.4), Head items (to y -46), the longest tail (ink to x -97.5), a Chubby Girl's lost-leg outline and regrowth glints (to about y 55.7), and the existing padding. Large is x1.00, so size never grows the frame. The protected ring and effects are separate sprites. |
+| Axolotl texture frame (as built) | 166 x 139 local units, with local (0,0) at 102 from the left and 79 from the top (local x -102 to 64, y -79 to 60). It holds every look (every gill style, Boy or girl, Tail, Body and Age) at every gill flutter phase and at tail amplitudes up to 1.6, ink included, with at least 4 units of padding: the far left is a Grown-up Chubby Boy's Long tail tip (ink to x -97.5, 4.5 padding); the top is Grown-up Long gill ink (about y -74.4, about 4.6); the bottom is a regrowing rear leg's glints on a Chubby Girl (about y 55.7, about 4.3); the right is the snout ink (x 56.5), keeping the old frame's 7.5 of slack. It grew from 148 x 125 (origin 84 from the left, 73 from the top): left and up for the longest tail and Grown-up gills, and down for the Chubby Girl's lost-leg outline and regrowth glints. Size (6o) changes the bake scale, not the frame: a size change re-bakes the texture at the new scale under the same key. |
+| Picture-button crops (as built) | Still pictures for the creator and restyle picture buttons (8) are cropped from the frame by step, in local units: `face` for Eyes and Mouth, x 14 to 58 and y -20 to 24 (both eye zones, every mouth and the snout); `gills` for Gills, x -63 to 25 and y -77 to 22 (every gill style at every flutter phase and Age); `whole` for every other step, the full 166 x 139 frame. Whole pictures are drawn at the option's size factor about the crop centre; face and gill pictures at x1.00. |
+| Picture-button bakes (as built) | Each picture is baked once at the still pose, at its button's inner side (the button side less 4.5 each side) over the crop's longer side, times the device pixel ratio, so it shows at 1 texture px per device px and is never upscaled. It is baked again only when its look, morph, crop or bake scale changes. Still bakes are outside the live repaint budget (9). |
 
 ---
 
@@ -1583,9 +1685,10 @@ Everything in the table below is `derived (provisional)`. Confirm each in a prot
 | Expressions and poses | Every item marked "To design" in 6j and 6k |
 | Wearable slots | Anchors, footprints, keep-clear zones (eye zones r + 1.8, gill-root box, mouth zone), layers 8.5 to 11.5, glasses construction, rarity look ladder (6i) |
 | Rarity | 3e colours, badge shapes and sizes, 2.6 outline (8) |
-| Creator variants | Face variants, gill styles, spots (per-morph spot colours; freckles moved from a Leucistic cue to a spot option), sizes 0.85 / 1.00 / 1.15 and the outline-scaling exception (4a, 6l to 6o) |
+| Creator variants | Face variants, gill styles, spots (per-morph spot colours; freckles moved from a Leucistic cue to a spot option), sizes 0.72 / 0.85 / 1.00 with Large at the prototype scale, and the outline-scaling exception (4a, 6l to 6o) |
 | Sleepy eye bead share | As built, the Sleepy lid (6l) leaves about 43.6% of the round bead showing, under the "about 45%" Visible bead rule. Confirm in a prototype that it still reads as an open, sleepy eye, then either lower the lid a little or set the rule to about 43%. |
-| Character creator and restyle screen | Layout (8): #fff1d6 backdrop, white panel, title 28 px, preview scale 1.4 preferred and 0.75 least, stepper rows with 48 x 48 chevrons and 96 and 212 px value boxes in bold 20 px, the 24 px morph badge and its 8 px gap, Surprise me, Done and Cancel sizes, landscape and portrait arrangements and the fit order; the Surprise icon (8); the name entry field look and placement (8); the preview idle with no bob and its reduced-motion still (9); the axolotl texture frame 148 x 125 (11) |
+| Character creator and restyle screen | Step screen layout (8): #fff1d6 backdrop, white panel, heading 28 px with the "Step N of 11:" start, helper 18 px, progress dots (14 px slots, 6 px apart; done dot r 4.5, current ring r 5.75 with centre r 2.5, to-come ring r 4), restyle tabs (48 px tall, label-sized, the 5 px current-tab bar, 48 x 48 page buttons), picture buttons 48 to 96 px with 18 px labels and the 4.5 px picture inset, the chosen mark (5 px ring and the r 10 tick badge), the 24 px Colour morph badge 4 px in from the lower-left corner, the Name step sizes (name box 168 x 48, name buttons 120 x 48, More names 132 x 48), the label-sized step buttons (Back 65, Surprise me 158, Cancel 92, Next and Done 110, all 64 tall) and their skipping of the 200 px wide-button minimum, the 12 px and 4 px gaps, the preview at 1 CSS px per local unit and 0.6 after fit step 3, landscape and portrait arrangements and the six-step fit order; the Surprise icon (8); the name entry field look and placement (8); the preview idle with no bob and its reduced-motion still (9); the axolotl texture frame 166 x 139 and the picture-button crops (11) |
+| Tail, Body, Age and Boy or girl | Tail core lengths 36 / 44 / 52 (6r); Body torso and belly radii (6s); Age factors (torso x radius -6 / 0 / +2, tail x0.85, gills x0.8 / x1.12, legs x0.7, 6t); the Boy cue (tail +4, fins x1.2) and the Girl cue (torso and belly y radius +1.5, three eyelashes per eye, ink 1.4 over a white 3.0 under-stroke, 6u); that each reads in greyscale at Small. As built, the lash lines end inside the eye zones but their round caps reach up to 1.35 (white) and 0.55 (ink) past the zone edge (6u): confirm that is fine beside a Face item, or shorten the lashes or use butt caps. |
 | Home Tank axolotl picking | Focus ring round the sprite bounds, the name tag (bold ink 18 px, panel style, padding 12) and its above-or-below placement, the 48 px least tap area (8) |
 | Dream colours | All slot values and the mixing rule, pattern geometry and colours, Dream marker, rim light and eye ring rule, spot colours on Dream colours, swatch tile (3f, 6p, 8), the lightened Lavender, Sunset orange, and Bubblegum bodies, and the 2-unit pattern inset |
 | Tilapia | Geometry, colours, poses, glint, and "!" bubble (7c, 3g), the body #c2d2bb, a touch lighter than the hero body (7c) |
