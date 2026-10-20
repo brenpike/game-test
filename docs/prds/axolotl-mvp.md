@@ -76,7 +76,7 @@ Progress saves on the device by itself. Closing the game or reloading never lose
 After a new version is deployed, players get it quickly and never mid-trip. The version number is visible.
 
 **F. Character creator and outfits.**
-At first launch, the player makes a starter axolotl: a name, a face, a gill style, spots, a size, and one of the eight real morphs. Size is for looks only. The other seven real morphs become the axolotls to rescue. Any owned axolotl can be renamed and restyled in the Home Tank. Each axolotl has eight wearable slots: Head, Neck, Face, Shirt, Back, Tail, Socks, and Feet, with one item per slot. Each wearable gives one small perk. Rarer wearables give a slightly stronger perk and look fancier. Each perk type has a hard cap, so no outfit makes an axolotl untouchable. Before a trip, the player picks which axolotl goes exploring. Only that axolotl's outfit applies on the trip. Dream colours, found in Paint shells, can be put on any owned axolotl and taken off at any time. One owned Dream colour can be on any number of owned axolotls at the same time. Names stay on the device.
+At first launch, the player makes a starter axolotl step by step, one choice per screen: one of the eight real morphs, boy or girl, a face, a gill style, spots, a tail, a body, an age, a size, and a name. Every option shows as a big picture button. Size, tail, body, and age are for looks only. The other seven real morphs become the axolotls to rescue. Any owned axolotl can be renamed and restyled in the Home Tank. Its colour and boy or girl are fixed after creation. Each axolotl has eight wearable slots: Head, Neck, Face, Shirt, Back, Tail, Socks, and Feet, with one item per slot. Each wearable gives one small perk. Rarer wearables give a slightly stronger perk and look fancier. Each perk type has a hard cap, so no outfit makes an axolotl untouchable. Before a trip, the player picks which axolotl goes exploring. Only that axolotl's outfit applies on the trip. Dream colours, found in Paint shells, can be put on any owned axolotl and taken off at any time. One owned Dream colour can be on any number of owned axolotls at the same time. Names stay on the device.
 
 **H. Areas, exit and stars.**
 Areas are the levels of the game. The canal is Area 1, and it is the only area in the MVP. Its exit stays closed until every snack in the area has been eaten. A counter shows how many snacks are left, and the last 3 sparkle. In Area 1, snacks drift slowly. Reaching the open exit beats the area and banks everything in the Trip Bag. Beating an area earns up to 3 stars, and stars, once earned, are kept.
@@ -130,6 +130,8 @@ Everything stays calm, never scary, readable without colour, and usable with red
 
 - As a player, I want to make my own axolotl when I first play, so that it feels like mine from the start.
 - As a player who cannot decide, I want a "Surprise me" choice, so that I can start playing quickly.
+- As a player, I want to make my axolotl one step at a time and see every choice as a big picture, so that each choice is easy to understand.
+- As a player, I want to choose boy or girl, a tail, a body, and an age, so that my axolotl looks just how I imagine.
 - As a player, I want to rename and restyle my rescued axolotls, so that each one is special.
 - As a player, I want to choose which axolotl goes exploring and what it wears, so that I can plan my trip.
 - As a player, I want each wearable to give a small perk, so that dressing up also helps me on trips.
@@ -207,8 +209,8 @@ Everything stays calm, never scary, readable without colour, and usable with red
 1. **C1** The player starts with one axolotl, made in the character creator (F1). Its morph is the real morph the player chose. It is already in the Home Tank, and its morph is already found in the Collection Book.
 2. **C2** Each trip has at most one stranded axolotl. It is always a real morph not yet owned: one of the seven morphs not chosen in the character creator (F5). It looks a little lost, never hurt.
 3. **C3** Reaching the stranded axolotl makes it follow the player. It counts as a trip find until banked. The tilapia cannot hit it. It keeps up with the player and never gets stuck.
-4. **C4** Banking or going home moves the rescued axolotl into the Home Tank for good. Its morph unlocks in the Collection Book.
-5. **C5** If the player is carried home first, the stranded axolotl returns to where it was found. A kind message says "it's waiting for you".
+4. **C4** Banking or going home moves the rescued axolotl into the Home Tank for good. Its morph unlocks in the Collection Book. It gets the default look (open question 22) with its own boy or girl (C5), and the first suggested name that fits its boy or girl and that no owned axolotl uses (F17). The player can restyle it (F6).
+5. **C5** A stranded axolotl gets its boy or girl from the trip seed when it is picked. It keeps it while it waits and when it is rescued. If the player is carried home first, the stranded axolotl returns to where it was found. A kind message uses its name and he or she (for example "Gilly swam back to where you found him. He's waiting for you!").
 6. **C6** After all seven morphs are rescued, no more stranded axolotls appear in the MVP (see open question 5).
 7. **C7** After the title screen, the game opens in the Home Tank, which is the hub. On first launch, the character creator comes first (F1). A clear "Go exploring" button starts the Go exploring flow (F7).
 8. **C8** Every owned axolotl swims around the tank on its own. Under reduced motion, they hold still poses.
@@ -225,12 +227,14 @@ Everything stays calm, never scary, readable without colour, and usable with red
     - Piebald: white with dark patches that darken with age.
     - Axanthic: has no yellow colour, so it is dark grey all over.
     - Melanoid: extra dark, with no shiny flecks.
-14. **C14** The Collection Book also holds the tilapia fact card once the player has met the tilapia.
+14. **C14** The Collection Book also holds fact cards, in this order:
+    - The tilapia fact card, found once the player has met the tilapia.
+    - The "Boy or girl?" fact card, found from the start, with no picture. Its text: "Grown-up boy axolotls are longer and slimmer, with a bigger bump by the back legs. Girls are rounder and plumper." Source: Animal Diversity Web (University of Michigan), <https://animaldiversity.org/accounts/Ambystoma_mexicanum/>. Supporting: the Royal Veterinary College axolotl care sheet. The boy's longer tail fin (F2) is a drawn cue only, not a fact on the card.
 
 ### D. Save and load
 
 1. **D1** Progress saves on the device by itself after banking, going home, being carried home, beating an area, finishing the character creator, any tank change, any outfit change, any rename or restyle, any Dream colour change, choosing the explorer, and any Collection Book unlock. There is no save button.
-2. **D2** Saved: banked treasures (including owned Dream colours), the starter and rescued axolotls, each axolotl's name and look (real morph, applied Dream colour, face, gill style, spots, and size), each axolotl's outfit, the chosen explorer, decoration placements, Collection Book unlocks, the stars earned for each area, and settings. Not saved: the Trip Bag, the position mid-trip, leg state, and Shell blocks used this trip.
+2. **D2** Saved: banked treasures (including owned Dream colours), the starter and rescued axolotls, each axolotl's name and look (real morph, applied Dream colour, boy or girl, face, gill style, spots, tail, body, age, and size), each axolotl's outfit, the chosen explorer, decoration placements, Collection Book unlocks, the stars earned for each area, and settings. Not saved: the Trip Bag, the position mid-trip, leg state, and Shell blocks used this trip. The look is plain data, with each option held by its stable id. Nothing is saved yet: saving is issue #15.
 3. **D3** Closing or reloading and then reopening restores saved progress exactly. The game opens in the Home Tank, never mid-trip. Unbanked finds from an unfinished trip reappear on the next trip, in freshly picked hiding spots.
 4. **D4** Saves hold no personal data, never leave the device, and need no account or network, per [ADR 0007](../adr/0007-kid-safety-and-privacy.md).
 5. **D5** If there is no save, the game starts fresh. An unreadable save never crashes the game, and the player can still play.
@@ -248,19 +252,49 @@ Everything stays calm, never scary, readable without colour, and usable with red
 
 ### F. Character creator and outfits
 
-1. **F1** On first launch, and after "Start over", the character creator appears before the Home Tank. A "Surprise me" choice picks every option at random, including a suggested name. The player can then accept it or keep changing options. The creator ends in the Home Tank with the new starter axolotl.
+1. **F1** On first launch, and after "Start over", the character creator appears before the Home Tank. It goes step by step, one choice per screen, in 11 steps in this order: Colour, Boy or girl, Eyes, Mouth, Gills, Spots, Tail, Body, Age, Size, and Name. Each step screen has:
+    - A heading "Step N of 11: ..." (for example "Step 3 of 11: Pick your eyes!").
+    - Progress dots that show done, current, and to-come steps by shape and fill, not by colour alone.
+    - A short helper line.
+    - Every option of the step, all visible at once, as big picture buttons (up to 8 per step). Each picture button shows a small preview of that choice on the axolotl so far. The chosen one is marked by a thick ring and a tick. There are no arrows to flip through options.
+    - Back and Next buttons. The last step has Done instead of Next.
+    - A "Surprise me" button.
+
+    "Surprise me", on every step, picks every option at random: Colour, Boy or girl, every look option, and a suggested name that fits the boy or girl (F17). The player can then accept it or keep changing options. The creator starts with a random boy or girl, a random suggested name that fits it, the default look (open question 22), and the Leucistic colour. The creator ends in the Home Tank with the new starter axolotl. It still opens from one place (`openCreator` in `src/scenes/sceneFlow.ts`).
+
+    Text and touch targets never shrink to fit (X5): targets stay at least 48 by 48 CSS pixels, and primary actions at least 64 pixels tall. When a step does not fit, it makes room in this order:
+    1. The helper line hides.
+    2. The picture button labels hide, and one caption names the focused or chosen option.
+    3. The preview shrinks to 0.6 of its size.
+    4. The heading drops its "Step N of 11:" start.
+    5. The preview hides, and the chosen picture button is the preview (F3).
+
+    Every step fits the smallest canvases, 460 x 320 and 320 x 440.
 2. **F2** The character creator offers:
     - Name: free text, or a pick from a list of suggested names (F17).
+    - Boy or girl: exactly two choices, Boy or Girl. It is always set, and there is no way to skip it. A boy is slightly taller, with a longer tail fin. A girl has a slightly rounder belly and small eyelashes. The eyelashes are white-backed, so they read on dark morphs.
     - Eyes: happy, sleepy, determined, curious, or grumpy.
     - Mouth: smile, open "D", tongue-out, or small "o".
     - Gill style: fluffy, long, or short.
     - Spots: none, or one of a few patterns (for example freckles or spots).
-    - Size: small, medium, or large.
+    - Tail: Short, Medium, or Long tail length.
+    - Body: Slim, Regular, or Chubby.
+    - Age: Baby, Young, or Grown-up. Age changes proportions only, never size. A Baby has a bigger-looking head, from a shorter body and tail, shorter gills, and stubby legs. A Grown-up has longer gills. The head and face anchors never move.
+    - Size: Small, Medium, or Large (F4).
     - Colour: one of the eight real morphs: Leucistic, Wild, Golden albino, White albino, Copper, Piebald, Axanthic or Melanoid.
-3. **F3** A preview of the axolotl updates straight away whenever an option changes. Under reduced motion, the preview is a still pose.
-4. **F4** Size is for looks only. Small, medium, and large axolotls have exactly the same hit area and the same speed, on trips and everywhere else.
+
+    Every combination of options reads in greyscale and keeps the eyes, the gill roots, and the Wearable anchors and keep-clear zones ([art style guide](../art-style-guide.md) 6i) clear. Text about one axolotl says "he" or "she" to match its boy or girl, never "they" or "it".
+3. **F3** A preview of the axolotl updates straight away whenever an option changes. Under reduced motion, the preview is a still pose. When a step has no room for the preview (F1), the chosen picture button is the preview.
+4. **F4** Size is for looks only. Large is the old Medium (scale 1.00), Medium is the old Small (0.85), and Small is new (0.72). The default size is Medium. Small, Medium, and Large axolotls have exactly the same hit area and the same speed, on trips and everywhere else. The tilapia hit area matches Medium for every size (see Tuning values). Boy or girl, tail, body, and age are for looks only too. The leg-loss puff, the regrowth twinkles, and the snack speed-up star sit on the leg root at every size, age, and body. The protected ring and the carry bubble scale with the size and keep their clearances. These are visual only (issue #49).
 5. **F5** The starter's morph decides which morphs can be rescued: the other seven real morphs become the stranded axolotls (C2). The starter's morph cannot be rescued again.
-6. **F6** In the Home Tank, the player can rename any owned axolotl and restyle its face (eyes and mouth), gill style, spots, and size, by touch and by keyboard, with the same options and live preview as the character creator. An axolotl's real morph never changes. Only a Dream colour can be put on top of it (F14).
+6. **F6** In the Home Tank, the player can rename any owned axolotl and restyle its face (eyes and mouth), gill style, spots, tail, body, age, and size, by touch and by keyboard. Restyling uses the same step screens, picture buttons, options, and live preview as the character creator (F1 to F3), with these changes:
+    - A row of tabs, one per step, replaces the progress dots and the Back and Next buttons. Each tab is at least 48 pixels tall. When the tabs do not all fit, 48 by 48 pixel arrow buttons page through them. The current tab is marked by a bar and bold text, not by colour alone.
+    - Restyling starts on the Eyes step.
+    - The Colour and Boy or girl tabs open read-only screens. The colour and the boy or girl are fixed after creation and never change.
+    - Done and Cancel are on every step. Done keeps the changes. Cancel and Escape leave without keeping any change.
+    - "Surprise me" never changes the colour or the boy or girl. Any suggested name it picks fits the axolotl's boy or girl (F17).
+
+    An axolotl's real morph never changes. Only a Dream colour can be put on top of it (F14).
 7. **F7** The Go exploring flow asks which owned axolotl goes exploring: the explorer. It shows the explorer's outfit and its outfit summary (F10), and lets the player change the outfit before the trip starts. With one owned axolotl, it is chosen already. The last explorer is remembered. The explorer is the axolotl the player swims as on the trip, shown with its own look and outfit.
 8. **F8** Each axolotl has eight Wearable slots:
     - Head: for example hats, flowers, and crowns.
@@ -287,11 +321,17 @@ Everything stays calm, never scary, readable without colour, and usable with red
 10. **F10** A perk is shown as an icon and text, with its value, on the Wearable wherever the Wearable is listed. Each axolotl also has an outfit summary that shows the combined value for each perk type it wears. Perks are never shown by colour alone.
 11. **F11** Each perk type has a hard total cap. When an outfit adds up past a cap, only the capped value applies, and the outfit summary shows that the cap is reached. Shell perks block at most one hit per trip in total, however many Shell perks the outfit has. Even a full Legendary outfit still loses a leg to every hit it does not block, and is still carried home after losing the fourth leg.
 12. **F12** Perks apply only during a trip, and only from the explorer's outfit. Outfits on other axolotls have no effect. Perks never change the hit area, the telegraph, protected time, or the rule that one hit removes exactly one leg.
-13. **F13** Wearables never cover the eyes or the gill roots, in any slot, at any size, per the [art style guide](../art-style-guide.md).
+13. **F13** Wearables never cover the eyes or the gill roots, in any slot, at any size, boy or girl, tail, body, or age, per the [art style guide](../art-style-guide.md).
 14. **F14** In the Home Tank, the player can put any owned Dream colour on any owned axolotl, and take it off at any time, by touch and by keyboard. An axolotl shows at most one Dream colour at a time. One owned Dream colour can be on any number of owned axolotls at the same time, because it is a paint, not a single item. Putting it on one axolotl never takes it off another. A Dream colour combines with spots, and the spots draw on top of it. Taking it off returns the axolotl to its real morph. A Dream colour never changes perks, the real morph, or Collection Book unlocks.
 15. **F15** The 12 Dream colours are told apart from each other and from the real morphs in greyscale. Each patterned or sheen Dream colour (Hearts, Tie-dye, Iridescent, Rainbow, Galaxy, and Tie-dye galaxy) has its own distinct pattern cue (for example hearts, swirls, a sheen, or stars). Solid Dream colours (Mint, Sky blue, Lavender, Sunset orange, Bubblegum, and Midnight blue) have no pattern cue, so they are always shown with their name label next to the swatch. Wherever a Dream colour is named in the Treasure Chest or the Collection Book, it carries the label "Dream colour — not found in nature".
-16. **F16** All new screens and controls (the character creator, renaming and restyling, the Go exploring flow, slots, perks, the outfit summary, and Dream colours) work under reduced motion, can be read in greyscale, and work by touch and by keyboard, per X2, X3, and X5.
-17. **F17** Names stay on this device only. They are never sent anywhere, and the game has no way to share them. The character creator and renaming both offer a list of suggested names, so a player never has to type a name.
+16. **F16** All new screens and controls (the character creator's step screens, picture buttons, and progress dots, renaming and restyling with its tabs, the Go exploring flow, slots, perks, the outfit summary, and Dream colours) work under reduced motion, can be read in greyscale, and work by touch and by keyboard, per X2, X3, and X5. On the step screens, picture buttons, and tabs:
+    - The focused control has a visible focus ring.
+    - The arrow keys move between picture buttons. Enter or Space picks one.
+    - Tab reaches Back, Next, Surprise me, and Done. In restyling, Tab also reaches the tabs and Cancel.
+17. **F17** Names stay on this device only ([ADR 0011](../adr/0011-name-entry-stays-on-device.md)). They are never sent anywhere, and the game has no way to share them. The character creator and renaming both offer a list of suggested names, so a player never has to type a name. Suggested names fit the axolotl's boy or girl: in the character creator, in "Surprise me", and for rescued axolotls. A boy gets boy names and names for anyone. A girl gets girl names and names for anyone. The lists:
+    - Boy names: Axel, Finn, Ollie, Milo, and Gus.
+    - Girl names: Lily, Blossom, Daisy, Rosie, and Luna.
+    - Names for anyone: Bubbles, Gilly, Pebble, Noodle, Sprinkles, Mochi, Ripple, Puddle, Sunny, Peanut, Wiggles, Splash, Pickle, and Xochi.
 
 ### H. Areas, exit and stars
 
@@ -331,9 +371,9 @@ Everything stays calm, never scary, readable without colour, and usable with red
 6. **Update check.** Any update check is first-party only and sends no player data.
 7. **Tuning numbers.** Tuning numbers are adjustable starting points, not part of the contract.
 8. **Areas as data.** Each area is described as data: its layout, look, hazards, hiding spots, treasures, snacks, exit, and special treasure. New habitats can be added without rewriting game rules. Moving from one area to another is a world feature, not a special case inside one area.
-9. **Per-axolotl data.** Every owned axolotl has a stable, unique identity. Its look (real morph, applied Dream colour, face, gill style, spots, size, and name) and its outfit are saved per axolotl, against that identity. Wearables and Dream colours are referred to by their stable catalogue identities.
+9. **Per-axolotl data.** Every owned axolotl has a stable, unique identity. Its look (real morph, applied Dream colour, boy or girl, face, gill style, spots, tail, body, age, size, and name) and its outfit are saved per axolotl, against that identity. Wearables and Dream colours are referred to by their stable catalogue identities. Pre-baked axolotl frames, when they come (issue #46), are keyed by every look field, including boy or girl, tail, body, and age. Picture-button previews are still bakes, repainted only when the look changes.
 10. **Perks as data.** Each Wearable's perk type and value are data. Perks are modifiers applied on top of the base rules for speed, regrowth, Tail Dash, hits, hints, and snacks. Each perk type has a total cap, and only the capped total applies. Perk and cap rules are deterministic and can be tested without rendering.
-11. **Looks never change play.** Size, face, gill style, spots, morph, and Dream colour never change the hit area or speed. Only perks change play.
+11. **Looks never change play.** Size, boy or girl, tail, body, age, face, gill style, spots, morph, and Dream colour never change the hit area or speed. Only perks change play.
 12. **Set-ready Wearables.** Each Wearable may carry an optional set identity in its data, so Wearable sets (N5) can be added later without reworking the catalogue or saves. The MVP has no sets and no set bonuses.
 
 ## Testing Decisions
@@ -356,7 +396,12 @@ Everything stays calm, never scary, readable without colour, and usable with red
   - the update decision;
   - perk caps for every perk type, including a full Legendary outfit still losing a leg to every unblocked hit;
   - Shell perks blocking at most one hit per trip in total;
-  - size being looks only: the same hit area and speed at every size;
+  - every look option and size being looks only: the same hit area and speed at every size, boy or girl, tail, body, and age;
+  - the look option lists and the creator's step order (11 steps, at most 8 options each);
+  - "Surprise me" always giving a valid look, with boy or girl set and a suggested name that fits it;
+  - restyling never changing the real morph or the boy or girl;
+  - suggested names fitting boy or girl, and a rescued axolotl getting its seeded boy or girl and the first unused name that fits;
+  - he or she text: text about one axolotl matches its boy or girl and never says "they" or "it";
   - outfit and slot rules: one Wearable per slot, each Wearable in one slot only, and on at most one axolotl at a time;
   - perks applying only from the explorer's outfit, and only on trips;
   - save round-trip of every axolotl's look, name, and outfit, owned Dream colours, and the chosen explorer;
@@ -483,17 +528,24 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | 17 | Where does the player go after the "Area beaten" screen? | The Home Tank. Needs confirmation. |
 | 18 | Is Tank Top Model part of the MVP? | Decided: no. It is the first feature after the MVP (N1). |
 | 19 | Which spot patterns does the creator offer (F2)? | None, Freckles, Dots and Patches ([art style guide](../art-style-guide.md) 6n). Needs confirmation. |
-| 20 | Which suggested names are on the list (F17)? | Bubbles, Gilly, Pebble, Noodle, Sprinkles, Mochi, Lily, Ripple, Puddle, Sunny, Blossom, Peanut, Wiggles, Splash, Pickle and Xochi. Needs confirmation. |
+| 20 | Which suggested names are on the list (F17)? | Replaced by open question 33: the list is now split into boy names, girl names, and names for anyone. |
 | 21 | What can a typed name hold (F2)? | 1 to 12 characters: letters of any script, digits, spaces, hyphens and apostrophes. A letter with its accents counts as one character. Anything else is dropped and does not count. It never shows in the name field: it is dropped as it is typed or pasted. Needs confirmation. |
-| 22 | What is the default look? | Happy eyes, Open "D" mouth, Fluffy gills, Freckles spots, Medium size. Needs confirmation. |
-| 23 | What does the character creator start with (F1)? | The default look, a random suggested name, and the Leucistic colour, so Done works at once. Done makes the starter with the chosen colour as its morph, already found in the Collection Book (set by `addStarter` in `src/logic/session.ts`). Needs confirmation. |
-| 24 | What name and look does a rescued axolotl get? | The default look and the first suggested name no owned axolotl uses. The player can restyle it (F6). Needs confirmation. |
+| 22 | What is the default look? | Happy eyes, Open "D" mouth, Fluffy gills, Freckles spots, Medium tail, Regular body, Young age, and Medium size (0.85, F4). Boy or girl has no default: it is always set (F1, C5). Needs confirmation; the new options' defaults are open question 37. |
+| 23 | What does the character creator start with (F1)? | Decided (issue #52): a random boy or girl, a random suggested name that fits it (F17), the default look, and the Leucistic colour, on step 1 of 11. Done, on the last step, makes the starter with the chosen colour as its morph, already found in the Collection Book (set by `addStarter` in `src/logic/session.ts`). |
+| 24 | What name and look does a rescued axolotl get? | Decided (issue #52): the default look (Medium tail, Regular body, Young age, Medium size) with the boy or girl picked from the trip seed (C5), and the first suggested name that fits it and no owned axolotl uses (F17). The player can restyle it (F6). |
 | 25 | How does the player reach renaming and restyling (F6)? | Tap an axolotl in the Home Tank, or move the hub focus to it and press Enter or Space. A fifth hub tile does not fit the smallest canvas (460 x 320). Needs confirmation. |
-| 26 | What do Cancel and Escape do on the restyle screen (F6)? | Leave without keeping any change. Needs confirmation. |
-| 27 | Which colour does the creator start on (F1, F2)? | Leucistic, the first real morph. Needs confirmation. |
-| 28 | How does restyling show the real morph (F6)? | The Colour part shows the morph name and its badge with no arrows; it cannot be changed. Needs confirmation. |
+| 26 | What do Cancel and Escape do on the restyle screen (F6)? | Decided (issue #52): leave without keeping any change. Done and Cancel are on every restyle step. |
+| 27 | Which colour does the creator start on (F1, F2)? | Decided (issue #52): Leucistic, the first real morph. Colour is step 1 of 11. |
+| 28 | How does restyling show the real morph (F6)? | Decided (issue #52): the Colour tab opens a read-only screen with the morph name and its badge, and the Boy or girl tab opens a read-only screen for the boy or girl. Both are fixed after creation. |
 | 29 | Which four real morphs join the first four (C12, F2)? | White albino, Copper, Piebald, and Axanthic, for eight in all. Lavender is left out because it is also a Dream colour (F15). Needs confirmation. |
 | 30 | Which badge shapes do the new morphs get (C12)? | White albino a cloud, Copper a leaf, Piebald a capsule, Axanthic a drop ([art style guide](../art-style-guide.md) 8). None is a rarity shape or the Dream swatch tile. Needs confirmation. |
+| 31 | What are the size scales (F4)? | Small 0.72, Medium 0.85, and Large 1.00. Large is the old Medium and Medium is the old Small. The default is Medium. Needs confirmation after play-tests. |
+| 32 | How far do the tilapia hit and touch reach now that sizes are smaller (F4)? | A lunge hits within 26 pixels (was 30), and a touch bumps within 29 pixels (was 34), matching Medium at every size. Find pickup and Dash pot reaches do not change. Needs confirmation after play-tests. |
+| 33 | Which suggested names are on the list, and which fit a boy or a girl (F17)? | Boy names: Axel, Finn, Ollie, Milo, and Gus. Girl names: Lily, Blossom, Daisy, Rosie, and Luna. Names for anyone: Bubbles, Gilly, Pebble, Noodle, Sprinkles, Mochi, Ripple, Puddle, Sunny, Peanut, Wiggles, Splash, Pickle, and Xochi. Needs confirmation. |
+| 34 | What does the "Boy or girl?" fact card say, and when is it found (C14)? | "Grown-up boy axolotls are longer and slimmer, with a bigger bump by the back legs. Girls are rounder and plumper." Source: Animal Diversity Web (University of Michigan); supporting: the Royal Veterinary College axolotl care sheet. Found from the start, with no picture, listed after the tilapia card. Issue #52's example text about longer tails and eggs had no reputable source, so it is not used. Needs confirmation. |
+| 35 | How are Tail, Body, Age, and the boy and girl cues drawn (F2)? | Art decision, in the [art style guide](../art-style-guide.md). Every combination reads in greyscale and keeps the eyes, the gill roots, and the 6i anchors and keep-clear zones clear. Age changes proportions only, and the head and face anchors never move. Needs confirmation. |
+| 36 | How do the restyle tabs fit the smallest canvases, 460 x 320 and 320 x 440 (F6)? | As many tabs as fit, each at least 48 pixels tall, with 48 by 48 pixel arrow buttons to page through the rest. The current tab is marked by a bar and bold text. Needs confirmation. |
+| 37 | What are the defaults for the new options (F2)? | Medium tail, Regular body, and Young age. Boy or girl has no default: the creator picks one at random, and a stranded axolotl gets one from the trip seed. Needs confirmation. |
 
 ### Tuning values (starting points)
 
@@ -505,6 +557,9 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | Lunge cooldown | About 2.5 seconds |
 | Top speed by legs (4 / 3 / 2 / 1) | 100% / 90% / 75% / 60%. One leg must still beat the strongest current. |
 | Tilapia in the canal | At least 3 |
+| Tilapia lunge hit reach | 26 pixels from centre to centre (was 30), the same at every size (F4) |
+| Tilapia touch reach (bump, no leg lost) | 29 pixels from centre to centre (was 34), the same at every size (F4) |
+| Axolotl size scale (Small / Medium / Large) | 0.72 / 0.85 / 1.00. Default: Medium. Looks only (F4). |
 | Treasures | 12 or more Decorations and Wearables (at least 4 Decorations and 8 Wearables), plus 12 Paint shells |
 | Snack regrowth speed-up | Each snack adds 20% of one leg's regrowth to the leg that is regrowing (about 4 seconds at the base time). Never past a full leg. |
 | Snack eat reach | A circle of 36 pixels radius, centred 28 pixels ahead of the axolotl's middle along its body, turning with its tilt. While the body squashes in a turn, the centre moves in with it. The same at every size. It covers the whole head of the largest size; smaller sizes reach a little in front of the snout. |
@@ -531,6 +586,7 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | [Art style guide](../art-style-guide.md) (6i) has four Wearable slots and layers 8.5 to 11.5. Its Wearable test pose (6k) checks four slots. | F8 now has eight slots, layering, and the feet rule. | Art style guide follow-up with issue #16: anchors, footprints, layers, and keep-clear zones for Shirt, Back, Socks, and Feet, plus how socks and shoes hide on a lost leg. |
 | [ADR 0008](../adr/0008-gentle-fail-state.md) says only unbanked trip finds are lost when carried home. | A12 also starts the snacks over. | Snacks are not banked progress, so ADR 0008's guarantee holds. Amended by [ADR 0010](../adr/0010-carried-home-full-reset.md): being carried home is a full trip reset, snacks included (issue #31). |
 | [Art style guide](../art-style-guide.md) (7e) says the hint star is the cue for a hidden treasure. | H3 also uses it on the last 3 snacks. | Art style guide follow-up with issue #31. |
+| [Art style guide](../art-style-guide.md) (4a, 6o) scales sizes by x0.85 / x1.00 / x1.15, and has no Tail, Body, Age, or boy and girl cues. | F4 now scales sizes by 0.72 / 0.85 / 1.00, and F2 adds Boy or girl, Tail, Body, and Age. | Art style guide follow-up with issue #52 (open question 35). |
 
 ### Feature priority order
 
@@ -583,7 +639,14 @@ Early slices may use a placeholder find and an interim home.
 | Refuge | The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2). | |
 | Tank Top Model | Trying on Wearables and posing in a spotlight, started from the Home Tank (N1). Not in the MVP. | |
 | Wearable set | A themed group of Wearables that unlocks a small bonus when worn together (N5). A Wearable's optional set ID says which set it belongs to. | |
-| Character creator | The screen at first launch where the player makes a starter axolotl. | |
+| Character creator | The step-by-step screens at first launch where the player makes a starter axolotl: 11 steps, one choice per step, from Colour to Name (F1). | |
+| Boy or girl | Whether an axolotl is a boy or a girl. Exactly one, always set, and fixed after creation. Text about one axolotl says "he" or "she". | gender; "sex" in UI text; "they" or "it" for one axolotl |
+| Tail (look option) | How long an axolotl's tail is: Short, Medium, or Long. Looks only. Not the Tail Wearable slot, and not Tail Dash. | |
+| Body | An axolotl's body shape: Slim, Regular, or Chubby. Looks only. | |
+| Age | How grown-up an axolotl looks: Baby, Young, or Grown-up. Changes proportions only, never size. | |
+| Size | How big an axolotl is drawn: Small, Medium, or Large. Looks only: every size has the same hit area and speed. | |
+| Picture button | A big button on a creator or restyle step that shows one option as a small preview on the axolotl so far. | |
+| Restyle | Changing an owned axolotl's look and name in the Home Tank, on the creator's step screens with tabs. Colour and boy or girl cannot change. | |
 | Outfit | The Wearables one axolotl has on, one per slot at most. | |
 | Slot | One of eight places a Wearable goes: Head, Neck, Face, Shirt, Back, Tail, Socks, or Feet. | |
 | Perk | The one small gameplay bonus a Wearable gives on trips. | stat, buff (in UI) |

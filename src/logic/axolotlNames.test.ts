@@ -9,11 +9,14 @@ import {
   isNameDraft,
   isValidName,
   nameDraft,
+  nameFits,
   nameLength,
   randomSuggestedName,
   stepSuggestedName,
+  suggestedNamesFor,
   unusedSuggestedName,
 } from './axolotlNames';
+import type { AxolotlSex } from './axolotlLook';
 import { mulberry32 } from './rng';
 
 const EXPECTED_NAMES = [
@@ -33,7 +36,28 @@ const EXPECTED_NAMES = [
   'Splash',
   'Pickle',
   'Xochi',
+  'Axel',
+  'Finn',
+  'Ollie',
+  'Milo',
+  'Gus',
+  'Daisy',
+  'Rosie',
+  'Luna',
 ];
+
+const BOY_ONLY_NAMES = ['Axel', 'Finn', 'Ollie', 'Milo', 'Gus'];
+
+const GIRL_ONLY_NAMES = ['Lily', 'Blossom', 'Daisy', 'Rosie', 'Luna'];
+
+const ANY_NAMES = EXPECTED_NAMES.filter((name) => !BOY_ONLY_NAMES.includes(name) && !GIRL_ONLY_NAMES.includes(name));
+
+const SEXES: readonly AxolotlSex[] = ['boy', 'girl'];
+
+const OTHER_SEX_ONLY_NAMES: { readonly [Sex in AxolotlSex]: readonly string[] } = {
+  boy: GIRL_ONLY_NAMES,
+  girl: BOY_ONLY_NAMES,
+};
 
 const MESSY_INPUTS = [
   '',
@@ -131,6 +155,46 @@ describe('SUGGESTED_NAMES', () => {
 
   it('holds names unique ignoring case', () => {
     expect(new Set(SUGGESTED_NAMES.map((name) => name.toLowerCase())).size).toBe(SUGGESTED_NAMES.length);
+  });
+});
+
+describe('suggestedNamesFor', () => {
+  it('lists boy names as boy-only plus any, in SUGGESTED_NAMES order', () => {
+    expect(suggestedNamesFor('boy')).toEqual(EXPECTED_NAMES.filter((name) => !GIRL_ONLY_NAMES.includes(name)));
+    for (const name of [...ANY_NAMES, ...BOY_ONLY_NAMES]) expect(suggestedNamesFor('boy')).toContain(name);
+  });
+
+  it('lists girl names as girl-only plus any, in SUGGESTED_NAMES order', () => {
+    expect(suggestedNamesFor('girl')).toEqual(EXPECTED_NAMES.filter((name) => !BOY_ONLY_NAMES.includes(name)));
+    for (const name of [...ANY_NAMES, ...GIRL_ONLY_NAMES]) expect(suggestedNamesFor('girl')).toContain(name);
+  });
+
+  it.each(SEXES)('never lists the other sex only names for a %s', (sex) => {
+    for (const name of OTHER_SEX_ONLY_NAMES[sex]) expect(suggestedNamesFor(sex)).not.toContain(name);
+  });
+
+  it.each(SEXES)('is frozen for a %s', (sex) => {
+    expect(Object.isFrozen(suggestedNamesFor(sex))).toBe(true);
+  });
+});
+
+describe('nameFits', () => {
+  it.each(SEXES)('fits every suggested name for a %s and no other sex only name', (sex) => {
+    for (const name of suggestedNamesFor(sex)) expect(nameFits(name, sex)).toBe(true);
+    for (const name of OTHER_SEX_ONLY_NAMES[sex]) expect(nameFits(name, sex)).toBe(false);
+  });
+
+  it('matches suggested names ignoring case', () => {
+    expect(nameFits('LILY', 'boy')).toBe(false);
+    expect(nameFits('axel', 'girl')).toBe(false);
+    expect(nameFits('bubbles', 'girl')).toBe(true);
+  });
+
+  it('always fits a name not on the list', () => {
+    for (const sex of SEXES) {
+      expect(nameFits('Captain', sex)).toBe(true);
+      expect(nameFits('Zoë', sex)).toBe(true);
+    }
   });
 });
 
@@ -403,56 +467,90 @@ describe('fitNameEdit', () => {
 });
 
 describe('randomSuggestedName', () => {
-  it('always picks a suggested name and reaches every one', () => {
+  it.each(SEXES)('always picks a fitting suggested name and reaches every one for a %s', (sex) => {
     const seen = new Set<string>();
     for (let seed = 0; seed < 500; seed++) {
-      const name = randomSuggestedName(mulberry32(seed));
-      expect(SUGGESTED_NAMES).toContain(name);
+      const name = randomSuggestedName(mulberry32(seed), sex);
+      expect(suggestedNamesFor(sex)).toContain(name);
+      expect(nameFits(name, sex)).toBe(true);
       seen.add(name);
     }
-    expect(seen.size).toBe(SUGGESTED_NAMES.length);
+    expect(seen.size).toBe(suggestedNamesFor(sex).length);
   });
 
   it('is deterministic per seed', () => {
     for (let seed = 0; seed < 50; seed++) {
-      expect(randomSuggestedName(mulberry32(seed))).toBe(randomSuggestedName(mulberry32(seed)));
+      expect(randomSuggestedName(mulberry32(seed), 'girl')).toBe(randomSuggestedName(mulberry32(seed), 'girl'));
     }
   });
 
-  it('stays in the list at the ends of the random range', () => {
-    expect(randomSuggestedName(() => 0)).toBe('Bubbles');
-    expect(randomSuggestedName(() => 0.9999999999)).toBe('Xochi');
+  it('stays in the fitting list at the ends of the random range', () => {
+    expect(randomSuggestedName(() => 0, 'boy')).toBe('Bubbles');
+    expect(randomSuggestedName(() => 0.9999999999, 'boy')).toBe('Gus');
+    expect(randomSuggestedName(() => 0, 'girl')).toBe('Bubbles');
+    expect(randomSuggestedName(() => 0.9999999999, 'girl')).toBe('Luna');
   });
 });
 
 describe('stepSuggestedName', () => {
   it('steps forward and back, ignoring case', () => {
-    expect(stepSuggestedName('Bubbles', 1)).toBe('Gilly');
-    expect(stepSuggestedName('gilly', -1)).toBe('Bubbles');
+    expect(stepSuggestedName('Bubbles', 1, 'boy')).toBe('Gilly');
+    expect(stepSuggestedName('gilly', -1, 'girl')).toBe('Bubbles');
+  });
+
+  it('skips names that do not fit', () => {
+    expect(stepSuggestedName('Mochi', 1, 'boy')).toBe('Ripple');
+    expect(stepSuggestedName('Mochi', 1, 'girl')).toBe('Lily');
+    expect(stepSuggestedName('Xochi', 1, 'girl')).toBe('Daisy');
+    expect(stepSuggestedName('Xochi', 1, 'boy')).toBe('Axel');
   });
 
   it('wraps both ways', () => {
-    expect(stepSuggestedName('Xochi', 1)).toBe('Bubbles');
-    expect(stepSuggestedName('Bubbles', -1)).toBe('Xochi');
+    expect(stepSuggestedName('Gus', 1, 'boy')).toBe('Bubbles');
+    expect(stepSuggestedName('Bubbles', -1, 'boy')).toBe('Gus');
+    expect(stepSuggestedName('Luna', 1, 'girl')).toBe('Bubbles');
+    expect(stepSuggestedName('Bubbles', -1, 'girl')).toBe('Luna');
   });
 
-  it('starts a typed name from the first or last suggestion', () => {
-    expect(stepSuggestedName('Captain', 1)).toBe('Bubbles');
-    expect(stepSuggestedName('Captain', -1)).toBe('Xochi');
+  it('starts a typed or unfitting name from the first or last fitting suggestion', () => {
+    expect(stepSuggestedName('Captain', 1, 'boy')).toBe('Bubbles');
+    expect(stepSuggestedName('Captain', -1, 'girl')).toBe('Luna');
+    expect(stepSuggestedName('Lily', 1, 'boy')).toBe('Bubbles');
+    expect(stepSuggestedName('Axel', -1, 'girl')).toBe('Luna');
+  });
+
+  it.each(SEXES)('only ever returns a fitting name for a %s', (sex) => {
+    for (const current of [...EXPECTED_NAMES, 'Captain']) {
+      for (const step of [-3, -1, 0, 1, 2, 30]) expect(nameFits(stepSuggestedName(current, step, sex), sex)).toBe(true);
+    }
   });
 });
 
 describe('unusedSuggestedName', () => {
   it('picks the first name when none are taken', () => {
-    expect(unusedSuggestedName([])).toBe('Bubbles');
+    expect(unusedSuggestedName([], 'boy')).toBe('Bubbles');
+    expect(unusedSuggestedName([], 'girl')).toBe('Bubbles');
   });
 
   it('skips taken names, ignoring case', () => {
-    expect(unusedSuggestedName(['bubbles', 'GILLY'])).toBe('Pebble');
-    expect(unusedSuggestedName(['Gilly'])).toBe('Bubbles');
+    expect(unusedSuggestedName(['bubbles', 'GILLY'], 'boy')).toBe('Pebble');
+    expect(unusedSuggestedName(['Gilly'], 'girl')).toBe('Bubbles');
   });
 
-  it('falls back to the first name when all are taken', () => {
-    expect(unusedSuggestedName(SUGGESTED_NAMES.map((name) => name.toUpperCase()))).toBe('Bubbles');
+  it('skips names that do not fit', () => {
+    const takenBeforeLily = EXPECTED_NAMES.slice(0, 6);
+    expect(unusedSuggestedName(takenBeforeLily, 'girl')).toBe('Lily');
+    expect(unusedSuggestedName(takenBeforeLily, 'boy')).toBe('Ripple');
+  });
+
+  it.each(SEXES)('only ever returns a fitting name for a %s', (sex) => {
+    for (let takenCount = 0; takenCount <= EXPECTED_NAMES.length; takenCount++) {
+      expect(nameFits(unusedSuggestedName(EXPECTED_NAMES.slice(0, takenCount), sex), sex)).toBe(true);
+    }
+  });
+
+  it.each(SEXES)('falls back to the first fitting name when all are taken for a %s', (sex) => {
+    expect(unusedSuggestedName(SUGGESTED_NAMES.map((name) => name.toUpperCase()), sex)).toBe('Bubbles');
+    expect(unusedSuggestedName(suggestedNamesFor(sex), sex)).toBe(suggestedNamesFor(sex)[0]);
   });
 });
