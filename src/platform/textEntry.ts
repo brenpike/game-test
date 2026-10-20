@@ -86,7 +86,7 @@ const WHITE = '#ffffff';
 /** At least 16 px, so iOS Safari does not zoom the page when the field takes focus. */
 const FONT_SIZE_PX = 22;
 /** Same values as NAME_FIELD in src/art/drawUi.ts; platform code must not import src/art. */
-const FIELD_FILL = '#f3f0fb';
+const FIELD_FILL = '#f6f3fd';
 const FIELD_INSET = '#c9c2e0';
 const FIELD_PLACEHOLDER = '#6e6790';
 const BORDER_PX = 3.5;
