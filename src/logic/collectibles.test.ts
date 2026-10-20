@@ -1,12 +1,21 @@
 import { describe, expect, it } from 'vitest';
+import { CANAL_AREA } from './areas';
+import { SIZE_OPTIONS } from './axolotlLook';
 import {
   DEFAULT_COLLECT_RADIUS,
+  SNACK_BOB_PERIOD,
+  SNACK_BOB_PX,
   SPARKLE_SNACKS_LEFT,
   allCollected,
   collectDriftingNear,
   collectNear,
+  collectSnacksAtHead,
   countCollected,
   createCollectibles,
+  drawnSnackX,
+  drawnSnackY,
+  headPoint,
+  snackBobY,
   snackDriftMaxSpeed,
   snackDriftOffset,
   snackTally,
@@ -15,9 +24,13 @@ import {
   snacksLeft,
   sparklingSnackIds,
   type Collectible,
+  type DrawnBody,
   type SnackDrift,
+  type SnackFrame,
 } from './collectibles';
-import type { CollectibleSpawn, SwimBounds } from './zone';
+import { motionProfile } from './motion';
+import { LEGS, SNACK_REACH, SWIM } from './tuning';
+import { buildCanalZone, type CollectibleSpawn, type Point, type SwimBounds } from './zone';
 
 const SPAWNS: CollectibleSpawn[] = [
   { id: 's0', kind: 'worm', x: 100, y: 100 },
@@ -305,5 +318,320 @@ describe('collectDriftingNear', () => {
   it('ignores already-collected snacks', () => {
     const items = eatFirst(1);
     expect(collectDriftingNear(items, FIVE_SPAWNS[0], 1, t, DRIFT, WIDE_BOUNDS)).toBeNull();
+  });
+});
+
+/** The head ellipse in art local units, mirroring HEAD_ELL (src/art/drawAxolotl.ts). */
+const HEAD = Object.freeze({ cx: 26, cy: -1, rx: 27, ry: 22 });
+
+/** Ink past the head edge, mirroring LW (src/art/palette.ts): blob (src/art/canvasKit.ts) strokes 2 x LW. */
+const HEAD_INK = 3.5;
+
+/** Art local units to scene px, mirroring AXO_SCENE_SCALE (src/art/drawAxolotl.ts). */
+const SCENE_SCALE = 0.95;
+
+/**
+ * Every size factor, mirroring AXO_SIZE_SCALE (src/art/drawAxolotlParts.ts) plus 0.6 for a smaller
+ * Small. The only list of sizes in these tests: issue #52 adds its sizes here.
+ */
+const SIZE_FACTORS: readonly number[] = [0.6, 0.85, 1, 1.15];
+
+/** Largest swim tilt in radians, mirroring MAX_TILT (src/scenes/SwimScene.ts). */
+const MAX_TILT = 0.35;
+
+/** Largest idle tilt in radians, mirroring IDLE_TILT (src/scenes/SwimScene.ts). */
+const IDLE_TILT = 0.12;
+
+/** Share of the motion bob the axolotl sprite shows, mirroring BOB_SHARE (src/scenes/SwimScene.ts). */
+const BOB_SHARE = 0.3;
+
+/** Axolotl bob cycle in seconds, mirroring the 3 s sine in renderAxolotl (src/scenes/SwimScene.ts). */
+const AXO_BOB_PERIOD = 3;
+
+/** Largest sprite rotation: swim tilt, idle tilt and the wobble of three missing legs (src/logic/legs.ts). */
+const MAX_ROTATION = MAX_TILT + IDLE_TILT + (LEGS.count - 1) * LEGS.wobbleAmp;
+
+/** Largest axolotl bob in px (full motion); reduced motion has none. */
+const AXO_BOB = BOB_SHARE * motionProfile(false).bob;
+
+const STILL_DRIFT: SnackDrift = { amplitudeX: 0, amplitudeY: 0, periodX: 1, periodY: 1 };
+const STILL_FRAME: SnackFrame = { driftT: 0, bobT: 0, bobbing: false, drift: STILL_DRIFT, bounds: WIDE_BOUNDS };
+const LARGEST_SIZE = Math.max(...SIZE_FACTORS);
+
+/** Points of the drawn head ellipse, ink included, in art local units: its edge, a middle ring and its centre. */
+function drawnHeadLocalPoints(edgeSteps: number): Point[] {
+  const points: Point[] = [{ x: HEAD.cx, y: HEAD.cy }];
+  for (let k = 0; k < edgeSteps; k++) {
+    const angle = (2 * Math.PI * k) / edgeSteps;
+    for (const share of [1, 0.5]) {
+      points.push({
+        x: HEAD.cx + share * (HEAD.rx + HEAD_INK) * Math.cos(angle),
+        y: HEAD.cy + share * (HEAD.ry + HEAD_INK) * Math.sin(angle),
+      });
+    }
+  }
+  return points;
+}
+
+/** Where local point `local` lands on a sprite drawn at `body` with scale (facing x scale, scale), then rotated. */
+function placeOnBody(body: DrawnBody, scale: number, local: Point): Point {
+  const lx = local.x * scale;
+  const ly = local.y * scale;
+  const cos = Math.cos(body.rotation);
+  const sin = Math.sin(body.rotation);
+  return { x: body.x + body.facing * lx * cos - ly * sin, y: body.y + body.facing * lx * sin + ly * cos };
+}
+
+/** One uncollected snack per point, with its base set so `frame` draws it on that point. */
+function snacksDrawnAt(points: readonly Point[], frame: SnackFrame): Collectible[] {
+  return points.map((point, index) => {
+    const drift = snackDriftOffset(index, frame.driftT, frame.drift);
+    const bob = snackBobY(index, frame.bobT, frame.bobbing);
+    return { id: `p${index}`, kind: 'worm', x: point.x - drift.x, y: point.y - drift.y - bob, collected: false };
+  });
+}
+
+function eatenIds(items: readonly Collectible[], body: DrawnBody, frame: SnackFrame): Set<string> {
+  return new Set(collectSnacksAtHead(items, headPoint(body), frame)?.newly.map((item) => item.id) ?? []);
+}
+
+describe('SNACK_REACH', () => {
+  it('reaches 36 px around a point 28 px ahead', () => {
+    expect(SNACK_REACH).toEqual({ headAhead: 28, radius: 36 });
+    expect(Object.isFrozen(SNACK_REACH)).toBe(true);
+  });
+
+  it('centres on the largest drawn head', () => {
+    expect(SNACK_REACH.headAhead).toBe(Math.round(HEAD.cx * SCENE_SCALE * LARGEST_SIZE));
+  });
+
+  it('is one reach for every size (PRD F4)', () => {
+    const keys = Object.keys(SNACK_REACH).join(' ').toLowerCase();
+    for (const word of [...SIZE_OPTIONS.map((option) => option.id), 'size', 'look']) {
+      expect(keys).not.toContain(word);
+    }
+  });
+});
+
+describe('snackBobY, drawnSnackX and drawnSnackY', () => {
+  const TAU = Math.PI * 2;
+  const oldRenderBob = (index: number, t: number) => 2.5 * Math.sin((TAU * t) / 2.4 + index);
+  const frame: SnackFrame = { driftT: 2.5, bobT: 1.7, bobbing: true, drift: DRIFT, bounds: WIDE_BOUNDS };
+
+  it('bobs 2.5 px every 2.4 s like the old renderSnacks', () => {
+    expect(SNACK_BOB_PX).toBe(2.5);
+    expect(SNACK_BOB_PERIOD).toBe(2.4);
+    for (let index = 0; index < 8; index++) {
+      for (let t = 0; t <= 10; t += 0.13) expect(snackBobY(index, t, true)).toBe(oldRenderBob(index, t));
+    }
+  });
+
+  it('does not bob when snacks do not bob', () => {
+    for (let t = 0; t <= 10; t += 0.5) expect(snackBobY(3, t, false)).toBe(0);
+  });
+
+  it('draw each snack at its drift position plus its bob', () => {
+    createCollectibles(FIVE_SPAWNS).forEach((item, i) => {
+      expect(drawnSnackX(item, i, frame)).toBe(snackX(item, i, 2.5, DRIFT, WIDE_BOUNDS));
+      expect(drawnSnackY(item, i, frame)).toBe(snackY(item, i, 2.5, DRIFT, WIDE_BOUNDS) + oldRenderBob(i, 1.7));
+    });
+  });
+
+  it('draw a snack at its drift position when snacks do not bob', () => {
+    const still = { ...frame, bobbing: false };
+    createCollectibles(FIVE_SPAWNS).forEach((item, i) => {
+      expect(drawnSnackY(item, i, still)).toBe(snackY(item, i, 2.5, DRIFT, WIDE_BOUNDS));
+    });
+  });
+});
+
+describe('headPoint', () => {
+  it('lies headAhead px along the facing', () => {
+    expect(headPoint({ x: 500, y: 300, facing: 1, rotation: 0 })).toEqual({ x: 528, y: 300 });
+    expect(headPoint({ x: 500, y: 300, facing: -1, rotation: 0 })).toEqual({ x: 472, y: 300 });
+  });
+
+  it('honours a custom reach', () => {
+    expect(headPoint({ x: 0, y: 0, facing: -1, rotation: 0 }, { headAhead: 10, radius: 1 })).toEqual({ x: -10, y: 0 });
+  });
+
+  it('turns with the sprite drawn at scale (facing x s, s)', () => {
+    for (const facing of [1, -1] as const) {
+      for (const rotation of [-MAX_ROTATION, -0.3, 0, 0.3, MAX_ROTATION]) {
+        const body: DrawnBody = { x: 200, y: 150, facing, rotation };
+        const expected = placeOnBody(body, 1, { x: SNACK_REACH.headAhead, y: 0 });
+        expect(headPoint(body).x).toBeCloseTo(expected.x, 9);
+        expect(headPoint(body).y).toBeCloseTo(expected.y, 9);
+      }
+    }
+  });
+
+  it('dips the head when swimming down whichever way it faces', () => {
+    for (const facing of [1, -1] as const) {
+      const head = headPoint({ x: 0, y: 0, facing, rotation: facing * MAX_TILT });
+      expect(head.y).toBeCloseTo(SNACK_REACH.headAhead * Math.sin(MAX_TILT), 9);
+      expect(Math.sign(head.x)).toBe(facing);
+    }
+  });
+});
+
+describe('collectSnacksAtHead', () => {
+  const body: DrawnBody = { x: 500, y: 500, facing: 1, rotation: 0 };
+  const head = headPoint(body);
+
+  it('eats every snack drawn on the head, at every size, facing, tilt and bob, also in reduced motion', () => {
+    const rotations = [-MAX_ROTATION, -MAX_TILT, 0, MAX_TILT, MAX_ROTATION];
+    const axolotlBobs = [-AXO_BOB, BOB_SHARE * motionProfile(true).bob, AXO_BOB];
+    const snackBobbing = [motionProfile(false).collectBob, motionProfile(true).collectBob];
+    const local = drawnHeadLocalPoints(24);
+    for (const size of SIZE_FACTORS) {
+      for (const facing of [1, -1] as const) {
+        for (const rotation of rotations) {
+          for (const bob of axolotlBobs) {
+            const drawn: DrawnBody = { x: 500, y: 500 + bob, facing, rotation };
+            const points = local.map((point) => placeOnBody(drawn, SCENE_SCALE * size, point));
+            for (const bobbing of snackBobbing) {
+              for (const drift of [STILL_DRIFT, CANAL_AREA.snackDrift]) {
+                for (const [driftT, bobT] of [[0, 0], [1.3, 0.7], [2.5, 1.9]]) {
+                  const frame: SnackFrame = { driftT, bobT, bobbing, drift, bounds: WIDE_BOUNDS };
+                  const result = collectSnacksAtHead(snacksDrawnAt(points, frame), headPoint(drawn), frame);
+                  expect(result?.newly.length).toBe(points.length);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('REGRESSION: eats a snack 40 px ahead, inside the drawn head, that the body centre missed', () => {
+    for (const facing of [1, -1] as const) {
+      const medium: DrawnBody = { x: 500, y: 500, facing, rotation: 0 };
+      const snack = { x: 500 + facing * 40, y: 500 };
+      const local = { x: 40 / SCENE_SCALE, y: 0 };
+      const inHead =
+        ((local.x - HEAD.cx) / (HEAD.rx + HEAD_INK)) ** 2 + ((local.y - HEAD.cy) / (HEAD.ry + HEAD_INK)) ** 2;
+      expect(inHead).toBeLessThanOrEqual(1);
+      const items = snacksDrawnAt([snack], STILL_FRAME);
+      expect(collectNear(items, medium, DEFAULT_COLLECT_RADIUS).newly).toEqual([]);
+      expect(collectSnacksAtHead(items, headPoint(medium), STILL_FRAME)?.newly.map((item) => item.id)).toEqual(['p0']);
+    }
+  });
+
+  it('eats a snack exactly at the radius and skips one 0.5 px beyond it', () => {
+    const atEdge = snacksDrawnAt([{ x: head.x, y: head.y + SNACK_REACH.radius }], STILL_FRAME);
+    const beyond = snacksDrawnAt([{ x: head.x, y: head.y + SNACK_REACH.radius + 0.5 }], STILL_FRAME);
+    expect(collectSnacksAtHead(atEdge, head, STILL_FRAME)?.newly.length).toBe(1);
+    expect(collectSnacksAtHead(beyond, head, STILL_FRAME)).toBeNull();
+  });
+
+  it('honours a custom radius', () => {
+    const items = snacksDrawnAt([{ x: head.x + 10, y: head.y }], STILL_FRAME);
+    expect(collectSnacksAtHead(items, head, STILL_FRAME, 9.5)).toBeNull();
+    expect(collectSnacksAtHead(items, head, STILL_FRAME, 10)?.newly.length).toBe(1);
+  });
+
+  it('eats several snacks at once in index order and keeps their base x and y', () => {
+    const points = [
+      { x: head.x + 100, y: head.y },
+      { x: head.x, y: head.y - 20 },
+      { x: head.x + 30, y: head.y },
+      { x: head.x - 200, y: head.y },
+      { x: head.x - 5, y: head.y + 5 },
+    ];
+    const frame: SnackFrame = {
+      driftT: 1.1,
+      bobT: 0.4,
+      bobbing: true,
+      drift: CANAL_AREA.snackDrift,
+      bounds: WIDE_BOUNDS,
+    };
+    const items = snacksDrawnAt(points, frame);
+    const result = collectSnacksAtHead(items, head, frame);
+    expect(result?.newly.map((item) => item.id)).toEqual(['p1', 'p2', 'p4']);
+    result?.newly.forEach((item) => {
+      const before = items.find((candidate) => candidate.id === item.id);
+      expect(item.x).toBe(before?.x);
+      expect(item.y).toBe(before?.y);
+    });
+    expect(result?.items.map((item) => item.collected)).toEqual([false, true, true, false, true]);
+    expect(result?.items[0]).toBe(items[0]);
+    expect(result?.items[3]).toBe(items[3]);
+  });
+
+  it('returns null and leaves the items untouched when nothing is in reach', () => {
+    const items = snacksDrawnAt([{ x: head.x + 80, y: head.y }], STILL_FRAME);
+    const before = items.map((item) => ({ ...item }));
+    expect(collectSnacksAtHead(items, head, STILL_FRAME)).toBeNull();
+    expect(items).toEqual(before);
+  });
+
+  it('does not mutate the input items when it eats', () => {
+    const items = snacksDrawnAt([head, { x: head.x + 80, y: head.y }], STILL_FRAME);
+    const before = items.map((item) => ({ ...item }));
+    const result = collectSnacksAtHead(items, head, STILL_FRAME);
+    expect(items).toEqual(before);
+    expect(result?.items).not.toBe(items);
+  });
+
+  it('ignores already-collected snacks', () => {
+    const items = snacksDrawnAt([head], STILL_FRAME);
+    const eaten = collectNear(items, items[0], 1).items;
+    expect(collectSnacksAtHead(eaten, head, STILL_FRAME)).toBeNull();
+  });
+});
+
+describe('collectSnacksAtHead on a fast pass', () => {
+  const strongestCurrent = Math.max(
+    ...buildCanalZone().currents.map((current) => Math.hypot(current.force.x, current.force.y)),
+  );
+  const snackBobSpeed = (2 * Math.PI * SNACK_BOB_PX) / SNACK_BOB_PERIOD;
+  const axolotlBobSpeed = (2 * Math.PI * AXO_BOB) / AXO_BOB_PERIOD;
+  const longestStep =
+    (SWIM.dashSpeed + strongestCurrent + snackDriftMaxSpeed(CANAL_AREA.snackDrift) + snackBobSpeed + axolotlBobSpeed) *
+    SWIM.dtMax;
+  const origin: DrawnBody = { x: 0, y: 0, facing: 1, rotation: 0 };
+  const farthestHeadPoint = Math.max(
+    ...drawnHeadLocalPoints(720).map((point) => {
+      const placed = placeOnBody(origin, SCENE_SCALE * LARGEST_SIZE, point);
+      return Math.hypot(placed.x - SNACK_REACH.headAhead, placed.y);
+    }),
+  );
+
+  it('reaches past the farthest largest-head point from either end of the longest step', () => {
+    expect(farthestHeadPoint).toBeCloseTo(33.8, 1);
+    const reachMidStep = Math.sqrt(SNACK_REACH.radius ** 2 - (longestStep / 2) ** 2);
+    expect(reachMidStep).toBeGreaterThanOrEqual(farthestHeadPoint);
+  });
+
+  it('eats a snack the head passes over mid-step at one end of the step', () => {
+    const local = drawnHeadLocalPoints(24);
+    for (const facing of [1, -1] as const) {
+      for (const rotation of [0, MAX_ROTATION]) {
+        for (let k = 0; k < 16; k++) {
+          const angle = (2 * Math.PI * k) / 16;
+          const start: DrawnBody = { x: 500, y: 500, facing, rotation };
+          const end: DrawnBody = {
+            ...start,
+            x: 500 + longestStep * Math.cos(angle),
+            y: 500 + longestStep * Math.sin(angle),
+          };
+          for (const fraction of [0, 0.25, 0.5, 0.75, 1]) {
+            const passing: DrawnBody = {
+              ...start,
+              x: start.x + fraction * (end.x - start.x),
+              y: start.y + fraction * (end.y - start.y),
+            };
+            const items = snacksDrawnAt(
+              local.map((point) => placeOnBody(passing, SCENE_SCALE * LARGEST_SIZE, point)),
+              STILL_FRAME,
+            );
+            const eaten = new Set([...eatenIds(items, start, STILL_FRAME), ...eatenIds(items, end, STILL_FRAME)]);
+            expect(eaten.size).toBe(items.length);
+          }
+        }
+      }
+    }
   });
 });

@@ -1,3 +1,4 @@
+import { SNACK_REACH, type SnackReachTuning } from './tuning';
 import type { CollectibleKind, CollectibleSpawn, Point, SwimBounds } from './zone';
 
 export const DEFAULT_COLLECT_RADIUS = 22;
@@ -196,6 +197,94 @@ export function collectDriftingNear(
   const newly: Collectible[] = [];
   for (let index = first; index < items.length; index++) {
     if (!driftingInReach(items[index], index, pos, radius, t, drift, bounds)) continue;
+    const collectedItem = { ...items[index], collected: true };
+    updated[index] = collectedItem;
+    newly.push(collectedItem);
+  }
+  return { items: updated, newly };
+}
+
+/** Snack bob amplitude in px: a snack bobs up and down on top of its drift. */
+export const SNACK_BOB_PX = 2.5;
+
+/** Snack bob cycle length in seconds. */
+export const SNACK_BOB_PERIOD = 2.4;
+
+/** Where the snacks are drawn this frame: drift time, bob time, whether snacks bob, drift and bounds. */
+export interface SnackFrame {
+  /** Snack drift time in seconds (`snackX`, `snackY`). */
+  driftT: number;
+  /** Snack bob time in seconds. */
+  bobT: number;
+  /** False under reduced motion: snacks do not bob. */
+  bobbing: boolean;
+  drift: SnackDrift;
+  bounds: SwimBounds;
+}
+
+/** Drawn axolotl body: sprite position, facing and sprite rotation in radians. */
+export interface DrawnBody {
+  x: number;
+  y: number;
+  facing: 1 | -1;
+  rotation: number;
+}
+
+/** Bob offset in px of the snack at `index` at bob time `bobT` (s); 0 when snacks do not bob. */
+export function snackBobY(index: number, bobT: number, bobbing: boolean): number {
+  return bobbing ? SNACK_BOB_PX * Math.sin((2 * Math.PI * bobT) / SNACK_BOB_PERIOD + index) : 0;
+}
+
+/** Drawn x of the snack at `index` in `frame`: `snackX` at the frame's drift time. Allocates nothing. */
+export function drawnSnackX(item: Collectible, index: number, frame: SnackFrame): number {
+  return snackX(item, index, frame.driftT, frame.drift, frame.bounds);
+}
+
+/** Drawn y of the snack at `index` in `frame`: `snackY` plus its bob. Allocates nothing. */
+export function drawnSnackY(item: Collectible, index: number, frame: SnackFrame): number {
+  return snackY(item, index, frame.driftT, frame.drift, frame.bounds) + snackBobY(index, frame.bobT, frame.bobbing);
+}
+
+/**
+ * The reach centre at the drawn head: `reach.headAhead` px along the body's facing, turned by its
+ * rotation. Matches a sprite drawn with scale (facing x s, s) then rotated: local (lx, 0) lands at
+ * (x + facing lx cos(rotation), y + facing lx sin(rotation)).
+ */
+export function headPoint(body: DrawnBody, reach: Readonly<SnackReachTuning> = SNACK_REACH): Point {
+  return {
+    x: body.x + body.facing * reach.headAhead * Math.cos(body.rotation),
+    y: body.y + body.facing * reach.headAhead * Math.sin(body.rotation),
+  };
+}
+
+function snackAtHead(item: Collectible, index: number, head: Point, frame: SnackFrame, radius: number): boolean {
+  if (item.collected) return false;
+  const dx = drawnSnackX(item, index, frame) - head.x;
+  const dy = drawnSnackY(item, index, frame) - head.y;
+  return Math.hypot(dx, dy) <= radius;
+}
+
+/**
+ * Eats every uncollected snack drawn within radius of the head reach centre (inclusive), where
+ * `frame` draws it (`drawnSnackX`, `drawnSnackY`). Returns null, allocating nothing, when no snack
+ * is in reach. Otherwise returns a new items array (input untouched) plus the newly collected items
+ * in index order; the collected items keep their stored base `x` and `y`.
+ */
+export function collectSnacksAtHead(
+  items: readonly Collectible[],
+  head: Point,
+  frame: SnackFrame,
+  radius: number = SNACK_REACH.radius,
+): CollectResult | null {
+  let first = 0;
+  while (first < items.length && !snackAtHead(items[first], first, head, frame, radius)) {
+    first += 1;
+  }
+  if (first === items.length) return null;
+  const updated = items.slice();
+  const newly: Collectible[] = [];
+  for (let index = first; index < items.length; index++) {
+    if (!snackAtHead(items[index], index, head, frame, radius)) continue;
     const collectedItem = { ...items[index], collected: true };
     updated[index] = collectedItem;
     newly.push(collectedItem);
