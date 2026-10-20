@@ -44,7 +44,10 @@ export const SAVE_VERSION = SAVE_UPGRADES.length + 1;
 /** Storage key of the save. */
 export const SAVE_STORAGE_KEY = 'glam-gills:save';
 
-/** Storage key of the last unreadable save's text, kept so it is never lost. */
+/**
+ * Storage key of the first unreadable save's text, kept until the next "Start over". A later
+ * unreadable save is not backed up while this one is kept (ADR 0012, Known limits).
+ */
 export const SAVE_BACKUP_STORAGE_KEY = 'glam-gills:save-unreadable';
 
 /** Every storage key the game uses; nothing else is ever stored. */
@@ -185,24 +188,47 @@ function isRealMorphId(value: unknown): value is RealMorphId {
   return REAL_MORPHS.some((morph) => morph.id === value);
 }
 
+/** A saved axolotl entry with a real morph; any other entry is dropped. */
+type AxolotlEntry = Record<string, unknown> & { morph: RealMorphId };
+
+function isAxolotlEntry(value: unknown): value is AxolotlEntry {
+  return isRecord(value) && isRealMorphId(value.morph);
+}
+
+/** Whether `entry` needs no repair: the starter's id or its morph's find id, a valid name and every look field a valid option. */
+function isIntactAxolotl(entry: AxolotlEntry): boolean {
+  const look = entry.look;
+  return (
+    (entry.id === STARTER_AXOLOTL_ID || entry.id === axolotlFindId(entry.morph)) &&
+    isValidName(entry.name) &&
+    isRecord(look) &&
+    LOOK_FIELDS.every((field) => repairedOption(field, look[field]) === look[field])
+  );
+}
+
 /**
- * Owned axolotls with a real morph, the first per id and per morph kept, in saved order. An id that
- * is neither the starter's nor the morph's find id becomes the find id. A bad name becomes the first
- * suggested name no earlier axolotl uses.
+ * Owned axolotls with a real morph, one per id and per morph, in saved order. Intact entries claim
+ * their id and morph first, so an entry needing repair never displaces an intact one; among entries
+ * alike, the first in saved order is kept. An id that is neither the starter's nor the morph's find
+ * id becomes the find id. A bad name becomes the first suggested name no axolotl kept before it uses.
  */
 function repairedAxolotls(saved: unknown): OwnedAxolotl[] {
   if (!Array.isArray(saved)) return [];
-  const axolotls: OwnedAxolotl[] = [];
-  for (const entry of saved) {
-    if (!isRecord(entry) || !isRealMorphId(entry.morph)) continue;
+  const entries = saved.filter(isAxolotlEntry);
+  const indices = [...entries.keys()];
+  const intact = entries.map(isIntactAxolotl);
+  const claimOrder = [...indices.filter((index) => intact[index]), ...indices.filter((index) => !intact[index])];
+  const kept = new Map<number, OwnedAxolotl>();
+  for (const index of claimOrder) {
+    const entry = entries[index];
     const morph = entry.morph;
     const id = entry.id === STARTER_AXOLOTL_ID ? STARTER_AXOLOTL_ID : axolotlFindId(morph);
-    if (axolotls.some((axolotl) => axolotl.id === id || axolotl.morph === morph)) continue;
+    const claimed = [...kept.values()];
+    if (claimed.some((axolotl) => axolotl.id === id || axolotl.morph === morph)) continue;
     const look = repairedLook(entry.look);
-    const name = repairedName(entry.name, axolotls, look);
-    axolotls.push({ id, morph, name, look });
+    kept.set(index, { id, morph, name: repairedName(entry.name, claimed, look), look });
   }
-  return axolotls;
+  return indices.flatMap((index) => kept.get(index) ?? []);
 }
 
 function repairedName(saved: unknown, earlier: readonly OwnedAxolotl[], look: AxolotlLook): string {

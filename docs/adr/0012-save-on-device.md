@@ -18,7 +18,7 @@ The game is hosted on GitHub Pages at `brenpike.github.io/glam-gills/` ([ADR 000
 
 **Where and what.**
 
-- The save lives in `localStorage` under two keys, and only these: `glam-gills:save` holds the save, and `glam-gills:save-unreadable` holds the text of an unreadable save so it is never lost.
+- The save lives in `localStorage` under two keys, and only these: `glam-gills:save` holds the save, and `glam-gills:save-unreadable` holds the text of the first unreadable save, kept until the next "Start over".
 - The save is one versioned JSON object, `{"version": n, "hub": {...}}`, of the hub only: banked treasure ids (so owned Dream colours), the owned axolotls with their names and looks, the Home Tank layout, the Collection Book, and the best stars per area.
 - Nothing from a trip is saved: not the Trip Bag, position, leg state, Shell blocks used, the trip seed, eaten snacks, or a stranded axolotl left waiting. A loaded game opens in the Home Tank, and unbanked finds reappear on the next trip in freshly picked spots (PRD D2, D3).
 - Encoding, decoding, upgrading and repairing are pure, in `src/logic/save.ts`, with headless tests ([ADR 0006](0006-testing-strategy.md)). Reading and writing storage is browser glue in `src/platform/`.

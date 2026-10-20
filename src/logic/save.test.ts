@@ -234,6 +234,27 @@ describe('field-by-field repair', () => {
     expect(hub.axolotls).toEqual([starter, wild]);
   });
 
+  it('keeps an intact axolotl over a damaged one saved before it with the same id or morph', () => {
+    const [starter, wild] = playedSession().hub.axolotls;
+    const hub = hubWith('axolotls', [
+      { id: STARTER_AXOLOTL_ID, morph: 'copper' },
+      { id: WILD, morph: 'wild', name: 7, look: 'pretty' },
+      { ...wild, id: 'axolotl/copper' },
+      starter,
+      wild,
+    ]);
+    expect(hub.axolotls).toEqual([starter, wild]);
+  });
+
+  it('keeps a damaged axolotl no intact one claims, in saved order, named apart from later intact names', () => {
+    const [starter, wild] = playedSession().hub.axolotls;
+    const hub = hubWith('axolotls', [{ ...wild, name: '' }, { ...starter, name: 'Bubbles' }]);
+    expect(hub.axolotls.map((axolotl) => [axolotl.id, axolotl.name])).toEqual([
+      [WILD, suggestedNamesFor('girl').find((name) => name !== 'Bubbles')],
+      [STARTER_AXOLOTL_ID, 'Bubbles'],
+    ]);
+  });
+
   it('gives an axolotl with an unknown id its morph find id', () => {
     const [starter, wild] = playedSession().hub.axolotls;
     const hub = hubWith('axolotls', [starter, { ...wild, id: 'axolotl/copper' }, { ...wild, id: 3, morph: 'copper' }]);
