@@ -33,6 +33,8 @@ export interface EncounterState {
   tilapias: TilapiaState[];
   /** Seconds left before another bump can happen; 0 when a bump is ready. */
   bumpCooldownLeft: number;
+  /** Whether this trip's Shell block is spent (PRD A22, F11); false at the start of every trip. */
+  shellUsed: boolean;
   tripOver: boolean;
 }
 
@@ -41,17 +43,21 @@ export interface EncounterContext {
   bounds: SwimBounds;
   legs: LegTuning;
   tilapia: TilapiaTuning;
+  /** Whether the outfit has a Shell perk. One flag, so Shell blocks at most one hit per trip (PRD F11). */
+  shell: boolean;
 }
 
 /**
  * Encounter events, in the order they happened within the step.
  * `tilapiaId` is the route id of the tilapia involved. `leg` is a slot index.
- * `from` is the tilapia centre at the moment of the hit or bump.
+ * `from` is the tilapia centre at the moment of the hit, Shell block or bump.
+ * `shellBlock` is a hit the Shell perk blocked: no leg lost, protected time started (PRD A22).
  */
 export type EncounterEvent =
   | { type: 'telegraph'; tilapiaId: string }
   | { type: 'lunge'; tilapiaId: string; aim: Point }
   | { type: 'hit'; tilapiaId: string; leg: number; from: Point }
+  | { type: 'shellBlock'; tilapiaId: string; from: Point }
   | { type: 'bump'; tilapiaId: string; from: Point }
   | { type: 'regrowStart'; leg: number }
   | { type: 'regrown'; leg: number }
@@ -71,12 +77,12 @@ interface TilapiaPass {
   hit: boolean;
 }
 
-/** Default context: the canal swim bounds and the shared leg and tilapia tuning. */
+/** Default context: the canal swim bounds, the shared leg and tilapia tuning, and no Shell perk. */
 export function createEncounterContext(overrides: Partial<EncounterContext> = {}): EncounterContext {
-  return { bounds: swimBounds(), legs: LEGS, tilapia: TILAPIA, ...overrides };
+  return { bounds: swimBounds(), legs: LEGS, tilapia: TILAPIA, shell: false, ...overrides };
 }
 
-/** Starts a trip: every leg present, no protection, each tilapia at the start of its route. */
+/** Starts a trip: every leg present, no protection, Shell unused, each tilapia at the start of its route. */
 export function createEncounter(
   source: EncounterSource,
   legTuning: Pick<LegTuning, 'count'> = LEGS,
@@ -91,6 +97,7 @@ export function createEncounter(
     legs: createLegs(legTuning),
     tilapias: tilapiaRoutes.map(createTilapia),
     bumpCooldownLeft: 0,
+    shellUsed: false,
     tripOver: false,
   };
 }
@@ -131,6 +138,11 @@ export function resetEncounter(
  * the tilapia then sits in cooldown inside its contact radius, so the bump check below can
  * push the axolotl gently away. Losing the last present leg emits `hit` then `carriedHome`
  * (exactly once) and ends the trip, even while another leg is regrowing.
+ *
+ * Shell (PRD A22, F11): with `ctx.shell` on, the first connected lunge of the trip that
+ * protected time does not block is blocked instead. It costs no leg, starts protected time
+ * and the bump cooldown as a hit does, and emits `shellBlock`, never `hit`. A lunge that
+ * protected time blocks leaves the Shell unused. Every later hit removes one leg as usual.
  *
  * Bump: when no hit landed this step, the bump cooldown is ready and a non-lunging tilapia
  * touches the axolotl, emit `bump` and return `impulse`. A hit also starts the bump cooldown,
@@ -234,8 +246,12 @@ function otherTilapiaAttacking(tilapias: readonly TilapiaState[], index: number)
   );
 }
 
-/** Applies a connected lunge from `tilapia`; a protected or legless axolotl loses nothing. */
+/**
+ * Applies a connected lunge from `tilapia`; a protected or legless axolotl loses nothing.
+ * An unused Shell blocks the lunge instead of a leg loss.
+ */
 function applyHit(state: EncounterState, tilapia: TilapiaState, ctx: EncounterContext): TilapiaPass {
+  if (ctx.shell && !state.shellUsed && !isProtected(state.legs)) return applyShellBlock(state, tilapia, ctx);
   const result = tryHit(state.legs, ctx.legs);
   if (!result.hit) return { state, events: [], hit: false };
   const events: EncounterEvent[] = [
@@ -251,6 +267,18 @@ function applyHit(state: EncounterState, tilapia: TilapiaState, ctx: EncounterCo
     bumpCooldownLeft: ctx.tilapia.bumpCooldown,
     tripOver: result.tripOver,
   };
+  return { state: next, events, hit: true };
+}
+
+/** Blocks a connected lunge with the Shell: no leg lost, protected time and bump cooldown start. */
+function applyShellBlock(state: EncounterState, tilapia: TilapiaState, ctx: EncounterContext): TilapiaPass {
+  const next: EncounterState = {
+    ...state,
+    legs: { ...state.legs, protectedLeft: ctx.legs.protectedTime },
+    bumpCooldownLeft: ctx.tilapia.bumpCooldown,
+    shellUsed: true,
+  };
+  const events: EncounterEvent[] = [{ type: 'shellBlock', tilapiaId: tilapia.routeId, from: { ...tilapia.pos } }];
   return { state: next, events, hit: true };
 }
 

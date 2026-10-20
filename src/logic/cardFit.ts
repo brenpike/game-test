@@ -115,6 +115,14 @@ export function cardTextWidth(cssW: number): number {
   return Math.max(CARD.textMinW, Math.min(CARD.textMaxW, cssW - 2 * (CARD.margin + CARD.pad)));
 }
 
+/**
+ * Icon row wrap width of a card on a `cssW` wide canvas: the room inside the canvas margins and card
+ * padding, never less than cardTextWidth(). Wider than the text on canvases over 500 px wide.
+ */
+export function cardIconRowWidth(cssW: number): number {
+  return Math.max(cardTextWidth(cssW), cssW - 2 * (CARD.margin + CARD.pad));
+}
+
 /** Tank arrival card title wrap width beside the house icon, at least half of textMinW. */
 export function homeTitleWrapWidth(textW: number): number {
   return Math.max(CARD.textMinW / 2, textW - CARD.headIconPx - CARD.headIconGap);

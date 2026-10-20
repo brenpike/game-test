@@ -5,6 +5,7 @@ import {
   ICON_ROW_GAP_PX,
   SMALLEST_CANVAS,
   cardButtonsStacked,
+  cardIconRowWidth,
   cardTextWidth,
   fitCard,
   homeTitleWrapWidth,
@@ -163,6 +164,36 @@ describe('card text widths', () => {
     expect(homeTitleWrapWidth(cardTextWidth(480))).toBe(356);
     expect(homeTitleWrapWidth(cardTextWidth(568))).toBe(376);
     expect(homeTitleWrapWidth(100)).toBe(60);
+  });
+
+  it('widens the icon row past the text width only on canvases over 500 px wide', () => {
+    expect(cardIconRowWidth(320)).toBe(cardTextWidth(320));
+    expect(cardIconRowWidth(460)).toBe(cardTextWidth(460));
+    expect(cardIconRowWidth(500)).toBe(CARD.textMaxW);
+    expect(cardIconRowWidth(800)).toBe(720);
+    expect(cardIconRowWidth(1280)).toBe(1200);
+    expect(cardIconRowWidth(100)).toBe(CARD.textMinW);
+  });
+
+  it('keeps the widest icon row and its padding inside the canvas margins', () => {
+    for (const cssW of [320, 460, 500, 800, 1024, 1280]) {
+      const rowW = iconRowsSize(24, cardIconRowWidth(cssW)).width;
+      expect(rowW + 2 * CARD.pad, `${cssW}`).toBeLessThanOrEqual(cssW - 2 * CARD.margin);
+    }
+  });
+
+  it('keeps the icon rows of the smallest canvases unchanged', () => {
+    expect(iconsPerRow(cardIconRowWidth(SMALLEST_CANVAS.landscape.cssW))).toBe(9);
+    expect(iconsPerRow(cardIconRowWidth(SMALLEST_CANVAS.portrait.cssW))).toBe(6);
+  });
+
+  it('fits 24 icons in 2 rows on an 800 x 600 canvas', () => {
+    const maxW = cardIconRowWidth(800);
+    expect(iconsPerRow(maxW)).toBe(18);
+    expect(iconRowsSize(24, maxW)).toEqual({ width: 18 * 32 + 17 * 8, height: 2 * 32 + 8 });
+    const fit = fitCard(600 - 2 * CARD.margin, homeSections(41, makeVariants([5]), 24, maxW));
+    expect(fit.clipped).toBe(false);
+    expect(fit.iconCount).toBe(24);
   });
 
   it('stacks buttons below 460 px wide', () => {

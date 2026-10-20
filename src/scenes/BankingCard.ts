@@ -2,7 +2,7 @@ import * as Phaser from 'phaser';
 import { INK, UI_PANEL } from '../art/palette';
 import type { TexInfo } from '../art/textures';
 import type { TreasureTextures } from '../art/treasureTextures';
-import { CARD, cardButtonsStacked, cardTextWidth, fitCard, iconRowsSize } from '../logic/cardFit';
+import { CARD, cardButtonsStacked, cardIconRowWidth, cardTextWidth, fitCard, iconRowsSize } from '../logic/cardFit';
 import { morphById, rescueMorphsIn } from '../logic/morphs';
 import type { MotionProfile } from '../logic/motion';
 import { foundInfos } from '../logic/trip';
@@ -200,6 +200,7 @@ export class BankingCard {
     const [keepExploring, goHome] = this.buttons;
     const stacked = cardButtonsStacked(cssW);
     const textW = cardTextWidth(cssW);
+    const iconRowW = cardIconRowWidth(cssW);
     this.title.setWordWrapWidth(textW, true);
     this.body.setWordWrapWidth(textW, true);
     const lineH = this.body.getTextMetrics().fontSize;
@@ -211,7 +212,7 @@ export class BankingCard {
     const availH = cssH - 2 * CARD.margin;
     const fit = fitCard(availH, [
       { kind: 'fixed', height: this.title.height },
-      { kind: 'icons', count: this.icons.length, maxW: textW },
+      { kind: 'icons', count: this.icons.length, maxW: iconRowW },
       { kind: 'body', variants },
       { kind: 'actions', height: buttonsH },
     ]);
@@ -220,7 +221,7 @@ export class BankingCard {
     this.body.setVisible(fit.bodyLines > 0);
     this.body.setMaxLines(fit.clipped ? fit.bodyLines : 0);
     this.icons.forEach((icon, index) => icon.setVisible(index < fit.iconCount));
-    const { width: rowW, height: rowH } = iconRowsSize(fit.iconCount, textW);
+    const { width: rowW, height: rowH } = iconRowsSize(fit.iconCount, iconRowW);
     const bodyW = fit.bodyLines > 0 ? this.body.width : 0;
     const panelW = Math.min(
       cssW - 2 * CARD.margin,
@@ -229,7 +230,7 @@ export class BankingCard {
     const top = CARD.margin + Math.max(0, (availH - fit.panelH) / 2) - cssH / 2;
     drawPanel(this.panel, -panelW / 2, top, panelW, fit.panelH, UI_PANEL);
     this.title.setPosition(-this.title.width / 2, top + titleSlot.top);
-    this.layoutRow(top + iconsSlot.top, textW, fit.iconCount, rowW, rowH);
+    this.layoutRow(top + iconsSlot.top, iconRowW, fit.iconCount, rowW, rowH);
     this.body.setPosition(-this.body.width / 2, top + bodySlot.top);
     const buttonsY = top + actionsSlot.top;
     if (stacked) {

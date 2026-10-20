@@ -33,7 +33,7 @@ export const CHEST_CATEGORIES: readonly ChestCategory[] = Object.freeze([
 ]);
 
 /** Display name of a Wearable slot. */
-export type SlotName = 'Head' | 'Neck' | 'Face' | 'Tail';
+export type SlotName = 'Head' | 'Neck' | 'Face' | 'Shirt' | 'Back' | 'Tail' | 'Socks' | 'Feet';
 
 /** Fields every Treasure Chest entry has. */
 export interface ChestEntryBase {
@@ -109,7 +109,11 @@ const SLOT_NAMES: Readonly<Record<WearableSlot, SlotName>> = Object.freeze({
   head: 'Head',
   neck: 'Neck',
   face: 'Face',
+  shirt: 'Shirt',
+  back: 'Back',
   tail: 'Tail',
+  socks: 'Socks',
+  feet: 'Feet',
 });
 
 const PERCENT_PERK_NAMES: Readonly<Record<Exclude<PerkType, 'snackMagnet' | 'shell'>, string>> =

@@ -4,7 +4,7 @@ import { iconKey } from '../art/textures';
 import type { TreasureTextures } from '../art/treasureTextures';
 import { areaLabel } from '../logic/areaText';
 import type { AreaData } from '../logic/areas';
-import { CARD, cardTextWidth, fitCard, homeTitleWrapWidth, iconRowsSize } from '../logic/cardFit';
+import { CARD, cardIconRowWidth, cardTextWidth, fitCard, homeTitleWrapWidth, iconRowsSize } from '../logic/cardFit';
 import { treasureById } from '../logic/catalogue';
 import type { MotionProfile } from '../logic/motion';
 import { morphById, rescueMorphsIn } from '../logic/morphs';
@@ -246,13 +246,15 @@ export class TankArrivalCard {
    * row (no room unless the area was beaten), the body (full or short wording, clipped only when
    * nothing fits), the treasure icon row and the button:
    * it tightens the padding on a short screen, shows only the icon rows that fit (hiding the other
-   * icons) and keeps the button inside the canvas. The icon row wraps to the text width and takes no
-   * room (nor padding) when empty or hidden. Safe to call before show() and after hide().
+   * icons) and keeps the button inside the canvas. The icon row wraps to cardIconRowWidth() (the text
+   * width, or wider on a canvas over 500 px wide) and takes no room (nor padding) when empty or
+   * hidden. Safe to call before show() and after hide().
    */
   layout(view: SceneView): void {
     this.view = view;
     const { cssW, cssH } = view;
     const textW = cardTextWidth(cssW);
+    const iconRowW = cardIconRowWidth(cssW);
     this.title.setWordWrapWidth(homeTitleWrapWidth(textW), true);
     this.body.setWordWrapWidth(textW, true);
     const lineH = this.body.getTextMetrics().fontSize;
@@ -264,7 +266,7 @@ export class TankArrivalCard {
       { kind: 'fixed', height: headH },
       { kind: 'fixed', height: this.showsStars ? starRow.h : 0 },
       { kind: 'body', variants },
-      { kind: 'icons', count: this.treasureIcons.length, maxW: textW },
+      { kind: 'icons', count: this.treasureIcons.length, maxW: iconRowW },
       { kind: 'actions', height: this.button.height },
     ]);
     const [headSlot, starRowSlot, bodySlot, iconsSlot, actionsSlot] = fit.slots;
@@ -272,7 +274,7 @@ export class TankArrivalCard {
     this.body.setVisible(fit.bodyLines > 0);
     this.body.setMaxLines(fit.clipped ? fit.bodyLines : 0);
     this.treasureIcons.forEach((icon, index) => icon.setVisible(index < fit.iconCount));
-    const { width: rowW } = iconRowsSize(fit.iconCount, textW);
+    const { width: rowW } = iconRowsSize(fit.iconCount, iconRowW);
     const headW = CARD.headIconPx + CARD.headIconGap + this.title.width;
     const bodyW = fit.bodyLines > 0 ? this.body.width : 0;
     const starRowW = this.showsStars ? starRow.w : 0;
@@ -290,7 +292,7 @@ export class TankArrivalCard {
     this.title.setPosition(headX + CARD.headIconPx + CARD.headIconGap, headY + (headH - this.title.height) / 2);
     this.body.setPosition((cssW - this.body.width) / 2, panelY + bodySlot.top);
     if (fit.iconCount > 0) {
-      placeIconRows(this.treasureIcons.slice(0, fit.iconCount), cssW / 2, panelY + iconsSlot.top, textW);
+      placeIconRows(this.treasureIcons.slice(0, fit.iconCount), cssW / 2, panelY + iconsSlot.top, iconRowW);
     }
     this.button.container.setPosition((cssW - this.button.width) / 2, panelY + actionsSlot.top);
   }

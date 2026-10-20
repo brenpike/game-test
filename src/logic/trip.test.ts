@@ -1614,3 +1614,58 @@ describe('beatArea (H5, H6)', () => {
     expect(next.holdings.banked).toEqual(beaten.holdings.banked);
   });
 });
+
+describe('Shell perk through stepTrip (A22, F11)', () => {
+  const shellCtx = createTripContext({
+    encounter: createEncounterContext({ legs: { ...LEGS, regrowTime: 1e9 }, shell: true }),
+  });
+  const plantSpecial: StarContext = { specialTreasureId: PLANT };
+  const hitInput: TripInput = { axolotlPos: farTarget, reduced: false, dashing: false };
+
+  function driveShell(state: TripState, until: TripEvent['type'], limit = 120): Drive {
+    let current = state;
+    const events: TripEvent[] = [];
+    let last: TripStepResult = { state, events: [] };
+    let seconds = 0;
+    while (seconds < limit) {
+      last = stepTrip(current, hitInput, DT, shellCtx);
+      current = last.state;
+      seconds += DT;
+      events.push(...last.events);
+      if (last.events.some((event) => event.type === until)) break;
+    }
+    return { state: current, events, last, seconds };
+  }
+
+  it('blocks the first hit with no leg lost and keeps star 3', () => {
+    const blocked = driveShell(createTrip(farZone), 'shellBlock');
+    expect(countOf(blocked.events, 'shellBlock')).toBe(1);
+    expect(countOf(blocked.events, 'hit')).toBe(0);
+    expect(blocked.state.phase).toBe('swimming');
+    expect(blocked.state.legsLost).toBe(0);
+    expect(presentCount(blocked.state.encounter.legs)).toBe(LEGS.count);
+    expect(isProtected(blocked.state.encounter.legs)).toBe(true);
+    expect(beatArea(blocked.state, plantSpecial).state.ending?.stars?.legsOrRescue).toBe(true);
+  });
+
+  it('costs a leg on the next hit', () => {
+    const blocked = driveShell(createTrip(farZone), 'shellBlock');
+    const hit = driveShell(blocked.state, 'hit');
+    expect(countOf(hit.events, 'shellBlock')).toBe(0);
+    expect(countOf(hit.events, 'hit')).toBe(1);
+    expect(hit.state.legsLost).toBe(1);
+    expect(presentCount(hit.state.encounter.legs)).toBe(LEGS.count - 1);
+    expect(beatArea(hit.state, plantSpecial).state.ending?.stars?.legsOrRescue).toBe(false);
+  });
+
+  it('resets the block on newTrip', () => {
+    const blocked = driveShell(createTrip(farZone), 'shellBlock');
+    expect(blocked.state.encounter.shellUsed).toBe(true);
+    const next = newTrip(beatArea(blocked.state, plantSpecial).state);
+    expect(next.phase).toBe('swimming');
+    expect(next.encounter.shellUsed).toBe(false);
+    const again = driveShell(next, 'shellBlock');
+    expect(countOf(again.events, 'shellBlock')).toBe(1);
+    expect(again.state.legsLost).toBe(0);
+  });
+});
