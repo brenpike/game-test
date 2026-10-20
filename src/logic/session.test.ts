@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CANAL_AREA } from './areas';
 import { DEFAULT_LOOK, LOOK_FIELDS, rescuedLook, type AxolotlLook, type AxolotlSex } from './axolotlLook';
 import { NAME_MAX, nameFits, nameLength, suggestedNamesFor } from './axolotlNames';
+import type { DreamColourId } from './catalogue';
 import { collectNear, type Collectible } from './collectibles';
 import { createEncounterContext } from './encounter';
 import { REGISTRY_KEYS } from './gameEvents';
@@ -23,6 +24,7 @@ import {
   recordTripEnd,
   restoreSnacks,
   restyleAxolotl,
+  setDreamColour,
   setTankLayout,
   tripEndRecord,
   tripStart,
@@ -57,6 +59,8 @@ const inRange: Point = { x: routeStart.x + 60, y: routeStart.y };
 const PLANT = 'canal/pond-plant';
 const BOAT = 'canal/toy-boat';
 const HAT = 'canal/sun-hat';
+const MINT_SHELL = 'canal/paint-shell-mint';
+const GALAXY_SHELL = 'canal/paint-shell-galaxy';
 
 /** Steps the trip once with the axolotl at `pos`. */
 function stepAt(trip: TripState, pos: Point): TripState {
@@ -211,12 +215,12 @@ function withStarter(name = 'Gilly', morph: RealMorphId = STARTER_MORPH): Sessio
 
 /** The starter `withStarter` makes. */
 function starterOf(morph: RealMorphId = STARTER_MORPH, name = 'Gilly'): OwnedAxolotl {
-  return { id: STARTER_AXOLOTL_ID, morph, name, look: DEFAULT_LOOK };
+  return { id: STARTER_AXOLOTL_ID, morph, name, look: DEFAULT_LOOK, dreamColour: null };
 }
 
 /** A rescued axolotl of `morph` and `sex` as `recordTripEnd` adopts it: a suggested `name` and the rescued look. */
 function rescuedOf(morph: RealMorphId, name: string, sex: AxolotlSex): OwnedAxolotl {
-  return { id: axolotlFindId(morph), morph, name, look: rescuedLook(sex) };
+  return { id: axolotlFindId(morph), morph, name, look: rescuedLook(sex), dreamColour: null };
 }
 
 describe('createSession', () => {
@@ -792,7 +796,9 @@ describe('addStarter (F1)', () => {
     const fresh = createSession();
     const look = { ...STYLED };
     const session = addStarter(fresh, { name: '  Mochi  ', look });
-    expect(session.hub.axolotls).toEqual([{ id: STARTER_AXOLOTL_ID, morph: STARTER_MORPH, name: 'Mochi', look: STYLED }]);
+    expect(session.hub.axolotls).toEqual([
+      { id: STARTER_AXOLOTL_ID, morph: STARTER_MORPH, name: 'Mochi', look: STYLED, dreamColour: null },
+    ]);
     expect(session.hub.axolotls[0].look).not.toBe(look);
     expect(session.hub.book).toEqual({ foundMorphs: [STARTER_MORPH], tilapiaCard: false });
     expect(session.hub.banked).toBe(fresh.hub.banked);
@@ -865,6 +871,7 @@ describe('restyleAxolotl (F6)', () => {
       morph: 'golden-albino',
       name: 'Noodle',
       look: STYLED_BOY,
+      dreamColour: null,
     });
     for (const field of LOOK_FIELDS) expect(next.hub.axolotls[0].look[field]).toBe(STYLED_BOY[field]);
     expect(next.hub.book).toBe(session.hub.book);
@@ -903,13 +910,115 @@ describe('restyleAxolotl (F6)', () => {
   });
 });
 
+/**
+ * A session with the starter and a rescued wild axolotl, where the Mint and Galaxy Paint shells and
+ * a pond plant are banked.
+ */
+function withDreams(): Session {
+  const owned = recordTripEnd(withStarter(), {
+    ...record([MINT_SHELL, PLANT, GALAXY_SHELL], 1),
+    rescued: [{ morph: 'wild', sex: 'girl' }],
+  });
+  expect(owned.hub.axolotls.map((axolotl) => axolotl.id)).toEqual([STARTER_AXOLOTL_ID, axolotlFindId('wild')]);
+  return owned;
+}
+
+describe('setDreamColour (F14)', () => {
+  const WILD_ID = axolotlFindId('wild');
+
+  it('puts an owned Dream colour on an axolotl and takes it off again', () => {
+    const plain = withDreams();
+    const painted = setDreamColour(plain, STARTER_AXOLOTL_ID, 'mint');
+    expect(painted.hub.axolotls[0].dreamColour).toBe('mint');
+    const off = setDreamColour(painted, STARTER_AXOLOTL_ID, null);
+    expect(off.hub.axolotls[0].dreamColour).toBeNull();
+    expect(off.hub.axolotls).toEqual(plain.hub.axolotls);
+  });
+
+  it('changes only the Dream colour of that axolotl', () => {
+    const before = withDreams();
+    const after = setDreamColour(before, WILD_ID, 'galaxy');
+    expect(after.hub.axolotls[1]).toEqual({ ...before.hub.axolotls[1], dreamColour: 'galaxy' });
+    expect({ ...after.hub.axolotls[1], dreamColour: before.hub.axolotls[1].dreamColour }).toEqual(before.hub.axolotls[1]);
+    expect(after.hub.axolotls[1].morph).toBe('wild');
+    expect(after.hub.axolotls[1].look).toBe(before.hub.axolotls[1].look);
+    expect(after.hub.axolotls[0]).toBe(before.hub.axolotls[0]);
+    expect(after.hub.book).toBe(before.hub.book);
+    expect(after.hub.banked).toBe(before.hub.banked);
+    expect(after.hub.stars).toBe(before.hub.stars);
+    expect(after.hub.tank).toBe(before.hub.tank);
+    expect(after.canal).toBe(before.canal);
+  });
+
+  it('puts the same colour on two axolotls at once', () => {
+    const both = setDreamColour(setDreamColour(withDreams(), STARTER_AXOLOTL_ID, 'mint'), WILD_ID, 'mint');
+    expect(both.hub.axolotls.map((axolotl) => axolotl.dreamColour)).toEqual(['mint', 'mint']);
+  });
+
+  it('never takes a colour off another axolotl when putting one on', () => {
+    const first = setDreamColour(withDreams(), STARTER_AXOLOTL_ID, 'mint');
+    const second = setDreamColour(first, WILD_ID, 'galaxy');
+    expect(second.hub.axolotls[0]).toBe(first.hub.axolotls[0]);
+    expect(second.hub.axolotls.map((axolotl) => axolotl.dreamColour)).toEqual(['mint', 'galaxy']);
+  });
+
+  it('replaces the colour an axolotl wore, so it wears at most one', () => {
+    const mint = setDreamColour(withDreams(), STARTER_AXOLOTL_ID, 'mint');
+    const galaxy = setDreamColour(mint, STARTER_AXOLOTL_ID, 'galaxy');
+    expect(galaxy.hub.axolotls[0].dreamColour).toBe('galaxy');
+  });
+
+  it('throws when the Dream colour is not owned', () => {
+    expect(() => setDreamColour(withDreams(), STARTER_AXOLOTL_ID, 'rainbow')).toThrow(/not owned/);
+    expect(() => setDreamColour(withStarter(), STARTER_AXOLOTL_ID, 'mint')).toThrow(/not owned/);
+    const plaid = 'plaid' as DreamColourId;
+    expect(() => setDreamColour(withDreams(), STARTER_AXOLOTL_ID, plaid)).toThrow(/not owned/);
+  });
+
+  it('takes a colour off even with no Paint shell banked', () => {
+    expect(setDreamColour(withStarter(), STARTER_AXOLOTL_ID, null).hub.axolotls).toEqual([starterOf()]);
+  });
+
+  it('throws on an unknown axolotl id', () => {
+    expect(() => setDreamColour(withDreams(), 'nobody', 'mint')).toThrow(/no owned axolotl/);
+    expect(() => setDreamColour(createSession(), STARTER_AXOLOTL_ID, null)).toThrow(/no owned axolotl/);
+  });
+
+  it('leaves the input session alone', () => {
+    const before = withDreams();
+    const copy = JSON.parse(JSON.stringify(before)) as Session;
+    setDreamColour(before, STARTER_AXOLOTL_ID, 'galaxy');
+    expect(before).toEqual(copy);
+    expect(before.hub.axolotls[0].dreamColour).toBeNull();
+  });
+
+  it('is kept by restyleAxolotl and recordTripEnd, and rescued axolotls start with none', () => {
+    const painted = setDreamColour(withDreams(), STARTER_AXOLOTL_ID, 'galaxy');
+    const restyled = restyleAxolotl(painted, STARTER_AXOLOTL_ID, { name: 'Noodle', look: STYLED_BOY });
+    expect(restyled.hub.axolotls[0].dreamColour).toBe('galaxy');
+    const later = recordTripEnd(restyled, { ...record([HAT], 2), rescued: [{ morph: 'melanoid', sex: 'boy' }] });
+    expect(later.hub.axolotls.map((axolotl) => axolotl.dreamColour)).toEqual(['galaxy', null, null]);
+  });
+
+  it('survives a JSON round trip', () => {
+    const painted = setDreamColour(withDreams(), WILD_ID, 'mint');
+    expect(JSON.parse(JSON.stringify(painted))).toEqual(painted);
+  });
+});
+
 describe('newOwnedAxolotl', () => {
   it.each<AxolotlSex>(['boy', 'girl'])(
     'takes its morph, the first %s name no owned axolotl uses, ignoring case, and the rescued look',
     (sex) => {
       const owned = withStarter('bubbles').hub.axolotls;
       const rescued = newOwnedAxolotl('rescued-wild', 'wild', owned, sex);
-      expect(rescued).toEqual({ id: 'rescued-wild', morph: 'wild', name: suggestedNamesFor(sex)[1], look: rescuedLook(sex) });
+      expect(rescued).toEqual({
+        id: 'rescued-wild',
+        morph: 'wild',
+        name: suggestedNamesFor(sex)[1],
+        look: rescuedLook(sex),
+        dreamColour: null,
+      });
       expect(rescued.look.sex).toBe(sex);
       expect(nameFits(rescued.name, sex)).toBe(true);
       expect(rescued.look).not.toBe(DEFAULT_LOOK);

@@ -112,6 +112,8 @@ export interface MorphPalette {
   readonly mouth: string;
   /** Non-hue cues and tweaks (guide 3b, 6h). Undefined draws exactly the Leucistic look. */
   readonly extras?: MorphExtras;
+  /** The Dream colour painted over the real morph (guide 3f, 6p). Set only on Dream palettes (dreamPalette). */
+  readonly dream?: DreamOverlay;
 }
 
 /**
@@ -448,6 +450,143 @@ export const MORPH_PALETTES: Record<MorphLookId, MorphPalette> = {
   axanthic: AXANTHIC,
   melanoid: MELANOID,
 };
+
+// ---- Dream colours (guide 3f, 6h, 6p) -------------------------------------
+// A Dream colour is a paint over the real morph, never a morph. It swaps the
+// body and gill slots; the real morph keeps its eye and mouth. Every value in
+// this section is derived (provisional).
+
+/** Look ids of the twelve Dream colours, in the guide 3f order. Must match the logic layer's Dream colour ids. */
+export type DreamLookId =
+  | 'mint'
+  | 'sky-blue'
+  | 'lavender'
+  | 'sunset-orange'
+  | 'bubblegum'
+  | 'midnight-blue'
+  | 'hearts'
+  | 'tie-dye'
+  | 'iridescent'
+  | 'rainbow'
+  | 'galaxy'
+  | 'tie-dye-galaxy';
+
+/** The body and gill role slots a Dream colour swaps (guide 3f). */
+export type DreamSlots = Pick<
+  MorphPalette,
+  | 'body'
+  | 'farSide'
+  | 'fin'
+  | 'belly'
+  | 'gillNearStem'
+  | 'gillNearFilament'
+  | 'gillFarStem'
+  | 'gillFarFilament'
+>;
+
+const dreamSlots = (
+  body: string,
+  farSide: string,
+  fin: string,
+  belly: string,
+  [gillNearStem, gillNearFilament]: readonly [string, string],
+  [gillFarStem, gillFarFilament]: readonly [string, string],
+): DreamSlots => ({ body, farSide, fin, belly, gillNearStem, gillNearFilament, gillFarStem, gillFarFilament });
+
+/** The guide 3f "Dream colour slots" table, verbatim. */
+export const DREAM_SLOTS: Readonly<Record<DreamLookId, DreamSlots>> = {
+  mint: dreamSlots('#a8f0cf', '#99d7c0', '#cbf6e2', '#d8f8e9', ['#34c98e', '#61d5a7'], ['#33b888', '#5dc7a0']),
+  'sky-blue': dreamSlots('#9fd8ff', '#91c2ea', '#c5e8ff', '#d4edff', ['#3a96e8', '#65aded'], ['#388ad9', '#60a2e0']),
+  lavender: dreamSlots('#d6c5ff', '#c1b2ea', '#e6dcff', '#ede5ff', ['#9575e6', '#ac93ec'], ['#8a6dd7', '#a28ae0']),
+  'sunset-orange': dreamSlots(
+    '#ffc18e',
+    '#e6ae87',
+    '#ffdabb',
+    '#ffe3cc',
+    ['#ff6a3d', '#ff8b68'],
+    ['#ea633f', '#ee8366'],
+  ),
+  bubblegum: dreamSlots('#ffb9e2', '#e6a7d0', '#ffd5ee', '#ffe0f2', ['#e0449c', '#e76db2'], ['#ce4194', '#d867aa']),
+  'midnight-blue': dreamSlots(
+    '#2f3a8f',
+    '#2f3787',
+    '#8289bc',
+    '#a1a6cd',
+    ['#6f8cff', '#8fa5ff'],
+    ['#6882ee', '#879bf1'],
+  ),
+  hearts: dreamSlots('#fff0b3', '#e6d7a7', '#fff6d1', '#fff8dd', ['#ff5f8d', '#ff82a6'], ['#ea5987', '#ee7a9f']),
+  'tie-dye': dreamSlots('#ffe9a8', '#e6d19d', '#fff2cb', '#fff5d8', ['#ff7fbf', '#ff9bcd'], ['#ea76b4', '#ee91c3']),
+  iridescent: dreamSlots('#d7ccff', '#c2b8ea', '#e7e0ff', '#ede8ff', ['#8fe3ff', '#a8e9ff'], ['#85d0ee', '#9ed9f1']),
+  rainbow: dreamSlots('#ff6b6b', '#e66268', '#ffa6a6', '#ffbcbc', ['#b07cff', '#c199ff'], ['#a373ee', '#b590f1']),
+  galaxy: dreamSlots('#2b2f7a', '#2b2e75', '#8082af', '#a0a1c3', ['#ff8fd0', '#ffa8da'], ['#ea84c3', '#ee9dcf']),
+  'tie-dye-galaxy': dreamSlots(
+    '#3a2f7a',
+    '#382e75',
+    '#8982af',
+    '#a6a1c3',
+    ['#7fd4ff', '#9bddff'],
+    ['#77c2ee', '#92cef1'],
+  ),
+};
+
+/** Marks a palette as a Dream colour over a real morph; drawAxolotl paints the layer 6.5 overlay from it. */
+export interface DreamOverlay {
+  readonly id: DreamLookId;
+}
+
+/**
+ * Dream rim light (guide 3f): 2 px #cec9f0 along the upper silhouette, top fin
+ * edge included, as Melanoid. Ink vs rim is 9.07:1.
+ */
+export const DREAM_RIM_LIGHT: MorphRim = { colour: '#cec9f0', width: 2, fin: true };
+
+/** Dream eye ring (guide 3f): 1.5 px #cec9f0 round the morph eye. Ring vs eye bead is 10.98:1. */
+export const DREAM_EYE_RING: MorphEyeRing = { colour: '#cec9f0', width: 1.5 };
+
+/** The dark Dream bodies (guide 3f): the morph eye is under 3:1 on them, so they get the eye ring and white spots. */
+const DREAM_DARK_IDS: readonly DreamLookId[] = ['midnight-blue', 'galaxy', 'tie-dye-galaxy'];
+/** Guide 3f Extras column: the Dream colours with the rim light. */
+const DREAM_RIM_IDS: readonly DreamLookId[] = ['midnight-blue', 'rainbow', 'galaxy', 'tie-dye-galaxy'];
+/** Guide 3b spot table: white at 0.45 on the dark Dream bodies. */
+const DREAM_SPOT_DARK = 'rgba(255,255,255,0.45)';
+/** Guide 3b spot table: ink at 0.30 on Dream bodies of relative luminance 0.2 or more. */
+const DREAM_SPOT_LIGHT = 'rgba(43,35,80,0.30)';
+
+/**
+ * The real morph `base` wearing Dream colour `id` (guide 3f, 6h, 6p): the 3f
+ * body and gill slots, the morph's eye and mouth. The morph's body extras are
+ * off (no speckles, flecks, shimmer, matte shine, morph rim or fin rays); only
+ * the Dream spot colour, rim light and eye ring rules apply. Builds a new
+ * object: use axolotlPalette for the cached one.
+ */
+export function dreamPalette(base: MorphPalette, id: DreamLookId): MorphPalette {
+  const dark = DREAM_DARK_IDS.includes(id);
+  const eyeRing = dark ? DREAM_EYE_RING : base.extras?.eyeRing;
+  const extras: MorphExtras = {
+    spot: dark ? DREAM_SPOT_DARK : DREAM_SPOT_LIGHT,
+    ...(DREAM_RIM_IDS.includes(id) ? { rim: DREAM_RIM_LIGHT } : {}),
+    ...(eyeRing ? { eyeRing } : {}),
+  };
+  return { ...DREAM_SLOTS[id], eye: base.eye, mouth: base.mouth, extras, dream: { id } };
+}
+
+const dreamPaletteCache = new Map<string, MorphPalette>();
+
+/**
+ * Palette for a real morph with an optional Dream colour. `null` returns
+ * MORPH_PALETTES[morph] itself; otherwise the same cached Dream palette object
+ * for every call with this pair.
+ */
+export function axolotlPalette(morph: MorphLookId, dream: DreamLookId | null): MorphPalette {
+  if (dream === null) return MORPH_PALETTES[morph];
+  const key = `${morph}|${dream}`;
+  const cached = dreamPaletteCache.get(key);
+  if (cached) return cached;
+  const palette = dreamPalette(MORPH_PALETTES[morph], dream);
+  dreamPaletteCache.set(key, palette);
+  return palette;
+}
 
 // ---- UI roles (guide 3d and section 8) -----------------------------------
 export const UI_TEXT = INK;

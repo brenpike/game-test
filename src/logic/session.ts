@@ -4,7 +4,9 @@
  */
 import { copyLook, isAxolotlLook, rescuedLook, type AxolotlLook, type AxolotlSex } from './axolotlLook';
 import { cleanName, isValidName, unusedSuggestedName } from './axolotlNames';
+import { ownedDreamColours, type DreamColourId } from './catalogue';
 import { createCollectibles, type Collectible } from './collectibles';
+import { canWearDream } from './dreamPaint';
 import { REAL_MORPHS, STARTER_MORPH, axolotlFindId, isAxolotlFindId, rescuableMorphs, rescueMorphsIn, type RealMorphId } from './morphs';
 import { nextTripSeed } from './placement';
 import { waitingAfterTrip, type RescueState, type WaitingStranded } from './rescue';
@@ -20,12 +22,16 @@ export const SESSION_REGISTRY_KEY = 'session';
 /** Id of the axolotl the player starts with. */
 export const STARTER_AXOLOTL_ID = 'starter';
 
-/** One owned axolotl: its id, its real morph, its name and its player-chosen look (PRD F1, F6). */
+/**
+ * One owned axolotl: its id, its real morph, its name, its player-chosen look (PRD F1, F6) and the
+ * Dream colour it wears, null when it shows its real morph (PRD F14).
+ */
 export interface OwnedAxolotl {
   id: string;
   morph: RealMorphId;
   name: string;
   look: AxolotlLook;
+  dreamColour: DreamColourId | null;
 }
 
 /** What the player picks in the character creator or a restyle: a name and a look (PRD F1, F6). */
@@ -146,13 +152,18 @@ function checkedStyle(caller: string, style: AxolotlStyle): AxolotlStyle {
 
 /**
  * The session with the starter axolotl made in the character creator: id `STARTER_AXOLOTL_ID`, real
- * morph `starterMorph`, the cleaned name and a copy of the look (PRD F1). Its morph is found in the
+ * morph `starterMorph`, the cleaned name, a copy of the look and no Dream colour (PRD F1). Its morph is found in the
  * Collection Book, kept in REAL_MORPHS order (PRD C1). Throws when an axolotl is already owned, or
  * when the cleaned name or the look is invalid.
  */
 export function addStarter(session: Session, style: AxolotlStyle, starterMorph: RealMorphId = STARTER_MORPH): Session {
   if (!needsStarter(session)) throw new Error('addStarter: an axolotl is already owned');
-  const starter: OwnedAxolotl = { id: STARTER_AXOLOTL_ID, morph: starterMorph, ...checkedStyle('addStarter', style) };
+  const starter: OwnedAxolotl = {
+    id: STARTER_AXOLOTL_ID,
+    morph: starterMorph,
+    ...checkedStyle('addStarter', style),
+    dreamColour: null,
+  };
   const { book } = session.hub;
   const found = new Set<RealMorphId>([...book.foundMorphs, starterMorph]);
   const foundMorphs = REAL_MORPHS.map((morph) => morph.id).filter((id) => found.has(id));
@@ -174,15 +185,15 @@ export function restyleAxolotl(session: Session, id: string, style: AxolotlStyle
   return { ...session, hub: { ...session.hub, axolotls } };
 }
 
-/** `axolotl` with the checked style's name and look, keeping its id, morph and sex. */
+/** `axolotl` with the checked style's name and look, keeping its id, morph, sex and Dream colour. */
 function restyled(axolotl: OwnedAxolotl, checked: AxolotlStyle): OwnedAxolotl {
   return { ...axolotl, name: checked.name, look: { ...checked.look, sex: axolotl.look.sex } };
 }
 
 /**
  * A newly owned axolotl of real morph `morph` and sex `sex`, such as a rescued one: the first
- * suggested name for `sex` no owned axolotl uses and the rescued look for `sex`. The player can
- * restyle it later (PRD F6).
+ * suggested name for `sex` no owned axolotl uses, the rescued look for `sex` and no Dream colour.
+ * The player can restyle it later (PRD F6).
  */
 export function newOwnedAxolotl(
   id: string,
@@ -191,7 +202,7 @@ export function newOwnedAxolotl(
   sex: AxolotlSex,
 ): OwnedAxolotl {
   const name = unusedSuggestedName(owned.map((axolotl) => axolotl.name), sex);
-  return { id, morph, name, look: rescuedLook(sex) };
+  return { id, morph, name, look: rescuedLook(sex), dreamColour: null };
 }
 
 /**
@@ -287,6 +298,26 @@ export function recordTripEnd(session: Session, record: TripEndRecord): Session 
       waitingStranded: copyWaiting(record.waitingStranded),
     },
   };
+}
+
+/**
+ * The session with axolotl `id` wearing Dream colour `dream`, or showing its real morph when `dream`
+ * is null (PRD F14). It replaces any colour that axolotl wore. Only that axolotl's Dream colour
+ * changes: every other axolotl, its morph, look and name, and the perks, the Collection Book, the
+ * banked ids, the tank, the stars and the canal are kept. Throws when no owned axolotl has `id`, or
+ * when `dream` is not an owned Dream colour.
+ */
+export function setDreamColour(session: Session, id: string, dream: DreamColourId | null): Session {
+  if (!session.hub.axolotls.some((axolotl) => axolotl.id === id)) {
+    throw new Error(`setDreamColour: no owned axolotl has id ${id}`);
+  }
+  if (!canWearDream(ownedDreamColours(session.hub.banked), dream)) {
+    throw new Error(`setDreamColour: Dream colour ${String(dream)} is not owned`);
+  }
+  const axolotls = session.hub.axolotls.map((axolotl) =>
+    axolotl.id === id ? { ...axolotl, dreamColour: dream } : axolotl,
+  );
+  return { ...session, hub: { ...session.hub, axolotls } };
 }
 
 /** Whether any morph is left to rescue: false once every morph is owned (PRD C6). */

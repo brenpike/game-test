@@ -3,6 +3,8 @@ import { LOOK_FIELDS, LOOK_FIELD_OPTIONS } from './axolotlLook';
 import {
   FIXED_AFTER_CREATION,
   MAX_STEP_OPTIONS,
+  RESTYLE_ONLY_STEPS,
+  RESTYLE_STEPS,
   RESTYLE_START_STEP,
   STYLER_STEPS,
   stepLookField,
@@ -31,6 +33,51 @@ describe('STYLER_STEPS', () => {
   });
 });
 
+describe('RESTYLE_STEPS', () => {
+  it('lists the steps in restyle order, Dream colour after colour', () => {
+    expect(RESTYLE_STEPS).toEqual([
+      'colour',
+      'dream',
+      'sex',
+      'eyes',
+      'mouth',
+      'gills',
+      'spots',
+      'tail',
+      'body',
+      'age',
+      'size',
+      'name',
+    ]);
+  });
+
+  it('is the creator steps with dream inserted after colour', () => {
+    const expected = [...STYLER_STEPS];
+    expected.splice(expected.indexOf('colour') + 1, 0, 'dream');
+    expect(RESTYLE_STEPS).toEqual(expected);
+  });
+
+  it('is frozen', () => {
+    expect(Object.isFrozen(RESTYLE_STEPS)).toBe(true);
+    expect(Object.isFrozen(RESTYLE_ONLY_STEPS)).toBe(true);
+  });
+
+  it('keeps the creator steps free of dream', () => {
+    expect(STYLER_STEPS).not.toContain('dream');
+    expect(STYLER_STEPS).toHaveLength(11);
+  });
+});
+
+describe('RESTYLE_ONLY_STEPS', () => {
+  it('holds only dream', () => {
+    expect(RESTYLE_ONLY_STEPS).toEqual(['dream']);
+  });
+
+  it('holds only restyle steps missing from the creator steps', () => {
+    expect(RESTYLE_STEPS.filter((step) => !STYLER_STEPS.includes(step))).toEqual(RESTYLE_ONLY_STEPS);
+  });
+});
+
 describe('FIXED_AFTER_CREATION', () => {
   it('fixes colour and sex once the axolotl exists', () => {
     expect(FIXED_AFTER_CREATION).toEqual(['colour', 'sex']);
@@ -50,21 +97,25 @@ describe('RESTYLE_START_STEP', () => {
 });
 
 describe('stepLookField', () => {
+  it('maps dream to no look field', () => {
+    expect(stepLookField('dream')).toBeNull();
+  });
+
   it('maps colour and name to no look field', () => {
     expect(stepLookField('colour')).toBeNull();
     expect(stepLookField('name')).toBeNull();
   });
 
   it('maps every other step to the look field of the same name', () => {
-    for (const step of STYLER_STEPS) {
-      if (step === 'colour' || step === 'name') continue;
+    for (const step of RESTYLE_STEPS) {
+      if (step === 'colour' || step === 'dream' || step === 'name') continue;
       expect(stepLookField(step)).toBe(step);
     }
   });
 
   it('maps each look field to exactly one step', () => {
     for (const field of LOOK_FIELDS) {
-      expect(STYLER_STEPS.filter((step) => stepLookField(step) === field)).toHaveLength(1);
+      expect(RESTYLE_STEPS.filter((step) => stepLookField(step) === field)).toHaveLength(1);
     }
   });
 });

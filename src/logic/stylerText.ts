@@ -47,12 +47,25 @@ export const RESTYLE_HELPER = 'Tap a picture to try it on.';
 /** Helper line on a read-only restyle step (Colour, Boy or girl; PRD F6). */
 export const READ_ONLY_HELPER = 'This stays the same after you make your axolotl.';
 
+/** Label of the Dream colour step's choice that goes back to the real colour. */
+export const REAL_COLOUR_LABEL = 'Real colour';
+
+/** Label of the Dream colour step's button that shows more owned Dream colours. */
+export const MORE_COLOURS_LABEL = 'More colours';
+
+/** Helper line on the Dream colour step when the player owns at least one Dream colour. */
+export const DREAM_HELPER = 'Tap a picture to try it on. Dream colours are not found in nature.';
+
+/** Helper line on the Dream colour step when the player owns no Dream colour yet. */
+export const NO_DREAMS_HELPER = 'Find Paint shells in the canal to get Dream colours!';
+
 /** Button that keeps the axolotl and closes the styler; the same word as the Home Tank Done. */
 export { DONE_LABEL } from './tankText';
 
 /** The title of each step, the heading without its "Step N of 11:" start (PRD F1). */
 export const STEP_TITLES: { readonly [Step in StylerStep]: string } = Object.freeze({
   colour: 'Pick a colour!',
+  dream: 'Pick a Dream colour!',
   sex: 'Boy or girl?',
   eyes: 'Pick your eyes!',
   mouth: 'Pick a mouth!',
@@ -68,6 +81,7 @@ export const STEP_TITLES: { readonly [Step in StylerStep]: string } = Object.fre
 /** The short label of each step's restyle tab (PRD F6). */
 export const STEP_TAB_LABELS: { readonly [Step in StylerStep]: string } = Object.freeze({
   colour: 'Colour',
+  dream: 'Dream colour',
   sex: 'Boy or girl',
   eyes: 'Eyes',
   mouth: 'Mouth',
@@ -107,8 +121,12 @@ function isFixedStep(step: StylerStep): boolean {
   return FIXED_AFTER_CREATION.includes(step);
 }
 
-/** The helper line of `step` in `mode` (PRD F1, F6, F17). */
-export function stepHelper(mode: StylerMode, step: StylerStep): string {
+/**
+ * The helper line of `step` in `mode` (PRD F1, F6, F17). `ownedDreamCount` only matters on the Dream
+ * colour step: with none owned it points the player to Paint shells.
+ */
+export function stepHelper(mode: StylerMode, step: StylerStep, ownedDreamCount = 0): string {
+  if (step === 'dream') return ownedDreamCount > 0 ? DREAM_HELPER : NO_DREAMS_HELPER;
   if (step === 'name') return NAME_HELPER;
   if (mode === 'restyle') return isFixedStep(step) ? READ_ONLY_HELPER : RESTYLE_HELPER;
   return isFixedStep(step) ? CREATOR_FIXED_HELPER : CREATOR_HELPER;
