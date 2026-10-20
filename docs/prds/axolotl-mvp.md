@@ -483,13 +483,13 @@ Each one follows [ADR 0007](../adr/0007-kid-safety-and-privacy.md) and [ADR 0008
         - Canal: area 1 (4 x 1), the tilapia. This is the MVP.
         - Lily pad pond: area 2 (about 5 x 1), plastic worms. Area 3 (about 6 x 1), the heron and its shadow timing.
         - Chinampa gardens: area 4 (about 6 x 2), fishing line or a net, and the first area that scrolls up and down. Area 5 (about 7 x 2), the garter snake.
-        - Spring cave: area 6 (about 7 x 2), the crayfish and the glow-plant puzzle. Area 7 (about 8 x 2), the pulsing current and the pebble puzzle.
+        - Spring cave: area 6 (about 7 x 2), the crayfish and the glow-plant puzzle. Area 7 (about 8 x 2), the pulsing current as its one new hazard and the pebble puzzle as its one puzzle element.
         - Deep canal: area 8 (about 8 x 2), the black bass. Area 9 (about 9 x 2), murky water. Area 10 (about 10 x 2), trajinera boats with lures. Area 10 is the finale, and it mixes the tilapia with every earlier predator.
     - Unlocking: beating area N unlocks area N+1. There are no star gates, so stars stay a bonus. This replaces "some areas may need stars to unlock".
     - Area map: after the player chooses the explorer in the Go exploring flow (F7), an area map shows the habitats as a path. Each area shows its stars and whether it is locked. Any unlocked area can be replayed. Unlocked areas are saved.
     - Refuge: each beaten area restores part of Xochimilco and clears its trash from a safe axolotl refuge, based on real conservation work there. The refuge grows one section per habitat. Beating area 10 completes the refuge for this phase, with a kind "refuge complete" ending, and the game stays playable afterwards (issue #74). When later versions add areas 11 and up, the refuge keeps growing, and the area 10 ending becomes a milestone, not the end.
 3. **N3 Hazards and predators** (issues #32 and #73). A hazard is something in an area that can slow the axolotl or cost a leg. A predator is a kind of hazard: an animal that hunts with a visible warning before every strike, like the tilapia's telegraph and lunge. The tilapia is the first predator. The glossary's "Tilapia / predator" row and CONTEXT.md change to match in the area framework PR (issue #73). Area 1 keeps the tilapia as its only hazard. Each later area adds at most one new hazard or predator, plus at most one new timing or puzzle element, in the order in N2. The first time the player meets a new hazard or predator, a fact card appears, like A21.
-    - Guardrails: every hazard and predator is gentle and never scary, and every hit is avoidable with skill. A hit costs exactly one leg. Every predator gives a visible warning before every strike.
+    - Guardrails: every hazard and predator is gentle and never scary, and every hit is avoidable with skill. A hit costs exactly one leg, except that a hit blocked by a Shell perk costs no leg (A22). Every predator gives a visible warning before every strike.
     - Signature predators, one per habitat:
         - Tilapia: the canal (area 1). Tilapia also swim in the pond and the deep canal. There are fewer in the chinampa gardens and none in the spring cave.
         - Heron: the lily pad pond (area 3). Its shadow sweeps over the water on a cycle and warns before it strikes, so the player swims between passes.
@@ -499,6 +499,7 @@ Each one follows [ADR 0007](../adr/0007-kid-safety-and-privacy.md) and [ADR 0008
     - Hazards, in area order:
         - Plastic bits that look like worms (area 2): eating one makes the axolotl queasy and slow for a moment.
         - Fishing line or a net (area 4): it snags and slows the axolotl briefly. No leg is lost.
+        - Pulsing current (area 7): a current that pulses on a cycle and can slow the axolotl.
         - Murky, polluted water (area 9): staying in it too long costs a leg.
         - Fishing boats, like Xochimilco's trajineras, with people fishing (area 10). Some snacks are lures on a fishing line, and eating a lure costs a leg. The line and the boat's shadow are always visible, so kids can learn to spot the trap. It is shown gently: the line tugs, the axolotl wriggles free, and a hook is never shown in the axolotl.
     - Timing and puzzle elements stay simple for ages 8 to 12. A stuck player gets a gentle hint, and every area can always be finished (issue #77).
@@ -537,7 +538,7 @@ The area chain and refuge goal (N2) are the first steps.
 Direction from the project owner, 2026-10-20 (issue #32).
 Much later areas may drift from realism, for example to a volcano, space, land, or fairytale and fantasy places.
 Predators and hazards change with the landscape too, for example aliens in space areas and fairytale creatures in fantasy areas.
-The N3 guardrails still apply: gentle and never scary, a visible warning before every strike, one hit costs exactly one leg, and every hit is avoidable with skill.
+The N3 guardrails still apply: gentle and never scary, a visible warning before every strike, one hit costs exactly one leg (a hit blocked by a Shell perk costs no leg, A22), and every hit is avoidable with skill.
 Fantasy areas and imaginary creatures are labelled as imaginary, like Dream colours are labelled "not found in nature".
 Fact cards stay true to real animals and real places.
 Areas 1 to 10 stay real Xochimilco habitats.
