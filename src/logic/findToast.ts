@@ -1,18 +1,15 @@
 /**
  * Pure find toast lifecycle (PRD B8, C3, X10): which find or rescue the toast shows, its enter, hold and
  * leave timing on the HUD clock, and the frame the HUD draws. Time stands still while the HUD is
- * paused or while the toast waits for room; reduced motion skips the slide and both fades.
+ * paused or while the toast waits for room; reduced motion skips both fades.
  */
-import type { OverlayEdge } from './hudLayout';
 import type { RealMorphId } from './morphs';
 import type { FoundInfo, RescueSnapshot, TripSnapshot } from './tripEvents';
 
-/** Fade-in, slide-in and fade-out time in ms. */
+/** Fade-in and fade-out time in ms. */
 export const FIND_TOAST_FADE_MS = 250;
 /** Time in ms a toast stays at full opacity before it leaves. */
 export const FIND_TOAST_HOLD_MS = 2000;
-/** Distance in CSS px an entering toast slides in from its edge. */
-export const FIND_TOAST_SLIDE_PX = 16;
 
 /** One toast: a found treasure, or a stranded axolotl now following the player. */
 export type ToastItem = { kind: 'treasure'; found: FoundInfo } | { kind: 'axolotl'; morph: RealMorphId };
@@ -21,8 +18,7 @@ export type FindToastPhase = 'idle' | 'entering' | 'holding' | 'leaving';
 
 /**
  * Toast state. `remainingMs` is the time left in the current phase (0 when idle). `waiting` is
- * whether the last placement found no room, `paused` whether the HUD clock is frozen, and `edge`
- * where the last placement put the toast (null before one or while waiting).
+ * whether the last placement found no room, and `paused` whether the HUD clock is frozen.
  */
 export interface FindToastState {
   readonly phase: FindToastPhase;
@@ -30,12 +26,11 @@ export interface FindToastState {
   readonly remainingMs: number;
   readonly waiting: boolean;
   readonly paused: boolean;
-  readonly edge: OverlayEdge | null;
 }
 
 export type FindToastEvent =
   | { readonly kind: 'show'; readonly item: ToastItem; readonly ambient: boolean }
-  | { readonly kind: 'placed'; readonly edge: OverlayEdge | null }
+  | { readonly kind: 'placed' }
   | { readonly kind: 'noRoom' }
   | { readonly kind: 'tick'; readonly dtMs: number; readonly ambient: boolean }
   | { readonly kind: 'pause' }
@@ -48,11 +43,14 @@ export interface FindToastStep {
   readonly placementRequested: boolean;
 }
 
-/** What the HUD draws: whether the toast shows, its opacity and its content's vertical offset in CSS px. */
+/**
+ * What the HUD draws: whether the toast shows, and its opacity. It has no position because the HUD
+ * draws the toast exactly at the rect placeHudOverlays() validated, and that placement already sits
+ * against the margin or a keep-out's gap, so there is no validated room to slide through (X10).
+ */
 export interface FindToastFrame {
   readonly visible: boolean;
   readonly alpha: number;
-  readonly offsetY: number;
 }
 
 /** The toast to show for one trip snapshot, if any, and the find count announced so far. */
@@ -63,7 +61,7 @@ export interface ToastAnnouncement {
 
 /** Idle toast state: nothing shown, not waiting, HUD clock running. */
 export function createFindToastState(): FindToastState {
-  return { phase: 'idle', item: null, remainingMs: 0, waiting: false, paused: false, edge: null };
+  return { phase: 'idle', item: null, remainingMs: 0, waiting: false, paused: false };
 }
 
 /** Returns `state` with no placement request. */
@@ -81,7 +79,7 @@ function finishToast(state: FindToastState): FindToastStep {
 
 /**
  * Shows `item`: swaps it in at full opacity and restarts the hold when a toast is current (in any
- * phase or waiting), else enters it, sliding and fading in when `ambient`. Always asks for placement.
+ * phase or waiting), else enters it, fading in when `ambient`. Always asks for placement.
  */
 function showItem(state: FindToastState, item: ToastItem, ambient: boolean): FindToastStep {
   const enters = state.item === null && ambient;
@@ -155,9 +153,9 @@ export function stepFindToast(state: FindToastState, event: FindToastEvent): Fin
     case 'show':
       return showItem(state, event.item, event.ambient);
     case 'placed':
-      return keepPlacement({ ...state, waiting: false, edge: event.edge });
+      return keepPlacement({ ...state, waiting: false });
     case 'noRoom':
-      return keepPlacement({ ...state, waiting: true, edge: null });
+      return keepPlacement({ ...state, waiting: true });
     case 'tick':
       return tickToast(state, event.dtMs, event.ambient);
     case 'pause':
@@ -169,28 +167,20 @@ export function stepFindToast(state: FindToastState, event: FindToastEvent): Fin
   }
 }
 
-/** Returns the content offset a toast slides in from at `edge`: down from above at the top, up from below at the bottom. */
-function computeSlideOffset(edge: OverlayEdge | null): number {
-  if (edge === 'top') return -FIND_TOAST_SLIDE_PX;
-  if (edge === 'bottom') return FIND_TOAST_SLIDE_PX;
-  return 0;
-}
-
 /**
  * Returns the frame to draw for `state`: shown only while a toast is current and not waiting.
- * Entering eases opacity and slide by sin(p·π/2) over the fade time; leaving fades linearly.
+ * Entering eases opacity by sin(p·π/2) over the fade time; leaving fades linearly.
  */
 export function describeFindToastFrame(state: FindToastState): FindToastFrame {
   const visible = state.item !== null && !state.waiting;
   if (state.phase === 'entering') {
     const progress = Math.min(Math.max(1 - state.remainingMs / FIND_TOAST_FADE_MS, 0), 1);
-    const eased = Math.sin((progress * Math.PI) / 2);
-    return { visible, alpha: eased, offsetY: computeSlideOffset(state.edge) * (1 - eased) };
+    return { visible, alpha: Math.sin((progress * Math.PI) / 2) };
   }
   if (state.phase === 'leaving') {
-    return { visible, alpha: Math.min(Math.max(state.remainingMs / FIND_TOAST_FADE_MS, 0), 1), offsetY: 0 };
+    return { visible, alpha: Math.min(Math.max(state.remainingMs / FIND_TOAST_FADE_MS, 0), 1) };
   }
-  return { visible, alpha: 1, offsetY: 0 };
+  return { visible, alpha: 1 };
 }
 
 /**

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   FIND_TOAST_FADE_MS,
   FIND_TOAST_HOLD_MS,
-  FIND_TOAST_SLIDE_PX,
   createFindToastState,
   describeFindToastFrame,
   pickToastAnnouncement,
@@ -24,7 +23,7 @@ const RESCUE_ITEM: ToastItem = { kind: 'axolotl', morph: 'wild' };
 
 const show = (item: ToastItem, ambient = true): FindToastEvent => ({ kind: 'show', item, ambient });
 const tick = (dtMs: number, ambient = true): FindToastEvent => ({ kind: 'tick', dtMs, ambient });
-const placedAt = (edge: 'top' | 'bottom' | 'panel' = 'top'): FindToastEvent => ({ kind: 'placed', edge });
+const PLACED: FindToastEvent = { kind: 'placed' };
 const NO_ROOM: FindToastEvent = { kind: 'noRoom' };
 const PAUSE: FindToastEvent = { kind: 'pause' };
 const RESUME: FindToastEvent = { kind: 'resume' };
@@ -47,35 +46,34 @@ function stateAfter(start: FindToastState, events: readonly FindToastEvent[]): F
   return events.reduce((state, event) => stepFindToast(state, event).state, start);
 }
 
-/** Returns a toast showing the shell, placed at the top, in `phase` with motion on. */
+/** Returns a toast showing the shell, placed, in `phase` with motion on. */
 function stateInPhase(phase: Exclude<FindToastPhase, 'idle'>): FindToastState {
-  const entering = stateAfter(createFindToastState(), [show(SHELL_ITEM), placedAt('top'), tick(100)]);
+  const entering = stateAfter(createFindToastState(), [show(SHELL_ITEM), PLACED, tick(100)]);
   if (phase === 'entering') return entering;
   if (phase === 'holding') return stateAfter(entering, [tick(1000)]);
   return stateAfter(entering, [tick(FIND_TOAST_FADE_MS + FIND_TOAST_HOLD_MS - 100)]);
 }
 
-/** Returns the ms of toast time until it finishes when ticked in 10 ms frames (motion on). */
-function msUntilFinished(start: FindToastState, ambient = true): number {
+/** Returns the ms of toast time until it finishes when ticked in `frameMs` frames (motion on by default). */
+function msUntilFinished(start: FindToastState, ambient = true, frameMs = 10): number {
   let state = start;
   let elapsedMs = 0;
   while (state.item !== null) {
-    state = stepFindToast(state, tick(10, ambient)).state;
-    elapsedMs += 10;
+    state = stepFindToast(state, tick(frameMs, ambient)).state;
+    elapsedMs += frameMs;
     if (elapsedMs > 10_000) throw new Error('msUntilFinished: toast never finished');
   }
   return elapsedMs;
 }
 
 describe('createFindToastState', () => {
-  it('starts idle, empty, placed nowhere and running', () => {
+  it('starts idle, empty, not waiting and running', () => {
     expect(createFindToastState()).toEqual({
       phase: 'idle',
       item: null,
       remainingMs: 0,
       waiting: false,
       paused: false,
-      edge: null,
     });
   });
 });
@@ -93,7 +91,7 @@ describe('stepFindToast lifecycle', () => {
   });
 
   it('enters, holds, then leaves 250 + 2000 ms after show, then finishes 250 ms later', () => {
-    const start = stateAfter(createFindToastState(), [show(SHELL_ITEM), placedAt()]);
+    const start = stateAfter(createFindToastState(), [show(SHELL_ITEM), PLACED]);
     expect(stateAfter(start, [tick(FIND_TOAST_FADE_MS - 1)]).phase).toBe('entering');
     expect(stateAfter(start, [tick(FIND_TOAST_FADE_MS)]).phase).toBe('holding');
     expect(stateAfter(start, [tick(FIND_TOAST_FADE_MS + FIND_TOAST_HOLD_MS - 1)]).phase).toBe('holding');
@@ -107,13 +105,13 @@ describe('stepFindToast lifecycle', () => {
   });
 
   it('carries frame time over phase boundaries', () => {
-    const start = stateAfter(createFindToastState(), [show(SHELL_ITEM), placedAt()]);
+    const start = stateAfter(createFindToastState(), [show(SHELL_ITEM), PLACED]);
     expect(stateAfter(start, [tick(300)])).toMatchObject({ phase: 'holding', remainingMs: FIND_TOAST_HOLD_MS - 50 });
     expect(msUntilFinished(start)).toBe(2 * FIND_TOAST_FADE_MS + FIND_TOAST_HOLD_MS);
   });
 
   it('finishes in one long frame and asks for placement once', () => {
-    const start = stateAfter(createFindToastState(), [show(SHELL_ITEM), placedAt()]);
+    const start = stateAfter(createFindToastState(), [show(SHELL_ITEM), PLACED]);
     const step = stepFindToast(start, tick(10_000));
     expect(step.state.phase).toBe('idle');
     expect(step.placementRequested).toBe(true);
@@ -125,9 +123,9 @@ describe('stepFindToast lifecycle', () => {
   });
 
   it('shows at once under reduced motion and finishes at once 2000 ms after show', () => {
-    const start = stateAfter(createFindToastState(), [show(SHELL_ITEM, false), placedAt()]);
+    const start = stateAfter(createFindToastState(), [show(SHELL_ITEM, false), PLACED]);
     expect(start).toMatchObject({ phase: 'holding', remainingMs: FIND_TOAST_HOLD_MS });
-    expect(describeFindToastFrame(start)).toEqual({ visible: true, alpha: 1, offsetY: 0 });
+    expect(describeFindToastFrame(start)).toEqual({ visible: true, alpha: 1 });
     expect(stateAfter(start, [tick(FIND_TOAST_HOLD_MS - 1, false)]).phase).toBe('holding');
     const step = stepFindToast(stateAfter(start, [tick(FIND_TOAST_HOLD_MS - 1, false)]), tick(1, false));
     expect(step.state.phase).toBe('idle');
@@ -136,8 +134,29 @@ describe('stepFindToast lifecycle', () => {
 
   it('never mutates its input', () => {
     const start = Object.freeze(stateInPhase('entering'));
-    const events: FindToastEvent[] = [show(CROWN_ITEM), placedAt('bottom'), NO_ROOM, tick(20), tick(20, false), PAUSE, RESUME, CLEAR];
+    const events: FindToastEvent[] = [show(CROWN_ITEM), PLACED, NO_ROOM, tick(20), tick(20, false), PAUSE, RESUME, CLEAR];
     for (const event of events) expect(() => stepFindToast(start, event)).not.toThrow();
+  });
+});
+
+describe('stepFindToast timing', () => {
+  const FRAME_SIZES_MS = [1, 7, 16.7, 33.3, 100, 250, 1000];
+
+  it.each(FRAME_SIZES_MS)('finishes 2500 ms after show with motion on, within one %d ms frame', (frameMs) => {
+    const start = stateAfter(createFindToastState(), [show(SHELL_ITEM), PLACED]);
+    const elapsedMs = msUntilFinished(start, true, frameMs);
+    expect(Math.abs(elapsedMs - (2 * FIND_TOAST_FADE_MS + FIND_TOAST_HOLD_MS))).toBeLessThanOrEqual(frameMs);
+  });
+
+  it.each(FRAME_SIZES_MS)('finishes 2000 ms after show with reduced motion, within one %d ms frame', (frameMs) => {
+    const start = stateAfter(createFindToastState(), [show(SHELL_ITEM, false), PLACED]);
+    const elapsedMs = msUntilFinished(start, false, frameMs);
+    expect(Math.abs(elapsedMs - FIND_TOAST_HOLD_MS)).toBeLessThanOrEqual(frameMs);
+  });
+
+  it.each(FRAME_SIZES_MS)('finishes 2000 ms after reduced motion turns on mid-enter, within one %d ms frame', (frameMs) => {
+    const elapsedMs = msUntilFinished(stateInPhase('entering'), false, frameMs);
+    expect(Math.abs(elapsedMs - FIND_TOAST_HOLD_MS)).toBeLessThanOrEqual(frameMs);
   });
 });
 
@@ -146,7 +165,7 @@ describe('stepFindToast replace', () => {
     const step = stepFindToast(stateInPhase(phase), show(CROWN_ITEM));
     expect(step.placementRequested).toBe(true);
     expect(step.state).toMatchObject({ phase: 'holding', item: CROWN_ITEM, remainingMs: FIND_TOAST_HOLD_MS });
-    expect(describeFindToastFrame(step.state)).toEqual({ visible: true, alpha: 1, offsetY: 0 });
+    expect(describeFindToastFrame(step.state)).toEqual({ visible: true, alpha: 1 });
     expect(msUntilFinished(step.state)).toBe(FIND_TOAST_HOLD_MS + FIND_TOAST_FADE_MS);
   });
 
@@ -156,8 +175,8 @@ describe('stepFindToast replace', () => {
     expect(swapped).toMatchObject({ phase: 'holding', item: CROWN_ITEM, waiting: true, remainingMs: FIND_TOAST_HOLD_MS });
     expect(describeFindToastFrame(swapped).visible).toBe(false);
     expect(stateAfter(swapped, [tick(5000)])).toEqual(swapped);
-    const placed = stateAfter(swapped, [placedAt('bottom')]);
-    expect(describeFindToastFrame(placed)).toEqual({ visible: true, alpha: 1, offsetY: 0 });
+    const placed = stateAfter(swapped, [PLACED]);
+    expect(describeFindToastFrame(placed)).toEqual({ visible: true, alpha: 1 });
   });
 });
 
@@ -172,7 +191,7 @@ describe('stepFindToast pause', () => {
   });
 
   it('enters from a show made while paused only once resumed', () => {
-    const paused = stateAfter(createFindToastState(), [PAUSE, show(SHELL_ITEM), placedAt(), tick(1000)]);
+    const paused = stateAfter(createFindToastState(), [PAUSE, show(SHELL_ITEM), PLACED, tick(1000)]);
     expect(paused).toMatchObject({ phase: 'entering', remainingMs: FIND_TOAST_FADE_MS });
     expect(stateAfter(paused, [RESUME, tick(FIND_TOAST_FADE_MS)]).phase).toBe('holding');
   });
@@ -187,28 +206,28 @@ describe('stepFindToast waiting for room', () => {
   it.each(['entering', 'holding', 'leaving'] as const)('hides and passes no time while waiting during %s', (phase) => {
     const start = stateInPhase(phase);
     const waiting = stateAfter(start, [NO_ROOM, tick(5000)]);
-    expect(waiting).toEqual({ ...start, waiting: true, edge: null });
+    expect(waiting).toEqual({ ...start, waiting: true });
     expect(describeFindToastFrame(waiting).visible).toBe(false);
   });
 
   it('shows again from the frozen time once a resize finds room', () => {
     const start = stateInPhase('holding');
     const waiting = stateAfter(start, [NO_ROOM, tick(3000)]);
-    const placed = stateAfter(waiting, [placedAt('bottom')]);
-    expect(placed).toEqual({ ...start, edge: 'bottom' });
+    const placed = stateAfter(waiting, [PLACED]);
+    expect(placed).toEqual(start);
     expect(describeFindToastFrame(placed).visible).toBe(true);
     expect(msUntilFinished(placed)).toBe(msUntilFinished(start));
   });
 
   it('waits from the first placement of a new show with no room', () => {
-    const steps = runEvents(createFindToastState(), [show(SHELL_ITEM), NO_ROOM, tick(4000), placedAt('top')]);
+    const steps = runEvents(createFindToastState(), [show(SHELL_ITEM), NO_ROOM, tick(4000), PLACED]);
     expect(describeFindToastFrame(steps[2].state).visible).toBe(false);
     expect(steps[2].state).toMatchObject({ phase: 'entering', remainingMs: FIND_TOAST_FADE_MS });
-    expect(describeFindToastFrame(steps[3].state)).toMatchObject({ visible: true, alpha: 0, offsetY: -FIND_TOAST_SLIDE_PX });
+    expect(describeFindToastFrame(steps[3].state)).toEqual({ visible: true, alpha: 0 });
   });
 
   it('does not ask for placement on placed or noRoom', () => {
-    const steps = runEvents(stateInPhase('holding'), [NO_ROOM, placedAt()]);
+    const steps = runEvents(stateInPhase('holding'), [NO_ROOM, PLACED]);
     expect(steps.map((step) => step.placementRequested)).toEqual([false, false]);
   });
 });
@@ -239,7 +258,7 @@ describe('stepFindToast reduced motion', () => {
     const settled = stepFindToast(entering, tick(0, false));
     expect(settled.placementRequested).toBe(false);
     expect(settled.state).toMatchObject({ phase: 'holding', remainingMs: FIND_TOAST_HOLD_MS });
-    expect(describeFindToastFrame(settled.state)).toEqual({ visible: true, alpha: 1, offsetY: 0 });
+    expect(describeFindToastFrame(settled.state)).toEqual({ visible: true, alpha: 1 });
     expect(stateAfter(settled.state, [tick(FIND_TOAST_HOLD_MS - 1, false)]).phase).toBe('holding');
     const step = stepFindToast(stateAfter(settled.state, [tick(FIND_TOAST_HOLD_MS - 1, false)]), tick(1, false));
     expect(step.state.phase).toBe('idle');
@@ -268,7 +287,7 @@ describe('stepFindToast reduced motion', () => {
   });
 
   it('turning off mid-hold fades the next leave', () => {
-    const start = stateAfter(createFindToastState(), [show(SHELL_ITEM, false), placedAt(), tick(500, false)]);
+    const start = stateAfter(createFindToastState(), [show(SHELL_ITEM, false), PLACED, tick(500, false)]);
     const leaving = stateAfter(start, [tick(FIND_TOAST_HOLD_MS - 500)]);
     expect(leaving).toMatchObject({ phase: 'leaving', remainingMs: FIND_TOAST_FADE_MS });
   });
@@ -276,35 +295,40 @@ describe('stepFindToast reduced motion', () => {
 
 describe('describeFindToastFrame', () => {
   it('hides when idle', () => {
-    expect(describeFindToastFrame(createFindToastState())).toEqual({ visible: false, alpha: 1, offsetY: 0 });
+    expect(describeFindToastFrame(createFindToastState())).toEqual({ visible: false, alpha: 1 });
   });
 
-  it.each([
-    ['top', -FIND_TOAST_SLIDE_PX],
-    ['bottom', FIND_TOAST_SLIDE_PX],
-    ['panel', 0],
-  ] as const)('slides in from the %s edge offset %d while fading in', (edge, offset) => {
-    const start = stateAfter(createFindToastState(), [show(SHELL_ITEM), placedAt(edge)]);
-    expect(describeFindToastFrame(start)).toEqual({ visible: true, alpha: 0, offsetY: offset });
+  it('fades in eased by sin(p·π/2) while entering', () => {
+    const start = stateAfter(createFindToastState(), [show(SHELL_ITEM), PLACED]);
+    expect(describeFindToastFrame(start)).toEqual({ visible: true, alpha: 0 });
+    const quarter = describeFindToastFrame(stateAfter(start, [tick(FIND_TOAST_FADE_MS / 4)]));
+    expect(quarter.alpha).toBeCloseTo(Math.sin(Math.PI / 8));
     const half = describeFindToastFrame(stateAfter(start, [tick(FIND_TOAST_FADE_MS / 2)]));
-    const eased = Math.sin(Math.PI / 4);
-    expect(half.alpha).toBeCloseTo(eased);
-    expect(half.offsetY).toBeCloseTo(offset * (1 - eased));
-    expect(describeFindToastFrame(stateAfter(start, [tick(FIND_TOAST_FADE_MS)]))).toEqual({
-      visible: true,
-      alpha: 1,
-      offsetY: 0,
-    });
+    expect(half.alpha).toBeCloseTo(Math.sin(Math.PI / 4));
+    expect(describeFindToastFrame(stateAfter(start, [tick(FIND_TOAST_FADE_MS)]))).toEqual({ visible: true, alpha: 1 });
   });
 
-  it('slides from the current edge when the edge changes mid-enter', () => {
-    const moved = stateAfter(createFindToastState(), [show(SHELL_ITEM), placedAt('top'), tick(0), placedAt('bottom')]);
-    expect(describeFindToastFrame(moved).offsetY).toBe(FIND_TOAST_SLIDE_PX);
+  it('keeps the same state and fade when placed again mid-enter', () => {
+    const entering = stateAfter(createFindToastState(), [show(SHELL_ITEM), PLACED, tick(FIND_TOAST_FADE_MS / 2)]);
+    const placedAgain = stateAfter(entering, [PLACED]);
+    expect(placedAgain).toEqual(entering);
+    expect(describeFindToastFrame(placedAgain)).toEqual(describeFindToastFrame(entering));
+  });
+
+  it.each<[string, FindToastState]>([
+    ['idle', createFindToastState()],
+    ['waiting', stateAfter(createFindToastState(), [show(SHELL_ITEM), NO_ROOM])],
+    ['entering', stateInPhase('entering')],
+    ['holding', stateInPhase('holding')],
+    ['leaving', stateInPhase('leaving')],
+    ['reduced motion', stateAfter(createFindToastState(), [show(SHELL_ITEM, false), PLACED, tick(16, false)])],
+  ])('carries no position while %s: its keys are exactly alpha and visible', (_label, state) => {
+    expect(Object.keys(describeFindToastFrame(state)).sort()).toEqual(['alpha', 'visible']);
   });
 
   it('fades out linearly while leaving', () => {
     const leaving = stateInPhase('leaving');
-    expect(describeFindToastFrame(leaving)).toEqual({ visible: true, alpha: 1, offsetY: 0 });
+    expect(describeFindToastFrame(leaving)).toEqual({ visible: true, alpha: 1 });
     expect(describeFindToastFrame(stateAfter(leaving, [tick(FIND_TOAST_FADE_MS * 0.4)])).alpha).toBeCloseTo(0.6);
   });
 });

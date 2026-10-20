@@ -27,7 +27,6 @@ import {
   type HudControls,
   type HudOverlayId,
   type HudOverlayRequest,
-  type OverlayEdge,
   type Rect,
   type Size,
 } from '../logic/hudLayout';
@@ -724,23 +723,15 @@ export class HudScene extends Phaser.Scene {
     if (this.bannerActive) requests.push(bannerRequest('snackBanner', this.bannerText, bannerBoxes));
     if (this.foundPopup.hasFind()) requests.push({ id: 'findToast', boxAt: (maxW) => this.foundPopup.box(maxW) });
     const keepOuts = controlKeepOuts(this.controls, { goHomeVisible: this.goHomeButton.container.visible });
-    for (const { id, rect, edge } of placeHudOverlays(this.view, this.controls, keepOuts, requests)) {
-      this.placeOverlay(id, rect, edge, id === 'hint' ? hintBoxes : bannerBoxes);
+    for (const { id, rect } of placeHudOverlays(this.view, this.controls, keepOuts, requests)) {
+      this.placeOverlay(id, rect, id === 'hint' ? hintBoxes : bannerBoxes);
     }
   }
 
-  /**
-   * Draws overlay `id` at `rect` on `edge`, or holds it when `rect` is null; `boxes` are a banner's
-   * measured sizes.
-   */
-  private placeOverlay(
-    id: HudOverlayId,
-    rect: Rect | null,
-    edge: OverlayEdge | null,
-    boxes: readonly WrappedBox[],
-  ): void {
+  /** Draws overlay `id` at `rect`, or holds it when `rect` is null; `boxes` are a banner's measured sizes. */
+  private placeOverlay(id: HudOverlayId, rect: Rect | null, boxes: readonly WrappedBox[]): void {
     if (id === 'findToast') {
-      this.foundPopup.place(rect, edge);
+      this.foundPopup.place(rect);
       return;
     }
     if (id === 'hint') {

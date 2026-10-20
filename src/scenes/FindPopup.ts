@@ -14,7 +14,7 @@ import {
   type ToastItem,
 } from '../logic/findToast';
 import { badgeShape, rarityName } from '../logic/hints';
-import { FIND_TOAST, findToastBox, type FindToastBox, type OverlayEdge, type Rect, type Size } from '../logic/hudLayout';
+import { FIND_TOAST, findToastBox, type FindToastBox, type Rect, type Size } from '../logic/hudLayout';
 import { RESCUE_POPUP_DETAIL, morphById, type RealMorphId } from '../logic/morphs';
 import type { MotionProfile } from '../logic/motion';
 import type { FoundInfo } from '../logic/tripEvents';
@@ -79,7 +79,8 @@ function textSize(text: Phaser.GameObjects.Text): Size {
  * Find toast: a compact white panel with the treasure icon, then its name over its rarity badge and
  * "<Rarity> <Category>"; for a rescued axolotl, its portrait, then its name over its morph badge
  * and the rescue detail. The HUD places it through placeHudOverlays() at a screen edge or over the
- * status panels; with no room it waits, hidden, until the HUD places it again. Never interactive
+ * status panels, and it is drawn only at that validated rect, never offset from it; with no room it
+ * waits, hidden, until the HUD places it again. Never interactive
  * and has no dim, so presses pass through to the controls. The lifecycle (enter, hold, leave,
  * replace, pause, waiting and reduced motion) is stepFindToast() in logic/findToast; this view
  * feeds it events, advances it each HUD frame through update() and draws describeFindToastFrame().
@@ -88,10 +89,8 @@ export class FindPopup {
   private readonly scene: Phaser.Scene;
   private readonly treasure: TreasureTextures;
   private readonly morph: MorphTextures;
-  /** Placed at the toast rect by place(). */
+  /** The panel and content; positioned only by place(), at the validated toast rect. */
   private readonly container: Phaser.GameObjects.Container;
-  /** The panel and content; only its offset and alpha move, so re-layout never fights the slide. */
-  private readonly content: Phaser.GameObjects.Container;
   private readonly panel: Phaser.GameObjects.Graphics;
   private readonly name: Phaser.GameObjects.Text;
   private readonly detail: Phaser.GameObjects.Text;
@@ -124,8 +123,10 @@ export class FindPopup {
     this.panel = scene.add.graphics();
     this.name = scene.add.text(0, 0, '', uiTextStyle(FIND_TOAST.nameTextPx, dpr));
     this.detail = scene.add.text(0, 0, '', uiTextStyle(FIND_TOAST.detailTextPx, dpr));
-    this.content = scene.add.container(0, 0, [this.panel, this.name, this.detail]);
-    this.container = scene.add.container(0, 0, [this.content]).setDepth(depth).setVisible(false);
+    this.container = scene.add
+      .container(0, 0, [this.panel, this.name, this.detail])
+      .setDepth(depth)
+      .setVisible(false);
   }
 
   /** Whether a find is current: on screen, fading or waiting for room. */
@@ -175,10 +176,10 @@ export class FindPopup {
   }
 
   /**
-   * Draws the toast at `rect`, a size box() returned, on `edge`; a null rect makes it wait: hidden,
-   * with its time frozen, until a later place() gives it a rect.
+   * Draws the toast at `rect`, a size box() returned; a null rect makes it wait: hidden, with its
+   * time frozen, until a later place() gives it a rect.
    */
-  place(rect: Rect | null, edge: OverlayEdge | null): void {
+  place(rect: Rect | null): void {
     const measured = this.measured;
     this.measured = [];
     if (rect === null) {
@@ -191,7 +192,7 @@ export class FindPopup {
     this.wrapText(this.detail, match.detailWrapW);
     this.container.setPosition(rect.x, rect.y);
     this.layoutContent(rect);
-    this.dispatch({ kind: 'placed', edge });
+    this.dispatch({ kind: 'placed' });
   }
 
   /** Sets `text` to wrap at `wrapW` and returns its size. */
@@ -208,11 +209,10 @@ export class FindPopup {
     if (step.placementRequested) this.requestPlacement();
   }
 
-  /** Draws the toast state: visibility, content opacity and slide offset. */
+  /** Draws the toast state: visibility and opacity. */
   private drawFrame(): void {
     const frame = describeFindToastFrame(this.toast);
-    this.container.setVisible(frame.visible);
-    this.content.setPosition(0, frame.offsetY).setAlpha(frame.alpha);
+    this.container.setVisible(frame.visible).setAlpha(frame.alpha);
   }
 
   /** Replaces the icon, badge and texts with the item's. */
@@ -223,7 +223,7 @@ export class FindPopup {
     const images = item.kind === 'treasure' ? this.fillTreasure(item.found) : this.fillAxolotl(item.morph);
     this.icon = images.icon;
     this.badge = images.badge;
-    this.content.add([images.icon, images.badge]);
+    this.container.add([images.icon, images.badge]);
   }
 
   /** Sets the treasure's name and "<Rarity> <Category>"; returns its icon and rarity badge. */
@@ -248,7 +248,7 @@ export class FindPopup {
   }
 
   /**
-   * Draws the panel to `rect` (content-local, top-left at 0, 0): icon on the left, then a column of
+   * Draws the panel to `rect` (container-local, top-left at 0, 0): icon on the left, then a column of
    * the name over the badge and detail line, both centred on the content height.
    */
   private layoutContent(rect: Rect): void {
