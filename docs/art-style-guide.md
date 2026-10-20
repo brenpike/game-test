@@ -594,7 +594,7 @@ Neither shape ever blinks. Only slow size or position changes are allowed (secti
 
 ### 6a. Construction and layer order
 
-The axolotl is authored **facing right** in local units, then drawn at x0.95 in the scene. Mirroring for left-facing is allowed. Snout-to-tail length **L = 127 local units** (about 121 px in the scene at Large, about 25% of the 480 px width). Source: `cartoon.js`.
+The axolotl is authored **facing right** in local units, then drawn at x0.95 in the scene. Mirroring for left-facing is allowed. It mirrors about the anchor (local x = 0), so a left-facing sprite sits on the same spot as when it faces right. This applies to the axolotl and the tilapia. Snout-to-tail length **L = 127 local units** (about 121 px in the scene at Large, about 25% of the 480 px width). Source: `cartoon.js`.
 
 L = 127 is the prototype proportions: Young, Regular, a Medium tail and no Boy cue. Tail, Body, Age and Boy or girl (6r to 6u) change the torso, belly, tail, legs and gills, so L runs from 101.6 to 147 local units; the default Boy is 131. The head, the face, the gill roots and the Head, Neck and Face anchors never move. Source: `derived (provisional)`.
 
@@ -1373,7 +1373,7 @@ PRD C7 to C9. UI text says "Home Tank", never "fish tank". Layout at the 480 x 3
 | Ink | Standard ink rules (4a to 4c) | `derived (provisional)` |
 | Motion | The Pond plant sways about its base point (section 9). Everything else is still. | `derived (provisional)` |
 | Castles | Rounded towers, round windows, rounded crenellations | `derived (provisional)` |
-| Axolotls | Same construction at scene scale 0.95, times the tank frame scale, each in its own look (6l to 6u) at its own size: x0.72, x0.85 or x1.00, about 87, 103 or 121 px long at tank frame scale 1 for the prototype proportions (6o). A rescued axolotl arrives in the default look at Medium with its boy or girl cues, until it is restyled. The size factor (6o) is applied everywhere the axolotl is drawn: on trips, in the Home Tank and in the creator and restyle preview. On trips the mouth bubble spawn and the tail sparkles scale with it, so they stay on the body. | `derived (provisional)` |
+| Axolotls | Same construction at scene scale 0.95, times the tank frame scale, each in its own look (6l to 6u) at its own size: x0.72, x0.85 or x1.00, about 87, 103 or 121 px long at tank frame scale 1 for the prototype proportions (6o). A rescued axolotl arrives in the default look at Medium with its boy or girl cues, until it is restyled. The size factor (6o) is applied everywhere the axolotl is drawn: on trips, in the Home Tank and in the creator and restyle preview. On trips the mouth bubble spawn and the tail sparkles scale with it, so they stay on the body, and they also follow the tilt and the turn. | `derived (provisional)` |
 | Axolotl swim | Every owned axolotl laps the tank on its own: x 88 to 392 and back, eased at each end, facing flips at each end. Lap period 16 to 24 s, fixed per axolotl. Each axolotl has its own lane, spread through y 84 to 264 so the bob stays in the water, a hover bob of +/-6 px over 3 s and a tilt of up to 0.12 rad that follows the bob. Under reduced motion each stands still in its lane, spread along the lap, facing right and left in turn, with no tilt (section 9). | `derived (provisional)` |
 
 **Placement**
@@ -1520,7 +1520,7 @@ Everything is soft, slow, and looping. Times are periods (one full cycle).
 | Clouds | 24 s | Drift +/- 6 px | `cartoon.js` |
 | Sun rays | About 25 s per turn | Rotate 0.25 rad/s | `cartoon.js` |
 | Water surface | Continuous | y = 80 + 1.6 sin(0.045x + 1.6t) + 0.8 sin(0.11x - 1.1t) | `cartoon.js` |
-| Bubbles | New one every 0.7 s | Spawn at the mouth; rise 40 px/s; sideways wobble +/- 6 px over 1.3 s; radius 2.6 to 5.6; at most 10 on screen; vanish at the surface | `cartoon.js` |
+| Bubbles | New one every 0.7 s | Spawn at the mouth as it is drawn (following tilt and turn); rise 40 px/s; sideways wobble +/- 6 px over 1.3 s; radius 2.6 to 5.6; at most 10 on screen; vanish at the surface | `cartoon.js` |
 | Lily pads | Follow the wave | Tilt to match the local surface slope | `cartoon.js` |
 | Frame step | - | Clamp dt to 50 ms so a slow frame never causes a jump | `cartoon.js` |
 | Reduced motion | - | Show one still frame (time t = 1.0 s) | `cartoon.js` |
