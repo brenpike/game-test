@@ -52,7 +52,7 @@ One of up to 3 rewards for beating an area, kept forever once earned.
 The one treasure per area that earns a star when the area is beaten with it owned.
 
 **Snack**:
-A worm or bug the axolotl eats; not a trip find, it speeds up regrowth while a leg is missing, and every snack must be eaten to open the exit.
+A worm or bug the axolotl eats by touching it with its head; not a trip find, it speeds up regrowth while a leg is missing, and every snack must be eaten to open the exit.
 
 **Current**:
 A stretch of flowing water in an area that pushes the axolotl, and that rarer treasures hide past.
