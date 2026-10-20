@@ -110,14 +110,17 @@ function rarityOf(id: string): Rarity {
   return rarity;
 }
 
-function validateFinds(unbanked: readonly FindSpawn[], spotById: ReadonlyMap<string, HidingSpot>): void {
+/** Each unbanked find's rarity by id; throws on a pool naming an unknown spot or a non-catalogue find. */
+function validateFinds(unbanked: readonly FindSpawn[], spotById: ReadonlyMap<string, HidingSpot>): Map<string, Rarity> {
+  const rarityById = new Map<string, Rarity>();
   for (const find of unbanked) {
     const unknownId = find.pool.find((spotId) => !spotById.has(spotId));
     if (unknownId !== undefined) {
       throw new Error(`placeTreasures: ${find.id} pool names unknown spot ${unknownId}`);
     }
-    rarityOf(find.id);
+    rarityById.set(find.id, rarityOf(find.id));
   }
+  return rarityById;
 }
 
 function knownIds(ids: readonly string[] | undefined, allowed: ReadonlySet<string>, excluded: ReadonlySet<string>): Set<string> {
@@ -141,11 +144,25 @@ function pickSome(candidates: readonly string[], count: number, rng: () => numbe
   return deck.slice(0, count);
 }
 
-function spotWeights(pool: readonly HidingSpot[], tuning: TripTreasureTuning, mainPath: readonly Point[] | undefined): Map<string, number> {
+/** The spot's distance to the main path, computed once per spot and kept in `distanceById`. */
+function cachedDistance(spot: HidingSpot, mainPath: readonly Point[], distanceById: Map<string, number>): number {
+  const cached = distanceById.get(spot.id);
+  if (cached !== undefined) return cached;
+  const distance = distanceToPath(spot, mainPath);
+  distanceById.set(spot.id, distance);
+  return distance;
+}
+
+function spotWeights(
+  pool: readonly HidingSpot[],
+  tuning: TripTreasureTuning,
+  mainPath: readonly Point[] | undefined,
+  distanceById: Map<string, number>,
+): Map<string, number> {
   if (mainPath === undefined || mainPath.length === 0) {
     return new Map(pool.map((spot) => [spot.id, 1]));
   }
-  const distances = pool.map((spot) => distanceToPath(spot, mainPath));
+  const distances = pool.map((spot) => cachedDistance(spot, mainPath, distanceById));
   const dMin = Math.min(...distances);
   const dMax = Math.max(...distances);
   if (dMax === dMin) {
@@ -189,7 +206,7 @@ export function placeTreasures(
   const spotById = new Map(spots.map((spot) => [spot.id, spot]));
   const bankedIds = new Set(banked);
   const unbanked = finds.filter((find) => !bankedIds.has(find.id));
-  validateFinds(unbanked, spotById);
+  const rarityById = validateFinds(unbanked, spotById);
   const unbankedIds = new Set(unbanked.map((find) => find.id));
   const extraIds = knownIds(options.extras, unbankedIds, new Set());
   const mustIds = knownIds(options.mustPlace, unbankedIds, extraIds);
@@ -198,7 +215,7 @@ export function placeTreasures(
   const mustCounts = emptyCounts();
   for (const find of unbanked) {
     if (extraIds.has(find.id)) continue;
-    const rarity = rarityOf(find.id);
+    const rarity = rarityById.get(find.id) as Rarity;
     available[rarity] += 1;
     if (mustIds.has(find.id)) mustCounts[rarity] += 1;
   }
@@ -208,13 +225,14 @@ export function placeTreasures(
   const pickRng = mulberry32((tripSeed ^ PICK_STREAM_SALT) >>> 0);
   for (const rarity of RARITIES) {
     const candidates = unbanked
-      .filter((find) => !placedIds.has(find.id) && rarityOf(find.id) === rarity)
+      .filter((find) => !placedIds.has(find.id) && rarityById.get(find.id) === rarity)
       .map((find) => find.id);
     const needed = Math.max(0, shares[rarity] - mustCounts[rarity]);
     for (const id of pickSome(candidates, needed, pickRng)) placedIds.add(id);
   }
 
   const usedSpotIds = new Set<string>();
+  const distanceById = new Map<string, number>();
   const spotRng = mulberry32(tripSeed);
   const placed: PlacedFind[] = [];
   for (const find of unbanked) {
@@ -224,7 +242,7 @@ export function placeTreasures(
       throw new Error(`placeTreasures: no free spot left for ${find.id}`);
     }
     const pool = find.pool.map((spotId) => spotById.get(spotId) as HidingSpot);
-    const spot = spotById.get(drawWeighted(free, spotWeights(pool, tuning, options.mainPath), spotRng)) as HidingSpot;
+    const spot = spotById.get(drawWeighted(free, spotWeights(pool, tuning, options.mainPath, distanceById), spotRng)) as HidingSpot;
     usedSpotIds.add(spot.id);
     placed.push({ id: find.id, spotId: spot.id, x: spot.x, y: spot.y, container: spot.container, sealed: spot.container });
   }

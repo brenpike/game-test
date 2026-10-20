@@ -81,26 +81,50 @@ function usesAllHidingKinds(zone: ZoneLayout, placements: readonly PlacedFind[])
   return kinds.every((kind) => covers.has(kind)) && placements.some((placed) => placed.container);
 }
 
+interface PlacedFacts {
+  id: string;
+  at: { x: number; y: number; container: boolean };
+  sealed: boolean;
+  meetsRarity: boolean;
+  legendaryInDeepPot: boolean;
+}
+
+function placedFacts(zone: ZoneLayout, placed: PlacedFind): PlacedFacts {
+  const rarity = rarityOf(placed.id);
+  const deep = inCave(placed, zone.cave) || pastCurrent(placed, zone.currents, zone.homeSpot);
+  return {
+    id: placed.id,
+    at: { x: placed.x, y: placed.y, container: placed.container },
+    sealed: placed.sealed,
+    meetsRarity: meetsRarity(placed, rarity, zone),
+    legendaryInDeepPot: rarity !== 'legendary' || (placed.container && deep),
+  };
+}
+
+function expectedFacts(zone: ZoneLayout, placed: PlacedFind): PlacedFacts {
+  const spot = spotOf(zone, placed);
+  return {
+    id: placed.id,
+    at: { x: spot.x, y: spot.y, container: spot.container },
+    sealed: spot.container,
+    meetsRarity: true,
+    legendaryInDeepPot: true,
+  };
+}
+
+/** One assertion per layout: catalogue order, one treasure per spot, and each placement's spot, seal and rarity rules. */
 function expectValidLayout(zone: ZoneLayout, placements: readonly PlacedFind[]): void {
   const ids = placements.map((placed) => placed.id);
   const placedIds = new Set(ids);
-  expect(ids).toEqual(zone.finds.map((find) => find.id).filter((id) => placedIds.has(id)));
-  expect(new Set(placements.map((placed) => placed.spotId)).size).toBe(placements.length);
-  for (const placed of placements) {
-    const spot = spotOf(zone, placed);
-    const rarity = rarityOf(placed.id);
-    expect({ x: placed.x, y: placed.y, container: placed.container }).toEqual({
-      x: spot.x,
-      y: spot.y,
-      container: spot.container,
-    });
-    expect(meetsRarity(placed, rarity, zone)).toBe(true);
-    expect(placed.sealed).toBe(placed.container);
-    if (rarity === 'legendary') {
-      expect(placed.container).toBe(true);
-      expect(inCave(placed, zone.cave) || pastCurrent(placed, zone.currents, zone.homeSpot)).toBe(true);
-    }
-  }
+  expect({
+    ids,
+    spotCount: new Set(placements.map((placed) => placed.spotId)).size,
+    facts: placements.map((placed) => placedFacts(zone, placed)),
+  }).toEqual({
+    ids: zone.finds.map((find) => find.id).filter((id) => placedIds.has(id)),
+    spotCount: placements.length,
+    facts: placements.map((placed) => expectedFacts(zone, placed)),
+  });
 }
 
 function tripRate(zone: ZoneLayout, seeds: readonly number[], hasIt: (placements: PlacedFind[]) => boolean, options?: PlacementOptions): number {
