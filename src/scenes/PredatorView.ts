@@ -43,6 +43,16 @@ const BOOST_GROW_S = 0.3;
 const BOOST_FADE_S = 0.4;
 const BOOST_GROW_FROM = 0.6;
 const BOOST_RISE_PX = 8;
+/** Shell sparkle (guide 9): four twinkles round the torso centre, at 45, 135, 225 and 315 degrees. */
+const SHELL_TWINKLE_ANGLES: readonly number[] = [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4];
+/** Torso centre the Shell twinkles sit round, in axolotl art local units. */
+const SHELL_CENTRE: Vec2 = { x: -8, y: 4 };
+/** Shell twinkle distance from the torso centre, in axolotl art local units. */
+const SHELL_REACH = 26;
+const SHELL_SPREAD_PX = 6;
+const SHELL_LIFE_S = 0.5;
+/** Shell twinkles at R 5: the sparkle art's arms reach R 9. */
+const SHELL_TWINKLE_SCALE = 5 / 9;
 
 /** One frame of predator rendering input. `phase` is the trip phase for this frame. */
 export interface PredatorFrame {
@@ -57,6 +67,12 @@ interface TilapiaSprites {
   body: Phaser.GameObjects.Image;
   alert: Phaser.GameObjects.Image;
   glint: Phaser.GameObjects.Image;
+}
+
+/** One Shell sparkle twinkle and where it sits on the axolotl, in art local units. */
+interface ShellTwinkle {
+  image: Phaser.GameObjects.Image;
+  local: Vec2;
 }
 
 /** A short-lived effect pinned to one leg root of the axolotl. */
@@ -103,7 +119,7 @@ function axolotlSizeFactor(axolotl: Phaser.GameObjects.Image, texture: AxolotlTe
 
 /**
  * Draws the tilapia, its telegraph, the leg-loss poof, regrow sparkles, the snack speed-up
- * star, the protected halo and the carry-home bubble. Visual only: every timer here is driven by the frame `dt`, so it
+ * star, the Shell sparkle, the protected halo and the carry-home bubble. Visual only: every timer here is driven by the frame `dt`, so it
  * freezes with the scene, and nothing here changes game state.
  */
 export class PredatorView {
@@ -114,6 +130,7 @@ export class PredatorView {
   private readonly regrowSparkles: LegEffect[];
   private readonly boostStars: LegEffect[];
   private readonly boostStarInfo: TexInfo;
+  private readonly shellTwinkles: ShellTwinkle[];
   private readonly halo: Phaser.GameObjects.Image;
   private readonly carryBubble: Phaser.GameObjects.Image;
   private effectLook: AxolotlArtLook;
@@ -121,6 +138,8 @@ export class PredatorView {
   private carryBubbleLookScale: number;
   private poofCursor = 0;
   private regrowCursor = 0;
+  /** Seconds the Shell sparkle has shown; SHELL_LIFE_S when it is not showing. */
+  private shellAge = SHELL_LIFE_S;
 
   constructor(scene: Phaser.Scene, assets: GameAssets, tilapiaCount: number) {
     this.scene = scene;
@@ -147,13 +166,21 @@ export class PredatorView {
     this.boostStars = Array.from({ length: BOOST_POOL }, () =>
       createLegEffect(bakedImage(scene, starInfo, DEPTH.fx), BOOST_LIFE_S),
     );
+    this.shellTwinkles = SHELL_TWINKLE_ANGLES.map((angle) => ({
+      image: bakedImage(scene, assets.baked.sparkle, DEPTH.fx).setVisible(false),
+      local: { x: SHELL_CENTRE.x + SHELL_REACH * Math.cos(angle), y: SHELL_CENTRE.y + SHELL_REACH * Math.sin(angle) },
+    }));
   }
 
-  /** Starts the effects for this step's trip events: a poof on a hit, sparkles on a regrown leg. */
+  /**
+   * Starts the effects for this step's trip events: a poof on a hit, sparkles on a regrown leg and
+   * the Shell sparkle on a hit the Shell blocked (PRD A22).
+   */
   handleEvents(events: readonly TripEvent[]): void {
     for (const event of events) {
       if (event.type === 'hit') this.startPoof(event.leg);
       if (event.type === 'regrown') this.startRegrowSparkles(event.leg);
+      if (event.type === 'shellBlock') this.shellAge = 0;
     }
   }
 
@@ -176,6 +203,7 @@ export class PredatorView {
     this.renderPoofs(frame);
     this.renderRegrowSparkles(frame);
     this.renderBoostStars(frame);
+    this.renderShellSparkle(frame);
   }
 
   /** Hides every short-lived effect, the halo and the carry bubble (new trip). */
@@ -184,6 +212,8 @@ export class PredatorView {
       effect.age = effect.life;
       effect.image.setVisible(false);
     }
+    this.shellAge = SHELL_LIFE_S;
+    for (const twinkle of this.shellTwinkles) twinkle.image.setVisible(false);
     this.halo.setVisible(false);
     this.carryBubble.setVisible(false);
   }
@@ -350,6 +380,36 @@ export class PredatorView {
         .setY(star.image.y - BOOST_RISE_PX * grow)
         .setScale((BOOST_GROW_FROM + (1 - BOOST_GROW_FROM) * grow) * baseScale)
         .setAlpha(fade);
+    }
+  }
+
+  /**
+   * Shell sparkle (guide 9), once per blocked hit: the four twinkles sit round the torso centre in
+   * the axolotl's local space, so they turn and scale with it while keeping their own size. Full
+   * motion: they move SHELL_SPREAD_PX out while their alpha goes 1 to 0 over SHELL_LIFE_S. Reduced
+   * motion: still at their end positions, at full alpha, for SHELL_LIFE_S, then gone.
+   */
+  private renderShellSparkle(frame: PredatorFrame): void {
+    this.shellAge = Math.min(this.shellAge + frame.dt, SHELL_LIFE_S);
+    const life = this.shellAge / SHELL_LIFE_S;
+    if (life >= 1) {
+      for (const twinkle of this.shellTwinkles) twinkle.image.setVisible(false);
+      return;
+    }
+    const ambient = frame.motion.ambient;
+    const spread = SHELL_SPREAD_PX * (ambient ? life : 1);
+    const textureScale = this.assets.axolotl.scale;
+    const centre = anchorWorld(frame.axolotl, textureScale, SHELL_CENTRE);
+    const scale = SHELL_TWINKLE_SCALE / this.assets.baked.sparkle.scale;
+    for (const twinkle of this.shellTwinkles) {
+      const at = anchorWorld(frame.axolotl, textureScale, twinkle.local);
+      const distance = Math.hypot(at.x - centre.x, at.y - centre.y);
+      const out = distance > 0 ? spread / distance : 0;
+      twinkle.image
+        .setVisible(true)
+        .setPosition(at.x + (at.x - centre.x) * out, at.y + (at.y - centre.y) * out)
+        .setScale(scale)
+        .setAlpha(ambient ? 1 - life : 1);
     }
   }
 
