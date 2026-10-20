@@ -80,6 +80,9 @@ const OPTION_COUNTS: readonly number[] = [2, 3, 4, 5, MAX_STEP_OPTIONS];
 /** Suggested names fitting a boy or a girl: the most the Name step pages through. */
 const NAME_COUNT = Math.max(suggestedNamesFor('boy').length, suggestedNamesFor('girl').length);
 
+/** The every-canvas matrix is heavy; give it room when the whole suite runs in parallel. */
+const MATRIX_TIMEOUT_MS = 30_000;
+
 const CANVAS_WIDTHS: readonly number[] = [
   320, 340, 360, 375, 390, 414, 430, 459, 460, 480, 520, 568, 640, 667, 736, 800, 844, 1024, 1280, 1366,
 ];
@@ -158,8 +161,14 @@ function sharedMeasure(mode: StylerMode, step: StylerStep): StylerMeasure {
   return measure;
 }
 
+const LAYOUTS = new Map<string, StylerLayout>();
+
+/** The layout of `step` with `optionCount` options in `mode` on `view`, made once and shared by the matrix tests. */
 function layoutFor(view: HudView, mode: StylerMode, step: StylerStep, optionCount: number): StylerLayout {
-  return stylerLayout(view, screenFor(mode, step, optionCount), sharedMeasure(mode, step));
+  const key = `${view.cssW}x${view.cssH} ${mode} ${step} ${optionCount}`;
+  const layout = LAYOUTS.get(key) ?? stylerLayout(view, screenFor(mode, step, optionCount), sharedMeasure(mode, step));
+  LAYOUTS.set(key, layout);
+  return layout;
 }
 
 /** Supported canvases from the width and height grid (art guide 1). */
@@ -339,7 +348,7 @@ describe('stylerLayout', () => {
 
   it('fits every step in both modes on every supported canvas', () => {
     expect(problemsOn(supportedCanvases())).toEqual([]);
-  });
+  }, MATRIX_TIMEOUT_MS);
 
   it('shows everything with room to spare', () => {
     for (const mode of MODES) {
@@ -368,7 +377,7 @@ describe('stylerLayout', () => {
         }
       }
     }
-  });
+  }, MATRIX_TIMEOUT_MS);
 
   it('hides the heading at fit step 6 in restyle only, and never in the creator', () => {
     const views = [...SMALLEST, ...supportedCanvases()];
@@ -388,7 +397,7 @@ describe('stylerLayout', () => {
       }
     }
     expect(restyleHides).toBeGreaterThan(0);
-  });
+  }, MATRIX_TIMEOUT_MS);
 
   it('keeps the heading at its measured size', () => {
     const view = { cssW: 460, cssH: 320 };
