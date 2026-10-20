@@ -103,7 +103,7 @@ const CARET_STEADY_CLASS = `${FIELD_CLASS}-caret-steady`;
 const CARET_BLINK_CLASS = `${FIELD_CLASS}-caret-blink`;
 const CARET_BLINK_KEYFRAMES = `${FIELD_CLASS}-caret-blink`;
 const FIELD_STYLESHEET = [
-  `.${FIELD_CLASS}::placeholder { color: ${FIELD_PLACEHOLDER}; opacity: 1; }`,
+  `.${FIELD_CLASS}::placeholder { color: ${FIELD_PLACEHOLDER}; opacity: 1; font-weight: normal; }`,
   `@keyframes ${CARET_BLINK_KEYFRAMES} { 0%, 100% { caret-color: ${INK}; } 50% { caret-color: transparent; } }`,
   '@supports (caret-animation: manual) {',
   `  .${CARET_STEADY_CLASS} { caret-animation: manual; }`,
