@@ -1,5 +1,5 @@
 import * as Phaser from 'phaser';
-import { AXO_MAX_TAIL_AMP, type AxolotlPose } from '../art/drawAxolotl';
+import { AXO_MAX_TAIL_AMP, AXO_SCENE_SCALE, type AxolotlPose } from '../art/drawAxolotl';
 import { AXO_SIZE_SCALE } from '../art/drawAxolotlParts';
 import { DEPTH } from '../art/layers';
 import {
@@ -25,7 +25,7 @@ import {
   type SnackFrame,
   type SnackTally,
 } from '../logic/collectibles';
-import { TURN_SQUASH, drawnAxolotl, type DrawnAxolotl } from '../logic/drawnAxolotl';
+import { TURN_SQUASH, bodyPoint, drawnAxolotl, type DrawnAxolotl } from '../logic/drawnAxolotl';
 import { createEncounterContext } from '../logic/encounter';
 import { currentAt, reedDragAt, reedsNear } from '../logic/environment';
 import { TILAPIA_FACT } from '../logic/factCards';
@@ -86,6 +86,7 @@ import { HUD_EVENTS, type FactCardSeenPayload } from './HudScene';
 import { addMotionTween, settleMotionTweens } from './motionTweens';
 import { PredatorView } from './PredatorView';
 import { readSession, returnToHomeTank } from './sceneFlow';
+import { faceSprite } from './spriteFacing';
 import { StrandedView } from './StrandedView';
 import { TreasureView } from './TreasureView';
 
@@ -99,9 +100,19 @@ const SPARKLE_FADE_S = 0.4;
 const SPARKLE_SPAWN_S = 0.05;
 const SPARKLE_LIFE_S = 0.4;
 const SPARKLE_POOL = 10;
-const SPARKLE_TAIL_X = 44;
-const MOUTH_X = 49;
-const MOUTH_Y = 4;
+/** Dash sparkles spawn this far behind the body origin, in axolotl art local units. */
+const SPARKLE_TAIL_X = 46.3;
+/** Full width of the dash sparkle spawn spread along the body, in axolotl art local units. */
+const SPARKLE_SPREAD_X = 10.5;
+/** Full height of the dash sparkle spawn spread across the body, in axolotl art local units. */
+const SPARKLE_SPREAD_Y = 14.7;
+/** Bubble emitter point at the mouth, ahead of and below the body origin, in axolotl art local units. */
+const MOUTH_X = 51.6;
+const MOUTH_Y = 4.2;
+/** Scratch point for the bubble emitter, reused each frame; updateBubbles copies its x and y. */
+const MOUTH_AT: Vec2 = { x: 0, y: 0 };
+/** Scratch point for a dash sparkle spawn, reused each spawn; it is read straight into setPosition. */
+const SPARKLE_AT: Vec2 = { x: 0, y: 0 };
 const REED_PERIOD = 4;
 const REED_TOUCH_RADIUS = 26;
 const REED_NUDGE_PX = 7;
@@ -863,10 +874,12 @@ export class SwimScene extends Phaser.Scene {
     // Phaser flips about the texture frame centre, but the AXO_TEX anchor (originX) is off-centre,
     // so setFlipX drew a left-facing axolotl ahead of its anchor. A negative x scale mirrors about
     // the anchor, so the head lands where the eat check expects.
-    this.axolotl
-      .setPosition(body.x, body.y)
-      .setScale(body.facing * baseScale * body.squash, baseScale)
-      .setRotation(body.rotation);
+    faceSprite(
+      this.axolotl.setPosition(body.x, body.y).setRotation(body.rotation),
+      body.facing,
+      baseScale * body.squash,
+      baseScale,
+    );
   }
 
   /**
@@ -1023,10 +1036,8 @@ export class SwimScene extends Phaser.Scene {
   }
 
   private renderBubbles(dt: number): void {
-    const size = this.axolotlSize();
-    const emitter = this.motion.bubbles
-      ? { x: this.axolotl.x + this.swim.facing * MOUTH_X * size, y: this.axolotl.y + MOUTH_Y * size }
-      : null;
+    const worldPerUnit = AXO_SCENE_SCALE * this.axolotlSize();
+    const emitter = this.motion.bubbles ? bodyPoint(this.body, worldPerUnit, MOUTH_X, MOUTH_Y, MOUTH_AT) : null;
     this.bubbles = updateBubbles(this.bubbles, dt, emitter, this.rand);
     const baked = this.assets.baked.bubbles;
     this.bubbleImages.forEach((image, i) => {
@@ -1073,13 +1084,10 @@ export class SwimScene extends Phaser.Scene {
     const sparkle = this.sparkles[this.sparkleCursor];
     this.sparkleCursor = (this.sparkleCursor + 1) % this.sparkles.length;
     sparkle.age = 0;
-    const size = this.axolotlSize();
-    sparkle.image
-      .setPosition(
-        this.axolotl.x + size * (-this.swim.facing * SPARKLE_TAIL_X + (this.rand() - 0.5) * 10),
-        this.axolotl.y + size * (this.rand() - 0.5) * 14,
-      )
-      .setVisible(true);
+    const localX = -SPARKLE_TAIL_X + (this.rand() - 0.5) * SPARKLE_SPREAD_X;
+    const localY = (this.rand() - 0.5) * SPARKLE_SPREAD_Y;
+    const at = bodyPoint(this.body, AXO_SCENE_SCALE * this.axolotlSize(), localX, localY, SPARKLE_AT);
+    sparkle.image.setPosition(at.x, at.y).setVisible(true);
   }
 
   private renderSurface(t: number): void {

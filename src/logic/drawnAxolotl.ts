@@ -2,6 +2,7 @@ import type { DrawnBody } from './collectibles';
 import { legWobble } from './legs';
 import { swimIntensity, type SwimState } from './swimPhysics';
 import { SWIM } from './tuning';
+import type { Vec2 } from './vec';
 
 const TAU = Math.PI * 2;
 
@@ -65,4 +66,27 @@ export function drawnAxolotl(input: DrawnAxolotlInput): DrawnAxolotl {
     rotation: facing * (swimTilt + idleTilt) + wobble,
     squash: input.squash,
   };
+}
+
+/**
+ * Maps a point in axolotl art local units onto the drawn body: scales it by
+ * (facing x squash x worldPerUnit, worldPerUnit), as the sprite is drawn, then rotates it by the
+ * body rotation about the drawn body position (bob included). `headPoint` is the case
+ * (`SNACK_REACH.headAhead`, 0) at 1 px per unit. Writes into and returns `out`; allocates nothing
+ * when `out` is passed.
+ */
+export function bodyPoint(
+  body: DrawnBody,
+  worldPerUnit: number,
+  localX: number,
+  localY: number,
+  out: Vec2 = { x: 0, y: 0 },
+): Vec2 {
+  const fx = body.facing * (body.squash ?? 1) * worldPerUnit * localX;
+  const ly = worldPerUnit * localY;
+  const cos = Math.cos(body.rotation);
+  const sin = Math.sin(body.rotation);
+  out.x = body.x + fx * cos - ly * sin;
+  out.y = body.y + fx * sin + ly * cos;
+  return out;
 }

@@ -21,6 +21,7 @@ import { GAME_EVENTS, REGISTRY_KEYS, type ReducedMotionPayload } from '../logic/
 import type { Rect, Size } from '../logic/hudLayout';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { NO_REPAINT, pickSecondaryRepaint } from '../logic/repaintBudget';
+import { spriteFrameBounds } from '../logic/spriteAnchor';
 import {
   bestStars,
   canRescueMore,
@@ -73,6 +74,7 @@ import { AreaStarsBadge } from './AreaStarsBadge';
 import { CollectionBookView } from './CollectionBookView';
 import { settleMotionTweens } from './motionTweens';
 import { goExploring, readSession, writeSession, type HomeTankStart } from './sceneFlow';
+import { faceSprite } from './spriteFacing';
 import { TankArrivalCard, type ArrivalAreaStars } from './TankArrivalCard';
 import { TankDecorator } from './TankDecorator';
 import { TreasureChestView } from './TreasureChestView';
@@ -871,8 +873,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.nameTagPanel.setVisible(swimmer !== undefined);
     this.nameTagText.setVisible(swimmer !== undefined);
     if (target === null || swimmer === undefined) return;
-    const bounds = swimmer.image.getBounds();
-    const rect: Rect = { x: bounds.x, y: bounds.y, w: bounds.width, h: bounds.height };
+    const rect: Rect = spriteFrameBounds(swimmer.image);
     strokeAxolotlRing(this.pickRing, rect);
     this.nameTagText.setText(this.swimmerAxolotl(target.i).name);
     const tagSize: Size = { w: this.nameTagText.width + 2 * UI.pad, h: this.nameTagText.height + 2 * UI.pad };
@@ -894,11 +895,11 @@ export class HomeTankScene extends Phaser.Scene {
     else this.askRescuedRepaint(swimmer, index - 1, pose, dt);
     const swim = tankSwimPose(swimmer.id, index, this.clock, !this.motion.ambient);
     const at = tankToCss(this.frame, { x: swim.x, y: swim.y });
-    swimmer.image
-      .setPosition(at.x, at.y)
-      .setFlipX(swim.facing < 0)
-      .setScale(swimmer.texture.displayScale(this.frame.scale))
-      .setRotation(swim.tilt);
+    faceSprite(
+      swimmer.image.setPosition(at.x, at.y).setRotation(swim.tilt),
+      swim.facing,
+      swimmer.texture.displayScale(this.frame.scale),
+    );
   }
 
   /**

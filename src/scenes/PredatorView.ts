@@ -14,6 +14,7 @@ import type { TripEvent } from '../logic/trip';
 import type { TripPhase } from '../logic/tripEvents';
 import type { Vec2 } from '../logic/vec';
 import type { GameAssets } from './BootScene';
+import { faceSprite } from './spriteFacing';
 
 const POSE_BY_PHASE: Readonly<Record<TilapiaPhase, TilapiaPose>> = {
   patrol: 'swim',
@@ -81,7 +82,8 @@ function createLegEffect(image: Phaser.GameObjects.Image, life: number): LegEffe
 
 /**
  * World position of an axolotl leg root for the look the texture currently paints, following the
- * sprite's position, scale, flip and rotation.
+ * sprite's position, scale and rotation. A sprite facing left has a negative `scaleX`, which
+ * mirrors the root about the sprite's origin.
  */
 function legRootWorld(axolotl: Phaser.GameObjects.Image, texture: AxolotlTexture, leg: number): Vec2 {
   const root = axolotlLegRoots(texture.look)[leg];
@@ -202,8 +204,8 @@ export class PredatorView {
     sprites.body
       .setTexture(info.key)
       .setOrigin(info.originNormX, info.originNormY)
-      .setPosition(x, y)
-      .setFlipX(facing < 0);
+      .setPosition(x, y);
+    faceSprite(sprites.body, facing, 1 / info.scale);
 
     const telegraph = tilapia.phase === 'telegraph';
     sprites.alert.setVisible(telegraph).setPosition(x, y + ALERT_OFFSET_Y);

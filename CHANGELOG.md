@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-10-20
+
+### Fixed
+
+- Left-facing stranded axolotls, Home Tank axolotls and tilapia are now drawn on their spot instead of off to the side (#54).
+- Home Tank axolotls no longer jump when they turn around (#54).
+- The Home Tank pick ring and name tag follow the mirrored art (#54).
+- Bubbles rise from the drawn mouth, and dash sparkles trail from the drawn tail, through tilt and turns at every size (#55).
+
 ## [0.14.0] - 2026-10-20
 
 ### Added
