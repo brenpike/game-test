@@ -1,17 +1,21 @@
 /**
  * Styler layout: the CSS px layout of one step screen of the step-by-step character creator (PRD F1
- * to F3) and the restyle screen (PRD F6), for 1 to MAX_STEP_OPTIONS picture buttons or the Name step.
+ * to F3) and the restyle screen (PRD F6), for 1 to MAX_STEP_OPTIONS picture buttons, the Dream colour
+ * step (pages of up to MAX_STEP_OPTIONS of its MAX_DREAM_OPTIONS options, with More colours) or the
+ * Name step.
  * Text sizes come in measured from the scene; button sizes are estimated wide here. Nothing here
  * shrinks text or a touch target: when a step does not fit, it makes room in the PRD F1 order
  * (FIT_LEVELS), and the picture buttons grow from PICTURE_PX.min only when there is room.
  */
 import { NAME_MAX, SUGGESTED_NAMES } from './axolotlNames';
+import { MAX_DREAM_OPTIONS } from './dreamPaint';
 import type { HudView, Rect, Size } from './hudLayout';
-import { MAX_STEP_OPTIONS, STYLER_STEPS, type StylerStep } from './stylerSteps';
+import { MAX_STEP_OPTIONS, RESTYLE_STEPS, STYLER_STEPS, type StylerStep } from './stylerSteps';
 import {
   BACK_LABEL,
   CANCEL_LABEL,
   DONE_LABEL,
+  MORE_COLOURS_LABEL,
   MORE_NAMES_LABEL,
   NEXT_LABEL,
   SURPRISE_ME_LABEL,
@@ -170,6 +174,12 @@ export const MORE_NAMES_BUTTON: Size = Object.freeze({
   h: MIN_TARGET_PX,
 });
 
+/** More colours (Dream colour step): a text button that shows the next page of Dream colour options. */
+export const MORE_COLOURS_BUTTON: Size = Object.freeze({
+  w: textButtonWidth(MORE_COLOURS_LABEL.length, NAME_TEXT_PX),
+  h: MIN_TARGET_PX,
+});
+
 /** Width of the restyle tab for `step`: its label with BUTTON_LABEL_PAD each side. */
 export function tabWidth(step: StylerStep): number {
   return textButtonWidth(stepTabLabel(step).length, TAB_TEXT_PX);
@@ -177,8 +187,9 @@ export function tabWidth(step: StylerStep): number {
 
 /**
  * The step screen to lay out: the mode, the step, how many option buttons it has (1 to
- * MAX_STEP_OPTIONS; on Name, how many suggested names fit the axolotl's boy or girl), and in restyle
- * the tab page to show (null for the page holding `step`; any other whole number wraps).
+ * MAX_STEP_OPTIONS; on the restyle-only Dream colour step 1 to MAX_DREAM_OPTIONS; on Name, how many
+ * suggested names fit the axolotl's boy or girl), and in restyle the tab page to show (null for the
+ * page holding `step`; any other whole number wraps).
  */
 export interface StylerScreen {
   mode: StylerMode;
@@ -242,6 +253,15 @@ export interface StylerNameLayout {
   moreNames: Rect | null;
 }
 
+/**
+ * The Dream colour step controls: how many options show on one page (the `options` of the layout), and
+ * More colours under them (null when every option fits on one page).
+ */
+export interface StylerDreamLayout {
+  perPage: number;
+  moreColours: Rect | null;
+}
+
 /** The step buttons. Creator: Back (null on step 1), Next or Done, Surprise me. Restyle: Done, Surprise me, Cancel. */
 export interface StylerNav {
   back: Rect | null;
@@ -256,8 +276,9 @@ export interface StylerNav {
  * last fit step taken (1 helper hidden, 2 labels hidden and caption shown, 3 preview at 0.6, 4
  * creator heading without "Step N of 11:", 5 preview hidden: the chosen picture button is the
  * preview, 6 restyle only: heading hidden (null), the bold current tab names the step). `options` are the square picture buttons in order, `columns` per row (0 on Name), and
- * `optionLabels` their labels under them while `labelsShown`. `cancelInTabRow` is true when restyle
- * Cancel sits at the end of the tab row, the last layout choice.
+ * `optionLabels` their labels under them while `labelsShown`; the Dream colour step never hides its
+ * labels (fit step 2 does not apply) and `dream` holds its page size and More colours (null on every
+ * other step). `cancelInTabRow` is true when restyle Cancel sits at the end of the tab row.
  */
 export interface StylerLayout {
   panel: Rect;
@@ -274,6 +295,7 @@ export interface StylerLayout {
   labelsShown: boolean;
   optionLabels: Rect[];
   name: StylerNameLayout | null;
+  dream: StylerDreamLayout | null;
   nav: StylerNav;
   cancelInTabRow: boolean;
 }
@@ -308,7 +330,16 @@ interface StylerFrame {
 type EdgeKind = 'target' | 'other' | 'edge';
 
 /** The parts a body block places. */
-type PieceName = 'helper' | 'preview' | 'caption' | 'option' | 'optionLabel' | 'nameBox' | 'nameTile' | 'moreNames';
+type PieceName =
+  | 'helper'
+  | 'preview'
+  | 'caption'
+  | 'option'
+  | 'optionLabel'
+  | 'nameBox'
+  | 'nameTile'
+  | 'moreNames'
+  | 'moreColours';
 
 /** One placed part of a block, relative to the block's top left. */
 interface Piece {
@@ -347,9 +378,18 @@ function gapBetween(first: EdgeKind, second: EdgeKind): number {
   return first === 'target' && second === 'target' ? UI.gap : TEXT_GAP;
 }
 
-/** Throws a RangeError when `screen` has no valid option count or tab page. */
+/** The most options `step` may have: any number on Name, MAX_DREAM_OPTIONS on Dream colour, else MAX_STEP_OPTIONS. */
+function maxOptionsOf(step: StylerStep): number {
+  if (step === 'name') return Infinity;
+  return step === 'dream' ? MAX_DREAM_OPTIONS : MAX_STEP_OPTIONS;
+}
+
+/** Throws a RangeError when `screen` has no valid option count or tab page, or is Dream colour outside restyle. */
 function checkScreen(screen: StylerScreen): void {
-  const maxOptions = screen.step === 'name' ? Infinity : MAX_STEP_OPTIONS;
+  if (screen.step === 'dream' && screen.mode !== 'restyle') {
+    throw new RangeError(`stylerLayout: the dream step is restyle only, not ${screen.mode}`);
+  }
+  const maxOptions = maxOptionsOf(screen.step);
   if (!Number.isInteger(screen.optionCount) || screen.optionCount < 1 || screen.optionCount > maxOptions) {
     throw new RangeError(`stylerLayout: ${screen.optionCount} options on the ${screen.step} step`);
   }
@@ -368,14 +408,17 @@ function framesFor(view: HudView, mode: StylerMode): StylerFrame[] {
   ];
 }
 
-/** The fit levels that change something on `screen`, with their PRD F1 fit step numbers. The creator never hides its heading. */
+/**
+ * The fit levels that change something on `screen`, with their PRD F1 fit step numbers. The creator
+ * never hides its heading, and the Dream colour step never hides its labels.
+ */
 function levelsFor(screen: StylerScreen): { fitStep: number; level: FitLevel }[] {
   const levels: { fitStep: number; level: FitLevel }[] = [];
   let previous: FitLevel | null = null;
   FIT_LEVELS.forEach((raw, fitStep) => {
     const level: FitLevel = {
       helper: raw.helper,
-      labels: screen.step !== 'name' && raw.labels,
+      labels: screen.step === 'dream' || (screen.step !== 'name' && raw.labels),
       previewScale: raw.previewScale,
       headingFull: screen.mode === 'creator' && raw.headingFull,
       heading: screen.mode === 'creator' || raw.heading,
@@ -404,8 +447,9 @@ function sameLevel(first: FitLevel, second: FitLevel): boolean {
  * and More names). The step buttons sit in centred rows at the bottom, except in restyle landscape,
  * where they stack in a right column under the tab row with Done at the bottom. The body sets the
  * preview above or beside the picture buttons, whichever fits. When a step does not fit it takes the
- * PRD F1 fit steps in order (restyle adds step 6: the heading hides); restyle then tries Cancel at the end of the tab row. Below the smallest
- * canvases it returns the last try, which may overflow.
+ * PRD F1 fit steps in order (restyle adds step 6: the heading hides); restyle then tries Cancel at the end of the tab row. The Dream colour
+ * step shows fewer options per page (with More colours under them) only when nothing else fits. Below
+ * the smallest canvases it returns the last try, which may overflow.
  */
 export function stylerLayout(view: HudView, screen: StylerScreen, measure: StylerMeasure): StylerLayout {
   checkScreen(screen);
@@ -421,13 +465,40 @@ export function stylerLayout(view: HudView, screen: StylerScreen, measure: Style
     w: Math.max(0, panel.w - 2 * UI.pad),
     h: Math.max(0, panel.h - 2 * UI.pad),
   };
-  const levels = levelsFor(screen);
   let lastTry: StylerLayout | null = null;
+  for (const perPage of pageSizesFor(screen)) {
+    const tried = firstFittingTry(view, inner, panel, screen, measure, perPage);
+    if (tried.fits) return tried.layout;
+    lastTry = tried.layout;
+  }
+  if (lastTry === null) throw new Error('stylerLayout: no page sizes to try');
+  return lastTry;
+}
+
+/**
+ * The picture buttons per page to try, most first: on Dream colour from the fewer of MAX_STEP_OPTIONS
+ * and the option count down to 1, else only the option count (Name pages its names itself).
+ */
+function pageSizesFor(screen: StylerScreen): number[] {
+  if (screen.step !== 'dream') return [screen.optionCount];
+  const most = Math.min(MAX_STEP_OPTIONS, screen.optionCount);
+  return Array.from({ length: most }, (_unused, index) => most - index);
+}
+
+/** The first try over every frame and fit level, in order, that fits with `perPage` buttons, else the last try. */
+function firstFittingTry(
+  view: HudView,
+  inner: Rect,
+  panel: Rect,
+  screen: StylerScreen,
+  measure: StylerMeasure,
+  perPage: number,
+): { layout: StylerLayout; fits: boolean } {
+  let lastTry: { layout: StylerLayout; fits: boolean } | null = null;
   for (const frame of framesFor(view, screen.mode)) {
-    for (const { fitStep, level } of levels) {
-      const tried = arrangeScreen(inner, panel, screen, measure, frame, level, fitStep);
-      if (tried.fits) return tried.layout;
-      lastTry = tried.layout;
+    for (const { fitStep, level } of levelsFor(screen)) {
+      lastTry = arrangeScreen(inner, panel, screen, measure, frame, level, fitStep, perPage);
+      if (lastTry.fits) return lastTry;
     }
   }
   if (lastTry === null) throw new Error('stylerLayout: no fit levels to try');
@@ -443,12 +514,13 @@ function arrangeScreen(
   frame: StylerFrame,
   level: FitLevel,
   fitStep: number,
+  perPage: number,
 ): { layout: StylerLayout; fits: boolean } {
   const chrome = placeChrome(inner, screen, measure, frame, level);
   const body =
     screen.step === 'name'
       ? bestNameBody(chrome, screen.optionCount, measure, level)
-      : bestPictureBody(chrome, screen.optionCount, measure, level);
+      : bestPictureBody(chrome, perPage, screen.optionCount > perPage, measure, level);
   const layout: StylerLayout = {
     panel,
     fitStep,
@@ -528,11 +600,11 @@ function dotSlots(inner: Rect, top: number): Rect[] {
   }));
 }
 
-/** The step's tabs split into pages that each fit `areaW` with UI.gap between tabs. */
+/** The restyle tabs split into pages that each fit `areaW` with UI.gap between tabs. */
 function tabPages(areaW: number): StylerStep[][] {
   const pages: StylerStep[][] = [];
   let rowW = 0;
-  for (const step of STYLER_STEPS) {
+  for (const step of RESTYLE_STEPS) {
     const page = pages[pages.length - 1];
     const w = tabWidth(step);
     if (page !== undefined && rowW + UI.gap + w <= areaW) {
@@ -564,10 +636,10 @@ function placeTabStrip(
   const h = cancelInStrip ? Math.max(TAB_H, CANCEL_BUTTON.h) : TAB_H;
   const rowW = inner.w - (cancelInStrip ? CANCEL_BUTTON.w + UI.gap : 0);
   const tabTop = top + (h - TAB_H) / 2;
-  const paging = tabsWidth(STYLER_STEPS) > rowW;
+  const paging = tabsWidth(RESTYLE_STEPS) > rowW;
   const sideW = paging ? PAGE_BUTTON_PX + UI.gap : 0;
   const areaW = rowW - 2 * sideW;
-  const pages = paging ? tabPages(areaW) : [[...STYLER_STEPS]];
+  const pages = paging ? tabPages(areaW) : [[...RESTYLE_STEPS]];
   const homePage = pages.findIndex((page) => page.includes(screen.step));
   const page = screen.tabPage === null ? homePage : ((screen.tabPage % pages.length) + pages.length) % pages.length;
   let x = inner.x + sideW + (areaW - tabsWidth(pages[page])) / 2;
@@ -809,24 +881,43 @@ function helperBlock(level: FitLevel, measure: StylerMeasure, wrapW: number): Bl
   return level.helper ? pieceBlock('helper', measure.helperAt(wrapW), 'other') : null;
 }
 
-/** The body blocks to try for picture buttons of side `side`: the preview above, then beside, the buttons. */
-function pictureBodies(count: number, side: number, chrome: Chrome, measure: StylerMeasure, level: FitLevel): { block: Block; columns: number }[] {
+/**
+ * `grid` with what goes under it: the caption wrapped at `gridW` once the level hides the labels, then
+ * the More colours row when `more`.
+ */
+function gridWithFooter(grid: Block, gridW: number, more: boolean, measure: StylerMeasure, level: FitLevel): Block {
+  const below: Block[] = [];
+  if (!level.labels) below.push(pieceBlock('caption', measure.captionAt(gridW), 'other'));
+  if (more) below.push(pieceBlock('moreColours', MORE_COLOURS_BUTTON, 'target'));
+  return below.length === 0 ? grid : stackBlocks([grid, ...below]);
+}
+
+/**
+ * The body blocks to try for `count` picture buttons of side `side`, with More colours under them when
+ * `more`: the preview above, then beside, the buttons.
+ */
+function pictureBodies(
+  count: number,
+  side: number,
+  more: boolean,
+  chrome: Chrome,
+  measure: StylerMeasure,
+  level: FitLevel,
+): { block: Block; columns: number }[] {
   const bandW = chrome.band.w;
   const helper = helperBlock(level, measure, bandW);
   const preview = level.previewScale === null ? null : previewBlock(measure, level.previewScale);
-  const withCaption = (gridW: number, grid: Block): Block =>
-    level.labels ? grid : stackBlocks([grid, pieceBlock('caption', measure.captionAt(gridW), 'other')]);
   const stackedGrid = pictureGrid(count, side, level.labels, bandW, measure);
   const stacked = stackBlocks([
     ...(helper ? [helper] : []),
     ...(preview ? [preview] : []),
-    withCaption(bandW, stackedGrid.block),
+    gridWithFooter(stackedGrid.block, bandW, more, measure, level),
   ]);
   const bodies = [{ block: stacked, columns: stackedGrid.columns }];
   if (preview !== null) {
     const sideW = bandW - preview.w - TEXT_GAP;
     const sideGrid = pictureGrid(count, side, level.labels, sideW, measure);
-    const row = sideBlocks(preview, withCaption(sideW, sideGrid.block));
+    const row = sideBlocks(preview, gridWithFooter(sideGrid.block, sideW, more, measure, level));
     bodies.push({ block: stackBlocks([...(helper ? [helper] : []), row]), columns: sideGrid.columns });
   }
   return bodies;
@@ -854,33 +945,35 @@ interface PlacedBody {
   fits: boolean;
 }
 
-/** The first picture body with buttons of side `side` that fits the band, or null. */
+/** The first picture body with `count` buttons of side `side` (and More colours when `more`) that fits the band, or null. */
 function fittingPictureBody(
   side: number,
   chrome: Chrome,
   count: number,
+  more: boolean,
   measure: StylerMeasure,
   level: FitLevel,
 ): { block: Block; columns: number } | null {
-  return pictureBodies(count, side, chrome, measure, level).find((body) => fitsBand(body.block, chrome)) ?? null;
+  return pictureBodies(count, side, more, chrome, measure, level).find((body) => fitsBand(body.block, chrome)) ?? null;
 }
 
 /**
- * The picture body for this level: a body that fits at PICTURE_PX.min decides the level fits; then
- * the buttons take the largest whole side up to PICTURE_PX.max that still fits. A bigger side never
- * fits where a smaller one does not, so the side is found by halving.
+ * The picture body for this level with `count` buttons, and More colours under them when `more`: a
+ * body that fits at PICTURE_PX.min decides the level fits; then the buttons take the largest whole
+ * side up to PICTURE_PX.max that still fits. A bigger side never fits where a smaller one does not, so
+ * the side is found by halving.
  */
-function bestPictureBody(chrome: Chrome, count: number, measure: StylerMeasure, level: FitLevel): PlacedBody {
-  let best = fittingPictureBody(PICTURE_PX.min, chrome, count, measure, level);
+function bestPictureBody(chrome: Chrome, count: number, more: boolean, measure: StylerMeasure, level: FitLevel): PlacedBody {
+  let best = fittingPictureBody(PICTURE_PX.min, chrome, count, more, measure, level);
   if (best === null) {
-    const tight = pictureBodies(count, PICTURE_PX.min, chrome, measure, level)[0];
+    const tight = pictureBodies(count, PICTURE_PX.min, more, chrome, measure, level)[0];
     return { pieces: placeInBand(tight.block, chrome), columns: tight.columns, fits: false };
   }
   let fitting: number = PICTURE_PX.min;
   let tooBig = PICTURE_PX.max + 1;
   while (tooBig - fitting > 1) {
     const side = Math.floor((fitting + tooBig) / 2);
-    const body = fittingPictureBody(side, chrome, count, measure, level);
+    const body = fittingPictureBody(side, chrome, count, more, measure, level);
     if (body === null) {
       tooBig = side;
     } else {
@@ -977,15 +1070,19 @@ function collectBody(
   level: FitLevel,
   columns: number,
   screen: StylerScreen,
-): Pick<StylerLayout, 'helper' | 'preview' | 'caption' | 'options' | 'columns' | 'labelsShown' | 'optionLabels' | 'name'> {
+): Pick<
+  StylerLayout,
+  'helper' | 'preview' | 'caption' | 'options' | 'columns' | 'labelsShown' | 'optionLabels' | 'name' | 'dream'
+> {
   const previewRect = pieceNamed(pieces, 'preview');
   const nameBox = pieceNamed(pieces, 'nameBox');
   const tiles = piecesNamed(pieces, 'nameTile');
+  const options = piecesNamed(pieces, 'option');
   return {
     helper: pieceNamed(pieces, 'helper'),
     preview: previewRect === null || level.previewScale === null ? null : withAnchor(previewRect, level.previewScale, measure),
     caption: pieceNamed(pieces, 'caption'),
-    options: piecesNamed(pieces, 'option'),
+    options,
     columns,
     labelsShown: screen.step !== 'name' && level.labels,
     optionLabels: piecesNamed(pieces, 'optionLabel'),
@@ -993,6 +1090,8 @@ function collectBody(
       nameBox === null
         ? null
         : { box: nameBox, tiles, namesPerPage: tiles.length, moreNames: pieceNamed(pieces, 'moreNames') },
+    dream:
+      screen.step === 'dream' ? { perPage: options.length, moreColours: pieceNamed(pieces, 'moreColours') } : null,
   };
 }
 

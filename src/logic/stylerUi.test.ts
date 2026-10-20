@@ -2,15 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { LOOK_FIELD_OPTIONS, LOOK_FIELDS } from './axolotlLook';
 import { NAME_MAX, SUGGESTED_NAMES, suggestedNamesFor } from './axolotlNames';
 import { isSupportedCanvas } from './cardFit';
+import { DREAM_COLOURS } from './catalogue';
+import { MAX_DREAM_OPTIONS } from './dreamPaint';
 import type { HudView, Rect, Size } from './hudLayout';
 import { REAL_MORPHS } from './morphs';
-import { MAX_STEP_OPTIONS, STYLER_STEPS, type StylerStep } from './stylerSteps';
+import { MAX_STEP_OPTIONS, RESTYLE_STEPS, STYLER_STEPS, type StylerStep } from './stylerSteps';
 import {
   BACK_LABEL,
   CANCEL_LABEL,
   DONE_LABEL,
+  MORE_COLOURS_LABEL,
   MORE_NAMES_LABEL,
   NEXT_LABEL,
+  REAL_COLOUR_LABEL,
   SURPRISE_ME_LABEL,
   stepHeading,
   stepHelper,
@@ -21,6 +25,7 @@ import {
   BACK_BUTTON,
   CANCEL_BUTTON,
   DONE_BUTTON,
+  MORE_COLOURS_BUTTON,
   MORE_NAMES_BUTTON,
   NAME_BOX,
   NAME_CURSOR,
@@ -71,6 +76,13 @@ const OPTION_LABELS: readonly string[] = [
   ...REAL_MORPHS.map((morph) => morph.name),
 ];
 
+/** Every option label the Dream colour step may show, on top of OPTION_LABELS: Real colour and every Dream colour name. */
+const DREAM_OPTION_LABELS: readonly string[] = [
+  ...OPTION_LABELS,
+  REAL_COLOUR_LABEL,
+  ...DREAM_COLOURS.map((colour) => colour.name),
+];
+
 const SMALLEST: readonly HudView[] = [
   { cssW: 460, cssH: 320 },
   { cssW: 320, cssH: 440 },
@@ -80,6 +92,9 @@ const MODES: readonly StylerMode[] = ['creator', 'restyle'];
 
 /** Option counts every picture step is laid out for, up to MAX_STEP_OPTIONS. */
 const OPTION_COUNTS: readonly number[] = [2, 3, 4, 5, MAX_STEP_OPTIONS];
+
+/** Option counts the Dream colour step is laid out for: Real colour alone up to every Dream colour owned. */
+const DREAM_COUNTS: readonly number[] = Array.from({ length: MAX_DREAM_OPTIONS }, (_unused, index) => index + 1);
 
 /** Suggested names fitting a boy or a girl: the most the Name step pages through. */
 const NAME_COUNT = Math.max(suggestedNamesFor('boy').length, suggestedNamesFor('girl').length);
@@ -133,17 +148,27 @@ function memoByWidth(sizeAt: (wrapW: number) => Size): (wrapW: number) => Size {
   };
 }
 
-/** The styler measure for `step` in `mode`, as the scene measures it, with every option label. */
+/** The steps of `mode`: the creator steps, or the restyle steps with Dream colour. */
+function stepsOf(mode: StylerMode): readonly StylerStep[] {
+  return mode === 'restyle' ? RESTYLE_STEPS : STYLER_STEPS;
+}
+
+/**
+ * The styler measure for `step` in `mode`, as the scene measures it, with every option label (on Dream
+ * colour, the Dream colour labels too) and the taller of its helpers with no and with every Dream colour.
+ */
 function measureFor(mode: StylerMode, step: StylerStep): StylerMeasure {
   const index = STYLER_STEPS.indexOf(step);
-  const longestLabel = OPTION_LABELS.reduce((longest, label) => (label.length > longest.length ? label : longest), '');
-  const longestWord = Math.max(...OPTION_LABELS.flatMap((label) => label.split(' ').map((word) => word.length)));
+  const labels = step === 'dream' ? DREAM_OPTION_LABELS : OPTION_LABELS;
+  const helpers = [stepHelper(mode, step, 0), stepHelper(mode, step, DREAM_COLOURS.length)];
+  const longestLabel = labels.reduce((longest, label) => (label.length > longest.length ? label : longest), '');
+  const longestWord = Math.max(...labels.flatMap((label) => label.split(' ').map((word) => word.length)));
   return {
     headingAt: (wrapW, full) =>
       textSize(full ? stepHeading(index, STYLER_STEPS.length, step) : stepTitle(step), HEADING_PX, wrapW),
-    helperAt: (wrapW) => textSize(stepHelper(mode, step), HELPER_PX, wrapW),
+    helperAt: (wrapW) => boundsOf(helpers, HELPER_PX, wrapW),
     captionAt: (wrapW) => textSize(longestLabel, CAPTION_PX, wrapW),
-    optionLabelAt: memoByWidth((wrapW) => boundsOf(OPTION_LABELS, OPTION_LABEL_PX, wrapW)),
+    optionLabelAt: memoByWidth((wrapW) => boundsOf(labels, OPTION_LABEL_PX, wrapW)),
     optionLabelMinW: longestWord * BOLD_EM * OPTION_LABEL_PX,
     previewFrame: PREVIEW_FRAME,
     previewLargestSize: PREVIEW_LARGEST_SIZE,
@@ -182,11 +207,15 @@ function supportedCanvases(): HudView[] {
   );
 }
 
-/** Every step's screen, with each option count on the picture steps and once on Name. */
-function screensOf(): [StylerStep, number][] {
-  return STYLER_STEPS.flatMap((step): [StylerStep, number][] =>
-    step === 'name' ? [[step, NAME_COUNT]] : OPTION_COUNTS.map((count): [StylerStep, number] => [step, count]),
-  );
+/** The option counts `step` is laid out for: every name once on Name, DREAM_COUNTS on Dream colour, else OPTION_COUNTS. */
+function countsOf(step: StylerStep): readonly number[] {
+  if (step === 'name') return [NAME_COUNT];
+  return step === 'dream' ? DREAM_COUNTS : OPTION_COUNTS;
+}
+
+/** Every screen of `mode`'s steps, with each option count of the step. */
+function screensOf(mode: StylerMode): [StylerStep, number][] {
+  return stepsOf(mode).flatMap((step) => countsOf(step).map((count): [StylerStep, number] => [step, count]));
 }
 
 /** Larger of the horizontal and vertical clearances between two rects; negative when they overlap. */
@@ -244,6 +273,7 @@ function targetsOf(layout: StylerLayout): [string, Rect][] {
     layout.name.tiles.forEach((rect, index) => targets.push([`nameTile ${index}`, rect]));
     if (layout.name.moreNames) targets.push(['moreNames', layout.name.moreNames]);
   }
+  if (layout.dream?.moreColours) targets.push(['moreColours', layout.dream.moreColours]);
   return targets;
 }
 
@@ -289,14 +319,15 @@ function layoutProblems(view: HudView, mode: StylerMode, step: StylerStep, optio
   }
   if (layout.preview === null && layout.fitStep < 5) problems.push(`${label}: no preview before fit step 5`);
   if (layout.heading === null && layout.fitStep < 6) problems.push(`${label}: no heading before fit step 6`);
-  if (step !== 'name' && layout.options.length !== optionCount) problems.push(`${label}: ${layout.options.length} options`);
+  const shownCount = step === 'dream' ? layout.dream?.perPage : optionCount;
+  if (step !== 'name' && layout.options.length !== shownCount) problems.push(`${label}: ${layout.options.length} options`);
   return problems;
 }
 
 /** Problems with every screen of every step in both modes on `views`. */
 function problemsOn(views: readonly HudView[]): string[] {
   return views.flatMap((view) =>
-    MODES.flatMap((mode) => screensOf().flatMap(([step, count]) => layoutProblems(view, mode, step, count))),
+    MODES.flatMap((mode) => screensOf(mode).flatMap(([step, count]) => layoutProblems(view, mode, step, count))),
   );
 }
 
@@ -331,6 +362,12 @@ describe('styler sizes', () => {
     for (const size of [NAME_BOX, NAME_TILE, MORE_NAMES_BUTTON]) expect(size.h).toBeGreaterThanOrEqual(MIN_TARGET_PX);
   });
 
+  it('fits the More colours label in its button at 20 px, 48 px tall or more', () => {
+    expect(MORE_COLOURS_BUTTON.w).toBeGreaterThanOrEqual(MORE_COLOURS_LABEL.length * BOLD_EM * NAME_TEXT_PX);
+    expect(MORE_COLOURS_BUTTON.w).toBeGreaterThanOrEqual(MIN_TARGET_PX);
+    expect(MORE_COLOURS_BUTTON.h).toBeGreaterThanOrEqual(MIN_TARGET_PX);
+  });
+
   it('widens the name box to hold the pencil icon beside a 12-character name', () => {
     expect(NAME_PENCIL_PX).toBe(20);
     expect(NAME_BOX).toEqual({ w: 192, h: MIN_TARGET_PX });
@@ -339,7 +376,7 @@ describe('styler sizes', () => {
 
   it('fits each tab label in its tab, 48 px tall or more', () => {
     expect(TAB_H).toBeGreaterThanOrEqual(MIN_TARGET_PX);
-    for (const step of STYLER_STEPS) {
+    for (const step of RESTYLE_STEPS) {
       expect(tabWidth(step)).toBeGreaterThanOrEqual(stepTabLabel(step).length * BOLD_EM * TAB_TEXT_PX);
       expect(tabWidth(step)).toBeGreaterThanOrEqual(MIN_TARGET_PX);
     }
@@ -352,7 +389,7 @@ describe('styler sizes', () => {
 });
 
 describe('stylerLayout', () => {
-  it.each(SMALLEST)('fits every step with 2, 3, 4, 5 and 8 options and the Name step in both modes on %j', (view) => {
+  it.each(SMALLEST)('fits every step with 2, 3, 4, 5 and 8 options, Dream colour with 1 to 13 and the Name step in both modes on %j', (view) => {
     expect(problemsOn([view])).toEqual([]);
   });
 
@@ -362,7 +399,7 @@ describe('stylerLayout', () => {
 
   it('shows everything with room to spare', () => {
     for (const mode of MODES) {
-      for (const [step, count] of screensOf()) {
+      for (const [step, count] of screensOf(mode)) {
         const layout = layoutFor({ cssW: 1280, cssH: 800 }, mode, step, count);
         expect(layout.fitStep).toBe(0);
         expect(layout.helper).not.toBeNull();
@@ -375,12 +412,13 @@ describe('stylerLayout', () => {
   it('takes the fit steps in the PRD F1 order', () => {
     for (const view of [...SMALLEST, ...supportedCanvases()]) {
       for (const mode of MODES) {
-        for (const [step, count] of screensOf()) {
+        for (const [step, count] of screensOf(mode)) {
           const layout = layoutFor(view, mode, step, count);
           const { fitStep } = layout;
+          const labelsHide = step !== 'name' && step !== 'dream';
           expect(layout.helper !== null).toBe(fitStep < 1);
-          if (step !== 'name') expect(layout.labelsShown).toBe(fitStep < 2);
-          expect(layout.caption !== null).toBe(step !== 'name' && fitStep >= 2);
+          if (labelsHide) expect(layout.labelsShown).toBe(fitStep < 2);
+          expect(layout.caption !== null).toBe(labelsHide && fitStep >= 2);
           if (fitStep < 5) expect(layout.preview?.scale).toBe(fitStep >= 3 ? PREVIEW_SCALE.shrunk : PREVIEW_SCALE.full);
           expect(layout.headingFull).toBe(mode === 'creator' && fitStep < 4);
           expect(layout.heading === null).toBe(fitStep >= 6);
@@ -393,10 +431,12 @@ describe('stylerLayout', () => {
     const views = [...SMALLEST, ...supportedCanvases()];
     let restyleHides = 0;
     for (const view of views) {
-      for (const [step, count] of screensOf()) {
+      for (const [step, count] of screensOf('creator')) {
         const creator = layoutFor(view, 'creator', step, count);
         expect(creator.fitStep).toBeLessThanOrEqual(5);
         expect(creator.heading).not.toBeNull();
+      }
+      for (const [step, count] of screensOf('restyle')) {
         const restyle = layoutFor(view, 'restyle', step, count);
         expect(restyle.fitStep).toBeLessThanOrEqual(6);
         expect(restyle.heading === null).toBe(restyle.fitStep === 6);
@@ -412,7 +452,7 @@ describe('stylerLayout', () => {
   it('keeps the heading at its measured size', () => {
     const view = { cssW: 460, cssH: 320 };
     for (const mode of MODES) {
-      for (const step of STYLER_STEPS) {
+      for (const step of stepsOf(mode)) {
         const layout = layoutFor(view, mode, step, MAX_STEP_OPTIONS);
         if (layout.heading === null) continue;
         const measured = measureFor(mode, step).headingAt(panelInner(layout).w, layout.headingFull);
@@ -467,10 +507,10 @@ describe('stylerLayout', () => {
 
   it('pages the tabs with 48 px page buttons when they do not all fit, and shows the current step', () => {
     for (const view of supportedCanvases()) {
-      for (const step of STYLER_STEPS) {
+      for (const step of RESTYLE_STEPS) {
         const tabs = layoutFor(view, 'restyle', step, 3).tabs;
         if (tabs === null) throw new Error('restyle has tabs');
-        expect(tabs.pages.flat()).toEqual(STYLER_STEPS);
+        expect(tabs.pages.flat()).toEqual(RESTYLE_STEPS);
         expect(tabs.tabs.map((tab) => tab.step)).toEqual(tabs.pages[tabs.page]);
         expect(tabs.tabs.map((tab) => tab.step)).toContain(step);
         expect(tabs.prevPage === null).toBe(tabs.pages.length === 1);
@@ -523,7 +563,114 @@ describe('stylerLayout', () => {
     const measure = measureFor('creator', 'eyes');
     expect(() => stylerLayout(view, { mode: 'creator', step: 'eyes', optionCount: 0, tabPage: null }, measure)).toThrow(RangeError);
     expect(() => stylerLayout(view, { mode: 'creator', step: 'eyes', optionCount: 9, tabPage: null }, measure)).toThrow(RangeError);
+    expect(() => stylerLayout(view, { mode: 'restyle', step: 'eyes', optionCount: 9, tabPage: null }, measure)).toThrow(RangeError);
     expect(() => stylerLayout(view, { mode: 'restyle', step: 'eyes', optionCount: 3, tabPage: 0.5 }, measure)).toThrow(RangeError);
+  });
+
+  it('rejects a Dream colour option count outside 1 to 13, and the Dream colour step in the creator', () => {
+    const view = { cssW: 844, cssH: 390 };
+    const measure = measureFor('restyle', 'dream');
+    const at = (mode: StylerMode, optionCount: number): StylerLayout =>
+      stylerLayout(view, { mode, step: 'dream', optionCount, tabPage: null }, measure);
+    expect(MAX_DREAM_OPTIONS).toBe(13);
+    expect(() => at('restyle', 0)).toThrow(RangeError);
+    expect(() => at('restyle', MAX_DREAM_OPTIONS + 1)).toThrow(RangeError);
+    expect(() => at('restyle', 2.5)).toThrow(RangeError);
+    expect(() => at('creator', 3)).toThrow(RangeError);
+    expect(at('restyle', 1).dream?.perPage).toBe(1);
+    expect(at('restyle', MAX_DREAM_OPTIONS).dream).not.toBeNull();
+  });
+});
+
+describe('stylerLayout Dream colour step', () => {
+  /** The canvases the Dream colour matrix runs on: the smallest, then every supported canvas. */
+  const DREAM_VIEWS: readonly HudView[] = [...SMALLEST, ...supportedCanvases()];
+
+  /** The Dream colour layout with `count` options on `view`. */
+  function dreamOn(view: HudView, count: number): StylerLayout {
+    return layoutFor(view, 'restyle', 'dream', count);
+  }
+
+  /** Options per page on `view` with `count` options. */
+  function perPageOn(view: HudView, count: number): number {
+    const dream = dreamOn(view, count).dream;
+    if (dream === null) throw new Error('the Dream colour step has dream controls');
+    return dream.perPage;
+  }
+
+  it('fits 1 to 13 options with labels always shown and no caption on every supported canvas', () => {
+    expect(problemsOn(DREAM_VIEWS).filter((problem) => problem.includes(' dream '))).toEqual([]);
+    for (const view of DREAM_VIEWS) {
+      for (const count of DREAM_COUNTS) {
+        const layout = dreamOn(view, count);
+        expect(layout.labelsShown).toBe(true);
+        expect(layout.optionLabels).toHaveLength(layout.options.length);
+        expect(layout.caption).toBeNull();
+        expect(layout.name).toBeNull();
+      }
+    }
+  }, MATRIX_TIMEOUT_MS);
+
+  it('shows at most 8 options per page, with More colours exactly when they do not all show', () => {
+    for (const view of DREAM_VIEWS) {
+      for (const count of DREAM_COUNTS) {
+        const dream = dreamOn(view, count).dream;
+        if (dream === null) throw new Error('the Dream colour step has dream controls');
+        expect(dream.perPage).toBeGreaterThanOrEqual(1);
+        expect(dream.perPage).toBeLessThanOrEqual(Math.min(MAX_STEP_OPTIONS, count));
+        expect(dreamOn(view, count).options).toHaveLength(dream.perPage);
+        expect(dream.moreColours !== null).toBe(count > dream.perPage);
+        if (dream.moreColours !== null) {
+          expect(dream.moreColours).toMatchObject(MORE_COLOURS_BUTTON);
+          expect(dream.moreColours.h).toBeGreaterThanOrEqual(MIN_TARGET_PX);
+        }
+      }
+    }
+  }, MATRIX_TIMEOUT_MS);
+
+  it('keeps More colours 12 px from every other target and under the options', () => {
+    for (const view of DREAM_VIEWS) {
+      for (const count of DREAM_COUNTS) {
+        const layout = dreamOn(view, count);
+        const more = layout.dream?.moreColours;
+        if (!more) continue;
+        for (const [name, rect] of targetsOf(layout)) {
+          if (name === 'moreColours') continue;
+          expect(clearance(more, rect)).toBeGreaterThanOrEqual(UI.gap - 1e-9);
+        }
+        for (const option of layout.options) expect(more.y).toBeGreaterThan(option.y + option.h);
+      }
+    }
+  }, MATRIX_TIMEOUT_MS);
+
+  it('shows fewer options per page only when no fit level or frame fits more', () => {
+    for (const view of DREAM_VIEWS) {
+      const mostPerPage = perPageOn(view, MAX_DREAM_OPTIONS);
+      for (const count of DREAM_COUNTS) {
+        const perPage = perPageOn(view, count);
+        const allShown = Math.min(MAX_STEP_OPTIONS, count);
+        if (count > MAX_STEP_OPTIONS) expect(perPage).toBe(mostPerPage);
+        else expect([allShown, mostPerPage]).toContain(perPage);
+        if (perPage < allShown) expect(perPage).toBe(mostPerPage);
+      }
+    }
+  }, MATRIX_TIMEOUT_MS);
+
+  it('shows 8 options and More colours with everything shown on a large canvas', () => {
+    const layout = dreamOn({ cssW: 1280, cssH: 800 }, MAX_DREAM_OPTIONS);
+    expect(layout.fitStep).toBe(0);
+    expect(layout.dream?.perPage).toBe(MAX_STEP_OPTIONS);
+    expect(layout.dream?.moreColours).not.toBeNull();
+    const few = dreamOn({ cssW: 1280, cssH: 800 }, 3);
+    expect(few.dream).toEqual({ perPage: 3, moreColours: null });
+  });
+
+  it('leaves dream null on every other step', () => {
+    for (const mode of MODES) {
+      for (const [step, count] of screensOf(mode)) {
+        if (step !== 'dream') expect(layoutFor({ cssW: 844, cssH: 390 }, mode, step, count).dream).toBeNull();
+      }
+    }
   });
 });
 

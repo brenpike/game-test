@@ -7,12 +7,15 @@ import {
   type AxolotlSex,
 } from './axolotlLook';
 import { isValidName, nameFits, suggestedNamesFor } from './axolotlNames';
+import { DREAM_COLOURS, type DreamColourId } from './catalogue';
+import { REAL_COLOUR_OPTION_ID } from './dreamPaint';
 import { REAL_MORPHS, STARTER_MORPH, type RealMorphId } from './morphs';
 import { mulberry32 } from './rng';
 import {
   SURPRISE_ROLLS,
   chosenIndex,
   creatorStart,
+  dreamPageCount,
   focusOrder,
   isReadOnly,
   namePageCount,
@@ -25,13 +28,22 @@ import {
   stepOptions,
   surprise,
   visibleButtons,
+  withDreamsPerPage,
   withNamesPerPage,
   type StylerAction,
   type StylerAxolotl,
   type StylerFocusKind,
   type StylerState,
 } from './styler';
-import { MAX_STEP_OPTIONS, RESTYLE_START_STEP, STYLER_STEPS, stepLookField, type StylerStep } from './stylerSteps';
+import {
+  MAX_STEP_OPTIONS,
+  RESTYLE_START_STEP,
+  RESTYLE_STEPS,
+  STYLER_STEPS,
+  stepLookField,
+  type StylerStep,
+} from './stylerSteps';
+import { REAL_COLOUR_LABEL } from './stylerText';
 
 const SEED_COUNT = 300;
 
@@ -61,8 +73,14 @@ function creatorOn(step: StylerStep, overrides: Partial<StylerState> = {}): Styl
   return state;
 }
 
-function restyleOn(step: StylerStep, axolotl: StylerAxolotl = OWNED): StylerState {
-  return reduceStyler(restyleStart(axolotl), { type: 'tab', step }, noRandom).state;
+const ALL_DREAMS: readonly DreamColourId[] = DREAM_COLOURS.map((colour) => colour.id);
+
+function restyleOn(
+  step: StylerStep,
+  axolotl: StylerAxolotl = OWNED,
+  ownedDreams: readonly DreamColourId[] = [],
+): StylerState {
+  return reduceStyler(restyleStart(axolotl, ownedDreams), { type: 'tab', step }, noRandom).state;
 }
 
 function pressKey(state: StylerState, key: string, shiftKey = false, columns = 4, rand: () => number = noRandom) {
@@ -256,7 +274,7 @@ describe('restyle', () => {
   });
 
   it('every other step is changeable', () => {
-    for (const step of STYLER_STEPS.filter((candidate) => candidate !== 'colour' && candidate !== 'sex')) {
+    for (const step of RESTYLE_STEPS.filter((candidate) => candidate !== 'colour' && candidate !== 'sex')) {
       expect(isReadOnly(restyleOn(step))).toBe(false);
     }
   });
@@ -266,7 +284,7 @@ describe('restyle', () => {
   });
 
   it('a tab jumps to any step and focuses the tab', () => {
-    for (const step of STYLER_STEPS) {
+    for (const step of RESTYLE_STEPS) {
       const state = restyleOn(step);
       expect(state.step).toBe(step);
       expect(state.focus).toEqual({ kind: 'tab', step });
@@ -290,6 +308,9 @@ describe('restyle', () => {
     expect(pressKey(tabbed, 'ArrowRight').state.focus).toEqual({ kind: 'tab', step: 'mouth' });
     expect(pressKey(tabbed, 'ArrowRight').state.step).toBe('mouth');
     const colour = restyleOn('colour');
+    expect(pressKey(colour, 'ArrowRight').state.step).toBe('dream');
+    expect(pressKey(restyleOn('dream'), 'ArrowRight').state.step).toBe('sex');
+    expect(pressKey(restyleOn('dream'), 'ArrowLeft').state.step).toBe('colour');
     expect(pressKey(colour, 'ArrowLeft').state.step).toBe('name');
     expect(pressKey(restyleOn('name'), 'ArrowRight').state.step).toBe('colour');
     expect(pressKey(colour, 'ArrowDown')).toEqual({ state: colour });
@@ -308,7 +329,13 @@ describe('Done and Cancel', () => {
     expect(visibleButtons(state)).toContain('done');
     expect(visibleButtons(state)).not.toContain('next');
     const result = reduceStyler(state, { type: 'done' }, noRandom);
-    expect(result.effect).toEqual({ type: 'done', name: state.name, look: state.look, morph: state.morph });
+    expect(result.effect).toEqual({
+      type: 'done',
+      name: state.name,
+      look: state.look,
+      morph: state.morph,
+      dreamColour: null,
+    });
     expect(result.state.focus).toEqual({ kind: 'done' });
   });
 
@@ -318,10 +345,11 @@ describe('Done and Cancel', () => {
   });
 
   it('Done and Cancel work on every restyle step', () => {
-    for (const step of STYLER_STEPS) {
+    for (const step of RESTYLE_STEPS) {
       const state = restyleOn(step);
       expect(visibleButtons(state)).toEqual(expect.arrayContaining(['cancel', 'done']));
-      expect(reduceStyler(state, { type: 'done' }, noRandom).effect).toEqual({ type: 'done', ...OWNED });
+      const done = reduceStyler(state, { type: 'done' }, noRandom);
+      expect(done.effect).toEqual({ type: 'done', ...OWNED, dreamColour: null });
       expect(reduceStyler(state, { type: 'cancel' }, noRandom).effect).toEqual({ type: 'cancel' });
     }
   });
@@ -596,7 +624,7 @@ describe('surprise', () => {
 
   it('restyle: never changes the morph or sex, and the name fits', () => {
     for (let seed = 1; seed <= SEED_COUNT; seed++) {
-      const before = restyleOn(STYLER_STEPS[seed % STYLER_STEPS.length]);
+      const before = restyleOn(RESTYLE_STEPS[seed % RESTYLE_STEPS.length]);
       const after = surprise(before, mulberry32(seed));
       expectValid(after);
       expect(after.morph).toBe('melanoid');
@@ -658,11 +686,27 @@ describe('surprise', () => {
 });
 
 describe('restyle property: random actions never change the morph or sex', () => {
-  const STEP_ACTIONS: readonly StylerAction[] = STYLER_STEPS.map((step) => ({ type: 'tab', step }));
+  const STEP_ACTIONS: readonly StylerAction[] = RESTYLE_STEPS.map((step) => ({ type: 'tab', step }));
   const KEYS = ['Tab', 'Enter', ' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Escape'];
+  const SOME_DREAMS: readonly DreamColourId[] = [
+    'galaxy',
+    'mint',
+    'hearts',
+    'sky-blue',
+    'rainbow',
+    'bubblegum',
+    'lavender',
+    'tie-dye',
+    'iridescent',
+  ];
+
+  function expectOwnedOrNone(dreamColour: DreamColourId | null | undefined): void {
+    if (dreamColour !== null) expect(SOME_DREAMS).toContain(dreamColour);
+  }
 
   function randomAction(rand: () => number): StylerAction {
-    const roll = Math.floor(rand() * 9);
+    const roll = Math.floor(rand() * 10);
+    if (roll === 9) return { type: 'moreColours', perPage: 1 + Math.floor(rand() * MAX_STEP_OPTIONS) };
     if (roll === 0) return { type: 'key', key: KEYS[Math.floor(rand() * KEYS.length)], shiftKey: rand() < 0.5, columns: 4 };
     if (roll === 1) return { type: 'pick', index: Math.floor(rand() * MAX_STEP_OPTIONS) };
     if (roll === 2) return STEP_ACTIONS[Math.floor(rand() * STEP_ACTIONS.length)];
@@ -677,17 +721,193 @@ describe('restyle property: random actions never change the morph or sex', () =>
   it('holds over many seeded sequences', () => {
     for (let seed = 1; seed <= SEED_COUNT; seed++) {
       const rand = mulberry32(seed);
-      let state = restyleStart(OWNED);
+      let state = restyleStart({ ...OWNED, dreamColour: 'mint' }, SOME_DREAMS);
       for (let index = 0; index < 60; index++) {
         const result = reduceStyler(state, randomAction(rand), rand);
         state = result.state;
         expect(state.morph).toBe(OWNED.morph);
         expect(state.look.sex).toBe(OWNED.look.sex);
+        expectOwnedOrNone(state.dreamColour);
         if (result.effect?.type === 'done') {
           expect(result.effect.morph).toBe(OWNED.morph);
           expect(result.effect.look.sex).toBe(OWNED.look.sex);
+          expect(result.effect.dreamColour).toBe(state.dreamColour);
+          expectOwnedOrNone(result.effect.dreamColour);
         }
       }
     }
+  });
+});
+
+describe('Dream colour step', () => {
+  const PAINTED: StylerAxolotl = { ...OWNED, dreamColour: 'galaxy' };
+
+  function dreamOn(ownedDreams: readonly DreamColourId[], axolotl: StylerAxolotl = OWNED): StylerState {
+    return restyleOn('dream', axolotl, ownedDreams);
+  }
+
+  function pickId(state: StylerState, id: string): StylerState {
+    return reduceStyler(state, { type: 'pick', index: optionIds(state).indexOf(id) }, noRandom).state;
+  }
+
+  function allPageIds(state: StylerState): string[] {
+    const seen: string[] = [];
+    let current = state;
+    for (let page = 0; page < dreamPageCount(state); page++) {
+      seen.push(...optionIds(current));
+      current = reduceStyler(current, { type: 'moreColours', perPage: MAX_STEP_OPTIONS }, noRandom).state;
+    }
+    return seen;
+  }
+
+  it('is a restyle tab right after Colour', () => {
+    expect(RESTYLE_STEPS.indexOf('dream')).toBe(RESTYLE_STEPS.indexOf('colour') + 1);
+    const state = dreamOn(['mint']);
+    expect(state.step).toBe('dream');
+    expect(isReadOnly(state)).toBe(false);
+  });
+
+  it('the creator never shows it', () => {
+    expect(STYLER_STEPS).not.toContain('dream');
+    let state = creator();
+    for (let index = 0; index < STYLER_STEPS.length; index++) {
+      expect(state.step).not.toBe('dream');
+      state = reduceStyler(state, { type: 'next' }, noRandom).state;
+    }
+    for (let index = 0; index < STYLER_STEPS.length; index++) {
+      expect(state.step).not.toBe('dream');
+      state = reduceStyler(state, { type: 'back' }, noRandom).state;
+    }
+    expect(reduceStyler(creator(), { type: 'tab', step: 'dream' }, noRandom)).toEqual({ state: creator() });
+    expect(creator().dreamColour).toBeNull();
+    expect(creator().ownedDreams).toEqual([]);
+  });
+
+  it('offers Real colour then the owned Dream colours in catalogue order', () => {
+    const state = dreamOn(['galaxy', 'mint', 'hearts', 'mint']);
+    expect(optionIds(state)).toEqual([REAL_COLOUR_OPTION_ID, 'mint', 'hearts', 'galaxy']);
+    expect(stepOptions(state).map((option) => option.label)).toEqual([REAL_COLOUR_LABEL, 'Mint', 'Hearts', 'Galaxy']);
+    expect(state.ownedDreams).toEqual(['mint', 'hearts', 'galaxy']);
+  });
+
+  it('with none owned offers Real colour only and no More colours', () => {
+    const state = dreamOn([]);
+    expect(stepOptions(state)).toEqual([{ id: REAL_COLOUR_OPTION_ID, label: REAL_COLOUR_LABEL }]);
+    expect(chosenIndex(state)).toBe(0);
+    expect(dreamPageCount(state)).toBe(1);
+    expect(focusOrder(state)).not.toContain('moreColours');
+    expect(reduceStyler(state, { type: 'moreColours', perPage: MAX_STEP_OPTIONS }, noRandom).state.dreamPage).toBe(0);
+  });
+
+  it('pages 13 options as 8 then 5 with More colours, wrapping, Real colour first on page 1', () => {
+    let state = dreamOn(ALL_DREAMS);
+    expect(dreamPageCount(state)).toBe(2);
+    expect(optionIds(state)).toHaveLength(8);
+    expect(optionIds(state)[0]).toBe(REAL_COLOUR_OPTION_ID);
+    expect(allPageIds(state)).toEqual([REAL_COLOUR_OPTION_ID, ...ALL_DREAMS]);
+    state = reduceStyler(state, { type: 'moreColours', perPage: MAX_STEP_OPTIONS }, noRandom).state;
+    expect(optionIds(state)).toEqual(ALL_DREAMS.slice(7));
+    expect(state.focus).toEqual({ kind: 'moreColours' });
+    state = reduceStyler(state, { type: 'moreColours', perPage: MAX_STEP_OPTIONS }, noRandom).state;
+    expect(state.dreamPage).toBe(0);
+    expect(optionIds(state)[0]).toBe(REAL_COLOUR_OPTION_ID);
+    expect(() => reduceStyler(state, { type: 'moreColours', perPage: 0 }, noRandom)).toThrow(RangeError);
+  });
+
+  it('More colours does nothing off the Dream colour step', () => {
+    const state = restyleOn('eyes', OWNED, ALL_DREAMS);
+    expect(reduceStyler(state, { type: 'moreColours', perPage: MAX_STEP_OPTIONS }, noRandom)).toEqual({ state });
+  });
+
+  it('Enter and Space on More colours show the next page and keep focus', () => {
+    const state: StylerState = { ...dreamOn(ALL_DREAMS), focus: { kind: 'moreColours' } };
+    for (const key of ['Enter', ' ']) {
+      const next = pressKey(state, key).state;
+      expect(next.dreamPage).toBe(1);
+      expect(next.focus).toEqual({ kind: 'moreColours' });
+    }
+  });
+
+  it('a pointer pick puts a Dream colour on and Real colour takes it off', () => {
+    const on = pickId(dreamOn(['mint', 'galaxy']), 'galaxy');
+    expect(on.dreamColour).toBe('galaxy');
+    expect(chosenIndex(on)).toBe(optionIds(on).indexOf('galaxy'));
+    const off = pickId(on, REAL_COLOUR_OPTION_ID);
+    expect(off.dreamColour).toBeNull();
+    expect(chosenIndex(off)).toBe(0);
+  });
+
+  it('ArrowRight then Enter or Space puts a Dream colour on and takes it off', () => {
+    const start = pressKey(dreamOn(['mint', 'galaxy']), 'Tab').state;
+    expect(start.focus).toEqual({ kind: 'option', index: 0 });
+    for (const key of ['Enter', ' ']) {
+      const on = pressKey(pressKey(start, 'ArrowRight').state, key).state;
+      expect(on.dreamColour).toBe('mint');
+      const off = pressKey(pressKey(on, 'ArrowLeft').state, key).state;
+      expect(off.dreamColour).toBeNull();
+    }
+  });
+
+  it('opens on the page holding the chosen option with it focused', () => {
+    const state = dreamOn(ALL_DREAMS, PAINTED);
+    expect(state.dreamColour).toBe('galaxy');
+    expect(state.dreamPage).toBe(1);
+    expect(optionIds(state)).toContain('galaxy');
+    expect(chosenIndex(state)).toBe(optionIds(state).indexOf('galaxy'));
+    expect(pressKey(state, 'Tab').state.focus).toEqual({ kind: 'option', index: optionIds(state).indexOf('galaxy') });
+    const sized = withDreamsPerPage({ ...state, focus: { kind: 'option', index: 0 } }, 4);
+    expect(optionIds(sized)).toContain('galaxy');
+    expect(sized.focus).toEqual({ kind: 'option', index: optionIds(sized).indexOf('galaxy') });
+    expect(() => withDreamsPerPage(state, 1.5)).toThrow(RangeError);
+  });
+
+  it('Done gives the Dream colour in the state', () => {
+    const on = pickId(dreamOn(['mint', 'galaxy']), 'mint');
+    const done = reduceStyler(on, { type: 'done' }, noRandom);
+    expect(done.effect).toEqual({ type: 'done', ...OWNED, dreamColour: 'mint' });
+    const off = pickId(dreamOn(['mint', 'galaxy'], PAINTED), REAL_COLOUR_OPTION_ID);
+    expect(reduceStyler(off, { type: 'done' }, noRandom).effect).toEqual({ type: 'done', ...OWNED, dreamColour: null });
+  });
+
+  it('Cancel gives only the cancel effect', () => {
+    const on = pickId(dreamOn(['mint', 'galaxy']), 'mint');
+    expect(reduceStyler(on, { type: 'cancel' }, noRandom).effect).toEqual({ type: 'cancel' });
+    expect(pressKey(on, 'Escape').effect).toEqual({ type: 'cancel' });
+  });
+
+  it('restyleStart keeps an owned worn colour and takes off one not owned', () => {
+    expect(restyleStart(PAINTED, ['galaxy']).dreamColour).toBe('galaxy');
+    expect(restyleStart(PAINTED, ['mint']).dreamColour).toBeNull();
+    expect(restyleStart(PAINTED).dreamColour).toBeNull();
+    expect(restyleStart(OWNED, ['galaxy']).dreamColour).toBeNull();
+    expect(restyleStart({ ...OWNED, dreamColour: 'nope' as DreamColourId }, ['galaxy']).dreamColour).toBeNull();
+  });
+
+  it('Surprise me never changes the Dream colour on any restyle step or in the creator', () => {
+    for (let seed = 1; seed <= SEED_COUNT; seed++) {
+      const before = restyleOn(RESTYLE_STEPS[seed % RESTYLE_STEPS.length], PAINTED, ALL_DREAMS);
+      const after = reduceStyler(before, { type: 'surprise' }, mulberry32(seed)).state;
+      expect(after.dreamColour).toBe('galaxy');
+      expect(after.morph).toBe(OWNED.morph);
+      expect(after.look.sex).toBe(OWNED.look.sex);
+      expect(surprise(before, mulberry32(seed)).dreamColour).toBe('galaxy');
+      const creatorBefore = creatorOn(STYLER_STEPS[seed % STYLER_STEPS.length]);
+      expect(reduceStyler(creatorBefore, { type: 'surprise' }, mulberry32(seed)).state.dreamColour).toBeNull();
+    }
+  });
+
+  it('tab order: tabs, colours, More colours, Surprise me, Cancel, Done', () => {
+    expect(focusOrder(dreamOn(ALL_DREAMS))).toEqual(['tab', 'option', 'moreColours', 'surprise', 'cancel', 'done']);
+    expect(focusOrder(dreamOn(['mint']))).toEqual(['tab', 'option', 'surprise', 'cancel', 'done']);
+    expect(visibleButtons(dreamOn(ALL_DREAMS))).toContain('moreColours');
+  });
+
+  it('Tab follows the order and wraps; Shift+Tab reverses it', () => {
+    const state = dreamOn(ALL_DREAMS);
+    const order = focusOrder(state);
+    const start = order.indexOf(state.focus.kind);
+    expect(tabStops(state, false)).toEqual(order.map((_kind, index) => order[(start + 1 + index) % order.length]));
+    const backward = order.map((_kind, index) => order[(start - 1 - index + 2 * order.length) % order.length]);
+    expect(tabStops(state, true)).toEqual(backward);
   });
 });
