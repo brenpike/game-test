@@ -130,7 +130,7 @@ describe('chestListing', () => {
     const sections = chestListing([]);
     expect(sections.map((section) => section.countText)).toEqual([
       '0 of 4 found',
-      '0 of 4 found',
+      '0 of 8 found',
       '0 of 12 found',
     ]);
     for (const section of sections) {
@@ -151,7 +151,7 @@ describe('chestListing', () => {
     const sections = chestListing(ALL_IDS);
     expect(sections.map((section) => section.countText)).toEqual([
       '4 of 4 found',
-      '4 of 4 found',
+      '8 of 8 found',
       '12 of 12 found',
     ]);
     for (const section of sections) expect(section.found).toBe(section.total);
@@ -220,6 +220,10 @@ describe('chestListing', () => {
       ['Shell necklace', 'Neck', 'Neck · Regrowth +15%'],
       ['Heart glasses', 'Face', 'Face · Treasure sense +35%'],
       ['Golden bow', 'Tail', 'Tail · Shell blocks 1 hit'],
+      ['Tank top', 'Shirt', 'Shirt · Regrowth +10%'],
+      ['Diving tank', 'Back', 'Back · Dash +15%'],
+      ['Stripy socks', 'Socks', 'Socks · Snack magnet +30'],
+      ['Flippers', 'Feet', 'Feet · Speed +6%'],
     ]);
   });
 
@@ -238,7 +242,16 @@ describe('chestListing', () => {
 
 describe('slotName', () => {
   it('names every Wearable slot', () => {
-    expect(WEARABLE_SLOTS.map(slotName)).toEqual(['Head', 'Neck', 'Face', 'Tail']);
+    expect(WEARABLE_SLOTS.map(slotName)).toEqual([
+      'Head',
+      'Neck',
+      'Face',
+      'Shirt',
+      'Back',
+      'Tail',
+      'Socks',
+      'Feet',
+    ]);
   });
 });
 
@@ -300,7 +313,8 @@ describe('chestPages', () => {
       ['decoration', 3],
       ['decoration', 1],
       ['wearable', 3],
-      ['wearable', 1],
+      ['wearable', 3],
+      ['wearable', 2],
       ['dreamColour', 3],
       ['dreamColour', 3],
       ['dreamColour', 3],

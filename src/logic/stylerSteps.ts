@@ -8,6 +8,7 @@ import type { LookField } from './axolotlLook';
 export type StylerStep =
   | 'colour'
   | 'dream'
+  | 'outfit'
   | 'sex'
   | 'eyes'
   | 'mouth'
@@ -34,10 +35,14 @@ export const STYLER_STEPS: readonly StylerStep[] = Object.freeze([
   'name',
 ] as const);
 
-/** Every step of the restyle screen: the creator steps plus the restyle-only Dream colour step after colour. */
+/**
+ * Every step of the restyle screen: the creator steps plus the restyle-only Dream colour and Outfit
+ * steps after colour.
+ */
 export const RESTYLE_STEPS: readonly StylerStep[] = Object.freeze([
   'colour',
   'dream',
+  'outfit',
   'sex',
   'eyes',
   'mouth',
@@ -51,7 +56,7 @@ export const RESTYLE_STEPS: readonly StylerStep[] = Object.freeze([
 ] as const);
 
 /** Steps that exist only on the restyle screen, never in the creator. */
-export const RESTYLE_ONLY_STEPS: readonly StylerStep[] = Object.freeze(['dream'] as const);
+export const RESTYLE_ONLY_STEPS: readonly StylerStep[] = Object.freeze(['dream', 'outfit'] as const);
 
 /** Steps chosen once at creation and never restyled. */
 export const FIXED_AFTER_CREATION: readonly StylerStep[] = Object.freeze(['colour', 'sex'] as const);
@@ -65,6 +70,7 @@ export const RESTYLE_START_STEP: StylerStep = 'eyes';
 const STEP_LOOK_FIELDS: { readonly [Step in StylerStep]: LookField | null } = Object.freeze({
   colour: null,
   dream: null,
+  outfit: null,
   sex: 'sex',
   eyes: 'eyes',
   mouth: 'mouth',
@@ -77,7 +83,7 @@ const STEP_LOOK_FIELDS: { readonly [Step in StylerStep]: LookField | null } = Ob
   name: null,
 });
 
-/** The look field `step` chooses, or null for a step that is not part of the look (colour, dream, name). */
+/** The look field `step` chooses, or null for a step that is not part of the look (colour, dream, outfit, name). */
 export function stepLookField(step: StylerStep): LookField | null {
   return STEP_LOOK_FIELDS[step];
 }

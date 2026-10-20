@@ -1,5 +1,5 @@
 /**
- * Treasure icon painters (guide 6i rarity ladder, 7e, 8): the eight canal
+ * Treasure icon painters (guide 6i rarity ladder, 7e, 8): the twelve canal
  * Decorations and Wearables plus one Paint shell per Dream colour.
  *
  * Each icon is authored in a 28-unit box centred on (0, 0) and scaled
@@ -33,6 +33,8 @@ import {
   CASTLE_STONE,
   CASTLE_TRIM,
   CASTLE_WINDOW,
+  DIVING_TANK_FILL,
+  DIVING_TANK_STRAP,
   DREAM_DIVIDER,
   DREAM_RIM,
   DREAM_STAR,
@@ -41,6 +43,9 @@ import {
   GLASSES_FRAME,
   GLASSES_GEM,
   GLASSES_LENS,
+  FLIPPER_CUFF,
+  FLIPPER_FILL,
+  FLIPPER_RIDGE,
   GOLD_TRIM,
   HAT_FILL,
   NECKLACE_CORD,
@@ -50,6 +55,8 @@ import {
   PLANT_LEAF,
   PYRAMID_GEM,
   PYRAMID_STONE,
+  SOCK_FILL,
+  TANK_TOP_FILL,
   TREASURE_SHINE,
   TREASURE_STAR,
   type DreamSwatchId,
@@ -77,7 +84,7 @@ export const DREAM_SWATCH_IDS: readonly DreamSwatchId[] = [
   'tie-dye-galaxy',
 ];
 
-/** The eight Decoration and Wearable slugs (the text after `canal/`). */
+/** The twelve Decoration and Wearable slugs (the text after `canal/`). */
 export type TreasureItemSlug =
   | 'pond-plant'
   | 'toy-boat'
@@ -86,7 +93,11 @@ export type TreasureItemSlug =
   | 'sun-hat'
   | 'shell-necklace'
   | 'heart-glasses'
-  | 'golden-bow';
+  | 'golden-bow'
+  | 'tank-top'
+  | 'diving-tank'
+  | 'stripy-socks'
+  | 'flippers';
 
 export type TreasureIconSlug = TreasureItemSlug | `paint-shell-${DreamSwatchId}`;
 
@@ -99,9 +110,13 @@ const ITEM_SLUGS: readonly TreasureItemSlug[] = [
   'shell-necklace',
   'heart-glasses',
   'golden-bow',
+  'tank-top',
+  'diving-tank',
+  'stripy-socks',
+  'flippers',
 ];
 
-/** All twenty icon slugs: the eight items, then the twelve Paint shells in Dream order. */
+/** All twenty-four icon slugs: the twelve items, then the twelve Paint shells in Dream order. */
 export const TREASURE_ICON_SLUGS: readonly TreasureIconSlug[] = [
   ...ITEM_SLUGS,
   ...DREAM_SWATCH_IDS.map((id): TreasureIconSlug => `paint-shell-${id}`),
@@ -149,6 +164,9 @@ const INK_OUT_BLOB = ITEM_LW;
 const INK_OUT_TUBE = TUBE_W / 2 + TUBE_OL;
 const INK_OUT_GLASSES = GLASSES_W / 2 + GLASSES_OL;
 const INK_OUT_SHELL = SHELL_LW / 2;
+
+/** Diving tank fill height, design units (guide 7e); its blob ink adds INK_OUT_BLOB each side. */
+const DIVING_TANK_FILL_H = 25.2;
 
 /** Texture frame for an icon of `size`. Anchor is the icon centre. */
 export function treasureIconTextureSize(size: number): TexSize {
@@ -560,6 +578,119 @@ function paintGoldenBow(pen: Pen): void {
   legendStar(pen, 0, -10.2);
 }
 
+/**
+ * Common: one merged `shape` silhouette (2.8): a body with two rounded straps, a neck
+ * scoop cut between the straps and an armhole notch cut at each side. One shine.
+ */
+function paintTankTop(pen: Pen): void {
+  const { k } = pen;
+  const body = new Path2D();
+  const strapCapR = 2.2;
+  const scoopCy = -10.6;
+  const scoopR = 5.2;
+  const holeCx = 10;
+  const holeCy = -4.6;
+  const holeR = 3.4;
+  const strapOut = 9.6;
+  // Where the straight strap edge meets the armhole circle.
+  const holeDy = Math.sqrt(holeR * holeR - (holeCx - strapOut) ** 2);
+  const holeTop = holeCy - holeDy;
+  // Angle of that meeting point seen from the right and from the left armhole centre.
+  const rightEdge = Math.atan2(-holeDy, strapOut - holeCx);
+  const leftEdge = Math.atan2(-holeDy, holeCx - strapOut);
+  body.moveTo(-strapOut, -10.4);
+  body.arc(-7.4, -10.4, strapCapR, Math.PI, TAU, false);
+  body.lineTo(-5.2, scoopCy);
+  body.arc(0, scoopCy, scoopR, Math.PI, 0, true);
+  body.lineTo(5.2, -10.4);
+  body.arc(7.4, -10.4, strapCapR, Math.PI, TAU, false);
+  body.lineTo(strapOut, holeTop);
+  body.arc(holeCx, holeCy, holeR, rightEdge, Math.PI / 2 - TAU, true);
+  body.lineTo(holeCx, 8);
+  body.arcTo(holeCx, 12.6, holeCx - 4.6, 12.6, 4.6);
+  body.arcTo(-holeCx, 12.6, -holeCx, 8, 4.6);
+  body.lineTo(-holeCx, holeCy + holeR);
+  body.arc(-holeCx, holeCy, holeR, Math.PI / 2, leftEdge, true);
+  body.closePath();
+  const { ctx } = pen;
+  shape(ctx, place(body, k), TANK_TOP_FILL, ITEM_LW);
+  shine(pen, -5, 2.6, 0.9, 2.6, 0.1);
+}
+
+/**
+ * Common: one merged `shape` silhouette (2.8) of an upright leg, a round heel and a
+ * foot to the right. Three stripes at ink alpha 0.30, clipped to the leg. One shine.
+ */
+function paintStripySocks(pen: Pen): void {
+  const { ctx, k } = pen;
+  const sock = new Path2D();
+  sock.moveTo(-8.4 + 1.6, -12.6);
+  sock.arcTo(3.6, -12.6, 3.6, -12.6 + 1.6, 1.6);
+  sock.lineTo(3.6, 3.6 - 1.5);
+  sock.arcTo(3.6, 3.6, 3.6 + 1.5, 3.6, 1.5);
+  sock.lineTo(8.1, 3.6);
+  sock.arc(8.1, 8.1, 4.5, -Math.PI / 2, Math.PI / 2, false);
+  sock.lineTo(-8.4 + 5, 12.6);
+  sock.arcTo(-8.4, 12.6, -8.4, 12.6 - 5, 5);
+  sock.lineTo(-8.4, -12.6 + 1.6);
+  sock.arcTo(-8.4, -12.6, -8.4 + 1.6, -12.6, 1.6);
+  sock.closePath();
+  silhouette(pen, place(sock, k), SOCK_FILL, ITEM_LW, () => {
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = INK;
+    for (const y of [-8.8, -5, -1.2]) ctx.fillRect(-9 * k, (y - 1.1) * k, 13 * k, 2.2 * k);
+    ctx.globalAlpha = 1;
+  });
+  shine(pen, -4.8, -9.6, 0.9, 2.2, 0.1);
+}
+
+/**
+ * Rare: one merged `blob` silhouette (2.8, all outside the fill) of an upright capsule
+ * tank, a valve neck and a valve knob, with one yellow strap band. One shine.
+ * The fill is 25.2 tall and the blob ink adds 2.8 each side, so it is scaled to the
+ * whole 28-unit box rather than by `fitScale`, which would leave the ink outside it.
+ */
+function paintDivingTank(pen: Pen): void {
+  const { k } = pen;
+  const capsule = roundedPolygon(pts(-6.4, -8.2, 6.4, -8.2, 6.4, 12.6, -6.4, 12.6), 6.4);
+  const neck = roundedPolygon(pts(-2.6, -12.6, 2.6, -12.6, 2.6, -6, -2.6, -6), [1.4, 1.4, 0, 0]);
+  const pieces: Piece[] = [
+    { path: place(capsule, k), fill: DIVING_TANK_FILL, inner: () => trimBand(pen, 0.6, 4.2, DIVING_TANK_STRAP) },
+    { path: place(neck, k), fill: DIVING_TANK_FILL },
+    { path: place(ellipse(4.4, -10.4, 2.2, 2.2), k), fill: DIVING_TANK_FILL },
+  ];
+  mergedSilhouette(pen, pieces, ITEM_LW);
+  shine(pen, -3.4, -3.6, 0.9, 2.4, 0.1);
+}
+
+/**
+ * Rare: one merged `shape` silhouette (2.8) of a flipper pointing up: an ankle block
+ * widening to a rounded fan. One pink cuff band, three internal fan ridges. One shine.
+ */
+function paintFlippers(pen: Pen): void {
+  const { ctx, k } = pen;
+  const flipper = roundedPolygon(
+    pts(-4.2, 12.6, 4.2, 12.6, 4.2, 5.6, 12.4, -5, 12.4, -12.6, -12.4, -12.6, -12.4, -5, -4.2, 5.6),
+    [1.2, 1.2, 0.8, 1.5, 6, 6, 1.5, 0.8],
+  );
+  silhouette(pen, place(flipper, k), FLIPPER_FILL, ITEM_LW, () => {
+    trimBand(pen, 6.4, 9.6, FLIPPER_CUFF);
+    const ridges = new Path2D();
+    for (const [x, y] of [
+      [-7, -7],
+      [0, -9],
+      [7, -7],
+    ]) {
+      ridges.moveTo(0, 3 * k);
+      ridges.lineTo(x * k, y * k);
+    }
+    ctx.strokeStyle = FLIPPER_RIDGE;
+    ctx.lineWidth = 1.6;
+    ctx.stroke(ridges);
+  });
+  shine(pen, -7.4, -6.4, 0.9, 2.4, 0.4);
+}
+
 // ---------------------------------------------------------------------------
 // Paint shell and the Dream blob
 // ---------------------------------------------------------------------------
@@ -825,6 +956,18 @@ export function paintTreasureIcon(ctx: CanvasRenderingContext2D, slug: TreasureI
       break;
     case 'golden-bow':
       paintGoldenBow({ ctx, k: fitScale(size, INK_OUT_BLOB) });
+      break;
+    case 'tank-top':
+      paintTankTop({ ctx, k: fitScale(size, INK_OUT_SHAPE) });
+      break;
+    case 'diving-tank':
+      paintDivingTank({ ctx, k: (size - 2 * INK_OUT_BLOB) / DIVING_TANK_FILL_H });
+      break;
+    case 'stripy-socks':
+      paintStripySocks({ ctx, k: fitScale(size, INK_OUT_SHAPE) });
+      break;
+    case 'flippers':
+      paintFlippers({ ctx, k: fitScale(size, INK_OUT_SHAPE) });
       break;
   }
 }

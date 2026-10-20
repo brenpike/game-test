@@ -3,10 +3,11 @@
  * the text back as a hub. Pure; reading and writing browser storage lives in `src/platform/`.
  *
  * Only the hub is saved: banked treasure ids (so owned Dream colours), the owned axolotls with their
- * names, looks and worn Dream colours, the Home Tank layout, the Collection Book and the best stars per area. Never
- * saved: the Trip Bag, any trip state, legs, Shell blocks used this trip, the trip seed, the eaten
- * snacks and the stranded axolotl left waiting. The canal stays session-only, so a loaded game
- * opens in the Home Tank and unbanked finds reappear on the next trip in fresh spots (D3).
+ * names, looks, worn Dream colours and outfits, the chosen explorer, the Home Tank layout, the
+ * Collection Book and the best stars per area. Never saved: the Trip Bag, any trip state, legs,
+ * Shell blocks used this trip, the trip seed, the eaten snacks and the stranded axolotl left
+ * waiting. The canal stays session-only, so a loaded game opens in the Home Tank and unbanked finds
+ * reappear on the next trip in fresh spots (D3).
  *
  * Additive rule: a new hub field loads with its default when an older save lacks it, with no
  * version bump. Only a change an old save cannot load by default (a rename, a new meaning) bumps
@@ -15,6 +16,9 @@
  * Repair rule: the hub is repaired field by field, so one bad field never wipes the rest. Unknown
  * ids, bad options and wrong types fall back to their defaults or are dropped. Only text that is
  * not a versioned save object at all is unreadable.
+ *
+ * Outfits and the explorer (#16) came under the additive rule: a missing outfit loads empty, and a
+ * missing or unknown explorer loads as the first owned axolotl.
  */
 import { DEFAULT_LOOK, LOOK_FIELDS, LOOK_FIELD_OPTIONS, copyLook, type AxolotlLook, type LookField } from './axolotlLook';
 import { cleanName, isValidName, unusedSuggestedName } from './axolotlNames';
@@ -22,6 +26,7 @@ import { areaById } from './areas';
 import { ownedDreamColours, treasureById, type DreamColourId } from './catalogue';
 import { wornDreamOrNone } from './dreamPaint';
 import { REAL_MORPHS, axolotlFindId, isAxolotlFindId, type RealMorphId } from './morphs';
+import { repairOutfits, type Outfit } from './outfit';
 import {
   STARTER_AXOLOTL_ID,
   createSession,
@@ -89,6 +94,7 @@ function savedHub(hub: HubState): HubState {
     tank: { placed: hub.tank.placed.map(savedPlacement) },
     book: savedBook(hub.book),
     stars: savedStars(hub.stars),
+    explorerId: hub.explorerId,
   } satisfies { [Key in keyof HubState]-?: unknown };
 }
 
@@ -100,7 +106,22 @@ function savedAxolotl(axolotl: OwnedAxolotl): OwnedAxolotl {
     name: axolotl.name,
     look: copyLook(axolotl.look),
     dreamColour: axolotl.dreamColour,
+    outfit: savedOutfit(axolotl.outfit),
   } satisfies { [Key in keyof OwnedAxolotl]-?: unknown };
+}
+
+/** An allowlisted copy of `outfit`, slot by slot. A new slot fails the build here until it is saved. */
+function savedOutfit(outfit: Outfit): Outfit {
+  return {
+    head: outfit.head,
+    neck: outfit.neck,
+    face: outfit.face,
+    shirt: outfit.shirt,
+    back: outfit.back,
+    tail: outfit.tail,
+    socks: outfit.socks,
+    feet: outfit.feet,
+  } satisfies { [Key in keyof Outfit]-?: unknown };
 }
 
 function savedPlacement(placement: TankPlacement): TankPlacement {
@@ -162,16 +183,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** A whole HubState from a saved hub, each field repaired on its own. */
+/**
+ * A whole HubState from a saved hub, each field repaired on its own. Outfits are repaired once the
+ * axolotls and the banked ids are (repairOutfits).
+ */
 function repairedHub(saved: Record<string, unknown>): HubState {
   const banked = repairedBanked(saved.banked);
-  const axolotls = repairedAxolotls(saved.axolotls, ownedDreamColours(banked));
+  const axolotls = repairOutfits(repairedAxolotls(saved.axolotls, ownedDreamColours(banked)), banked);
   return {
     banked,
     axolotls,
     tank: repairedTank(saved.tank, banked),
     book: repairedBook(saved.book, axolotls),
     stars: repairedStars(saved.stars),
+    explorerId: repairedExplorerId(saved.explorerId, axolotls),
   };
 }
 
@@ -190,6 +215,9 @@ function isRealMorphId(value: unknown): value is RealMorphId {
   return REAL_MORPHS.some((morph) => morph.id === value);
 }
 
+/** An owned axolotl whose saved outfit is not repaired yet. */
+type UnrepairedOutfitAxolotl = Omit<OwnedAxolotl, 'outfit'> & { outfit: unknown };
+
 /** A saved axolotl entry with a real morph; any other entry is dropped. */
 type AxolotlEntry = Record<string, unknown> & { morph: RealMorphId };
 
@@ -199,8 +227,8 @@ function isAxolotlEntry(value: unknown): value is AxolotlEntry {
 
 /**
  * Whether `entry` needs no repair: the starter's id or its morph's find id, a valid name and every
- * look field a valid option. Its Dream colour is not checked: a Dream colour that loads as none
- * never lets a duplicate take this entry's id or morph.
+ * look field a valid option. Its Dream colour and outfit are not checked: a Dream colour that loads
+ * as none or an outfit that loads empty never lets a duplicate take this entry's id or morph.
  */
 function isIntactAxolotl(entry: AxolotlEntry): boolean {
   const look = entry.look;
@@ -217,15 +245,16 @@ function isIntactAxolotl(entry: AxolotlEntry): boolean {
  * their id and morph first, so an entry needing repair never displaces an intact one; among entries
  * alike, the first in saved order is kept. An id that is neither the starter's nor the morph's find
  * id becomes the find id. A bad name becomes the first suggested name no axolotl kept before it uses.
- * A Dream colour that is missing, unknown or not in `owned` loads as none (additive rule).
+ * A Dream colour that is missing, unknown or not in `owned` loads as none (additive rule). The saved
+ * outfit is kept as it is, for repairOutfits.
  */
-function repairedAxolotls(saved: unknown, owned: readonly DreamColourId[]): OwnedAxolotl[] {
+function repairedAxolotls(saved: unknown, owned: readonly DreamColourId[]): UnrepairedOutfitAxolotl[] {
   if (!Array.isArray(saved)) return [];
   const entries = saved.filter(isAxolotlEntry);
   const indices = [...entries.keys()];
   const intact = entries.map(isIntactAxolotl);
   const claimOrder = [...indices.filter((index) => intact[index]), ...indices.filter((index) => !intact[index])];
-  const kept = new Map<number, OwnedAxolotl>();
+  const kept = new Map<number, UnrepairedOutfitAxolotl>();
   for (const index of claimOrder) {
     const entry = entries[index];
     const morph = entry.morph;
@@ -234,12 +263,13 @@ function repairedAxolotls(saved: unknown, owned: readonly DreamColourId[]): Owne
     if (claimed.some((axolotl) => axolotl.id === id || axolotl.morph === morph)) continue;
     const look = repairedLook(entry.look);
     const dreamColour = wornDreamOrNone(entry.dreamColour, owned);
-    kept.set(index, { id, morph, name: repairedName(entry.name, claimed, look), look, dreamColour });
+    const name = repairedName(entry.name, claimed, look);
+    kept.set(index, { id, morph, name, look, dreamColour, outfit: entry.outfit });
   }
   return indices.flatMap((index) => kept.get(index) ?? []);
 }
 
-function repairedName(saved: unknown, earlier: readonly OwnedAxolotl[], look: AxolotlLook): string {
+function repairedName(saved: unknown, earlier: readonly UnrepairedOutfitAxolotl[], look: AxolotlLook): string {
   const name = typeof saved === 'string' ? cleanName(saved) : '';
   if (isValidName(name)) return name;
   return unusedSuggestedName(earlier.map((axolotl) => axolotl.name), look.sex);
@@ -291,6 +321,12 @@ function repairedStars(saved: unknown): AreaStarsRecord {
 
 function repairedAreaStars(saved: Record<string, unknown>): AreaStars {
   return { exit: saved.exit === true, special: saved.special === true, legsOrRescue: saved.legsOrRescue === true };
+}
+
+/** The saved explorer id when an axolotl in `axolotls` has it, else the first one's id, or null with none. */
+function repairedExplorerId(saved: unknown, axolotls: readonly OwnedAxolotl[]): string | null {
+  const chosen = axolotls.find((axolotl) => axolotl.id === saved) ?? axolotls[0];
+  return chosen?.id ?? null;
 }
 
 /** The session a save read starts: the loaded hub with a fresh canal, else a new session. */

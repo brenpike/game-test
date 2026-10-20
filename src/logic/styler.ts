@@ -1,7 +1,7 @@
 /**
  * Styler rules: the step-by-step character creator (PRD F1, F2, F17) and the restyle screen (PRD F6),
- * with its Dream colour step (PRD F14), their focus and keys (PRD F16), as one pure reducer so the
- * scene only draws the state and acts on the returned effect.
+ * with its Dream colour step (PRD F14) and Outfit step (PRD C10, F8), their focus and keys (PRD F16),
+ * as one pure reducer so the scene only draws the state and acts on the returned effect.
  */
 import {
   DEFAULT_LOOK,
@@ -22,9 +22,18 @@ import {
   stepSuggestedName,
   suggestedNamesFor,
 } from './axolotlNames';
-import { dreamColourById, type DreamColourId } from './catalogue';
+import {
+  CANAL_TREASURES,
+  WEARABLE_SLOTS,
+  dreamColourById,
+  treasureById,
+  type DreamColourId,
+  type Wearable,
+  type WearableSlot,
+} from './catalogue';
 import { REAL_COLOUR_OPTION_ID, dreamOptionIds, isDreamColourId, wornDreamOrNone } from './dreamPaint';
 import { REAL_MORPHS, STARTER_MORPH, morphById, type RealMorphId } from './morphs';
+import { emptyOutfit, wornIds, type Outfit } from './outfit';
 import {
   FIXED_AFTER_CREATION,
   MAX_STEP_OPTIONS,
@@ -34,20 +43,25 @@ import {
   stepLookField,
   type StylerStep,
 } from './stylerSteps';
-import { REAL_COLOUR_LABEL } from './stylerText';
+import { NONE_LABEL, REAL_COLOUR_LABEL, wornOnLabel } from './stylerText';
+import type { OutfitView } from './stylerUi';
 import { nextFocusIndex, tankKeyFor } from './tankUi';
+import { slotName } from './treasureChest';
 
 /** Which screen the styler is: the character creator or the restyle screen. */
 export type StylerMode = 'creator' | 'restyle';
 
 /**
  * A styler button. `nameBox` is the name text box on the Name step, before typing starts; `moreColours`
- * shows the next page of the Dream colour step.
+ * shows the next page of the Dream colour step; `moreOutfit` shows the next page of the Outfit step's
+ * view (More slots or More wearables); `backToSlots` goes from one slot's choices back to the slots.
  */
 export type StylerButton =
   | 'nameBox'
   | 'moreNames'
   | 'moreColours'
+  | 'moreOutfit'
+  | 'backToSlots'
   | 'back'
   | 'surprise'
   | 'next'
@@ -63,10 +77,20 @@ export type StylerFocus =
 /** A kind of focusable control: one Tab stop in the focus order. */
 export type StylerFocusKind = StylerFocus['kind'];
 
+/** Another axolotl wearing a Wearable: its id, and the name its "On <name>" mark shows. */
+export interface StylerWearer {
+  readonly axolotlId: string;
+  readonly name: string;
+}
+
 /**
  * The styler: the screen, the current step, the name, look, morph and Dream colour so far, the focus,
  * which page of suggested names the Name step shows, `namesPerPage` names to a page, the owned Dream
  * colours, and which page of them the Dream colour step shows, `dreamsPerPage` options to a page.
+ * The Outfit step adds the draft `outfit`, the banked Wearable ids in catalogue order, who else wears
+ * each Wearable (by Wearable id), its view and the slot it opened (or last opened), and which page of
+ * that view shows, `outfitPerPage` picture buttons to a page. `tabsHidden` is true when the layout has
+ * hidden the restyle tab row (only the Outfit choices view does that).
  */
 export interface StylerState {
   readonly mode: StylerMode;
@@ -81,23 +105,47 @@ export interface StylerState {
   readonly namesPerPage: number;
   readonly dreamPage: number;
   readonly dreamsPerPage: number;
+  readonly outfit: Outfit;
+  readonly bankedWearables: readonly string[];
+  readonly wearers: ReadonlyMap<string, StylerWearer>;
+  readonly outfitView: OutfitView;
+  readonly outfitSlot: WearableSlot;
+  readonly outfitPage: number;
+  readonly outfitPerPage: number;
+  readonly tabsHidden: boolean;
 }
 
 /**
  * The axolotl the styler starts from, and finishes with on Done. In restyle the morph and sex never
- * change. `dreamColour` is the Dream colour worn; missing means none.
+ * change. `dreamColour` is the Dream colour worn and `outfit` the Wearables worn; missing means none.
  */
 export interface StylerAxolotl {
   readonly name: string;
   readonly look: AxolotlLook;
   readonly morph: RealMorphId;
   readonly dreamColour?: DreamColourId | null;
+  readonly outfit?: Readonly<Outfit>;
 }
 
-/** One option button of the current step: a stable id and the label the player reads. */
+/**
+ * What a restyle starts with besides the axolotl: the banked treasure ids (only Wearables count), who
+ * wears each Wearable by Wearable id, and the step to open on (RESTYLE_START_STEP when missing; the
+ * explorer card's Change outfit opens on 'outfit').
+ */
+export interface RestyleOptions {
+  readonly banked?: readonly string[];
+  readonly wearers?: ReadonlyMap<string, StylerWearer>;
+  readonly startStep?: StylerStep;
+}
+
+/**
+ * One option button of the current step: a stable id and the label the player reads. On the Outfit
+ * choices view, `wornOnMark` is the "On <name>" mark of a Wearable another axolotl wears.
+ */
 export interface StylerOption {
   readonly id: string;
   readonly label: string;
+  readonly wornOnMark?: string;
 }
 
 /** A key press: a `KeyboardEvent.key` value, whether Shift is held, and the option grid's column count. */
@@ -110,8 +158,9 @@ export interface StylerKeyAction {
 
 /**
  * A styler input: a key, or a pointer press of an option button by its index in stepOptions, Back, Next, a restyle
- * tab, Surprise me, Done, Cancel, a tap on the name box, More names with the names that fit a page, and More
- * colours with the Dream colour options that fit a page.
+ * tab, Surprise me, Done, Cancel, a tap on the name box, More names with the names that fit a page, More
+ * colours with the Dream colour options that fit a page, More slots or More wearables with the Outfit
+ * picture buttons that fit a page, and Back to slots.
  */
 export type StylerAction =
   | StylerKeyAction
@@ -124,16 +173,19 @@ export type StylerAction =
   | { type: 'cancel' }
   | { type: 'nameTap' }
   | { type: 'moreNames'; perPage: number }
-  | { type: 'moreColours'; perPage: number };
+  | { type: 'moreColours'; perPage: number }
+  | { type: 'moreOutfit'; perPage: number }
+  | { type: 'backToSlots' };
 
 /**
- * What the scene must do after an action: open the name text field, finish with the axolotl and its
- * Dream colour, null for none (create it or keep the restyle), or leave the restyle screen without
- * keeping changes.
+ * What the scene must do after an action: open the name text field, finish with the axolotl, its
+ * Dream colour (null for none) and its outfit (create it or keep the restyle; a Wearable in the
+ * outfit that another axolotl wears is for the caller to take off that one), or leave the restyle
+ * screen without keeping changes.
  */
 export type StylerEffect =
   | { type: 'startTyping' }
-  | ({ type: 'done'; readonly dreamColour: DreamColourId | null } & StylerAxolotl)
+  | ({ type: 'done'; readonly dreamColour: DreamColourId | null; readonly outfit: Outfit } & StylerAxolotl)
   | { type: 'cancel' };
 
 /** Result of a styler action: the new state and, when the scene must act, an effect. */
@@ -144,6 +196,9 @@ export interface StylerResult {
 
 /** Most "Surprise me" rolls before stepping the name to force a change. */
 export const SURPRISE_ROLLS = 8;
+
+/** The id of the Outfit choices view option "None", which leaves the slot empty. */
+export const NO_WEARABLE_OPTION_ID = 'none';
 
 const MORPH_IDS: readonly RealMorphId[] = Object.freeze(REAL_MORPHS.map((morph) => morph.id));
 
@@ -172,7 +227,7 @@ function nameKey(name: string): string {
   return name.toLowerCase();
 }
 
-/** The index of `step` in STYLER_STEPS: 0 for Colour, 10 for Name, -1 for the restyle-only Dream colour step. */
+/** The index of `step` in STYLER_STEPS: 0 for Colour, 10 for Name, -1 for the restyle-only Dream colour and Outfit steps. */
 export function stepIndex(state: StylerState): number {
   return STYLER_STEPS.indexOf(state.step);
 }
@@ -244,6 +299,109 @@ function dreamOption(id: string): StylerOption {
   return { id, label: colour.name };
 }
 
+/** The catalogue Wearable with `id`. Throws when `id` is unknown or not a Wearable. */
+function wearableById(id: string): Wearable {
+  const treasure = treasureById(id);
+  if (treasure?.category !== 'wearable') throw new Error(`Not a Wearable: ${id}`);
+  return treasure;
+}
+
+/** The Wearable ids among `banked`, in catalogue order without repeats; other ids are ignored. */
+function bankedWearableIds(banked: readonly string[]): string[] {
+  const bankedIds = new Set(banked);
+  return CANAL_TREASURES.filter((treasure) => treasure.category === 'wearable' && bankedIds.has(treasure.id)).map(
+    (treasure) => treasure.id,
+  );
+}
+
+/** `outfit` keeping only banked Wearables in their own slot; every other slot is empty. */
+function bankedOutfit(outfit: Readonly<Outfit> | undefined, bankedWearables: readonly string[]): Outfit {
+  const kept = emptyOutfit();
+  if (outfit === undefined) return kept;
+  for (const slot of WEARABLE_SLOTS) {
+    const id = outfit[slot];
+    if (id !== null && bankedWearables.includes(id) && wearableById(id).slot === slot) kept[slot] = id;
+  }
+  return kept;
+}
+
+/** `wearers` without the Wearables in `outfit`, which this axolotl wears itself. */
+function otherWearers(
+  wearers: ReadonlyMap<string, StylerWearer>,
+  outfit: Readonly<Outfit>,
+): ReadonlyMap<string, StylerWearer> {
+  const ownIds = wornIds(outfit);
+  return new Map([...wearers].filter(([wearableId]) => !ownIds.includes(wearableId)));
+}
+
+function isOutfitSlots(state: StylerState): boolean {
+  return state.step === 'outfit' && state.outfitView === 'slots';
+}
+
+function isOutfitChoices(state: StylerState): boolean {
+  return state.step === 'outfit' && state.outfitView === 'choices';
+}
+
+/** The choice ids of the open slot: None, then the banked Wearables of that slot in catalogue order. */
+function outfitChoiceIds(state: StylerState): readonly string[] {
+  const slotIds = state.bankedWearables.filter((id) => wearableById(id).slot === state.outfitSlot);
+  return [NO_WEARABLE_OPTION_ID, ...slotIds];
+}
+
+function outfitViewIds(state: StylerState): readonly string[] {
+  return state.outfitView === 'slots' ? WEARABLE_SLOTS : outfitChoiceIds(state);
+}
+
+/**
+ * How many picture buttons the Outfit step's current view has in all pages: one per slot in the slots
+ * view, None and the slot's banked Wearables in the choices view.
+ */
+export function outfitOptionCount(state: StylerState): number {
+  return outfitViewIds(state).length;
+}
+
+/** How many pages the Outfit step's current view has. */
+export function outfitPageCount(state: StylerState): number {
+  return Math.ceil(outfitOptionCount(state) / state.outfitPerPage);
+}
+
+function clampedOutfitPage(state: StylerState): number {
+  return Math.min(Math.max(state.outfitPage, 0), outfitPageCount(state) - 1);
+}
+
+function outfitPageSlice<Id extends string>(state: StylerState, ids: readonly Id[]): readonly Id[] {
+  const start = clampedOutfitPage(state) * state.outfitPerPage;
+  return ids.slice(start, start + state.outfitPerPage);
+}
+
+/** The id the Outfit page follows: the open slot in the slots view, the worn choice (or None) in the choices view. */
+function outfitAnchorId(state: StylerState): string {
+  if (state.outfitView === 'slots') return state.outfitSlot;
+  return state.outfit[state.outfitSlot] ?? NO_WEARABLE_OPTION_ID;
+}
+
+/** The styler with the Outfit page that holds the open slot or the worn choice, or its page kept in range. */
+function syncOutfitPage(state: StylerState): StylerState {
+  const index = outfitViewIds(state).indexOf(outfitAnchorId(state));
+  const outfitPage = index < 0 ? clampedOutfitPage(state) : Math.floor(index / state.outfitPerPage);
+  return { ...state, outfitPage };
+}
+
+function choiceOption(state: StylerState, id: string): StylerOption {
+  if (id === NO_WEARABLE_OPTION_ID) return { id, label: NONE_LABEL };
+  const label = wearableById(id).name;
+  const wearer = state.wearers.get(id);
+  return wearer === undefined ? { id, label } : { id, label, wornOnMark: wornOnLabel(wearer.name) };
+}
+
+/** The Outfit options on the current page: the slots by slot name, or the open slot's choices. */
+function outfitOptions(state: StylerState): readonly StylerOption[] {
+  if (state.outfitView === 'slots') {
+    return outfitPageSlice(state, WEARABLE_SLOTS).map((slot) => ({ id: slot, label: slotName(slot) }));
+  }
+  return outfitPageSlice(state, outfitChoiceIds(state)).map((id) => choiceOption(state, id));
+}
+
 function currentLookOption(state: StylerState): StylerOption {
   const field = lookFieldOf(state.step);
   const options: readonly LookOption<string>[] = LOOK_FIELD_OPTIONS[field];
@@ -259,14 +417,16 @@ function readOnlyOption(state: StylerState): StylerOption {
 
 /**
  * The option buttons of the current step, in order: the real morphs on Colour, the current page of
- * the real colour then the owned Dream colours on Dream colour, the current page of suggested names
- * fitting the sex on Name, else the look field's options. A read-only restyle step shows only its
- * current value.
+ * the real colour then the owned Dream colours on Dream colour, on Outfit the current page of the
+ * slots (slots view) or of None then the open slot's banked Wearables (choices view), the current
+ * page of suggested names fitting the sex on Name, else the look field's options. A read-only
+ * restyle step shows only its current value.
  */
 export function stepOptions(state: StylerState): readonly StylerOption[] {
   if (isReadOnly(state)) return [readOnlyOption(state)];
   if (state.step === 'colour') return COLOUR_OPTIONS;
   if (state.step === 'dream') return dreamPageIds(state).map(dreamOption);
+  if (state.step === 'outfit') return outfitOptions(state);
   if (state.step === 'name') return namePageNames(state).map((name) => ({ id: name, label: name }));
   return LOOK_FIELD_OPTIONS[lookFieldOf(state.step)];
 }
@@ -274,14 +434,17 @@ export function stepOptions(state: StylerState): readonly StylerOption[] {
 function chosenId(state: StylerState): string {
   if (state.step === 'colour') return state.morph;
   if (state.step === 'dream') return chosenDreamId(state);
+  if (state.step === 'outfit') return outfitAnchorId(state);
   return state.look[lookFieldOf(state.step)];
 }
 
 /**
- * The index in stepOptions of the current value, or -1 when it is not shown: a typed name, or a
- * suggested name or Dream colour option on another page. Names match ignoring case.
+ * The index in stepOptions of the current value, or -1 when it is not shown: a typed name, a
+ * suggested name, Dream colour or Outfit choice on another page, or the Outfit slots view, which
+ * marks no slot chosen. Names match ignoring case.
  */
 export function chosenIndex(state: StylerState): number {
+  if (isOutfitSlots(state)) return -1;
   const options = stepOptions(state);
   if (state.step === 'name') {
     const currentKey = nameKey(state.name);
@@ -291,8 +454,33 @@ export function chosenIndex(state: StylerState): number {
   return options.findIndex((option) => option.id === chosen);
 }
 
+/**
+ * The index in stepOptions that Tab lands on and a page resize keeps focused: the open slot on the
+ * Outfit slots view (-1 when on another page), else chosenIndex.
+ */
+function homeIndex(state: StylerState): number {
+  if (isOutfitSlots(state)) return outfitPageSlice(state, WEARABLE_SLOTS).indexOf(state.outfitSlot);
+  return chosenIndex(state);
+}
+
+/** True when the layout has hidden the restyle tab row, which only the Outfit choices view does. */
+function tabRowHidden(state: StylerState): boolean {
+  return state.tabsHidden && isOutfitChoices(state);
+}
+
+/**
+ * The Outfit controls: the picture buttons, then the More button when there is more than one page; the
+ * choices view adds Back to slots after them, or first while the tab row is hidden.
+ */
+function outfitControls(state: StylerState): readonly StylerFocusKind[] {
+  const controls: readonly StylerFocusKind[] = outfitPageCount(state) > 1 ? ['option', 'moreOutfit'] : ['option'];
+  if (state.outfitView === 'slots') return controls;
+  return tabRowHidden(state) ? ['backToSlots', ...controls] : [...controls, 'backToSlots'];
+}
+
 function stepControls(state: StylerState): readonly StylerFocusKind[] {
   if (state.step === 'dream') return dreamPageCount(state) > 1 ? ['option', 'moreColours'] : ['option'];
+  if (state.step === 'outfit') return outfitControls(state);
   if (state.step !== 'name') return ['option'];
   return namePageCount(state) > 1 ? ['nameBox', 'option', 'moreNames'] : ['nameBox', 'option'];
 }
@@ -308,10 +496,16 @@ function creatorButtons(state: StylerState): readonly StylerButton[] {
  * (not on step 1), Surprise me, then Next or Done on the last step. Restyle: the tabs, options,
  * Surprise me, Cancel, Done. On the Name step the options are the name box, the name buttons and
  * More names (when there is more than one page). On the Dream colour step they are the colour
- * buttons and More colours (when there is more than one page).
+ * buttons and More colours (when there is more than one page). On the Outfit step they are the
+ * picture buttons, More slots or More wearables (when there is more than one page) and, in the
+ * choices view, Back to slots; once the choices view has hidden the tab row there are no tabs and
+ * Back to slots comes first (art guide 8).
  */
 export function focusOrder(state: StylerState): readonly StylerFocusKind[] {
-  if (state.mode === 'restyle') return ['tab', ...stepControls(state), 'surprise', 'cancel', 'done'];
+  if (state.mode === 'restyle') {
+    const controls: readonly StylerFocusKind[] = [...stepControls(state), 'surprise', 'cancel', 'done'];
+    return tabRowHidden(state) ? controls : ['tab', ...controls];
+  }
   return [...stepControls(state), ...creatorButtons(state)];
 }
 
@@ -331,22 +525,33 @@ export function sameFocus(first: StylerFocus, second: StylerFocus): boolean {
   return first.kind === second.kind;
 }
 
-/** The focus a Tab stop of `kind` lands on: the chosen option (else the first), the current tab, or the button. */
+/**
+ * The focus a Tab stop of `kind` lands on: the chosen option or the open Outfit slot (else the
+ * first), the current tab, or the button.
+ */
 function focusFor(state: StylerState, kind: StylerFocusKind): StylerFocus {
-  if (kind === 'option') return { kind, index: Math.max(chosenIndex(state), 0) };
+  if (kind === 'option') return { kind, index: Math.max(homeIndex(state), 0) };
   if (kind === 'tab') return { kind, step: state.step };
   return { kind };
 }
 
-/** The focus on arriving at a step: its chosen option, else the name box on Name, else the first option. */
+/**
+ * The focus on arriving at a step or an Outfit view: its chosen option or open slot, else the name box
+ * on Name, else the first option.
+ */
 function stepEntryFocus(state: StylerState): StylerFocus {
-  const chosen = chosenIndex(state);
-  if (chosen >= 0) return { kind: 'option', index: chosen };
+  const home = homeIndex(state);
+  if (home >= 0) return { kind: 'option', index: home };
   return state.step === 'name' ? { kind: 'nameBox' } : { kind: 'option', index: 0 };
 }
 
+/** The step `step`; the Outfit step opens on its slots view, first page, with Head as the open slot. */
 function enterStep(state: StylerState, step: StylerStep): StylerState {
-  const moved = syncDreamPage(syncNamePage({ ...state, step }));
+  const stepped: StylerState =
+    step === 'outfit'
+      ? { ...state, step, outfitView: 'slots', outfitSlot: WEARABLE_SLOTS[0], outfitPage: 0 }
+      : { ...state, step };
+  const moved = syncDreamPage(syncNamePage(stepped));
   return { ...moved, focus: stepEntryFocus(moved) };
 }
 
@@ -355,7 +560,10 @@ function startState(
   axolotl: StylerAxolotl,
   step: StylerStep,
   ownedDreams: readonly DreamColourId[],
+  options: RestyleOptions,
 ): StylerState {
+  const bankedWearables = bankedWearableIds(options.banked ?? []);
+  const outfit = bankedOutfit(axolotl.outfit, bankedWearables);
   const base: StylerState = {
     mode,
     step,
@@ -369,36 +577,56 @@ function startState(
     namesPerPage: MAX_STEP_OPTIONS,
     dreamPage: 0,
     dreamsPerPage: MAX_STEP_OPTIONS,
+    outfit,
+    bankedWearables,
+    wearers: otherWearers(options.wearers ?? new Map<string, StylerWearer>(), outfit),
+    outfitView: 'slots',
+    outfitSlot: WEARABLE_SLOTS[0],
+    outfitPage: 0,
+    outfitPerPage: MAX_STEP_OPTIONS,
+    tabsHidden: false,
   };
   return enterStep(base, step);
 }
 
 /**
  * A new character creator on Colour with the chosen option focused: the default look with a random
- * sex, a random suggested name that fits it, STARTER_MORPH and no Dream colour. `rand` yields floats
- * in [0, 1).
+ * sex, a random suggested name that fits it, STARTER_MORPH, no Dream colour and an empty outfit.
+ * `rand` yields floats in [0, 1).
  */
 export function creatorStart(rand: () => number): StylerState {
   const sexOptions = LOOK_FIELD_OPTIONS.sex;
   const sex = sexOptions[randomIndex(rand, sexOptions.length)].id;
   const look: AxolotlLook = { ...DEFAULT_LOOK, sex };
   const axolotl: StylerAxolotl = { name: randomSuggestedName(rand, sex), look, morph: STARTER_MORPH };
-  return startState('creator', axolotl, STYLER_STEPS[0], []);
+  return startState('creator', axolotl, STYLER_STEPS[0], [], {});
 }
 
 /**
- * A restyle of `axolotl` on RESTYLE_START_STEP with the chosen option focused. `ownedDreams` are the
- * Dream colours the player owns, kept in DREAM_COLOURS order without repeats or unknown ids; a worn
- * Dream colour that is not owned is taken off. Extra fields are dropped.
+ * A restyle of `axolotl` on `options.startStep` (else RESTYLE_START_STEP) with the chosen option
+ * focused, or on the Outfit step its first slot. `ownedDreams` are the Dream colours the player owns,
+ * kept in DREAM_COLOURS order without repeats or unknown ids; a worn Dream colour that is not owned
+ * is taken off. `options.banked` are the banked treasure ids, of which the Wearables are kept in
+ * catalogue order; a worn Wearable that is not banked or not in its own slot is taken off.
+ * `options.wearers` marks each Wearable another axolotl wears; entries for Wearables this axolotl
+ * wears are dropped. Extra fields are dropped.
  */
-export function restyleStart(axolotl: StylerAxolotl, ownedDreams: readonly DreamColourId[] = []): StylerState {
-  return startState('restyle', axolotl, RESTYLE_START_STEP, dreamOptionIds(ownedDreams).filter(isDreamColourId));
+export function restyleStart(
+  axolotl: StylerAxolotl,
+  ownedDreams: readonly DreamColourId[] = [],
+  options: RestyleOptions = {},
+): StylerState {
+  const owned = dreamOptionIds(ownedDreams).filter(isDreamColourId);
+  return startState('restyle', axolotl, options.startStep ?? RESTYLE_START_STEP, owned, options);
 }
 
-/** `sized` with a focused option button on the chosen option when `pagedStep` shows it, else kept in range. */
+/**
+ * `sized` with a focused option button on the chosen option (or open Outfit slot) when `pagedStep`
+ * shows it, else kept in range.
+ */
 function fitOptionFocus(sized: StylerState, pagedStep: StylerStep): StylerState {
   if (sized.focus.kind !== 'option') return sized;
-  const chosen = sized.step === pagedStep ? chosenIndex(sized) : -1;
+  const chosen = sized.step === pagedStep ? homeIndex(sized) : -1;
   if (chosen >= 0) return { ...sized, focus: { kind: 'option', index: chosen } };
   const lastIndex = stepOptions(sized).length - 1;
   return { ...sized, focus: { kind: 'option', index: Math.min(sized.focus.index, lastIndex) } };
@@ -420,6 +648,31 @@ export function withNamesPerPage(state: StylerState, perPage: number): StylerSta
 export function withDreamsPerPage(state: StylerState, perPage: number): StylerState {
   const sized = syncDreamPage({ ...state, dreamsPerPage: requirePositiveInteger(perPage, 'Dreams per page') });
   return fitOptionFocus(sized, 'dream');
+}
+
+/** `state`, with a focus that is no longer a Tab stop (a hidden tab or More button) moved to the picture buttons. */
+function keepFocusInOrder(state: StylerState): StylerState {
+  return focusOrder(state).includes(state.focus.kind) ? state : { ...state, focus: focusFor(state, 'option') };
+}
+
+/**
+ * The styler with `perPage` picture buttons to an Outfit page of the current view, on the page holding
+ * the open slot (slots view) or the worn choice (choices view). A focused picture button moves onto
+ * that slot or choice, else stays in range; a focused More button that one page no longer needs
+ * moves to the picture buttons.
+ */
+export function withOutfitPerPage(state: StylerState, perPage: number): StylerState {
+  const perPageChecked = requirePositiveInteger(perPage, 'Outfit buttons per page');
+  const sized = syncOutfitPage({ ...state, outfitPerPage: perPageChecked });
+  return keepFocusInOrder(fitOptionFocus(sized, 'outfit'));
+}
+
+/**
+ * The styler with the restyle tab row `hidden` or shown, as the layout placed it (its `tabs` null).
+ * Only the Outfit choices view hides it; a focused tab moves to the picture buttons.
+ */
+export function withTabsHidden(state: StylerState, hidden: boolean): StylerState {
+  return keepFocusInOrder({ ...state, tabsHidden: hidden });
 }
 
 /** The styler with `raw` cleaned as its name; unchanged when the cleaned name is empty. */
@@ -455,9 +708,27 @@ function chooseDream(state: StylerState, index: number): StylerState {
   return { ...state, dreamColour: id === REAL_COLOUR_OPTION_ID ? null : wornDreamOrNone(id, state.ownedDreams) };
 }
 
+/** The Outfit choices view of `slot`, on the page holding the worn choice, with it focused. */
+function openSlot(state: StylerState, slot: WearableSlot): StylerState {
+  const opened = syncOutfitPage({ ...state, outfitView: 'choices', outfitSlot: slot });
+  return { ...opened, focus: stepEntryFocus(opened) };
+}
+
+/**
+ * On the Outfit slots view, opens the slot at `index` on the page; on the choices view, puts the
+ * choice at `index` in the open slot of the draft outfit, None taking it off. The view stays open.
+ */
+function chooseOutfit(state: StylerState, index: number): StylerState {
+  if (state.outfitView === 'slots') return openSlot(state, outfitPageSlice(state, WEARABLE_SLOTS)[index]);
+  const id = outfitPageSlice(state, outfitChoiceIds(state))[index];
+  const worn = id === NO_WEARABLE_OPTION_ID ? null : id;
+  return { ...state, outfit: { ...state.outfit, [state.outfitSlot]: worn } };
+}
+
 function chooseOption(state: StylerState, index: number): StylerState {
   if (state.step === 'colour') return { ...state, morph: MORPH_IDS[index] };
   if (state.step === 'dream') return chooseDream(state, index);
+  if (state.step === 'outfit') return chooseOutfit(state, index);
   if (state.step === 'name') return { ...state, name: namePageNames(state)[index] };
   if (state.step === 'sex') return withSex(state, LOOK_FIELD_OPTIONS.sex[index].id);
   return { ...state, look: withLookOption(state.look, lookFieldOf(state.step), index) };
@@ -465,7 +736,8 @@ function chooseOption(state: StylerState, index: number): StylerState {
 
 /**
  * Picks the option at `index` in stepOptions and focuses it. An index outside the options is ignored;
- * a read-only restyle step only takes the focus.
+ * a read-only restyle step only takes the focus. On the Outfit slots view the pick opens that slot's
+ * choices view, focused on its worn choice.
  */
 export function pickOption(state: StylerState, index: number): StylerState {
   if (!Number.isInteger(index) || index < 0 || index >= stepOptions(state).length) return state;
@@ -492,7 +764,8 @@ function rollSurprise(state: StylerState, rand: () => number): StylerAxolotl {
  * fitting that sex, and a random real morph. Restyle: a random look keeping the sex, and a suggested
  * name fitting it; never the morph. Never the Dream colour (PRD F6). Rolled up to SURPRISE_ROLLS
  * times until it is not exactly the current name, look and morph; if every roll matches, the last
- * roll's name steps to the next fitting suggested name. Step and focus stay.
+ * roll's name steps to the next fitting suggested name. Never the outfit. Step, Outfit view and
+ * focus stay.
  */
 export function surprise(state: StylerState, rand: () => number): StylerState {
   let rolled = rollSurprise(state, rand);
@@ -502,7 +775,8 @@ export function surprise(state: StylerState, rand: () => number): StylerState {
 }
 
 function doneEffect(state: StylerState): StylerEffect {
-  return { type: 'done', name: state.name, look: state.look, morph: state.morph, dreamColour: state.dreamColour };
+  const { name, look, morph, dreamColour } = state;
+  return { type: 'done', name, look, morph, dreamColour, outfit: { ...state.outfit } };
 }
 
 /** Back or Next in the creator: moves `offset` steps when that step exists. Restyle has neither. */
@@ -546,6 +820,21 @@ function showMoreColours(state: StylerState, perPage: number): StylerState {
   return { ...sized, dreamPage, focus: { kind: 'moreColours' } };
 }
 
+/** The next Outfit page, wrapping, with the focus on the More button while it shows (more than one page). */
+function showMoreOutfit(state: StylerState, perPage: number): StylerState {
+  if (state.step !== 'outfit') return state;
+  const sized: StylerState = { ...state, outfitPerPage: requirePositiveInteger(perPage, 'Outfit buttons per page') };
+  const outfitPage = (clampedOutfitPage(sized) + 1) % outfitPageCount(sized);
+  return keepFocusInOrder({ ...sized, outfitPage, focus: { kind: 'moreOutfit' } });
+}
+
+/** From an Outfit slot's choices back to the slots view, on the page holding that slot, with it focused. */
+function backToSlots(state: StylerState): StylerState {
+  if (!isOutfitChoices(state)) return state;
+  const slots = syncOutfitPage({ ...state, outfitView: 'slots' });
+  return { ...slots, focus: stepEntryFocus(slots) };
+}
+
 function moveFocus(state: StylerState, step: number): StylerState {
   const order = focusOrder(state);
   const kind = order[nextFocusIndex(order.indexOf(state.focus.kind), order.length, step)];
@@ -582,7 +871,7 @@ function arrowFocus(state: StylerState, arrow: 'left' | 'right' | 'up' | 'down',
 
 /**
  * Enter or Space on the focused control: picks an option, starts typing on the name box, shows the
- * next page of names or Dream colours, or presses a button.
+ * next page of names, Dream colours or Outfit picture buttons, or presses a button.
  */
 function pressFocused(state: StylerState, rand: () => number): StylerResult {
   const focus = state.focus;
@@ -592,19 +881,21 @@ function pressFocused(state: StylerState, rand: () => number): StylerResult {
   if (button === 'nameBox') return tapNameBox(state);
   if (button === 'moreNames') return { state: showMoreNames(state, state.namesPerPage) };
   if (button === 'moreColours') return { state: showMoreColours(state, state.dreamsPerPage) };
+  if (button === 'moreOutfit') return { state: showMoreOutfit(state, state.outfitPerPage) };
   return reduceStyler(state, { type: button }, rand);
 }
 
 /**
  * A key, through tankKeyFor: Tab and Shift+Tab move through focusOrder; arrows move in the option
- * grid or the tabs; Enter and Space press the focused control; Escape cancels in restyle only.
+ * grid or the tabs; Enter and Space press the focused control; Escape is Back to slots on the Outfit
+ * choices view, else cancels in restyle only.
  */
 function reduceKey(state: StylerState, action: StylerKeyAction, rand: () => number): StylerResult {
   const intent = tankKeyFor(action.key, action.shiftKey);
   if (intent === 'next') return { state: moveFocus(state, 1) };
   if (intent === 'previous') return { state: moveFocus(state, -1) };
   if (intent === 'confirm') return pressFocused(state, rand);
-  if (intent === 'cancel') return pressCancel(state);
+  if (intent === 'cancel') return isOutfitChoices(state) ? { state: backToSlots(state) } : pressCancel(state);
   if (intent === 'left' || intent === 'right' || intent === 'up' || intent === 'down') {
     return { state: arrowFocus(state, intent, action.columns) };
   }
@@ -615,7 +906,8 @@ function reduceKey(state: StylerState, action: StylerKeyAction, rand: () => numb
  * Applies one styler action. `rand` yields floats in [0, 1), such as mulberry32, and is used only by
  * "Surprise me". Pointer presses focus the pressed control. Back and Next do nothing in restyle;
  * tabs, Cancel and Escape do nothing in the creator, and Done works only on its last step.
- * In restyle no action changes the morph or the sex, and the Dream colour is only ever one owned or none.
+ * In restyle no action changes the morph or the sex, the Dream colour is only ever one owned or none,
+ * and the outfit only ever holds banked Wearables in their own slots; only Outfit choice picks change it.
  */
 export function reduceStyler(state: StylerState, action: StylerAction, rand: () => number): StylerResult {
   switch (action.type) {
@@ -641,5 +933,9 @@ export function reduceStyler(state: StylerState, action: StylerAction, rand: () 
       return { state: showMoreNames(state, action.perPage) };
     case 'moreColours':
       return { state: showMoreColours(state, action.perPage) };
+    case 'moreOutfit':
+      return { state: showMoreOutfit(state, action.perPage) };
+    case 'backToSlots':
+      return { state: backToSlots(state) };
   }
 }

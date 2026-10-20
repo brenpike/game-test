@@ -40,8 +40,8 @@ describe('catalogue enums', () => {
     expect(RARITIES).toEqual(['common', 'rare', 'epic', 'legendary']);
   });
 
-  it('has 4 wearable slots in order', () => {
-    expect(WEARABLE_SLOTS).toEqual(['head', 'neck', 'face', 'tail']);
+  it('has 8 wearable slots in order', () => {
+    expect(WEARABLE_SLOTS).toEqual(['head', 'neck', 'face', 'shirt', 'back', 'tail', 'socks', 'feet']);
   });
 });
 
@@ -66,14 +66,44 @@ describe('CANAL_TREASURES', () => {
     }
   });
 
-  it('covers all four wearable slots', () => {
+  it('has a Wearable for every one of the eight wearable slots', () => {
+    for (const slot of WEARABLE_SLOTS) {
+      expect(WEARABLES.some((wearable) => wearable.slot === slot)).toBe(true);
+    }
     const slots = new Set(WEARABLES.map((wearable) => wearable.slot));
     expect([...slots].sort()).toEqual([...WEARABLE_SLOTS].sort());
   });
 
-  it('has exactly 8 Decorations plus Wearables and 20 treasures in total', () => {
-    expect(DECORATIONS.length + WEARABLES.length).toBe(8);
-    expect(CANAL_TREASURES).toHaveLength(20);
+  it('has exactly 4 Decorations, 8 Wearables and 24 treasures in total', () => {
+    expect(DECORATIONS).toHaveLength(4);
+    expect(WEARABLES).toHaveLength(8);
+    expect(CANAL_TREASURES).toHaveLength(24);
+  });
+
+  it('keeps the original 16 treasures first so placement by seed stays the same', () => {
+    expect(CANAL_TREASURES.slice(0, 16).map((treasure) => treasure.id)).toEqual([
+      'canal/pond-plant',
+      'canal/toy-boat',
+      'canal/castle-tower',
+      'canal/sun-pyramid',
+      'canal/sun-hat',
+      'canal/shell-necklace',
+      'canal/heart-glasses',
+      'canal/golden-bow',
+      ...DREAM_COLOURS.map((colour) => `canal/paint-shell-${colour.id}`).slice(0, 8),
+    ]);
+    expect(CANAL_TREASURES.slice(-4).map((treasure) => treasure.id)).toEqual([
+      'canal/tank-top',
+      'canal/diving-tank',
+      'canal/stripy-socks',
+      'canal/flippers',
+    ]);
+  });
+
+  it('has no Wearable in a set yet', () => {
+    for (const wearable of WEARABLES) {
+      expect(wearable.setId).toBeUndefined();
+    }
   });
 
   it('has exactly 12 Paint shells, one per Dream colour', () => {

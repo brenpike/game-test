@@ -1,6 +1,8 @@
 /**
  * Axolotl face, gill and spot parts for the character creator (guide 6l to 6o),
- * so a preview can swap each part on its own (guide 11). drawAxolotl() paints
+ * so a preview can swap each part on its own (guide 11). The end of the file
+ * holds the Wearable slot geometry (guide 6i): anchors, footprints and
+ * keep-clear zones for the eight slots. drawAxolotl() paints
  * its eye, mouth, gill and spot layers through these painters, and reads the
  * body proportions (Boy or girl, Tail, Body, Age) from axolotlBodyGeometry().
  *
@@ -1216,4 +1218,402 @@ export function paintSpots(
     ell(p, m.x, m.y, m.rx, m.ry, m.rot);
     ctx.fill(p);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Wearable slots (guide 6a, 6i, 6k, 11)
+// ---------------------------------------------------------------------------
+// Pure geometry for the eight Wearable slots: anchors, footprints (ink
+// included) and keep-clear zones, resolved per AxolotlArtLook. The Head, Neck
+// and Face numbers sit on the head and never move. The Tail, Shirt, Back,
+// Socks and Feet numbers ride the look's tail, torso edge and leg roots. A
+// footprint is a conservative local box unless its comment says otherwise.
+// Painters (drawWearables.ts) and tests read these; nothing here paints.
+
+/** The eight Wearable slots, in PRD order (guide 6i). */
+export type WearableSlot = 'head' | 'neck' | 'face' | 'shirt' | 'back' | 'tail' | 'socks' | 'feet';
+export const WEARABLE_SLOTS: readonly WearableSlot[] = [
+  'head',
+  'neck',
+  'face',
+  'shirt',
+  'back',
+  'tail',
+  'socks',
+  'feet',
+];
+
+/** Slots painted over the body or head: one layer each (guide 6a). */
+export type BodyWearableSlot = Exclude<WearableSlot, 'socks' | 'feet'>;
+/** Layer of each body Wearable (guide 6a). */
+export const WEARABLE_LAYERS: Readonly<Record<BodyWearableSlot, number>> = {
+  shirt: 8.2,
+  tail: 8.5,
+  neck: 9.5,
+  back: 9.7,
+  head: 10.5,
+  face: 11.5,
+};
+/**
+ * Layer of the Socks and Feet items, per leg side (guide 6a): the far pair
+ * paints at 2.5 and the near pair at 3.5, both behind the silhouette (layer 4).
+ * On one leg the Sock paints first, then the Feet item over it.
+ */
+export const LEG_WEARABLE_LAYERS = { far: 2.5, near: 3.5 } as const;
+/** The silhouette layer: Socks and Feet sit behind it (guide 6a). */
+export const SILHOUETTE_LAYER = 4;
+/** The eye layer, above every Wearable layer; a Girl's lashes paint on it (guide 6a). */
+export const EYES_LAYER = 12;
+
+/** Side of a leg by its draw index: far-front, far-rear, then near-front, near-rear (guide 6e). */
+export function legSide(legIndex: number): 'far' | 'near' {
+  return legIndex < 2 ? 'far' : 'near';
+}
+
+/** Layer of the Socks and Feet items on a leg (guide 6a). */
+export function legWearableLayer(legIndex: number): number {
+  return LEG_WEARABLE_LAYERS[legSide(legIndex)];
+}
+
+/** A circle in local units. */
+export interface ZoneCircle {
+  readonly x: number;
+  readonly y: number;
+  readonly r: number;
+}
+
+/** Keep-clear zones (guide 6i). The eye zone is the prototype bead radius plus EYE_ZONE_MARGIN. */
+export const NEAR_EYE_ZONE: ZoneCircle = { x: NEAR_EYE.x, y: NEAR_EYE.y, r: NEAR_EYE.r + EYE_ZONE_MARGIN };
+export const FAR_EYE_ZONE: ZoneCircle = { x: FAR_EYE.x, y: FAR_EYE.y, r: FAR_EYE.r + EYE_ZONE_MARGIN };
+/** Holds all six gill roots plus the stem ink. */
+export const GILL_ROOT_ZONE: Bounds = { minX: -5, minY: -22, maxX: 12, maxY: 13 };
+/** Ink of the first four mouths plus 1 unit; every mouth variant stays inside it. */
+export const MOUTH_ZONE: Bounds = { minX: 24.4, minY: 2.6, maxX: 52.4, maxY: 21.3 };
+/** A Girl's lash reach circle about an eye: the prototype bead radius plus LASH_REACH. */
+export function lashReachCircle(spot: EyeSpot): ZoneCircle {
+  return { x: spot.x, y: spot.y, r: spot.r + LASH_REACH };
+}
+export const NEAR_LASH_REACH: ZoneCircle = lashReachCircle(NEAR_EYE);
+export const FAR_LASH_REACH: ZoneCircle = lashReachCircle(FAR_EYE);
+/** No Shirt or Back ink at x -6.8 or more: 1.8 units short of the gill-root zone (guide 6i). */
+export const SHIRT_BACK_FRONT_LINE_X = -6.8;
+/** Width of the band just inside the torso edge that the Shirt never paints (guide 6i). */
+export const TORSO_EDGE_BAND = 3;
+
+/** A wearable frame: an origin and the rotation of its u axis (x' for Back). v is u turned by +90 degrees. */
+export interface WearFrame {
+  readonly x: number;
+  readonly y: number;
+  /** Radians, y down. u runs along (cos angle, sin angle); v along (-sin angle, cos angle). */
+  readonly angle: number;
+}
+
+/** A frame point (u along, v across) in local units. */
+export function framePoint(frame: WearFrame, u: number, v: number): LocalPoint {
+  const c = Math.cos(frame.angle);
+  const s = Math.sin(frame.angle);
+  return { x: frame.x + u * c - v * s, y: frame.y + u * s + v * c };
+}
+
+// -- Head, Neck, Face: on the head, never move (guide 6i) --
+
+/** Head item anchor: the head top. */
+export const HEAD_SLOT_ANCHOR: LocalPoint = { x: 26, y: -23 };
+/** Head footprint: rests on the head outline, lowest point y -19.5, top no higher than y -46. */
+export const HEAD_FOOTPRINT: Bounds = { minX: 16, minY: -46, maxX: 36, maxY: -19.5 };
+
+/** Neck item anchor: the throat. */
+export const NECK_SLOT_ANCHOR: LocalPoint = { x: 17, y: 16 };
+/** Neck footprint, inside the silhouette; nothing hangs below it, so the front legs stay visible. */
+export const NECK_FOOTPRINT: Bounds = { minX: 13, minY: 11, maxX: 22, maxY: 21 };
+
+/** Face item anchor: between the eyes. */
+export const FACE_SLOT_ANCHOR: LocalPoint = { x: 35, y: -6.5 };
+/** Glasses lens circles, near then far: the merged frame is their union outline. */
+export const GLASSES_LENSES: readonly ZoneCircle[] = [
+  { x: 28, y: -6, r: 9.95 },
+  { x: 42, y: -7, r: 8.85 },
+];
+/** Glasses band width, centred on the union outline: its inner edge lies on the eye zones. */
+export const GLASSES_BAND = 3.5;
+/** Optional temple stub reaches back to this x at most. */
+export const GLASSES_TEMPLE_MIN_X = 14;
+/** Glasses outer extents, band included: x 16.3 to 52.6, y -17.7 to 5.7. */
+export const GLASSES_EXTENT: Bounds = unionBounds(
+  GLASSES_LENSES.map((lens) => boundsOfPoints([[lens.x, lens.y]], lens.r + GLASSES_BAND / 2)),
+);
+
+/** The two points where the lens circles cross: the top notch first, then the underside notch. */
+export function glassesNotches(): [LocalPoint, LocalPoint] {
+  const [a, b] = GLASSES_LENSES;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const d = Math.hypot(dx, dy);
+  const along = (a.r * a.r - b.r * b.r + d * d) / (2 * d);
+  const half = Math.sqrt(a.r * a.r - along * along);
+  const mx = a.x + (dx * along) / d;
+  const my = a.y + (dy * along) / d;
+  const top = { x: mx + (dy * half) / d, y: my - (dx * half) / d };
+  const under = { x: mx - (dy * half) / d, y: my + (dx * half) / d };
+  return top.y < under.y ? [top, under] : [under, top];
+}
+
+/**
+ * Points on the glasses' merged outline (each lens circle, less the part inside
+ * the other lens), `stepsPerLens` per circle before the cut. The band is centred on it.
+ */
+export function glassesOutlinePoints(stepsPerLens = 180): LocalPoint[] {
+  const points: LocalPoint[] = [];
+  GLASSES_LENSES.forEach((lens, i) => {
+    const other = GLASSES_LENSES[1 - i];
+    for (let k = 0; k < stepsPerLens; k++) {
+      const a = (k / stepsPerLens) * Math.PI * 2;
+      const p = { x: lens.x + Math.cos(a) * lens.r, y: lens.y + Math.sin(a) * lens.r };
+      if (Math.hypot(p.x - other.x, p.y - other.y) >= other.r) points.push(p);
+    }
+  });
+  return points;
+}
+
+// -- Shirt: the torso only (guide 6i) --
+
+/** The Shirt's front edge, ink included. */
+export const SHIRT_FRONT_X = -7.5;
+/** The front edge has a neckline: a concave arc bowing back this far, to x -10.5. */
+export const SHIRT_NECKLINE_DEPTH = 3;
+
+/** Shirt footprint for a look. */
+export interface ShirtGeometry {
+  /** The look's torso centre (cx, 4). */
+  readonly anchor: LocalPoint;
+  /** The torso ellipse inset by TORSO_EDGE_BAND all round: the Shirt, ink included, stays inside it. */
+  readonly inset: BodyEllipse;
+  /** The Shirt is cut at the tail root x at the rear (guide 6r). */
+  readonly rearX: number;
+  readonly frontX: number;
+  /** The front edge: its ends on the inset ellipse, and the neckline apex x it bows back to. */
+  readonly neckline: { readonly x: number; readonly yTop: number; readonly yBottom: number; readonly apexX: number };
+  /** Box of the footprint: the inset ellipse between rearX and frontX. */
+  readonly bounds: Bounds;
+}
+
+/** Shirt footprint of a look (guide 6i: over all 54 looks x -38 to -7.5, y -20 to 28). */
+export function shirtGeometry(look: AxolotlArtLook): ShirtGeometry {
+  const geo = axolotlBodyGeometry(look);
+  const { torso } = geo;
+  const inset: BodyEllipse = {
+    cx: torso.cx,
+    cy: torso.cy,
+    rx: torso.rx - TORSO_EDGE_BAND,
+    ry: torso.ry - TORSO_EDGE_BAND,
+  };
+  const rearX = Math.max(geo.tail.rootX, inset.cx - inset.rx);
+  const frontX = SHIRT_FRONT_X;
+  const halfAt = (x: number): number => inset.ry * Math.sqrt(Math.max(0, 1 - ((x - inset.cx) / inset.rx) ** 2));
+  const nearestX = Math.min(Math.max(inset.cx, rearX), frontX);
+  const half = halfAt(nearestX);
+  const frontHalf = halfAt(frontX);
+  return {
+    anchor: { x: torso.cx, y: torso.cy },
+    inset,
+    rearX,
+    frontX,
+    neckline: {
+      x: frontX,
+      yTop: inset.cy - frontHalf,
+      yBottom: inset.cy + frontHalf,
+      apexX: frontX - SHIRT_NECKLINE_DEPTH,
+    },
+    bounds: { minX: rearX, minY: inset.cy - half, maxX: frontX, maxY: inset.cy + half },
+  };
+}
+
+/** Whether (x, y) lies inside the Shirt's footprint (the inset ellipse, between rearX and frontX). */
+export function shirtContains(shirt: ShirtGeometry, x: number, y: number): boolean {
+  const e = shirt.inset;
+  return x >= shirt.rearX && x <= shirt.frontX && ((x - e.cx) / e.rx) ** 2 + ((y - e.cy) / e.ry) ** 2 <= 1;
+}
+
+// -- Back: rides the torso top edge (guide 6i) --
+
+/** The Back anchor sits on the torso top edge at this local x. */
+export const BACK_ANCHOR_X = -17;
+/** The Back footprint in its frame, ink included: x' along the edge toward the snout, y' across (+ into the body). */
+export const BACK_FRAME_BOX = { minU: -9, maxU: 9, minV: -8, maxV: 5 } as const;
+
+/**
+ * Back frame on a torso: the origin is the point on the top edge at
+ * BACK_ANCHOR_X, and x' follows the edge's tangent toward the snout (it rises,
+ * so the angle is negative while the anchor is behind the torso centre).
+ */
+export function backFrame(torso: BodyEllipse): WearFrame {
+  const u = (BACK_ANCHOR_X - torso.cx) / torso.rx;
+  const root = Math.sqrt(1 - u * u);
+  return {
+    x: BACK_ANCHOR_X,
+    y: torso.cy - torso.ry * root,
+    angle: Math.atan(((torso.ry / torso.rx) * u) / root),
+  };
+}
+
+/** Back footprint for a look: its frame, the four corners and the local box. */
+export interface BackFootprint {
+  readonly frame: WearFrame;
+  /** Corners in order: (minU,minV), (maxU,minV), (maxU,maxV), (minU,maxV). */
+  readonly corners: readonly LocalPoint[];
+  readonly bounds: Bounds;
+}
+
+export function backFootprint(look: AxolotlArtLook): BackFootprint {
+  const frame = backFrame(axolotlBodyGeometry(look).torso);
+  const { minU, maxU, minV, maxV } = BACK_FRAME_BOX;
+  const corners = [
+    framePoint(frame, minU, minV),
+    framePoint(frame, maxU, minV),
+    framePoint(frame, maxU, maxV),
+    framePoint(frame, minU, maxV),
+  ];
+  return { frame, corners, bounds: boundsOfPoints(corners.map((p): [number, number] => [p.x, p.y]), 0) };
+}
+
+// -- Tail: the core top at tail point 4 (guide 6i) --
+
+/** The Tail footprint stays within this many units of its anchor. */
+export const TAIL_SLOT_REACH = 9;
+
+/**
+ * Tail anchor frame: the core top at TAIL_SLOT_POINT, turned with the local
+ * tail direction (tailAngleAt) so a Tail item follows the wave.
+ */
+export function tailSlotFrame(tail: TailGeometry, swim: number, tailAmp: number): WearFrame {
+  const s = TAIL_SLOT_POINT / TAIL_SEGMENTS;
+  const tp = tailPointAt(s, swim, tailAmp, tail);
+  return { x: tp.x, y: tp.cy - tp.hc, angle: tailAngleAt(s, swim, tailAmp, tail) };
+}
+
+/** Box of the Tail footprint about its anchor. */
+export function tailSlotBounds(frame: WearFrame): Bounds {
+  return boundsOfPoints([[frame.x, frame.y]], TAIL_SLOT_REACH);
+}
+
+// -- Socks and Feet: in leg space (guide 6i) --
+
+/** A swinging leg's frame: origin at the leg root, u along the leg (guide 6i leg space). */
+export interface LegSlotFrame extends WearFrame {
+  /** Leg draw index: far-front, far-rear, near-front, near-rear. */
+  readonly index: number;
+  readonly side: 'far' | 'near';
+  /** Leg tube length l. */
+  readonly length: number;
+  /** Toe length t. */
+  readonly toeLength: number;
+  /** A Baby's feet are narrower. */
+  readonly baby: boolean;
+}
+
+/** Leg swing amplitude and rest angles (guide 6e, 9); the same as the leg painter's. */
+export const LEG_SWING = 0.35;
+const LEG_REST_ANGLES: readonly number[] = [Math.PI / 2 - 0.2, Math.PI / 2 + 0.5, Math.PI / 2 - 0.2, Math.PI / 2 + 0.5];
+const LEG_SWING_OFFSETS: readonly number[] = [Math.PI, 0, 0, Math.PI];
+
+/** Angle of leg `legIndex` at swim phase `swim`. */
+export function legAngle(legIndex: number, swim: number): number {
+  return LEG_REST_ANGLES[legIndex] + LEG_SWING * Math.sin(swim + LEG_SWING_OFFSETS[legIndex]);
+}
+
+/** The four leg frames of a look at a swim phase, in leg draw order. */
+export function legSlotFrames(look: AxolotlArtLook, swim: number): LegSlotFrame[] {
+  const geo = axolotlBodyGeometry(look);
+  return geo.legRoots.map((root, index) => ({
+    x: root.x,
+    y: root.y,
+    angle: legAngle(index, swim),
+    index,
+    side: legSide(index),
+    length: geo.legLengths[index],
+    toeLength: geo.toeLength,
+    baby: look.age === 'baby',
+  }));
+}
+
+/** A rounded rectangle in leg space, ink included: u from u0 to u1, v from -vHalf to +vHalf. */
+export interface LegRect {
+  readonly u0: number;
+  readonly u1: number;
+  readonly vHalf: number;
+  /** Corner radius, already capped to half of each side. 0 for the Feet envelope. */
+  readonly radius: number;
+}
+
+/** Corner radius of a foot pad and a Shoe, before it is capped to half of each side (guide 6i). */
+export const FOOT_CORNER_RADIUS = 8;
+/** Sock sleeve: colour width 10.4, `ol` 2.4, so ink width 15.2, round ends. */
+export const SOCK_SLEEVE_W = 10.4;
+export const SOCK_SLEEVE_OL = 2.4;
+export const SOCK_SLEEVE_INK_W = SOCK_SLEEVE_W + 2 * SOCK_SLEEVE_OL;
+/** Foot pad and Shoe start this far behind the leg end (u = l - 2.0). */
+export const FOOT_BACK_U = 2;
+/** Feet envelope starts this far behind the leg end (u = l - 3.0). */
+export const FEET_ENVELOPE_BACK_U = 3;
+/** Foot pad reaches this far past the toe tips (u = l + t + 5.3). */
+export const SOCK_PAD_FRONT = 5.3;
+/** Shoe reaches this far past the toe tips (u = l + t + 6.8). */
+export const SHOE_FRONT = 6.8;
+/** Feet envelope reaches this far past the toe tips (u = l + t + 10.0). */
+export const FEET_ENVELOPE_FRONT = 10;
+/** Foot pad, Shoe and Feet envelope half widths, ink included; a Baby's pad and Shoe are narrower. */
+export const SOCK_PAD_HALF_WIDTH = { grown: 10.2, baby: 8.9 } as const;
+export const SHOE_HALF_WIDTH = { grown: 11.7, baby: 10.8 } as const;
+export const FEET_ENVELOPE_HALF_WIDTH = 12;
+
+function legRect(frame: LegSlotFrame, back: number, front: number, vHalf: number, radius: number): LegRect {
+  const u0 = frame.length - back;
+  const u1 = frame.length + frame.toeLength + front;
+  return { u0, u1, vHalf, radius: Math.min(radius, (u1 - u0) / 2, vHalf) };
+}
+
+/** The Sock's foot pad over the toes. It sits inside the Feet envelope. */
+export function sockFootPad(frame: LegSlotFrame): LegRect {
+  const half = frame.baby ? SOCK_PAD_HALF_WIDTH.baby : SOCK_PAD_HALF_WIDTH.grown;
+  return legRect(frame, FOOT_BACK_U, SOCK_PAD_FRONT, half, FOOT_CORNER_RADIUS);
+}
+
+/** A rounded-rectangle Feet item (a Shoe). Its fill covers the Sock's foot pad. */
+export function shoeRect(frame: LegSlotFrame): LegRect {
+  const half = frame.baby ? SHOE_HALF_WIDTH.baby : SHOE_HALF_WIDTH.grown;
+  return legRect(frame, FOOT_BACK_U, SHOE_FRONT, half, FOOT_CORNER_RADIUS);
+}
+
+/**
+ * The Feet envelope: every Feet item (Shoe, Flippers) stays inside it. A plain
+ * box (square corners, radius 0): the guide's measured extents (frame bottom
+ * y 58.06, x -61.4 to 45.8) are its corners.
+ */
+export function feetEnvelope(frame: LegSlotFrame): LegRect {
+  return legRect(frame, FEET_ENVELOPE_BACK_U, FEET_ENVELOPE_FRONT, FEET_ENVELOPE_HALF_WIDTH, 0);
+}
+
+/** Local box of a leg-space rounded rectangle (exact: the inner corners grown by the corner radius). */
+export function legRectBounds(frame: LegSlotFrame, rect: LegRect): Bounds {
+  const inner = rect.vHalf - rect.radius;
+  const corners: [number, number][] = [];
+  for (const u of [rect.u0 + rect.radius, rect.u1 - rect.radius]) {
+    for (const v of [-inner, inner]) {
+      const p = framePoint(frame, u, v);
+      corners.push([p.x, p.y]);
+    }
+  }
+  return boundsOfPoints(corners, rect.radius);
+}
+
+/** Local box of the Sock sleeve: the leg root to the leg end, round ends, ink included. Behind the silhouette. */
+export function sockSleeveBounds(frame: LegSlotFrame): Bounds {
+  const end = framePoint(frame, frame.length, 0);
+  return boundsOfPoints(
+    [
+      [frame.x, frame.y],
+      [end.x, end.y],
+    ],
+    SOCK_SLEEVE_INK_W / 2,
+  );
 }

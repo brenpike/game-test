@@ -12,7 +12,7 @@ One outing from the Home Tank into an area and back.
 _Avoid_: run, level, life
 
 **Explorer**:
-The axolotl the player takes on a trip, and the only one whose outfit applies.
+The axolotl the player takes on a trip, chosen on the explorer card before each trip, and the only one whose outfit applies.
 
 **Home Spot**:
 The safe, clearly marked place where each trip starts and where finds are banked.
@@ -146,7 +146,7 @@ A big button on a creator or restyle step that shows one option as a small previ
 The field on the Name step where the player types the axolotl's name; it looks typeable, with a light inset field, a pencil, the "Type a name" placeholder, and a blinking cursor while focused.
 
 **Restyle**:
-Changing an owned axolotl's look and name in the Home Tank, on the creator's step screens with tabs, and putting on or taking off its **Dream colour** on its own tab; Colour and **Boy or girl** cannot change.
+Changing an owned axolotl's look and name in the Home Tank, on the creator's step screens with tabs, putting on or taking off its **Dream colour** on its own tab, and choosing its **Outfit** on the Outfit tab; Colour and **Boy or girl** cannot change.
 
 **Boy or girl**:
 Whether an axolotl is a boy or a girl; exactly one, always set, and fixed after creation.
@@ -237,7 +237,7 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - An **Outfit** holds at most one **Wearable** per **Slot**; each **Perk** type in it is limited by its **Perk cap**
 - Each axolotl has exactly one **Real morph**; a **Dream colour** draws on top of it and never changes it
 - Each axolotl has exactly one **Boy or girl**, fixed after creation; text about one axolotl says he or she, never they or it
-- **Restyle** can change **Tail**, **Body**, **Age**, **Size**, face, gills, spots, and name, and can put on or take off the applied **Dream colour**, but never the **Real morph** or **Boy or girl**; none of these looks changes the hit area or speed
+- **Restyle** can change **Tail**, **Body**, **Age**, **Size**, face, gills, spots, and name, can put on or take off the applied **Dream colour**, and can change the **Outfit** on the Outfit tab, but never the **Real morph** or **Boy or girl**; none of these looks changes the hit area or speed, and only the **Perks** of the **Explorer**'s **Outfit** change play, on a **Trip**
 - The starter axolotl's **Real morph**, chosen in the **Character creator**, decides which seven **Real morphs** can be **Stranded axolotls**
 - Each **Trip** has at most one **Stranded axolotl**; a **Rescue** moves it into the **Home Tank** and unlocks its **Morph** in the **Collection Book**
 - The **Treasure Chest** lists owned **Decorations**, **Wearables**, and **Dream colours**; placed **Decorations** live in the **Home Tank**
@@ -256,7 +256,6 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - "collectible" means **Snacks** in code (`src/logic/collectibles.ts`, `CollectibleKind = 'worm' | 'bug'`) but the PRD defines a **Treasure** as "a hidden collectible": resolved: say **Snack** for worms and bugs and **Treasure** for hidden finds; avoid "collectible" for either in new work.
 - "hint star" (art style guide 7e) and "hint sparkle" (PRD B7 and H3) name the same cue: resolved: **Hint sparkle**, matching the PRD; the PRD lists an art style guide follow-up (issue #31). Art style guide 7e now covers the snack sparkle (#31); the guide-wide "hint star" to "hint sparkle" rename is a follow-up.
 - "slot" means a Wearable **Slot** in the PRD, but code also has `LegSlot` (one leg in the legs display) and `CardSlot`: resolved: **Slot** alone always means a Wearable slot; say "leg" for legs.
-- **Slot** count differs: the PRD (F8) has eight Slots, while `WearableSlot` in `src/logic/catalogue.ts` and art style guide 6i have four (Head, Neck, Face, Tail): resolved: the PRD's eight Slots are canonical; code and art guide lag it (issue #16).
 - "Go home" and **Carried home** both end a trip and both send the axolotl home: resolved: distinct concepts; **Go home** is the player's choice and banks first (`wentHome` in code), **Carried home** follows the fourth **Leg loss** and loses unbanked finds (`carriedHome` in code).
 - "sex" in code (`AxolotlSex`, the `sex` look field, the `sex` styler step) means **Boy or girl** in the UI: resolved: say **Boy or girl** in UI text and docs; "sex" survives in code only.
 - "Tail" names three things: the **Tail** look option (tail length), the Tail Wearable **Slot**, and **Tail Dash**: resolved: **Tail** alone means the look option; say "Tail slot" for the Wearable slot and **Tail Dash** for the power.

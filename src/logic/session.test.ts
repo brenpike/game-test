@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { CANAL_AREA } from './areas';
 import { DEFAULT_LOOK, LOOK_FIELDS, rescuedLook, type AxolotlLook, type AxolotlSex } from './axolotlLook';
 import { NAME_MAX, nameFits, nameLength, suggestedNamesFor } from './axolotlNames';
-import type { DreamColourId } from './catalogue';
+import { CANAL_TREASURES, WEARABLE_SLOTS, type DreamColourId, type Wearable } from './catalogue';
 import { collectNear, type Collectible } from './collectibles';
 import { createEncounterContext } from './encounter';
 import { REGISTRY_KEYS } from './gameEvents';
 import { REAL_MORPHS, STARTER_MORPH, axolotlFindId, isAxolotlFindId, type RealMorphId } from './morphs';
+import { emptyOutfit, type Outfit } from './outfit';
 import { nextTripSeed, type PlacedFind } from './placement';
 import { pickStranding } from './rescue';
 import {
@@ -15,6 +16,7 @@ import {
   addStarter,
   bestStars,
   canRescueMore,
+  chooseExplorer,
   createSession,
   explorerAxolotl,
   explorerId,
@@ -25,9 +27,12 @@ import {
   restoreSnacks,
   restyleAxolotl,
   setDreamColour,
+  setOutfit,
   setTankLayout,
+  takeOffFrom,
   tripEndRecord,
   tripStart,
+  wearOn,
   type AxolotlStyle,
   type OwnedAxolotl,
   type Session,
@@ -222,12 +227,12 @@ function withStarter(name = 'Gilly', morph: RealMorphId = STARTER_MORPH): Sessio
 
 /** The starter `withStarter` makes. */
 function starterOf(morph: RealMorphId = STARTER_MORPH, name = 'Gilly'): OwnedAxolotl {
-  return { id: STARTER_AXOLOTL_ID, morph, name, look: DEFAULT_LOOK, dreamColour: null };
+  return { id: STARTER_AXOLOTL_ID, morph, name, look: DEFAULT_LOOK, dreamColour: null, outfit: emptyOutfit() };
 }
 
 /** A rescued axolotl of `morph` and `sex` as `recordTripEnd` adopts it: a suggested `name` and the rescued look. */
 function rescuedOf(morph: RealMorphId, name: string, sex: AxolotlSex): OwnedAxolotl {
-  return { id: axolotlFindId(morph), morph, name, look: rescuedLook(sex), dreamColour: null };
+  return { id: axolotlFindId(morph), morph, name, look: rescuedLook(sex), dreamColour: null, outfit: emptyOutfit() };
 }
 
 describe('createSession', () => {
@@ -239,6 +244,7 @@ describe('createSession', () => {
         tank: { placed: [] },
         book: { foundMorphs: [], tilapiaCard: false },
         stars: {},
+        explorerId: null,
       },
       canal: { eatenSnacks: [], lastTripSeed: null, waitingStranded: null, returnedFinds: [] },
     });
@@ -868,7 +874,7 @@ describe('addStarter (F1)', () => {
     const look = { ...STYLED };
     const session = addStarter(fresh, { name: '  Mochi  ', look });
     expect(session.hub.axolotls).toEqual([
-      { id: STARTER_AXOLOTL_ID, morph: STARTER_MORPH, name: 'Mochi', look: STYLED, dreamColour: null },
+      { id: STARTER_AXOLOTL_ID, morph: STARTER_MORPH, name: 'Mochi', look: STYLED, dreamColour: null, outfit: emptyOutfit() },
     ]);
     expect(session.hub.axolotls[0].look).not.toBe(look);
     expect(session.hub.book).toEqual({ foundMorphs: [STARTER_MORPH], tilapiaCard: false });
@@ -943,6 +949,7 @@ describe('restyleAxolotl (F6)', () => {
       name: 'Noodle',
       look: STYLED_BOY,
       dreamColour: null,
+      outfit: emptyOutfit(),
     });
     for (const field of LOOK_FIELDS) expect(next.hub.axolotls[0].look[field]).toBe(STYLED_BOY[field]);
     expect(next.hub.book).toBe(session.hub.book);
@@ -1089,6 +1096,7 @@ describe('newOwnedAxolotl', () => {
         name: suggestedNamesFor(sex)[1],
         look: rescuedLook(sex),
         dreamColour: null,
+        outfit: emptyOutfit(),
       });
       expect(rescued.look.sex).toBe(sex);
       expect(nameFits(rescued.name, sex)).toBe(true);
@@ -1135,5 +1143,159 @@ describe('explorerAxolotl, explorerId and explorerMorph', () => {
     expect(() => explorerAxolotl(createSession())).toThrow(/explorerAxolotl: no axolotl/);
     expect(() => explorerId(createSession())).toThrow(/explorerId: no axolotl/);
     expect(() => explorerMorph(createSession())).toThrow(/explorerMorph: no axolotl/);
+  });
+});
+
+const WEARABLES = CANAL_TREASURES.filter((treasure): treasure is Wearable => treasure.category === 'wearable');
+const SUN_HAT = 'canal/sun-hat';
+const FLIPPERS = 'canal/flippers';
+
+/** An outfit with the canal Wearable for each slot on. */
+function fullOutfit(): Outfit {
+  const outfit = emptyOutfit();
+  for (const wearable of WEARABLES) outfit[wearable.slot] = wearable.id;
+  return outfit;
+}
+
+/**
+ * A session with the starter and a rescued wild axolotl, where every canal Wearable, the Mint Paint
+ * shell and a pond plant are banked.
+ */
+function withWearables(): Session {
+  const banked = [...WEARABLES.map((wearable) => wearable.id), MINT_SHELL, PLANT];
+  return recordTripEnd(withStarter(), { ...record(banked, 1), rescued: [{ morph: 'wild', sex: 'girl' }] });
+}
+
+/** Expects `after` to differ from `before` only in its axolotls' outfits. */
+function expectOnlyOutfitsChanged(before: Session, after: Session): void {
+  const unchanged = (session: Session) => session.hub.axolotls.map((axolotl) => ({ ...axolotl, outfit: null }));
+  expect(unchanged(after)).toEqual(unchanged(before));
+  expect(after.hub.book).toBe(before.hub.book);
+  expect(after.hub.banked).toBe(before.hub.banked);
+  expect(after.hub.tank).toBe(before.hub.tank);
+  expect(after.hub.stars).toBe(before.hub.stars);
+  expect(after.hub.explorerId).toBe(before.hub.explorerId);
+  expect(after.canal).toBe(before.canal);
+}
+
+describe('setOutfit, wearOn and takeOffFrom (C10, F8)', () => {
+  const WILD_ID = axolotlFindId('wild');
+
+  it('puts a Wearable in every slot of one axolotl, the others untouched', () => {
+    const before = withWearables();
+    const after = setOutfit(before, WILD_ID, fullOutfit());
+    expect(WEARABLE_SLOTS).toHaveLength(8);
+    for (const slot of WEARABLE_SLOTS) expect(after.hub.axolotls[1].outfit[slot]).toBe(fullOutfit()[slot]);
+    expect(after.hub.axolotls[0]).toBe(before.hub.axolotls[0]);
+    expectOnlyOutfitsChanged(before, after);
+  });
+
+  it('takes a Wearable off another axolotl when it is put on', () => {
+    const hatted = wearOn(withWearables(), STARTER_AXOLOTL_ID, SUN_HAT);
+    expect(hatted.hub.axolotls[0].outfit.head).toBe(SUN_HAT);
+    const moved = setOutfit(hatted, WILD_ID, { ...emptyOutfit(), head: SUN_HAT });
+    expect(moved.hub.axolotls.map((axolotl) => axolotl.outfit.head)).toEqual([null, SUN_HAT]);
+    const back = wearOn(moved, STARTER_AXOLOTL_ID, SUN_HAT);
+    expect(back.hub.axolotls.map((axolotl) => axolotl.outfit.head)).toEqual([SUN_HAT, null]);
+  });
+
+  it('never changes a look, morph, name, Dream colour, the Collection Book or anything but outfits', () => {
+    const before = setDreamColour(withWearables(), WILD_ID, 'mint');
+    const dressed = setOutfit(before, WILD_ID, fullOutfit());
+    expectOnlyOutfitsChanged(before, dressed);
+    const worn = wearOn(dressed, STARTER_AXOLOTL_ID, FLIPPERS);
+    expectOnlyOutfitsChanged(dressed, worn);
+    const bare = takeOffFrom(worn, STARTER_AXOLOTL_ID, 'feet');
+    expectOnlyOutfitsChanged(worn, bare);
+    expect(bare.hub.axolotls[1].dreamColour).toBe('mint');
+  });
+
+  it('takes a Wearable off into the Treasure Chest, keeping the other slots', () => {
+    const dressed = setOutfit(withWearables(), WILD_ID, fullOutfit());
+    const after = takeOffFrom(dressed, WILD_ID, 'head');
+    expect(after.hub.axolotls[1].outfit).toEqual({ ...fullOutfit(), head: null });
+    expect(after.hub.banked).toContain(SUN_HAT);
+  });
+
+  it('leaves the input session alone', () => {
+    const before = withWearables();
+    const copy = JSON.parse(JSON.stringify(before)) as Session;
+    setOutfit(before, WILD_ID, fullOutfit());
+    wearOn(before, STARTER_AXOLOTL_ID, SUN_HAT);
+    takeOffFrom(before, STARTER_AXOLOTL_ID, 'head');
+    expect(before).toEqual(copy);
+  });
+
+  it('throws on an unknown axolotl, an unbanked, unknown or non-Wearable id, or a wrong slot', () => {
+    const session = withWearables();
+    expect(() => setOutfit(session, 'nobody', emptyOutfit())).toThrow(/no owned axolotl has id nobody/);
+    expect(() => setOutfit(withStarter(), STARTER_AXOLOTL_ID, { ...emptyOutfit(), head: SUN_HAT })).toThrow(
+      /not banked/,
+    );
+    expect(() => setOutfit(session, WILD_ID, { ...emptyOutfit(), head: 'canal/top-hat' })).toThrow(/unknown treasure/);
+    expect(() => setOutfit(session, WILD_ID, { ...emptyOutfit(), head: PLANT })).toThrow(/not a Wearable/);
+    expect(() => setOutfit(session, WILD_ID, { ...emptyOutfit(), feet: SUN_HAT })).toThrow(/does not fit slot feet/);
+    expect(() => wearOn(session, 'nobody', SUN_HAT)).toThrow(/no owned axolotl/);
+    expect(() => wearOn(withStarter(), STARTER_AXOLOTL_ID, SUN_HAT)).toThrow(/not banked/);
+    expect(() => takeOffFrom(session, 'nobody', 'head')).toThrow(/no owned axolotl/);
+  });
+
+  it('starts every starter and rescued axolotl with an empty outfit', () => {
+    for (const axolotl of withWearables().hub.axolotls) expect(axolotl.outfit).toEqual(emptyOutfit());
+  });
+
+  it('is kept by restyleAxolotl, setDreamColour and recordTripEnd, with the explorer', () => {
+    const dressed = chooseExplorer(setOutfit(withWearables(), WILD_ID, fullOutfit()), WILD_ID);
+    const restyled = restyleAxolotl(dressed, WILD_ID, { name: 'Noodle', look: STYLED });
+    const painted = setDreamColour(restyled, WILD_ID, 'mint');
+    const later = recordTripEnd(painted, { ...record([BOAT], 2), rescued: [{ morph: 'melanoid', sex: 'boy' }] });
+    for (const session of [restyled, painted, later]) {
+      expect(session.hub.axolotls[1].outfit).toEqual(fullOutfit());
+      expect(session.hub.explorerId).toBe(WILD_ID);
+    }
+    expect(later.hub.axolotls[2].outfit).toEqual(emptyOutfit());
+  });
+
+  it('survives a JSON round trip', () => {
+    const dressed = setOutfit(withWearables(), WILD_ID, fullOutfit());
+    expect(JSON.parse(JSON.stringify(dressed))).toEqual(dressed);
+  });
+});
+
+describe('chooseExplorer (F7)', () => {
+  const WILD_ID = axolotlFindId('wild');
+
+  it('makes the starter the explorer when it is added', () => {
+    expect(createSession().hub.explorerId).toBeNull();
+    expect(withStarter().hub.explorerId).toBe(STARTER_AXOLOTL_ID);
+  });
+
+  it('remembers the chosen explorer, which explorerAxolotl, explorerId and explorerMorph return', () => {
+    const before = withWearables();
+    const after = chooseExplorer(before, WILD_ID);
+    expect(after.hub.explorerId).toBe(WILD_ID);
+    expect(explorerAxolotl(after)).toBe(after.hub.axolotls[1]);
+    expect(explorerId(after)).toBe(WILD_ID);
+    expect(explorerMorph(after)).toBe('wild');
+    expect(after.hub.axolotls).toBe(before.hub.axolotls);
+    expect({ ...after.hub, explorerId: before.hub.explorerId }).toEqual(before.hub);
+    expect(after.canal).toBe(before.canal);
+    expect(chooseExplorer(after, STARTER_AXOLOTL_ID).hub.explorerId).toBe(STARTER_AXOLOTL_ID);
+  });
+
+  it('throws on an unknown id', () => {
+    expect(() => chooseExplorer(withWearables(), 'nobody')).toThrow(/chooseExplorer: no owned axolotl has id nobody/);
+    expect(() => chooseExplorer(createSession(), STARTER_AXOLOTL_ID)).toThrow(/no owned axolotl/);
+  });
+
+  it.each([
+    ['none is remembered', null],
+    ['the remembered one is not owned', axolotlFindId('copper')],
+  ])('falls back to the first owned axolotl when %s', (_label, remembered) => {
+    const before = withWearables();
+    const session: Session = { ...before, hub: { ...before.hub, explorerId: remembered } };
+    expect(explorerAxolotl(session)).toBe(session.hub.axolotls[0]);
+    expect(explorerId(session)).toBe(STARTER_AXOLOTL_ID);
+    expect(explorerMorph(session)).toBe(STARTER_MORPH);
   });
 });

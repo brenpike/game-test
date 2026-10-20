@@ -1,11 +1,29 @@
 import * as Phaser from 'phaser';
-import { AXO_PREVIEW_CROPS, AXO_SCENE_SCALE, AXO_TEX, type AxolotlPose } from '../art/drawAxolotl';
-import { AXO_SIZE_SCALE } from '../art/drawAxolotlParts';
+import type { TexSize } from '../art/canvasKit';
+import { AXO_PREVIEW_CROPS, AXO_SCENE_SCALE, AXO_TEX, drawAxolotl, type AxolotlPose } from '../art/drawAxolotl';
+import {
+  AXO_SIZE_SCALE,
+  BACK_FRAME_BOX,
+  HEAD_FOOTPRINT,
+  NECK_FOOTPRINT,
+  TAIL_SLOT_REACH,
+  axolotlBodyGeometry,
+  backFrame,
+  feetEnvelope,
+  framePoint,
+  legSlotFrames,
+  shirtGeometry,
+  tailSlotFrame,
+  type Bounds,
+  type ShirtGeometry,
+  type WearFrame,
+} from '../art/drawAxolotlParts';
 import { dreamSheenAt } from '../art/drawDreamOverlay';
 import { dreamSwatchTextureSize, paintDreamSwatch } from '../art/drawTreasures';
 import { BUTTON_PRESS_OFFSET, ICON_SIZE, NAME_FIELD, type IconKind } from '../art/drawUi';
+import { NO_OUTFIT, artOutfit, outfitKey, wornSlug, type ArtOutfit } from '../art/drawWearables';
 import type { MorphTextures } from '../art/morphTextures';
-import { HOME_TANK_WALL, INK, LW, T_STATIC, UI_PANEL, WHITE, axolotlPalette } from '../art/palette';
+import { HOME_TANK_WALL, INK, LW, T_STATIC, UI_PANEL, WHITE, axolotlPalette, type MorphPalette } from '../art/palette';
 import {
   bake,
   bakeAxolotlStill,
@@ -20,15 +38,29 @@ import {
   type ButtonVisual,
   type TexInfo,
 } from '../art/textures';
+import type { TreasureTextures } from '../art/treasureTextures';
 import type { AxolotlLook, AxolotlSex, LookField } from '../logic/axolotlLook';
 import { NAME_FIELD_RAW_MAX, fitNameEdit, suggestedNamesFor } from '../logic/axolotlNames';
-import type { DreamColourId } from '../logic/catalogue';
+import {
+  WEARABLE_SLOTS,
+  treasureById,
+  type DreamColourId,
+  type Perk,
+  type PerkType,
+  type Wearable,
+  type WearableSlot,
+} from '../logic/catalogue';
 import { MAX_DREAM_OPTIONS, REAL_COLOUR_OPTION_ID } from '../logic/dreamPaint';
+import { MAX_MARK_LABEL } from '../logic/explorerCard';
 import type { Rect, Size } from '../logic/hudLayout';
 import { morphById, type RealMorphId } from '../logic/morphs';
 import type { MotionProfile } from '../logic/motion';
+import { wornIds, type Outfit } from '../logic/outfit';
+import { NO_PERKS_TEXT, PERK_ORDER, outfitSummary } from '../logic/perks';
 import {
+  NO_WEARABLE_OPTION_ID,
   chosenIndex,
+  outfitOptionCount,
   reduceStyler,
   restyleStart,
   setName,
@@ -36,6 +68,9 @@ import {
   stepOptions,
   withDreamsPerPage,
   withNamesPerPage,
+  withOutfitPerPage,
+  withTabsHidden,
+  type RestyleOptions,
   type StylerAction,
   type StylerAxolotl,
   type StylerEffect,
@@ -46,21 +81,28 @@ import {
 import { MAX_STEP_OPTIONS, RESTYLE_STEPS, STYLER_STEPS, stepLookField, type StylerStep } from '../logic/stylerSteps';
 import {
   BACK_LABEL,
+  BACK_TO_SLOTS_LABEL,
   CANCEL_LABEL,
   DONE_LABEL,
   MORE_COLOURS_LABEL,
   MORE_NAMES_LABEL,
+  MORE_SLOTS_LABEL,
+  MORE_WEARABLES_LABEL,
   NAME_FIELD_LABEL,
   NAME_PLACEHOLDER,
   NEXT_LABEL,
   SURPRISE_ME_LABEL,
+  outfitHelper,
+  outfitSlotCaption,
   stepHeading,
   stepHelper,
   stepTabLabel,
   stepTitle,
 } from '../logic/stylerText';
+import { perkText } from '../logic/treasureChest';
 import {
   BACK_BUTTON,
+  BACK_TO_SLOTS_BUTTON,
   CANCEL_BUTTON,
   CAPTION_TEXT_PX,
   DONE_BUTTON,
@@ -135,22 +177,67 @@ const STILL_POSE: AxolotlPose = Object.freeze({
   tailAmp: 1,
   sparkle: 0,
 });
+/**
+ * The perk line and the outfit summary (art guide 8): the 24 px perk icon, 6 px, then the text; summary
+ * rows 6 px apart, or flowed side by side 12 px apart across; the max mark 8 px after the text, a pill
+ * 24 px tall with 6 px of padding across and a 2.6 ink outline.
+ */
+const PERK_ROW = Object.freeze({ iconPx: 24, gap: 6, rowGap: 6, flowGap: 12, maxGap: 8, maxH: 24, maxPad: 6, maxOutline: 2.6 });
+/** A worn slot's perk badge (art guide 8): a white disc r 12 with an ink ring 2.6 and the 18 px perk icon. */
+const PERK_DISC = Object.freeze({ r: 12, outline: 2.6, iconPx: 18 });
+/**
+ * An empty slot's plus badge (art guide 8): a white disc r 10 with an ink ring 2.6 and the 16 px plus icon,
+ * two strokes 18 long and 4.5 wide in the 32 icon box, so 9 long and 2.25 wide at 16 px.
+ */
+const PLUS_BADGE = Object.freeze({ r: 10, outline: 2.6, halfLength: 4.5, ink: 2.25 });
+/** The empty-slot cue (art guide 8): the slot's footprint as an opaque dashed ink outline, in local units. */
+const EMPTY_SLOT_CUE = Object.freeze({ ink: 2, dash: 3, gap: 3 });
+/** The Face footprint (art guide 6i), in local units. */
+const FACE_FOOTPRINT: Bounds = Object.freeze({ minX: 14, minY: -18, maxX: 54, maxY: 6 });
+/** Socks and Feet share one crop holding all four feet (art guide 11, `slotLegs`). */
+const LEGS_SLOT_CROP: Bounds = Object.freeze({ minX: -66, minY: 6, maxX: 50, maxY: 63 });
+/** The Outfit slot crops in local units (art guide 11), each holding its slot's footprint over every look. */
+const OUTFIT_SLOT_CROPS: Readonly<Record<WearableSlot, Bounds>> = Object.freeze({
+  head: { minX: 8, minY: -50, maxX: 44, maxY: -14 },
+  neck: { minX: 4, minY: 4, maxX: 30, maxY: 30 },
+  face: { minX: 8, minY: -24, maxX: 60, maxY: 12 },
+  shirt: { minX: -42, minY: -24, maxX: -3, maxY: 32 },
+  back: { minX: -33, minY: -36, maxX: -2, maxY: 2 },
+  tail: { minX: -68, minY: -28, maxX: -13, maxY: 15 },
+  socks: LEGS_SLOT_CROP,
+  feet: LEGS_SLOT_CROP,
+});
+/** What the preview and the pictures wear in the creator: nothing. */
+const NO_PREVIEW_OUTFIT = Object.freeze({ art: NO_OUTFIT, key: outfitKey(NO_OUTFIT) });
+/** Steps along each half of the Shirt cue's ellipse edge. */
+const SHIRT_CUE_STEPS = 32;
 
 let stylerCount = 0;
 
-/** How the styler is used, and who hears when it finishes. */
-export interface AxolotlStylerOptions {
+/** What Done hands back: the finished name, look and morph, the Dream colour (null for none) and the outfit. */
+export type StyledAxolotl = StylerAxolotl & { readonly dreamColour: DreamColourId | null; readonly outfit: Outfit };
+
+/**
+ * How the styler is used, and who hears when it finishes. The RestyleOptions (`banked`, `wearers`,
+ * `startStep`) go to restyleStart() with an axolotl handed in as `initial`; a whole state handed in
+ * already holds them, so they must then be left out.
+ */
+export interface AxolotlStylerOptions extends RestyleOptions {
   /** The step-by-step character creator, or restyling an owned axolotl (adds tabs, Cancel and Escape). */
   mode: StylerMode;
   /** The current motion profile, read every frame, so turning reduced motion on stills the preview at once. */
   motion: () => MotionProfile;
   /**
-   * Where the styler starts. Restyle: the owned axolotl's name, look and morph (it starts with
+   * Where the styler starts. Restyle: the owned axolotl's name, look, morph and outfit (it starts with
    * restyleStart()). The creator: a creatorStart() state; a restyle may pass a restyleStart() state too.
    */
   initial: StylerAxolotl | StylerState;
-  /** Done: the finished name, look and morph (the initial morph in restyle). Called at most once. */
-  onDone: (axolotl: StylerAxolotl) => void;
+  /**
+   * Done: the finished name, look, morph (the initial morph in restyle), Dream colour and outfit (empty
+   * in the creator; a Wearable in it that another axolotl wears is for the owner to take off that one).
+   * Called at most once.
+   */
+  onDone: (axolotl: StyledAxolotl) => void;
   /** Cancel or Escape in restyle: leave without keeping changes. Required in restyle. Called at most once. */
   onCancel?: () => void;
 }
@@ -189,7 +276,10 @@ interface Chevron {
   setEnabled(enabled: boolean): void;
 }
 
-/** One option button's objects: its tap area, picture, label, name text, tick, morph badge and sex symbol. */
+/**
+ * One option button's objects: its tap area, picture, label, name text, tick, morph badge (or a worn
+ * slot's perk icon) and sex symbol, and an Outfit choice's perk line (icon and text) and "On <name>" mark.
+ */
 interface OptionSlot {
   zone: Phaser.GameObjects.Zone;
   picture: Phaser.GameObjects.Image;
@@ -198,6 +288,52 @@ interface OptionSlot {
   tick: Phaser.GameObjects.Image;
   badge: Phaser.GameObjects.Image;
   symbol: Phaser.GameObjects.Image;
+  perkIcon: Phaser.GameObjects.Image;
+  perkText: Phaser.GameObjects.Text;
+  wornOnText: Phaser.GameObjects.Text;
+}
+
+/** An Outfit choice's label block (art guide 8): the name, the perk (none for None) and the "On <name>" mark. */
+interface LabelBlock {
+  name: string;
+  perk: Perk | null;
+  wornOn: string | null;
+}
+
+/** The texts a label block is set on: the bold name, the perk text and the bold "On <name>" mark. */
+interface LabelBlockTexts {
+  name: Phaser.GameObjects.Text;
+  perk: Phaser.GameObjects.Text;
+  wornOn: Phaser.GameObjects.Text;
+}
+
+/** One line of a label block: its top and size, from the block's top. */
+interface BlockLine {
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** A label block wrapped at a width: its size, the name line, the perk line (with its text size) and the mark line. */
+interface LabelBlockLayout {
+  size: Size;
+  name: BlockLine;
+  perk: (BlockLine & { text: Size }) | null;
+  wornOn: BlockLine | null;
+}
+
+/** One outfit summary row: the perk type (null for "No perks yet", which has no icon), its text and the max mark. */
+interface SummaryRowSpec {
+  type: PerkType | null;
+  text: string;
+  max: boolean;
+}
+
+/** One outfit summary row's objects: its 24 px perk icon, its text and the word in its max mark. */
+interface SummaryRowParts {
+  icon: Phaser.GameObjects.Image;
+  text: Phaser.GameObjects.Text;
+  maxText: Phaser.GameObjects.Text;
 }
 
 /** Sets `text` to wrap at `wrapW` and returns its size. */
@@ -339,24 +475,227 @@ function lookWithOption(look: AxolotlLook, field: LookField, id: string): Axolot
   return { ...look, [field]: id } as AxolotlLook;
 }
 
+/** Texture px per local unit for a picture of `crop` filling `rect` inside its outline, at the device pixel ratio `dpr`. */
+function pictureScaleOf(crop: Bounds, rect: Rect, dpr: number): number {
+  const inner = Math.max(1, rect.w - 2 * PICTURE_INSET);
+  return (inner / Math.max(crop.maxX - crop.minX, crop.maxY - crop.minY)) * dpr;
+}
+
+/** The texture frame of `crop`: its size, with local (0, 0) as the anchor. */
+function cropFrame(crop: Bounds): TexSize {
+  return { w: crop.maxX - crop.minX, h: crop.maxY - crop.minY, originX: -crop.minX, originY: -crop.minY };
+}
+
+/** The catalogue Wearable `id`. Throws when `id` is unknown or not a Wearable. */
+function wearableOf(id: string): Wearable {
+  const treasure = treasureById(id);
+  if (treasure?.category !== 'wearable') throw new Error(`AxolotlStyler: not a Wearable: ${id}`);
+  return treasure;
+}
+
+/** The closed box u0 to u1 along and v0 to v1 across `frame`. */
+function framePolygon(frame: WearFrame, u0: number, u1: number, v0: number, v1: number): Path2D {
+  const path = new Path2D();
+  const corners = [framePoint(frame, u0, v0), framePoint(frame, u1, v0), framePoint(frame, u1, v1), framePoint(frame, u0, v1)];
+  path.moveTo(corners[0].x, corners[0].y);
+  for (const corner of corners.slice(1)) path.lineTo(corner.x, corner.y);
+  path.closePath();
+  return path;
+}
+
+/** The local box `bounds`, `inset` inside its edges. */
+function insetBoxPath(bounds: Bounds, inset: number): Path2D {
+  const local: WearFrame = { x: 0, y: 0, angle: 0 };
+  return framePolygon(local, bounds.minX + inset, bounds.maxX - inset, bounds.minY + inset, bounds.maxY - inset);
+}
+
+/**
+ * The Shirt footprint `inset` inside its edges: the inset torso ellipse from the front edge round the
+ * rear (cut at the tail root) and back, then the neckline bowing back to its apex (as the Tank top).
+ */
+function shirtCuePath(shirt: ShirtGeometry, inset: number): Path2D {
+  const ellipse = shirt.inset;
+  const rx = ellipse.rx - inset;
+  const ry = ellipse.ry - inset;
+  const front = shirt.frontX - inset;
+  const angleAt = (x: number): number => Math.acos(Math.min(1, Math.max(-1, (x - ellipse.cx) / rx)));
+  const frontAngle = angleAt(front);
+  const rearAngle = angleAt(shirt.rearX + inset);
+  const angles = Array.from(
+    { length: SHIRT_CUE_STEPS + 1 },
+    (_unused, index) => frontAngle + ((rearAngle - frontAngle) * index) / SHIRT_CUE_STEPS,
+  );
+  const path = new Path2D();
+  angles.forEach((angle, index) => {
+    const x = ellipse.cx + rx * Math.cos(angle);
+    const y = ellipse.cy - ry * Math.sin(angle);
+    if (index === 0) path.moveTo(x, y);
+    else path.lineTo(x, y);
+  });
+  for (const angle of [...angles].reverse()) path.lineTo(ellipse.cx + rx * Math.cos(angle), ellipse.cy + ry * Math.sin(angle));
+  const apex = shirt.neckline.apexX - inset;
+  path.quadraticCurveTo(2 * apex - front, ellipse.cy, front, ellipse.cy - ry * Math.sin(frontAngle));
+  path.closePath();
+  return path;
+}
+
+/**
+ * The footprint outlines of `slot` on `look` at the still pose (art guide 6i), `inset` inside the
+ * footprint (which includes its ink): a box for Head, Neck and Face, the Shirt shape, the Back box on
+ * the torso edge, the Tail reach circle, and for Socks and Feet the Feet envelope of each of the four feet.
+ */
+function slotFootprintPaths(slot: WearableSlot, look: AxolotlLook, inset: number): Path2D[] {
+  switch (slot) {
+    case 'head':
+      return [insetBoxPath(HEAD_FOOTPRINT, inset)];
+    case 'neck':
+      return [insetBoxPath(NECK_FOOTPRINT, inset)];
+    case 'face':
+      return [insetBoxPath(FACE_FOOTPRINT, inset)];
+    case 'shirt':
+      return [shirtCuePath(shirtGeometry(look), inset)];
+    case 'back': {
+      const { minU, maxU, minV, maxV } = BACK_FRAME_BOX;
+      const frame = backFrame(axolotlBodyGeometry(look).torso);
+      return [framePolygon(frame, minU + inset, maxU - inset, minV + inset, maxV - inset)];
+    }
+    case 'tail': {
+      const anchor = tailSlotFrame(axolotlBodyGeometry(look).tail, STILL_POSE.swimPhase, STILL_POSE.tailAmp);
+      const path = new Path2D();
+      path.arc(anchor.x, anchor.y, TAIL_SLOT_REACH - inset, 0, TAU);
+      return [path];
+    }
+    case 'socks':
+    case 'feet':
+      return legSlotFrames(look, STILL_POSE.swimPhase).map((frame) => {
+        const envelope = feetEnvelope(frame);
+        return framePolygon(frame, envelope.u0 + inset, envelope.u1 - inset, inset - envelope.vHalf, envelope.vHalf - inset);
+      });
+  }
+}
+
+/** Strokes the empty-slot cue of `slot` on `look`: its footprint as an opaque dashed ink outline (art guide 8). */
+function strokeEmptySlotCue(ctx: CanvasRenderingContext2D, slot: WearableSlot, look: AxolotlLook): void {
+  ctx.save();
+  ctx.strokeStyle = INK;
+  ctx.globalAlpha = 1;
+  ctx.lineWidth = EMPTY_SLOT_CUE.ink;
+  ctx.lineJoin = 'round';
+  ctx.setLineDash([EMPTY_SLOT_CUE.dash, EMPTY_SLOT_CUE.gap]);
+  for (const path of slotFootprintPaths(slot, look, EMPTY_SLOT_CUE.ink / 2)) ctx.stroke(path);
+  ctx.restore();
+}
+
+/** The Outfit picture of one slot: the axolotl at the still pose wearing `outfit`, with the empty-slot cue of `cueSlot`. */
+function paintOutfitPicture(
+  ctx: CanvasRenderingContext2D,
+  look: AxolotlLook,
+  palette: MorphPalette,
+  outfit: ArtOutfit,
+  cueSlot: WearableSlot | null,
+): void {
+  drawAxolotl(ctx, STILL_POSE, palette, look, outfit);
+  if (cueSlot !== null) strokeEmptySlotCue(ctx, cueSlot, look);
+}
+
+/**
+ * Sets `block` on `texts` wrapped at `wrapW` and stacks its lines: the name, then the perk line (the
+ * 24 px icon, 6 px, the perk text wrapped in the room left, centred down a line as tall as the taller),
+ * then the "On <name>" mark.
+ */
+function arrangeLabelBlock(texts: LabelBlockTexts, block: LabelBlock, wrapW: number): LabelBlockLayout {
+  const nameSize = wrappedSize(texts.name.setText(block.name), wrapW);
+  const name: BlockLine = { y: 0, ...nameSize };
+  let bottom = name.h;
+  let perk: LabelBlockLayout['perk'] = null;
+  if (block.perk !== null) {
+    const indent = PERK_ROW.iconPx + PERK_ROW.gap;
+    const text = wrappedSize(texts.perk.setText(perkText(block.perk)), wrapW - indent);
+    perk = { y: bottom, w: indent + text.w, h: Math.max(PERK_ROW.iconPx, text.h), text };
+    bottom += perk.h;
+  }
+  let wornOn: BlockLine | null = null;
+  if (block.wornOn !== null) {
+    wornOn = { y: bottom, ...wrappedSize(texts.wornOn.setText(block.wornOn), wrapW) };
+    bottom += wornOn.h;
+  }
+  const w = Math.max(name.w, perk?.w ?? 0, wornOn?.w ?? 0);
+  return { size: { w, h: bottom }, name, perk, wornOn };
+}
+
+/** The largest size of each of `blocks` set on `texts` and wrapped at `wrapW`; zero when there are none. */
+function largestBlock(texts: LabelBlockTexts, blocks: readonly LabelBlock[], wrapW: number): Size {
+  let largest: Size = { w: 0, h: 0 };
+  for (const block of blocks) {
+    const { size } = arrangeLabelBlock(texts, block, wrapW);
+    largest = { w: Math.max(largest.w, size.w), h: Math.max(largest.h, size.h) };
+  }
+  return largest;
+}
+
+/**
+ * Places rows of `sizes` from (0, 0): one under another `PERK_ROW.rowGap` apart, or when `flowed` side
+ * by side `PERK_ROW.flowGap` apart in whole rows that fit `wrapW`. Returns each row's rect and the size.
+ */
+function arrangeRows(sizes: readonly Size[], wrapW: number, flowed: boolean): { rects: Rect[]; size: Size } {
+  const rects: Rect[] = [];
+  let lineEnd = 0;
+  let lineTop = 0;
+  let lineH = 0;
+  let width = 0;
+  for (const size of sizes) {
+    const startsLine = rects.length === 0 || !flowed || lineEnd + PERK_ROW.flowGap + size.w > wrapW;
+    if (startsLine && rects.length > 0) {
+      lineTop += lineH + PERK_ROW.rowGap;
+      lineH = 0;
+    }
+    const x = startsLine ? 0 : lineEnd + PERK_ROW.flowGap;
+    rects.push({ x, y: lineTop, w: size.w, h: size.h });
+    lineEnd = x + size.w;
+    lineH = Math.max(lineH, size.h);
+    width = Math.max(width, lineEnd);
+  }
+  return { rects, size: { w: width, h: lineTop + lineH } };
+}
+
+/** Draws the plus badge of an empty slot on `graphics`: a white disc, an ink ring and the plus centred at `centre`. */
+function drawPlusBadge(graphics: Phaser.GameObjects.Graphics, centre: { x: number; y: number }): void {
+  const ink = cssColor(INK).color;
+  graphics.fillStyle(cssColor(WHITE).color, 1).fillCircle(centre.x, centre.y, PLUS_BADGE.r);
+  graphics.lineStyle(PLUS_BADGE.outline, ink, 1).strokeCircle(centre.x, centre.y, PLUS_BADGE.r);
+  const half = PLUS_BADGE.halfLength + PLUS_BADGE.ink / 2;
+  const cap = PLUS_BADGE.ink / 2;
+  graphics.fillStyle(ink, 1);
+  graphics.fillRoundedRect(centre.x - cap, centre.y - half, PLUS_BADGE.ink, 2 * half, cap);
+  graphics.fillRoundedRect(centre.x - half, centre.y - cap, 2 * half, PLUS_BADGE.ink, cap);
+}
+
 /** True when the styler was handed a whole state (creatorStart or restyleStart), not only an axolotl. */
 function isStylerState(initial: StylerAxolotl | StylerState): initial is StylerState {
   return 'step' in initial;
 }
 
-/** The starting state for `options`: the state handed in, or a restyle of the axolotl handed in. */
+/**
+ * The starting state for `options`: the state handed in, or a restyle of the axolotl handed in with the
+ * RestyleOptions. Throws when a whole state comes with RestyleOptions, which it already holds.
+ */
 function startStateOf(options: AxolotlStylerOptions): StylerState {
-  const { initial, mode } = options;
+  const { initial, mode, banked, wearers, startStep } = options;
   if (isStylerState(initial)) {
     if (initial.mode !== mode) throw new Error(`AxolotlStyler: a ${initial.mode} state in ${mode} mode`);
+    if (banked !== undefined || wearers !== undefined || startStep !== undefined) {
+      throw new Error('AxolotlStyler: restyle options with a whole state, which already holds them');
+    }
     return initial;
   }
-  if (mode === 'restyle') return restyleStart(initial);
+  if (mode === 'restyle') return restyleStart(initial, [], { banked, wearers, startStep });
   throw new Error('AxolotlStyler: the creator starts from a creatorStart() state');
 }
 
-function screenKeyOf(screen: StylerScreen): string {
-  return `${screen.mode}|${screen.step}|${screen.optionCount}|${screen.tabPage}`;
+/** The layout key of `screen`: a change lays the screen out again. On Outfit it holds the view and the open slot. */
+function screenKeyOf(screen: StylerScreen, outfitSlot: WearableSlot): string {
+  const outfit = screen.outfitView === undefined ? '' : `|${screen.outfitView}|${outfitSlot}`;
+  return `${screen.mode}|${screen.step}|${screen.optionCount}|${screen.tabPage}${outfit}`;
 }
 
 /** A press and release on the zone calls `onTap`, inside the pointer handler (so a text field can open). */
@@ -462,17 +801,25 @@ function placeBadge(badge: Phaser.GameObjects.Image, info: TexInfo | null, rect:
  * box, the suggested names and More names), then Back, Next or Done, Surprise me, and Cancel in
  * restyle. Every press and key goes through reduceStyler(); changes show at once, with no tweens.
  * Each picture button is a still bake of the look so far with its option applied, repainted only
- * when the look or morph changes. Each step keeps its pictures until the styler is destroyed, so
+ * when the look, morph or draft outfit changes. Each step keeps its pictures until the styler is destroyed, so
  * going back to a step re-bakes only the pictures that changed. The chosen option has a thick ink ring and a tick; the focused
  * control the double focus ring (PRD F16). The preview idles, and is a still pose under reduced
  * motion. After Done or Cancel the styler ignores further input; the owner destroys it.
+ * The restyle Outfit tab (PRD C10, F8 to F11; art guide 8) shows the axolotl in its draft outfit, in
+ * the preview and in every picture of its slots view and choices view; every other restyle step's
+ * preview and pictures wear the draft outfit too, and the creator draws none. Each slot picture is the slot's crop wearing the whole outfit, with the worn item's perk
+ * badge or, when empty, the dashed footprint and the plus badge; each choice picture wears that
+ * choice, with its label block (name, perk line, "On <name>" mark) under or beside it. The slots view
+ * shows the outfit summary, or a caption in its place, and More slots; the choices view More
+ * wearables and Back to slots. Outfit pictures are baked again only when the look, morph, Dream
+ * colour, outfit (by outfitKey) or bake scale changes.
  */
 export class AxolotlStyler {
   private readonly scene: Phaser.Scene;
   private readonly baked: BakedTextures;
   private readonly baseBakeScale: number;
   private readonly motion: () => MotionProfile;
-  private readonly onDone: (axolotl: StylerAxolotl) => void;
+  private readonly onDone: (axolotl: StyledAxolotl) => void;
   private readonly onCancel: (() => void) | undefined;
   private readonly previewKey: string;
   /** The start of every picture texture key: one texture per picture step and option id. */
@@ -490,7 +837,15 @@ export class AxolotlStyler {
   private readonly helper: Phaser.GameObjects.Text;
   private readonly caption: Phaser.GameObjects.Text;
   private readonly labelProbe: Phaser.GameObjects.Text;
+  /** Measures the perk text of Outfit label blocks (normal weight). */
+  private readonly perkProbe: Phaser.GameObjects.Text;
   private readonly morphBadges: MorphTextures['badges'][typeof MORPH_BADGE_PX];
+  private readonly perkIcons: TreasureTextures['perks'];
+  private readonly summaryRows: SummaryRowParts[];
+  private readonly moreOutfitText: Phaser.GameObjects.Text;
+  private readonly moreOutfitZone: Phaser.GameObjects.Zone;
+  /** Back to slots on the Outfit choices view (restyle only; null in the creator). */
+  private readonly backToSlotsButton: UiButton | null;
   private readonly slots: OptionSlot[];
   private readonly tabTexts: Phaser.GameObjects.Text[];
   private readonly tabZones: Phaser.GameObjects.Zone[];
@@ -508,8 +863,10 @@ export class AxolotlStyler {
   private readonly texts: Phaser.GameObjects.Text[];
   private preview: AxolotlTexture;
   private shownLook: AxolotlLook;
+  /** The logic outfit the preview's art outfit was last made from, and that art outfit. */
+  private shownOutfit: { source: Outfit | null; art: ArtOutfit; key: string } = { source: null, ...NO_PREVIEW_OUTFIT };
   private lastPose: AxolotlPose | null = null;
-  /** The morph and Dream colour the preview was last painted in, or null before the first paint. */
+  /** The morph, Dream colour and outfit (outfitKey) the preview was last painted in, or null before the first paint. */
   private paintedPalette: string | null = null;
   private redrawAcc = 0;
   private state: StylerState;
@@ -547,6 +904,7 @@ export class AxolotlStyler {
     this.shownLook = this.state.look;
     this.preview = createAxolotlTexture(scene, this.previewKey, this.baseBakeScale, this.shownLook);
     this.morphBadges = assets.morph.badges[MORPH_BADGE_PX];
+    this.perkIcons = assets.treasure.perks;
 
     const backdrop = scene.add
       .rectangle(-BACKDROP_COVER / 2, -BACKDROP_COVER / 2, BACKDROP_COVER, BACKDROP_COVER, cssColor(HOME_TANK_WALL).color, 1)
@@ -560,7 +918,9 @@ export class AxolotlStyler {
     this.helper = this.addText(HELPER_TEXT_PX, false);
     this.caption = this.addText(CAPTION_TEXT_PX, true);
     this.labelProbe = this.addText(OPTION_LABEL_TEXT_PX, true).setVisible(false);
+    this.perkProbe = this.addText(OPTION_LABEL_TEXT_PX, false).setVisible(false);
     this.slots = Array.from({ length: MAX_STEP_OPTIONS }, (_unused, index) => this.createSlot(index));
+    this.summaryRows = PERK_ORDER.map(() => this.createSummaryRow());
     this.tabTexts = RESTYLE_STEPS.map((step) => this.addText(TAB_TEXT_PX, true).setText(stepTabLabel(step)));
     this.tabZones = RESTYLE_STEPS.map((step) => createTapZone(scene, () => this.dispatch({ type: 'tab', step })));
     this.prevPage = createChevron(scene, this.baked, 'left', () => this.turnTabPage(-1));
@@ -581,21 +941,28 @@ export class AxolotlStyler {
     this.moreNamesZone = createTapZone(scene, () => this.pressMoreNames());
     this.moreColoursText = this.addText(NAME_TEXT_PX, true).setText(MORE_COLOURS_LABEL);
     this.moreColoursZone = createTapZone(scene, () => this.pressMoreColours());
+    this.moreOutfitText = this.addText(NAME_TEXT_PX, true);
+    this.moreOutfitZone = createTapZone(scene, () => this.pressMoreOutfit());
     this.buttons = {};
     for (const control of NAV_CONTROLS[options.mode]) {
       this.buttons[control] = this.createNavButton(control);
     }
+    this.backToSlotsButton = options.mode === 'restyle' ? this.createBackToSlotsButton() : null;
     this.texts = [
       this.heading,
       this.helper,
       this.caption,
       this.labelProbe,
-      ...this.slots.flatMap((slot) => [slot.label, slot.nameText]),
+      this.perkProbe,
+      ...this.slots.flatMap((slot) => [slot.label, slot.nameText, slot.perkText, slot.wornOnText]),
+      ...this.summaryRows.flatMap((row) => [row.text, row.maxText]),
       ...this.tabTexts,
       this.nameBoxText,
       this.moreNamesText,
       this.moreColoursText,
+      this.moreOutfitText,
     ];
+    const stepButtons = [...Object.values(this.buttons), ...(this.backToSlotsButton ? [this.backToSlotsButton] : [])];
 
     this.container = scene.add
       .container(0, 0, [
@@ -605,7 +972,8 @@ export class AxolotlStyler {
         this.previewImage,
         ...this.slots.map((slot) => slot.picture),
         this.marks,
-        ...this.slots.flatMap((slot) => [slot.tick, slot.badge, slot.symbol]),
+        ...this.slots.flatMap((slot) => [slot.tick, slot.badge, slot.symbol, slot.perkIcon]),
+        ...this.summaryRows.map((row) => row.icon),
         ...this.texts,
         this.nameBoxPencil,
         this.nameCursor,
@@ -614,9 +982,10 @@ export class AxolotlStyler {
         this.nameBoxZone,
         this.moreNamesZone,
         this.moreColoursZone,
+        this.moreOutfitZone,
         this.prevPage.container,
         this.nextPage.container,
-        ...Object.values(this.buttons).map((button) => button.container),
+        ...stepButtons.map((button) => button.container),
       ])
       .setDepth(depth);
     this.layout(view);
@@ -672,6 +1041,7 @@ export class AxolotlStyler {
     for (const button of Object.values(this.buttons)) {
       button.setResolution(dpr);
     }
+    this.backToSlotsButton?.setResolution(dpr);
   }
 
   /**
@@ -708,6 +1078,17 @@ export class AxolotlStyler {
         .setVisible(false),
       badge: this.scene.add.image(0, 0, this.morphBadges.triangle.key).setVisible(false),
       symbol: this.scene.add.image(0, 0, this.baked.icons.boy.key).setOrigin(0, 0).setVisible(false),
+      perkIcon: this.scene.add.image(0, 0, '__DEFAULT').setVisible(false),
+      perkText: this.addText(OPTION_LABEL_TEXT_PX, false),
+      wornOnText: this.addText(OPTION_LABEL_TEXT_PX, true),
+    };
+  }
+
+  private createSummaryRow(): SummaryRowParts {
+    return {
+      icon: this.scene.add.image(0, 0, '__DEFAULT').setVisible(false),
+      text: this.addText(OPTION_LABEL_TEXT_PX, false).setVisible(false),
+      maxText: this.addText(OPTION_LABEL_TEXT_PX, true).setText(MAX_MARK_LABEL).setVisible(false),
     };
   }
 
@@ -726,33 +1107,81 @@ export class AxolotlStyler {
     });
   }
 
+  /** Back to slots: a secondary tile with the left chevron over its label (art guide 8). */
+  private createBackToSlotsButton(): UiButton {
+    const button = createButton(this.scene, this.baked, {
+      fill: 'secondary',
+      shape: 'square',
+      size: 1,
+      width: BACK_TO_SLOTS_BUTTON.w,
+      label: BACK_TO_SLOTS_LABEL,
+      icon: 'left',
+      dpr: this.dpr,
+      pressOnDown: false,
+      onPress: () => this.dispatch({ type: 'backToSlots' }),
+    });
+    button.container.setVisible(false);
+    return button;
+  }
+
   /**
    * The step screen stylerLayout() lays out: on Name, the option count is every suggested name that
-   * fits; on Dream colour, the real colour and every owned Dream colour, over all pages.
+   * fits; on Dream colour, the real colour and every owned Dream colour, over all pages; on Outfit, the
+   * buttons of its view over all pages, with the view.
    */
   private screenOf(): StylerScreen {
     const { mode, step } = this.state;
-    return { mode, step, optionCount: this.optionCountOf(step), tabPage: this.tabPage };
+    const screen: StylerScreen = { mode, step, optionCount: this.optionCountOf(step), tabPage: this.tabPage };
+    return step === 'outfit' ? { ...screen, outfitView: this.state.outfitView } : screen;
   }
 
   private optionCountOf(step: StylerStep): number {
     if (step === 'name') return suggestedNamesFor(this.state.look.sex).length;
     if (step === 'dream') return 1 + this.state.ownedDreams.length;
+    if (step === 'outfit') return outfitOptionCount(this.state);
     return stepOptions(this.state).length;
   }
 
+  private isOutfitSlots(): boolean {
+    return this.state.step === 'outfit' && this.state.outfitView === 'slots';
+  }
+
+  private isOutfitChoices(): boolean {
+    return this.state.step === 'outfit' && this.state.outfitView === 'choices';
+  }
+
+  /** Every option of the Outfit step's current view, over all its pages. */
+  private allOutfitOptions(): readonly StylerOption[] {
+    return stepOptions({ ...this.state, outfitPage: 0, outfitPerPage: outfitOptionCount(this.state) });
+  }
+
+  /** The label block of the Outfit choice `option`: None has only its name. */
+  private labelBlockOf(option: StylerOption): LabelBlock {
+    if (option.id === NO_WEARABLE_OPTION_ID) return { name: option.label, perk: null, wornOn: null };
+    return { name: option.label, perk: wearableOf(option.id).perk, wornOn: option.wornOnMark ?? null };
+  }
+
+  /** The Outfit slots view caption of `slot`: "Head: Sun hat, Speed +4%" or "Head: empty". */
+  private slotCaption(slot: WearableSlot): string {
+    const worn = this.state.outfit[slot];
+    return outfitSlotCaption(slot, worn === null ? null : wearableOf(worn));
+  }
+
   /**
-   * The option labels to measure: none on Name, every page's labels on Dream colour (so each page
-   * lays out alike), else the step's.
+   * The option labels to measure: none on Name, every page's labels on Dream colour and Outfit (so
+   * each page lays out alike), else the step's.
    */
   private measuredLabels(): string[] {
     const { step } = this.state;
     if (step === 'name') return [];
+    if (step === 'outfit') return this.allOutfitOptions().map((option) => option.label);
     const onOnePage = step === 'dream' ? { ...this.state, dreamPage: 0, dreamsPerPage: MAX_DREAM_OPTIONS } : this.state;
     return stepOptions(onOnePage).map((option) => option.label);
   }
 
+  /** The helper line; on the Outfit choices view it names the slot, or says none of its Wearables is banked yet. */
   private helperText(): string {
+    if (this.isOutfitChoices()) return outfitHelper(this.state.outfitSlot, outfitOptionCount(this.state) - 1);
     return stepHelper(this.state.mode, this.state.step, this.state.ownedDreams.length);
   }
 
@@ -764,13 +1193,39 @@ export class AxolotlStyler {
   }
 
   private measureFor(): StylerMeasure {
+    if (this.isOutfitChoices()) return this.choicesMeasure();
     const labels = this.measuredLabels();
+    const captions = this.isOutfitSlots() ? WEARABLE_SLOTS.map((slot) => this.slotCaption(slot)) : labels;
     return {
       headingAt: (wrapW, full) => wrappedSize(this.heading.setText(this.headingText(full)), wrapW),
       helperAt: (wrapW) => wrappedSize(this.helper.setText(this.helperText()), wrapW),
-      captionAt: (wrapW) => largestWrapped(this.caption, labels, wrapW),
+      captionAt: (wrapW) => largestWrapped(this.caption, captions, wrapW),
       optionLabelAt: (wrapW) => largestWrapped(this.labelProbe, labels, wrapW),
       optionLabelMinW: longestWordWidth(this.labelProbe, labels),
+      previewFrame: AXO_TEX,
+      previewLargestSize: PREVIEW_LARGEST_SIZE,
+      outfitSummaryAt: (wrapW, flowed) => this.arrangeSummary(wrapW, flowed).size,
+    };
+  }
+
+  /**
+   * The Outfit choices view measure: the option labels are whole label blocks (name, perk line and
+   * "On <name>" mark), and the narrowest a block wraps is its longest word, or the perk icon, the gap
+   * and the perk text's longest word.
+   */
+  private choicesMeasure(): StylerMeasure {
+    const blocks = this.allOutfitOptions().map((option) => this.labelBlockOf(option));
+    const probes: LabelBlockTexts = { name: this.labelProbe, perk: this.perkProbe, wornOn: this.labelProbe };
+    const boldWords = blocks.flatMap((block) => (block.wornOn === null ? [block.name] : [block.name, block.wornOn]));
+    const perkTexts = blocks.flatMap((block) => (block.perk === null ? [] : [perkText(block.perk)]));
+    const perkMinW = perkTexts.length === 0 ? 0 : PERK_ROW.iconPx + PERK_ROW.gap + longestWordWidth(this.perkProbe, perkTexts);
+    const names = blocks.map((block) => block.name);
+    return {
+      headingAt: (wrapW, full) => wrappedSize(this.heading.setText(this.headingText(full)), wrapW),
+      helperAt: (wrapW) => wrappedSize(this.helper.setText(this.helperText()), wrapW),
+      captionAt: (wrapW) => largestWrapped(this.caption, names, wrapW),
+      optionLabelAt: (wrapW) => largestBlock(probes, blocks, wrapW),
+      optionLabelMinW: Math.max(longestWordWidth(this.labelProbe, boldWords), perkMinW),
       previewFrame: AXO_TEX,
       previewLargestSize: PREVIEW_LARGEST_SIZE,
     };
@@ -778,16 +1233,19 @@ export class AxolotlStyler {
 
   /**
    * Lays out the current step screen, fits the names per page to it on Name and the options per page
-   * on Dream colour, places the panel, the heading, the helper and the step buttons, then redraws
-   * everything else.
+   * on Dream colour and Outfit, tells the state whether the tab row shows (restyle), places the panel,
+   * the heading, the helper and the step buttons, then redraws everything else.
    */
   private relayout(): void {
     const screen = this.screenOf();
     const placed = stylerLayout(this.view, screen, this.measureFor());
     this.placed = placed;
-    this.screenKey = screenKeyOf(screen);
+    this.screenKey = screenKeyOf(screen, this.state.outfitSlot);
     if (placed.name !== null) this.state = withNamesPerPage(this.state, placed.name.namesPerPage);
     if (placed.dream !== null) this.state = withDreamsPerPage(this.state, placed.dream.perPage);
+    if (placed.outfit !== null) this.state = withOutfitPerPage(this.state, placed.outfit.perPage);
+    if (this.state.mode === 'restyle') this.state = withTabsHidden(this.state, placed.tabs === null);
+    this.placeBackToSlots(placed.outfit?.backToSlots ?? null);
     const { panel } = placed;
     drawPanel(this.panel, panel.x, panel.y, panel.w, panel.h, UI_PANEL);
     this.placeHeading(placed);
@@ -815,6 +1273,17 @@ export class AxolotlStyler {
   private placeNavButton(control: NavControl, rect: Rect | null): void {
     const button = this.buttons[control];
     if (button === undefined) return;
+    button.container.setVisible(rect !== null);
+    if (rect !== null) button.container.setPosition(rect.x, rect.y);
+  }
+
+  /** Back to slots at `rect` (a step button, or the body's first part once the tab row hides), or hidden. */
+  private placeBackToSlots(rect: Rect | null): void {
+    const button = this.backToSlotsButton;
+    if (button === null) {
+      if (rect !== null) throw new Error('AxolotlStyler: Back to slots outside restyle');
+      return;
+    }
     button.container.setVisible(rect !== null);
     if (rect !== null) button.container.setPosition(rect.x, rect.y);
   }
@@ -850,6 +1319,10 @@ export class AxolotlStyler {
     this.dispatch({ type: 'moreColours', perPage: this.placed?.dream?.perPage ?? this.state.dreamsPerPage });
   }
 
+  private pressMoreOutfit(): void {
+    this.dispatch({ type: 'moreOutfit', perPage: this.placed?.outfit?.perPage ?? this.state.outfitPerPage });
+  }
+
   /** A page button: shows the next or previous page of restyle tabs, wrapping. Focus stays. */
   private turnTabPage(offset: number): void {
     const tabs = this.placed?.tabs;
@@ -868,7 +1341,8 @@ export class AxolotlStyler {
     this.finished = true;
     this.blinkNameCursor();
     if (effect.type === 'done') {
-      this.onDone({ name: effect.name, look: effect.look, morph: effect.morph, dreamColour: effect.dreamColour });
+      const { name, look, morph, dreamColour, outfit } = effect;
+      this.onDone({ name, look, morph, dreamColour, outfit });
       return;
     }
     if (this.onCancel === undefined) throw new Error('AxolotlStyler: cancel without onCancel');
@@ -966,12 +1440,13 @@ export class AxolotlStyler {
   /**
    * Redraws the state, laying the screen out again first when the step, its option count or the tab
    * page changed: dots or tabs, option buttons with their pictures, labels or caption, the Name
-   * controls, the step buttons' focus, and the preview look and morph.
+   * controls, the Outfit More button and summary, the step buttons' focus, and the preview look, morph
+   * and outfit.
    */
   private refresh(): void {
     const placed = this.placed;
     if (placed === null) return;
-    if (screenKeyOf(this.screenOf()) !== this.screenKey) {
+    if (screenKeyOf(this.screenOf(), this.state.outfitSlot) !== this.screenKey) {
       this.relayout();
       return;
     }
@@ -982,9 +1457,12 @@ export class AxolotlStyler {
     this.drawOptions(placed);
     this.drawNameControls(placed);
     this.drawMoreColours(placed);
+    this.drawMoreOutfit(placed);
+    this.drawOutfitSummary(placed);
     for (const [control, button] of Object.entries(this.buttons)) {
       button.setFocused(this.state.focus.kind === control);
     }
+    this.backToSlotsButton?.setFocused(this.state.focus.kind === 'backToSlots');
     this.refreshPreview(placed.preview);
   }
 
@@ -1080,6 +1558,14 @@ export class AxolotlStyler {
     slot.tick.setVisible(false);
     slot.badge.setVisible(false);
     slot.symbol.setVisible(false);
+    this.hidePerkLine(slot);
+  }
+
+  /** Hides an Outfit choice's perk line and "On <name>" mark. */
+  private hidePerkLine(slot: OptionSlot): void {
+    slot.perkIcon.setVisible(false);
+    slot.perkText.setVisible(false);
+    slot.wornOnText.setVisible(false);
   }
 
   /** The chosen mark (thick ring and tick badge) on `rect`, or none. */
@@ -1098,26 +1584,98 @@ export class AxolotlStyler {
     slot.label.setVisible(false);
     slot.badge.setVisible(false);
     slot.symbol.setVisible(false);
+    this.hidePerkLine(slot);
     placeTextIn(slot.nameText.setText(option.label), rect);
   }
 
   /**
-   * A picture button: its still picture (re-baked when it shows something new), its label, the Colour
-   * step's morph badge, the Dream colour step's badge and the Boy or girl step's symbol.
+   * A picture button: its still picture (re-baked when it shows something new), its label (on the
+   * Outfit choices view the label block), the Colour step's morph badge, the Dream colour step's badge,
+   * the Boy or girl step's symbol, and on the Outfit slots view the perk badge or the plus badge.
    */
   private showPictureOption(slot: OptionSlot, option: StylerOption, index: number, placed: StylerLayout): void {
     const rect = placed.options[index];
     slot.nameText.setVisible(false);
-    const key = this.bakePicture(option, rect);
+    const key = this.state.step === 'outfit' ? this.bakeOutfitPicture(option, rect) : this.bakePicture(option, rect);
     const centre = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
     slot.picture.setTexture(key).setOrigin(0.5, 0.5).setPosition(centre.x, centre.y);
     slot.picture.setScale(1 / this.dpr).setVisible(true);
     const labelRect = placed.labelsShown ? placed.optionLabels[index] : undefined;
-    if (labelRect === undefined) slot.label.setVisible(false);
-    else placeTextIn(slot.label.setText(option.label), labelRect);
+    this.placeOptionLabel(slot, option, labelRect, placed.outfit?.labelsBeside === true);
     const badgeRect = cornerBadgeRect(rect);
+    if (this.state.step === 'outfit') {
+      slot.symbol.setVisible(false);
+      this.placeSlotBadge(slot, option, rect, badgeRect);
+      return;
+    }
     placeBadge(slot.badge, this.cornerBadgeOf(option), badgeRect);
     this.placeSexSymbol(slot, option, badgeRect);
+  }
+
+  /** The option's label in `rect`, or none when the labels hide; on the Outfit choices view, its label block. */
+  private placeOptionLabel(slot: OptionSlot, option: StylerOption, rect: Rect | undefined, beside: boolean): void {
+    if (rect === undefined) {
+      slot.label.setVisible(false);
+      this.hidePerkLine(slot);
+      return;
+    }
+    if (this.isOutfitChoices()) {
+      this.placeLabelBlock(slot, this.labelBlockOf(option), rect, beside);
+      return;
+    }
+    this.hidePerkLine(slot);
+    placeTextIn(slot.label.setAlign('center').setText(option.label), rect);
+  }
+
+  /**
+   * A label block in `rect`, wrapped to it (with 1 px slack, so it breaks as measured): under its
+   * picture each line is centred and the block starts at the top; beside its picture each line starts
+   * at the left and the block is centred down the row.
+   */
+  private placeLabelBlock(slot: OptionSlot, block: LabelBlock, rect: Rect, beside: boolean): void {
+    const align = beside ? 'left' : 'center';
+    const texts: LabelBlockTexts = {
+      name: slot.label.setAlign(align),
+      perk: slot.perkText.setAlign(align),
+      wornOn: slot.wornOnText.setAlign(align),
+    };
+    const parts = arrangeLabelBlock(texts, block, rect.w + 1);
+    const top = beside ? rect.y + (rect.h - parts.size.h) / 2 : rect.y;
+    const lineX = (line: BlockLine): number => (beside ? rect.x : rect.x + (rect.w - line.w) / 2);
+    slot.label.setPosition(lineX(parts.name), top + parts.name.y).setVisible(true);
+    if (parts.perk === null || block.perk === null) {
+      slot.perkIcon.setVisible(false);
+      slot.perkText.setVisible(false);
+    } else {
+      const { perk } = parts;
+      const x = lineX(perk);
+      const iconRect: Rect = { x, y: top + perk.y + (perk.h - PERK_ROW.iconPx) / 2, w: PERK_ROW.iconPx, h: PERK_ROW.iconPx };
+      placeBadge(slot.perkIcon, this.perkIcons[PERK_ROW.iconPx][block.perk.type], iconRect);
+      slot.perkText.setPosition(x + PERK_ROW.iconPx + PERK_ROW.gap, top + perk.y + (perk.h - perk.text.h) / 2).setVisible(true);
+    }
+    if (parts.wornOn === null) slot.wornOnText.setVisible(false);
+    else slot.wornOnText.setPosition(lineX(parts.wornOn), top + parts.wornOn.y).setVisible(true);
+  }
+
+  /**
+   * On the Outfit slots view: a worn slot's perk icon on a white disc in the lower-left badge spot, or an
+   * empty slot's plus badge where the tick sits on other screens. The choices view has neither.
+   */
+  private placeSlotBadge(slot: OptionSlot, option: StylerOption, rect: Rect, badgeRect: Rect): void {
+    if (!this.isOutfitSlots()) {
+      slot.badge.setVisible(false);
+      return;
+    }
+    const worn = this.state.outfit[option.id as WearableSlot];
+    if (worn === null) {
+      slot.badge.setVisible(false);
+      drawPlusBadge(this.marks, tickCentre(rect, true));
+      return;
+    }
+    const centre = { x: badgeRect.x + badgeRect.w / 2, y: badgeRect.y + badgeRect.h / 2 };
+    this.marks.fillStyle(cssColor(WHITE).color, 1).fillCircle(centre.x, centre.y, PERK_DISC.r);
+    this.marks.lineStyle(PERK_DISC.outline, cssColor(INK).color, 1).strokeCircle(centre.x, centre.y, PERK_DISC.r);
+    placeBadge(slot.badge, this.perkIcons[PERK_DISC.iconPx][wearableOf(worn).perk.type], badgeRect);
   }
 
   /**
@@ -1160,17 +1718,23 @@ export class AxolotlStyler {
       .setVisible(true);
   }
 
-  /** The caption names the focused option, else the chosen one, once the labels hide. */
+  /**
+   * The caption names the focused option, else the chosen one, once the labels hide. On the Outfit
+   * slots view it shows in place of the outfit summary: the focused slot's caption, else the open slot's.
+   */
   private drawCaption(placed: StylerLayout, options: readonly StylerOption[], chosen: number): void {
     const rect = placed.caption;
-    if (rect === null || placed.labelsShown) {
+    const slotsCaption = this.isOutfitSlots();
+    if (rect === null || (placed.labelsShown && !slotsCaption)) {
       this.caption.setVisible(false);
       return;
     }
     const focus = this.state.focus;
-    const index = focus.kind === 'option' ? focus.index : chosen;
-    this.caption.setText(options[index]?.label ?? '');
-    placeTextIn(this.caption, rect);
+    const openSlot = options.findIndex((option) => option.id === this.state.outfitSlot);
+    const unfocused = slotsCaption ? Math.max(openSlot, 0) : chosen;
+    const option = options[focus.kind === 'option' ? focus.index : unfocused];
+    const text = option === undefined ? '' : slotsCaption ? this.slotCaption(option.id as WearableSlot) : option.label;
+    placeTextIn(this.caption.setText(text), rect);
   }
 
   /**
@@ -1211,6 +1775,93 @@ export class AxolotlStyler {
     placeTextIn(this.moreColoursText, rect);
   }
 
+  /** More slots or More wearables under the Outfit picture buttons, or none with one page or on other steps. */
+  private drawMoreOutfit(placed: StylerLayout): void {
+    const rect = placed.outfit?.more ?? null;
+    placeZone(this.moreOutfitZone, rect);
+    if (rect === null) {
+      this.moreOutfitText.setVisible(false);
+      return;
+    }
+    drawBox(this.boxes, rect, this.state.focus.kind === 'moreOutfit');
+    this.moreOutfitText.setText(this.isOutfitSlots() ? MORE_SLOTS_LABEL : MORE_WEARABLES_LABEL);
+    placeTextIn(this.moreOutfitText, rect);
+  }
+
+  /** The outfit summary rows of the draft outfit: one per perk type worn, in PRD order, or "No perks yet". */
+  private summarySpecs(): SummaryRowSpec[] {
+    const summary = outfitSummary(wornIds(this.state.outfit).map(wearableOf));
+    if (summary.empty) return [{ type: null, text: NO_PERKS_TEXT, max: false }];
+    return summary.rows.map((row) => ({ type: row.type, text: row.text, max: row.capReached }));
+  }
+
+  /**
+   * Sets each summary row's text (unwrapped) and returns its size: the 24 px icon, 6 px, the text, and
+   * the max mark 8 px after it when the cap is reached.
+   */
+  private summaryRowSizes(specs: readonly SummaryRowSpec[]): Size[] {
+    return specs.map((spec, index) => this.summaryRowSize(this.summaryRows[index], spec));
+  }
+
+  private summaryRowSize(row: SummaryRowParts, spec: SummaryRowSpec): Size {
+    const text = row.text.setWordWrapWidth(null).setText(spec.text);
+    const iconW = spec.type === null ? 0 : PERK_ROW.iconPx + PERK_ROW.gap;
+    const maxW = spec.max ? PERK_ROW.maxGap + this.maxMarkWidth(row) : 0;
+    const h = Math.max(spec.type === null ? 0 : PERK_ROW.iconPx, text.height, spec.max ? PERK_ROW.maxH : 0);
+    return { w: iconW + text.width + maxW, h };
+  }
+
+  private maxMarkWidth(row: SummaryRowParts): number {
+    return row.maxText.setWordWrapWidth(null).width + 2 * PERK_ROW.maxPad;
+  }
+
+  /** The draft outfit's summary rows placed from (0, 0), stacked or flowed in whole rows across `wrapW`. */
+  private arrangeSummary(wrapW: number, flowed: boolean): { rects: Rect[]; size: Size } {
+    return arrangeRows(this.summaryRowSizes(this.summarySpecs()), wrapW, flowed);
+  }
+
+  /** The outfit summary under the Outfit slot buttons, when the layout has room for it; else hidden. */
+  private drawOutfitSummary(placed: StylerLayout): void {
+    for (const parts of this.summaryRows) {
+      parts.icon.setVisible(false);
+      parts.text.setVisible(false);
+      parts.maxText.setVisible(false);
+    }
+    const outfit = placed.outfit;
+    const rect = outfit?.summary ?? null;
+    if (outfit === null || rect === null) return;
+    const specs = this.summarySpecs();
+    const rows = arrangeRows(this.summaryRowSizes(specs), rect.w + 1, outfit.summaryFlowed).rects;
+    specs.forEach((spec, index) => {
+      const row = rows[index];
+      this.placeSummaryRow(this.summaryRows[index], spec, { ...row, x: rect.x + row.x, y: rect.y + row.y });
+    });
+  }
+
+  /** One summary row in `rect`: its icon, its text and its max mark, each centred down the row. */
+  private placeSummaryRow(parts: SummaryRowParts, spec: SummaryRowSpec, rect: Rect): void {
+    const middle = rect.y + rect.h / 2;
+    let x = rect.x;
+    if (spec.type === null) {
+      parts.icon.setVisible(false);
+    } else {
+      const iconRect: Rect = { x, y: middle - PERK_ROW.iconPx / 2, w: PERK_ROW.iconPx, h: PERK_ROW.iconPx };
+      placeBadge(parts.icon, this.perkIcons[PERK_ROW.iconPx][spec.type], iconRect);
+      x += PERK_ROW.iconPx + PERK_ROW.gap;
+    }
+    parts.text.setPosition(x, middle - parts.text.height / 2).setVisible(true);
+    x += parts.text.width;
+    if (!spec.max) {
+      parts.maxText.setVisible(false);
+      return;
+    }
+    const pill: Rect = { x: x + PERK_ROW.maxGap, y: middle - PERK_ROW.maxH / 2, w: this.maxMarkWidth(parts), h: PERK_ROW.maxH };
+    const radius = PERK_ROW.maxH / 2;
+    this.marks.fillStyle(cssColor(WHITE).color, 1).fillRoundedRect(pill.x, pill.y, pill.w, pill.h, radius);
+    this.marks.lineStyle(PERK_ROW.maxOutline, cssColor(INK).color, 1).strokeRoundedRect(pill.x, pill.y, pill.w, pill.h, radius);
+    placeTextIn(parts.maxText, pill);
+  }
+
   /**
    * The name box's parts: the name left-aligned in the text room and centred down it (else the
    * placeholder, normal weight, in the placeholder colour), the pencil icon, and the text cursor at the
@@ -1244,8 +1895,8 @@ export class AxolotlStyler {
   /**
    * The texture key of the picture of `option` on the current step, baked first when it would show
    * something new: the look so far with the option applied, in the applied Dream colour (on Colour,
-   * in that morph's palette; on Dream colour, in that option's colour over the real morph), at the
-   * still pose, cropped for the step and sized to fill the button inside its outline at the device
+   * in that morph's palette; on Dream colour, in that option's colour over the real morph), wearing
+   * the draft outfit in restyle (previewOutfit), at the still pose, cropped for the step and sized to fill the button inside its outline at the device
    * pixel ratio. Whole-axolotl pictures are drawn at their size factor, so Size options look
    * different. Each step and option id has its own key, kept until destroy(), so going back to a step
    * or a Dream colour page bakes nothing that did not change; there is at most one key per option of
@@ -1260,11 +1911,10 @@ export class AxolotlStyler {
     const pictureDream = this.pictureDreamOf(option);
     const cropName = pictureCropOf(step);
     const crop = AXO_PREVIEW_CROPS[cropName];
-    const inner = Math.max(1, rect.w - 2 * PICTURE_INSET);
-    const unit = inner / Math.max(crop.maxX - crop.minX, crop.maxY - crop.minY);
-    const scale = unit * this.dpr;
+    const scale = pictureScaleOf(crop, rect, this.dpr);
     const sizeFactor = cropName === 'whole' ? AXO_SIZE_SCALE[pictureLook.size] : 1;
-    const sig = JSON.stringify([pictureLook, pictureMorph, pictureDream, cropName, scale]);
+    const outfit = this.previewOutfit();
+    const sig = JSON.stringify([pictureLook, pictureMorph, pictureDream, cropName, scale, outfit.key]);
     if (this.pictureSigs.get(key) === sig) return key;
     bakeAxolotlStill(this.scene, key, {
       look: pictureLook,
@@ -1273,9 +1923,40 @@ export class AxolotlStyler {
       crop,
       scale,
       sizeFactor,
+      outfit: outfit.art,
     });
     this.pictureSigs.set(key, sig);
     return key;
+  }
+
+  /**
+   * The texture key of the Outfit picture of `option`, baked first when it would show something new:
+   * the slot's crop (art guide 11) of the axolotl in its look and Dream colour at the still pose, at
+   * x1.00, wearing the draft outfit (slots view) or the draft outfit with that choice in the open slot
+   * (choices view), with the empty-slot cue when that slot is empty. One key per slot in the slots view
+   * and per slot and choice in the choices view, kept until destroy().
+   */
+  private bakeOutfitPicture(option: StylerOption, rect: Rect): string {
+    const { look, morph, dreamColour, outfitView } = this.state;
+    const slot = outfitView === 'slots' ? (option.id as WearableSlot) : this.state.outfitSlot;
+    const key =
+      outfitView === 'slots' ? `${this.pictureKeyStart}-outfit-${slot}` : `${this.pictureKeyStart}-outfit-${slot}-${option.id}`;
+    const outfit = artOutfit(outfitView === 'slots' ? this.state.outfit : this.outfitWithChoice(option));
+    const cueSlot = wornSlug(outfit, slot) === undefined ? slot : null;
+    const crop = OUTFIT_SLOT_CROPS[slot];
+    const scale = pictureScaleOf(crop, rect, this.dpr);
+    const sig = JSON.stringify([look, morph, dreamColour, scale, outfitKey(outfit), cueSlot]);
+    if (this.pictureSigs.get(key) === sig) return key;
+    const palette = axolotlPalette(morph, dreamColour);
+    bake(this.scene, key, cropFrame(crop), scale, (ctx) => paintOutfitPicture(ctx, look, palette, outfit, cueSlot));
+    this.pictureSigs.set(key, sig);
+    return key;
+  }
+
+  /** The draft outfit with the Outfit choice `option` in the open slot (None leaves it empty). */
+  private outfitWithChoice(option: StylerOption): Outfit {
+    const worn = option.id === NO_WEARABLE_OPTION_ID ? null : option.id;
+    return { ...this.state.outfit, [this.state.outfitSlot]: worn };
   }
 
   /** The Dream colour a picture shows: on Dream colour the option's (none for the real colour), else the applied one. */
@@ -1341,7 +2022,8 @@ export class AxolotlStyler {
       sheen: motion.ambient ? dreamSheenAt(this.clock) : undefined,
     };
     const { morph, dreamColour } = this.state;
-    const paletteKey = `${morph}|${dreamColour ?? ''}`;
+    const outfit = this.previewOutfit();
+    const paletteKey = `${morph}|${dreamColour ?? ''}|${outfit.key}`;
     if (this.lastPose !== null && this.paintedPalette === paletteKey) {
       if (samePose(pose, this.lastPose) && pose.sheen === this.lastPose.sheen) return;
       if (dt !== undefined && motion.ambient) {
@@ -1350,8 +2032,22 @@ export class AxolotlStyler {
       }
     }
     this.redrawAcc = 0;
-    this.preview.redraw(pose, axolotlPalette(morph, dreamColour));
+    this.preview.redraw(pose, axolotlPalette(morph, dreamColour), outfit.art);
     this.lastPose = pose;
     this.paintedPalette = paletteKey;
+  }
+
+  /**
+   * What the owned axolotl wears in the preview and the picture buttons, with its outfitKey: in
+   * restyle the draft outfit on every step, so it shows everywhere the axolotl is drawn; in the
+   * creator nothing. Made again only when the draft outfit changes.
+   */
+  private previewOutfit(): { art: ArtOutfit; key: string } {
+    if (this.state.mode !== 'restyle') return NO_PREVIEW_OUTFIT;
+    if (this.shownOutfit.source !== this.state.outfit) {
+      const art = artOutfit(this.state.outfit);
+      this.shownOutfit = { source: this.state.outfit, art, key: outfitKey(art) };
+    }
+    return this.shownOutfit;
   }
 }

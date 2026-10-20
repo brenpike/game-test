@@ -4,10 +4,11 @@
  */
 import { copyLook, isAxolotlLook, rescuedLook, type AxolotlLook, type AxolotlSex } from './axolotlLook';
 import { cleanName, isValidName, unusedSuggestedName } from './axolotlNames';
-import { ownedDreamColours, type DreamColourId } from './catalogue';
+import { ownedDreamColours, type DreamColourId, type WearableSlot } from './catalogue';
 import { createCollectibles, type Collectible } from './collectibles';
 import { canWearDream } from './dreamPaint';
 import { REAL_MORPHS, STARTER_MORPH, axolotlFindId, isAxolotlFindId, rescuableMorphs, rescueMorphsIn, type RealMorphId } from './morphs';
+import { applyOutfit, emptyOutfit, takeOff, wear, type Outfit } from './outfit';
 import { nextTripSeed } from './placement';
 import { waitingAfterTrip, type RescueState, type WaitingStranded } from './rescue';
 import { bestStarsFor, withStars, type AreaStars, type AreaStarsRecord } from './stars';
@@ -23,8 +24,9 @@ export const SESSION_REGISTRY_KEY = 'session';
 export const STARTER_AXOLOTL_ID = 'starter';
 
 /**
- * One owned axolotl: its id, its real morph, its name, its player-chosen look (PRD F1, F6) and the
- * Dream colour it wears, null when it shows its real morph (PRD F14).
+ * One owned axolotl: its id, its real morph, its name, its player-chosen look (PRD F1, F6), the
+ * Dream colour it wears, null when it shows its real morph (PRD F14), and its outfit, the Wearable
+ * in each of its eight slots (PRD C10, F8).
  */
 export interface OwnedAxolotl {
   id: string;
@@ -32,6 +34,7 @@ export interface OwnedAxolotl {
   name: string;
   look: AxolotlLook;
   dreamColour: DreamColourId | null;
+  outfit: Outfit;
 }
 
 /** What the player picks in the character creator or a restyle: a name and a look (PRD F1, F6). */
@@ -51,7 +54,8 @@ export interface CollectionBookState {
 
 /**
  * What the hub owns: banked treasure ids (never an axolotl find id), the owned axolotls, the Home
- * Tank layout, the Collection Book and the best stars per area (PRD H7, D2).
+ * Tank layout, the Collection Book, the best stars per area (PRD H7, D2) and the id of the last
+ * chosen explorer, null while no axolotl is owned (PRD F7).
  */
 export interface HubState {
   banked: string[];
@@ -59,6 +63,7 @@ export interface HubState {
   tank: TankLayout;
   book: CollectionBookState;
   stars: AreaStarsRecord;
+  explorerId: string | null;
 }
 
 /**
@@ -124,9 +129,10 @@ export interface TripEndRecord {
 }
 
 /**
- * A new session: nothing banked, no axolotl yet, an empty tank, an empty Collection Book, no stars,
- * no snacks eaten, no trip yet, no axolotl waiting and no treasure lost. The character creator adds the starter with
- * `addStarter` (PRD F1), which finds its morph in the Collection Book (PRD C1).
+ * A new session: nothing banked, no axolotl yet, no explorer, an empty tank, an empty Collection
+ * Book, no stars, no snacks eaten, no trip yet, no axolotl waiting and no treasure lost. The
+ * character creator adds the starter with `addStarter` (PRD F1), which finds its morph in the
+ * Collection Book (PRD C1).
  */
 export function createSession(): Session {
   return {
@@ -136,6 +142,7 @@ export function createSession(): Session {
       tank: createTankLayout(),
       book: { foundMorphs: [], tilapiaCard: false },
       stars: {},
+      explorerId: null,
     },
     canal: { eatenSnacks: [], lastTripSeed: null, waitingStranded: null, returnedFinds: [] },
   };
@@ -159,9 +166,10 @@ function checkedStyle(caller: string, style: AxolotlStyle): AxolotlStyle {
 
 /**
  * The session with the starter axolotl made in the character creator: id `STARTER_AXOLOTL_ID`, real
- * morph `starterMorph`, the cleaned name, a copy of the look and no Dream colour (PRD F1). Its morph is found in the
- * Collection Book, kept in REAL_MORPHS order (PRD C1). Throws when an axolotl is already owned, or
- * when the cleaned name or the look is invalid.
+ * morph `starterMorph`, the cleaned name, a copy of the look, no Dream colour and an empty outfit
+ * (PRD F1). Its morph is found in the Collection Book, kept in REAL_MORPHS order (PRD C1). The
+ * starter is the explorer (PRD F7). Throws when an axolotl is already owned, or when the cleaned
+ * name or the look is invalid.
  */
 export function addStarter(session: Session, style: AxolotlStyle, starterMorph: RealMorphId = STARTER_MORPH): Session {
   if (!needsStarter(session)) throw new Error('addStarter: an axolotl is already owned');
@@ -170,18 +178,20 @@ export function addStarter(session: Session, style: AxolotlStyle, starterMorph: 
     morph: starterMorph,
     ...checkedStyle('addStarter', style),
     dreamColour: null,
+    outfit: emptyOutfit(),
   };
   const { book } = session.hub;
   const found = new Set<RealMorphId>([...book.foundMorphs, starterMorph]);
   const foundMorphs = REAL_MORPHS.map((morph) => morph.id).filter((id) => found.has(id));
-  return { ...session, hub: { ...session.hub, axolotls: [starter], book: { ...book, foundMorphs } } };
+  const hub: HubState = { ...session.hub, axolotls: [starter], book: { ...book, foundMorphs }, explorerId: starter.id };
+  return { ...session, hub };
 }
 
 /**
  * The session with axolotl `id` renamed and restyled (PRD F6). Only the name and the look change;
- * every other field of that axolotl is kept, and so is its sex whatever the style's look says. The
- * name is cleaned and the look copied. Throws when no owned axolotl has `id`, or when the cleaned
- * name or the look is invalid.
+ * every other field of that axolotl, such as its outfit, is kept, and so is its sex whatever the
+ * style's look says. The explorer is kept. The name is cleaned and the look copied. Throws when no
+ * owned axolotl has `id`, or when the cleaned name or the look is invalid.
  */
 export function restyleAxolotl(session: Session, id: string, style: AxolotlStyle): Session {
   if (!session.hub.axolotls.some((axolotl) => axolotl.id === id)) {
@@ -192,15 +202,15 @@ export function restyleAxolotl(session: Session, id: string, style: AxolotlStyle
   return { ...session, hub: { ...session.hub, axolotls } };
 }
 
-/** `axolotl` with the checked style's name and look, keeping its id, morph, sex and Dream colour. */
+/** `axolotl` with the checked style's name and look, keeping its id, morph, sex, Dream colour and outfit. */
 function restyled(axolotl: OwnedAxolotl, checked: AxolotlStyle): OwnedAxolotl {
   return { ...axolotl, name: checked.name, look: { ...checked.look, sex: axolotl.look.sex } };
 }
 
 /**
  * A newly owned axolotl of real morph `morph` and sex `sex`, such as a rescued one: the first
- * suggested name for `sex` no owned axolotl uses, the rescued look for `sex` and no Dream colour.
- * The player can restyle it later (PRD F6).
+ * suggested name for `sex` no owned axolotl uses, the rescued look for `sex`, no Dream colour and an
+ * empty outfit. The player can restyle it later (PRD F6).
  */
 export function newOwnedAxolotl(
   id: string,
@@ -209,7 +219,7 @@ export function newOwnedAxolotl(
   sex: AxolotlSex,
 ): OwnedAxolotl {
   const name = unusedSuggestedName(owned.map((axolotl) => axolotl.name), sex);
-  return { id, morph, name, look: rescuedLook(sex), dreamColour: null };
+  return { id, morph, name, look: rescuedLook(sex), dreamColour: null, outfit: emptyOutfit() };
 }
 
 /**
@@ -290,12 +300,12 @@ export function tripEndRecord(
  * stranded axolotl are stored, so eaten snacks are kept after going home and cleared after being
  * carried home or beating the area, whose records have none (PRD A12, A19, open question 14, ADR
  * 0010). The lost treasures are stored, so the canal holds only the last trip's losses, none after
- * a trip that lost nothing (PRD A12, B9). The tank is untouched.
+ * a trip that lost nothing (PRD A12, B9). The tank, every outfit and the explorer are untouched.
  */
 export function recordTripEnd(session: Session, record: TripEndRecord): Session {
   const { hub } = session;
   const banked = [...new Set([...hub.banked, ...record.banked])].filter((id) => !isAxolotlFindId(id));
-  const kept = hub.axolotls.map((axolotl) => ({ ...axolotl, look: { ...axolotl.look } }));
+  const kept = hub.axolotls.map((axolotl) => ({ ...axolotl, look: { ...axolotl.look }, outfit: { ...axolotl.outfit } }));
   const axolotls = [...kept, ...adoptRescued(hub.axolotls, record.rescued)];
   const found = new Set<RealMorphId>([...hub.book.foundMorphs, ...record.rescued.map((rescued) => rescued.morph)]);
   const book: CollectionBookState = {
@@ -317,9 +327,9 @@ export function recordTripEnd(session: Session, record: TripEndRecord): Session 
 /**
  * The session with axolotl `id` wearing Dream colour `dream`, or showing its real morph when `dream`
  * is null (PRD F14). It replaces any colour that axolotl wore. Only that axolotl's Dream colour
- * changes: every other axolotl, its morph, look and name, and the perks, the Collection Book, the
- * banked ids, the tank, the stars and the canal are kept. Throws when no owned axolotl has `id`, or
- * when `dream` is not an owned Dream colour.
+ * changes: every other axolotl, its morph, look, name and outfit, and the perks, the Collection
+ * Book, the banked ids, the tank, the stars, the explorer and the canal are kept. Throws when no
+ * owned axolotl has `id`, or when `dream` is not an owned Dream colour.
  */
 export function setDreamColour(session: Session, id: string, dream: DreamColourId | null): Session {
   if (!session.hub.axolotls.some((axolotl) => axolotl.id === id)) {
@@ -387,8 +397,50 @@ export function setTankLayout(session: Session, layout: TankLayout): Session {
 }
 
 /**
- * The axolotl that goes exploring: the first owned axolotl, the starter. Choosing the explorer is
- * #16. Throws when no axolotl is owned.
+ * The session with axolotl `axolotlId` wearing exactly `outfit` (PRD C10, F8). Each Wearable in it
+ * comes off any other axolotl. Only outfits change: every look, morph, name and Dream colour, the
+ * Collection Book, the banked ids, the tank, the stars, the explorer and the canal are kept. Throws
+ * when no owned axolotl has `axolotlId`, or when any slot holds an id that is unknown, not a
+ * Wearable, not banked or for another slot.
+ */
+export function setOutfit(session: Session, axolotlId: string, outfit: Readonly<Outfit>): Session {
+  const axolotls = applyOutfit(session.hub.axolotls, axolotlId, outfit, session.hub.banked);
+  return { ...session, hub: { ...session.hub, axolotls } };
+}
+
+/**
+ * The session with Wearable `wearableId` on axolotl `axolotlId` in its own slot, replacing what that
+ * slot held and coming off any other axolotl (PRD C10, F8). Only outfits change. Throws when no
+ * owned axolotl has `axolotlId`, or when `wearableId` is unknown, not a Wearable or not banked.
+ */
+export function wearOn(session: Session, axolotlId: string, wearableId: string): Session {
+  const axolotls = wear(session.hub.axolotls, axolotlId, wearableId, session.hub.banked);
+  return { ...session, hub: { ...session.hub, axolotls } };
+}
+
+/**
+ * The session with slot `slot` of axolotl `axolotlId` emptied, its Wearable back in the Treasure
+ * Chest (PRD C10). Only outfits change. Throws when no owned axolotl has `axolotlId`.
+ */
+export function takeOffFrom(session: Session, axolotlId: string, slot: WearableSlot): Session {
+  const axolotls = takeOff(session.hub.axolotls, axolotlId, slot);
+  return { ...session, hub: { ...session.hub, axolotls } };
+}
+
+/**
+ * The session with owned axolotl `id` as the remembered explorer (PRD F7). Nothing else changes.
+ * Throws when no owned axolotl has `id`.
+ */
+export function chooseExplorer(session: Session, id: string): Session {
+  if (!session.hub.axolotls.some((axolotl) => axolotl.id === id)) {
+    throw new Error(`chooseExplorer: no owned axolotl has id ${id}`);
+  }
+  return { ...session, hub: { ...session.hub, explorerId: id } };
+}
+
+/**
+ * The axolotl that goes exploring: the remembered explorer (PRD F7), or the first owned axolotl, the
+ * starter, when none is remembered or it is not owned. Throws when no axolotl is owned.
  */
 export function explorerAxolotl(session: Session): OwnedAxolotl {
   return findExplorer(session, 'explorerAxolotl');
@@ -405,7 +457,8 @@ export function explorerMorph(session: Session): RealMorphId {
 }
 
 function findExplorer(session: Session, caller: string): OwnedAxolotl {
-  const first = session.hub.axolotls[0];
-  if (first === undefined) throw new Error(`${caller}: no axolotl is owned`);
-  return first;
+  const { axolotls, explorerId: chosenId } = session.hub;
+  const explorer = axolotls.find((axolotl) => axolotl.id === chosenId) ?? axolotls[0];
+  if (explorer === undefined) throw new Error(`${caller}: no axolotl is owned`);
+  return explorer;
 }

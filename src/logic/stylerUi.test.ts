@@ -2,37 +2,50 @@ import { describe, expect, it } from 'vitest';
 import { LOOK_FIELD_OPTIONS, LOOK_FIELDS } from './axolotlLook';
 import { NAME_MAX, SUGGESTED_NAMES, suggestedNamesFor } from './axolotlNames';
 import { isSupportedCanvas } from './cardFit';
-import { DREAM_COLOURS } from './catalogue';
+import { CANAL_TREASURES, DREAM_COLOURS, PERK_VALUES, WEARABLE_SLOTS, type Wearable } from './catalogue';
 import { MAX_DREAM_OPTIONS } from './dreamPaint';
 import type { HudView, Rect, Size } from './hudLayout';
 import { REAL_MORPHS } from './morphs';
 import { MAX_STEP_OPTIONS, RESTYLE_STEPS, STYLER_STEPS, type StylerStep } from './stylerSteps';
 import {
   BACK_LABEL,
+  BACK_TO_SLOTS_LABEL,
   CANCEL_LABEL,
   DONE_LABEL,
   MORE_COLOURS_LABEL,
   MORE_NAMES_LABEL,
+  MORE_SLOTS_LABEL,
+  MORE_WEARABLES_LABEL,
   NEXT_LABEL,
+  NONE_LABEL,
   REAL_COLOUR_LABEL,
   SURPRISE_ME_LABEL,
+  outfitHelper,
+  outfitSlotCaption,
   stepHeading,
   stepHelper,
   stepTabLabel,
   stepTitle,
+  wornOnLabel,
 } from './stylerText';
 import {
   BACK_BUTTON,
+  BACK_TO_SLOTS_BUTTON,
   CANCEL_BUTTON,
   DONE_BUTTON,
   MORE_COLOURS_BUTTON,
   MORE_NAMES_BUTTON,
+  MORE_SLOTS_BUTTON,
+  MORE_WEARABLES_BUTTON,
+  MAX_OUTFIT_CHOICES,
   NAME_BOX,
   NAME_CURSOR,
   NAME_PENCIL_PX,
   NAME_TEXT_PX,
   NAME_TILE,
   NEXT_BUTTON,
+  OUTFIT_LABEL_MAX_PX,
+  OUTFIT_SLOT_COUNT,
   PICTURE_PX,
   PREVIEW_SCALE,
   SURPRISE_BUTTON,
@@ -45,10 +58,12 @@ import {
   tabWidth,
   type StylerLayout,
   type StylerMeasure,
+  type OutfitView,
   type StylerMode,
   type StylerScreen,
 } from './stylerUi';
 import { UI } from './tankUi';
+import { perkText, slotName } from './treasureChest';
 
 /** Text size estimate that errs wide, the cardCopyFit.test constants. */
 const BOLD_EM = 0.6;
@@ -148,7 +163,111 @@ function memoByWidth(sizeAt: (wrapW: number) => Size): (wrapW: number) => Size {
   };
 }
 
-/** The steps of `mode`: the creator steps, or the restyle steps with Dream colour. */
+/** Every catalogue Wearable. */
+const WEARABLES: readonly Wearable[] = CANAL_TREASURES.filter(
+  (treasure): treasure is Wearable => treasure.category === 'wearable',
+);
+
+/** Choice counts the Outfit choices view is laid out for: None alone up to every catalogue Wearable of a slot. */
+const OUTFIT_CHOICE_COUNTS: readonly number[] = Array.from({ length: MAX_OUTFIT_CHOICES }, (_unused, index) => index + 1);
+
+/** The perk icon and the room after it at the start of a perk line, in CSS px (art guide 8, Wearable display). */
+const PERK_ICON_ROOM = 24 + 6;
+
+/** Height of a perk line: the 24 px perk icon or the text, whichever is taller. */
+const PERK_ICON_PX = 24;
+
+/** The longest axolotl name a "On <name>" mark may carry: NAME_MAX wide letters. */
+const LONGEST_NAME = 'W'.repeat(NAME_MAX);
+
+/** The max mark after a capped perk row: 8 px, then the "max" pill (bold 18 px, padding 6 across). */
+const MAX_MARK_W = 8 + 'max'.length * BOLD_EM * 18 + 2 * 6;
+
+/** Room between outfit summary rows: 6 px stacked, 12 px across when flowed (art guide 8). */
+const SUMMARY_GAP = Object.freeze({ down: 6, across: 12 });
+
+/** Every perk type's largest worn text, one summary row each, with the max mark: the tallest and widest summary. */
+const SUMMARY_TEXTS: readonly string[] = (Object.keys(PERK_VALUES) as (keyof typeof PERK_VALUES)[]).map((type) =>
+  perkText({ type, value: Math.max(...Object.values(PERK_VALUES[type])) * 2 }),
+);
+
+/** One Outfit choices label block at `wrapW`: the name, the perk line and the "On <name>" mark, stacked. */
+function choiceLabelSize(lines: readonly string[], perk: string | null, wrapW: number): Size {
+  const sizes = lines.map((line) => textSize(line, OPTION_LABEL_PX, wrapW));
+  if (perk !== null) {
+    const perkSize = textSize(perk, OPTION_LABEL_PX, wrapW - PERK_ICON_ROOM);
+    sizes.push({ w: PERK_ICON_ROOM + perkSize.w, h: Math.max(PERK_ICON_PX, perkSize.h) });
+  }
+  return { w: Math.max(...sizes.map((size) => size.w)), h: sizes.reduce((sum, size) => sum + size.h, 0) };
+}
+
+/** The tallest and widest Outfit choices label block at `wrapW`: None, and every Wearable worn on a longest-named axolotl. */
+function choiceLabelBounds(wrapW: number): Size {
+  const sizes = [
+    choiceLabelSize([NONE_LABEL], null, wrapW),
+    ...WEARABLES.map((wearable) => choiceLabelSize([wearable.name, wornOnLabel(LONGEST_NAME)], perkText(wearable.perk), wrapW)),
+  ];
+  return { w: Math.max(...sizes.map((size) => size.w)), h: Math.max(...sizes.map((size) => size.h)) };
+}
+
+/** One outfit summary row at `wrapW`: the perk icon, the text and the max mark. */
+function summaryRowSize(text: string, wrapW: number): Size {
+  const textPart = textSize(text, OPTION_LABEL_PX, Math.max(1, wrapW - PERK_ICON_ROOM - MAX_MARK_W));
+  return { w: PERK_ICON_ROOM + textPart.w + MAX_MARK_W, h: Math.max(PERK_ICON_PX, textPart.h) };
+}
+
+/** The outfit summary at `wrapW` with a row for every perk type: stacked, or flowed side by side in whole rows. */
+function summarySize(wrapW: number, flowed: boolean): Size {
+  const rows = SUMMARY_TEXTS.map((text) => summaryRowSize(text, wrapW));
+  if (!flowed) {
+    return { w: Math.max(...rows.map((row) => row.w)), h: rows.reduce((sum, row) => sum + row.h, 0) + SUMMARY_GAP.down * (rows.length - 1) };
+  }
+  const lines: Size[] = [];
+  for (const row of rows) {
+    const line = lines[lines.length - 1];
+    if (line !== undefined && line.w + SUMMARY_GAP.across + row.w <= wrapW) {
+      lines[lines.length - 1] = { w: line.w + SUMMARY_GAP.across + row.w, h: Math.max(line.h, row.h) };
+    } else {
+      lines.push(row);
+    }
+  }
+  return { w: Math.max(...lines.map((line) => line.w)), h: lines.reduce((sum, line) => sum + line.h, 0) + SUMMARY_GAP.down * (lines.length - 1) };
+}
+
+/** The longest Outfit slots view caption: every slot empty and every Wearable worn. */
+const LONGEST_SLOT_CAPTION = [
+  ...WEARABLE_SLOTS.map((slot) => outfitSlotCaption(slot, null)),
+  ...WEARABLES.map((wearable) => outfitSlotCaption(wearable.slot, wearable)),
+].reduce((longest, caption) => (caption.length > longest.length ? caption : longest), '');
+
+/** The longest word of `texts`, in characters. */
+function longestWordOf(texts: readonly string[]): number {
+  return Math.max(...texts.flatMap((text) => text.split(' ').map((word) => word.length)));
+}
+
+/** The Outfit step measure for `outfitView`, as the scene measures it. */
+function outfitMeasureFor(outfitView: OutfitView): StylerMeasure {
+  const slotNames = WEARABLE_SLOTS.map(slotName);
+  const helpers =
+    outfitView === 'slots' ? [outfitHelper(null, 0)] : WEARABLE_SLOTS.flatMap((slot) => [outfitHelper(slot, 0), outfitHelper(slot, 1)]);
+  const choiceWords = longestWordOf([NONE_LABEL, ...WEARABLES.map((wearable) => wearable.name), wornOnLabel(LONGEST_NAME)]);
+  const perkWord = PERK_ICON_ROOM + longestWordOf(WEARABLES.map((wearable) => perkText(wearable.perk))) * BOLD_EM * OPTION_LABEL_PX;
+  return {
+    headingAt: (wrapW) => textSize(stepTitle('outfit'), HEADING_PX, wrapW),
+    helperAt: (wrapW) => boundsOf(helpers, HELPER_PX, wrapW),
+    captionAt: (wrapW) => textSize(LONGEST_SLOT_CAPTION, CAPTION_PX, wrapW),
+    optionLabelAt: memoByWidth((wrapW) => (outfitView === 'slots' ? boundsOf(slotNames, OPTION_LABEL_PX, wrapW) : choiceLabelBounds(wrapW))),
+    optionLabelMinW:
+      outfitView === 'slots'
+        ? longestWordOf(slotNames) * BOLD_EM * OPTION_LABEL_PX
+        : Math.max(choiceWords * BOLD_EM * OPTION_LABEL_PX, perkWord),
+    previewFrame: PREVIEW_FRAME,
+    previewLargestSize: PREVIEW_LARGEST_SIZE,
+    outfitSummaryAt: summarySize,
+  };
+}
+
+/** The steps of `mode`: the creator steps, or the restyle steps with Dream colour and Outfit. */
 function stepsOf(mode: StylerMode): readonly StylerStep[] {
   return mode === 'restyle' ? RESTYLE_STEPS : STYLER_STEPS;
 }
@@ -157,7 +276,8 @@ function stepsOf(mode: StylerMode): readonly StylerStep[] {
  * The styler measure for `step` in `mode`, as the scene measures it, with every option label (on Dream
  * colour, the Dream colour labels too) and the taller of its helpers with no and with every Dream colour.
  */
-function measureFor(mode: StylerMode, step: StylerStep): StylerMeasure {
+function measureFor(mode: StylerMode, step: StylerStep, outfitView?: OutfitView): StylerMeasure {
+  if (step === 'outfit') return outfitMeasureFor(outfitView ?? 'slots');
   const index = STYLER_STEPS.indexOf(step);
   const labels = step === 'dream' ? DREAM_OPTION_LABELS : OPTION_LABELS;
   const helpers = [stepHelper(mode, step, 0), stepHelper(mode, step, DREAM_COLOURS.length)];
@@ -175,27 +295,44 @@ function measureFor(mode: StylerMode, step: StylerStep): StylerMeasure {
   };
 }
 
-/** The screen for `step` with `optionCount` options (on Name, every name that fits). */
-function screenFor(mode: StylerMode, step: StylerStep, optionCount: number): StylerScreen {
+/** The Outfit view of `step`: `outfitView` on Outfit (the slots view when not given), else none. */
+function outfitViewOf(step: StylerStep, outfitView: OutfitView | undefined): OutfitView | undefined {
+  return step === 'outfit' ? (outfitView ?? 'slots') : undefined;
+}
+
+/**
+ * The screen for `step` with `optionCount` options (on Name, every name that fits; on the Outfit slots
+ * view, every slot).
+ */
+function screenFor(mode: StylerMode, step: StylerStep, optionCount: number, outfitView?: OutfitView): StylerScreen {
+  const view = outfitViewOf(step, outfitView);
+  if (view !== undefined) {
+    return { mode, step, optionCount: view === 'slots' ? OUTFIT_SLOT_COUNT : optionCount, tabPage: null, outfitView: view };
+  }
   return { mode, step, optionCount: step === 'name' ? NAME_COUNT : optionCount, tabPage: null };
 }
 
 const MEASURES = new Map<string, StylerMeasure>();
 
-/** The measure for `step` in `mode`, made once. */
-function sharedMeasure(mode: StylerMode, step: StylerStep): StylerMeasure {
-  const key = `${mode} ${step}`;
-  const measure = MEASURES.get(key) ?? measureFor(mode, step);
+/** The measure for `step` in `mode` (and the Outfit view), made once. */
+function sharedMeasure(mode: StylerMode, step: StylerStep, outfitView?: OutfitView): StylerMeasure {
+  const key = `${mode} ${step} ${outfitViewOf(step, outfitView) ?? ''}`;
+  const measure = MEASURES.get(key) ?? measureFor(mode, step, outfitView);
   MEASURES.set(key, measure);
   return measure;
 }
 
 const LAYOUTS = new Map<string, StylerLayout>();
 
-/** The layout of `step` with `optionCount` options in `mode` on `view`, made once and shared by the matrix tests. */
-function layoutFor(view: HudView, mode: StylerMode, step: StylerStep, optionCount: number): StylerLayout {
-  const key = `${view.cssW}x${view.cssH} ${mode} ${step} ${optionCount}`;
-  const layout = LAYOUTS.get(key) ?? stylerLayout(view, screenFor(mode, step, optionCount), sharedMeasure(mode, step));
+/**
+ * The layout of `step` with `optionCount` options in `mode` on `view` (on Outfit, in `outfitView`, the
+ * slots view when not given), made once and shared by the matrix tests.
+ */
+function layoutFor(view: HudView, mode: StylerMode, step: StylerStep, optionCount: number, outfitView?: OutfitView): StylerLayout {
+  const key = `${view.cssW}x${view.cssH} ${mode} ${step} ${optionCount} ${outfitViewOf(step, outfitView) ?? ''}`;
+  const layout =
+    LAYOUTS.get(key) ??
+    stylerLayout(view, screenFor(mode, step, optionCount, outfitView), sharedMeasure(mode, step, outfitView));
   LAYOUTS.set(key, layout);
   return layout;
 }
@@ -207,15 +344,24 @@ function supportedCanvases(): HudView[] {
   );
 }
 
-/** The option counts `step` is laid out for: every name once on Name, DREAM_COUNTS on Dream colour, else OPTION_COUNTS. */
-function countsOf(step: StylerStep): readonly number[] {
-  if (step === 'name') return [NAME_COUNT];
-  return step === 'dream' ? DREAM_COUNTS : OPTION_COUNTS;
+/** One screen case: the step, its option count, and on Outfit its view. */
+type ScreenCase = [StylerStep, number, OutfitView?];
+
+/**
+ * The screen cases of `step`: every name once on Name, DREAM_COUNTS on Dream colour, the slots view
+ * and every choice count of the choices view on Outfit, else OPTION_COUNTS.
+ */
+function casesOf(step: StylerStep): ScreenCase[] {
+  if (step === 'name') return [[step, NAME_COUNT]];
+  if (step === 'outfit') {
+    return [[step, OUTFIT_SLOT_COUNT, 'slots'], ...OUTFIT_CHOICE_COUNTS.map((count): ScreenCase => [step, count, 'choices'])];
+  }
+  return (step === 'dream' ? DREAM_COUNTS : OPTION_COUNTS).map((count): ScreenCase => [step, count]);
 }
 
-/** Every screen of `mode`'s steps, with each option count of the step. */
-function screensOf(mode: StylerMode): [StylerStep, number][] {
-  return stepsOf(mode).flatMap((step) => countsOf(step).map((count): [StylerStep, number] => [step, count]));
+/** Every screen of `mode`'s steps, with each option count of the step (and each Outfit view). */
+function screensOf(mode: StylerMode): ScreenCase[] {
+  return stepsOf(mode).flatMap(casesOf);
 }
 
 /** Larger of the horizontal and vertical clearances between two rects; negative when they overlap. */
@@ -246,7 +392,7 @@ function panelInner(layout: StylerLayout): Rect {
   return { x: panel.x + UI.pad, y: panel.y + UI.pad, w: panel.w - 2 * UI.pad, h: panel.h - 2 * UI.pad };
 }
 
-/** The primary step buttons shown, by name. */
+/** The primary step buttons shown, by name (with Back to slots on the Outfit choices view). */
 function primariesOf(layout: StylerLayout): [string, Rect][] {
   const { back, next, done, surprise, cancel } = layout.nav;
   const named: [string, Rect | null][] = [
@@ -255,6 +401,7 @@ function primariesOf(layout: StylerLayout): [string, Rect][] {
     ['done', done],
     ['surprise', surprise],
     ['cancel', cancel],
+    ['backToSlots', layout.outfit?.backToSlots ?? null],
   ];
   return named.filter((entry): entry is [string, Rect] => entry[1] !== null);
 }
@@ -274,6 +421,7 @@ function targetsOf(layout: StylerLayout): [string, Rect][] {
     if (layout.name.moreNames) targets.push(['moreNames', layout.name.moreNames]);
   }
   if (layout.dream?.moreColours) targets.push(['moreColours', layout.dream.moreColours]);
+  if (layout.outfit?.more) targets.push(['moreOutfit', layout.outfit.more]);
   return targets;
 }
 
@@ -282,6 +430,7 @@ function othersOf(layout: StylerLayout): [string, Rect][] {
   const others: [string, Rect][] = layout.heading ? [['heading', layout.heading]] : [];
   if (layout.helper) others.push(['helper', layout.helper]);
   if (layout.caption) others.push(['caption', layout.caption]);
+  if (layout.outfit?.summary) others.push(['summary', layout.outfit.summary]);
   if (layout.preview) others.push(['preview', layout.preview.rect]);
   layout.optionLabels.forEach((rect, index) => others.push([`optionLabel ${index}`, rect]));
   layout.dots?.forEach((rect, index) => others.push([`dot ${index}`, rect]));
@@ -289,9 +438,9 @@ function othersOf(layout: StylerLayout): [string, Rect][] {
 }
 
 /** Every problem with one layout: outside the panel, too close, small targets, no preview before fit step 5, or no heading before fit step 6. */
-function layoutProblems(view: HudView, mode: StylerMode, step: StylerStep, optionCount: number): string[] {
-  const label = `${mode} ${step} x${optionCount} ${view.cssW}x${view.cssH}`;
-  const layout = layoutFor(view, mode, step, optionCount);
+function layoutProblems(view: HudView, mode: StylerMode, [step, optionCount, outfitView]: ScreenCase): string[] {
+  const label = `${mode} ${step}${outfitView ? ` ${outfitView}` : ''} x${optionCount} ${view.cssW}x${view.cssH}`;
+  const layout = layoutFor(view, mode, step, optionCount, outfitView);
   const inner = panelInner(layout);
   const targets = targetsOf(layout);
   const parts = [...targets.map(([name, rect]): [string, Rect, boolean] => [name, rect, true]), ...othersOf(layout).map(([name, rect]): [string, Rect, boolean] => [name, rect, false])];
@@ -319,15 +468,31 @@ function layoutProblems(view: HudView, mode: StylerMode, step: StylerStep, optio
   }
   if (layout.preview === null && layout.fitStep < 5) problems.push(`${label}: no preview before fit step 5`);
   if (layout.heading === null && layout.fitStep < 6) problems.push(`${label}: no heading before fit step 6`);
-  const shownCount = step === 'dream' ? layout.dream?.perPage : optionCount;
+  const shownCount = step === 'dream' ? layout.dream?.perPage : step === 'outfit' ? layout.outfit?.perPage : optionCount;
   if (step !== 'name' && layout.options.length !== shownCount) problems.push(`${label}: ${layout.options.length} options`);
   return problems;
 }
 
-/** Problems with every screen of every step in both modes on `views`. */
+/** True when `screenCase` is the Outfit choices view, which its own tests check (see the Outfit step tests). */
+function isOutfitChoicesCase([step, , outfitView]: ScreenCase): boolean {
+  return step === 'outfit' && outfitView === 'choices';
+}
+
+/** Problems with every screen of every step in both modes on `views`, except the Outfit choices view. */
 function problemsOn(views: readonly HudView[]): string[] {
   return views.flatMap((view) =>
-    MODES.flatMap((mode) => screensOf(mode).flatMap(([step, count]) => layoutProblems(view, mode, step, count))),
+    MODES.flatMap((mode) =>
+      screensOf(mode)
+        .filter((screenCase) => !isOutfitChoicesCase(screenCase))
+        .flatMap((screenCase) => layoutProblems(view, mode, screenCase)),
+    ),
+  );
+}
+
+/** Problems with the Outfit choices view, with each choice count, on `views`. */
+function choicesProblemsOn(views: readonly HudView[]): string[] {
+  return views.flatMap((view) =>
+    OUTFIT_CHOICE_COUNTS.flatMap((count) => layoutProblems(view, 'restyle', ['outfit', count, 'choices'])),
   );
 }
 
@@ -360,6 +525,15 @@ describe('styler sizes', () => {
     for (const name of SUGGESTED_NAMES) expect(NAME_TILE.w).toBeGreaterThanOrEqual(name.length * BOLD_EM * NAME_TEXT_PX);
     expect(MORE_NAMES_BUTTON.w).toBeGreaterThanOrEqual(MORE_NAMES_LABEL.length * BOLD_EM * NAME_TEXT_PX);
     for (const size of [NAME_BOX, NAME_TILE, MORE_NAMES_BUTTON]) expect(size.h).toBeGreaterThanOrEqual(MIN_TARGET_PX);
+  });
+
+  it('sizes More slots, More wearables and Back to slots to their labels (art guide 8)', () => {
+    expect(MORE_SLOTS_BUTTON).toEqual({ w: 132, h: MIN_TARGET_PX });
+    expect(MORE_WEARABLES_BUTTON).toEqual({ w: 180, h: MIN_TARGET_PX });
+    expect(BACK_TO_SLOTS_BUTTON).toEqual({ w: 184, h: PRIMARY_H });
+    expect(MORE_SLOTS_BUTTON.w).toBeGreaterThanOrEqual(MORE_SLOTS_LABEL.length * BOLD_EM * NAME_TEXT_PX);
+    expect(MORE_WEARABLES_BUTTON.w).toBeGreaterThanOrEqual(MORE_WEARABLES_LABEL.length * BOLD_EM * NAME_TEXT_PX);
+    expect(BACK_TO_SLOTS_BUTTON.w).toBeGreaterThanOrEqual(BACK_TO_SLOTS_LABEL.length * BOLD_EM * 22);
   });
 
   it('fits the More colours label in its button at 20 px, 48 px tall or more', () => {
@@ -399,8 +573,8 @@ describe('stylerLayout', () => {
 
   it('shows everything with room to spare', () => {
     for (const mode of MODES) {
-      for (const [step, count] of screensOf(mode)) {
-        const layout = layoutFor({ cssW: 1280, cssH: 800 }, mode, step, count);
+      for (const [step, count, outfitView] of screensOf(mode)) {
+        const layout = layoutFor({ cssW: 1280, cssH: 800 }, mode, step, count, outfitView);
         expect(layout.fitStep).toBe(0);
         expect(layout.helper).not.toBeNull();
         expect(layout.preview?.scale).toBe(PREVIEW_SCALE.full);
@@ -412,13 +586,14 @@ describe('stylerLayout', () => {
   it('takes the fit steps in the PRD F1 order', () => {
     for (const view of [...SMALLEST, ...supportedCanvases()]) {
       for (const mode of MODES) {
-        for (const [step, count] of screensOf(mode)) {
-          const layout = layoutFor(view, mode, step, count);
+        for (const [step, count, outfitView] of screensOf(mode)) {
+          const layout = layoutFor(view, mode, step, count, outfitView);
           const { fitStep } = layout;
-          const labelsHide = step !== 'name' && step !== 'dream';
+          const labelsHide = step !== 'name' && step !== 'dream' && step !== 'outfit';
+          const slotCaption = outfitView === 'slots' && fitStep === 0 && layout.outfit?.summary === null;
           expect(layout.helper !== null).toBe(fitStep < 1);
           if (labelsHide) expect(layout.labelsShown).toBe(fitStep < 2);
-          expect(layout.caption !== null).toBe(labelsHide && fitStep >= 2);
+          if (!slotCaption) expect(layout.caption !== null).toBe(labelsHide && fitStep >= 2);
           if (fitStep < 5) expect(layout.preview?.scale).toBe(fitStep >= 3 ? PREVIEW_SCALE.shrunk : PREVIEW_SCALE.full);
           expect(layout.headingFull).toBe(mode === 'creator' && fitStep < 4);
           expect(layout.heading === null).toBe(fitStep >= 6);
@@ -436,13 +611,15 @@ describe('stylerLayout', () => {
         expect(creator.fitStep).toBeLessThanOrEqual(5);
         expect(creator.heading).not.toBeNull();
       }
-      for (const [step, count] of screensOf('restyle')) {
-        const restyle = layoutFor(view, 'restyle', step, count);
+      for (const [step, count, outfitView] of screensOf('restyle')) {
+        const restyle = layoutFor(view, 'restyle', step, count, outfitView);
         expect(restyle.fitStep).toBeLessThanOrEqual(6);
         expect(restyle.heading === null).toBe(restyle.fitStep === 6);
         if (restyle.fitStep === 6) {
           restyleHides += 1;
-          expect(restyle.tabs?.tabs.map((tab) => tab.step)).toContain(step);
+          // The Outfit choices view may hide the tab row to fit; Back to slots then shows where the player is.
+          if (restyle.tabs === null) expect(restyle.outfit?.backToSlots).not.toBeNull();
+          else expect(restyle.tabs.tabs.map((tab) => tab.step)).toContain(step);
         }
       }
     }
@@ -667,10 +844,344 @@ describe('stylerLayout Dream colour step', () => {
 
   it('leaves dream null on every other step', () => {
     for (const mode of MODES) {
-      for (const [step, count] of screensOf(mode)) {
-        if (step !== 'dream') expect(layoutFor({ cssW: 844, cssH: 390 }, mode, step, count).dream).toBeNull();
+      for (const [step, count, outfitView] of screensOf(mode)) {
+        if (step !== 'dream') expect(layoutFor({ cssW: 844, cssH: 390 }, mode, step, count, outfitView).dream).toBeNull();
       }
     }
+  });
+});
+
+describe('stylerLayout Outfit step', () => {
+  /** The canvases the Outfit matrix runs on: the smallest, then every supported canvas. */
+  const OUTFIT_VIEWS: readonly HudView[] = [...SMALLEST, ...supportedCanvases()];
+
+  /** The Outfit slots view on `view`. */
+  function slotsOn(view: HudView): StylerLayout {
+    return layoutFor(view, 'restyle', 'outfit', OUTFIT_SLOT_COUNT, 'slots');
+  }
+
+  /** The Outfit choices view with `count` choices on `view`. */
+  function choicesOn(view: HudView, count: number): StylerLayout {
+    return layoutFor(view, 'restyle', 'outfit', count, 'choices');
+  }
+
+  /** The Outfit controls of `layout`, which the Outfit step always has. */
+  function outfitOf(layout: StylerLayout): NonNullable<StylerLayout['outfit']> {
+    if (layout.outfit === null) throw new Error('the Outfit step has outfit controls');
+    return layout.outfit;
+  }
+
+  it('derives its counts from the catalogue: eight slots, and None plus the most Wearables of one slot', () => {
+    expect(OUTFIT_SLOT_COUNT).toBe(WEARABLE_SLOTS.length);
+    expect(OUTFIT_SLOT_COUNT).toBe(MAX_STEP_OPTIONS);
+    const perSlot = WEARABLE_SLOTS.map((slot) => WEARABLES.filter((wearable) => wearable.slot === slot).length);
+    expect(MAX_OUTFIT_CHOICES).toBe(1 + Math.max(...perSlot));
+  });
+
+  it.each(SMALLEST)('fits the slots view on %j', (view) => {
+    expect(layoutProblems(view, 'restyle', ['outfit', OUTFIT_SLOT_COUNT, 'slots'])).toEqual([]);
+  });
+
+  it('fits the slots view on every supported canvas', () => {
+    expect(OUTFIT_VIEWS.flatMap((view) => layoutProblems(view, 'restyle', ['outfit', OUTFIT_SLOT_COUNT, 'slots']))).toEqual([]);
+  }, MATRIX_TIMEOUT_MS);
+
+  it.each(SMALLEST)('fits the choices view with every choice count on %j', (view) => {
+    expect(choicesProblemsOn([view])).toEqual([]);
+  });
+
+  it('fits the choices view with every choice count on every supported canvas', () => {
+    expect(choicesProblemsOn(OUTFIT_VIEWS)).toEqual([]);
+  }, MATRIX_TIMEOUT_MS);
+
+  it.each(SMALLEST)('fits the choices view on %j with the worst-case label block (three wrapped lines, a longest-named axolotl)', (view) => {
+    const worst = outfitMeasureFor('choices').optionLabelAt(OUTFIT_LABEL_MAX_PX);
+    expect(worst.h).toBeGreaterThanOrEqual(3 * LINE_HEIGHT_EM * OPTION_LABEL_PX);
+    for (const count of OUTFIT_CHOICE_COUNTS) {
+      const layout = choicesOn(view, count);
+      const outfit = outfitOf(layout);
+      const inner = panelInner(layout);
+      expect(layout.labelsShown).toBe(true);
+      expect(outfit.perPage).toBeGreaterThanOrEqual(1);
+      expect(outfit.more !== null).toBe(count > outfit.perPage);
+      for (const label of layout.optionLabels) {
+        expect(label.h).toBeCloseTo(worst.h, 6);
+        expect(isInside(label, inner)).toBe(true);
+      }
+      const { done, cancel, surprise } = layout.nav;
+      for (const rect of [outfit.backToSlots, done, cancel, surprise]) {
+        if (rect === null) throw new Error('Back to slots, Done, Cancel and Surprise me all show');
+        expect(isInside(rect, inner)).toBe(true);
+        expect(rect.h).toBeGreaterThanOrEqual(PRIMARY_H);
+      }
+    }
+  });
+
+  it('shows one choice with its label block under it on the smallest canvases, and both choices at 460 x 320', () => {
+    const landscape = choicesOn({ cssW: 460, cssH: 320 }, 2);
+    expect(outfitOf(landscape).perPage).toBe(2);
+    expect(outfitOf(landscape).more).toBeNull();
+    const portrait = choicesOn({ cssW: 320, cssH: 440 }, 2);
+    expect(outfitOf(portrait).perPage).toBe(1);
+    expect(outfitOf(portrait).more).toMatchObject(MORE_WEARABLES_BUTTON);
+    for (const view of SMALLEST) {
+      const single = choicesOn(view, 1);
+      expect(outfitOf(single).perPage).toBe(1);
+      expect(outfitOf(single).more).toBeNull();
+      expect(outfitOf(single).labelsBeside).toBe(false);
+    }
+  });
+
+  it('puts Back to slots first in the body when the tab row hides, and sets labels beside their pictures only then', () => {
+    let hidden = 0;
+    let beside = 0;
+    for (const view of OUTFIT_VIEWS) {
+      for (const count of OUTFIT_CHOICE_COUNTS) {
+        const layout = choicesOn(view, count);
+        const outfit = outfitOf(layout);
+        const back = outfit.backToSlots;
+        if (back === null) throw new Error('the choices view has Back to slots');
+        if (outfit.labelsBeside) expect(layout.tabs).toBeNull();
+        if (layout.tabs !== null) continue;
+        hidden += 1;
+        if (outfit.labelsBeside) beside += 1;
+        expect(layout.cancelInTabRow).toBe(false);
+        // Back to slots leads the body: above every picture and its label, and 12 px clear of the pictures.
+        for (const option of layout.options) expect(option.y).toBeGreaterThanOrEqual(back.y + back.h + UI.gap - 1e-9);
+        for (const label of layout.optionLabels) expect(label.y).toBeGreaterThanOrEqual(back.y + back.h + TEXT_GAP - 1e-9);
+        if (outfit.labelsBeside) {
+          layout.options.forEach((option, index) => {
+            expect(layout.optionLabels[index].x).toBeGreaterThanOrEqual(option.x + option.w + TEXT_GAP - 1e-9);
+          });
+        }
+      }
+    }
+    expect(hidden).toBeGreaterThan(0);
+    expect(beside).toBeGreaterThan(0);
+  }, MATRIX_TIMEOUT_MS);
+
+  it('keeps the tab row and labels under the pictures when the choices fit that way', () => {
+    for (const view of [{ cssW: 1280, cssH: 800 }, { cssW: 844, cssH: 390 }, { cssW: 390, cssH: 844 }]) {
+      for (const count of OUTFIT_CHOICE_COUNTS) {
+        const layout = choicesOn(view, count);
+        expect(layout.tabs).not.toBeNull();
+        expect(outfitOf(layout).labelsBeside).toBe(false);
+      }
+    }
+  });
+
+  it('never sets labels beside the pictures in the slots view', () => {
+    for (const view of OUTFIT_VIEWS) {
+      expect(outfitOf(slotsOn(view)).labelsBeside).toBe(false);
+      expect(slotsOn(view).tabs).not.toBeNull();
+    }
+  }, MATRIX_TIMEOUT_MS);
+
+  it('fits the choices view with everything shown on a large canvas', () => {
+    expect(choicesProblemsOn([{ cssW: 1280, cssH: 800 }, { cssW: 844, cssH: 390 }])).toEqual([]);
+    for (const count of OUTFIT_CHOICE_COUNTS) expect(choicesOn({ cssW: 1280, cssH: 800 }, count).fitStep).toBe(0);
+  });
+
+  it('never hides the labels, and gives every picture button one', () => {
+    for (const view of OUTFIT_VIEWS) {
+      for (const layout of [slotsOn(view), ...OUTFIT_CHOICE_COUNTS.map((count) => choicesOn(view, count))]) {
+        expect(layout.labelsShown).toBe(true);
+        expect(layout.optionLabels).toHaveLength(layout.options.length);
+        expect(layout.name).toBeNull();
+        expect(layout.dream).toBeNull();
+      }
+    }
+  }, MATRIX_TIMEOUT_MS);
+
+  it('shows at most 8 slots per page, with More slots exactly when they do not all show', () => {
+    for (const view of OUTFIT_VIEWS) {
+      const layout = slotsOn(view);
+      const outfit = outfitOf(layout);
+      expect(outfit.view).toBe('slots');
+      expect(outfit.perPage).toBeGreaterThanOrEqual(1);
+      expect(outfit.perPage).toBeLessThanOrEqual(MAX_STEP_OPTIONS);
+      expect(layout.options).toHaveLength(outfit.perPage);
+      expect(outfit.more !== null).toBe(outfit.perPage < OUTFIT_SLOT_COUNT);
+      if (outfit.more !== null) expect(outfit.more).toMatchObject(MORE_SLOTS_BUTTON);
+      expect(outfit.backToSlots).toBeNull();
+    }
+  }, MATRIX_TIMEOUT_MS);
+
+  it('shows every slot on one page with the summary stacked on a large canvas', () => {
+    const layout = slotsOn({ cssW: 1280, cssH: 800 });
+    expect(layout.fitStep).toBe(0);
+    expect(layout.helper).not.toBeNull();
+    expect(layout.preview?.scale).toBe(PREVIEW_SCALE.full);
+    expect(layout.caption).toBeNull();
+    expect(outfitOf(layout)).toMatchObject({ view: 'slots', perPage: OUTFIT_SLOT_COUNT, more: null, summaryFlowed: false });
+    expect(outfitOf(layout).summary).not.toBeNull();
+  });
+
+  it('puts the summary or caption under the slot buttons and any More slots', () => {
+    for (const view of OUTFIT_VIEWS) {
+      const layout = slotsOn(view);
+      const under = layout.outfit?.summary ?? layout.caption;
+      if (under === null) continue;
+      for (const option of layout.options) expect(under.y).toBeGreaterThan(option.y + option.h);
+      const more = layout.outfit?.more;
+      if (more) expect(under.y).toBeGreaterThan(more.y + more.h);
+    }
+  }, MATRIX_TIMEOUT_MS);
+
+  it('hides the summary, then the caption, before fit step 1, and never shows both', () => {
+    let captions = 0;
+    let flowed = 0;
+    for (const view of OUTFIT_VIEWS) {
+      const layout = slotsOn(view);
+      const outfit = outfitOf(layout);
+      expect(outfit.summary !== null && layout.caption !== null).toBe(false);
+      if (outfit.summary !== null || layout.caption !== null) expect(layout.fitStep).toBe(0);
+      if (layout.fitStep > 0) {
+        expect(outfit.summary).toBeNull();
+        expect(layout.caption).toBeNull();
+      }
+      if (!outfit.summary) expect(outfit.summaryFlowed).toBe(false);
+      if (outfit.summaryFlowed) flowed += 1;
+      if (layout.caption !== null) captions += 1;
+    }
+    expect(captions).toBeGreaterThan(0);
+    expect(flowed + captions).toBeGreaterThan(0);
+  }, MATRIX_TIMEOUT_MS);
+
+  it('flows the summary side by side only when stacked rows do not fit', () => {
+    for (const view of OUTFIT_VIEWS) {
+      const layout = slotsOn(view);
+      const outfit = outfitOf(layout);
+      if (!outfit.summaryFlowed || outfit.summary === null) continue;
+      const stacked = summarySize(panelInner(layout).w, false);
+      expect(outfit.summary.h).toBeLessThan(stacked.h);
+    }
+  }, MATRIX_TIMEOUT_MS);
+
+  it('puts Back to slots first among the step buttons in the choices view only', () => {
+    for (const view of [{ cssW: 1280, cssH: 800 }, { cssW: 844, cssH: 390 }, { cssW: 390, cssH: 844 }]) {
+      for (const count of OUTFIT_CHOICE_COUNTS) {
+        const layout = choicesOn(view, count);
+        const back = outfitOf(layout).backToSlots;
+        if (back === null) throw new Error('the choices view has Back to slots');
+        expect(back).toMatchObject(BACK_TO_SLOTS_BUTTON);
+        const { surprise } = layout.nav;
+        const before = back.y + back.h <= surprise.y + 1e-9 || (Math.abs(back.y - surprise.y) < 1e-9 && back.x < surprise.x);
+        expect(before).toBe(true);
+        expect(layout.nav.done).not.toBeNull();
+        expect(layout.nav.cancel).not.toBeNull();
+      }
+    }
+  });
+
+  it('pages the choices with More wearables exactly when they do not all show', () => {
+    for (const view of OUTFIT_VIEWS) {
+      for (const count of OUTFIT_CHOICE_COUNTS) {
+        const layout = choicesOn(view, count);
+        const outfit = outfitOf(layout);
+        expect(outfit.view).toBe('choices');
+        expect(outfit.perPage).toBeGreaterThanOrEqual(1);
+        expect(outfit.perPage).toBeLessThanOrEqual(Math.min(MAX_STEP_OPTIONS, count));
+        expect(layout.options).toHaveLength(outfit.perPage);
+        expect(outfit.more !== null).toBe(count > outfit.perPage);
+        if (outfit.more !== null) expect(outfit.more).toMatchObject(MORE_WEARABLES_BUTTON);
+        expect(outfit.summary).toBeNull();
+        expect(layout.caption).toBeNull();
+      }
+    }
+  }, MATRIX_TIMEOUT_MS);
+
+  it('wraps each choices label block at 168 px or less, never cutting a word', () => {
+    const measure = outfitMeasureFor('choices');
+    expect(OUTFIT_LABEL_MAX_PX).toBe(168);
+    expect(measure.optionLabelMinW).toBeLessThanOrEqual(OUTFIT_LABEL_MAX_PX);
+    for (const view of OUTFIT_VIEWS) {
+      for (const count of OUTFIT_CHOICE_COUNTS) {
+        for (const label of choicesOn(view, count).optionLabels) {
+          expect(label.w).toBeLessThanOrEqual(OUTFIT_LABEL_MAX_PX + 1e-9);
+          expect(label.w).toBeGreaterThanOrEqual(measure.optionLabelMinW - 1e-9);
+        }
+      }
+    }
+  }, MATRIX_TIMEOUT_MS);
+
+  it('leaves outfit null on every other step', () => {
+    for (const mode of MODES) {
+      for (const [step, count, outfitView] of screensOf(mode)) {
+        if (step !== 'outfit') expect(layoutFor({ cssW: 844, cssH: 390 }, mode, step, count, outfitView).outfit).toBeNull();
+      }
+    }
+  });
+
+  it('rejects Outfit in the creator, a missing or stray Outfit view, and a wrong option count', () => {
+    const view = { cssW: 844, cssH: 390 };
+    const slots = outfitMeasureFor('slots');
+    const choices = outfitMeasureFor('choices');
+    const at = (screen: StylerScreen, measure: StylerMeasure): StylerLayout => stylerLayout(view, screen, measure);
+    const outfit = (optionCount: number, outfitView?: OutfitView): StylerScreen => ({
+      mode: 'restyle',
+      step: 'outfit',
+      optionCount,
+      tabPage: null,
+      ...(outfitView ? { outfitView } : {}),
+    });
+    expect(() => at({ ...outfit(OUTFIT_SLOT_COUNT, 'slots'), mode: 'creator' }, slots)).toThrow(RangeError);
+    expect(() => at(outfit(OUTFIT_SLOT_COUNT), slots)).toThrow(RangeError);
+    expect(() => at({ mode: 'restyle', step: 'eyes', optionCount: 3, tabPage: null, outfitView: 'slots' }, measureFor('restyle', 'eyes'))).toThrow(RangeError);
+    expect(() => at(outfit(OUTFIT_SLOT_COUNT - 1, 'slots'), slots)).toThrow(RangeError);
+    expect(() => at(outfit(OUTFIT_SLOT_COUNT + 1, 'slots'), slots)).toThrow(RangeError);
+    expect(() => at(outfit(0, 'choices'), choices)).toThrow(RangeError);
+    expect(() => at(outfit(MAX_OUTFIT_CHOICES + 1, 'choices'), choices)).toThrow(RangeError);
+    expect(() => at(outfit(1.5, 'choices'), choices)).toThrow(RangeError);
+    expect(at(outfit(1, 'choices'), choices).outfit?.perPage).toBe(1);
+  });
+
+  it('needs the outfit summary measure on the slots view only', () => {
+    const view = { cssW: 844, cssH: 390 };
+    const withoutSummary = (outfitView: OutfitView): StylerMeasure => ({ ...outfitMeasureFor(outfitView), outfitSummaryAt: undefined });
+    const screen = (outfitView: OutfitView, optionCount: number): StylerScreen => ({ mode: 'restyle', step: 'outfit', optionCount, tabPage: null, outfitView });
+    expect(() => stylerLayout(view, screen('slots', OUTFIT_SLOT_COUNT), withoutSummary('slots'))).toThrow(Error);
+    expect(stylerLayout(view, screen('choices', 1), withoutSummary('choices')).outfit?.view).toBe('choices');
+  });
+});
+
+describe('restyle tab strip with the Outfit tab', () => {
+  it('holds every restyle tab, Outfit right after Dream colour, on the smallest canvases and pages it', () => {
+    for (const view of SMALLEST) {
+      for (const step of RESTYLE_STEPS) {
+        const tabs = layoutFor(view, 'restyle', step, 3).tabs;
+        if (tabs === null) throw new Error('restyle has tabs');
+        const order = tabs.pages.flat();
+        expect(order).toEqual(RESTYLE_STEPS);
+        expect(order.indexOf('outfit')).toBe(order.indexOf('dream') + 1);
+        expect(tabs.pages.length).toBeGreaterThan(1);
+        expect(tabs.prevPage).not.toBeNull();
+        expect(tabs.nextPage).not.toBeNull();
+        expect(tabs.tabs.map((tab) => tab.step)).toContain(step);
+      }
+    }
+  });
+
+  it('keeps every tab page inside the room between the page buttons, 12 px from them', () => {
+    for (const view of [...SMALLEST, ...supportedCanvases()]) {
+      const tabs = layoutFor(view, 'restyle', 'outfit', OUTFIT_SLOT_COUNT, 'slots').tabs;
+      if (tabs === null) throw new Error('restyle has tabs');
+      for (const tab of tabs.tabs) {
+        if (tabs.prevPage) expect(clearance(tab.rect, tabs.prevPage)).toBeGreaterThanOrEqual(UI.gap - 1e-9);
+        if (tabs.nextPage) expect(clearance(tab.rect, tabs.nextPage)).toBeGreaterThanOrEqual(UI.gap - 1e-9);
+      }
+    }
+  }, MATRIX_TIMEOUT_MS);
+
+  it('shows the Outfit tab on the page it opens on, wrapping the asked page at both ends', () => {
+    const view = { cssW: 460, cssH: 320 };
+    const at = (tabPage: number | null): StylerLayout =>
+      stylerLayout(view, { mode: 'restyle', step: 'outfit', optionCount: OUTFIT_SLOT_COUNT, tabPage, outfitView: 'slots' }, outfitMeasureFor('slots'));
+    const home = at(null).tabs;
+    if (home === null) throw new Error('restyle has tabs');
+    expect(home.tabs.map((tab) => tab.step)).toContain('outfit');
+    expect(at(home.pages.length + home.page).tabs?.page).toBe(home.page);
+    expect(at(-1).tabs?.page).toBe(home.pages.length - 1);
   });
 });
 

@@ -1,8 +1,10 @@
 /**
  * Styler text: the step headings, helper lines, tab labels and button labels of the step-by-step
- * character creator (PRD F1) and the restyle screen (PRD F6).
+ * character creator (PRD F1) and the restyle screen (PRD F6), with its Outfit tab (PRD C10, F8, F10).
  */
+import type { Perk, WearableSlot } from './catalogue';
 import { FIXED_AFTER_CREATION, type StylerStep } from './stylerSteps';
+import { perkText, slotName } from './treasureChest';
 import type { StylerMode } from './stylerUi';
 
 /** Title of the character creator (PRD F1). */
@@ -59,6 +61,21 @@ export const DREAM_HELPER = 'Tap a picture to try it on. Dream colours are not f
 /** Helper line on the Dream colour step when the player owns no Dream colour yet. */
 export const NO_DREAMS_HELPER = 'Find Paint shells in the canal to get Dream colours!';
 
+/** Label of the Outfit step's choice that leaves the slot empty. */
+export const NONE_LABEL = 'None';
+
+/** Button in the Outfit step's choices view that goes back to the eight slots. */
+export const BACK_TO_SLOTS_LABEL = 'Back to slots';
+
+/** Label of the Outfit step's button that shows more slots in the slots view. */
+export const MORE_SLOTS_LABEL = 'More slots';
+
+/** Label of the Outfit step's button that shows more Wearables in the choices view. */
+export const MORE_WEARABLES_LABEL = 'More wearables';
+
+/** Helper line of the Outfit step's slots view. */
+export const OUTFIT_SLOTS_HELPER = 'Tap a slot to choose what to wear.';
+
 /** Button that keeps the axolotl and closes the styler; the same word as the Home Tank Done. */
 export { DONE_LABEL } from './tankText';
 
@@ -66,6 +83,7 @@ export { DONE_LABEL } from './tankText';
 export const STEP_TITLES: { readonly [Step in StylerStep]: string } = Object.freeze({
   colour: 'Pick a colour!',
   dream: 'Pick a Dream colour!',
+  outfit: 'Pick your outfit!',
   sex: 'Boy or girl?',
   eyes: 'Pick your eyes!',
   mouth: 'Pick a mouth!',
@@ -82,6 +100,7 @@ export const STEP_TITLES: { readonly [Step in StylerStep]: string } = Object.fre
 export const STEP_TAB_LABELS: { readonly [Step in StylerStep]: string } = Object.freeze({
   colour: 'Colour',
   dream: 'Dream colour',
+  outfit: 'Outfit',
   sex: 'Boy or girl',
   eyes: 'Eyes',
   mouth: 'Mouth',
@@ -123,11 +142,43 @@ function isFixedStep(step: StylerStep): boolean {
 
 /**
  * The helper line of `step` in `mode` (PRD F1, F6, F17). `ownedDreamCount` only matters on the Dream
- * colour step: with none owned it points the player to Paint shells.
+ * colour step: with none owned it points the player to Paint shells. On the Outfit step it is the
+ * slots view helper; outfitHelper gives the choices view helper.
  */
 export function stepHelper(mode: StylerMode, step: StylerStep, ownedDreamCount = 0): string {
   if (step === 'dream') return ownedDreamCount > 0 ? DREAM_HELPER : NO_DREAMS_HELPER;
+  if (step === 'outfit') return OUTFIT_SLOTS_HELPER;
   if (step === 'name') return NAME_HELPER;
   if (mode === 'restyle') return isFixedStep(step) ? READ_ONLY_HELPER : RESTYLE_HELPER;
   return isFixedStep(step) ? CREATOR_FIXED_HELPER : CREATOR_HELPER;
+}
+
+/**
+ * The Outfit step helper line: with `slot` null the slots view helper; in the choices view of `slot`,
+ * "Head: tap a picture to try it on.", or with no banked Wearable for it (`bankedCount` 0)
+ * "No Head items yet. Find some on a trip!". Throws a RangeError when `bankedCount` is not a whole
+ * number of 0 or more.
+ */
+export function outfitHelper(slot: WearableSlot | null, bankedCount: number): string {
+  if (!Number.isInteger(bankedCount) || bankedCount < 0) {
+    throw new RangeError(`outfitHelper: banked count ${bankedCount} is not a whole number of 0 or more`);
+  }
+  if (slot === null) return OUTFIT_SLOTS_HELPER;
+  const name = slotName(slot);
+  return bankedCount > 0 ? `${name}: tap a picture to try it on.` : `No ${name} items yet. Find some on a trip!`;
+}
+
+/** The "On <name>" mark of a Wearable another axolotl wears, for example "On Milo". */
+export function wornOnLabel(axolotlName: string): string {
+  return `On ${axolotlName}`;
+}
+
+/**
+ * The Outfit slots view caption of `slot`, shown in place of the outfit summary when it does not fit:
+ * "Head: Sun hat, Speed +4%" with the worn Wearable's name and perk, or "Head: empty" when `worn` is
+ * null.
+ */
+export function outfitSlotCaption(slot: WearableSlot, worn: Readonly<{ name: string; perk: Perk }> | null): string {
+  const name = slotName(slot);
+  return worn === null ? `${name}: empty` : `${name}: ${worn.name}, ${perkText(worn.perk)}`;
 }

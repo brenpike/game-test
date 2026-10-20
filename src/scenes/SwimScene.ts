@@ -2,6 +2,7 @@ import * as Phaser from 'phaser';
 import { AXO_MAX_TAIL_AMP, AXO_SCENE_SCALE, type AxolotlPose } from '../art/drawAxolotl';
 import { AXO_SIZE_SCALE } from '../art/drawAxolotlParts';
 import { dreamSheenAt } from '../art/drawDreamOverlay';
+import { NO_OUTFIT, artOutfit, type ArtOutfit } from '../art/drawWearables';
 import { DEPTH } from '../art/layers';
 import {
   axolotlPalette,
@@ -21,13 +22,13 @@ import {
   drawnSnackX,
   drawnSnackY,
   headPoint,
+  pullSnacksToward,
   snackTally,
   type Collectible,
   type SnackFrame,
   type SnackTally,
 } from '../logic/collectibles';
 import { TURN_SQUASH, bodyPoint, drawnAxolotl, type DrawnAxolotl } from '../logic/drawnAxolotl';
-import { createEncounterContext } from '../logic/encounter';
 import { currentAt, reedDragAt, reedsNear } from '../logic/environment';
 import { TILAPIA_FACT } from '../logic/factCards';
 import {
@@ -44,6 +45,7 @@ import {
 import { hintSparkleRadius } from '../logic/hints';
 import { legSwimTuning } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
+import { outfitPerks, perkTripContext, perkTuning, type PerkTuning } from '../logic/perks';
 import { mulberry32 } from '../logic/rng';
 import { pickStranding } from '../logic/rescue';
 import { explorerAxolotl, restoreSnacks, tripStart } from '../logic/session';
@@ -53,7 +55,6 @@ import { createDash, dashCharge, tryStartDash, updateDash, type DashState } from
 import {
   beatArea,
   createTrip,
-  createTripContext,
   eatSnacks,
   goHome,
   keepExploring,
@@ -218,6 +219,10 @@ export class SwimScene extends Phaser.Scene {
   private strandedView!: StrandedView;
   /** The explorer's morph colours, fixed for the trip. */
   private explorerPalette!: MorphPalette;
+  /** The explorer's worn Wearables as art, fixed for the trip. */
+  private explorerOutfit: ArtOutfit = NO_OUTFIT;
+  /** Trip overrides from the explorer's outfit only (PRD F12), fixed for the trip. */
+  private perks!: PerkTuning;
   private exitView!: ExitView;
   private reeds: Phaser.GameObjects.Image[] = [];
   private reedNudge: number[] = [];
@@ -300,6 +305,11 @@ export class SwimScene extends Phaser.Scene {
     const start = tripStart(session, Math.floor(Math.random() * 0x100000000) >>> 0);
     const explorer = explorerAxolotl(session);
     this.explorerPalette = axolotlPalette(explorer.morph, explorer.dreamColour);
+    this.explorerOutfit = artOutfit(explorer.outfit);
+    // INVARIANT: perks are worked out once, with every leg present. The feet rule (Socks and Feet
+    // count only with a leg present) never changes them in play: the hit that takes the last leg
+    // starts the carry home in that step, and only swimming reads them.
+    this.perks = perkTuning(outfitPerks(explorer.outfit));
     this.assets.axolotl.setLook(explorer.look);
     this.setItems(restoreSnacks(zone.collectibles, start.eatenSnacks));
     this.allDone = this.snackTally.left === 0;
@@ -310,7 +320,7 @@ export class SwimScene extends Phaser.Scene {
       returnedFinds: start.returnedFinds,
     });
     this.dashKeyLatched = true;
-    this.tripCtx = createTripContext({ encounter: createEncounterContext({ bounds: this.bounds }) });
+    this.tripCtx = perkTripContext(this.perks, this.bounds);
     this.registry.set(REGISTRY_KEYS.total, this.items.length);
     this.registry.set(REGISTRY_KEYS.collected, this.snackTally.collected);
 
@@ -341,10 +351,14 @@ export class SwimScene extends Phaser.Scene {
    * tally (left, collected, sparkling ids) is worked out only in setItems, when the items change,
    * and frame code reads it. Snack positions, the exit and the last-3 stars create no objects per
    * frame. Drawn-frame capture (#51 review finding cbed1ef9): captureDrawnFrame builds the
-   * drawnAxolotl input and result and the snack frame, and collectSnacks builds the head point while
-   * swimming, so four small objects per frame. They stay plain values, like the step results below:
-   * drawnAxolotl and headPoint are pure src/logic functions tested as values (ADR 0006), and the eat
-   * and the sprite read one immutable capture. Same bounded cost as the residual below.
+   * drawnAxolotl input and result and the snack frame, and update builds the head point once while
+   * swimming for the snack magnet and the eat, so four small objects per frame. They stay plain
+   * values, like the step results below: drawnAxolotl and headPoint are pure src/logic functions
+   * tested as values (ADR 0006), and the eat and the sprite read one immutable capture. Same bounded
+   * cost as the residual below.
+   * Snack magnet (#16): pullSnacksToward allocates nothing when no snack is in the perk radius (and
+   * always with no Snack magnet worn). While it pulls, it builds a new items array and one object
+   * per pulled snack, and setItems works the tally out again: bounded by the area's snack count.
    * Recorded residual, inherited from main: stepSwim and stepTrip return new immutable state and
    * event lists each frame, syncSnapshot builds a trip snapshot to compare, the views take a render
    * argument object, and the reeds-near Set, bubble views and surface x list are rebuilt each frame.
@@ -366,7 +380,9 @@ export class SwimScene extends Phaser.Scene {
     this.captureDrawnFrame();
     // INVARIANT: a trip that left swimming in its step eats nothing.
     if (this.trip.phase === 'swimming') {
-      this.collectSnacks();
+      const head = headPoint(this.body);
+      this.pullSnacks(head, dt);
+      this.collectSnacks(head);
     }
     // INVARIANT: the exit check runs after the eat, so eating the last snack at the exit beats it this frame.
     this.checkExit();
@@ -391,10 +407,10 @@ export class SwimScene extends Phaser.Scene {
         dashing: this.dashingThisFrame,
       },
       dt,
-      legSwimTuning(this.snapshot.legs.present),
+      legSwimTuning(this.snapshot.legs.present, this.perks.swim),
     );
     const previousPhase = this.dash.phase;
-    this.dash = updateDash(this.dash, dt);
+    this.dash = updateDash(this.dash, dt, this.perks.swim);
     if (this.dash.phase !== previousPhase || this.dash.phase === 'cooldown') {
       this.emitDashState();
     }
@@ -422,7 +438,7 @@ export class SwimScene extends Phaser.Scene {
 
     this.homeSpotView = new HomeSpotView(this, this.assets, this.trip.homeSpot);
     this.exitView = new ExitView(this, this.assets, this.area.exit, exitOpen(this.snackTally.left));
-    this.treasureView = new TreasureView(this, this.assets, zone, this.trip.placed);
+    this.treasureView = new TreasureView(this, this.assets, zone, this.trip.placed, this.perks.hintMultiplier);
 
     this.snacks.clear();
     for (const item of this.items) {
@@ -548,17 +564,17 @@ export class SwimScene extends Phaser.Scene {
 
   private requestDash(): void {
     if (this.trip.phase !== 'swimming') return;
-    const attempt = tryStartDash(this.dash);
+    const attempt = tryStartDash(this.dash, this.perks.swim);
     if (!attempt.started) return;
     this.dash = attempt.state;
     const velocity = { x: this.swim.vx, y: this.swim.vy };
     const direction = len(this.lastSteer) > 0 ? this.lastSteer : velocity;
-    this.swim = startDashVelocity(this.swim, direction);
+    this.swim = startDashVelocity(this.swim, direction, this.perks.swim);
     this.emitDashState();
   }
 
   private emitDashState(): void {
-    const payload: DashStatePayload = { phase: this.dash.phase, charge: dashCharge(this.dash) };
+    const payload: DashStatePayload = { phase: this.dash.phase, charge: dashCharge(this.dash, this.perks.swim) };
     this.game.events.emit(GAME_EVENTS.DASH_STATE, payload);
   }
 
@@ -576,9 +592,22 @@ export class SwimScene extends Phaser.Scene {
     }
   }
 
-  private collectSnacks(): void {
+  /** Snack magnet (PRD A19): pulls the snacks in the perk radius toward `head`, before the eat. */
+  private pullSnacks(head: Vec2, dt: number): void {
+    const pulled = pullSnacksToward(
+      this.items,
+      head,
+      this.perks.snackMagnetRadius,
+      this.perks.snackMagnetSpeed,
+      dt,
+      this.snackView,
+    );
+    if (pulled) this.setItems(pulled);
+  }
+
+  private collectSnacks(head: Vec2): void {
     const before = this.snackTally.collected;
-    const result = collectSnacksAtHead(this.items, headPoint(this.body), this.snackView);
+    const result = collectSnacksAtHead(this.items, head, this.snackView);
     if (!result) return;
     this.setItems(result.items);
     const total = this.items.length;
@@ -940,7 +969,7 @@ export class SwimScene extends Phaser.Scene {
       return;
     }
     this.redrawAcc = 0;
-    this.assets.axolotl.redraw(pose, this.explorerPalette);
+    this.assets.axolotl.redraw(pose, this.explorerPalette, this.explorerOutfit);
     this.lastPose = pose;
   }
 

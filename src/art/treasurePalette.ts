@@ -74,6 +74,14 @@ export const GLASSES_FRAME = UI_PANEL_PINK;
 export const GLASSES_LENS = 'rgba(255,255,255,0.25)';
 /** Golden bow ribbon, soft pink. 11.19:1. */
 export const BOW_FILL = UI_PANEL_PINK;
+/** Tank top, the reed leaf green. 9.25:1. */
+export const TANK_TOP_FILL = REED_LEAF;
+/** Stripy socks, pebble C. 10.70:1. */
+export const SOCK_FILL = PEBBLE_C;
+/** Diving tank body, pebble A. 9.50:1. */
+export const DIVING_TANK_FILL = PEBBLE_A;
+/** Flippers, sun yellow. 11.05:1. */
+export const FLIPPER_FILL = SUN;
 
 // ---- Trims, gems and details inside the silhouette (free) -----------------
 
@@ -81,6 +89,12 @@ export const BOW_FILL = UI_PANEL_PINK;
 export const GOLD_TRIM = '#ffc12e';
 /** Rare and Epic trim bands. */
 export const BOAT_TRIM = SUN;
+/** Diving tank strap band, the boat yellow (guide 7e). */
+export const DIVING_TANK_STRAP = BOAT_TRIM;
+/** Flippers cuff band, the castle pink (guide 7e). */
+export const FLIPPER_CUFF = FLOWER_PETAL;
+/** Flippers fan ridges, the Paint shell ridge colour; internal lines, not ink (guide 7e). */
+export const FLIPPER_RIDGE = PEBBLE_E;
 export const CASTLE_TRIM = FLOWER_PETAL;
 export const CASTLE_GEM = WATER_SHALLOW;
 export const CASTLE_WINDOW = EYE;
@@ -91,6 +105,16 @@ export const BOW_GEM = '#ff5f8d';
 export const GEM_GLINT = WHITE;
 /** 4-point star on Legendary icons (guide 4e): white with an ink outline. */
 export const TREASURE_STAR = WHITE;
+
+// ---- Worn looks (guide 6a, 6i) ----------------------------------------------
+
+/**
+ * Far-leg Socks and Feet are the item colours mixed this far toward ink (guide 6a layer 2.5,
+ * the far-side depth rule of 3f). Ink and shine stay as on the near pair.
+ */
+export const WORN_FAR_INK_MIX = 0.12;
+/** Stripy socks: the three sleeve stripes are ink at this alpha (guide 6i), the same colour darkened. */
+export const SOCK_STRIPE_ALPHA = 0.3;
 
 // ---- Paint shell (guide 3g, 7e) --------------------------------------------
 

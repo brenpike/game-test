@@ -7,11 +7,13 @@ import {
   type AxolotlSex,
 } from './axolotlLook';
 import { isValidName, nameFits, suggestedNamesFor } from './axolotlNames';
-import { DREAM_COLOURS, type DreamColourId } from './catalogue';
+import { CANAL_TREASURES, DREAM_COLOURS, WEARABLE_SLOTS, treasureById, type DreamColourId } from './catalogue';
 import { REAL_COLOUR_OPTION_ID } from './dreamPaint';
 import { REAL_MORPHS, STARTER_MORPH, type RealMorphId } from './morphs';
+import { emptyOutfit, type Outfit } from './outfit';
 import { mulberry32 } from './rng';
 import {
+  NO_WEARABLE_OPTION_ID,
   SURPRISE_ROLLS,
   chosenIndex,
   creatorStart,
@@ -19,6 +21,8 @@ import {
   focusOrder,
   isReadOnly,
   namePageCount,
+  outfitOptionCount,
+  outfitPageCount,
   pickOption,
   reduceStyler,
   restyleStart,
@@ -30,10 +34,14 @@ import {
   visibleButtons,
   withDreamsPerPage,
   withNamesPerPage,
+  withOutfitPerPage,
+  withTabsHidden,
+  type RestyleOptions,
   type StylerAction,
   type StylerAxolotl,
   type StylerFocusKind,
   type StylerState,
+  type StylerWearer,
 } from './styler';
 import {
   MAX_STEP_OPTIONS,
@@ -43,7 +51,7 @@ import {
   stepLookField,
   type StylerStep,
 } from './stylerSteps';
-import { REAL_COLOUR_LABEL } from './stylerText';
+import { NONE_LABEL, REAL_COLOUR_LABEL } from './stylerText';
 
 const SEED_COUNT = 300;
 
@@ -309,8 +317,10 @@ describe('restyle', () => {
     expect(pressKey(tabbed, 'ArrowRight').state.step).toBe('mouth');
     const colour = restyleOn('colour');
     expect(pressKey(colour, 'ArrowRight').state.step).toBe('dream');
-    expect(pressKey(restyleOn('dream'), 'ArrowRight').state.step).toBe('sex');
+    expect(pressKey(restyleOn('dream'), 'ArrowRight').state.step).toBe('outfit');
     expect(pressKey(restyleOn('dream'), 'ArrowLeft').state.step).toBe('colour');
+    expect(pressKey(restyleOn('outfit'), 'ArrowRight').state.step).toBe('sex');
+    expect(pressKey(restyleOn('outfit'), 'ArrowLeft').state.step).toBe('dream');
     expect(pressKey(colour, 'ArrowLeft').state.step).toBe('name');
     expect(pressKey(restyleOn('name'), 'ArrowRight').state.step).toBe('colour');
     expect(pressKey(colour, 'ArrowDown')).toEqual({ state: colour });
@@ -335,6 +345,7 @@ describe('Done and Cancel', () => {
       look: state.look,
       morph: state.morph,
       dreamColour: null,
+      outfit: emptyOutfit(),
     });
     expect(result.state.focus).toEqual({ kind: 'done' });
   });
@@ -349,7 +360,7 @@ describe('Done and Cancel', () => {
       const state = restyleOn(step);
       expect(visibleButtons(state)).toEqual(expect.arrayContaining(['cancel', 'done']));
       const done = reduceStyler(state, { type: 'done' }, noRandom);
-      expect(done.effect).toEqual({ type: 'done', ...OWNED, dreamColour: null });
+      expect(done.effect).toEqual({ type: 'done', ...OWNED, dreamColour: null, outfit: emptyOutfit() });
       expect(reduceStyler(state, { type: 'cancel' }, noRandom).effect).toEqual({ type: 'cancel' });
     }
   });
@@ -864,9 +875,14 @@ describe('Dream colour step', () => {
   it('Done gives the Dream colour in the state', () => {
     const on = pickId(dreamOn(['mint', 'galaxy']), 'mint');
     const done = reduceStyler(on, { type: 'done' }, noRandom);
-    expect(done.effect).toEqual({ type: 'done', ...OWNED, dreamColour: 'mint' });
+    expect(done.effect).toEqual({ type: 'done', ...OWNED, dreamColour: 'mint', outfit: emptyOutfit() });
     const off = pickId(dreamOn(['mint', 'galaxy'], PAINTED), REAL_COLOUR_OPTION_ID);
-    expect(reduceStyler(off, { type: 'done' }, noRandom).effect).toEqual({ type: 'done', ...OWNED, dreamColour: null });
+    expect(reduceStyler(off, { type: 'done' }, noRandom).effect).toEqual({
+      type: 'done',
+      ...OWNED,
+      dreamColour: null,
+      outfit: emptyOutfit(),
+    });
   });
 
   it('Cancel gives only the cancel effect', () => {
@@ -910,4 +926,350 @@ describe('Dream colour step', () => {
     const backward = order.map((_kind, index) => order[(start - 1 - index + 2 * order.length) % order.length]);
     expect(tabStops(state, true)).toEqual(backward);
   });
+});
+
+describe('Outfit step', () => {
+  const WEARABLE_IDS: readonly string[] = CANAL_TREASURES.filter((treasure) => treasure.category === 'wearable').map(
+    (treasure) => treasure.id,
+  );
+  const BANKED: readonly string[] = ['canal/paint-shell-mint', 'nope', ...[...WEARABLE_IDS].reverse()];
+  const MILO: StylerWearer = { axolotlId: 'axolotl-2', name: 'Milo' };
+  const WEARERS: ReadonlyMap<string, StylerWearer> = new Map([
+    ['canal/sun-hat', MILO],
+    ['canal/flippers', { axolotlId: 'axolotl-1', name: 'Lily' }],
+  ]);
+  const DRESSED: StylerAxolotl = { ...OWNED, outfit: { ...emptyOutfit(), feet: 'canal/flippers' } };
+
+  function outfitStart(options: RestyleOptions = {}, axolotl: StylerAxolotl = DRESSED): StylerState {
+    return restyleStart(axolotl, [], { banked: BANKED, wearers: WEARERS, startStep: 'outfit', ...options });
+  }
+
+  function pickId(state: StylerState, id: string): StylerState {
+    const index = optionIds(state).indexOf(id);
+    if (index < 0) throw new Error(`${id} is not on this page`);
+    return reduceStyler(state, { type: 'pick', index }, noRandom).state;
+  }
+
+  function openSlot(slot: string, state: StylerState = outfitStart()): StylerState {
+    return pickId(state, slot);
+  }
+
+  function slotWearables(slot: string): string[] {
+    return WEARABLE_IDS.filter((id) => {
+      const treasure = treasureById(id);
+      return treasure?.category === 'wearable' && treasure.slot === slot;
+    });
+  }
+
+  function expectBankedOutfit(outfit: Outfit): void {
+    expect(Object.keys(outfit).sort()).toEqual([...WEARABLE_SLOTS].sort());
+    for (const slot of WEARABLE_SLOTS) {
+      const id = outfit[slot];
+      if (id !== null) expect(slotWearables(slot)).toContain(id);
+    }
+  }
+
+  it('is a restyle tab right after Dream colour that the creator never shows', () => {
+    expect(RESTYLE_STEPS.indexOf('outfit')).toBe(RESTYLE_STEPS.indexOf('dream') + 1);
+    expect(STYLER_STEPS).not.toContain('outfit');
+    let state = creator();
+    for (let index = 0; index < STYLER_STEPS.length; index++) {
+      expect(state.step).not.toBe('outfit');
+      state = reduceStyler(state, { type: 'next' }, noRandom).state;
+    }
+    expect(reduceStyler(creator(), { type: 'tab', step: 'outfit' }, noRandom)).toEqual({ state: creator() });
+    expect(creator().outfit).toEqual(emptyOutfit());
+    expect(creator().bankedWearables).toEqual([]);
+  });
+
+  it('restyle still starts on Eyes unless the start step is Outfit', () => {
+    expect(restyleStart(DRESSED, [], { banked: BANKED }).step).toBe(RESTYLE_START_STEP);
+    const state = outfitStart();
+    expect(state.step).toBe('outfit');
+    expect(state.outfitView).toBe('slots');
+    expect(state.focus).toEqual({ kind: 'option', index: 0 });
+    expect(isReadOnly(state)).toBe(false);
+  });
+
+  it('the slots view lists the eight slots in order, none of them chosen', () => {
+    const state = outfitStart();
+    expect(optionIds(state)).toEqual([...WEARABLE_SLOTS]);
+    expect(stepOptions(state).map((option) => option.label)).toEqual([
+      'Head',
+      'Neck',
+      'Face',
+      'Shirt',
+      'Back',
+      'Tail',
+      'Socks',
+      'Feet',
+    ]);
+    expect(outfitOptionCount(state)).toBe(8);
+    expect(chosenIndex(state)).toBe(-1);
+  });
+
+  it('keeps only banked Wearables in catalogue order and a worn outfit of banked Wearables in their own slots', () => {
+    const state = outfitStart();
+    expect(state.bankedWearables).toEqual(WEARABLE_IDS);
+    expect(state.outfit).toEqual({ ...emptyOutfit(), feet: 'canal/flippers' });
+    const odd: StylerAxolotl = {
+      ...OWNED,
+      outfit: { ...emptyOutfit(), head: 'canal/flippers', neck: 'canal/shell-necklace', face: 'canal/pond-plant' },
+    };
+    expect(outfitStart({ banked: ['canal/flippers', 'canal/pond-plant'] }, odd).outfit).toEqual(emptyOutfit());
+    expect(outfitStart({}, odd).outfit).toEqual({ ...emptyOutfit(), neck: 'canal/shell-necklace' });
+    expect(restyleStart(DRESSED).outfit).toEqual(emptyOutfit());
+  });
+
+  it('picking a slot opens its choices on the same tab: None, then its banked Wearables, the worn one focused', () => {
+    const head = openSlot('head');
+    expect(head.step).toBe('outfit');
+    expect(head.outfitView).toBe('choices');
+    expect(head.outfitSlot).toBe('head');
+    expect(stepOptions(head)).toEqual([
+      { id: NO_WEARABLE_OPTION_ID, label: NONE_LABEL },
+      { id: 'canal/sun-hat', label: 'Sun hat', wornOnMark: 'On Milo' },
+    ]);
+    expect(chosenIndex(head)).toBe(0);
+    expect(head.focus).toEqual({ kind: 'option', index: 0 });
+    const feet = openSlot('feet');
+    expect(optionIds(feet)).toEqual([NO_WEARABLE_OPTION_ID, 'canal/flippers']);
+    expect(feet.focus).toEqual({ kind: 'option', index: 1 });
+    expect(chosenIndex(feet)).toBe(1);
+  });
+
+  it('a slot with no banked Wearable offers only None', () => {
+    const state = openSlot('socks', outfitStart({ banked: ['canal/sun-hat'] }));
+    expect(stepOptions(state)).toEqual([{ id: NO_WEARABLE_OPTION_ID, label: NONE_LABEL }]);
+    expect(outfitOptionCount(state)).toBe(1);
+  });
+
+  it('a pick replaces the draft item, None takes it off, and the view stays open', () => {
+    const on = pickId(openSlot('head'), 'canal/sun-hat');
+    expect(on.outfit).toEqual({ ...emptyOutfit(), head: 'canal/sun-hat', feet: 'canal/flippers' });
+    expect(on.outfitView).toBe('choices');
+    expect(chosenIndex(on)).toBe(1);
+    expect(on.focus).toEqual({ kind: 'option', index: 1 });
+    const off = pickId(openSlot('feet', backToSlotsOf(on)), NO_WEARABLE_OPTION_ID);
+    expect(off.outfit).toEqual({ ...emptyOutfit(), head: 'canal/sun-hat' });
+    expect(off.outfitView).toBe('choices');
+  });
+
+  it('marks "On <name>" only on Wearables another axolotl wears', () => {
+    const feet = openSlot('feet');
+    expect(stepOptions(feet)[1]).toEqual({ id: 'canal/flippers', label: 'Flippers' });
+    expect(stepOptions(feet)[1]).not.toHaveProperty('wornOnMark');
+    const picked = pickId(openSlot('head'), 'canal/sun-hat');
+    expect(stepOptions(picked)[1].wornOnMark).toBe('On Milo');
+    expect(stepOptions(openSlot('neck'))[1]).not.toHaveProperty('wornOnMark');
+  });
+
+  it('Done carries the outfit, with a Wearable worn by another axolotl in it', () => {
+    const picked = pickId(openSlot('head'), 'canal/sun-hat');
+    const done = reduceStyler(picked, { type: 'done' }, noRandom);
+    expect(done.effect).toEqual({
+      type: 'done',
+      ...OWNED,
+      dreamColour: null,
+      outfit: { ...emptyOutfit(), head: 'canal/sun-hat', feet: 'canal/flippers' },
+    });
+    if (done.effect?.type !== 'done') throw new Error('no done effect');
+    expect(done.effect.outfit).not.toBe(picked.outfit);
+  });
+
+  it('Cancel drops the outfit, and Escape on the slots view cancels', () => {
+    const picked = backToSlotsOf(pickId(openSlot('head'), 'canal/sun-hat'));
+    expect(reduceStyler(picked, { type: 'cancel' }, noRandom).effect).toEqual({ type: 'cancel' });
+    expect(pressKey(picked, 'Escape').effect).toEqual({ type: 'cancel' });
+  });
+
+  function backToSlotsOf(state: StylerState): StylerState {
+    return reduceStyler(state, { type: 'backToSlots' }, noRandom).state;
+  }
+
+  it('Escape on the choices view is Back to slots, focusing that slot, and keeps the draft', () => {
+    const picked = pickId(openSlot('head'), 'canal/sun-hat');
+    const tail = openSlot('tail', backToSlotsOf(picked));
+    const result = pressKey(tail, 'Escape');
+    expect(result.effect).toBeUndefined();
+    expect(result.state.outfitView).toBe('slots');
+    expect(result.state.focus).toEqual({ kind: 'option', index: WEARABLE_SLOTS.indexOf('tail') });
+    expect(result.state.outfit.head).toBe('canal/sun-hat');
+    expect(pressKey(result.state, 'Escape').effect).toEqual({ type: 'cancel' });
+  });
+
+  it('Back to slots by pointer or by Enter and Space returns to the slot; it does nothing elsewhere', () => {
+    const neck = openSlot('neck');
+    expect(backToSlotsOf(neck).focus).toEqual({ kind: 'option', index: 1 });
+    for (const key of ['Enter', ' ']) {
+      const state = pressKey({ ...neck, focus: { kind: 'backToSlots' } }, key).state;
+      expect(state.outfitView).toBe('slots');
+      expect(state.focus).toEqual({ kind: 'option', index: 1 });
+    }
+    const slots = outfitStart();
+    expect(reduceStyler(slots, { type: 'backToSlots' }, noRandom)).toEqual({ state: slots });
+    const eyes = restyleOn('eyes');
+    expect(reduceStyler(eyes, { type: 'backToSlots' }, noRandom)).toEqual({ state: eyes });
+  });
+
+  it('arrows move in the picture buttons; Enter opens a slot and Space picks a choice', () => {
+    const state = outfitStart();
+    expect(pressKey(state, 'ArrowRight').state.focus).toEqual({ kind: 'option', index: 1 });
+    expect(pressKey(state, 'ArrowDown').state.focus).toEqual({ kind: 'option', index: 4 });
+    expect(pressKey(state, 'ArrowLeft').state.focus).toEqual({ kind: 'option', index: 0 });
+    const opened = pressKey(pressKey(state, 'ArrowRight').state, 'Enter').state;
+    expect(opened.outfitView).toBe('choices');
+    expect(opened.outfitSlot).toBe('neck');
+    const picked = pressKey(pressKey(opened, 'ArrowRight').state, ' ').state;
+    expect(picked.outfit.neck).toBe('canal/shell-necklace');
+    expect(pressKey(picked, 'ArrowRight').state.focus).toEqual({ kind: 'option', index: 1 });
+  });
+
+  it('the Outfit tab always opens on the slots view with Head focused', () => {
+    const away = pressKey(pressKey({ ...openSlot('feet'), focus: { kind: 'tab', step: 'outfit' } }, 'ArrowRight').state, 'ArrowLeft').state;
+    expect(away.step).toBe('outfit');
+    expect(away.outfitView).toBe('slots');
+    expect(away.outfitSlot).toBe('head');
+    expect(away.focus).toEqual({ kind: 'tab', step: 'outfit' });
+    expect(pressKey(away, 'Tab').state.focus).toEqual({ kind: 'option', index: 0 });
+  });
+
+  it('More slots pages the slots, wrapping, and keeps the focus on it', () => {
+    let state = withOutfitPerPage(outfitStart(), 3);
+    expect(outfitPageCount(state)).toBe(3);
+    const seen: string[] = [];
+    for (let page = 0; page < 3; page++) {
+      seen.push(...optionIds(state));
+      state = reduceStyler(state, { type: 'moreOutfit', perPage: 3 }, noRandom).state;
+      expect(state.focus).toEqual({ kind: 'moreOutfit' });
+    }
+    expect(seen).toEqual([...WEARABLE_SLOTS]);
+    expect(state.outfitPage).toBe(0);
+    for (const key of ['Enter', ' ']) {
+      const next = pressKey({ ...state, focus: { kind: 'moreOutfit' } }, key).state;
+      expect(optionIds(next)).toEqual(['shirt', 'back', 'tail']);
+      expect(next.focus).toEqual({ kind: 'moreOutfit' });
+    }
+    expect(() => reduceStyler(state, { type: 'moreOutfit', perPage: 0 }, noRandom)).toThrow(RangeError);
+    expect(() => withOutfitPerPage(state, 1.5)).toThrow(RangeError);
+  });
+
+  it('More slots does nothing off the Outfit step, and hides when one page holds every button', () => {
+    const eyes = restyleOn('eyes');
+    expect(reduceStyler(eyes, { type: 'moreOutfit', perPage: 3 }, noRandom)).toEqual({ state: eyes });
+    const one = outfitStart();
+    expect(outfitPageCount(one)).toBe(1);
+    const unpaged = reduceStyler(one, { type: 'moreOutfit', perPage: 8 }, noRandom).state;
+    expect(unpaged.outfitPage).toBe(0);
+    expect(unpaged.focus).toEqual({ kind: 'option', index: 0 });
+    const onMore = reduceStyler(openSlot('feet'), { type: 'moreOutfit', perPage: 1 }, noRandom).state;
+    expect(onMore.focus).toEqual({ kind: 'moreOutfit' });
+    expect(withOutfitPerPage(onMore, 2).focus).toEqual({ kind: 'option', index: 1 });
+  });
+
+  it('More wearables pages the choices from the page holding the worn one, wrapping', () => {
+    const feet = withOutfitPerPage(openSlot('feet'), 1);
+    expect(outfitPageCount(feet)).toBe(2);
+    expect(optionIds(feet)).toEqual(['canal/flippers']);
+    expect(feet.focus).toEqual({ kind: 'option', index: 0 });
+    const next = reduceStyler(feet, { type: 'moreOutfit', perPage: 1 }, noRandom).state;
+    expect(optionIds(next)).toEqual([NO_WEARABLE_OPTION_ID]);
+    expect(chosenIndex(next)).toBe(-1);
+    const off = pickId(next, NO_WEARABLE_OPTION_ID);
+    expect(off.outfit.feet).toBeNull();
+    expect(reduceStyler(off, { type: 'moreOutfit', perPage: 1 }, noRandom).state.outfitPage).toBe(1);
+  });
+
+  it('a slot on a later page opens and comes back to that page with it focused', () => {
+    const paged = reduceStyler(withOutfitPerPage(outfitStart(), 3), { type: 'moreOutfit', perPage: 3 }, noRandom);
+    const lastPage = reduceStyler(paged.state, { type: 'moreOutfit', perPage: 3 }, noRandom).state;
+    expect(optionIds(lastPage)).toEqual(['socks', 'feet']);
+    const feet = pickId(lastPage, 'feet');
+    expect(feet.outfitSlot).toBe('feet');
+    const back = pressKey(withOutfitPerPage(feet, 1), 'Escape').state;
+    expect(optionIds(back)).toEqual(['feet']);
+    expect(back.focus).toEqual({ kind: 'option', index: 0 });
+    const resized = withOutfitPerPage(back, 3);
+    expect(optionIds(resized)).toEqual(['socks', 'feet']);
+    expect(resized.focus).toEqual({ kind: 'option', index: 1 });
+  });
+
+  it('focus order: slots view, More, choices view with Back to slots, and with the tab row hidden', () => {
+    const slots = outfitStart();
+    expect(focusOrder(slots)).toEqual(['tab', 'option', 'surprise', 'cancel', 'done']);
+    expect(focusOrder(withOutfitPerPage(slots, 3))).toEqual(['tab', 'option', 'moreOutfit', 'surprise', 'cancel', 'done']);
+    expect(focusOrder(withTabsHidden(slots, true))).toEqual(focusOrder(slots));
+    const head = openSlot('head');
+    expect(focusOrder(head)).toEqual(['tab', 'option', 'backToSlots', 'surprise', 'cancel', 'done']);
+    expect(visibleButtons(head)).toEqual(['backToSlots', 'surprise', 'cancel', 'done']);
+    const paged = withOutfitPerPage(head, 1);
+    expect(focusOrder(paged)).toEqual(['tab', 'option', 'moreOutfit', 'backToSlots', 'surprise', 'cancel', 'done']);
+    const hidden = withTabsHidden(paged, true);
+    expect(focusOrder(hidden)).toEqual(['backToSlots', 'option', 'moreOutfit', 'surprise', 'cancel', 'done']);
+    expect(focusOrder(withTabsHidden(hidden, false))).toEqual(focusOrder(paged));
+  });
+
+  it.each([
+    ['slots', outfitStart()],
+    ['slots paged', withOutfitPerPage(outfitStart(), 3)],
+    ['choices', openSlot('head')],
+    ['choices paged, tab row hidden', withTabsHidden(withOutfitPerPage(openSlot('head'), 1), true)],
+  ])('%s: Tab follows the order and wraps; Shift+Tab reverses it', (_label, state) => {
+    const order = focusOrder(state);
+    const start = order.indexOf(state.focus.kind);
+    expect(tabStops(state, false)).toEqual(order.map((_kind, index) => order[(start + 1 + index) % order.length]));
+    const backward = order.map((_kind, index) => order[(start - 1 - index + 2 * order.length) % order.length]);
+    expect(tabStops(state, true)).toEqual(backward);
+  });
+
+  it('hiding the tab row moves a focused tab to the worn choice and keeps any other focus', () => {
+    const onTab: StylerState = { ...openSlot('feet'), focus: { kind: 'tab', step: 'outfit' } };
+    expect(withTabsHidden(onTab, true).focus).toEqual({ kind: 'option', index: 1 });
+    const onOption = openSlot('feet');
+    expect(withTabsHidden(onOption, true).focus).toEqual(onOption.focus);
+    expect(withTabsHidden(onOption, true).tabsHidden).toBe(true);
+  });
+
+  it('Surprise me never changes the outfit, the view or the open slot', () => {
+    const states = [outfitStart(), pickId(openSlot('head'), 'canal/sun-hat'), restyleOn('eyes', DRESSED)];
+    for (let seed = 1; seed <= SEED_COUNT; seed++) {
+      const before = states[seed % states.length];
+      const after = reduceStyler(before, { type: 'surprise' }, mulberry32(seed)).state;
+      expect(after.outfit).toEqual(before.outfit);
+      expect(after.outfitView).toBe(before.outfitView);
+      expect(after.outfitSlot).toBe(before.outfitSlot);
+      expect(after.step).toBe(before.step);
+      expect(after.morph).toBe(OWNED.morph);
+      expect(after.look.sex).toBe(OWNED.look.sex);
+    }
+  });
+
+  it('random actions never change the morph or sex, and the outfit stays banked Wearables in their own slots', () => {
+    const keys = ['Tab', 'Enter', ' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Escape'];
+    function randomAction(rand: () => number): StylerAction {
+      const roll = Math.floor(rand() * 8);
+      const perPage = 1 + Math.floor(rand() * MAX_STEP_OPTIONS);
+      if (roll === 0) return { type: 'moreOutfit', perPage };
+      if (roll === 1) return { type: 'backToSlots' };
+      if (roll === 2) return { type: 'pick', index: Math.floor(rand() * MAX_STEP_OPTIONS) };
+      if (roll === 3) return { type: 'tab', step: RESTYLE_STEPS[Math.floor(rand() * RESTYLE_STEPS.length)] };
+      if (roll === 4) return { type: 'surprise' };
+      if (roll === 5) return { type: 'done' };
+      return { type: 'key', key: keys[Math.floor(rand() * keys.length)], shiftKey: rand() < 0.5, columns: 4 };
+    }
+    for (let seed = 1; seed <= SEED_COUNT; seed++) {
+      const rand = mulberry32(seed);
+      let state = outfitStart();
+      for (let index = 0; index < 60; index++) {
+        if (rand() < 0.1) state = withTabsHidden(withOutfitPerPage(state, 1 + Math.floor(rand() * 4)), rand() < 0.5);
+        const result = reduceStyler(state, randomAction(rand), rand);
+        state = result.state;
+        expect(state.morph).toBe(OWNED.morph);
+        expect(state.look.sex).toBe(OWNED.look.sex);
+        expectBankedOutfit(state.outfit);
+        expect(focusOrder(state)).toContain(state.focus.kind);
+        if (result.effect?.type === 'done') expect(result.effect.outfit).toEqual(state.outfit);
+      }
+    }
+  }, 20_000);
 });

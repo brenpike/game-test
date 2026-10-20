@@ -20,10 +20,27 @@ export const TREASURE_CATEGORIES: readonly TreasureCategory[] = Object.freeze([
 ]);
 
 /** Wearable slot on an axolotl; one item per slot. */
-export type WearableSlot = 'head' | 'neck' | 'face' | 'tail';
+export type WearableSlot =
+  | 'head'
+  | 'neck'
+  | 'face'
+  | 'shirt'
+  | 'back'
+  | 'tail'
+  | 'socks'
+  | 'feet';
 
 /** Every wearable slot in display order. */
-export const WEARABLE_SLOTS: readonly WearableSlot[] = Object.freeze(['head', 'neck', 'face', 'tail']);
+export const WEARABLE_SLOTS: readonly WearableSlot[] = Object.freeze([
+  'head',
+  'neck',
+  'face',
+  'shirt',
+  'back',
+  'tail',
+  'socks',
+  'feet',
+]);
 
 /** Perk type a Wearable can give. */
 export type PerkType = 'speed' | 'regrowth' | 'dash' | 'shell' | 'treasureSense' | 'snackMagnet';
@@ -105,11 +122,12 @@ export interface Decoration extends TreasureBase {
   readonly category: 'decoration';
 }
 
-/** An outfit item for one slot, with exactly one perk. */
+/** An outfit item for one slot, with exactly one perk and an optional set (Implementation Decision 12). */
 export interface Wearable extends TreasureBase {
   readonly category: 'wearable';
   readonly slot: WearableSlot;
   readonly perk: Perk;
+  readonly setId?: string;
 }
 
 /** A shell holding one Dream colour; banking it makes the colour owned. */
@@ -131,7 +149,11 @@ function createPaintShell(colour: DreamColour): PaintShell {
   };
 }
 
-/** The canal treasures: 8 Decorations and Wearables, then one Paint shell per Dream colour. */
+/**
+ * The canal treasures: 4 Decorations and 4 Wearables, then one Paint shell per Dream colour, then
+ * 4 more Wearables. The newest entries come last so placement by seed stays the same for every
+ * earlier treasure.
+ */
 export const CANAL_TREASURES: readonly Treasure[] = Object.freeze([
   { id: 'canal/pond-plant', name: 'Pond plant', rarity: 'common', category: 'decoration' },
   { id: 'canal/toy-boat', name: 'Toy boat', rarity: 'rare', category: 'decoration' },
@@ -170,6 +192,38 @@ export const CANAL_TREASURES: readonly Treasure[] = Object.freeze([
     perk: { type: 'shell', value: 1 },
   },
   ...DREAM_COLOURS.map(createPaintShell),
+  {
+    id: 'canal/tank-top',
+    name: 'Tank top',
+    rarity: 'common',
+    category: 'wearable',
+    slot: 'shirt',
+    perk: { type: 'regrowth', value: 10 },
+  },
+  {
+    id: 'canal/diving-tank',
+    name: 'Diving tank',
+    rarity: 'rare',
+    category: 'wearable',
+    slot: 'back',
+    perk: { type: 'dash', value: 15 },
+  },
+  {
+    id: 'canal/stripy-socks',
+    name: 'Stripy socks',
+    rarity: 'common',
+    category: 'wearable',
+    slot: 'socks',
+    perk: { type: 'snackMagnet', value: 30 },
+  },
+  {
+    id: 'canal/flippers',
+    name: 'Flippers',
+    rarity: 'rare',
+    category: 'wearable',
+    slot: 'feet',
+    perk: { type: 'speed', value: 6 },
+  },
 ]);
 
 const CATEGORY_NAMES: Readonly<Record<TreasureCategory, 'Decoration' | 'Wearable' | 'Paint shell'>> =

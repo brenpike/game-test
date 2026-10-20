@@ -8,6 +8,7 @@ import {
   chestListing,
   chestPages,
   pageText,
+  perkText,
   type ChestCategory,
   type ChestEntry,
   type ChestPage,
@@ -27,6 +28,15 @@ const DETAIL_PX = 18;
 const LEAD_PX = 32;
 const LEAD_GAP = 8;
 const BADGE_PX = 24;
+const SLOT_PX = 18;
+const PERK_PX = 18;
+/** Perk icon box, the gap after it (guide 8, Wearable display: 24 px icon, 6 px, then the text). */
+const PERK_ICON_PX = 24;
+const PERK_ICON_GAP = 6;
+/** Gap between the slot name and the perk icon when they share a line. */
+const SLOT_GAP = 6;
+/** Follows the slot name when the perk shares its line, e.g. 'Head ·'. */
+const SLOT_SEPARATOR = ' ·';
 const BADGE_GAP = 6;
 const NAME_GAP = 8;
 const BACKDROP_COVER = 8192;
@@ -40,13 +50,21 @@ export interface TreasureChestTextures {
   treasure: TreasureTextures;
 }
 
-/** The texts of one entry row, and its images (null in the measuring probe). */
+/**
+ * The texts of one entry row, and its images (null in the measuring probe). A Wearable's slot and
+ * perk are `slot`, `perkIcon` and `perk`; a Dream colour's label is `detail`. The unused ones stay empty.
+ */
 interface RowParts {
   lead: Phaser.GameObjects.Image | null;
   badge: Phaser.GameObjects.Image | null;
+  perkIcon: Phaser.GameObjects.Image | null;
+  /** The slot name without the separator, e.g. 'Head'; empty for an entry that is not a Wearable. */
+  slotName: string;
   name: Phaser.GameObjects.Text;
   rarity: Phaser.GameObjects.Text;
   detail: Phaser.GameObjects.Text;
+  slot: Phaser.GameObjects.Text;
+  perk: Phaser.GameObjects.Text;
 }
 
 /** One entry row on screen: its container and parts. */
@@ -68,11 +86,9 @@ function headingText(section: ChestSection): string {
   return `${section.heading}: ${section.countText}`;
 }
 
-/** Detail line of an entry: the Wearable slot and perk, the Dream colour label, or none for a Decoration. */
+/** Detail line of an entry: the Dream colour label, or none (a Wearable has the slot and perk line instead). */
 function detailText(entry: ChestEntry): string {
-  if ('detailText' in entry) return entry.detailText;
-  if ('label' in entry) return entry.label;
-  return '';
+  return 'label' in entry ? entry.label : '';
 }
 
 /** Returns the current CSS size of `text`. */
@@ -86,29 +102,75 @@ function wrappedSize(text: Phaser.GameObjects.Text, wrapW: number): Size {
   return textSize(text);
 }
 
-/** Fills the row texts with the entry's name, rarity name and detail line. */
+/** Fills the row texts with the entry's name, rarity name, detail line, and a Wearable's slot and perk. */
 function fillRowTexts(parts: RowParts, entry: ChestEntry): void {
   parts.name.setText(entry.name);
   parts.rarity.setText(entry.rarityName);
   parts.detail.setText(detailText(entry));
+  parts.slotName = 'slotName' in entry ? entry.slotName : '';
+  parts.slot.setText(parts.slotName);
+  parts.perk.setText('perk' in entry ? perkText(entry.perk) : '');
 }
 
 /**
- * Places the detail line at `top` and returns its bottom: beside the 32 px lead image (left edge
- * `textX`) or, when that ends higher, under it across the whole row. An empty detail adds nothing.
+ * Lays a Wearable's slot and perk line in `availW` from `top` at `x`, and returns its height; 0 when
+ * the entry is not a Wearable. The slot name comes first, then the 24 px perk icon, 6 px, then the
+ * perk name and value. When that does not fit one line, the slot name takes its own line and the
+ * perk icon and text go under it, the text wrapping beside the icon. Nothing shrinks or hides.
  */
-function placeDetail(detail: Phaser.GameObjects.Text, top: number, textX: number, rowW: number): number {
-  if (detail.text === '') return top;
-  const underTop = Math.max(top, LEAD_PX);
-  const underBottom = underTop + wrappedSize(detail, rowW).h;
-  const besideBottom = top + wrappedSize(detail, rowW - textX).h;
-  if (besideBottom <= underBottom) {
-    detail.setPosition(textX, top);
-    return besideBottom;
+function placePerkLine(parts: RowParts, x: number, top: number, availW: number): number {
+  if (parts.slotName === '') return 0;
+  const textOffset = PERK_ICON_PX + PERK_ICON_GAP;
+  parts.slot.setText(`${parts.slotName}${SLOT_SEPARATOR}`);
+  parts.slot.setWordWrapWidth(null);
+  parts.perk.setWordWrapWidth(null);
+  const sameLine = parts.slot.width + SLOT_GAP + textOffset + parts.perk.width <= availW;
+  if (sameLine) {
+    const lineH = Math.max(PERK_ICON_PX, parts.slot.height, parts.perk.height);
+    const iconX = x + parts.slot.width + SLOT_GAP;
+    parts.slot.setPosition(x, top + (lineH - parts.slot.height) / 2);
+    parts.perkIcon?.setPosition(iconX + PERK_ICON_PX / 2, top + lineH / 2);
+    parts.perk.setPosition(iconX + textOffset, top + (lineH - parts.perk.height) / 2);
+    return lineH;
   }
-  wrappedSize(detail, rowW);
-  detail.setPosition(0, underTop);
-  return underBottom;
+  parts.slot.setText(parts.slotName);
+  const slot = wrappedSize(parts.slot, availW);
+  const perk = wrappedSize(parts.perk, availW - textOffset);
+  const perkH = Math.max(PERK_ICON_PX, perk.h);
+  parts.slot.setPosition(x, top);
+  parts.perkIcon?.setPosition(x + PERK_ICON_PX / 2, top + slot.h + perkH / 2);
+  parts.perk.setPosition(x + textOffset, top + slot.h + (perkH - perk.h) / 2);
+  return slot.h + perkH;
+}
+
+/** Height `placePerkLine` would use in `availW` (it also places the parts; the caller places them again). */
+function perkLineHeight(parts: RowParts, availW: number): number {
+  return placePerkLine(parts, 0, 0, availW);
+}
+
+/**
+ * Places the detail block at `top` and returns its bottom: beside the 32 px lead image (left edge
+ * `textX`) or, when that ends higher, under it across the whole row. The block is the Dream colour
+ * label or a Wearable's slot and perk line; an entry with neither adds nothing.
+ */
+function placeDetail(parts: RowParts, top: number, textX: number, rowW: number): number {
+  const { detail } = parts;
+  if (detail.text === '' && parts.slotName === '') return top;
+  const underTop = Math.max(top, LEAD_PX);
+  const blockH = (availW: number): number =>
+    detail.text === '' ? perkLineHeight(parts, availW) : wrappedSize(detail, availW).h;
+  const underBottom = underTop + blockH(rowW);
+  const besideBottom = top + blockH(rowW - textX);
+  const useBeside = besideBottom <= underBottom;
+  const x = useBeside ? textX : 0;
+  const y = useBeside ? top : underTop;
+  const availW = useBeside ? rowW - textX : rowW;
+  if (detail.text === '') placePerkLine(parts, x, y, availW);
+  else {
+    wrappedSize(detail, availW);
+    detail.setPosition(x, y);
+  }
+  return useBeside ? besideBottom : underBottom;
 }
 
 /**
@@ -131,7 +193,7 @@ function arrangeRow(parts: RowParts, rowW: number): number {
   parts.rarity.setPosition(groupX + BADGE_PX + BADGE_GAP, groupY + (groupH - parts.rarity.height) / 2);
   parts.lead?.setPosition(LEAD_PX / 2, LEAD_PX / 2);
   const headBottom = sameLine ? lineH : name.h + groupH;
-  return Math.max(LEAD_PX, placeDetail(parts.detail, headBottom, textX, rowW));
+  return Math.max(LEAD_PX, placeDetail(parts, headBottom, textX, rowW));
 }
 
 /**
@@ -186,7 +248,7 @@ export class TreasureChestView {
     this.heading = scene.add.text(0, 0, '', uiTextStyle(HEADING_PX, this.dpr));
     this.pageLabel = scene.add.text(0, 0, '', uiTextStyle(PAGE_TEXT_PX, this.dpr, false));
     this.emptyText = scene.add.text(0, 0, '', uiTextStyle(EMPTY_TEXT_PX, this.dpr, false));
-    this.probe = this.createRowParts(null, null);
+    this.probe = this.createRowParts(null, null, null);
     for (const text of this.probeTexts()) {
       text.setVisible(false);
     }
@@ -267,7 +329,13 @@ export class TreasureChestView {
 
   setResolution(dpr: number): void {
     this.dpr = dpr;
-    const rowTexts = this.rows.flatMap((row) => [row.parts.name, row.parts.rarity, row.parts.detail]);
+    const rowTexts = this.rows.flatMap((row) => [
+      row.parts.name,
+      row.parts.rarity,
+      row.parts.detail,
+      row.parts.slot,
+      row.parts.perk,
+    ]);
     for (const text of [this.title, this.heading, this.pageLabel, this.emptyText, ...this.probeTexts(), ...rowTexts]) {
       text.setResolution(dpr);
     }
@@ -299,7 +367,7 @@ export class TreasureChestView {
   }
 
   private probeTexts(): Phaser.GameObjects.Text[] {
-    return [this.probe.name, this.probe.rarity, this.probe.detail];
+    return [this.probe.name, this.probe.rarity, this.probe.detail, this.probe.slot, this.probe.perk];
   }
 
   private createChestButton(
@@ -321,13 +389,21 @@ export class TreasureChestView {
     });
   }
 
-  private createRowParts(lead: Phaser.GameObjects.Image | null, badge: Phaser.GameObjects.Image | null): RowParts {
+  private createRowParts(
+    lead: Phaser.GameObjects.Image | null,
+    badge: Phaser.GameObjects.Image | null,
+    perkIcon: Phaser.GameObjects.Image | null,
+  ): RowParts {
     return {
       lead,
       badge,
+      perkIcon,
+      slotName: '',
       name: this.scene.add.text(0, 0, '', uiTextStyle(NAME_PX, this.dpr)),
       rarity: this.scene.add.text(0, 0, '', uiTextStyle(RARITY_PX, this.dpr)),
       detail: this.scene.add.text(0, 0, '', uiTextStyle(DETAIL_PX, this.dpr, false)),
+      slot: this.scene.add.text(0, 0, '', uiTextStyle(SLOT_PX, this.dpr)),
+      perk: this.scene.add.text(0, 0, '', uiTextStyle(PERK_PX, this.dpr, false)),
     };
   }
 
@@ -397,17 +473,30 @@ export class TreasureChestView {
     });
   }
 
-  /** Adds one entry row at (`x`, `y`), `rowW` wide: its icon or swatch, name, badge, rarity name and detail. */
+  /**
+   * Adds one entry row at (`x`, `y`), `rowW` wide: its icon or swatch, name, badge, rarity name and
+   * detail; a Wearable's slot name, perk icon and perk text.
+   */
   private buildRow(entry: ChestEntry, x: number, y: number, rowW: number): ChestRow {
     const lead =
       'label' in entry
         ? addCentredImage(this.scene, this.treasure.swatches[entry.id])
         : addTreasureIcon(this.scene, this.treasure, LEAD_PX, entry.id);
     const badge = addCentredImage(this.scene, this.treasure.badges[BADGE_PX][entry.badge]);
-    const parts = this.createRowParts(lead, badge);
+    const perkIcon = 'perk' in entry ? addCentredImage(this.scene, this.treasure.perks[PERK_ICON_PX][entry.perk.type]) : null;
+    const parts = this.createRowParts(lead, badge, perkIcon);
     fillRowTexts(parts, entry);
     arrangeRow(parts, rowW);
-    const container = this.scene.add.container(x, y, [lead, badge, parts.name, parts.rarity, parts.detail]);
+    const container = this.scene.add.container(x, y, [
+      lead,
+      badge,
+      ...(perkIcon ? [perkIcon] : []),
+      parts.name,
+      parts.rarity,
+      parts.detail,
+      parts.slot,
+      parts.perk,
+    ]);
     this.container.add(container);
     return { container, parts };
   }

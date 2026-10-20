@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-20
+
+### Added
+
+- Your axolotls now have eight outfit slots. Four new Wearables join the Treasure Chest: Tank top, Diving tank, Stripy socks and Flippers (#16).
+- Dress your axolotls on the restyled Outfit tab. Each slot holds one Wearable. Swapping a Wearable sends the old one back to the Treasure Chest, and a Wearable can be on only one axolotl at a time (#16).
+- Wearables give perks, shown with icons. Perk totals have a cap, and an outfit summary shows what your axolotl's outfit does (#16).
+- Perks work only on trips, and only for the explorer: Speed, Regrowth, a longer Tail Dash, Treasure sense, Snack magnet (pulls nearby snacks to you) and Shell (blocks the first hit of a trip) (#16).
+- Go exploring now asks which axolotl goes exploring, and remembers your pick (#16).
+- Wearables are drawn on your axolotls everywhere you see them. They never cover the eyes or gills (#16).
+- Socks and shoes go away with a lost leg and come back when it regrows (#16).
+- Outfits and the explorer are saved on this device (#16).
+
+### Changed
+
+- The treasure icon rows on the arrival and banking cards use more of a wide screen, so every treasure shows (#16).
+
 ## [0.17.0] - 2026-10-20
 
 ### Changed

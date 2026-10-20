@@ -1,6 +1,6 @@
 /**
  * Phaser glue for hidden treasures and rarity (issue #11): bakes the treasure
- * icon and rarity badge painters into CanvasTextures.
+ * icon, rarity badge, Dream swatch and perk icon painters into CanvasTextures.
  * Visual only. No game state, no input, no physics.
  *
  * Same rules as textures.ts: every texture is drawn at `bakeScale` through the
@@ -20,6 +20,7 @@ import {
   type DreamSwatchId,
   type TreasureIconSlug,
 } from './drawTreasures';
+import { PERK_ICON_KINDS, paintPerkIcon, perkIconTextureSize, type PerkIconKind } from './drawUi';
 import { bake, type TexInfo } from './textures';
 
 // ---------------------------------------------------------------------------
@@ -40,6 +41,15 @@ export const treasureIconKey = (slug: TreasureIconSlug, size: TreasureIconSize):
 export const DREAM_SWATCH_SIZE = 32;
 export const dreamSwatchKey = (id: DreamSwatchId, size: number = DREAM_SWATCH_SIZE): string =>
   `dream-swatch-${id}-${size}`;
+/** Perk icon sizes baked, logical px (guide 7b: 24 in rows, 32 in detail views; 18 on the Outfit tab's slot disc). */
+export const PERK_ICON_SIZES = [18, 24, 32] as const;
+export type PerkIconSize = (typeof PERK_ICON_SIZES)[number];
+export type { PerkIconKind } from './drawUi';
+/**
+ * Texture key of a perk icon. `type` is a catalogue `PerkType` string (speed, regrowth, dash,
+ * shell, treasureSense, snackMagnet). Scenes normally read `treasure.perks[size][type]`.
+ */
+export const perkIconKey = (type: PerkIconKind, size: PerkIconSize): string => `perk-${type}-${size}`;
 export const badgeKey = (shape: BadgeShape, size: BadgeSize): string => `badge-${shape}-${size}`;
 
 // ---------------------------------------------------------------------------
@@ -55,9 +65,11 @@ export interface TreasureTextures {
   readonly badges: Readonly<Record<BadgeSize, Readonly<Record<BadgeShape, TexInfo>>>>;
   /** Dream swatch tiles at 32, by Dream colour id. Key `dream-swatch-${id}-32`. Anchor is the tile centre. */
   readonly swatches: Readonly<Record<DreamSwatchId, TexInfo>>;
+  /** Perk icons by size, then perk type (a catalogue `PerkType`). Key `perk-${type}-${size}`. Anchor is the icon centre. */
+  readonly perks: Readonly<Record<PerkIconSize, Readonly<Record<PerkIconKind, TexInfo>>>>;
 }
 
-/** Bake every treasure icon, rarity badge and Dream swatch tile, one texture per size, into the scene's texture manager. */
+/** Bake every treasure icon, rarity badge, Dream swatch tile and perk icon, one texture per size, into the scene's texture manager. */
 export function bakeTreasureTextures(scene: Phaser.Scene, bakeScale: number): TreasureTextures {
   const info: Record<string, TexInfo> = {};
   const add = (t: TexInfo): TexInfo => {
@@ -97,5 +109,21 @@ export function bakeTreasureTextures(scene: Phaser.Scene, bakeScale: number): Tr
     );
   }
 
-  return { info, icons, badges, swatches };
+  const perks = {} as Record<PerkIconSize, Record<PerkIconKind, TexInfo>>;
+  for (const size of PERK_ICON_SIZES) {
+    const byType = {} as Record<PerkIconKind, TexInfo>;
+    const frame = perkIconTextureSize(size);
+    for (const type of PERK_ICON_KINDS) {
+      byType[type] = add(
+        bake(scene, perkIconKey(type, size), frame, bakeScale, (ctx) => {
+          // The painter draws in the box (0, 0) to (size, size); the texture anchor is the box centre.
+          ctx.translate(-size / 2, -size / 2);
+          paintPerkIcon(ctx, type, size);
+        }),
+      );
+    }
+    perks[size] = byType;
+  }
+
+  return { info, icons, badges, swatches, perks };
 }

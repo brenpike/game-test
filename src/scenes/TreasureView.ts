@@ -149,9 +149,18 @@ export class TreasureView {
   /** The placed list `placedById` indexes; the trip keeps the same array until a pot breaks or a trip starts. */
   private placedRef: readonly PlacedFind[] | null = null;
   private placedById: ReadonlyMap<FindId, PlacedFind> = new Map();
+  /** Hint range multiplier from the explorer's Treasure sense perk (PRD B7), 1 with none; fixed for the trip. */
+  private readonly hintMultiplier: number;
 
-  constructor(scene: Phaser.Scene, assets: GameAssets, zone: ZoneLayout, placed: readonly PlacedFind[]) {
+  constructor(
+    scene: Phaser.Scene,
+    assets: GameAssets,
+    zone: ZoneLayout,
+    placed: readonly PlacedFind[],
+    hintMultiplier: number,
+  ) {
     this.assets = assets;
+    this.hintMultiplier = hintMultiplier;
     const hiding = assets.baked.hiding;
     const baseY = BED_TOP + BED_SINK_PX;
     const caveX = (zone.cave.x0 + zone.cave.x1) / 2;
@@ -384,7 +393,8 @@ export class TreasureView {
   }
 
   /**
-   * The hint star shows while its find is in range. Not `eligible` (held or revealed): hidden at
+   * The hint star shows while its find is in range, the range scaled by the Treasure sense
+   * multiplier. Not `eligible` (held or revealed): hidden at
    * once. Full motion: it grows in at full alpha, bobs and spins, and fades out on leaving range; a
    * star back in range mid-fade finishes the fade first, so its alpha never rises. Reduced motion:
    * it appears and leaves at once, still.
@@ -392,7 +402,8 @@ export class TreasureView {
   private renderHint(sprites: FindSprites, find: PlacedFind, eligible: boolean, frame: TreasureFrame): void {
     const ambient = frame.motion.ambient;
     const inRange =
-      eligible && hintVisible(find, sprites.rarity, frame.axolotl, frame.holdings, sprites.hintInRange);
+      eligible &&
+      hintVisible(find, sprites.rarity, frame.axolotl, frame.holdings, sprites.hintInRange, this.hintMultiplier);
     sprites.hintInRange = inRange;
     if (!eligible) {
       sprites.hintShownAge = null;

@@ -452,3 +452,79 @@ describe('trip events contract', () => {
     for (const key of Object.values(TRIP_REGISTRY_KEYS)) expect(registryValues.has(key)).toBe(false);
   });
 });
+
+describe('Shell perk (A22, F11)', () => {
+  const target: Point = { x: 600, y: 200 };
+  const shellCtx = createEncounterContext({ shell: true });
+  const shellNoRegrowCtx = createEncounterContext({ legs: { ...LEGS, regrowTime: 1e9 }, shell: true });
+
+  it('is off by default and starts every encounter unused', () => {
+    expect(createEncounterContext().shell).toBe(false);
+    expect(createEncounter(zone).shellUsed).toBe(false);
+  });
+
+  it('blocks the first connected lunge: no leg lost, protected time and bump cooldown start, shellBlock not hit', () => {
+    const result = stepEncounter(lungingAt(target, createEncounter(zone).legs), target, DT, shellCtx);
+    expect(result.events).toEqual([{ type: 'shellBlock', tilapiaId: 'tilapia-0', from: result.state.tilapias[0].pos }]);
+    expect(presentCount(result.state.legs)).toBe(LEGS.count);
+    expect(result.state.legs.regrowQueue).toEqual([]);
+    expect(result.state.legs.protectedLeft).toBe(LEGS.protectedTime);
+    expect(result.state.bumpCooldownLeft).toBe(TILAPIA.bumpCooldown);
+    expect(result.impulse).toBeUndefined();
+    expect(result.state.shellUsed).toBe(true);
+    expect(result.state.tripOver).toBe(false);
+  });
+
+  it('blocks only once per trip: the next connected lunge costs a leg', () => {
+    const blocked = stepEncounter(lungingAt(target, createEncounter(zone).legs), target, DT, shellCtx).state;
+    const unprotected = { ...blocked.legs, protectedLeft: 0 };
+    const armed: EncounterState = { ...blocked, legs: unprotected, tilapias: lungingAt(target, unprotected).tilapias };
+    const result = stepEncounter(armed, target, DT, shellCtx);
+    expect(result.events.map((event) => event.type)).toEqual(['hit', 'regrowStart']);
+    expect(presentCount(result.state.legs)).toBe(LEGS.count - 1);
+    expect(result.state.shellUsed).toBe(true);
+  });
+
+  it('keeps the Shell unused when protected time already blocks the lunge', () => {
+    const protectedLegs = { ...createEncounter(zone).legs, protectedLeft: 1 };
+    const blockedByTime = stepEncounter(lungingAt(target, protectedLegs), target, DT, shellCtx);
+    expect(typesOf(blockedByTime.events, ['hit', 'shellBlock'])).toEqual([]);
+    expect(blockedByTime.state.shellUsed).toBe(false);
+    expect(presentCount(blockedByTime.state.legs)).toBe(LEGS.count);
+
+    const unprotected = { ...blockedByTime.state.legs, protectedLeft: 0 };
+    const armed: EncounterState = {
+      ...blockedByTime.state,
+      legs: unprotected,
+      tilapias: lungingAt(target, unprotected).tilapias,
+    };
+    const result = stepEncounter(armed, target, DT, shellCtx);
+    expect(typesOf(result.events, ['hit', 'shellBlock'])).toEqual(['shellBlock']);
+    expect(result.state.shellUsed).toBe(true);
+  });
+
+  it('changes nothing without the Shell flag', () => {
+    const result = stepEncounter(lungingAt(target, createEncounter(zone).legs), target, DT);
+    expect(result.events.map((event) => event.type)).toEqual(['hit', 'regrowStart']);
+    expect(presentCount(result.state.legs)).toBe(LEGS.count - 1);
+    expect(result.state.shellUsed).toBe(false);
+  });
+
+  it('still ends the trip after 4 hits that follow the block', () => {
+    const { state, events } = run(createEncounter(zone), inRange, 120, shellNoRegrowCtx, 'carriedHome');
+    const flow = typesOf(events, ['telegraph', 'lunge', 'hit', 'shellBlock', 'protectedEnd', 'carriedHome']);
+    const cycle = ['telegraph', 'lunge', 'hit', 'protectedEnd'];
+    const blockCycle = ['telegraph', 'lunge', 'shellBlock', 'protectedEnd'];
+    expect(flow).toEqual([...blockCycle, ...cycle, ...cycle, ...cycle, 'telegraph', 'lunge', 'hit', 'carriedHome']);
+    const hits = events.filter((event) => event.type === 'hit');
+    expect(hits.map((event) => event.leg)).toEqual([0, 1, 2, 3]);
+    expect(presentCount(state.legs)).toBe(0);
+    expect(state.tripOver).toBe(true);
+  });
+
+  it('is unused again after resetEncounter', () => {
+    const blocked = stepEncounter(lungingAt(target, createEncounter(zone).legs), target, DT, shellCtx).state;
+    expect(blocked.shellUsed).toBe(true);
+    expect(resetEncounter(blocked).shellUsed).toBe(false);
+  });
+});

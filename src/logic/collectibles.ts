@@ -250,3 +250,53 @@ export function collectSnacksAtHead(
   }
   return { items: updated, newly };
 }
+
+function snackCanBePulled(item: Collectible, index: number, head: Point, frame: SnackFrame, radius: number): boolean {
+  if (item.collected) return false;
+  const distance = Math.hypot(drawnSnackX(item, index, frame) - head.x, drawnSnackY(item, index, frame) - head.y);
+  return distance > 0 && distance <= radius;
+}
+
+function pullSnackStep(item: Collectible, index: number, head: Point, frame: SnackFrame, maxStep: number): Collectible {
+  const dx = head.x - drawnSnackX(item, index, frame);
+  const dy = head.y - drawnSnackY(item, index, frame);
+  const distance = Math.hypot(dx, dy);
+  const scale = Math.min(maxStep, distance) / distance;
+  return {
+    ...item,
+    x: clamp(item.x + dx * scale, frame.bounds.minX, frame.bounds.maxX),
+    y: clamp(item.y + dy * scale, frame.bounds.minY, frame.bounds.maxY),
+  };
+}
+
+/**
+ * Snack magnet (PRD A19): moves every uncollected snack drawn within radius of the head reach centre
+ * (inclusive, measured where `frame` draws it, bob included) toward the head by at most `speed` x `dt`
+ * px, never past the head. Moves the stored base `x` and `y`, clamped to `frame.bounds`, so the drift
+ * and bob follow; bobbing off (reduced motion) uses the same rule. Never collects: eating stays
+ * `collectSnacksAtHead`. A snack drawn exactly on the head does not move. Returns null, allocating
+ * nothing, when `radius`, `speed` or `dt` is not above 0 or no snack is pulled; otherwise a new items array
+ * (input untouched) in which unpulled items are the same objects.
+ */
+export function pullSnacksToward(
+  items: readonly Collectible[],
+  head: Point,
+  radius: number,
+  speed: number,
+  dt: number,
+  frame: SnackFrame,
+): Collectible[] | null {
+  if (radius <= 0 || speed <= 0 || dt <= 0) return null;
+  let first = 0;
+  while (first < items.length && !snackCanBePulled(items[first], first, head, frame, radius)) {
+    first += 1;
+  }
+  if (first === items.length) return null;
+  const maxStep = speed * dt;
+  const updated = items.slice();
+  for (let index = first; index < items.length; index++) {
+    if (!snackCanBePulled(items[index], index, head, frame, radius)) continue;
+    updated[index] = pullSnackStep(items[index], index, head, frame, maxStep);
+  }
+  return updated;
+}

@@ -5,6 +5,7 @@ import { CANAL_TREASURES, treasureById } from './catalogue';
 import {
   CARD,
   cardButtonsStacked,
+  cardIconRowWidth,
   cardTextWidth,
   fitCard,
   homeTitleWrapWidth,
@@ -55,7 +56,7 @@ const CANVAS_WIDTHS: readonly number[] = [
 const CANVAS_HEIGHTS: readonly number[] = [
   320, 340, 360, 375, 414, 440, 480, 568, 600, 667, 740, 768, 844, 932,
 ];
-const BANKED_TOTALS: readonly number[] = [0, 1, 9, 20];
+const BANKED_TOTALS: readonly number[] = [0, 1, 9, 24];
 const ARRIVAL_REASONS: readonly ArrivalReason[] = ['carriedHome', 'wentHome', 'areaBeaten'];
 
 /** Catalogue name of the canal special treasure. Throws when the catalogue has no such treasure. */
@@ -204,7 +205,7 @@ function arrivalSections(
       kind: 'body',
       variants: [bodyFit(`${text.body}\n${text.bankedLine}`, textW), bodyFit(`${text.shortBody}\n${text.bankedLine}`, textW)],
     },
-    { kind: 'icons', count: names.length, maxW: textW },
+    { kind: 'icons', count: names.length, maxW: cardIconRowWidth(cssW) },
     { kind: 'actions', height: BUTTON_H },
   ];
 }
@@ -222,7 +223,7 @@ function bankingSections(
   const short = bankedBodyShort(names.length, total, axolotls.rescued.length);
   return [
     { kind: 'fixed', height: titleHeight(BANKED_TITLE, textW) },
-    { kind: 'icons', count: names.length, maxW: textW },
+    { kind: 'icons', count: names.length, maxW: cardIconRowWidth(cssW) },
     { kind: 'body', variants: [bodyFit(full, textW), bodyFit(short, textW)] },
     { kind: 'actions', height: actionsH },
   ];
@@ -361,12 +362,12 @@ describe('card copy fit', () => {
     FIT_TIMEOUT_MS,
   );
 
-  it('fits the carried-home arrival card with 20 returned treasures at 480x360 (PR #35 r4309314686)', () => {
+  it('fits the carried-home arrival card with 24 returned treasures at 480x360 (PR #35 r4309314686)', () => {
     const canvas = { cssW: 480, cssH: 360 };
-    const names = SORTED_NAMES.slice(0, 20);
+    const names = SORTED_NAMES.slice(0, 24);
     for (const total of BANKED_TOTALS) {
       const combination = makeCombination(
-        `arrival carriedHome 480x360 n=20 total=${total}`,
+        `arrival carriedHome 480x360 n=24 total=${total}`,
         canvas,
         names.length,
         arrivalSections('carriedHome', names, total, canvas.cssW),
@@ -407,7 +408,7 @@ describe('area beaten card copy fit (H5, H8)', () => {
       reason: 'areaBeaten',
       returnedNames: [],
       bankedThisTripNames: SORTED_NAMES,
-      bankedTotal: 20,
+      bankedTotal: 24,
       stars: WORST_STARS,
     });
     expect(text.shortBody.length).toBeLessThanOrEqual(34);

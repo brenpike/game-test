@@ -14,6 +14,7 @@ import {
   drawnSnackX,
   drawnSnackY,
   headPoint,
+  pullSnacksToward,
   snackBobY,
   snackDriftMaxSpeed,
   snackDriftOffset,
@@ -548,6 +549,156 @@ describe('collectSnacksAtHead', () => {
     const items = snacksDrawnAt([head], STILL_FRAME);
     const eaten = collectNear(items, items[0], 1).items;
     expect(collectSnacksAtHead(eaten, head, STILL_FRAME)).toBeNull();
+  });
+});
+
+describe('pullSnacksToward', () => {
+  const head: Point = { x: 500, y: 500 };
+  const RADIUS = 150;
+
+  function drawnDistance(items: readonly Collectible[], index: number, frame: SnackFrame): number {
+    return Math.hypot(drawnSnackX(items[index], index, frame) - head.x, drawnSnackY(items[index], index, frame) - head.y);
+  }
+
+  it('moves a snack toward the head at speed x dt', () => {
+    const items = snacksDrawnAt([{ x: head.x + 60, y: head.y + 80 }], STILL_FRAME);
+    const pulled = pullSnacksToward(items, head, RADIUS, 20, 0.5, STILL_FRAME);
+    expect(pulled?.[0].x).toBeCloseTo(head.x + 60 - 6, 9);
+    expect(pulled?.[0].y).toBeCloseTo(head.y + 80 - 8, 9);
+    expect(pulled?.[0].collected).toBe(false);
+  });
+
+  it('pulls a snack at exactly the radius and skips one 0.5 px beyond it', () => {
+    const atEdge = snacksDrawnAt([{ x: head.x + RADIUS, y: head.y }], STILL_FRAME);
+    const beyond = snacksDrawnAt([{ x: head.x + RADIUS + 0.5, y: head.y }], STILL_FRAME);
+    expect(pullSnacksToward(atEdge, head, RADIUS, 10, 1, STILL_FRAME)).not.toBeNull();
+    expect(pullSnacksToward(beyond, head, RADIUS, 10, 1, STILL_FRAME)).toBeNull();
+  });
+
+  it('leaves a snack out of range alone and returns null', () => {
+    const items = snacksDrawnAt([{ x: head.x + 300, y: head.y }], STILL_FRAME);
+    const before = items.map((item) => ({ ...item }));
+    expect(pullSnacksToward(items, head, RADIUS, 100, 1, STILL_FRAME)).toBeNull();
+    expect(items).toEqual(before);
+  });
+
+  it('pulls only the snacks in range and keeps the others as the same objects', () => {
+    const items = snacksDrawnAt(
+      [
+        { x: head.x + 400, y: head.y },
+        { x: head.x - 100, y: head.y },
+        { x: head.x, y: head.y + 900 },
+        { x: head.x, y: head.y - 50 },
+      ],
+      STILL_FRAME,
+    );
+    const pulled = pullSnacksToward(items, head, RADIUS, 10, 1, STILL_FRAME);
+    expect(pulled?.[0]).toBe(items[0]);
+    expect(pulled?.[2]).toBe(items[2]);
+    expect(pulled?.[1].x).toBeCloseTo(head.x - 90, 9);
+    expect(pulled?.[3].y).toBeCloseTo(head.y - 40, 9);
+  });
+
+  it('never moves a snack past the head', () => {
+    const items = snacksDrawnAt([{ x: head.x + 5, y: head.y - 12 }], STILL_FRAME);
+    const pulled = pullSnacksToward(items, head, RADIUS, 1000, 1, STILL_FRAME);
+    expect(pulled?.[0].x).toBeCloseTo(head.x, 9);
+    expect(pulled?.[0].y).toBeCloseTo(head.y, 9);
+  });
+
+  it('does not move a snack drawn exactly on the head and returns null', () => {
+    expect(pullSnacksToward(snacksDrawnAt([head], STILL_FRAME), head, RADIUS, 100, 1, STILL_FRAME)).toBeNull();
+  });
+
+  it('does nothing when dt is 0 (pause) or below', () => {
+    const items = snacksDrawnAt([{ x: head.x + 50, y: head.y }], STILL_FRAME);
+    expect(pullSnacksToward(items, head, RADIUS, 100, 0, STILL_FRAME)).toBeNull();
+    expect(pullSnacksToward(items, head, RADIUS, 100, -0.1, STILL_FRAME)).toBeNull();
+  });
+
+  it('returns null for a radius of 0 or below', () => {
+    const items = snacksDrawnAt([head, { x: head.x + 1, y: head.y }], STILL_FRAME);
+    expect(pullSnacksToward(items, head, 0, 100, 1, STILL_FRAME)).toBeNull();
+    expect(pullSnacksToward(items, head, -5, 100, 1, STILL_FRAME)).toBeNull();
+  });
+
+  it('returns null for a speed of 0 or below, never pushing a snack away', () => {
+    const items = snacksDrawnAt([{ x: head.x + 50, y: head.y }], STILL_FRAME);
+    expect(pullSnacksToward(items, head, RADIUS, 0, 1, STILL_FRAME)).toBeNull();
+    expect(pullSnacksToward(items, head, RADIUS, -10, 1, STILL_FRAME)).toBeNull();
+  });
+
+  it('leaves collected snacks untouched', () => {
+    const items = snacksDrawnAt([{ x: head.x + 50, y: head.y }, { x: head.x - 50, y: head.y }], STILL_FRAME);
+    const eaten = collectNear(items, items[0], 1).items;
+    const pulled = pullSnacksToward(eaten, head, RADIUS, 10, 1, STILL_FRAME);
+    expect(pulled?.[0]).toBe(eaten[0]);
+    expect(pulled?.[1]).not.toBe(eaten[1]);
+    expect(pullSnacksToward([eaten[0]], head, RADIUS, 10, 1, STILL_FRAME)).toBeNull();
+  });
+
+  it('does not mutate the input items', () => {
+    const items = snacksDrawnAt([{ x: head.x + 50, y: head.y }], STILL_FRAME);
+    const before = items.map((item) => ({ ...item }));
+    const pulled = pullSnacksToward(items, head, RADIUS, 10, 1, STILL_FRAME);
+    expect(items).toEqual(before);
+    expect(pulled).not.toBe(items);
+  });
+
+  it('moves the drawn snack the same way with bobbing on and off (reduced motion)', () => {
+    for (const bobbing of [true, false]) {
+      const frame: SnackFrame = { driftT: 1.3, bobT: 0.7, bobbing, drift: CANAL_AREA.snackDrift, bounds: WIDE_BOUNDS };
+      const items = snacksDrawnAt(
+        [
+          { x: head.x + 90, y: head.y + 20 },
+          { x: head.x - 60, y: head.y - 70 },
+        ],
+        frame,
+      );
+      const pulled = pullSnacksToward(items, head, RADIUS, 12, 1, frame);
+      expect(pulled).not.toBeNull();
+      if (pulled === null) continue;
+      items.forEach((item, index) => {
+        expect(drawnDistance(pulled, index, frame)).toBeCloseTo(drawnDistance(items, index, frame) - 12, 9);
+      });
+    }
+  });
+
+  it('measures the range where the snack is drawn, not at its base', () => {
+    const drift: SnackDrift = { amplitudeX: 0, amplitudeY: 40, periodX: 1, periodY: 1 };
+    const frame: SnackFrame = { driftT: 0, bobT: 0, bobbing: false, drift, bounds: WIDE_BOUNDS };
+    const drawnInBaseOut = snacksDrawnAt([{ x: head.x, y: head.y - 30 }], frame);
+    const drawnOutBaseIn = snacksDrawnAt([{ x: head.x, y: head.y + 60 }], frame);
+    expect(Math.abs(drawnInBaseOut[0].y - head.y)).toBe(70);
+    expect(Math.abs(drawnOutBaseIn[0].y - head.y)).toBe(20);
+    expect(pullSnacksToward(drawnInBaseOut, head, 50, 5, 1, frame)).not.toBeNull();
+    expect(pullSnacksToward(drawnOutBaseIn, head, 50, 5, 1, frame)).toBeNull();
+  });
+
+  it('clamps the moved base to the bounds', () => {
+    const bounds: SwimBounds = { minX: 480, maxX: 520, minY: 490, maxY: 510 };
+    const frame: SnackFrame = { ...STILL_FRAME, bounds };
+    const items = snacksDrawnAt([{ x: 500, y: 500 }], frame);
+    const pulled = pullSnacksToward(items, { x: 700, y: 300 }, 400, 100, 1, frame);
+    expect(pulled?.[0].x).toBe(520);
+    expect(pulled?.[0].y).toBe(490);
+  });
+
+  it('never collects: a pulled snack is eaten only once it is inside the head reach', () => {
+    let items = snacksDrawnAt([{ x: head.x + 100, y: head.y }], STILL_FRAME);
+    let ticks = 0;
+    for (;;) {
+      ticks += 1;
+      items = pullSnacksToward(items, head, RADIUS, 10, 1, STILL_FRAME) ?? items;
+      expect(items[0].collected).toBe(false);
+      const result = collectSnacksAtHead(items, head, STILL_FRAME);
+      if (result !== null) {
+        expect(drawnDistance(items, 0, STILL_FRAME)).toBeLessThanOrEqual(SNACK_REACH.radius);
+        break;
+      }
+      expect(drawnDistance(items, 0, STILL_FRAME)).toBeGreaterThan(SNACK_REACH.radius);
+    }
+    expect(ticks).toBe(7);
   });
 });
 

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_LOOK, type AxolotlLook } from './axolotlLook';
 import { suggestedNamesFor } from './axolotlNames';
-import { ownedDreamColours } from './catalogue';
+import { CANAL_TREASURES, WEARABLE_SLOTS, ownedDreamColours, type Wearable } from './catalogue';
 import { REGISTRY_KEYS } from './gameEvents';
 import { STARTER_MORPH, axolotlFindId } from './morphs';
+import { emptyOutfit, type Outfit } from './outfit';
 import {
   SAVE_BACKUP_STORAGE_KEY,
   SAVE_GATE_REGISTRY_KEY,
@@ -24,10 +25,12 @@ import {
   SESSION_REGISTRY_KEY,
   STARTER_AXOLOTL_ID,
   addStarter,
+  chooseExplorer,
   createSession,
   recordTripEnd,
   restyleAxolotl,
   setDreamColour,
+  setOutfit,
   setTankLayout,
   tripStart,
   type HubState,
@@ -116,7 +119,14 @@ describe('save round trip', () => {
     expect(ownedDreamColours(hub.banked)).toEqual(['mint']);
     expect(hub.axolotls.map((axolotl) => axolotl.id)).toEqual([STARTER_AXOLOTL_ID, WILD]);
     expect(hub.axolotls[0].dreamColour).toBeNull();
-    expect(hub.axolotls[1]).toEqual({ id: WILD, morph: 'wild', name: 'Gilly Mae', look: STYLED, dreamColour: 'mint' });
+    expect(hub.axolotls[1]).toEqual({
+      id: WILD,
+      morph: 'wild',
+      name: 'Gilly Mae',
+      look: STYLED,
+      dreamColour: 'mint',
+      outfit: emptyOutfit(),
+    });
     expect(hub.tank.placed.map((placement) => placement.id)).toEqual([PLANT]);
     expect(hub.book).toEqual({ foundMorphs: [STARTER_MORPH, 'wild'], tilapiaCard: true });
     expect(hub.stars).toEqual({ [CANAL_AREA_ID]: { exit: true, special: false, legsOrRescue: true } });
@@ -127,7 +137,7 @@ describe('save round trip', () => {
     const json = JSON.parse(raw);
     expect(Object.keys(json)).toEqual(['version', 'hub']);
     expect(json.version).toBe(SAVE_VERSION);
-    expect(Object.keys(json.hub).sort()).toEqual(['axolotls', 'banked', 'book', 'stars', 'tank']);
+    expect(Object.keys(json.hub).sort()).toEqual(['axolotls', 'banked', 'book', 'explorerId', 'stars', 'tank']);
     const tripOnlyKeys = [
       'eatenSnacks',
       'lastTripSeed',
@@ -507,5 +517,170 @@ describe('save keys', () => {
     const others = [...Object.values(REGISTRY_KEYS), ...Object.values(TRIP_REGISTRY_KEYS), SESSION_REGISTRY_KEY];
     expect(SAVE_GATE_REGISTRY_KEY).toBe('saveGate');
     expect(others).not.toContain(SAVE_GATE_REGISTRY_KEY);
+  });
+});
+
+const WEARABLES = CANAL_TREASURES.filter((treasure): treasure is Wearable => treasure.category === 'wearable');
+const FLIPPERS = 'canal/flippers';
+
+/** An outfit with the canal Wearable for each slot on. */
+function fullOutfit(): Outfit {
+  const outfit = emptyOutfit();
+  for (const wearable of WEARABLES) outfit[wearable.slot] = wearable.id;
+  return outfit;
+}
+
+/**
+ * `playedSession` with every canal Wearable banked, the wild axolotl wearing one in every slot and
+ * chosen as the explorer.
+ */
+function dressedSession(): Session {
+  const played = playedSession();
+  const banked = WEARABLES.map((wearable) => wearable.id);
+  const withWearables = recordTripEnd(played, {
+    banked,
+    rescued: [],
+    eatenSnacks: [],
+    tripSeed: 78,
+    waitingStranded: null,
+    metTilapia: false,
+    returnedFinds: [],
+  });
+  return chooseExplorer(setOutfit(withWearables, WILD, fullOutfit()), WILD);
+}
+
+/** The saved hub of `dressedSession` as plain JSON. */
+function dressedJson(): { version: number; hub: Record<string, unknown> } {
+  return JSON.parse(encodeSave(dressedSession().hub));
+}
+
+/** `dressedJson` with the starter's and the wild axolotl's saved outfits replaced, decoded. */
+function hubWearing(starterOutfit: unknown, wildOutfit: unknown): HubState {
+  const json = dressedJson();
+  const [starter, wild] = json.hub.axolotls as Record<string, unknown>[];
+  const axolotls = [
+    { ...starter, outfit: starterOutfit },
+    { ...wild, outfit: wildOutfit },
+  ];
+  return loadedHub({ ...json, hub: { ...json.hub, axolotls } });
+}
+
+describe('outfits and the explorer (#16, D2)', () => {
+  it('round-trips every one of the eight slots and the chosen explorer', () => {
+    const session = dressedSession();
+    expect(decodeSave(encodeSave(session.hub))).toEqual({ kind: 'loaded', hub: session.hub });
+    const hub = loadedHub(dressedJson());
+    expect(WEARABLE_SLOTS).toHaveLength(8);
+    for (const slot of WEARABLE_SLOTS) {
+      expect(hub.axolotls[1].outfit[slot]).toBe(fullOutfit()[slot]);
+      expect(hub.axolotls[1].outfit[slot]).not.toBeNull();
+    }
+    expect(hub.axolotls[0].outfit).toEqual(emptyOutfit());
+    expect(hub.explorerId).toBe(WILD);
+  });
+
+  it('never saves fields outside the outfit allowlist', () => {
+    const session = dressedSession();
+    const axolotls = session.hub.axolotls.map((axolotl) => ({ ...axolotl, outfit: { ...axolotl.outfit, cape: 'x' } }));
+    const json = JSON.parse(encodeSave({ ...session.hub, axolotls }));
+    expect(Object.keys(json.hub.axolotls[1].outfit).sort()).toEqual([...WEARABLE_SLOTS].sort());
+  });
+
+  it('loads an older save without outfits or an explorer with empty outfits and the first axolotl exploring', () => {
+    const json = dressedJson();
+    const axolotls = (json.hub.axolotls as Record<string, unknown>[]).map((axolotl) => {
+      const older = { ...axolotl };
+      delete older.outfit;
+      return older;
+    });
+    const olderHub: Record<string, unknown> = { ...json.hub, axolotls };
+    delete olderHub.explorerId;
+    const hub = loadedHub({ version: 1, hub: olderHub });
+    const expected = dressedSession().hub;
+    expect(hub).toEqual({
+      ...expected,
+      axolotls: expected.axolotls.map((axolotl) => ({ ...axolotl, outfit: emptyOutfit() })),
+      explorerId: STARTER_AXOLOTL_ID,
+    });
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['null', null],
+    ['not an object', 'canal/sun-hat'],
+  ])('loads an outfit that is %s as empty, keeping the axolotl', (_label, outfit) => {
+    const hub = hubWearing(outfit, fullOutfit());
+    expect(hub.axolotls[0]).toEqual({ ...dressedSession().hub.axolotls[0], outfit: emptyOutfit() });
+    expect(hub.axolotls[1].outfit).toEqual(fullOutfit());
+  });
+
+  it('drops an unknown id, keeping the other slots', () => {
+    const hub = hubWearing(emptyOutfit(), { ...fullOutfit(), head: 'canal/top-hat', neck: 7 });
+    expect(hub.axolotls[1].outfit).toEqual({ ...fullOutfit(), head: null, neck: null });
+  });
+
+  it('drops a Wearable that is not banked', () => {
+    const json = dressedJson();
+    const banked = (json.hub.banked as string[]).filter((id) => id !== FLIPPERS);
+    const hub = loadedHub({ ...json, hub: { ...json.hub, banked } });
+    expect(hub.axolotls[1].outfit).toEqual({ ...fullOutfit(), feet: null });
+  });
+
+  it('drops an id that is not a Wearable', () => {
+    const hub = hubWearing({ ...emptyOutfit(), head: PLANT, back: MINT_SHELL, face: WILD }, fullOutfit());
+    expect(hub.axolotls[0].outfit).toEqual(emptyOutfit());
+  });
+
+  it('drops a Wearable in the wrong slot', () => {
+    const { head, ...rest } = fullOutfit();
+    const hub = hubWearing(emptyOutfit(), { ...rest, head: null, feet: head });
+    expect(hub.axolotls[1].outfit).toEqual({ ...fullOutfit(), head: null, feet: null });
+  });
+
+  it('keeps a Wearable on two axolotls on the first in saved order only', () => {
+    const hatOnly = { ...emptyOutfit(), head: HAT };
+    const hub = hubWearing(hatOnly, fullOutfit());
+    expect(hub.axolotls[0].outfit).toEqual(hatOnly);
+    expect(hub.axolotls[1].outfit).toEqual({ ...fullOutfit(), head: null });
+
+    const json = dressedJson();
+    const [starter, wild] = json.hub.axolotls as Record<string, unknown>[];
+    const reversed = loadedHub({ ...json, hub: { ...json.hub, axolotls: [wild, { ...starter, outfit: hatOnly }] } });
+    expect(reversed.axolotls.map((axolotl) => axolotl.id)).toEqual([WILD, STARTER_AXOLOTL_ID]);
+    expect(reversed.axolotls[0].outfit).toEqual(fullOutfit());
+    expect(reversed.axolotls[1].outfit).toEqual(emptyOutfit());
+  });
+
+  it('loads a missing explorer as the first owned axolotl', () => {
+    const json = dressedJson();
+    expect(json.hub.explorerId).toBe(WILD);
+    const hub: Record<string, unknown> = { ...json.hub };
+    delete hub.explorerId;
+    expect(loadedHub({ ...json, hub }).explorerId).toBe(STARTER_AXOLOTL_ID);
+  });
+
+  it.each([
+    ['an axolotl not owned', axolotlFindId('copper')],
+    ['not a string', 7],
+    ['null', null],
+    ['a prototype key', '__proto__'],
+  ])('loads an explorer that is %s as the first owned axolotl', (_label, explorerId) => {
+    const json = dressedJson();
+    expect(json.hub.explorerId).toBe(WILD);
+    expect(loadedHub({ ...json, hub: { ...json.hub, explorerId } }).explorerId).toBe(STARTER_AXOLOTL_ID);
+  });
+
+  it('loads the explorer as the first kept axolotl when its own entry was dropped', () => {
+    const json = dressedJson();
+    const [starter] = json.hub.axolotls as Record<string, unknown>[];
+    const hub = loadedHub({ ...json, hub: { ...json.hub, axolotls: [starter], explorerId: WILD } });
+    expect(hub.explorerId).toBe(STARTER_AXOLOTL_ID);
+  });
+
+  it('loads no explorer when no axolotl is owned, as after Start over', () => {
+    expect(hubWith('axolotls', []).explorerId).toBeNull();
+    const fresh = createSession().hub;
+    expect(loadedHub(JSON.parse(encodeSave(fresh)))).toEqual(fresh);
+    expect(fresh.explorerId).toBeNull();
   });
 });
