@@ -173,6 +173,31 @@ export interface HintTuning {
   hysteresis: number;
 }
 
+/** Which end of a pool's distances to the tilapia a rarity favours. */
+export type RiskSide = 'nearer' | 'farther';
+
+/** A band of distances in px from a hiding spot to the nearest tilapia route. */
+export interface RiskBand {
+  /** Lower edge in px; a spot must be farther than this (exclusive). */
+  over: number;
+  /** Upper edge in px; a spot may be exactly this far (inclusive). */
+  upTo: number;
+}
+
+/** How close each rarity's hiding spots sit to the tilapia: rarer treasures sit nearer (issue #70). */
+export interface RiskTuning {
+  /** Each rarity's band of distances from a spot to the nearest point of any tilapia route. */
+  band: Readonly<Record<Rarity, Readonly<RiskBand>>>;
+  /** Least distance in px from a spot to any route waypoint, where a tilapia turns. */
+  turnClearance: number;
+  /** Spot weight for the pool spot at the end away from the rarity's favoured side. */
+  unfavouredWeight: number;
+  /** Spot weight for the pool spot at the rarity's favoured side; weights between are linear in distance. */
+  favouredWeight: number;
+  /** Each rarity's favoured side: nearer to or farther from the tilapia. */
+  favoured: Readonly<Record<Rarity, RiskSide>>;
+}
+
 export const SWIM: Readonly<SwimTuning> = Object.freeze({
   maxSpeed: 150,
   accel: 520,
@@ -309,4 +334,25 @@ export const SNACK_REACH: Readonly<SnackReachTuning> = Object.freeze({
 export const HINTS: Readonly<HintTuning> = Object.freeze({
   range: Object.freeze({ common: 150, rare: 115, epic: 85, legendary: 60 }),
   hysteresis: 16,
+});
+
+/**
+ * Provisional risk values (issue #70). Bands of distance to the nearest tilapia route: Common over
+ * 200 px, Rare over 140 and up to 200, Epic over 70 and up to 140, Legendary up to 70. The Rare
+ * and Epic edge is the lunge range, so only Epic and Legendary sit where a lunge can start. Every
+ * spot keeps 60 px from the waypoints where a tilapia turns. Within a pool, the spot at the
+ * favoured side is picked twice as often as the spot at the other end: Common favours farther,
+ * the rarer three favour nearer.
+ */
+export const RISK: Readonly<RiskTuning> = Object.freeze({
+  band: Object.freeze({
+    common: Object.freeze({ over: 200, upTo: Infinity }),
+    rare: Object.freeze({ over: 140, upTo: 200 }),
+    epic: Object.freeze({ over: 70, upTo: 140 }),
+    legendary: Object.freeze({ over: -Infinity, upTo: 70 }),
+  }),
+  turnClearance: 60,
+  unfavouredWeight: 1,
+  favouredWeight: 2,
+  favoured: Object.freeze({ common: 'farther', rare: 'nearer', epic: 'nearer', legendary: 'nearer' }),
 });

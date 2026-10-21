@@ -14,9 +14,7 @@ export const DEFAULT_ZONE_SEED = 0xa70107;
 export const CANAL_AREA_ID = 'canal';
 
 const TAU = Math.PI * 2;
-const REED_CLUSTER_ANCHORS = [320, 600, 1320, 1660];
-const REED_CLUSTER_JITTER = 80;
-const REED_CLUSTER_WIDTH = 60;
+const REED_SPREAD = 20;
 const REED_PATCH_PAD = 10;
 const REED_DRAG_MUL = 2.5;
 const SNACK_WORMS = 10;
@@ -28,45 +26,69 @@ const SNACK_MAX_ATTEMPTS = 400;
 const PAD_COUNT = 6;
 const SAFE_AREA: Readonly<SafeArea> = Object.freeze({ x0: 40, x1: 300, y0: SURF, y1: BED_TOP });
 const HOME_SPOT_RADIUS = 72;
-const REED_SPOT_SHALLOW_Y = 172;
-const REED_SPOT_MID_Y = 228;
-const REED_SPOT_DEEP_Y = 288;
+const PAD_SPOT_INDEX = 2;
 const PAD_SPOT_Y = 100;
 const SPOT_HOME_CLEARANCE = FINDS.pickupRadius + 8;
 const CAVE_SPOTS: readonly (readonly [number, number, Rarity, boolean])[] = [
-  [1500, 230, 'epic', false],
-  [1558, 230, 'legendary', true],
-  [1616, 230, 'epic', false],
-  [1500, 288, 'legendary', true],
-  [1558, 288, 'epic', false],
-  [1616, 288, 'legendary', true],
+  [1492, 206, 'legendary', true],
+  [1552, 206, 'legendary', true],
+  [1612, 206, 'legendary', true],
+  [1492, 266, 'epic', false],
+  [1552, 266, 'epic', false],
+  [1612, 266, 'epic', false],
 ];
 const CURRENT_SPOTS: readonly (readonly [number, number, Rarity, boolean])[] = [
-  [1190, 162, 'epic', false],
-  [1260, 162, 'legendary', true],
-  [1190, 220, 'legendary', true],
-  [1260, 220, 'epic', false],
-  [1190, 278, 'epic', false],
-  [1260, 278, 'legendary', true],
+  [1200, 140, 'legendary', true],
+  [1200, 200, 'legendary', true],
+  [1200, 260, 'legendary', true],
+  [1260, 140, 'epic', false],
+  [1260, 200, 'epic', false],
+  [1260, 260, 'epic', false],
+];
+
+/** One row of reed hiding spots: a spot at this depth in every column of its bed. */
+interface ReedSpotRow {
+  y: number;
+  rarity: Rarity;
+  tag: string;
+}
+
+/** A reed bed: the first reeds stand on its columns, and its hiding spots sit on them. */
+interface ReedBed {
+  columns: readonly number[];
+  rows: readonly ReedSpotRow[];
+}
+
+const REED_BEDS: readonly ReedBed[] = [
+  {
+    columns: [316, 372, 428, 484],
+    rows: [
+      { y: 172, rarity: 'common', tag: 'a' },
+      { y: 228, rarity: 'common', tag: 'b' },
+    ],
+  },
+  { columns: [580, 640], rows: [{ y: 110, rarity: 'rare', tag: 'top' }] },
+  { columns: [1316, 1376, 1436], rows: [{ y: 288, rarity: 'rare', tag: 'deep' }] },
+  { columns: [1700], rows: [{ y: 288, rarity: 'rare', tag: 'deep' }] },
 ];
 const TILAPIA_ROUTES: readonly (readonly (readonly [number, number])[])[] = [
   [
-    [460, 170],
-    [720, 140],
-    [700, 250],
-    [480, 240],
+    [700, 262],
+    [790, 262],
+    [790, 296],
+    [700, 296],
   ],
   [
-    [1010, 150],
-    [1240, 170],
-    [1230, 260],
-    [1020, 250],
+    [1080, 100],
+    [1145, 100],
+    [1145, 296],
+    [1080, 296],
   ],
   [
-    [1530, 150],
-    [1760, 170],
-    [1750, 250],
-    [1540, 240],
+    [1432, 110],
+    [1588, 110],
+    [1588, 144],
+    [1432, 144],
   ],
 ];
 
@@ -230,13 +252,14 @@ export const MAIN_PATH: readonly Readonly<Point>[] = Object.freeze([
 
 /**
  * Fixed canal stranding places (PRD C2), left to right: near the start above the first reeds, on
- * the bed under the current, between the past-current stones and the cave, and at the far end.
- * Area data, never seeded.
+ * the bed under the current, in the open water above the reeds between the past-current stones and
+ * the cave, and at the far end. Every place is at least 80 px from every tilapia route. Area data,
+ * never seeded.
  */
 export const STRANDING_PLACES: readonly Readonly<StrandingPlace>[] = Object.freeze([
   Object.freeze({ id: `${CANAL_AREA_ID}/strand-1`, x: 320, y: 110 }),
   Object.freeze({ id: `${CANAL_AREA_ID}/strand-2`, x: 880, y: 292 }),
-  Object.freeze({ id: `${CANAL_AREA_ID}/strand-3`, x: 1440, y: 140 }),
+  Object.freeze({ id: `${CANAL_AREA_ID}/strand-3`, x: 1340, y: 220 }),
   Object.freeze({ id: `${CANAL_AREA_ID}/strand-4`, x: 1860, y: 260 }),
 ]);
 
@@ -263,14 +286,31 @@ export function inHomeSpot(pos: Point, spot: HomeSpot): boolean {
   return Math.hypot(pos.x - spot.x, pos.y - spot.y) <= spot.radius;
 }
 
-function buildReedCluster(rand: () => number, anchor: number, firstIndex: number): ReedSpec[] {
-  const left = anchor + rand() * REED_CLUSTER_JITTER;
+/**
+ * One reed's base x: the first reeds stand on the bed's columns, the rest anywhere from
+ * REED_SPREAD before the first column to REED_SPREAD past the last. Always makes exactly one draw.
+ */
+function reedBaseX(rand: () => number, bed: ReedBed, index: number): number {
+  const draw = rand();
+  if (index < bed.columns.length) {
+    return bed.columns[index];
+  }
+  const left = Math.min(...bed.columns) - REED_SPREAD;
+  const right = Math.max(...bed.columns) + REED_SPREAD;
+  return left + draw * (right - left);
+}
+
+function buildReedCluster(rand: () => number, bed: ReedBed, firstIndex: number): ReedSpec[] {
+  // INVARIANT: each bed makes the same rand() draws in the same order as the old jittered clusters
+  // (one spare draw where the jitter was, the count, then 11 per reed), so snacks and pads stay
+  // identical for every seed.
+  rand();
   const count = rand() < 0.5 ? 5 : 6;
   const reeds: ReedSpec[] = [];
   for (let i = 0; i < count; i++) {
     reeds.push({
       id: `reed-${firstIndex + i}`,
-      bx: left + rand() * REED_CLUSTER_WIDTH,
+      bx: reedBaseX(rand, bed, i),
       by: 326 + rand() * 8,
       tipY: 34 + rand() * 38,
       lean: (rand() - 0.5) * 16,
@@ -377,7 +417,8 @@ function buildPads(rand: () => number): PadSpec[] {
 
 /**
  * Three fixed patrol loops, ids `tilapia-0` to `tilapia-2`, left to right along the canal. The
- * closest two routes are 290.2 px apart, more than twice the lunge range of 140 px.
+ * closest two routes, `tilapia-1` and `tilapia-2`, are 287 px apart, more than twice the lunge
+ * range of 140 px.
  */
 function buildTilapiaRoutes(): TilapiaRoute[] {
   return TILAPIA_ROUTES.map((points, i) => ({
@@ -401,28 +442,29 @@ function fixedSpots(
   }));
 }
 
-function derivedSpotCandidates(reedPatches: ReedPatch[], pads: PadSpec[]): HidingSpot[] {
-  const candidates: HidingSpot[] = [];
-  reedPatches.forEach((patch, p) => {
-    const cx = (patch.x0 + patch.x1) / 2;
-    const base = { cover: 'reeds' as const, container: false, x: cx };
-    candidates.push(
-      { ...base, id: `${CANAL_AREA_ID}/spot-reeds-${p}-a`, rarity: 'common', y: REED_SPOT_SHALLOW_Y },
-      { ...base, id: `${CANAL_AREA_ID}/spot-reeds-${p}-b`, rarity: 'common', y: REED_SPOT_MID_Y },
-      { ...base, id: `${CANAL_AREA_ID}/spot-reeds-${p}-deep`, rarity: 'rare', y: REED_SPOT_DEEP_Y },
-    );
-  });
-  for (let i = 1; i < pads.length; i++) {
-    candidates.push({
-      id: `${CANAL_AREA_ID}/spot-pad-${i}`,
-      cover: 'pad',
-      rarity: 'rare',
+/** One bed's reed hiding spots: one per row and column, ids `spot-reeds-<bed>-<column>-<tag>`. */
+function bedSpots(bed: ReedBed, bedIndex: number): HidingSpot[] {
+  return bed.rows.flatMap((row) =>
+    bed.columns.map((column): HidingSpot => ({
+      id: `${CANAL_AREA_ID}/spot-reeds-${bedIndex}-${column}-${row.tag}`,
+      cover: 'reeds',
+      rarity: row.rarity,
       container: false,
-      x: pads[i].x,
-      y: PAD_SPOT_Y,
-    });
-  }
-  return candidates;
+      x: column,
+      y: row.y,
+    })),
+  );
+}
+
+function padSpot(pads: PadSpec[]): HidingSpot {
+  return {
+    id: `${CANAL_AREA_ID}/spot-pad-${PAD_SPOT_INDEX}`,
+    cover: 'pad',
+    rarity: 'rare',
+    container: false,
+    x: pads[PAD_SPOT_INDEX].x,
+    y: PAD_SPOT_Y,
+  };
 }
 
 function isSpotClear(candidate: HidingSpot, accepted: HidingSpot[], safeArea: SafeArea, homeSpot: HomeSpot): boolean {
@@ -438,16 +480,19 @@ function isSpotClear(candidate: HidingSpot, accepted: HidingSpot[], safeArea: Sa
 }
 
 /**
- * Hiding spots: the fixed cave and past-current spots (area data, never dropped), then reed and
- * pad spots derived from this seed's patches and pads. A derived spot that is out of the water,
- * in the safe area, near the ring or too close to an accepted spot is dropped.
+ * Hiding spots: the fixed cave, past-current and reed spots (area data, never dropped), then the
+ * spot under pad PAD_SPOT_INDEX, whose x comes from this seed's pads. The pad spot is dropped if it
+ * is out of the water, in the safe area, near the ring or too close to an accepted spot.
  */
-function buildSpots(reedPatches: ReedPatch[], pads: PadSpec[], safeArea: SafeArea, homeSpot: HomeSpot): HidingSpot[] {
-  const spots = [...fixedSpots(CAVE_SPOTS, 'cave', 'cave'), ...fixedSpots(CURRENT_SPOTS, 'current', 'pastCurrent')];
-  for (const candidate of derivedSpotCandidates(reedPatches, pads)) {
-    if (isSpotClear(candidate, spots, safeArea, homeSpot)) {
-      spots.push(candidate);
-    }
+function buildSpots(pads: PadSpec[], safeArea: SafeArea, homeSpot: HomeSpot): HidingSpot[] {
+  const spots = [
+    ...fixedSpots(CAVE_SPOTS, 'cave', 'cave'),
+    ...fixedSpots(CURRENT_SPOTS, 'current', 'pastCurrent'),
+    ...REED_BEDS.flatMap(bedSpots),
+  ];
+  const candidate = padSpot(pads);
+  if (isSpotClear(candidate, spots, safeArea, homeSpot)) {
+    spots.push(candidate);
   }
   return spots;
 }
@@ -467,8 +512,8 @@ export function buildCanalZone(seed: number = DEFAULT_ZONE_SEED): ZoneLayout {
 
   const reeds: ReedSpec[] = [];
   const reedPatches: ReedPatch[] = [];
-  for (const anchor of REED_CLUSTER_ANCHORS) {
-    const cluster = buildReedCluster(rand, anchor, reeds.length);
+  for (const bed of REED_BEDS) {
+    const cluster = buildReedCluster(rand, bed, reeds.length);
     reeds.push(...cluster);
     reedPatches.push(patchAroundReeds(cluster));
   }
@@ -481,7 +526,7 @@ export function buildCanalZone(seed: number = DEFAULT_ZONE_SEED): ZoneLayout {
   const pads = buildPads(rand);
   const safeArea: SafeArea = { ...SAFE_AREA };
   const homeSpot: HomeSpot = { x: start.x, y: start.y, radius: HOME_SPOT_RADIUS };
-  const spots = buildSpots(reedPatches, pads, safeArea, homeSpot);
+  const spots = buildSpots(pads, safeArea, homeSpot);
 
   return {
     areaId: CANAL_AREA_ID,

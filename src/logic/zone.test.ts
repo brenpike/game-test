@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { areaById } from './areas';
-import { CANAL_TREASURES, treasureById } from './catalogue';
-import { coversAt, isDeep, spotMatchesLabels } from './hiding';
+import { CANAL_TREASURES, RARITIES, treasureById } from './catalogue';
+import { coversAt, inReeds, isDeep, routeDistance, spotMatchesLabels, turnDistance } from './hiding';
 import { inSafeArea } from './tilapia';
-import { FINDS, TILAPIA, treasuresPerTrip, tripTreasureTuning } from './tuning';
+import { FINDS, RISK, TILAPIA, treasuresPerTrip, tripTreasureTuning } from './tuning';
 import {
   BED_TOP,
   CANAL_AREA_ID,
@@ -29,23 +29,40 @@ import {
 const EXTRA_SEEDS = [1, 2, 3, 42, 1234, 0xdeadbeef, 0x12345678, 987654321];
 const ALL_SEEDS = [0xa70107, ...EXTRA_SEEDS];
 const FIXED_SPOTS: readonly HidingSpot[] = [
-  { id: 'canal/spot-cave-1', cover: 'cave', rarity: 'epic', container: false, x: 1500, y: 230 },
-  { id: 'canal/spot-cave-2', cover: 'cave', rarity: 'legendary', container: true, x: 1558, y: 230 },
-  { id: 'canal/spot-cave-3', cover: 'cave', rarity: 'epic', container: false, x: 1616, y: 230 },
-  { id: 'canal/spot-cave-4', cover: 'cave', rarity: 'legendary', container: true, x: 1500, y: 288 },
-  { id: 'canal/spot-cave-5', cover: 'cave', rarity: 'epic', container: false, x: 1558, y: 288 },
-  { id: 'canal/spot-cave-6', cover: 'cave', rarity: 'legendary', container: true, x: 1616, y: 288 },
-  { id: 'canal/spot-current-1', cover: 'pastCurrent', rarity: 'epic', container: false, x: 1190, y: 162 },
-  { id: 'canal/spot-current-2', cover: 'pastCurrent', rarity: 'legendary', container: true, x: 1260, y: 162 },
-  { id: 'canal/spot-current-3', cover: 'pastCurrent', rarity: 'legendary', container: true, x: 1190, y: 220 },
-  { id: 'canal/spot-current-4', cover: 'pastCurrent', rarity: 'epic', container: false, x: 1260, y: 220 },
-  { id: 'canal/spot-current-5', cover: 'pastCurrent', rarity: 'epic', container: false, x: 1190, y: 278 },
-  { id: 'canal/spot-current-6', cover: 'pastCurrent', rarity: 'legendary', container: true, x: 1260, y: 278 },
+  { id: 'canal/spot-cave-1', cover: 'cave', rarity: 'legendary', container: true, x: 1492, y: 206 },
+  { id: 'canal/spot-cave-2', cover: 'cave', rarity: 'legendary', container: true, x: 1552, y: 206 },
+  { id: 'canal/spot-cave-3', cover: 'cave', rarity: 'legendary', container: true, x: 1612, y: 206 },
+  { id: 'canal/spot-cave-4', cover: 'cave', rarity: 'epic', container: false, x: 1492, y: 266 },
+  { id: 'canal/spot-cave-5', cover: 'cave', rarity: 'epic', container: false, x: 1552, y: 266 },
+  { id: 'canal/spot-cave-6', cover: 'cave', rarity: 'epic', container: false, x: 1612, y: 266 },
+  { id: 'canal/spot-current-1', cover: 'pastCurrent', rarity: 'legendary', container: true, x: 1200, y: 140 },
+  { id: 'canal/spot-current-2', cover: 'pastCurrent', rarity: 'legendary', container: true, x: 1200, y: 200 },
+  { id: 'canal/spot-current-3', cover: 'pastCurrent', rarity: 'legendary', container: true, x: 1200, y: 260 },
+  { id: 'canal/spot-current-4', cover: 'pastCurrent', rarity: 'epic', container: false, x: 1260, y: 140 },
+  { id: 'canal/spot-current-5', cover: 'pastCurrent', rarity: 'epic', container: false, x: 1260, y: 200 },
+  { id: 'canal/spot-current-6', cover: 'pastCurrent', rarity: 'epic', container: false, x: 1260, y: 260 },
+];
+/** Every reed spot, in build order: bed index, column x, depth y, rarity and id tag. */
+const REED_SPOTS: readonly (readonly [number, number, number, 'common' | 'rare', string])[] = [
+  [0, 316, 172, 'common', 'a'],
+  [0, 372, 172, 'common', 'a'],
+  [0, 428, 172, 'common', 'a'],
+  [0, 484, 172, 'common', 'a'],
+  [0, 316, 228, 'common', 'b'],
+  [0, 372, 228, 'common', 'b'],
+  [0, 428, 228, 'common', 'b'],
+  [0, 484, 228, 'common', 'b'],
+  [1, 580, 110, 'rare', 'top'],
+  [1, 640, 110, 'rare', 'top'],
+  [2, 1316, 288, 'rare', 'deep'],
+  [2, 1376, 288, 'rare', 'deep'],
+  [2, 1436, 288, 'rare', 'deep'],
+  [3, 1700, 288, 'rare', 'deep'],
 ];
 const STRANDING_SNAPSHOT: readonly StrandingPlace[] = [
   { id: 'canal/strand-1', x: 320, y: 110 },
   { id: 'canal/strand-2', x: 880, y: 292 },
-  { id: 'canal/strand-3', x: 1440, y: 140 },
+  { id: 'canal/strand-3', x: 1340, y: 220 },
   { id: 'canal/strand-4', x: 1860, y: 260 },
 ];
 const STRANDING_ROUTE_CLEARANCE = 80;
@@ -95,28 +112,28 @@ const TILAPIA_ROUTES: readonly TilapiaRoute[] = [
   {
     id: 'tilapia-0',
     waypoints: [
-      { x: 460, y: 170 },
-      { x: 720, y: 140 },
-      { x: 700, y: 250 },
-      { x: 480, y: 240 },
+      { x: 700, y: 262 },
+      { x: 790, y: 262 },
+      { x: 790, y: 296 },
+      { x: 700, y: 296 },
     ],
   },
   {
     id: 'tilapia-1',
     waypoints: [
-      { x: 1010, y: 150 },
-      { x: 1240, y: 170 },
-      { x: 1230, y: 260 },
-      { x: 1020, y: 250 },
+      { x: 1080, y: 100 },
+      { x: 1145, y: 100 },
+      { x: 1145, y: 296 },
+      { x: 1080, y: 296 },
     ],
   },
   {
     id: 'tilapia-2',
     waypoints: [
-      { x: 1530, y: 150 },
-      { x: 1760, y: 170 },
-      { x: 1750, y: 250 },
-      { x: 1540, y: 240 },
+      { x: 1432, y: 110 },
+      { x: 1588, y: 110 },
+      { x: 1588, y: 144 },
+      { x: 1432, y: 144 },
     ],
   },
 ];
@@ -285,8 +302,9 @@ describe('buildCanalZone', () => {
     const crossing: TilapiaRoute = { id: 'c', waypoints: [{ x: 5, y: -5 }, { x: 5, y: 15 }] };
     expect(routeGap(square, left)).toBeCloseTo(20, 9);
     expect(routeGap(square, crossing)).toBe(0);
-    const [first, second] = buildCanalZone().tilapiaRoutes;
-    expect(routeGap(first, second)).toBeCloseTo(290.2, 1);
+    const [first, second, third] = buildCanalZone().tilapiaRoutes;
+    expect(routeGap(first, second)).toBeCloseTo(290.0, 1);
+    expect(routeGap(second, third)).toBeCloseTo(287.0, 1);
   });
 
   it('builds the safe area and routes without changing seeded content', () => {
@@ -298,11 +316,11 @@ describe('buildCanalZone', () => {
 });
 
 describe('seeded content golden pin (v0.4.0)', () => {
-  it('keeps reeds, pads and snacks identical for the default seed', () => {
+  it('keeps pads and snacks identical and pins the reeds for the default seed', () => {
     const zone = buildCanalZone();
     expect(zone.reeds).toHaveLength(22);
-    expect(zone.reeds[0].bx).toBeCloseTo(364.4302624510601, 9);
-    expect(zone.reeds[zone.reeds.length - 1].bx).toBeCloseTo(1774.447806943208, 9);
+    expect(zone.reeds[0].bx).toBe(316);
+    expect(zone.reeds[zone.reeds.length - 1].bx).toBeCloseTo(1715.3372168540955, 9);
 
     const padXs = [152.54123428836465, 562.476081745699, 777.9833907261491, 1064.4019156508148, 1536.3621501810849, 1760.0520987901837];
     expect(zone.pads).toHaveLength(padXs.length);
@@ -320,10 +338,10 @@ describe('seeded content golden pin (v0.4.0)', () => {
     expect(lastSnack.y).toBeCloseTo(213.23013308318332, 9);
 
     const patchXs = [
-      [347.7242391509935, 411.4360785158351],
-      [641.7804688028991, 707.7564802039415],
-      [1346.841099866666, 1404.1428034985438],
-      [1713.7261524302885, 1784.447806943208],
+      [302.3313205689192, 494.1486609131098],
+      [564.2870107628405, 667.0625178907067],
+      [1306, 1446],
+      [1669.1009571608156, 1725.3372168540955],
     ];
     expect(zone.reedPatches).toHaveLength(patchXs.length);
     patchXs.forEach(([x0, x1], i) => {
@@ -411,6 +429,35 @@ describe('hiding spots', () => {
     }
   });
 
+  it.each(ALL_SEEDS)('puts every spot in its rarity band of distance to the tilapia, with its cover and B6 rules, for seed %i', (seed) => {
+    const zone = buildCanalZone(seed);
+    for (const spot of zone.spots) {
+      const distance = routeDistance(spot, zone.tilapiaRoutes);
+      const band = RISK.band[spot.rarity];
+      const where = `${spot.id} (${spot.rarity}) is ${distance.toFixed(1)} px from a route`;
+      expect(distance, where).toBeGreaterThan(band.over);
+      expect(distance, where).toBeLessThanOrEqual(band.upTo);
+      expect(spotMatchesLabels(spot, zone), where).toBe(true);
+    }
+  });
+
+  it.each(ALL_SEEDS)('keeps every spot at least the turn clearance from every waypoint for seed %i', (seed) => {
+    const zone = buildCanalZone(seed);
+    for (const spot of zone.spots) {
+      const distance = turnDistance(spot, zone.tilapiaRoutes);
+      expect(distance, `${spot.id} is ${distance.toFixed(1)} px from a waypoint`).toBeGreaterThanOrEqual(RISK.turnClearance);
+    }
+  });
+
+  it.each(ALL_SEEDS)('keeps at least 6 spots in every rarity pool for seed %i', (seed) => {
+    const zone = buildCanalZone(seed);
+    const counts = Object.fromEntries(RARITIES.map((rarity) => [rarity, zone.spots.filter((spot) => spot.rarity === rarity).length]));
+    expect(counts).toEqual({ common: 8, rare: 7, epic: 6, legendary: 6 });
+    for (const find of zone.finds) {
+      expect(find.pool.length, find.id).toBeGreaterThanOrEqual(6);
+    }
+  });
+
   it.each(ALL_SEEDS)('places spots in the water, outside the safe area, clear of the ring and spaced for seed %i', (seed) => {
     const zone = buildCanalZone(seed);
     const bounds = swimBounds();
@@ -454,8 +501,8 @@ describe('hiding spots', () => {
     for (const spot of zone.spots) {
       expect(coversAt(spot, zone)).toContain(spot.cover);
     }
-    expect(zone.spots.filter((spot) => spot.cover === 'reeds')).toHaveLength(12);
-    expect(zone.spots.filter((spot) => spot.cover === 'pad')).toHaveLength(5);
+    expect(zone.spots.filter((spot) => spot.cover === 'reeds')).toHaveLength(14);
+    expect(zone.spots.filter((spot) => spot.cover === 'pad')).toHaveLength(1);
   });
 
   it.each(EXTRA_SEEDS)('keeps finds, fixed spots, cave, path and Home Spot identical for seed %i', (seed) => {
@@ -471,19 +518,26 @@ describe('hiding spots', () => {
     expect(zone.areaId).toBe(base.areaId);
   });
 
-  it.each(ALL_SEEDS)('derives reed and pad spot positions from the seed patches and pads for seed %i', (seed) => {
+  it.each(ALL_SEEDS)('keeps reed spots on fixed columns inside their bed patch, and one spot under pad 2, for seed %i', (seed) => {
     const zone = buildCanalZone(seed);
     const spotById = new Map(zone.spots.map((spot) => [spot.id, spot]));
-    zone.reedPatches.forEach((patch, p) => {
-      const cx = (patch.x0 + patch.x1) / 2;
-      expect(spotById.get(`canal/spot-reeds-${p}-a`)).toMatchObject({ x: cx, y: 172, rarity: 'common' });
-      expect(spotById.get(`canal/spot-reeds-${p}-b`)).toMatchObject({ x: cx, y: 228, rarity: 'common' });
-      expect(spotById.get(`canal/spot-reeds-${p}-deep`)).toMatchObject({ x: cx, y: 288, rarity: 'rare' });
-    });
-    for (let i = 1; i < zone.pads.length; i++) {
-      expect(spotById.get(`canal/spot-pad-${i}`)).toMatchObject({ x: zone.pads[i].x, y: 100, rarity: 'rare' });
+    for (const [bed, x, y, rarity, tag] of REED_SPOTS) {
+      const spot = spotById.get(`canal/spot-reeds-${bed}-${x}-${tag}`);
+      expect(spot).toEqual({ id: `canal/spot-reeds-${bed}-${x}-${tag}`, cover: 'reeds', rarity, container: false, x, y });
+      expect(inReeds({ x, y }, [zone.reedPatches[bed]])).toBe(true);
     }
-    expect(spotById.has('canal/spot-pad-0')).toBe(false);
+    const reedIds = zone.spots.filter((spot) => spot.cover === 'reeds').map((spot) => spot.id);
+    expect(reedIds).toEqual(REED_SPOTS.map(([bed, x, , , tag]) => `canal/spot-reeds-${bed}-${x}-${tag}`));
+    expect(zone.spots.filter((spot) => spot.cover === 'pad')).toEqual([
+      { id: 'canal/spot-pad-2', cover: 'pad', rarity: 'rare', container: false, x: zone.pads[2].x, y: 100 },
+    ]);
+    expect(zone.pads[2].x).toBeGreaterThanOrEqual(700);
+    expect(zone.pads[2].x).toBeLessThan(900);
+  });
+
+  it.each(EXTRA_SEEDS)('keeps every reed spot identical to the default seed for seed %i', (seed) => {
+    const reedSpots = (layout: ZoneLayout): HidingSpot[] => layout.spots.filter((spot) => spot.cover === 'reeds');
+    expect(reedSpots(buildCanalZone(seed))).toEqual(reedSpots(buildCanalZone()));
   });
 
   it('pins the fixed cave and past-current spots, the cave and the main path', () => {
@@ -541,8 +595,8 @@ describe('stranding places', () => {
     }
   });
 
-  it('keeps every place at least SPOT_MIN_SPACING from every hiding spot of the default seed', () => {
-    const zone = buildCanalZone();
+  it.each(ALL_SEEDS)('keeps every place at least SPOT_MIN_SPACING from every hiding spot for seed %i', (seed) => {
+    const zone = buildCanalZone(seed);
     for (const place of zone.strandingPlaces) {
       for (const spot of zone.spots) {
         expect(Math.hypot(place.x - spot.x, place.y - spot.y)).toBeGreaterThanOrEqual(SPOT_MIN_SPACING);
@@ -550,12 +604,13 @@ describe('stranding places', () => {
     }
   });
 
-  it('keeps every place at least 80 px from every tilapia route segment', () => {
-    const zone = buildCanalZone();
+  it.each(ALL_SEEDS)('keeps every place at least 80 px from every tilapia route segment for seed %i', (seed) => {
+    const zone = buildCanalZone(seed);
     for (const place of zone.strandingPlaces) {
       for (const route of zone.tilapiaRoutes) {
         for (const [a, b] of loopSegments(route.waypoints)) {
-          expect(distanceToSegment(place, a, b)).toBeGreaterThanOrEqual(STRANDING_ROUTE_CLEARANCE);
+          const distance = distanceToSegment(place, a, b);
+          expect(distance, `${place.id} is ${distance.toFixed(1)} px from ${route.id}`).toBeGreaterThanOrEqual(STRANDING_ROUTE_CLEARANCE);
         }
       }
     }
