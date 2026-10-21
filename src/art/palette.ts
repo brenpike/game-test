@@ -613,22 +613,20 @@ export const UI_FONT =
 // prototype, so confirm in a prototype before final art. The tilapia is cooler
 // and less saturated than the hero so the axolotl stays the warmest, brightest
 // thing on screen (guide section 2).
-/**
- * Tilapia body, provisional. Contrast: body vs water deep #0a5c98 3.81:1
- * (body carries); ink vs shallow 9.24:1 and vs mid 5.90:1 (outline carries).
- */
-export const TILAPIA_BODY = '#b4bfdc';
-/** Tilapia fins, provisional. Darker cool tone so fins read as the far/back parts. */
-export const TILAPIA_FIN = '#8f9cc4';
-/** Tilapia belly band, provisional. */
-export const TILAPIA_BELLY = '#dfe5f2';
-/**
- * Soft tinted marks inside the tilapia (body bars, fin rays, gill line),
- * provisional. Never ink. They also tell the tilapia from the axolotl without hue.
- */
-export const TILAPIA_MARK = 'rgba(110,124,172,0.55)';
-/** Inside of the tilapia's open mouth, provisional. Cool, never red. */
-export const TILAPIA_MOUTH = '#7d89b3';
+/** Tilapia body (guide 3g): 9.07:1 with ink, so body or ink is 3.01:1 or better on any background. */
+export const TILAPIA_BODY = '#c2d2bb';
+/** Tilapia fins (guide 3g): 10.54:1 with ink. No fin sits wholly behind the body, so there is no far-fin tone. */
+export const TILAPIA_FIN = '#d4e0d0';
+/** Tilapia belly band (guide 3g): 11.72:1 with ink. */
+export const TILAPIA_BELLY = '#e3eadf';
+/** Tilapia body bars (guide 3g). Soft tinted mark, never ink. They also tell the tilapia from the axolotl without hue. */
+export const TILAPIA_BARS = 'rgba(70,95,80,0.22)';
+/** Tilapia fin rays and gill-cover line (guide 3g). Internal detail lines, never ink. */
+export const TILAPIA_LINE = 'rgba(70,95,80,0.4)';
+/** Tilapia shine (guide 3g). */
+export const TILAPIA_SHINE = 'rgba(255,255,255,0.6)';
+/** Inside of the tilapia's open lunge mouth (guide 3g). */
+export const TILAPIA_MOUTH = '#e8567e';
 /** Alert sign bubble fill, provisional. Reuses the sun yellow; ink "!" on it is 11.05:1. */
 export const ALERT_FILL = SUN;
 /** Telegraph glint fill, provisional. */
@@ -639,10 +637,14 @@ export const POOF_PUFF = WHITE;
 export const POOF_SHINE = CLOUD_SHINE;
 /** Poof sparkle fill, provisional. Reuses the sun yellow. */
 export const POOF_SPARKLE = SUN;
-/** Protected halo: soft ring band behind the dots, provisional. */
-export const HALO_BAND = 'rgba(255,255,255,0.22)';
-/** Protected halo: dot fill, provisional. Ink-stroked dots carry against shallow water. */
-export const HALO_DOT = 'rgba(255,255,255,0.95)';
+/** Protected ring outer line (guide 3g, 6q): ink, opaque. Ink and white are 14.39:1, so one line is 3.79:1 or better on any background. */
+export const PROTECTED_RING_OUTER = INK;
+/** Protected ring inner line (guide 3g, 6q): white, opaque. */
+export const PROTECTED_RING_INNER = WHITE;
+/** Protected ring glint (guide 3g, 6q): white, opaque. */
+export const PROTECTED_RING_GLINT = WHITE;
+/** Legs display, leg present (guide 3g): 3.46:1 vs the white panel, 4.16:1 vs ink. */
+export const LEGS_FILL = '#e8567e';
 /** Carry bubble inner rim, provisional. White vs water deep is 6.6:1. */
 export const CARRY_RIM = 'rgba(255,255,255,0.9)';
 
