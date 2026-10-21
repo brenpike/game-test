@@ -580,7 +580,7 @@ A silhouette fills in once its treasure is banked. "X of Y found" stays. Found a
 Recommended, awaiting owner confirmation in the PR that builds it: it lives in the Treasure Chest, not a new screen; an unfound treasure's name shows as "???", with a hint by rarity based on B6; and an unfound Wearable shows its slot but not its perk.
 That PR updates C11 and the art style guide (section 8). Until then, C11 stays as it is. It starts after outfits (issue #16) merges.
 
-### Rarer treasures nearer hazards (decision, not built yet)
+### Rarer treasures nearer hazards (decision)
 
 Owner request (issue #70): rarer treasures are harder to get, as well as harder to find, by sitting near a hazard (in area 1, the tilapia). The risk ladder below says how near each rarity's spots sit.
 Each hiding spot gets a pure, tested risk measure, for example its distance from each tilapia's patrol route and lunge range. Placement picks spots by both how well hidden and how risky they are for the rarity.
@@ -601,7 +601,7 @@ Product owner decisions, 2026-10-20:
 
 This ladder is defined for the tilapia only: it applies in area 1 and in any area that has a tilapia. It does not cover hazards with no patrol route or lunge range (such as plastic worms, fishing lines, currents, and murky water), or areas without a tilapia.
 The area framework (N3, issue #73) defines a generic risk measure and band rule for those other hazards and predators, including areas without a tilapia, and updates this ladder in its PR.
-The PR that builds this ladder updates B6 (or adds a B row), the Testing Decisions, the Tuning values, and CONTEXT.md (Hiding spot). Until then, those stay as they are. It starts after fewer treasures (issue #39) merges.
+Built in 0.19.0 (PR #84): B6 and B10, the Testing Decisions, the Tuning values, and CONTEXT.md (Hiding spot) hold the built rules. The owner approved re-laying the canal so the bands can hold (issue #70).
 
 ### Shuffled hiding spots (decision)
 
