@@ -61,7 +61,7 @@ import { makeInfo, type TexInfo } from './textures';
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Largest side of one part texture, in pixels (frames are laid out in a grid within it). */
+/** Largest side of one part texture, in pixels (frames are laid out in a grid within it); see textureSideLimit. */
 const MAX_TEXTURE_SIDE = 4096;
 /** Most twinkle sprites one view shows at once. */
 const TWINKLE_POOL = 17;
@@ -252,6 +252,17 @@ function bakeSheet(
   }
 }
 
+/**
+ * Largest side a part texture may have here: MAX_TEXTURE_SIDE, or less when
+ * the WebGL renderer reports a smaller MAX_TEXTURE_SIZE (a texture over it
+ * cannot upload). The Canvas renderer has no such limit to report.
+ */
+function textureSideLimit(scene: Phaser.Scene): number {
+  const renderer = scene.sys.game.renderer as Partial<Pick<Phaser.Renderer.WebGL.WebGLRenderer, 'getMaxTextureSize'>>;
+  const device = typeof renderer.getMaxTextureSize === 'function' ? renderer.getMaxTextureSize() : undefined;
+  return device !== undefined && Number.isFinite(device) && device > 0 ? Math.min(MAX_TEXTURE_SIDE, device) : MAX_TEXTURE_SIDE;
+}
+
 function paintSheet(
   scene: Phaser.Scene,
   key: string,
@@ -262,12 +273,12 @@ function paintSheet(
   paintFrame: (ctx: CanvasRenderingContext2D, frame: number) => void,
 ): TexInfo {
   const info = makeInfo(key, scale, size);
-  const columns = Math.min(frames, Math.max(1, Math.floor(MAX_TEXTURE_SIDE / info.pxW)));
+  const side = textureSideLimit(scene);
+  // Most columns that fit the width gives the fewest rows, so if this grid is too tall, every grid is.
+  const columns = Math.min(frames, Math.max(1, Math.floor(side / info.pxW)));
   const rows = Math.ceil(frames / columns);
-  if (info.pxW > MAX_TEXTURE_SIDE || rows * info.pxH > MAX_TEXTURE_SIDE) {
-    throw new RangeError(
-      `rig texture "${key}" needs ${frames} frames of ${info.pxW}x${info.pxH} px, over ${MAX_TEXTURE_SIDE} px`,
-    );
+  if (info.pxW > side || rows * info.pxH > side) {
+    throw new RangeError(`rig texture "${key}" needs ${frames} frames of ${info.pxW}x${info.pxH} px, over ${side} px`);
   }
   if (scene.textures.exists(key)) scene.textures.remove(key);
   const tex = scene.textures.createCanvas(key, columns * info.pxW, rows * info.pxH);

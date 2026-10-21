@@ -12,7 +12,7 @@ import { createAxolotlRigBake, createAxolotlRigView, takeRigBakeCount } from './
 import { RIG_STILL_POSE } from './axolotlRigParts';
 import { AXO_TEX } from './drawAxolotl';
 import { AXO_SIZE_SCALE, DEFAULT_ART_LOOK, type AxolotlArtLook } from './drawAxolotlParts';
-import { MORPH_PALETTES } from './palette';
+import { MORPH_PALETTES, axolotlPalette } from './palette';
 import { makeInfo } from './textures';
 
 const { inert, InertGameObject } = vi.hoisted(() => {
@@ -62,6 +62,8 @@ vi.mock('phaser', () => ({
 class FakeTextures {
   readonly live = new Set<string>();
   readonly created: string[] = [];
+  /** Width and height of each texture, by key, as last created. */
+  readonly sizes = new Map<string, { readonly w: number; readonly h: number }>();
 
   exists(key: string): boolean {
     return this.live.has(key);
@@ -71,10 +73,11 @@ class FakeTextures {
     this.live.delete(key);
   }
 
-  createCanvas(key: string): unknown {
+  createCanvas(key: string, w: number, h: number): unknown {
     if (this.live.has(key)) throw new Error(`texture "${key}" already exists`);
     this.live.add(key);
     this.created.push(key);
+    this.sizes.set(key, { w, h });
     return { context: inert(), add: () => undefined, refresh: () => undefined };
   }
 
@@ -117,10 +120,10 @@ class FakeGameEvents {
   }
 }
 
-function fakeScene(textures: FakeTextures, events = new FakeGameEvents()): Phaser.Scene {
+function fakeScene(textures: FakeTextures, events = new FakeGameEvents(), renderer: object = { type: 2 }): Phaser.Scene {
   return {
     textures,
-    sys: { game: { renderer: { type: 2 }, events } },
+    sys: { game: { renderer, events } },
     add: { container: () => inert() },
   } as unknown as Phaser.Scene;
 }
@@ -176,6 +179,23 @@ describe('rig bake texture lifecycle', () => {
     expect(textures.createdCount(strip)).toBe(1);
     bake.destroy();
     expect([...textures.live]).toEqual([]);
+  });
+
+  it('packs every part texture within the WebGL renderer max texture size', () => {
+    const appearance = { look: { ...DEFAULT_ART_LOOK, size: 'large' as const }, palette: axolotlPalette('leucistic', 'iridescent') };
+    const widest = (maxTextureSize: number): { w: number; h: number } => {
+      const textures = new FakeTextures();
+      const renderer = { type: 2, getMaxTextureSize: () => maxTextureSize };
+      const bake = createAxolotlRigBake(fakeScene(textures, new FakeGameEvents(), renderer), 'cap', 3, appearance);
+      expect(bake.version).toBe(1);
+      const sizes = [...textures.sizes.values()];
+      bake.destroy();
+      return { w: Math.max(...sizes.map((s) => s.w)), h: Math.max(...sizes.map((s) => s.h)) };
+    };
+    expect(widest(4096).w).toBeGreaterThan(2048);
+    const capped = widest(2048);
+    expect(capped.w).toBeLessThanOrEqual(2048);
+    expect(capped.h).toBeLessThanOrEqual(2048);
   });
 });
 
