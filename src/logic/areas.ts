@@ -188,12 +188,17 @@ export function isAreaBeaten(stars: AreaStarsRecord, areaId: string): boolean {
 
 /**
  * Ids of the unlocked areas, in area order: the first area always, and each later area when the
- * one before it is beaten. There are no star gates.
+ * one before it is unlocked and beaten. There are no star gates. The unlocked areas are always a
+ * run from the first area: the run stops at the first area not beaten, so stars saved for a later
+ * area (a damaged or edited save, or areas reordered by an update) never unlock past a locked one.
  */
 export function unlockedAreaIds(stars: AreaStarsRecord, areas: readonly Readonly<AreaData>[] = AREAS): string[] {
-  return areas
-    .filter((_, index) => index === 0 || isAreaBeaten(stars, areas[index - 1].id))
-    .map((area) => area.id);
+  const unlocked: string[] = [];
+  for (const area of areas) {
+    unlocked.push(area.id);
+    if (!isAreaBeaten(stars, area.id)) break;
+  }
+  return unlocked;
 }
 
 /** Whether the area with this id is unlocked; false for an unknown id. */

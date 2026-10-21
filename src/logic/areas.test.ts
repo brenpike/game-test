@@ -53,6 +53,9 @@ const SPECIAL_ONLY: AreaStars = { exit: false, special: true, legsOrRescue: fals
 /** The canal, then the dev test area as area 2. */
 const TWO_AREAS: readonly AreaData[] = [CANAL_AREA, { ...DEV_TEST_AREA, number: 2 }];
 const TEST_ID = DEV_TEST_AREA.id;
+const THIRD_ID = 'third-test-area';
+/** The canal, the dev test area as area 2, then a third area. */
+const THREE_AREAS: readonly AreaData[] = [...TWO_AREAS, { ...CANAL_AREA, id: THIRD_ID, number: 3 }];
 
 function testFact(id: string): FactCard {
   return { id, name: id, title: `Meet the ${id}`, body: `A ${id} for tests.` };
@@ -262,6 +265,26 @@ describe('unlocking', () => {
     expect(newestUnlockedAreaId({}, TWO_AREAS)).toBe('canal');
     expect(newestUnlockedAreaId(canalBeaten, TWO_AREAS)).toBe(TEST_ID);
     expect(newestUnlockedAreaId({ canal: ALL_STARS, [TEST_ID]: EXIT_ONLY }, TWO_AREAS)).toBe(TEST_ID);
+  });
+
+  it('unlocks a run from area 1 that stops at the first area not beaten', () => {
+    expect(unlockedAreaIds({ canal: EXIT_ONLY, [TEST_ID]: EXIT_ONLY }, THREE_AREAS)).toEqual([
+      'canal',
+      TEST_ID,
+      THIRD_ID,
+    ]);
+    expect(unlockedAreaIds({ canal: EXIT_ONLY, [THIRD_ID]: EXIT_ONLY }, THREE_AREAS)).toEqual(['canal', TEST_ID]);
+  });
+
+  it('never unlocks past a locked area when a later area has stars', () => {
+    const gap: AreaStarsRecord = { [TEST_ID]: EXIT_ONLY, [THIRD_ID]: ALL_STARS };
+    expect(unlockedAreaIds(gap, THREE_AREAS)).toEqual(['canal']);
+    expect(isAreaUnlocked(gap, TEST_ID, THREE_AREAS)).toBe(false);
+    expect(isAreaUnlocked(gap, THIRD_ID, THREE_AREAS)).toBe(false);
+    expect(newestUnlockedAreaId(gap, THREE_AREAS)).toBe('canal');
+    expect(isNewArea(gap, 'canal', THREE_AREAS)).toBe(true);
+    expect(resolveAreaId(THIRD_ID, gap, THREE_AREAS)).toBe('canal');
+    expect(resolveAreaId(TEST_ID, gap, THREE_AREAS)).toBe('canal');
   });
 
   it('throws when there are no areas', () => {

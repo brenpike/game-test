@@ -1,5 +1,5 @@
 import * as Phaser from 'phaser';
-import { bakeAreaMapPanel, bakeAreaMapPath } from '../art/areaMapTextures';
+import { areaMapPanelKey, bakeAreaMapPanel, bakeAreaMapPath } from '../art/areaMapTextures';
 import {
   MAP_BADGE_OFFSET,
   MAP_LABEL_PANEL,
@@ -68,6 +68,11 @@ const NEW_BOB_PERIOD_MS = 2400;
 const DRAG_START_PX = 8;
 /** Texture key of the baked path, baked again under the same key on every layout. */
 const PATH_KEY = 'area-map-path';
+/** Texture keys of the title and message panels, each baked again under the same key at every new size. */
+const TITLE_PANEL_KEY = areaMapPanelKey('title');
+const MESSAGE_PANEL_KEY = areaMapPanelKey('message');
+/** Texture key of habitat label `index`'s panel, baked again under the same key at every new size. */
+const labelPanelKey = (index: number): string => areaMapPanelKey(`label-${index}`);
 const BACKDROP_COVER = 8192;
 const CAPTURED_KEYS: readonly number[] = [
   Phaser.Input.Keyboard.KeyCodes.TAB,
@@ -422,7 +427,7 @@ export class AreaMapScene extends Phaser.Scene {
     this.titlePanel.setVisible(title !== null);
     this.titleText.setVisible(title !== null);
     if (title !== null) {
-      const info = bakeAreaMapPanel(this, MAP_TITLE_PANEL.fill, title.w, title.h, this.bakeScale());
+      const info = bakeAreaMapPanel(this, TITLE_PANEL_KEY, MAP_TITLE_PANEL.fill, title.w, title.h, this.bakeScale());
       placeBaked(this.titlePanel, info, title.x, title.y);
       placeTextInPanel(this.titleText, title, MAP_TITLE_PANEL);
     }
@@ -437,7 +442,7 @@ export class AreaMapScene extends Phaser.Scene {
     this.applyPathDraw();
     placed.nodes.forEach((node, index) => this.placeMarker(this.markers[index], node.cell, node.centre));
     while (this.labels.length < placed.habitats.length) this.labels.push(this.createLabel());
-    placed.habitats.forEach((habitat, index) => this.placeLabel(this.labels[index], habitat.name, habitat.rect));
+    placed.habitats.forEach((habitat, index) => this.placeLabel(this.labels[index], index, habitat.name, habitat.rect));
     this.placeNewPills();
   }
 
@@ -450,9 +455,9 @@ export class AreaMapScene extends Phaser.Scene {
     parts.pillAt = { x: cell.x + MAP_PILL_CENTRE.x, y: cell.y + MAP_PILL_CENTRE.y };
   }
 
-  /** Places one habitat label: its white panel at `rect` and `name` centred in it. */
-  private placeLabel(parts: LabelParts, name: string, rect: Rect): void {
-    const info = bakeAreaMapPanel(this, MAP_LABEL_PANEL.fill, rect.w, rect.h, this.bakeScale());
+  /** Places habitat label `index`: its white panel at `rect` and `name` centred in it. */
+  private placeLabel(parts: LabelParts, index: number, name: string, rect: Rect): void {
+    const info = bakeAreaMapPanel(this, labelPanelKey(index), MAP_LABEL_PANEL.fill, rect.w, rect.h, this.bakeScale());
     placeBaked(parts.panel, info, rect.x, rect.y);
     placeTextInPanel(parts.text.setText(name), rect, MAP_LABEL_PANEL);
   }
@@ -673,7 +678,7 @@ export class AreaMapScene extends Phaser.Scene {
       w: size.w,
       h: size.h,
     };
-    const info = bakeAreaMapPanel(this, MAP_MESSAGE_PANEL.fill, rect.w, rect.h, this.bakeScale());
+    const info = bakeAreaMapPanel(this, MESSAGE_PANEL_KEY, MAP_MESSAGE_PANEL.fill, rect.w, rect.h, this.bakeScale());
     placeBaked(this.messagePanel, info, rect.x, rect.y);
     placeTextInPanel(this.messageText, rect, MAP_MESSAGE_PANEL);
   }

@@ -16,8 +16,10 @@
  *
  * Panels and the path depend on the layout (text width, marker positions), so
  * they are baked on request by {@link bakeAreaMapPanel} and
- * {@link bakeAreaMapPath}, not in {@link bakeAreaMapTextures}. A scene may
- * instead draw its panels with its own drawPanel: the look is the same.
+ * {@link bakeAreaMapPath}, not in {@link bakeAreaMapTextures}. Each re-bakes
+ * under one fixed key per panel or path, so a new layout replaces its texture
+ * rather than adding one. A scene may instead draw its panels with its own
+ * drawPanel: the look is the same.
  */
 import * as Phaser from 'phaser';
 import {
@@ -38,7 +40,7 @@ import {
   paintMapStarRow,
   type MapPoint,
 } from './drawAreaMap';
-import { bake, makeInfo, type TexInfo } from './textures';
+import { bake, type TexInfo } from './textures';
 
 // ---------------------------------------------------------------------------
 // Keys
@@ -50,8 +52,11 @@ export const AREA_MAP_BADGE_KEY = 'area-map-padlock-badge';
 export const AREA_MAP_PILL_KEY = 'area-map-new-pill';
 /** Star row with `earned` filled stars (0 to 3). */
 export const areaMapStarRowKey = (earned: number): string => `area-map-stars-${earned}`;
-/** Panel body of any logical size; the key holds the fill and the size, so a body already baked is reused. */
-export const areaMapPanelKey = (fill: string, w: number, h: number): string => `area-map-panel-${fill}-${w}x${h}`;
+/**
+ * Panel body for one panel `role` (such as 'title', 'message' or 'label-0'). One key per role,
+ * never per size, so re-baking at a new size replaces the old body and a resize adds no texture.
+ */
+export const areaMapPanelKey = (role: string): string => `area-map-panel-${role}`;
 
 // ---------------------------------------------------------------------------
 // Bake
@@ -93,17 +98,21 @@ export function bakeAreaMapTextures(scene: Phaser.Scene, bakeScale: number): Are
 }
 
 /**
- * Bake (or reuse) a w x h panel body in `fill` (the habitat label, message and
- * title panels, sized by mapPanelSize). Anchor is the panel's top-left corner.
- * A body already baked at that fill and size is reused as is, so `bakeScale`
- * must be the boot bake scale.
+ * Bake (re-bake under the same key) a w x h panel body in `fill` (the habitat
+ * label, message and title panels, sized by mapPanelSize) under `key`, from
+ * {@link areaMapPanelKey}. Anchor is the panel's top-left corner. The key names
+ * the panel, not its size, so the panel textures stay one per panel however
+ * often the layout changes; set the panel's image texture again after each bake.
  */
-export function bakeAreaMapPanel(scene: Phaser.Scene, fill: string, w: number, h: number, bakeScale: number): TexInfo {
-  const key = areaMapPanelKey(fill, w, h);
-  const size = mapPanelTextureSize(w, h);
-  return scene.textures.exists(key)
-    ? makeInfo(key, bakeScale, size)
-    : bake(scene, key, size, bakeScale, (ctx) => paintMapPanel(ctx, w, h, fill));
+export function bakeAreaMapPanel(
+  scene: Phaser.Scene,
+  key: string,
+  fill: string,
+  w: number,
+  h: number,
+  bakeScale: number,
+): TexInfo {
+  return bake(scene, key, mapPanelTextureSize(w, h), bakeScale, (ctx) => paintMapPanel(ctx, w, h, fill));
 }
 
 /**
