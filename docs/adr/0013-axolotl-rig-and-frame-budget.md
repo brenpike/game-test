@@ -71,6 +71,7 @@ A moving Iridescent tail shows in three layers, so its stripe pair is never bent
 The overlay is redrawn only when the shown tail or the sheen step changes. It repaints no texture and uploads nothing. On Canvas the tail stripe glides too.
 
 **Re-bake keys.** Every part re-bakes when `rigAppearanceKey` changes: every look field (size included, through a `Record` over `AxolotlArtLook` that fails the build until a new field is keyed), the morph palette and Dream colour, the outfit, and the bake scale.
+The re-bake is lazy: it runs once, on the next read of the baked parts or before the next frame, however many changes came first.
 Each leg part is keyed again per leg by `legStateKey`. A pose never re-bakes.
 Picture-button stills keep `bakeAxolotlStill`, one whole `drawAxolotl` bake, repainted only when the look or outfit shown changes.
 
@@ -184,7 +185,7 @@ Accepted approximations, each bounded by an asserted test, to confirm by eye in 
 ## Consequences
 
 - A pose costs moving, turning and frame swaps, plus one vector redraw for a moving Iridescent tail. No texture is repainted or uploaded after a bake.
-- Changing a look, Dream colour, outfit or bake scale re-bakes the whole rig at once. A regrowing leg re-bakes one small leg texture at each of 10 progress steps, never every frame.
+- Changing a look, Dream colour, outfit or bake scale re-bakes the whole rig once, lazily: on the next read of the baked parts or before the next frame, however many changes came first. A regrowing leg re-bakes one small leg texture at each of 10 progress steps, never every frame.
 - Canvas bakes take more memory than WebGL (the 36-frame tail strip), and Iridescent about doubles both.
 - Every frame of a part is painted by `drawAxolotl`'s own painters, so the rig follows the art style guide with no second copy of the art.
 - A new look field fails the build until `rigAppearanceKey` keys it.

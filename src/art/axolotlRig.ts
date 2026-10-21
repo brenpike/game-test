@@ -16,6 +16,11 @@
  * overlay (a Graphics between the 'under' tail and 'tail-over') with no
  * texture upload, redrawn only when the shown tail or the sheen step changes.
  * Legs are baked lazily, one texture per leg state. Destroy views before their bake.
+ *
+ * Baking is lazy too. Creating a bake, setAppearance and setBakeScale only
+ * note the target appearance and scale; the whole rig re-bakes once, on the
+ * next read of baked state (version, parts, a view's setPose) or at the game's
+ * next POST_STEP (before the frame renders), however many changes came first.
  */
 import * as Phaser from 'phaser';
 import type { SpriteFrame } from '../logic/spriteAnchor';
@@ -79,12 +84,22 @@ export interface AxolotlRigBake {
   readonly outfit: ArtOutfit;
   /** makeInfo(key, scale, AXO_TEX): the frame today's axolotl sprite has (anchorWorld, spriteFrameBounds). */
   readonly info: TexInfo;
-  /** Goes up on every re-bake. */
+  /**
+   * Goes up on every re-bake. Reading it bakes any pending change first, so a
+   * read between two setters bakes the in-between appearance too.
+   */
   readonly version: number;
   readonly renderer: RigRenderer;
-  /** Merge into the appearance; re-bake every part when rigAppearanceKey changes. Returns whether it re-baked. */
+  /**
+   * Merge into the appearance. Returns whether the bake is now out of date
+   * (rigAppearanceKey differs from the baked one); it then re-bakes every part
+   * once, on the next read or before the next frame.
+   */
   setAppearance(appearance: Partial<RigAppearance>): boolean;
-  /** Change the base bake scale; re-bake when the scale changes. Returns whether it re-baked. */
+  /**
+   * Change the base bake scale. Returns whether the bake is now out of date;
+   * it then re-bakes once, on the next read or before the next frame.
+   */
   setBakeScale(bakeScale: number): boolean;
   /** Root scale that shows the axolotl at its size: AXO_SCENE_SCALE x size factor x viewScale / scale. */
   displayScale(viewScale: number): number;
@@ -352,9 +367,15 @@ class RigBake implements AxolotlRigBake {
   readonly key: string;
   readonly renderer: RigRenderer;
   private readonly scene: Phaser.Scene;
+  /** Game-level events: the flush listens here, because a bake (BootScene's) can outlive the scene that made it. */
+  private readonly gameEvents: Phaser.Events.EventEmitter;
   private appearance: RigAppearance;
   private base: number;
   private bakedKey = '';
+  /** The appearance or scale differs from the baked one; the next flush re-bakes. */
+  private stale = false;
+  /** A flush is registered for the game's next POST_STEP. */
+  private flushScheduled = false;
   private bakes = 0;
   private frameInfo: TexInfo;
   private sheetsById = new Map<RigPartId, RigSheet>();
@@ -369,6 +390,7 @@ class RigBake implements AxolotlRigBake {
   constructor(scene: Phaser.Scene, key: string, bakeScale: number, appearance: Partial<RigAppearance>) {
     assertBakeScale(bakeScale);
     this.scene = scene;
+    this.gameEvents = scene.sys.game.events;
     this.key = key;
     this.base = bakeScale;
     this.renderer = rigRendererOf(scene);
@@ -378,7 +400,7 @@ class RigBake implements AxolotlRigBake {
       outfit: appearance.outfit ?? NO_OUTFIT,
     };
     this.frameInfo = makeInfo(key, this.scale, AXO_TEX);
-    this.rebake();
+    this.markStale();
   }
 
   get bakeScale(): number {
@@ -406,15 +428,18 @@ class RigBake implements AxolotlRigBake {
   }
 
   get version(): number {
+    this.flush();
     return this.bakes;
   }
 
   /** The parts in draw order (rigParts) at the current bake. */
   get parts(): readonly RigPartSpec[] {
+    this.flush();
     return this.partOrder;
   }
 
   get iridescent(): boolean {
+    this.flush();
     return this.iridescentPalette;
   }
 
@@ -423,29 +448,40 @@ class RigBake implements AxolotlRigBake {
    * (whose strip bakes only 'under'); else null, and Canvas shows strip frame 0, the same pose.
    */
   get tailStill(): TexInfo | null {
+    this.flush();
     return this.stillTail;
   }
 
   get twinkle(): TexInfo {
+    this.flush();
     if (!this.twinkles) throw new Error(`rig bake "${this.key}" has no twinkle strip`);
     return this.twinkles;
   }
 
+  /** Whether a change waits for its re-bake (on the next read of baked state, or at the game's next POST_STEP). */
+  get rebakePending(): boolean {
+    return this.stale && !this.destroyed;
+  }
+
   setAppearance(appearance: Partial<RigAppearance>): boolean {
     this.assertAlive();
+    const previousScale = this.scale;
     this.appearance = {
       look: appearance.look ?? this.appearance.look,
       palette: appearance.palette ?? this.appearance.palette,
       outfit: appearance.outfit ?? this.appearance.outfit,
     };
-    return this.rebakeIfChanged();
+    this.refreshFrameInfo(previousScale);
+    return this.markStale();
   }
 
   setBakeScale(bakeScale: number): boolean {
     this.assertAlive();
     assertBakeScale(bakeScale);
+    const previousScale = this.scale;
     this.base = bakeScale;
-    return this.rebakeIfChanged();
+    this.refreshFrameInfo(previousScale);
+    return this.markStale();
   }
 
   displayScale(viewScale: number): number {
@@ -454,6 +490,7 @@ class RigBake implements AxolotlRigBake {
 
   destroy(): void {
     if (this.destroyed) return;
+    this.unscheduleFlush();
     for (const view of [...this.views]) view.destroy();
     this.removeOwned();
     if (this.twinkles) releaseTwinkleSheet(this.scene, this.twinkles.key);
@@ -462,14 +499,16 @@ class RigBake implements AxolotlRigBake {
   }
 
   sheet(id: RigPartId): RigSheet {
+    this.flush();
     const sheet = this.sheetsById.get(id);
     if (!sheet) throw new Error(`rig bake "${this.key}" has no part ${id}`);
     return sheet;
   }
 
-  /** Texture key of a leg or wear-leg part in a leg state, baking it on first use. */
+  /** Texture key of a leg or wear-leg part in a leg state, baking it on first use (after any pending re-bake). */
   legTexture(id: RigPartId, leg: LegLook | undefined): string {
     this.assertAlive();
+    this.flush();
     const texKey = `${this.key}:${id}:${legStateKey(leg)}`;
     if (this.owned.has(texKey)) return texKey;
     const { spec } = this.sheet(id);
@@ -495,10 +534,35 @@ class RigBake implements AxolotlRigBake {
     if (this.destroyed) throw new Error(`rig bake "${this.key}" was destroyed`);
   }
 
-  private rebakeIfChanged(): boolean {
-    if (rigAppearanceKey(this.appearance, this.scale) === this.bakedKey) return false;
-    this.rebake();
-    return true;
+  /** Recompute the AXO_TEX frame info when the scale moved off `previousScale`. */
+  private refreshFrameInfo(previousScale: number): void {
+    const scale = this.scale;
+    if (scale !== previousScale) this.frameInfo = makeInfo(this.key, scale, AXO_TEX);
+  }
+
+  /** Whether the appearance and scale now differ from the baked ones; if so, flush at the game's next POST_STEP. */
+  private markStale(): boolean {
+    const wasStale = this.stale;
+    this.stale = rigAppearanceKey(this.appearance, this.scale) !== this.bakedKey;
+    if (this.stale && !this.flushScheduled) {
+      this.gameEvents.once(Phaser.Core.Events.POST_STEP, this.flush, this);
+      this.flushScheduled = true;
+    }
+    if (wasStale && !this.stale) {
+      for (const view of this.views) view.resyncIfBehind();
+    }
+    return this.stale;
+  }
+
+  /** Re-bake a pending change now. Runs at POST_STEP and before every read of baked state. */
+  private flush(): void {
+    if (this.flushScheduled) this.unscheduleFlush();
+    if (this.stale && !this.destroyed) this.rebake();
+  }
+
+  private unscheduleFlush(): void {
+    this.gameEvents.off(Phaser.Core.Events.POST_STEP, this.flush, this);
+    this.flushScheduled = false;
   }
 
   private rebake(): void {
@@ -516,6 +580,8 @@ class RigBake implements AxolotlRigBake {
       this.frameInfo = makeInfo(this.key, scale, AXO_TEX);
       this.bakedKey = rigAppearanceKey(this.appearance, scale);
       this.bakes += 1;
+      // INVARIANT: un-stale before any view resyncs, so the baked-state reads in resync never re-enter rebake.
+      this.stale = false;
       for (const view of this.views) view.resync();
       // Hold the new strip before letting go of the old, so a strip this bake keeps is never removed and re-baked.
       if (heldTwinkles) releaseTwinkleSheet(this.scene, heldTwinkles.key);
@@ -570,6 +636,7 @@ function assertBakeScale(bakeScale: number): void {
 /**
  * Bake every part of an appearance (defaults: DEFAULT_ART_LOOK, LEUCISTIC,
  * NO_OUTFIT) at `bakeScale` x the look's size factor, under `${key}:<part>`.
+ * The first bake runs on the first read of baked state or before the next frame.
  */
 export function createAxolotlRigBake(
   scene: Phaser.Scene,
@@ -695,7 +762,7 @@ class RigView implements AxolotlRigView {
     this.root = scene.add.container(0, 0);
     this.root.once(Phaser.GameObjects.Events.DESTROY, () => this.detach());
     owner.register(this);
-    this.resync();
+    if (!owner.rebakePending) this.resync();
   }
 
   get bake(): AxolotlRigBake {
@@ -708,7 +775,8 @@ class RigView implements AxolotlRigView {
     const started = startRigTiming();
     try {
       this.lastPose = pose;
-      if (this.syncedVersion !== this.owner.version) this.resync();
+      const version = this.owner.version;
+      if (this.syncedVersion !== version) this.resync();
       else if (!samePose(this.memo, pose)) this.apply(pose);
     } finally {
       stopRigTiming(started);
@@ -735,6 +803,12 @@ class RigView implements AxolotlRigView {
     if (this.destroyed) return;
     this.root.destroy();
     this.detach();
+  }
+
+  /** Resync unless already showing the bake's current version (a view made while a re-bake was pending, then cancelled). */
+  resyncIfBehind(): void {
+    const version = this.owner.version;
+    if (this.syncedVersion !== version) this.resync();
   }
 
   /** Rebuild every child from the bake's current textures and parts, and show the last pose. */
@@ -1021,7 +1095,11 @@ function drawStripe(graphics: Phaser.GameObjects.Graphics, stripe: TailStripe, s
   }
 }
 
-/** A live axolotl showing `bake`'s parts, added to `scene` at (0, 0) in the still pose. */
+/**
+ * A live axolotl showing `bake`'s parts, added to `scene` at (0, 0). It shows
+ * the still pose from its first sync: right away, or, while a re-bake is
+ * pending, when that re-bake runs (before the next frame at the latest).
+ */
 export function createAxolotlRigView(scene: Phaser.Scene, bake: AxolotlRigBake): AxolotlRigView {
   if (!(bake instanceof RigBake)) throw new TypeError('createAxolotlRigView needs a bake from createAxolotlRigBake');
   return new RigView(scene, bake);
