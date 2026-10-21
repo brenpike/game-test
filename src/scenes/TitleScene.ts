@@ -1,7 +1,9 @@
 import * as Phaser from 'phaser';
+import { createAxolotlRigView, type AxolotlRigView } from '../art/axolotlRig';
 import { AXO_SCENE_SCALE, type AxolotlPose } from '../art/drawAxolotl';
+import { NO_OUTFIT } from '../art/drawWearables';
 import { DEPTH } from '../art/layers';
-import { T_STATIC, UI_PANEL } from '../art/palette';
+import { LEUCISTIC, T_STATIC, UI_PANEL } from '../art/palette';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { GAME_EVENTS, REGISTRY_KEYS, type ReducedMotionPayload } from '../logic/gameEvents';
 import { START_OVER_LABEL, showsStartOver } from '../logic/startOver';
@@ -22,7 +24,6 @@ import {
   createButton,
   drawPanel,
   readSceneView,
-  samePose,
   uiTextStyle,
   useCssCamera,
   type GameAssets,
@@ -43,8 +44,6 @@ const BODY_PX = 18;
 const VERSION_PX = 14;
 const VERSION_GAP = 4;
 const BUTTON_GAP = 12;
-const LOW_FPS = 45;
-const LOW_FPS_REDRAW_S = 1 / 30;
 const AXO_WORLD_Y = 210;
 const TITLE_TEXT = 'Glam Gills';
 const SUBTITLE_TEXT = 'Find Your Flair';
@@ -102,10 +101,9 @@ export class TitleScene extends Phaser.Scene {
   private clock = 0;
   private axoBaseY = 0;
   private starting = false;
-  private lastPose: AxolotlPose | null = null;
-  private redrawAcc = 0;
   private backgrounds: Phaser.GameObjects.Image[] = [];
-  private axolotl!: Phaser.GameObjects.Image;
+  private axolotlView!: AxolotlRigView;
+  private axolotl!: Phaser.GameObjects.Container;
   private panel!: Phaser.GameObjects.Graphics;
   private title!: Phaser.GameObjects.Text;
   private subtitle!: Phaser.GameObjects.Text;
@@ -128,8 +126,6 @@ export class TitleScene extends Phaser.Scene {
     this.assets = data;
     this.clock = 0;
     this.starting = false;
-    this.lastPose = null;
-    this.redrawAcc = 0;
     this.startOver = null;
     this.startOverShown = false;
     this.focusIndex = START_INDEX;
@@ -146,11 +142,9 @@ export class TitleScene extends Phaser.Scene {
     this.backgrounds = this.assets.baked.bg.map((info) =>
       this.add.image(0, 0, info.key).setOrigin(0, 0).setDepth(DEPTH.bg),
     );
-    const axoInfo = this.assets.axolotl.info;
-    this.axolotl = this.add
-      .image(0, 0, this.assets.axolotl.key)
-      .setOrigin(axoInfo.originNormX, axoInfo.originNormY)
-      .setDepth(DEPTH.axolotl);
+    this.assets.axolotl.setAppearance({ palette: LEUCISTIC, outfit: NO_OUTFIT });
+    this.axolotlView = createAxolotlRigView(this, this.assets.axolotl);
+    this.axolotl = this.axolotlView.root.setDepth(DEPTH.axolotl);
     this.panel = this.add.graphics().setDepth(DEPTH.ui);
     this.title = this.add.text(0, 0, TITLE_TEXT, uiTextStyle(TITLE_PX, this.view.fit.dpr)).setDepth(DEPTH.ui);
     this.subtitle = this.add
@@ -354,6 +348,7 @@ export class TitleScene extends Phaser.Scene {
     this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.game.events.off(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
     this.stopUpdates();
+    this.axolotlView.destroy();
     const keyboard = this.input.keyboard;
     if (!keyboard) return;
     keyboard.off(Phaser.Input.Keyboard.Events.ANY_KEY_DOWN, this.handleKeyDown, this);
@@ -481,21 +476,9 @@ export class TitleScene extends Phaser.Scene {
       tailAmp: 1,
       sparkle: 0,
     };
-    this.redrawAxolotl(pose, dt);
+    this.axolotlView.setPose(pose);
     const zoom = this.worldScale();
     this.axolotl.y = this.axoBaseY + this.motion.bob * Math.sin((TAU * t) / 3) * zoom;
     this.axolotl.rotation = this.motion.ambient ? 0.12 * Math.cos((TAU * t) / 3) : 0;
-  }
-
-  /** Repaints the axolotl when its pose changes; while the frame rate is low, at most 30 times a second, as in the swim. */
-  private redrawAxolotl(pose: AxolotlPose, dt: number): void {
-    if (this.lastPose !== null && samePose(pose, this.lastPose)) return;
-    this.redrawAcc += dt;
-    if (this.lastPose !== null && this.game.loop.actualFps < LOW_FPS && this.redrawAcc < LOW_FPS_REDRAW_S) {
-      return;
-    }
-    this.redrawAcc = 0;
-    this.assets.axolotl.redraw(pose);
-    this.lastPose = pose;
   }
 }

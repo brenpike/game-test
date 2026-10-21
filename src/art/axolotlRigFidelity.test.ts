@@ -9,8 +9,11 @@
  * approach of axolotlRig.test.ts, copied here: a test file is never imported),
  * so every fill and stroke is kept as flattened polygons in local units with
  * its clips. drawAxolotl's own recording is cut into its layer painters' runs,
- * each checked equal to that painter recorded alone. Two claims the rig does
- * not meet yet stay on record as it.fails 'KNOWN GAP' tests, with what was measured.
+ * each checked equal to that painter recorded alone. The tail part draws over
+ * the body part, so the body shows only past rootX + RIG_SEAM_OVERLAP; a seam
+ * guard checks paintBodyLayers there is the same at every tail pose. One claim
+ * the rig does not meet yet (the WebGL rope's Iridescent stripe) stays on
+ * record as an it.fails 'KNOWN GAP' test, with what was measured.
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -39,7 +42,6 @@ import {
   NEAR_EYE_ZONE,
   NEAR_LASH_REACH,
   SPOTS_OPTIONS,
-  SPOT_SETS,
   axolotlBodyGeometry,
   gillSpecs,
   legAngle,
@@ -62,7 +64,6 @@ import {
 } from './drawWearables';
 import {
   DREAM_SLOTS,
-  FRECKLE,
   INK,
   LEUCISTIC,
   LW,
@@ -75,6 +76,7 @@ import {
 } from './palette';
 import { GLASSES_LENS } from './treasurePalette';
 import {
+  RIG_SEAM_OVERLAP,
   RIG_STILL_POSE,
   SHEEN_STEPS,
   paintRigPart,
@@ -1425,34 +1427,15 @@ describe('Dream colours on the composed rig', { timeout: TIMEOUT_MS }, () => {
 // ---------------------------------------------------------------------------
 
 /**
- * Indices, in a paintBodyLayers run of `length` paints, of the tail-space spot
- * marks (guide 6n): one fill per mark, the tail marks last, just before the Shirt item.
- */
-function tailSpotIndices(look: AxolotlArtLook, palette: MorphPalette, outfit: ArtOutfit, run: readonly Paint[]): Set<number> {
-  if (palette.extras?.spot === null) return new Set();
-  const shirt = recordPaints((ctx) => paintBodyWearable(ctx, 'shirt', outfit, look, STILL_SWIM, 1)).length;
-  const marks = SPOT_SETS[look.spots].tail.length;
-  const end = run.length - shirt;
-  const indices = new Set(Array.from({ length: marks }, (_, k) => end - marks + k));
-  const colour = palette.extras?.spot ?? FRECKLE;
-  for (const i of indices) {
-    const p = run[i];
-    if (p.kind !== 'fill' || p.style !== colour || p.clips.length !== 0) throw new Error(`paint ${i} is not a tail spot mark`);
-  }
-  return indices;
-}
-
-const without = (paints: readonly Paint[], skip: ReadonlySet<number>): Paint[] => paints.filter((_, i) => !skip.has(i));
-
-/**
  * Failures where a still composition's parts miss drawAxolotl's runs by more
- * than EXACT, on both renderers. The body bake is the straight tail, so only
- * its band (x >= the tail root) is compared; `skipTailSpots` leaves its tail spot marks out.
+ * than EXACT, on both renderers. The tail part is compared in full. The body
+ * bake is the straight tail and the tail part draws over it up to
+ * rootX + RIG_SEAM_OVERLAP, so the body is compared only where it shows, past that.
  */
-function stillGaps(look: AxolotlArtLook, palette: MorphPalette, outfit: ArtOutfit, skipTailSpots: boolean): string[] {
+function stillGaps(look: AxolotlArtLook, palette: MorphPalette, outfit: ArtOutfit): string[] {
   const runs = drawnRuns(RIG_STILL_POSE, palette, look, outfit);
   const bodyLayers = runOf(runs, 'body-layers');
-  const skip = skipTailSpots ? tailSpotIndices(look, palette, outfit, bodyLayers) : new Set<number>();
+  const bodyShowsFrom = axolotlBodyGeometry(look).tail.rootX + RIG_SEAM_OVERLAP;
   const failures: string[] = [];
   for (const renderer of RENDERERS) {
     const composed = composeRig({ look, palette, outfit }, RIG_STILL_POSE, renderer);
@@ -1463,7 +1446,7 @@ function stillGaps(look: AxolotlArtLook, palette: MorphPalette, outfit: ArtOutfi
       shown.add(part.id);
       let gap: number;
       if (part.id === 'tail') gap = paintsGap(part.paints, bodyLayers);
-      else if (part.id === 'body') gap = paintsGap(without(part.paints, skip), without(bodyLayers, skip), part.band!.minX);
+      else if (part.id === 'body') gap = paintsGap(part.paints, bodyLayers, bodyShowsFrom);
       else gap = paintsGap(part.paints, runOf(runs, part.id));
       if (gap > EXACT) failures.push(`${lookId(look)} ${renderer} ${part.id}: ${gap}`);
     }
@@ -1473,33 +1456,65 @@ function stillGaps(look: AxolotlArtLook, palette: MorphPalette, outfit: ArtOutfi
   return failures;
 }
 
+/** Every morph plain, then every Dream colour on the morphs in turn. */
+const SEAM_PALETTES: readonly MorphPalette[] = [
+  ...MORPHS.map((morph) => axolotlPalette(morph, null)),
+  ...DREAM_IDS.map((dream, k) => axolotlPalette(MORPHS[k % MORPHS.length], dream)),
+];
+
+/**
+ * Failures where paintBodyLayers at a SWIMS x AMPS pose paints other than at
+ * the straight tail (the body bake's pose) at x >= rootX + RIG_SEAM_OVERLAP,
+ * where the body part shows. Points of each paint compared there; counts must match.
+ */
+function seamGaps(look: AxolotlArtLook, palette: MorphPalette, outfit: ArtOutfit): string[] {
+  const from = axolotlBodyGeometry(look).tail.rootX + RIG_SEAM_OVERLAP;
+  const straight = recordPaints((ctx) => paintBodyLayers(ctx, pose({ tailAmp: 0 }), palette, look, outfit));
+  const failures: string[] = [];
+  for (const swimPhase of SWIMS) {
+    for (const tailAmp of AMPS) {
+      const posed = recordPaints((ctx) => paintBodyLayers(ctx, pose({ swimPhase, tailAmp }), palette, look, outfit));
+      const at = `${lookId(look)} ${look.spots} ${palette.dream?.id ?? 'plain'} swim ${swimPhase.toFixed(3)} amp ${tailAmp}`;
+      if (posed.length !== straight.length) failures.push(`${at}: ${posed.length} paints, straight ${straight.length}`);
+      else {
+        const gap = paintsGap(posed, straight, from);
+        if (gap > EXACT) failures.push(`${at}: ${gap}`);
+      }
+    }
+  }
+  return failures;
+}
+
 describe('the composed rig at the still pose', { timeout: TIMEOUT_MS }, () => {
-  it('paints what drawAxolotl paints at RIG_STILL_POSE, within 1e-6, but for the tail spot marks in the body bake', () => {
-    const failures = EVERY_BODY_LOOK.flatMap((look, n) =>
-      stillGaps(look, PALETTES[n % PALETTES.length], n % 3 === 0 ? NO_OUTFIT : FULL, true),
-    );
+  it('paints what drawAxolotl paints at RIG_STILL_POSE, within 1e-6', () => {
+    const failures = EVERY_BODY_LOOK.flatMap((look, n) => stillGaps(look, PALETTES[n % PALETTES.length], n % 3 === 0 ? NO_OUTFIT : FULL));
     expect(failures).toEqual([]);
   });
 
-  // FINDING (#46): the body bake is clipped to x >= the tail root, but a tail-space spot mark whose
-  // ink reaches past the root is baked there on the straight tail. Patches' first tail mark (s 0.2,
-  // rx 6.2) on a Girl Short Baby tail (length 30.6) reaches 6.2 - 0.2 x 30.6 = 0.08 units past the
-  // root, so the body bake shows a 0.08-unit sliver of it at the straight-tail place: 2.03 units off
-  // drawAxolotl's mark at the still pose (and up to the tail's bend there, 3.52, on a dashing tail).
-  // Every other Spots option and every other look keeps its tail marks behind the root.
-  // it.fails keeps the claim on record until the body bake leaves tail-space marks out.
-  it.fails('KNOWN GAP: paints the Patches tail mark exactly at the still pose on a Girl Short Baby', () => {
+  // FINDING (#46, fixed): a tail-space spot mark can reach past the tail root. Patches' first tail
+  // mark (s 0.2, rx 6.2) on a Girl Short Baby tail (length 30.6) reaches 6.2 - 0.2 x 30.6 = 0.08
+  // units past the root, and the body bake (the straight tail, clipped to x >= the root) once showed
+  // that sliver at the straight-tail place: 2.03 units off drawAxolotl's mark at the still pose, up
+  // to 3.52 on a dashing tail. The tail part now draws over the body part, so the seam overlap shows
+  // the tail's posed copy; the body shows only past rootX + RIG_SEAM_OVERLAP (seam guard below).
+  it('paints the Patches tail mark exactly at the still pose on a Girl Short Baby', () => {
     const failures = AXO_BODIES.flatMap((body) =>
-      stillGaps({ ...DEFAULT_ART_LOOK, sex: 'girl', tail: 'short', age: 'baby', body, spots: 'patches' }, LEUCISTIC, NO_OUTFIT, false),
+      stillGaps({ ...DEFAULT_ART_LOOK, sex: 'girl', tail: 'short', age: 'baby', body, spots: 'patches' }, LEUCISTIC, NO_OUTFIT),
     );
     expect(failures).toEqual([]);
   });
 
-  it('keeps every other Spots option\'s tail marks behind the tail root on every look', () => {
-    const failures = EVERY_BODY_LOOK.flatMap((look) =>
-      SPOTS_OPTIONS.filter((spots) => !(spots === 'patches' && look.sex === 'girl' && look.tail === 'short' && look.age === 'baby')).flatMap(
-        (spots) => stillGaps({ ...look, spots }, LEUCISTIC, NO_OUTFIT, false),
-      ),
+  it('paints every Spots option exactly at the still pose on every look', () => {
+    const failures = EVERY_BODY_LOOK.flatMap((look) => SPOTS_OPTIONS.flatMap((spots) => stillGaps({ ...look, spots }, LEUCISTIC, NO_OUTFIT)));
+    expect(failures).toEqual([]);
+  });
+
+  it('paints the body layers past the seam overlap the same at every tail pose as on the straight tail', () => {
+    const failures = EVERY_BODY_LOOK.flatMap((look, l) =>
+      SPOTS_OPTIONS.flatMap((spots, s) => {
+        const palette = SEAM_PALETTES[(l * SPOTS_OPTIONS.length + s) % SEAM_PALETTES.length];
+        return seamGaps({ ...look, spots }, palette, NO_OUTFIT);
+      }),
     );
     expect(failures).toEqual([]);
   });

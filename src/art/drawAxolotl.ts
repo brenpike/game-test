@@ -609,9 +609,19 @@ export function paintAxolotlLeg(
 }
 
 /**
+ * Which of layers 4 to 8.2 paintBodyLayers paints: 'all' of them; 'under',
+ * layers 4 to 6.2 (silhouette, fin bands and rays, belly, morph rim and
+ * speckles), stopping before the 6.5 Dream block; 'over', only what follows
+ * the Dream pattern (the Dream rim and marker, shines, flecks and shimmer,
+ * spots, the Shirt item). 'under', the pattern, then 'over' paint as 'all'.
+ */
+export type BodyLayers = 'all' | 'under' | 'over';
+
+/**
  * Paint layers 4 to 8.2 of drawAxolotl: the merged silhouette, fin bands and
  * rays, belly, morph rim and speckles, the Dream overlay, shines, flecks and
- * shimmer, spots, then the Shirt item. Not the Tail item (8.5).
+ * shimmer, spots, then the Shirt item. Not the Tail item (8.5). `layers`
+ * (default 'all') paints only the 'under' or 'over' part (BodyLayers).
  */
 export function paintBodyLayers(
   ctx: CanvasRenderingContext2D,
@@ -619,6 +629,7 @@ export function paintBodyLayers(
   palette: MorphPalette,
   look: AxolotlArtLook,
   outfit: ArtOutfit,
+  layers: BodyLayers = 'all',
 ): void {
   const swim = pose.swimPhase;
   const extras = palette.extras;
@@ -647,62 +658,66 @@ export function paintBodyLayers(
   sil.closePath();
   ell(sil, torso.cx, torso.cy, torso.rx, torso.ry);
   ell(sil, HEAD_ELLIPSE.cx, HEAD_ELLIPSE.cy, HEAD_ELLIPSE.rx, HEAD_ELLIPSE.ry);
-  blob(ctx, sil, palette.body, LW);
-
-  // 5. fin bands, fin rays, core edge (from the look's fin start: nearer the body on a Boy)
   const i0 = geo.tail.finStart;
-  const bandT = new Path2D();
-  const bandB = new Path2D();
-  bandT.moveTo(topC[i0][0], topC[i0][1]);
-  bandB.moveTo(botC[i0][0], botC[i0][1]);
-  for (let i = i0 + 1; i <= N; i++) {
-    bandT.lineTo(topC[i][0], topC[i][1]);
-    bandB.lineTo(botC[i][0], botC[i][1]);
-  }
-  for (let i = N; i >= i0; i--) {
-    bandT.lineTo(topF[i][0], topF[i][1]);
-    bandB.lineTo(botF[i][0], botF[i][1]);
-  }
-  bandT.closePath();
-  bandB.closePath();
-  ctx.fillStyle = palette.fin;
-  ctx.fill(bandT);
-  ctx.fill(bandB);
+  let p: Path2D;
+  if (layers !== 'over') {
+    blob(ctx, sil, palette.body, LW);
 
-  const rays = new Path2D();
-  for (const ri of [5, 8, 11]) {
-    rays.moveTo(topC[ri][0], topC[ri][1]);
-    rays.lineTo(topF[ri][0], topF[ri][1]);
-    rays.moveTo(botC[ri][0], botC[ri][1]);
-    rays.lineTo(botF[ri][0], botF[ri][1]);
-  }
-  for (let i = i0; i <= N; i++) {
-    if (i === i0) rays.moveTo(topC[i][0], topC[i][1]);
-    else rays.lineTo(topC[i][0], topC[i][1]);
-  }
-  for (let i = i0; i <= N; i++) {
-    if (i === i0) rays.moveTo(botC[i][0], botC[i][1]);
-    else rays.lineTo(botC[i][0], botC[i][1]);
-  }
-  if (extras?.finRays !== null) {
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = extras?.finRays ?? FIN_RAY;
-    ctx.stroke(rays);
-  }
+    // 5. fin bands, fin rays, core edge (from the look's fin start: nearer the body on a Boy)
+    const bandT = new Path2D();
+    const bandB = new Path2D();
+    bandT.moveTo(topC[i0][0], topC[i0][1]);
+    bandB.moveTo(botC[i0][0], botC[i0][1]);
+    for (let i = i0 + 1; i <= N; i++) {
+      bandT.lineTo(topC[i][0], topC[i][1]);
+      bandB.lineTo(botC[i][0], botC[i][1]);
+    }
+    for (let i = N; i >= i0; i--) {
+      bandT.lineTo(topF[i][0], topF[i][1]);
+      bandB.lineTo(botF[i][0], botF[i][1]);
+    }
+    bandT.closePath();
+    bandB.closePath();
+    ctx.fillStyle = palette.fin;
+    ctx.fill(bandT);
+    ctx.fill(bandB);
 
-  // 6. belly
-  let p = new Path2D();
-  ell(p, belly.cx, belly.cy, belly.rx, belly.ry, 0.03);
-  ctx.fillStyle = palette.belly;
-  ctx.fill(p);
+    const rays = new Path2D();
+    for (const ri of [5, 8, 11]) {
+      rays.moveTo(topC[ri][0], topC[ri][1]);
+      rays.lineTo(topF[ri][0], topF[ri][1]);
+      rays.moveTo(botC[ri][0], botC[ri][1]);
+      rays.lineTo(botF[ri][0], botF[ri][1]);
+    }
+    for (let i = i0; i <= N; i++) {
+      if (i === i0) rays.moveTo(topC[i][0], topC[i][1]);
+      else rays.lineTo(topC[i][0], topC[i][1]);
+    }
+    for (let i = i0; i <= N; i++) {
+      if (i === i0) rays.moveTo(botC[i][0], botC[i][1]);
+      else rays.lineTo(botC[i][0], botC[i][1]);
+    }
+    if (extras?.finRays !== null) {
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = extras?.finRays ?? FIN_RAY;
+      ctx.stroke(rays);
+    }
 
-  // 6.2 morph rim light and speckles (clipped to the silhouette, under the shines); a Dream rim paints at 6.5
-  if (extras?.rim && !palette.dream) paintMorphRim(ctx, sil, topF, extras.rim.fin ? N : i0, torso, extras.rim);
-  if (extras?.speckles) paintMorphDots(ctx, sil, tail, torso, extras.speckles);
+    // 6. belly
+    p = new Path2D();
+    ell(p, belly.cx, belly.cy, belly.rx, belly.ry, 0.03);
+    ctx.fillStyle = palette.belly;
+    ctx.fill(p);
+
+    // 6.2 morph rim light and speckles (clipped to the silhouette, under the shines); a Dream rim paints at 6.5
+    if (extras?.rim && !palette.dream) paintMorphRim(ctx, sil, topF, extras.rim.fin ? N : i0, torso, extras.rim);
+    if (extras?.speckles) paintMorphDots(ctx, sil, tail, torso, extras.speckles);
+  }
+  if (layers === 'under') return;
 
   // 6.5 Dream overlay (guide 6p): pattern, then the rim light (top fin edge included), then the Dream marker
   if (palette.dream) {
-    paintDreamPattern(ctx, sil, { id: palette.dream.id, torso, tail, sheen: pose.sheen });
+    if (layers === 'all') paintDreamPattern(ctx, sil, { id: palette.dream.id, torso, tail, sheen: pose.sheen });
     if (extras?.rim) paintMorphRim(ctx, sil, topF, extras.rim.fin ? N : i0, torso, extras.rim);
     paintDreamMarker(ctx, dreamMarkerCentres(tail));
   }

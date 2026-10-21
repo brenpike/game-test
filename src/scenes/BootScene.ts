@@ -1,5 +1,6 @@
 import * as Phaser from 'phaser';
 import { bakeAreaTextures, type AreaTextures } from '../art/areaTextures';
+import { createAxolotlRigBake, type AxolotlRigBake } from '../art/axolotlRig';
 import { AXO_LEG_ROOTS, type AxolotlPose, type LegLook } from '../art/drawAxolotl';
 import type { ReedLook } from '../art/drawScenery';
 import { bakeMorphTextures, type MorphTextures } from '../art/morphTextures';
@@ -12,9 +13,7 @@ import {
   bakeSizedButton,
   bakeTextures,
   buttonKey,
-  createAxolotlTexture,
   iconKey,
-  type AxolotlTexture,
   type BakedTextures,
   type ButtonFill,
   type ButtonShape,
@@ -42,7 +41,7 @@ export const SCENE_KEYS = Object.freeze({
 export interface GameAssets {
   zone: ZoneLayout;
   baked: BakedTextures;
-  axolotl: AxolotlTexture;
+  axolotl: AxolotlRigBake;
   predator: PredatorTextures;
   treasure: TreasureTextures;
   tank: TankTextures;
@@ -339,7 +338,7 @@ export class BootScene extends Phaser.Scene {
       reeds: zone.reeds.map(toReedLook),
       pads: zone.pads,
     });
-    const axolotl = createAxolotlTexture(this, TEX.axolotl, bakeScale);
+    const axolotl = createAxolotlRigBake(this, TEX.axolotl, bakeScale);
     const predator = bakePredatorTextures(this, bakeScale);
     const treasure = bakeTreasureTextures(this, bakeScale);
     const morph = bakeMorphTextures(this, bakeScale);

@@ -1,10 +1,11 @@
 import * as Phaser from 'phaser';
+import type { AxolotlRigBake } from '../art/axolotlRig';
 import { AXO_SCENE_SCALE, axolotlLegRoots } from '../art/drawAxolotl';
 import type { AxolotlArtLook } from '../art/drawAxolotlParts';
 import { axolotlInkReach, carryBubbleLookScale, protectedHaloLookScale } from '../art/drawEffects';
 import type { TilapiaPose } from '../art/drawTilapia';
 import { DEPTH } from '../art/layers';
-import type { AxolotlTexture, TexInfo } from '../art/textures';
+import type { TexInfo } from '../art/textures';
 import type { EncounterState } from '../logic/encounter';
 import { isProtected } from '../logic/legs';
 import type { MotionProfile } from '../logic/motion';
@@ -57,7 +58,7 @@ const SHELL_TWINKLE_SCALE = 5 / 9;
 /** One frame of predator rendering input. `phase` is the trip phase for this frame. */
 export interface PredatorFrame {
   encounter: EncounterState;
-  axolotl: Phaser.GameObjects.Image;
+  axolotl: Phaser.GameObjects.Container;
   motion: MotionProfile;
   dt: number;
   phase: TripPhase;
@@ -97,24 +98,24 @@ function createLegEffect(image: Phaser.GameObjects.Image, life: number): LegEffe
 }
 
 /**
- * World position of an axolotl leg root for the look the texture currently paints, following the
- * sprite's position, scale and rotation. A sprite facing left has a negative `scaleX`, which
- * mirrors the root about the sprite's origin.
+ * World position of an axolotl leg root for the look the bake currently shows, following the
+ * rig root's position, scale and rotation. A root facing left has a negative `scaleX`, which
+ * mirrors the leg root about the anchor.
  */
-function legRootWorld(axolotl: Phaser.GameObjects.Image, texture: AxolotlTexture, leg: number): Vec2 {
-  const root = axolotlLegRoots(texture.look)[leg];
+function legRootWorld(axolotl: Phaser.GameObjects.Container, bake: AxolotlRigBake, leg: number): Vec2 {
+  const root = axolotlLegRoots(bake.look)[leg];
   if (!root) {
     throw new Error(`PredatorView: no leg root for leg ${leg}`);
   }
-  return anchorWorld(axolotl, texture.scale, root);
+  return anchorWorld(axolotl, bake.scale, root);
 }
 
 /**
- * The axolotl's on-screen size factor (1 at Large), from the sprite's unsquashed scale and the
- * texture's pixels per local unit.
+ * The axolotl's on-screen size factor (1 at Large), from the rig root's unsquashed scale and the
+ * bake's pixels per local unit.
  */
-function axolotlSizeFactor(axolotl: Phaser.GameObjects.Image, texture: AxolotlTexture): number {
-  return (axolotl.scaleY * texture.scale) / AXO_SCENE_SCALE;
+function axolotlSizeFactor(axolotl: Phaser.GameObjects.Container, bake: AxolotlRigBake): number {
+  return (axolotl.scaleY * bake.scale) / AXO_SCENE_SCALE;
 }
 
 /**
@@ -192,7 +193,7 @@ export class PredatorView {
     for (const leg of new Set(legs)) this.startBoostStar(leg);
   }
 
-  /** Draws one frame. Call after the axolotl sprite has its final transform for the frame. */
+  /** Draws one frame. Call after the axolotl rig root has its final transform for the frame. */
   render(frame: PredatorFrame): void {
     frame.encounter.tilapias.forEach((tilapia, i) => {
       this.renderTilapia(this.tilapias[i], tilapia, frame);
@@ -248,7 +249,7 @@ export class PredatorView {
   }
 
   /** In cooldown the tilapia turns away from the axolotl, so it is never shown holding on. */
-  private tilapiaFacing(tilapia: TilapiaState, axolotl: Phaser.GameObjects.Image): -1 | 1 {
+  private tilapiaFacing(tilapia: TilapiaState, axolotl: Phaser.GameObjects.Container): -1 | 1 {
     if (tilapia.phase !== 'cooldown') return tilapia.facing;
     const away = Math.sign(tilapia.pos.x - axolotl.x);
     if (away > 0) return 1;
@@ -256,7 +257,7 @@ export class PredatorView {
     return tilapia.facing;
   }
 
-  /** Re-measures the halo and carry bubble look scales when the axolotl texture paints a new look. */
+  /** Re-measures the halo and carry bubble look scales when the axolotl bake shows a new look. */
   private refreshEffectLook(): void {
     const look = this.assets.axolotl.look;
     if (look === this.effectLook) return;

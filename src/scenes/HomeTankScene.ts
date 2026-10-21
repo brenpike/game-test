@@ -1,7 +1,8 @@
 import * as Phaser from 'phaser';
+import { createAxolotlRigBake, createAxolotlRigView, type AxolotlRigBake, type AxolotlRigView } from '../art/axolotlRig';
 import type { AxolotlPose } from '../art/drawAxolotl';
 import { dreamSheenAt } from '../art/drawDreamOverlay';
-import { artOutfit, outfitKey, type ArtOutfit } from '../art/drawWearables';
+import { artOutfit } from '../art/drawWearables';
 import { DEPTH } from '../art/layers';
 import {
   axolotlPalette,
@@ -13,10 +14,9 @@ import {
   T_STATIC,
   UI_PANEL,
   WHITE,
-  type MorphPalette,
 } from '../art/palette';
 import type { IconKind } from '../art/drawUi';
-import { createAxolotlTexture, type AxolotlTexture, type TexInfo } from '../art/textures';
+import type { TexInfo } from '../art/textures';
 import { areaLabel } from '../logic/areaText';
 import { areaById, type AreaData } from '../logic/areas';
 import { ownedDreamColours } from '../logic/catalogue';
@@ -26,7 +26,6 @@ import type { Rect, Size } from '../logic/hudLayout';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { wornIds } from '../logic/outfit';
 import { outfitPerks } from '../logic/perks';
-import { NO_REPAINT, pickSecondaryRepaint } from '../logic/repaintBudget';
 import { spriteFrameBounds } from '../logic/spriteAnchor';
 import {
   bestStars,
@@ -74,7 +73,6 @@ import {
   cssColor,
   drawPanel,
   readSceneView,
-  samePose,
   uiTextStyle,
   useCssCamera,
   type GameAssets,
@@ -95,8 +93,6 @@ const TAU = Math.PI * 2;
 const TITLE_PX = 34;
 const SURFACE_STEP = 8;
 const GO_EXPLORING_INDEX = 0;
-const LOW_FPS = 45;
-const LOW_FPS_REDRAW_S = 1 / 30;
 const CAPTURED_KEYS: readonly number[] = [
   Phaser.Input.Keyboard.KeyCodes.TAB,
   Phaser.Input.Keyboard.KeyCodes.LEFT,
@@ -158,25 +154,21 @@ interface HubButton {
   button: UiButton;
 }
 
-/** One owned axolotl swimming in the tank, with its own texture, morph colours, pose cache and tap area. */
+/**
+ * One owned axolotl swimming in the tank: its own rig bake (its look, its morph's colours or its
+ * Dream colour's over its morph, and its outfit), the rig view showing it, and its tap area.
+ */
 interface TankSwimmer {
   id: string;
-  texture: AxolotlTexture;
-  /** Its morph's colours, or its Dream colour's over its morph (axolotlPalette). */
-  palette: MorphPalette;
-  /** What it wears (artOutfit of its outfit) and that outfit's outfitKey. */
-  outfit: ArtOutfit;
-  outfitKey: string;
-  /** The outfitKey last painted, or null before the first paint; a change repaints it. */
-  paintedOutfitKey: string | null;
-  image: Phaser.GameObjects.Image;
-  lastPose: AxolotlPose | null;
-  /** This frame's pose for an axolotl after the first, painted when the shared repaint budget picks it. */
-  wanted?: AxolotlPose;
-  /** Seconds since the last repaint, for the low frame rate repaint cap. */
-  redrawAcc: number;
-  /** Tap area in texture px, kept at least the touch target size (touchHitRect). */
+  bake: AxolotlRigBake;
+  view: AxolotlRigView;
+  /**
+   * Tap area on the view's root in texture px from the anchor (the root's local origin), kept at
+   * least the touch target size (touchHitRect).
+   */
   hitArea: Phaser.Geom.Rectangle;
+  /** The bake version the tap area was sized for; a re-bake (a size change) sizes it again. */
+  hitVersion: number;
   /** Whether a press began on this axolotl, so only a press and release on it picks it. */
   pressed: boolean;
 }
@@ -228,21 +220,6 @@ function wearersBesides(axolotls: readonly OwnedAxolotl[], axolotlId: string): M
   return wearers;
 }
 
-/** Whether `swimmer` already shows `pose` in its current outfit, so it need not repaint. */
-function swimmerPainted(swimmer: TankSwimmer, pose: AxolotlPose): boolean {
-  return (
-    swimmer.lastPose !== null && samePose(pose, swimmer.lastPose) && swimmer.paintedOutfitKey === swimmer.outfitKey
-  );
-}
-
-/** Repaints `swimmer` in `pose`, its colours and its outfit, and records what it painted. */
-function paintSwimmer(swimmer: TankSwimmer, pose: AxolotlPose): void {
-  swimmer.redrawAcc = 0;
-  swimmer.texture.redraw(pose, swimmer.palette, swimmer.outfit);
-  swimmer.lastPose = pose;
-  swimmer.paintedOutfitKey = swimmer.outfitKey;
-}
-
 /** Places a full-frame tank layer (480 x 360, origin top-left) on the tank frame. */
 function placeTankLayer(image: Phaser.GameObjects.Image, info: TexInfo, frame: TankFrame): void {
   image.setPosition(frame.x, frame.y).setScale(frame.scale / info.scale);
@@ -279,8 +256,6 @@ export class HomeTankScene extends Phaser.Scene {
   private surface!: Phaser.GameObjects.Graphics;
   private surfaceLine = { color: 0, alpha: 1 };
   private swimmers: TankSwimmer[] = [];
-  /** Repaint budget waits for the axolotls after the first, one per axolotl; reused every frame. */
-  private readonly rescuedWaits: number[] = [];
 
   private titlePanel!: Phaser.GameObjects.Graphics;
   private titleText!: Phaser.GameObjects.Text;
@@ -366,7 +341,7 @@ export class HomeTankScene extends Phaser.Scene {
 
   /**
    * Animates the tank, or only the styler while the restyle screen's opaque backdrop covers the tank,
-   * so hidden axolotls do not repaint (art guide 9, repaint budget). The tank picks up where it left off.
+   * so hidden axolotls are not posed (art guide 9). The tank picks up where it left off.
    * An open explorer card counts its Go! wait while the tank animates behind its dim.
    */
   update(time: number, deltaMs: number): void {
@@ -408,52 +383,53 @@ export class HomeTankScene extends Phaser.Scene {
 
   /**
    * One swimmer per owned axolotl in its morph's colours (or its Dream colour), its own look and its
-   * outfit, each with its own texture so their poses never share a frame. Baked at the boot bake
-   * scale; the look's size factor is applied by the texture.
+   * outfit, each with its own rig bake and view so their poses never share a frame. Baked at the
+   * boot bake scale; the look's size factor is applied by the bake.
    */
   private buildSwimmers(): void {
     const bakeScale = this.assets.axolotl.bakeScale;
     this.swimmers = this.session.hub.axolotls.map((axolotl, index): TankSwimmer => {
-      const texture = createAxolotlTexture(this, `tank-axolotl-${axolotl.id}`, bakeScale, axolotl.look);
-      const image = this.add
-        .image(0, 0, texture.key)
-        .setOrigin(texture.info.originNormX, texture.info.originNormY)
-        .setDepth(TANK_DEPTH.axolotls);
-      const hitArea = new Phaser.Geom.Rectangle(0, 0, texture.info.pxW, texture.info.pxH);
-      const outfit = artOutfit(axolotl.outfit);
+      const bake = createAxolotlRigBake(this, `tank-axolotl-${axolotl.id}`, bakeScale, {
+        look: axolotl.look,
+        palette: axolotlPalette(axolotl.morph, axolotl.dreamColour),
+        outfit: artOutfit(axolotl.outfit),
+      });
+      const view = createAxolotlRigView(this, bake);
+      view.root.setDepth(TANK_DEPTH.axolotls);
       const swimmer: TankSwimmer = {
         id: axolotl.id,
-        texture,
-        palette: axolotlPalette(axolotl.morph, axolotl.dreamColour),
-        outfit,
-        outfitKey: outfitKey(outfit),
-        paintedOutfitKey: null,
-        image,
-        lastPose: null,
-        redrawAcc: 0,
-        hitArea,
+        bake,
+        view,
+        hitArea: new Phaser.Geom.Rectangle(0, 0, bake.info.pxW, bake.info.pxH),
+        hitVersion: -1,
         pressed: false,
       };
+      this.fitSwimmerHitArea(swimmer);
       this.bindSwimmerTap(swimmer, index);
       return swimmer;
     });
   }
 
-  /** A press and release on an axolotl, in the hub, picks it; leaving it first cancels the press. */
+  /**
+   * A press and release on an axolotl, in the hub, picks it; leaving it first cancels the press.
+   * The tap area sits on the view's root Container, which hit-tests in its local space from its
+   * origin (a Container's display origin is 0 while it has no size), with a negative x scale
+   * mirrored back, so a left-facing axolotl hits its mirrored art.
+   */
   private bindSwimmerTap(swimmer: TankSwimmer, index: number): void {
-    const { image } = swimmer;
-    image.setInteractive({
+    const { root } = swimmer.view;
+    root.setInteractive({
       hitArea: swimmer.hitArea,
       hitAreaCallback: Phaser.Geom.Rectangle.Contains,
       useHandCursor: true,
     });
-    image.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
+    root.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
       swimmer.pressed = this.mode === 'hub';
     });
-    image.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
+    root.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
       swimmer.pressed = false;
     });
-    image.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.releaseSwimmer(swimmer, index));
+    root.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.releaseSwimmer(swimmer, index));
   }
 
   /** The focused axolotl's double focus ring and its name tag (a white panel with the name in bold ink 18 px). */
@@ -747,9 +723,9 @@ export class HomeTankScene extends Phaser.Scene {
 
   /**
    * Done in restyle: stores the new name, look, Dream colour and outfit (the morph and every other
-   * field stay; a Wearable put on comes off any other axolotl), saving once (D1). Repaints that
-   * axolotl's swimmer in them from a first paint, and any other swimmer whose outfit changed, then
-   * goes back to where the restyle was opened from.
+   * field stay; a Wearable put on comes off any other axolotl), saving once (D1). Re-bakes that
+   * axolotl's swimmer in them, and any other swimmer whose outfit changed, then goes back to where
+   * the restyle was opened from.
    */
   private finishRestyle(index: number, styled: StyledAxolotl, from: RestyleFrom): void {
     const { id } = this.swimmerAxolotl(index);
@@ -759,11 +735,10 @@ export class HomeTankScene extends Phaser.Scene {
     this.session = next;
     writeSession(this.registry, this.session);
     const axolotl = this.swimmerAxolotl(index);
-    const swimmer = this.swimmers[index];
-    swimmer.texture.setLook(axolotl.look);
-    swimmer.palette = axolotlPalette(axolotl.morph, axolotl.dreamColour);
-    swimmer.lastPose = null;
-    this.applySwimmerTexture(swimmer);
+    this.swimmers[index].bake.setAppearance({
+      look: axolotl.look,
+      palette: axolotlPalette(axolotl.morph, axolotl.dreamColour),
+    });
     this.refreshSwimmerOutfits();
     this.closeRestyle(index, from);
   }
@@ -784,37 +759,29 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * Gives every swimmer the outfit its owned axolotl wears now. A swimmer whose outfitKey changed
-   * repaints on its next frame, an axolotl after the first within the shared repaint budget.
+   * Gives every swimmer the outfit its owned axolotl wears now. The bake re-bakes only a swimmer
+   * whose outfit changed.
    */
   private refreshSwimmerOutfits(): void {
     for (const [index, swimmer] of this.swimmers.entries()) {
-      const outfit = artOutfit(this.swimmerAxolotl(index).outfit);
-      const key = outfitKey(outfit);
-      if (key === swimmer.outfitKey) continue;
-      swimmer.outfit = outfit;
-      swimmer.outfitKey = key;
+      swimmer.bake.setAppearance({ outfit: artOutfit(this.swimmerAxolotl(index).outfit) });
     }
   }
 
   /**
-   * Shows a swimmer's texture after its look changed. A size change re-bakes the texture, so the
-   * texture, origin, tap area and scale are applied again.
+   * Sizes a swimmer's tap area to its bake's frame, at least the touch target size at the current
+   * tank scale, moved so the anchor (the view root's local origin) sits where the frame puts it.
    */
-  private applySwimmerTexture(swimmer: TankSwimmer): void {
-    const { texture } = swimmer;
-    swimmer.image
-      .setTexture(texture.key)
-      .setOrigin(texture.info.originNormX, texture.info.originNormY)
-      .setScale(texture.displayScale(this.frame.scale));
-    this.fitSwimmerHitArea(swimmer);
-  }
-
-  /** Sizes a swimmer's tap area to its texture, at least the touch target size at the current tank scale. */
   private fitSwimmerHitArea(swimmer: TankSwimmer): void {
-    const { info } = swimmer.texture;
-    const area = touchHitRect({ w: info.pxW, h: info.pxH }, swimmer.texture.displayScale(this.frame.scale));
-    swimmer.hitArea.setTo(area.x, area.y, area.w, area.h);
+    const { info } = swimmer.bake;
+    const area = touchHitRect({ w: info.pxW, h: info.pxH }, swimmer.bake.displayScale(this.frame.scale));
+    swimmer.hitArea.setTo(
+      area.x - info.originNormX * info.pxW,
+      area.y - info.originNormY * info.pxH,
+      area.w,
+      area.h,
+    );
+    swimmer.hitVersion = swimmer.bake.version;
   }
 
   // ---- input ---------------------------------------------------------------
@@ -910,9 +877,9 @@ export class HomeTankScene extends Phaser.Scene {
     const enabled = this.mode === 'hub';
     for (const swimmer of this.swimmers) {
       if (enabled) {
-        swimmer.image.setInteractive();
+        swimmer.view.root.setInteractive();
       } else {
-        swimmer.image.disableInteractive();
+        swimmer.view.root.disableInteractive();
         swimmer.pressed = false;
       }
     }
@@ -964,16 +931,15 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * Removes each axolotl's sprite and its own texture, which the texture manager would otherwise keep
-   * for the whole canal trip, then forgets the axolotls (scene shutdown).
+   * Removes each axolotl's rig view and then its bake's textures, which the texture manager would
+   * otherwise keep for the whole canal trip, then forgets the axolotls (scene shutdown).
    */
   private releaseSwimmers(): void {
     for (const swimmer of this.swimmers) {
-      swimmer.image.destroy();
-      this.textures.remove(swimmer.texture.key);
+      swimmer.view.destroy();
+      swimmer.bake.destroy();
     }
     this.swimmers = [];
-    this.rescuedWaits.length = 0;
   }
 
   // ---- layout --------------------------------------------------------------
@@ -1045,11 +1011,10 @@ export class HomeTankScene extends Phaser.Scene {
   private animate(dt: number): void {
     this.clock += dt;
     const t = this.motion.ambient ? this.clock : T_STATIC;
-    this.swimmers.forEach((swimmer, index) => this.renderSwimmer(swimmer, index, t, dt));
+    this.swimmers.forEach((swimmer, index) => this.renderSwimmer(swimmer, index, t));
     this.renderPickFocus();
     this.renderSurface(t);
     this.decorator.update(this.clock, this.motion);
-    this.repaintRescuedSwimmers();
   }
 
   /**
@@ -1064,7 +1029,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.nameTagPanel.setVisible(swimmer !== undefined);
     this.nameTagText.setVisible(swimmer !== undefined);
     if (target === null || swimmer === undefined) return;
-    const rect: Rect = spriteFrameBounds(swimmer.image);
+    const rect: Rect = spriteFrameBounds(swimmer.view.spriteFrame());
     strokeAxolotlRing(this.pickRing, rect);
     this.nameTagText.setText(this.swimmerAxolotl(target.i).name);
     const tagSize: Size = { w: this.nameTagText.width + 2 * UI.pad, h: this.nameTagText.height + 2 * UI.pad };
@@ -1073,8 +1038,11 @@ export class HomeTankScene extends Phaser.Scene {
     this.nameTagText.setPosition(tag.x + UI.pad, tag.y + UI.pad);
   }
 
-  /** Places one axolotl from its tank pose (still under reduced motion) and repaints it when its pose changes. */
-  private renderSwimmer(swimmer: TankSwimmer, index: number, t: number, dt: number): void {
+  /**
+   * Poses one axolotl and places it from its tank pose (still under reduced motion); a re-bake since
+   * its tap area was sized sizes it again.
+   */
+  private renderSwimmer(swimmer: TankSwimmer, index: number, t: number): void {
     const pose: AxolotlPose = {
       swimPhase: (TAU * t) / 1.2,
       gillPhase: this.motion.gillFlutter ? (TAU * t) / 0.8 : (TAU * T_STATIC) / 0.8,
@@ -1083,55 +1051,15 @@ export class HomeTankScene extends Phaser.Scene {
       sparkle: 0,
       sheen: this.motion.ambient ? dreamSheenAt(t) : undefined,
     };
-    if (index === 0) this.redrawSwimmer(swimmer, pose, dt);
-    else this.askRescuedRepaint(swimmer, index - 1, pose, dt);
+    swimmer.view.setPose(pose);
+    if (swimmer.hitVersion !== swimmer.bake.version) this.fitSwimmerHitArea(swimmer);
     const swim = tankSwimPose(swimmer.id, index, this.clock, !this.motion.ambient);
     const at = tankToCss(this.frame, { x: swim.x, y: swim.y });
     faceSprite(
-      swimmer.image.setPosition(at.x, at.y).setRotation(swim.tilt),
+      swimmer.view.root.setPosition(at.x, at.y).setRotation(swim.tilt),
       swim.facing,
-      swimmer.texture.displayScale(this.frame.scale),
+      swimmer.bake.displayScale(this.frame.scale),
     );
-  }
-
-  /**
-   * Repaints one axolotl's texture in its morph's colours and its outfit when its pose or outfit
-   * changes. While the frame rate is low, repaints are capped at 30 a second, as in the swim, so each
-   * owned axolotl costs less per frame.
-   */
-  private redrawSwimmer(swimmer: TankSwimmer, pose: AxolotlPose, dt: number): void {
-    if (swimmerPainted(swimmer, pose)) return;
-    swimmer.redrawAcc += dt;
-    if (swimmer.lastPose !== null && this.game.loop.actualFps < LOW_FPS && swimmer.redrawAcc < LOW_FPS_REDRAW_S) {
-      return;
-    }
-    paintSwimmer(swimmer, pose);
-  }
-
-  /**
-   * Records this frame's pose for an axolotl after the first and its repaint budget wait in `slot`.
-   * An outfit change waits for the budget like a pose change. A first paint, or any change under
-   * reduced motion, paints at once so the morph colours and still pose show now (PRD C8).
-   */
-  private askRescuedRepaint(swimmer: TankSwimmer, slot: number, pose: AxolotlPose, dt: number): void {
-    swimmer.wanted = pose;
-    this.rescuedWaits[slot] = NO_REPAINT;
-    if (swimmerPainted(swimmer, pose)) return;
-    swimmer.redrawAcc += dt;
-    if (swimmer.lastPose === null || !this.motion.ambient) {
-      paintSwimmer(swimmer, pose);
-      return;
-    }
-    this.rescuedWaits[slot] = swimmer.redrawAcc;
-  }
-
-  /** Repaints at most one axolotl after the first this frame, the one the shared repaint budget picks. */
-  private repaintRescuedSwimmers(): void {
-    this.rescuedWaits.length = Math.max(0, this.swimmers.length - 1);
-    const slot = pickSecondaryRepaint(this.rescuedWaits);
-    if (slot < 0) return;
-    const swimmer = this.swimmers[slot + 1];
-    if (swimmer.wanted) paintSwimmer(swimmer, swimmer.wanted);
   }
 
   /** The surface line across the glass at the tank water top, with the canal wave (still under reduced motion). */

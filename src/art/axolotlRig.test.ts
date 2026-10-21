@@ -743,13 +743,13 @@ describe('part order and pivots', () => {
   it('lists the parts in the 6a draw order, wear parts only when worn', () => {
     const bare = rigParts(appearanceOf(DEFAULT_ART_LOOK, 0, NO_OUTFIT)).map((p) => p.id);
     expect(bare).toEqual([
-      'gill-far-0', 'gill-far-1', 'gill-far-2', 'leg-0', 'leg-1', 'leg-2', 'leg-3', 'tail', 'body',
+      'gill-far-0', 'gill-far-1', 'gill-far-2', 'leg-0', 'leg-1', 'leg-2', 'leg-3', 'body', 'tail',
       'gill-near-0', 'gill-near-1', 'gill-near-2', 'face', 'eyes',
     ]);
     const parts = rigParts(appearanceOf(DEFAULT_ART_LOOK, 0));
     expect(parts.map((p) => p.id)).toEqual([
       'gill-far-0', 'gill-far-1', 'gill-far-2', 'leg-0', 'leg-1', 'wear-leg-0', 'wear-leg-1', 'leg-2', 'leg-3',
-      'wear-leg-2', 'wear-leg-3', 'tail', 'body', 'tail-item', 'gill-near-0', 'gill-near-1', 'gill-near-2', 'face',
+      'wear-leg-2', 'wear-leg-3', 'body', 'tail', 'tail-item', 'gill-near-0', 'gill-near-1', 'gill-near-2', 'face',
       'eyes',
     ]);
     const layers = parts.map((p) => p.layer);

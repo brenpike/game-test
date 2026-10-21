@@ -12,6 +12,9 @@
  * The tail and the body are paintBodyLayers split at the tail root: the tail
  * part holds x <= rootX + RIG_SEAM_OVERLAP and the body part x >= rootX, so the
  * seam overlaps by more than the outline width (LW) and the tail's bend is 0 there.
+ * The body draws first and the tail over it, so the overlap always shows the
+ * tail's posed copy (still bake, rope or strip) and never the body's straight
+ * one: tail marks that reach past the root (a Patches spot) bend with the tail.
  */
 import { TAU } from './canvasKit';
 import {
@@ -147,7 +150,11 @@ export type RigPartId =
   | 'face'
   | 'eyes';
 
-/** One baked part: where it joins the axolotl and the box its texture covers. */
+/**
+ * One baked part: where it joins the axolotl and the box its texture covers.
+ * Parts draw in rigParts order; the body and the tail share layers 4 to 8.2,
+ * the body first, so the tail covers the seam overlap.
+ */
 export interface RigPartSpec {
   readonly id: RigPartId;
   /** The first 6a layer the part paints. */
@@ -605,8 +612,9 @@ function facePartInk(look: AxolotlArtLook, outfit: ArtOutfit): Bounds {
 /**
  * The parts of an appearance in draw order (guide 6a): far gills (1), far legs
  * (2), their Socks and Feet (2.5, only when the outfit wears on the legs), near
- * legs (3) and theirs (3.5), the tail and the body (4 to 8.2), the Tail item
- * (8.5, only when one is worn), near gills (9), the face (9.5 to 11.5) and the eyes (12).
+ * legs (3) and theirs (3.5), the body then the tail (both 4 to 8.2: the tail
+ * draws over the seam overlap), the Tail item (8.5, only when one is worn),
+ * near gills (9), the face (9.5 to 11.5) and the eyes (12).
  */
 export function rigParts(appearance: RigAppearance): RigPartSpec[] {
   const { look, outfit } = appearance;
@@ -632,8 +640,8 @@ export function rigParts(appearance: RigAppearance): RigPartSpec[] {
   pushLegs(0, 2, 2.5);
   pushLegs(2, 3, 3.5);
   const tailRoot: LocalPoint = { x: geo.tail.rootX, y: g.straightCys[0] };
-  parts.push(makeSpec('tail', [4, 8.2], tailRoot, tailPartInk(g), 1, tailMaxDy(look)));
   parts.push(makeSpec('body', [4, 8.2], { x: 0, y: 0 }, bodyPartInk(g)));
+  parts.push(makeSpec('tail', [4, 8.2], tailRoot, tailPartInk(g), 1, tailMaxDy(look)));
   if (wornSlug(outfit, 'tail') !== undefined) {
     const frame = g.stillTailFrame;
     parts.push(makeSpec('tail-item', [8.5, 8.5], { x: frame.x, y: frame.y }, tailSlotBounds(frame)));
