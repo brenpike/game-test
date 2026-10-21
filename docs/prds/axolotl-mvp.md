@@ -667,11 +667,11 @@ Fantasy areas and imaginary creatures are labelled as imaginary, like Dream colo
 Fact cards stay true to real animals and real places.
 Areas 1 to 10 stay in real Xochimilco habitats.
 
-### Rarity glow (decision, not built yet)
+### Rarity glow (decision)
 
 Owner request (issue #68): a treasure has a faint glow in its rarity's colour, so a player can tell its rarity at a glance.
 The glow is about as faint as the GFP halo ([art style guide](../art-style-guide.md) 3c). It never pulses faster than once every 2.4 seconds, and it is static under reduced motion.
-It shows wherever a treasure is drawn: in the area once revealed (B8), in the Trip Bag, on the banking card, in the Treasure Chest, and on placed Decorations. Paint shells and Dream colour swatches glow by their own rarity too.
+It shows on owned and revealed treasures: in the area once revealed (B8), on the find toast, the banking card, and the tank arrival card, in the Treasure Chest, and on placed Decorations. The Trip Bag panel shows no treasure icons, so the find toast and the banking card carry the glow for its finds. Paint shells and Dream colour swatches glow by their own rarity too. Open questions 85 and 86 list every place it shows, and where it does not.
 Colour stays the weakest cue. The rarity badge shape and name still carry rarity (B2, X2), and the glow never replaces them.
 Product owner decisions, 2026-10-20:
 
@@ -679,16 +679,16 @@ Product owner decisions, 2026-10-20:
 - Legendary keeps gold (`#ffc12e`).
 - No glow while a treasure is hidden. The glow appears once it is revealed (B8), and the hint sparkle (B7) stays the only cue for a hidden treasure.
 
-The PR that builds it updates the rarity B rows and art style guide 3e, 7e, and section 9. Until then, those rows stay as they are.
+Built in 0.20.0 (PR #85): B2, B7, B8, C11, C15, the Testing Decisions and open questions 83 to 88 hold the built rules.
 
-### Treasure checklist (request, not built yet)
+### Treasure checklist (decision)
 
 Owner request (issue #69): the player can see every treasure, so they know what they have and what they still need to find.
 The Treasure Chest shows every catalogue treasure, found or not, in catalogue order within each section. A found treasure shows as today (C11).
 An unfound treasure shows a flat silhouette of its icon, in the style of the unfound-morph silhouette (C12), with a "?" and its rarity badge and rarity name. An unfound Dream colour's silhouette is a plain swatch.
 A silhouette fills in once its treasure is banked. "X of Y found" stays. Found and unfound are never told apart by colour alone (X2).
-Recommended, awaiting owner confirmation in the PR that builds it: it lives in the Treasure Chest, not a new screen; an unfound treasure's name shows as "???", with a hint by rarity based on B6; and an unfound Wearable shows its slot but not its perk.
-That PR updates C11 and the art style guide (section 8). Until then, C11 stays as it is. It starts after outfits (issue #16) merges.
+Issue #69's recommendations: it lives in the Treasure Chest, not a new screen; an unfound treasure's name shows as "???", with a hint by rarity based on B6; and an unfound Wearable shows its slot but not its perk.
+Built in 0.20.0 (PR #85): C11 holds the built rules; open questions 89 to 92 track the owner's confirmation.
 
 ### Rarer treasures nearer hazards (decision)
 
@@ -825,7 +825,7 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | 97 | Which buttons do the first-find cards have (C15)? | The Paint shell card: "Try it now!" (primary, with the play icon, focused first), which opens restyle on the Dream colour tab for the explorer, or the first owned axolotl, and "Maybe later" (with the close icon), which closes the card. The Decoration and Wearable cards: "OK" with the tick icon, like the tilapia fact card. Only existing button icons are used. Every button ignores presses for the first 0.8 seconds, like the tank arrival card's OK. Awaiting owner confirmation. |
 | 98 | What picture does a first-find card show (C15)? | The icon of the first banked treasure of its kind, in a 32 pixel box beside the title, with its rarity glow (B2). Awaiting owner confirmation. |
 | 99 | Where does the Treasure Chest section line go (C11)? | Under the section heading, 4 pixels below it, in ink 18 pixel text, wrapping at the list width ([art style guide](../art-style-guide.md) section 8). It is part of the heading block, which is sized by the tallest heading and line across the sections, so the rows per page stay the same on every page. It shows on every page of its section, with or without finds. Awaiting owner confirmation. |
-| 100 | Do the live axolotls stay within the frame-time budget (X11)? | Built: the tools and method in [ADR 0013](../adr/0013-axolotl-rig-and-frame-budget.md). The results are to be measured: the owner runs the three cases (the canal with the explorer and a rescue, the Home Tank with four axolotls, and the title screen), each on WebGL and on Canvas, on desktop Chrome with 6x CPU throttling and on the phone, and fills in ADR 0013's table. If a case misses, one shared cap is added in `src/logic/`, not one per scene. Awaiting the owner's measurements. |
+| 100 | Do the live axolotls stay within the frame-time budget (X11)? | Built: the tools and method in [ADR 0013](../adr/0013-axolotl-rig-and-frame-budget.md). The results are to be measured: the owner runs the four cases (the canal with the explorer and a rescue, the Home Tank with four axolotls, the title screen, and the dev test area with the explorer and a rescue, via `?area=dev-test-area` in a dev build), each on WebGL and on Canvas, on desktop Chrome with 6x CPU throttling and on the phone, and fills in ADR 0013's table. If a case misses, one shared cap is added in `src/logic/`, not one per scene. Awaiting the owner's measurements. |
 | 101 | How does the owner reach the frame-time overlay on the phone? | Built: `?perf` works only under `npm run dev`, so on the phone it needs the dev server. Recommended to keep it dev-only. Open: may `?perf` also work on the GitHub Pages build, as an on-screen overlay that stores and sends nothing ([ADR 0007](../adr/0007-kid-safety-and-privacy.md))? `?compare` stays dev-only either way. Awaiting owner confirmation. |
 | 102 | How does the tail move on the Canvas renderer, where a texture cannot bend? | Built: a strip of baked tail frames, 12 over one swim cycle at three tail amplitudes (normal, faster, and a full dash), 36 frames, keyed like the other parts. The nearest frame shows. Awaiting owner confirmation. |
 | 103 | How does a rig axolotl blink? | Built: three baked eye frames, open, half and closed, on the existing blink timing. Awaiting owner confirmation. |
@@ -900,13 +900,13 @@ The same decision sets at least 3 tilapia in the canal (A1).
 |---|---|---|
 | [ADR 0007](../adr/0007-kid-safety-and-privacy.md): "No harsh fail states." | Losing legs and being carried home is a fail state. | Amended by [ADR 0008](../adr/0008-gentle-fail-state.md). |
 | An "invulnerability flash" after a hit. | The [art style guide](../art-style-guide.md) limits flashing. | Use a steady, non-flashing protected cue (A5). |
-| [Art style guide](../art-style-guide.md): accessories "never cover the eyes". | Glasses are a planned Wearable. | Glasses keep the eyes visible. The art style guide needs a face-anchor rule. |
-| [Art style guide](../art-style-guide.md) (section 7b) has no rarity colours, badge shapes, Home Tank kit, collectibles, or hazard art. | The MVP needs all of these. | Art style guide follow-up. |
+| [Art style guide](../art-style-guide.md): accessories "never cover the eyes". | Glasses are a planned Wearable. | Resolved in the [art style guide](../art-style-guide.md): glasses keep the eyes visible. The Face slot has eye zones, and Face items draw below the eyes (6a, 6i). |
+| [Art style guide](../art-style-guide.md) (section 7b) has no rarity colours, badge shapes, Home Tank kit, collectibles, or hazard art. | The MVP needs all of these. | Resolved in the [art style guide](../art-style-guide.md): rarity colours (3e), badge shapes (8), the tilapia (7c), the Home Spot (7d), treasures, the Dash pot, the hint sparkle, and Paint shells (7e), and the Home Tank kit (7f). Section 7b is updated. |
 | [Art style guide](../art-style-guide.md) has no Wearable slot anchors, no face, gill, or spot variants, and no Dream colour patterns. | The character creator, outfits, and Dream colours need all of these. | Resolved in the [art style guide](../art-style-guide.md): Wearable slot anchors for all eight slots (6i, issue #16), face, gill, and spot variants (6l to 6n), and Dream colour patterns (6p). |
 | AGENTS.md: "no network requests". [ADR 0007](../adr/0007-kid-safety-and-privacy.md): "no third-party requests". | An update check may make a request. | First-party only (E5), plus an ADR (open question 8). |
 | [Art style guide](../art-style-guide.md) (6i) has four Wearable slots and layers 8.5 to 11.5. Its Wearable test pose (6k) checks four slots. | F8 now has eight slots, layering, and the feet rule. | Resolved (issue #16). The [art style guide](../art-style-guide.md) now has all eight slots: anchors, footprints, layers, and keep-clear zones for Shirt, Back, Socks, and Feet (6a, 6i), the eight-slot Wearable test pose (6k), and how socks and shoes hide on a lost leg and come back once it has fully regrown (6i, 6q). |
 | [ADR 0008](../adr/0008-gentle-fail-state.md) says only unbanked trip finds are lost when carried home. | A12 also starts the snacks over. | Snacks are not banked progress, so ADR 0008's guarantee holds. Amended by [ADR 0010](../adr/0010-carried-home-full-reset.md): being carried home is a full trip reset, snacks included (issue #31). |
-| [Art style guide](../art-style-guide.md) (7e) says the hint star is the cue for a hidden treasure. | H3 also uses it on the last 3 snacks. | Art style guide follow-up with issue #31. |
+| [Art style guide](../art-style-guide.md) (7e) says the hint star is the cue for a hidden treasure. | H3 also uses it on the last 3 snacks. | Resolved in the [art style guide](../art-style-guide.md) (issue #31): the last 3 snacks each show the Common hint star, always on (7e, Last-snack hint star; open question 16). Follow-up: rename "hint star" to "hint sparkle" across the art style guide, which keeps "hint star" for now. |
 
 ### Feature priority order
 
