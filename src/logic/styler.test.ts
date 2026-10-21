@@ -628,7 +628,10 @@ describe('surprise', () => {
     return mode === 'creator' ? creatorOn(step) : restyleOn(step);
   }
 
-  /** Surprise me pressed on `before` with `seed`, its result checked to keep the step, the Dream colour, the outfit and the focus. */
+  /**
+   * Surprise me pressed on `before` with `seed`, its result checked to keep the step, the Dream colour, the outfit
+   * and the Outfit view, with the focus on Surprise me (a pointer press focuses the pressed control).
+   */
   function pressSurprise(before: StylerState, seed: number): StylerState {
     const result = reduceStyler(before, { type: 'surprise' }, mulberry32(seed));
     const after = result.state;
