@@ -81,6 +81,7 @@ import {
   type UiButton,
 } from './BootScene';
 import { AreaStarsBadge } from './AreaStarsBadge';
+import { AxolotlChoicesCard } from './AxolotlChoicesCard';
 import { CollectionBookView } from './CollectionBookView';
 import { ExplorerCard, type ExplorerCardAxolotl } from './ExplorerCard';
 import { settleMotionTweens } from './motionTweens';
@@ -121,8 +122,8 @@ const HUB_ICONS: Readonly<Record<HubActionId, IconKind>> = Object.freeze({
 /**
  * Home Tank draw order (art guide 7f): back layer (wall to gravel), placed Decorations, glass shine,
  * axolotls, surface line, tank outline and lid front, hub UI (with a focused axolotl's ring and name
- * tag) and the decorate toolbar, the Treasure Chest, the Collection Book, the explorer card or the
- * restyle screen (never open together), then the tank arrival card on top.
+ * tag) and the decorate toolbar, the Treasure Chest, the Collection Book, the explorer card, the
+ * choices card or the restyle screen (never open together), then the tank arrival card on top.
  */
 const TANK_DEPTH = Object.freeze({
   back: DEPTH.bg,
@@ -137,14 +138,15 @@ const TANK_DEPTH = Object.freeze({
   arrival: DEPTH.ui + 9,
   restyle: DEPTH.ui + 8,
   explorer: DEPTH.ui + 8,
+  choices: DEPTH.ui + 8,
 });
 
 /**
  * What the Home Tank is showing and where keys go, in priority order: the tank arrival card, the
  * Treasure Chest, the Collection Book, decorate mode, restyling an axolotl (PRD F6), the explorer
- * card (PRD F7), or the hub.
+ * card (PRD F7), the axolotl choices card (PRD F6), or the hub.
  */
-type TankMode = 'arrival' | 'chest' | 'book' | 'decorate' | 'restyle' | 'explorer' | 'hub';
+type TankMode = 'arrival' | 'chest' | 'book' | 'decorate' | 'restyle' | 'explorer' | 'choices' | 'hub';
 
 /** Where a restyle was opened from, and so where Done or Cancel goes back to: the hub, or the explorer card's Change outfit. */
 type RestyleFrom = 'hub' | 'explorer';
@@ -236,8 +238,9 @@ function placeTankLayer(image: Phaser.GameObjects.Image, info: TexInfo, frame: T
  * openExplorer); its Change outfit opens the restyle Outfit tab and comes back to the card. After a trip
  * the tank arrival card shows first and takes every key and press until it closes; after beating
  * the area it is the "Area beaten" card, and closing it leaves the player in the hub. The hub focus
- * runs over the hub buttons and then the axolotls, and a tap on an axolotl, or Enter on a focused
- * one, opens the restyle screen for it (PRD F6).
+ * runs over the hub buttons and then the axolotls, and a tap on an axolotl, or Enter or Space on a
+ * focused one, opens the axolotl choices card for it (PRD F6), whose Restyle, Outfit and Dream colour
+ * open the restyle screen on that step and whose Back comes back to the hub with that axolotl focused.
  */
 export class HomeTankScene extends Phaser.Scene {
   private assets!: GameAssets;
@@ -277,6 +280,7 @@ export class HomeTankScene extends Phaser.Scene {
   private nameTagText!: Phaser.GameObjects.Text;
   private restyler: AxolotlStyler | null = null;
   private explorerCard: ExplorerCard | null = null;
+  private choicesCard: AxolotlChoicesCard | null = null;
 
   constructor() {
     super(SCENE_KEYS.homeTank);
@@ -296,6 +300,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.titleFits = false;
     this.restyler = null;
     this.explorerCard = null;
+    this.choicesCard = null;
   }
 
   create(): void {
@@ -351,7 +356,8 @@ export class HomeTankScene extends Phaser.Scene {
   /**
    * Animates the tank, or only the styler while the restyle screen's opaque backdrop covers the tank,
    * so hidden axolotls are not posed (art guide 9). The tank picks up where it left off.
-   * An open explorer card counts its Go! wait while the tank animates behind its dim.
+   * An open explorer card counts its Go! wait, and an open choices card its press wait, while the
+   * tank animates behind its dim.
    */
   update(time: number, deltaMs: number): void {
     if (this.restyler !== null) {
@@ -359,6 +365,7 @@ export class HomeTankScene extends Phaser.Scene {
       return;
     }
     this.explorerCard?.update(time, deltaMs);
+    this.choicesCard?.update(time, deltaMs);
     this.animate(Math.min(Math.max(deltaMs / 1000, 0), 0.05));
   }
 
@@ -553,10 +560,10 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * Leaves the hub for the Treasure Chest, the Collection Book, decorate mode, restyle or the explorer
-   * card: its buttons and name panel hide.
+   * Leaves the hub for the Treasure Chest, the Collection Book, decorate mode, restyle, the explorer
+   * card or the choices card: its buttons and name panel hide.
    */
-  private leaveHub(mode: 'chest' | 'book' | 'decorate' | 'restyle' | 'explorer'): void {
+  private leaveHub(mode: 'chest' | 'book' | 'decorate' | 'restyle' | 'explorer' | 'choices'): void {
     this.mode = mode;
     this.applyHubVisibility();
     this.refreshHubFocus();
@@ -680,11 +687,47 @@ export class HomeTankScene extends Phaser.Scene {
     writeSession(this.registry, this.session);
   }
 
-  /** Picks the axolotl when the press began on it and the hub still has the input. */
+  /** Picks the axolotl when the press began on it and the hub still has the input: opens its choices card. */
   private releaseSwimmer(swimmer: TankSwimmer, index: number): void {
     const wasPressed = swimmer.pressed;
     swimmer.pressed = false;
-    if (wasPressed && this.mode === 'hub') this.openRestyle(index);
+    if (wasPressed && this.mode === 'hub') this.openAxolotlChoices(index);
+  }
+
+  /**
+   * Opens the axolotl choices card (PRD F6) over the hub for the axolotl at `index`, with Dream colour
+   * when the hub owns at least one. Every key goes to the card until a choice or Back.
+   */
+  private openAxolotlChoices(index: number): void {
+    const axolotl = this.swimmerAxolotl(index);
+    this.leaveHub('choices');
+    this.choicesCard = new AxolotlChoicesCard(this, this.assets, this.view, TANK_DEPTH.choices, {
+      name: axolotl.name,
+      ownedDreamCount: ownedDreamColours(this.session.hub.banked).length,
+      onChoose: (_choice, startStep) => this.chooseFromCard(index, startStep),
+      onBack: () => this.closeAxolotlChoices(index),
+    });
+  }
+
+  /** Removes the choices card, if open. */
+  private destroyChoicesCard(): void {
+    this.choicesCard?.destroy();
+    this.choicesCard = null;
+  }
+
+  /**
+   * A choice on the choices card: removes the card and opens restyle on `startStep`; Done or Cancel
+   * come back to the hub with that axolotl focused.
+   */
+  private chooseFromCard(index: number, startStep: StylerStep): void {
+    this.destroyChoicesCard();
+    this.openRestyle(index, 'hub', startStep);
+  }
+
+  /** Back or Escape on the choices card: removes it and goes back to the hub with the axolotl at `index` focused. */
+  private closeAxolotlChoices(index: number): void {
+    this.destroyChoicesCard();
+    this.showHub(axolotlFocusIndex(index, this.hubButtons.length));
   }
 
   /** The owned axolotl the swimmer at `index` shows. Throws when the session does not own it. */
@@ -699,8 +742,9 @@ export class HomeTankScene extends Phaser.Scene {
    * Opens the restyle screen (PRD F6) for the axolotl at `index`, starting from its name, look,
    * morph (shown read-only), Dream colour and outfit, offering the Dream colours the hub owns and,
    * on the Outfit tab, the banked Wearables with who else wears each (PRD C10). From the explorer
-   * card it opens on the Outfit tab, otherwise on `startStep` when given. The hub hides and every key
-   * goes to the styler until Done or Cancel.
+   * card it opens on the Outfit tab, otherwise on `startStep` when given (a choice on the axolotl
+   * choices card, or "Try it now!" on the Dream colour step). The hub hides and every key goes to the
+   * styler until Done or Cancel.
    */
   private openRestyle(index: number, from: RestyleFrom = 'hub', startStep?: StylerStep): void {
     const axolotl = this.swimmerAxolotl(index);
@@ -796,8 +840,8 @@ export class HomeTankScene extends Phaser.Scene {
   // ---- input ---------------------------------------------------------------
 
   /**
-   * Routes a key to what has the input: the restyle screen (every key, as is), the explorer card
-   * (every key; it reads its own), the arrival card, the Treasure Chest, the Collection Book,
+   * Routes a key to what has the input: the restyle screen (every key, as is), the explorer card or
+   * the choices card (every key; each reads its own), the arrival card, the Treasure Chest, the Collection Book,
    * decorate mode, or the hub. Unmapped keys are ignored, and so is a held confirm outside the hub.
    */
   private handleKeyDown(event: KeyboardEvent): void {
@@ -807,6 +851,10 @@ export class HomeTankScene extends Phaser.Scene {
     }
     if (this.mode === 'explorer') {
       this.explorerCard?.handleKey(event);
+      return;
+    }
+    if (this.mode === 'choices') {
+      this.choicesCard?.handleKey(event);
       return;
     }
     const action = tankKeyFor(event.key, event.shiftKey);
@@ -836,8 +884,8 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * Confirm presses the focused hub button or opens restyle for the focused axolotl, ignoring key
-   * repeat; the arrows and Tab move the focus over the hub buttons, then the axolotls.
+   * Confirm presses the focused hub button or opens the choices card for the focused axolotl,
+   * ignoring key repeat; the arrows and Tab move the focus over the hub buttons, then the axolotls.
    */
   private handleHubKey(action: TankKey, event: KeyboardEvent): void {
     if (action === 'confirm') {
@@ -855,7 +903,7 @@ export class HomeTankScene extends Phaser.Scene {
     return tankFocusTarget(this.focusIndex, this.hubButtons.length, this.swimmers.length);
   }
 
-  /** Presses the focused hub button, or opens restyle for the focused axolotl. */
+  /** Presses the focused hub button, or opens the choices card for the focused axolotl. */
   private pressFocused(): void {
     const target = this.focusTarget();
     if (target === null) return;
@@ -863,7 +911,7 @@ export class HomeTankScene extends Phaser.Scene {
       this.runHubAction(this.hubButtons[target.i].id);
       return;
     }
-    this.openRestyle(target.i);
+    this.openAxolotlChoices(target.i);
   }
 
   /**
@@ -919,6 +967,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.nameTagText.setResolution(dpr);
     this.restyler?.setResolution(dpr);
     this.explorerCard?.setResolution(dpr);
+    this.choicesCard?.setResolution(dpr);
     this.layout();
     this.animate(0);
   }
@@ -932,6 +981,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.restyler?.destroy();
     this.restyler = null;
     this.destroyExplorerCard();
+    this.destroyChoicesCard();
     this.releaseSwimmers();
     const keyboard = this.input.keyboard;
     if (!keyboard) return;
@@ -955,8 +1005,8 @@ export class HomeTankScene extends Phaser.Scene {
 
   /**
    * Fits the tank to the canvas, sizes the axolotl tap areas, then places the Decorations, the hub,
-   * the Treasure Chest, the Collection Book, the arrival card, an open restyle screen and an open
-   * explorer card.
+   * the Treasure Chest, the Collection Book, the arrival card, an open restyle screen, an open
+   * explorer card and an open choices card.
    */
   private layout(): void {
     this.frame = tankFrame(this.view.cssW, this.view.cssH);
@@ -974,11 +1024,12 @@ export class HomeTankScene extends Phaser.Scene {
     this.arrivalCard.layout(this.view);
     this.restyler?.layout(this.view);
     this.explorerCard?.layout(this.view);
+    this.choicesCard?.layout(this.view);
   }
 
   /**
    * Shows the hub buttons and the best-stars badge unless the Treasure Chest, the Collection Book,
-   * decorate mode, restyle or the explorer card is up, and the name panel only when it fits.
+   * decorate mode, restyle, the explorer card or the choices card is up, and the name panel only when it fits.
    */
   private applyHubVisibility(): void {
     const shown = this.mode === 'hub' || this.mode === 'arrival';
