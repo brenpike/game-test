@@ -178,7 +178,7 @@ export interface RigPartSpec {
   readonly box: Bounds;
   /** The pivot measured from the box's top-left corner (box.minX, box.minY). */
   readonly pivotOffset: LocalPoint;
-  /** How many `variant.frame` values the part bakes (gills 6, eyes 3, others 1). */
+  /** How many `variant.frame` values the part bakes (gills GILL_FLUTTER_FRAMES (10), eyes 3, others 1). */
   readonly frames: number;
   /**
    * Largest |dy| tailShear gives over the canvas strip poses and the still pose:
@@ -740,7 +740,7 @@ function paintRigWearLeg(ctx: CanvasRenderingContext2D, appearance: RigAppearanc
 /**
  * Paint one part's bake in axolotl local units (the glue maps the pivot to the
  * texture anchor). Gill g frame k: paintGill at the still gill phase plus
- * 2 pi k / 6. Legs: paintAxolotlLeg at the still leg angle in `variant.leg`.
+ * 2 pi k / GILL_FLUTTER_FRAMES (10). Legs: paintAxolotlLeg at the still leg angle in `variant.leg`.
  * A wear-leg paints its Socks and Feet in the still leg frame, and nothing on
  * a lost or regrowing leg. Tail: paintBodyLayers (`variant.tailLayers`,
  * default 'all') at `variant.tailPose` (default straight) and the still stripe,
