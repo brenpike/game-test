@@ -23,7 +23,7 @@ import {
   type SceneView,
   type UiButton,
 } from './BootScene';
-import { addTreasureIcon, placeIconRows } from './FindPopup';
+import { addGlowingTreasureIcon, placeIconRows } from './FindPopup';
 import { addMotionTween } from './motionTweens';
 
 const TREASURE_ICON_PX = 32;
@@ -71,7 +71,7 @@ export class BankingCard {
   private readonly body: Phaser.GameObjects.Text;
   private readonly buttons: readonly UiButton[];
   private view: SceneView;
-  private icons: Phaser.GameObjects.Image[] = [];
+  private icons: Phaser.GameObjects.Container[] = [];
   private bodyOptions: readonly string[] = [''];
   private twinkles: CardTwinkle[] = [];
   private focusIndex = KEEP_EXPLORING_INDEX;
@@ -256,11 +256,14 @@ export class BankingCard {
     this.scene.game.events.emit(BUTTON_REQUESTS[index]);
   }
 
-  /** Replaces the treasure icons (one 32 px icon per id) and the 3 to 5 twinkles around them. */
+  /**
+   * Replaces the treasure icons (one 32 px icon over its rarity glow per id) and the 3 to 5 twinkles
+   * around them.
+   */
   private buildRow(ids: readonly string[]): void {
     this.clearRow();
     for (const id of ids) {
-      this.icons.push(addTreasureIcon(this.scene, this.treasure, TREASURE_ICON_PX, id));
+      this.icons.push(addGlowingTreasureIcon(this.scene, this.treasure, TREASURE_ICON_PX, id));
     }
     if (ids.length === 0) return;
     const count = Phaser.Math.Clamp(ids.length + 2, TWINKLE_MIN, TWINKLE_MAX);
