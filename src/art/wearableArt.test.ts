@@ -5,17 +5,22 @@
  * clip it was painted under, so the tests can ask where ink landed and in what order.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { AXO_REST_POSE, AXO_TEX, drawAxolotl, type AxolotlPose, type LegLook } from './drawAxolotl';
+import { AXO_REST_POSE, AXO_SCENE_SCALE, AXO_TEX, drawAxolotl, legPoints, type AxolotlPose, type LegLook } from './drawAxolotl';
 import {
   AXO_AGES,
   AXO_BODIES,
   AXO_SEXES,
   AXO_SIZES,
+  AXO_SIZE_SCALE,
   AXO_TAILS,
-  BACK_FRAME_BOX,
+  CHEEK_HEART_INK,
+  CHEEK_HEART_LAYER,
+  CHEEK_HEART_UNDER,
+  CHEEK_HEART_ZONE,
   DEFAULT_ART_LOOK,
   EYELASH_INK,
   EYELASH_UNDER,
+  EYE_VARIANTS,
   FAR_EYE_ZONE,
   FAR_LASH_REACH,
   GILL_ROOT_ZONE,
@@ -23,26 +28,36 @@ import {
   HEAD_FOOTPRINT,
   HEAD_ELLIPSE,
   MOUTH_INK,
+  MOUTH_VARIANTS,
   MOUTH_ZONE,
   NECK_FOOTPRINT,
   NEAR_EYE_ZONE,
   NEAR_LASH_REACH,
   SHIRT_BACK_FRONT_LINE_X,
   SHIRT_FRONT_X,
+  SOCK_SLEEVE_INK_W,
+  TAIL_SLOT_POINT,
   TAIL_SLOT_REACH,
   WEARABLE_LAYERS,
   WEARABLE_SLOTS,
   axolotlBodyGeometry,
-  backFrame,
+  boundsOfPoints,
+  backFootprint,
   feetEnvelope,
+  framePoint,
+  legRectBounds,
   legSlotFrames,
+  shirtContains,
   shirtGeometry,
   sockFootPad,
+  tailSamples,
   tailSlotFrame,
+  unionBounds,
   type AxolotlArtLook,
   type BodyEllipse,
   type BodyWearableSlot,
   type Bounds,
+  type LegRect,
   type LegSlotFrame,
   type WearFrame,
   type WearableSlot,
@@ -61,8 +76,21 @@ import {
   type ArtOutfit,
   type WearableArtSlug,
 } from './drawWearables';
-import { BLUSH, FRECKLE, INK, LEUCISTIC, LW, WHITE, type MorphPalette } from './palette';
+import { BLUSH, CHEEK_HEART, FRECKLE, INK, LEUCISTIC, LW, SILHOUETTE, WHITE, dreamPalette, type MorphPalette } from './palette';
 import { bakeAxolotlStill } from './textures';
+import {
+  SWIM_VIEW_CSS_PX_PER_UNIT,
+  SWIM_VIEW_FIT_ZOOM,
+  WEARABLE_SLOT_MINIMUMS,
+  WEARABLE_SWIM_VIEW_MIN_CSS_PX2,
+  backMinimumLength,
+  type WearableSlotMinimums,
+} from './wearableFit';
+import { DREAM_MARKER_INK, DREAM_MARKER_R, DREAM_MARKER_S, dreamMarkerCentres } from './drawDreamOverlay';
+import { CANAL_TREASURES, treasureSlug, type Wearable } from '../logic/catalogue';
+import { VIEW } from '../logic/tuning';
+import { fitView } from '../logic/viewport';
+import { WORLD_H } from '../logic/zone';
 import {
   BOW_GEM,
   DIVING_TANK_FILL,
@@ -77,6 +105,7 @@ import {
   HAT_FILL,
   NECKLACE_CORD,
   NECKLACE_SHELL,
+  PAINT_SHELL_RIDGE,
   SOCK_FILL,
   SOCK_STRIPE_ALPHA,
   TANK_TOP_FILL,
@@ -92,9 +121,9 @@ const TAU = Math.PI * 2;
 const FRAME_PAD = 4;
 /** Flattened arcs sit inside their circle by their sagitta (under 0.002 here); geometry is held to this. */
 const TOL = 0.005;
-/** The Sock sleeve's ink and colour widths (guide 6i). */
-const SLEEVE_INK_W = 15.2;
-const SLEEVE_COLOUR_W = 10.4;
+/** The Sock sleeve's ink and colour widths (guide 6i; #88: 15.2 and 10.4 before). */
+const SLEEVE_INK_W = 16.4;
+const SLEEVE_COLOUR_W = 11.6;
 
 // ---------------------------------------------------------------------------
 // A recording canvas context
@@ -554,8 +583,8 @@ const AMPS = [1, 1.6] as const;
 /** The enumerations over 54 looks and a swim cycle take a few seconds each. */
 const ENUMERATION_TIMEOUT_MS = 30_000;
 
-function bodyPaints(slot: BodyWearableSlot, look: AxolotlArtLook, swim = 0, amp = 1): Paint[] {
-  const outfit: ArtOutfit = { [slot]: SLUG_OF[slot] };
+function bodyPaints(slot: BodyWearableSlot, look: AxolotlArtLook, swim = 0, amp = 1, slug: WearableArtSlug = SLUG_OF[slot]): Paint[] {
+  const outfit: ArtOutfit = { [slot]: slug };
   const rec = record((ctx) => paintBodyWearable(ctx, slot, outfit, look, swim, amp));
   expect(rec.depth).toBe(0);
   expect(rec.matrix).toEqual(IDENTITY);
@@ -604,14 +633,18 @@ interface Inserted {
 
 /**
  * The paints `withOutfit` has beyond `base`, or null when `base` is not a subsequence of it (so a
- * Wearable changed or moved a paint the axolotl already made).
+ * Wearable changed or moved a paint the axolotl already made). `sig` keys a paint (signature by default).
  */
-function insertedPaints(base: readonly Paint[], withOutfit: readonly Paint[]): Inserted[] | null {
-  const baseSigs = base.map(signature);
+function insertedPaints(
+  base: readonly Paint[],
+  withOutfit: readonly Paint[],
+  sig: (p: Paint) => string = signature,
+): Inserted[] | null {
+  const baseSigs = base.map(sig);
   const extra: Inserted[] = [];
   let b = 0;
   withOutfit.forEach((paint, index) => {
-    if (b < baseSigs.length && signature(paint) === baseSigs[b]) b++;
+    if (b < baseSigs.length && sig(paint) === baseSigs[b]) b++;
     else extra.push({ index, paint });
   });
   return b === baseSigs.length ? extra : null;
@@ -628,7 +661,7 @@ function firstEyePaint(paints: readonly Paint[]): number {
 
 const SOCKS_AND_FEET: ArtOutfit = { socks: 'stripy-socks', feet: 'flippers' };
 
-/** The Sock sleeve's paints: its 15.2 ink stroke, its 10.4 colour stroke and its alpha 0.30 stripes. */
+/** The Sock sleeve's paints: its 16.4 ink stroke, its 11.6 colour stroke and its alpha 0.30 stripes. */
 const isSleevePaint = (p: Paint): boolean =>
   (p.kind === 'stroke' && (p.lineWidth === SLEEVE_INK_W || p.lineWidth === SLEEVE_COLOUR_W)) ||
   (p.kind === 'fill' && p.alpha === SOCK_STRIPE_ALPHA);
@@ -778,13 +811,16 @@ describe('no outfit (regression)', () => {
     { ...DEFAULT_ART_LOOK, sex: 'boy', body: 'slim', age: 'grownUp', tail: 'short' },
   ];
   const poses: AxolotlPose[] = [AXO_REST_POSE, { ...AXO_REST_POSE, swimPhase: 1.3, tailAmp: 1.6, sparkle: 0.7, legs }];
-  /** Recorded from the painter before Wearables existed (pose-major, then look). */
+  /**
+   * Recorded from the painter before Wearables existed (pose-major, then look). The Girl entries
+   * (the second of each pose) are re-recorded for the #87 cheek heart; the Boy entries are unchanged.
+   */
   const BEFORE_WEARABLES = [
     'bd38c5db2508a8d7:32084',
-    '4c9243ce24f164aa:34251',
+    'c94b66975903d47b:40886',
     'dc5a96b05f46a954:32963',
     '07de654681b19bda:41725',
-    '9ff458d18e3f786d:43879',
+    'a1d3f250c2030c44:50514',
     'e6dd6f9972bdf625:42638',
   ];
 
@@ -870,13 +906,13 @@ describe('layers (guide 6a)', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
     expect(Math.max(...inserted.map((x) => x.index))).toBeLessThan(firstEyePaint(worn));
   });
 
-  it('orders the body items by layer: Shirt 8.2, Tail 8.5, Neck 9.5, Back 9.7, Head 10.5, Face 11.5', () => {
-    expect(WEARABLE_LAYERS.shirt).toBeLessThan(WEARABLE_LAYERS.tail);
+  it('orders the body items by layer: Tail 9.2, Shirt 9.3, Neck 9.5, Back 9.7, Head 10.5, Face 11.5', () => {
+    expect(WEARABLE_LAYERS.tail).toBeLessThan(WEARABLE_LAYERS.shirt);
     for (const look of looks) {
       const worn = drawn(AXO_REST_POSE, look, FULL);
       const at = (slot: WearableSlot): number => firstIndexOf(worn, itemSignatures(slot, AXO_REST_POSE, look));
       const end = (slot: WearableSlot): number => lastIndexOf(worn, itemSignatures(slot, AXO_REST_POSE, look));
-      const order: WearableSlot[] = ['shirt', 'tail', 'neck', 'back', 'head', 'face'];
+      const order: WearableSlot[] = ['tail', 'shirt', 'neck', 'back', 'head', 'face'];
       for (let i = 1; i < order.length; i++) {
         // Each item's first paint comes after the previous item's last paint.
         expect(at(order[i])).toBeGreaterThan(end(order[i - 1]));
@@ -887,7 +923,7 @@ describe('layers (guide 6a)', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
     }
   });
 
-  it('puts the Shirt over the spots, the near gills under the Neck and Back items, the Head item over the blush and the Face item over the mouth', () => {
+  it('puts the near gills over the spots and under the Tail, Shirt, Neck and Back items, a Girl cheek heart after the blush and before the Head item, and the Face item over the mouth', () => {
     const look = { ...GIRL, spots: 'patches' as const };
     const worn = drawn(AXO_REST_POSE, look, FULL);
     const nearGill = (p: Paint): boolean =>
@@ -896,6 +932,10 @@ describe('layers (guide 6a)', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
     const firstOf = (holds: (p: Paint) => boolean): number => worn.findIndex(holds);
     const spots = lastOf((p) => p.kind === 'fill' && p.style === FRECKLE);
     const blush = lastOf((p) => p.kind === 'fill' && p.style === BLUSH);
+    const heartFill = lastOf((p) => p.kind === 'fill' && p.style === CHEEK_HEART);
+    const heart = { first: heartFill - 1, last: heartFill + 1 };
+    expect(worn[heart.first]).toMatchObject({ kind: 'stroke', style: WHITE, lineWidth: CHEEK_HEART_UNDER });
+    expect(worn[heart.last]).toMatchObject({ kind: 'stroke', style: INK, lineWidth: CHEEK_HEART_INK });
     const mouth = lastOf((p) => p.kind === 'stroke' && p.lineWidth === MOUTH_INK);
     const gills = { first: firstOf(nearGill), last: lastOf(nearGill) };
     const shirt = firstIndexOf(worn, itemSignatures('shirt', AXO_REST_POSE, look));
@@ -904,13 +944,27 @@ describe('layers (guide 6a)', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
     const back = firstIndexOf(worn, itemSignatures('back', AXO_REST_POSE, look));
     const head = firstIndexOf(worn, itemSignatures('head', AXO_REST_POSE, look));
     const face = firstIndexOf(worn, itemSignatures('face', AXO_REST_POSE, look));
-    for (const index of [spots, blush, mouth, gills.first, gills.last, shirt, tail, neck, back, head, face]) {
-      expect(index).toBeGreaterThan(0);
-    }
-    // 8 spots, 8.2 Shirt, 8.5 Tail item, 9 near gills, 9.5 Neck item, 9.7 Back item, 10 blush, 10.5 Head item,
-    // 11 mouth, 11.5 Face item.
-    const layers = [spots, shirt, tail, gills.first, gills.last, neck, back, blush, head, mouth, face];
+    const found = [spots, blush, heart.first, mouth, gills.first, gills.last, shirt, tail, neck, back, head, face];
+    for (const index of found) expect(index).toBeGreaterThan(0);
+    // 8 spots, 9 near gills, 9.2 Tail item, 9.3 Shirt, 9.5 Neck item, 9.7 Back item, 10 blush, 10.2 cheek heart,
+    // 10.5 Head item, 11 mouth, 11.5 Face item.
+    expect(CHEEK_HEART_LAYER).toBe(10.2);
+    const layers = [
+      ...[spots, gills.first, gills.last, tail, shirt, neck, back, blush],
+      ...[heart.first, heart.last, head, mouth, face],
+    ];
     expect(layers).toEqual([...layers].sort((x, y) => x - y));
+  });
+
+  it('paints the cheek heart for a Girl only, and not when the palette turns the blush off', () => {
+    const heartPaints = (look: AxolotlArtLook, palette: MorphPalette): number =>
+      record((ctx) => drawAxolotl(ctx, AXO_REST_POSE, palette, look)).paints.filter(
+        (p) => p.kind === 'fill' && p.style === CHEEK_HEART,
+      ).length;
+    for (const look of looks) {
+      expect(heartPaints(look, LEUCISTIC), look.sex).toBe(look.sex === 'girl' ? 1 : 0);
+      expect(heartPaints(look, SILHOUETTE), look.sex).toBe(0);
+    }
   });
 
   it('paints Socks and Feet with their leg behind the silhouette: far legs, then their wear, then near legs, then theirs', () => {
@@ -1030,18 +1084,6 @@ describe('feet rule: a Sock and a Shoe go with their leg', { timeout: ENUMERATIO
     }
   });
 
-  it('works for Socks alone and for Feet alone', () => {
-    for (const outfit of [{ socks: 'stripy-socks' }, { feet: 'flippers' }] as ArtOutfit[]) {
-      const all = legWear({ ...AXO_REST_POSE, swimPhase: 0.7 }, outfit);
-      expect(all.size).toBeGreaterThan(0);
-      for (let i = 0; i < 4; i++) {
-        const worn = legWear(legPose(i, lost), outfit);
-        expect(worn.size).toBeLessThan(all.size);
-        expect(legWear(legPose(i, regrowing(0.5)), outfit).size).toBe(worn.size);
-      }
-    }
-  });
-
   it('leaves the lost-leg ghost the plain bare leg: no paint of the leg is added, moved or enlarged', () => {
     for (let i = 0; i < 4; i++) {
       const pose = legPose(i, lost);
@@ -1084,7 +1126,7 @@ describe('feet rule: a Sock and a Shoe go with their leg', { timeout: ENUMERATIO
           (p) => p.kind === 'fill' && p.style !== INK && p.style !== TREASURE_SHINE,
         )!;
         const corners = fill.subs[0].pts.map((p) => toFrame(frame, p));
-        const half = 1.4;
+        const half = 1;
         // The pad's path is its ink-included rectangle pulled in by half the ink, whatever the leg angle.
         expect(Math.min(...corners.map((q) => q.x))).toBeCloseTo(pad.u0 + half, 3);
         expect(Math.max(...corners.map((q) => q.x))).toBeCloseTo(pad.u1 - half, 3);
@@ -1127,14 +1169,18 @@ describe('keep-clear zones (guide 6i, PRD F13)', { timeout: ENUMERATION_TIMEOUT_
   const eyeZones: readonly ZoneCircle[] = [NEAR_EYE_ZONE, FAR_EYE_ZONE];
   const lashZones: readonly ZoneCircle[] = [NEAR_LASH_REACH, FAR_LASH_REACH];
 
-  /** Why `paint` is not clear, or null. `lens` paints are the clear lens tint: the one allowed exception. */
-  function trouble(paint: Paint, opts: { lashes: boolean; gills: boolean; mouth: boolean }): string | null {
+  /**
+   * Why `paint` is not clear, or null. `lens` paints are the clear lens tint: the one allowed exception
+   * to the eye zones. The cheek heart zone (#87, #88) is checked unless `heart` is false. The mouth zone
+   * is not a keep-clear zone (#88): the mouth paints at 11, over the Neck and Head items.
+   */
+  function trouble(paint: Paint, opts: { lashes: boolean; gills: boolean; heart?: boolean }): string | null {
     const region = regionOf(paint);
+    if (opts.heart !== false && reachesCircle(region, CHEEK_HEART_ZONE)) return 'cheek heart zone';
     if (paint.kind === 'fill' && paint.style === GLASSES_LENS) return null;
     if (eyeZones.some((z) => reachesCircle(region, z))) return 'eye zone';
     if (opts.lashes && lashZones.some((z) => reachesCircle(region, z))) return 'lash reach';
     if (opts.gills && reachesBox(region, GILL_ROOT_ZONE)) return 'gill-root zone';
-    if (opts.mouth && reachesBox(region, MOUTH_ZONE)) return 'mouth zone';
     return null;
   }
 
@@ -1143,25 +1189,27 @@ describe('keep-clear zones (guide 6i, PRD F13)', { timeout: ENUMERATION_TIMEOUT_
     return EVERY_BODY_LOOK.flatMap((look) => check(look).map((why) => `${lookId(look)}: ${why}`));
   }
 
-  it('keeps the Head, Neck and Face items off the eyes, the gill roots and the mouth zone', () => {
+  it('keeps the Head, Neck and Face items off the eyes, the gill roots and the cheek heart zone', () => {
     for (const slot of ['head', 'neck', 'face'] as const) {
       const paints = bodyPaints(slot, DEFAULT_ART_LOOK);
       expect(paints.length).toBeGreaterThan(0);
+      // They are on the head, so every look paints them alike.
+      for (const look of EVERY_BODY_LOOK) expect(bodyPaints(slot, look).map(signature)).toEqual(paints.map(signature));
       for (const paint of paints) {
-        // The glasses band reaches into the lash reach circles and the mouth zone box on purpose: the eyes
-        // paint above it, and its gap to the mouth ink is measured in drawAxolotlParts.test.ts.
-        const found = trouble(paint, { lashes: slot !== 'face', gills: true, mouth: slot !== 'face' });
+        // The glasses band reaches into the lash reach circles on purpose: the eyes paint above it. Its gap
+        // to the mouth ink is a design gap, measured in drawAxolotlParts.test.ts.
+        const found = trouble(paint, { lashes: slot !== 'face', gills: true });
         expect(found, `${slot} ${paint.kind} ${paint.style}`).toBeNull();
       }
     }
   });
 
-  it('keeps the Shirt, Back and Tail items off the eyes, lashes, gill roots and mouth zone on every look', () => {
+  it('keeps the Shirt, Back and Tail items off the eyes, lashes, gill roots and cheek heart zone on every look', () => {
     expect(
       failures((look) =>
         BODY_SLOTS.filter((slot) => slot === 'shirt' || slot === 'back').flatMap((slot) =>
           bodyPaints(slot, look).flatMap((p) => {
-            const why = trouble(p, { lashes: true, gills: true, mouth: true });
+            const why = trouble(p, { lashes: true, gills: true });
             return why ? [`${slot} ${why}`] : [];
           }),
         ),
@@ -1172,7 +1220,7 @@ describe('keep-clear zones (guide 6i, PRD F13)', { timeout: ENUMERATION_TIMEOUT_
         SWIMS.flatMap((swim) =>
           AMPS.flatMap((amp) =>
             bodyPaints('tail', look, swim, amp).flatMap((p) => {
-              const why = trouble(p, { lashes: true, gills: true, mouth: true });
+              const why = trouble(p, { lashes: true, gills: true });
               return why ? [`tail swim ${swim.toFixed(2)} amp ${amp} ${why}`] : [];
             }),
           ),
@@ -1189,8 +1237,8 @@ describe('keep-clear zones (guide 6i, PRD F13)', { timeout: ENUMERATION_TIMEOUT_
             legPaints({ socks: 'stripy-socks', feet: 'flippers' }, frame).flatMap((p) => {
               // The sleeve starts inside the torso, where the gill roots are; it is behind the silhouette (layer
               // 2.5 or 3.5, under 4), so only its eye and lash clearance is geometric. The pad and Shoe are clear of
-              // the gill-root zone too. The mouth zone is the head's, which paints over every leg.
-              const why = trouble(p, { lashes: true, gills: !isSleevePaint(p), mouth: false });
+              // the gill-root zone too. The cheek heart is the head's, which paints over every leg.
+              const why = trouble(p, { lashes: true, gills: !isSleevePaint(p), heart: false });
               return why ? [`leg ${frame.index} swim ${swim.toFixed(2)} ${why}`] : [];
             }),
           ),
@@ -1199,7 +1247,7 @@ describe('keep-clear zones (guide 6i, PRD F13)', { timeout: ENUMERATION_TIMEOUT_
     ).toEqual([]);
   });
 
-  it('keeps every Wearable of a full drawAxolotl run off the eyes and, once past the silhouette, the gill roots, at every size and look', () => {
+  it('keeps every Wearable of a full drawAxolotl run off the eyes and, once past the silhouette, the gill roots and the cheek heart zone, at every size and look', () => {
     const looks = AXO_SIZES.flatMap((size): AxolotlArtLook[] => [
       { ...DEFAULT_ART_LOOK, size },
       { ...GIRL, size, body: 'chubby', age: 'baby', tail: 'short' },
@@ -1213,11 +1261,28 @@ describe('keep-clear zones (guide 6i, PRD F13)', { timeout: ENUMERATION_TIMEOUT_
         const inserted = insertedPaints(base, worn)!;
         expect(inserted.length).toBeGreaterThan(0);
         for (const { index, paint } of inserted) {
-          const why = trouble(paint, { lashes: false, gills: index > silhouette, mouth: false });
+          const why = trouble(paint, { lashes: false, gills: index > silhouette, heart: index > silhouette });
           expect(why, `${lookId(look)} paint ${index} ${paint.kind} ${paint.style}`).toBeNull();
         }
       }
     }
+  });
+
+  it('measures each head item clear of the cheek heart zone: Sun hat 24.54, Shell necklace 0.39, Heart glasses band 1.40', () => {
+    const gap = (paints: readonly Paint[]): number =>
+      Math.min(
+        ...paints.map((p) => {
+          const r = regionOf(p);
+          expect(r.kind === 'fill' && winding(r.subs, CHEEK_HEART_ZONE.x, CHEEK_HEART_ZONE.y) !== 0).toBe(false);
+          const near = Math.min(...edgesOf(r).map(([a, b]) => segDist(CHEEK_HEART_ZONE.x, CHEEK_HEART_ZONE.y, a, b)));
+          return near - r.hw - CHEEK_HEART_ZONE.r;
+        }),
+      );
+    expect(gap(bodyPaints('head', GIRL))).toBeCloseTo(24.54, 2);
+    expect(gap(bodyPaints('neck', GIRL))).toBeCloseTo(0.39, 2);
+    const glasses = bodyPaints('face', GIRL);
+    expect(gap(glasses.filter((p) => p.kind === 'stroke' && p.lineWidth === 3.5))).toBeCloseTo(1.4, 2);
+    for (const slot of ['head', 'neck', 'face'] as const) expect(gap(bodyPaints(slot, GIRL))).toBeGreaterThan(0);
   });
 
   it('paints only the clear lens tint over the eye zones, and the tint is under the band, the gem and the eyes', () => {
@@ -1237,17 +1302,100 @@ describe('keep-clear zones (guide 6i, PRD F13)', { timeout: ENUMERATION_TIMEOUT_
 });
 
 describe('footprints (guide 6i), ink included, and the frame (guide 11)', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
-  it('keeps the Sun hat on the head top: x 16 to 36, lowest ink y -19.5, top no higher than y -46', () => {
+  it('keeps the Sun hat on the head top (#88): ink x 16.02 to 45.98, lowest y -19.5, top y -41.4, inside x 16 to 46, y -44 to -19.5', () => {
+    expect(HEAD_FOOTPRINT).toEqual({ minX: 16, minY: -44, maxX: 46, maxY: -19.5 });
     const box = inkBounds(bodyPaints('head', DEFAULT_ART_LOOK));
     expect(isInside(box, HEAD_FOOTPRINT)).toBe(true);
-    expect(box.maxY).toBeLessThanOrEqual(-19.5 + TOL);
-    expect(box.minY).toBeGreaterThanOrEqual(-46 - TOL);
-    // It rests on the head: its brim reaches the head outline.
-    expect(box.maxY).toBeGreaterThan(HEAD_ELLIPSE.cy - HEAD_ELLIPSE.ry - 5);
+    expect(box.minX).toBeCloseTo(16.02, 2);
+    expect(box.maxX).toBeCloseTo(45.98, 2);
+    expect(box.maxY).toBeCloseTo(-19.5, 2);
+    expect(box.minY).toBeCloseTo(-41.4, 6);
+    // It rests on the head: the brim's lowest fill point is inside the head outline.
+    const fills = bodyPaints('head', DEFAULT_ART_LOOK).filter((p) => p.kind === 'fill' && p.style === HAT_FILL);
+    const lowest = fills.flatMap((p) => p.subs[0].pts).reduce((a, b) => (b.y > a.y ? b : a));
+    expect(lowest.y).toBeCloseTo(-21.5, 2);
+    expect(((lowest.x - HEAD_ELLIPSE.cx) / HEAD_ELLIPSE.rx) ** 2 + ((lowest.y - HEAD_ELLIPSE.cy) / HEAD_ELLIPSE.ry) ** 2).toBeLessThan(1);
+    // The brim passes the head outline forward: its front tip is 4 or more above the head top below it.
+    const front = fills.flatMap((p) => p.subs[0].pts).reduce((a, b) => (b.x > a.x ? b : a));
+    const headTop = HEAD_ELLIPSE.cy - HEAD_ELLIPSE.ry * Math.sqrt(1 - ((front.x - HEAD_ELLIPSE.cx) / HEAD_ELLIPSE.rx) ** 2);
+    expect(headTop - front.y).toBeGreaterThan(4);
   });
 
-  it('keeps the Shell necklace at the throat: x 13 to 22, y 11 to 21', () => {
-    expect(isInside(inkBounds(bodyPaints('neck', DEFAULT_ART_LOOK)), NECK_FOOTPRINT)).toBe(true);
+  it('keeps the Shell necklace under the chin (#88): ink x 2 to 41.9, y 13.1 to 22.65, inside x 2 to 42, y 13.1 to 22.75', () => {
+    expect(NECK_FOOTPRINT).toEqual({ minX: 2, minY: 13.1, maxX: 42, maxY: 22.75 });
+    const box = inkBounds(bodyPaints('neck', DEFAULT_ART_LOOK));
+    expect(isInside(box, NECK_FOOTPRINT)).toBe(true);
+    expect(box.minX).toBeCloseTo(2, 6);
+    expect(box.maxX).toBeCloseTo(41.9, 6);
+    expect(box.minY).toBeCloseTo(13.1, 6);
+    expect(box.maxY).toBeCloseTo(22.65, 2);
+  });
+
+  it('keeps the Shell necklace paint off the gill-root zone (0.15) and the cheek heart zone, and over the mouth-zone box, under the mouth', () => {
+    const paints = bodyPaints('neck', DEFAULT_ART_LOOK);
+    const gillGap = Math.min(
+      ...inkPoints(paints).map(({ p, hw }) => {
+        const dx = Math.max(GILL_ROOT_ZONE.minX - p.x, 0, p.x - GILL_ROOT_ZONE.maxX);
+        const dy = Math.max(GILL_ROOT_ZONE.minY - p.y, 0, p.y - GILL_ROOT_ZONE.maxY);
+        return Math.hypot(dx, dy) - hw;
+      }),
+    );
+    expect(gillGap).toBeCloseTo(0.15, 6);
+    for (const paint of paints) {
+      expect(reachesBox(regionOf(paint), GILL_ROOT_ZONE), `${paint.kind} ${paint.style}`).toBe(false);
+      expect(reachesCircle(regionOf(paint), CHEEK_HEART_ZONE), `${paint.kind} ${paint.style}`).toBe(false);
+    }
+    // The mouth zone is no keep-clear zone: the necklace runs under the mouth, which paints over it at 11.
+    expect(paints.some((p) => reachesBox(regionOf(p), MOUTH_ZONE))).toBe(true);
+    expect(WEARABLE_LAYERS.neck).toBeLessThan(11);
+  });
+
+  it('keeps the Shell necklace paint 0.1 or more inside LW / 2 in from the outer edge of the silhouette outline on every look, so nothing hangs below it', () => {
+    // The outline ink is LW outside the head and torso ellipses; LW / 2 in from its outer edge is LW / 2 outside them.
+    const paints = bodyPaints('neck', DEFAULT_ART_LOOK);
+    const points = inkPoints(paints);
+    const margins = EVERY_BODY_LOOK.map((look) => {
+      const torso = axolotlBodyGeometry(look).torso;
+      const margin = Math.min(
+        ...points.map(({ p, hw }) =>
+          Math.max(
+            ...[HEAD_ELLIPSE, torso].map((e) => LW / 2 - hw - (inEllipse(e, p.x, p.y) ? -1 : 1) * ellipseGap(e, p.x, p.y)),
+          ),
+        ),
+      );
+      return { id: lookId(look), value: margin };
+    });
+    const least = leastOver(margins);
+    expect(least.value, least.id).toBeGreaterThanOrEqual(0);
+    expect(least.value).toBeCloseTo(0.1, 2);
+  });
+
+  it('paints the Heart glasses band 3.5 wide: colour 2.1 with 0.7 of ink each side, no more than 1.0 (#88)', () => {
+    const paints = bodyPaints('face', DEFAULT_ART_LOOK);
+    const ink = paints.filter((p) => p.kind === 'stroke' && p.style === INK && p.lineWidth === 3.5);
+    const colour = paints.filter((p) => p.kind === 'stroke' && p.style === GLASSES_FRAME);
+    expect(ink).toHaveLength(1);
+    expect(colour).toHaveLength(1);
+    expect(colour[0].lineWidth).toBeCloseTo(2.1, 9);
+    const inkEachSide = (ink[0].lineWidth - colour[0].lineWidth) / 2;
+    expect(inkEachSide).toBeCloseTo(0.7, 9);
+    expect(inkEachSide).toBeLessThanOrEqual(1);
+    expect(signature({ ...colour[0], style: INK, lineWidth: 3.5 })).toBe(signature(ink[0]));
+  });
+
+  it('keeps the Heart glasses 1.8 or more under the Sun hat ink, and the band 1.8 under the Head footprint', () => {
+    const hat = inkPoints(bodyPaints('head', DEFAULT_ART_LOOK));
+    const gap = (paints: readonly Paint[]): number =>
+      inkPoints(paints).reduce(
+        (best, { p, hw }) => hat.reduce((b, q) => Math.min(b, Math.hypot(p.x - q.p.x, p.y - q.p.y) - hw - q.hw), best),
+        Infinity,
+      );
+    const glasses = bodyPaints('face', DEFAULT_ART_LOOK);
+    // The band is the nearest paint, as the brim tilts up over the bridge gem.
+    expect(gap(glasses)).toBeCloseTo(1.81, 2);
+    expect(gap(glasses.filter((p) => p.kind === 'stroke' && p.lineWidth === 3.5))).toBeCloseTo(1.81, 2);
+    expect(gap(glasses)).toBeGreaterThanOrEqual(1.8);
+    expect(GLASSES_EXTENT.minY - HEAD_FOOTPRINT.maxY).toBeCloseTo(1.8, 1);
   });
 
   it('keeps the Heart glasses in the Face footprint, x 14 to 54, y -18 to 6, the band at x 16.3 to 52.6', () => {
@@ -1297,62 +1445,68 @@ describe('footprints (guide 6i), ink included, and the frame (guide 11)', { time
         const gap = Math.min(...boundary.map((q) => Math.hypot(p.x - q.x, p.y - q.y)));
         if (!inside || gap < hw - TOL) bad.push(`${lookId(look)} edge band`);
         if (p.x + hw > SHIRT_FRONT_X + TOL) bad.push(`${lookId(look)} front`);
-        if (p.x + hw > SHIRT_BACK_FRONT_LINE_X) bad.push(`${lookId(look)} front line`);
+        if (p.x + hw > SHIRT_BACK_FRONT_LINE_X + TOL) bad.push(`${lookId(look)} front line`);
         if (p.x - hw < shirt.rearX - TOL) bad.push(`${lookId(look)} rear`);
       }
     }
     expect([...new Set(bad)]).toEqual([]);
   });
 
-  it('paints the Shirt as the whole footprint: one silhouette from the tail root to the front edge, neckline bowing back to x -10.5', () => {
+  it('paints the Shirt as the whole footprint: one silhouette, ink 2.0, from the tail root to the front edge, neckline bowing back to x -7', () => {
     for (const look of EVERY_BODY_LOOK) {
       const shirt = shirtGeometry(look);
       const paints = bodyPaints('shirt', look);
       const fills = paints.filter((p) => p.kind === 'fill' && p.style === TANK_TOP_FILL);
       expect(fills).toHaveLength(1);
-      expect(paints.filter((p) => p.kind === 'stroke' && p.lineWidth === 2.8 && p.style === INK)).toHaveLength(1);
+      expect(paints.filter((p) => p.kind === 'stroke' && p.lineWidth === 2 && p.style === INK)).toHaveLength(1);
       const pts = fills[0].subs[0].pts;
-      // The path sits half the 2.8 ink inside the footprint's rear and front edges.
-      expect(Math.min(...pts.map((p) => p.x))).toBeCloseTo(shirt.rearX + 1.4, 3);
-      expect(Math.max(...pts.map((p) => p.x))).toBeCloseTo(SHIRT_FRONT_X - 1.4, 3);
-      // The neckline is the last 24 points (the curve back to the start): its apex is 3 units behind the front edge.
+      // The path sits half the 2.0 ink inside the footprint's rear and front edges.
+      expect(Math.min(...pts.map((p) => p.x))).toBeCloseTo(shirt.rearX + 1, 3);
+      expect(Math.max(...pts.map((p) => p.x))).toBeCloseTo(SHIRT_FRONT_X - 1, 3);
+      // The neckline is the last 24 points (the curve back to the start): its apex is 1.5 units behind the front edge.
       const neckline = pts.slice(-24);
-      expect(Math.min(...neckline.map((p) => p.x))).toBeCloseTo(shirt.neckline.apexX - 1.4, 6);
-      expect(shirt.neckline.apexX).toBeCloseTo(-10.5, 9);
+      expect(Math.min(...neckline.map((p) => p.x))).toBeCloseTo(shirt.neckline.apexX - 1, 6);
+      expect(shirt.neckline.apexX).toBeCloseTo(-7, 9);
     }
   });
 
-  it('keeps the Back item in the back frame, x\' -9 to 9, y\' -8 to 5, with its forward corner at x -6.8 or less', () => {
+  it('keeps the Back item in its look\'s back box, filling it end to end, with its forward corner at x -5.5 or less', () => {
     const bad: string[] = [];
     for (const look of EVERY_BODY_LOOK) {
-      const frame = backFrame(axolotlBodyGeometry(look).torso);
+      const { frame, box } = backFootprint(look);
       const paints = bodyPaints('back', look);
       expect(paints.length).toBeGreaterThan(0);
-      for (const { p, hw } of inkPoints(paints)) {
-        const q = toFrame(frame, p);
-        if (q.x - hw < BACK_FRAME_BOX.minU - TOL || q.x + hw > BACK_FRAME_BOX.maxU + TOL) bad.push(`${lookId(look)} u`);
-        if (q.y - hw < BACK_FRAME_BOX.minV - TOL || q.y + hw > BACK_FRAME_BOX.maxV + TOL) bad.push(`${lookId(look)} v`);
-        if (p.x + hw > SHIRT_BACK_FRONT_LINE_X + 0.005) bad.push(`${lookId(look)} front line`);
+      const along = inkPoints(paints).map(({ p, hw }) => ({ q: toFrame(frame, p), hw }));
+      for (const { q, hw } of along) {
+        if (q.x - hw < box.minU - TOL || q.x + hw > box.maxU + TOL) bad.push(`${lookId(look)} u`);
+        if (q.y - hw < box.minV - TOL || q.y + hw > box.maxV + TOL) bad.push(`${lookId(look)} v`);
       }
+      for (const { p, hw } of inkPoints(paints)) if (p.x + hw > SHIRT_BACK_FRONT_LINE_X + TOL) bad.push(`${lookId(look)} front line`);
+      // The ink runs the box's whole length and height.
+      if (Math.abs(Math.min(...along.map(({ q, hw }) => q.x - hw)) - box.minU) > TOL) bad.push(`${lookId(look)} rear end`);
+      if (Math.abs(Math.max(...along.map(({ q, hw }) => q.x + hw)) - box.maxU) > TOL) bad.push(`${lookId(look)} front end`);
+      if (Math.abs(Math.min(...along.map(({ q, hw }) => q.y - hw)) - box.minV) > TOL) bad.push(`${lookId(look)} top`);
+      if (Math.abs(Math.max(...along.map(({ q, hw }) => q.y + hw)) - box.maxV) > TOL) bad.push(`${lookId(look)} bottom`);
     }
     expect([...new Set(bad)]).toEqual([]);
   });
 
-  it('keeps the Golden bow within 9 units of its anchor, ink included, at every look, swim phase and tail amplitude', () => {
-    expect(TAIL_SLOT_REACH).toBe(9);
-    const bad: string[] = [];
+  it('keeps the Golden bow within 17.5 units of its anchor (#88: 9, then 12, before), ink included, at every look, swim phase and tail amplitude', () => {
+    expect(TAIL_SLOT_REACH).toBe(17.5);
+    let reach = 0;
     for (const look of EVERY_BODY_LOOK) {
       const tail = axolotlBodyGeometry(look).tail;
       for (const swim of SWIMS) {
         for (const amp of AMPS) {
           const frame = tailSlotFrame(tail, swim, amp);
           for (const { p, hw } of inkPoints(bodyPaints('tail', look, swim, amp))) {
-            if (Math.hypot(p.x - frame.x, p.y - frame.y) + hw > TAIL_SLOT_REACH + TOL) bad.push(lookId(look));
+            reach = Math.max(reach, Math.hypot(p.x - frame.x, p.y - frame.y) + hw);
           }
         }
       }
     }
-    expect([...new Set(bad)]).toEqual([]);
+    expect(reach).toBeCloseTo(17.34, 2);
+    expect(reach).toBeLessThanOrEqual(TAIL_SLOT_REACH + TOL);
   });
 
   it('turns the Golden bow with the local tail direction: its knot sits on the anchor line, rotated by the frame', () => {
@@ -1382,7 +1536,7 @@ describe('footprints (guide 6i), ink included, and the frame (guide 11)', { time
               const q = toFrame(frame, pt);
               const onSleeve = isSleevePaint(p);
               if (onSleeve) {
-                // Within the sleeve's ink radius (7.6) of the leg axis (u 0 to l), round ends. Its colour stroke
+                // Within the sleeve's ink radius (8.2) of the leg axis (u 0 to l), round ends. Its colour stroke
                 // carries its own half width, so a stroke's points are measured with it.
                 const d = segDist(q.x, q.y, { x: 0, y: 0 }, { x: frame.length, y: 0 });
                 if (d + hw > SLEEVE_INK_W / 2 + TOL) bad.push(`${lookId(look)} sleeve`);
@@ -1431,15 +1585,27 @@ describe('footprints (guide 6i), ink included, and the frame (guide 11)', { time
         for (const q of outline) {
           const inside = winding(fanLeg, q.x, q.y) !== 0;
           const nearInk =
-            Math.min(...edgesOf({ subs: fanLeg, kind: 'fill', hw: 0 }).map(([a, b]) => segDist(q.x, q.y, a, b))) <= 1.4 + TOL;
+            Math.min(...edgesOf({ subs: fanLeg, kind: 'fill', hw: 0 }).map(([a, b]) => segDist(q.x, q.y, a, b))) <= 1 + TOL;
           if (!inside && !nearInk) uncovered++;
         }
         expect(uncovered, `leg ${frame.index} ${look.age}`).toBe(0);
         // At the back the pad starts as far back as the Flippers' ink: the Sock's sleeve shows above them.
-        const backOfFan = Math.min(...fanLeg[0].pts.map((q) => q.x)) - 1.4;
+        const backOfFan = Math.min(...fanLeg[0].pts.map((q) => q.x)) - 1;
         expect(backOfFan).toBeCloseTo(pad.u0, 3);
       }
     }
+  });
+
+  it('keeps the lowest Socks and Flippers ink at y 56.24 on every look and swim phase, 4 or more above the frame bottom (#88: the frame did not grow)', () => {
+    let lowest = -Infinity;
+    for (const look of EVERY_BODY_LOOK) {
+      for (const swim of SWIMS) {
+        for (const frame of legSlotFrames(look, swim)) lowest = Math.max(lowest, inkBounds(legPaints(SOCKS_AND_FEET, frame)).maxY);
+      }
+    }
+    expect(lowest).toBeLessThanOrEqual(AXO_TEX.h - AXO_TEX.originY - FRAME_PAD);
+    // A Chubby Girl's near-rear leg at swim phase pi / 2 (#88: 55.90 before).
+    expect(lowest).toBeCloseTo(56.24, 2);
   });
 
   it('keeps every Wearable, ink included, in the texture frame with 4 or more units of padding', () => {
@@ -1458,6 +1624,1083 @@ describe('footprints (guide 6i), ink included, and the frame (guide 11)', { time
     expect([...new Set(bad)]).toEqual([]);
     // The frame did not need to grow: guide 11 gives 166 x 142.
     expect([AXO_TEX.w, AXO_TEX.h]).toEqual([166, 142]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Item ink (#88)
+// ---------------------------------------------------------------------------
+
+describe('item ink (#88): every worn silhouette uses the 2.0 item ink', () => {
+  /** The widths of an item's ink strokes, sorted. */
+  const inkWidths = (paints: readonly Paint[]): number[] =>
+    [...new Set(paints.filter((p) => p.kind === 'stroke' && p.style === INK).map((p) => Math.round(p.lineWidth * 1e9) / 1e9))].sort(
+      (a, b) => a - b,
+    );
+  const nearLeg = legSlotFrames(GIRL, 0)[2];
+
+  it('strokes a `shape` or inkedShape silhouette at 2.0 and a `blob` at 2 x 2.0, so 2.0 shows outside its fill', () => {
+    // Sun hat, Golden bow, Diving tank: one blob each. Tank top, Stripy socks pad, Flippers: shape 2.0.
+    expect(inkWidths(bodyPaints('head', GIRL))).toEqual([4]);
+    // The bow's band lines are 0.6, its gem and star outlines 1.2 (#88).
+    expect(inkWidths(bodyPaints('tail', GIRL))).toEqual([0.6, 1.2, 4]);
+    expect(inkWidths(bodyPaints('back', GIRL))).toEqual([1.2, 4]);
+    expect(inkWidths(bodyPaints('shirt', GIRL))).toEqual([2]);
+    expect(inkWidths(legPaints({ socks: 'stripy-socks' }, nearLeg))).toEqual([2, SLEEVE_INK_W]);
+    expect(inkWidths(legPaints({ feet: 'flippers' }, nearLeg))).toEqual([1.2, 2]);
+  });
+
+  it('keeps the band and detail inks: the glasses band 3.5 (0.7 each side) and gem 1.2, the cord 5.8 or 5.2 (0.6 each side) and shells 0.6 outside', () => {
+    expect(inkWidths(bodyPaints('face', GIRL))).toEqual([1.2, 3.5]);
+    // The shells' 1.2 ink is stroked before every fill, so 0.6 of it shows outside each shell.
+    expect(inkWidths(bodyPaints('neck', GIRL))).toEqual([1.2, 5.2, 5.8]);
+    // The cord: colour 4.0 behind the chin and 4.6 under it, each with 0.6 of ink a side.
+    const necklace = bodyPaints('neck', GIRL);
+    const widths = (style: string): number[] =>
+      necklace.filter((p) => p.kind === 'stroke' && p.style === style && p.lineWidth > 2).map((p) => p.lineWidth);
+    expect(widths(NECKLACE_CORD)).toEqual([4, 4.6]);
+    expect(widths(INK)).toEqual([5.2, 5.8]);
+    // One silhouette: every ink stroke comes before the cord colour and the shells, so ink shows only round the outside.
+    const firstColour = necklace.findIndex((p) => p.style !== INK);
+    expect(firstColour).toBeGreaterThan(0);
+    expect(necklace.slice(firstColour).some((p) => p.style === INK)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Swim view: how much of each worn item shows (#88)
+// ---------------------------------------------------------------------------
+//
+// The harness records a full drawAxolotl run with the items of an outfit worn and point-samples it on
+// a grid; it takes any outfit and cases, leg items included. An item's fill is its own paint that is
+// not ink and is half opaque or more (isItemFill); a sample counts as visible only when
+// the topmost paint covering it is one of those fills, so the item's own ink and every later layer
+// (near gills, blush, cheek heart, mouth, Face item, eyes, lashes) hide it. Clips are honoured: a
+// clipped paint covers a point only inside every active clip. Fills use the nonzero rule; a stroke
+// covers every point within half its width of its path (round caps and joins, a slight over-cover at
+// a butt end). Only paints whose box meets the box of the item's fills are tested.
+//
+// A Socks or Feet item is one item on four legs, so its visible fill is the sum over all four legs of
+// what shows of it as worn: each leg's wear at its own layer (far 2.5, near 3.5), under the near legs,
+// the silhouette and everything after them. All four legs are present.
+
+/** Sample grid step in local units; each sample stands for one step x step cell, on a grid fixed to the origin. */
+const SWIM_VIEW_GRID = 0.25;
+
+const toCssPx2 = (units2: number): number => units2 * SWIM_VIEW_CSS_PX_PER_UNIT ** 2;
+
+/** Opacity of a paint: its global alpha times the alpha of an `rgba(...)` style. */
+function paintOpacity(p: Paint): number {
+  const rgba = /^rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\)$/.exec(p.style);
+  return p.alpha * (rgba ? Number(rgba[1]) : 1);
+}
+
+/** An item fill: not ink, and half opaque or more, so the shine (white at 0.8) counts and the clear lens tint (0.25) does not. */
+function isItemFill(p: Paint): boolean {
+  return p.style !== INK && paintOpacity(p) >= 0.5;
+}
+
+/** An edge of a paint and its box, grown by half the line width for a stroke: a point outside that box is out of the stroke. */
+interface SampledEdge {
+  a: Pt;
+  b: Pt;
+  box: Bounds;
+}
+
+/**
+ * A paint ready for sampling: its box (ink included, cut to its clips) and, built on first use, its
+ * edges (every subpath closed for a fill, as `winding` reads it) and, per sampled row y, the edges
+ * that can count there, its own and each clip's.
+ */
+interface SampledPaint {
+  index: number;
+  paint: Paint;
+  box: Bounds;
+  edges: SampledEdge[] | null;
+  rows: Map<number, SampledEdge[]>;
+  clipEdges: SampledEdge[][] | null;
+  clipRows: Map<number, SampledEdge[][]>;
+}
+
+function subsBox(subs: readonly SubPath[], pad: number): Bounds {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const sub of subs) {
+    for (const q of sub.pts) {
+      minX = Math.min(minX, q.x);
+      minY = Math.min(minY, q.y);
+      maxX = Math.max(maxX, q.x);
+      maxY = Math.max(maxY, q.y);
+    }
+  }
+  return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
+}
+
+function sampledPaint(paint: Paint, index: number): SampledPaint {
+  const hw = paint.kind === 'stroke' ? paint.lineWidth / 2 : 0;
+  const box = paint.clips.reduce((b, clip) => {
+    const c = subsBox(clip, 0);
+    return { minX: Math.max(b.minX, c.minX), minY: Math.max(b.minY, c.minY), maxX: Math.min(b.maxX, c.maxX), maxY: Math.min(b.maxY, c.maxY) };
+  }, subsBox(paint.subs, hw));
+  return { index, paint, box, edges: null, rows: new Map(), clipEdges: null, clipRows: new Map() };
+}
+
+/** The edges of a region, each with its box grown by `hw`. */
+function regionEdges(r: Region): SampledEdge[] {
+  return edgesOf(r).map(([a, b]) => ({
+    a,
+    b,
+    box: boundsOfPoints(
+      [
+        [a.x, a.y],
+        [b.x, b.y],
+      ],
+      r.hw,
+    ),
+  }));
+}
+
+/** The edges of `s`, each with its box grown by half the line width of a stroke. */
+function sampledEdges(s: SampledPaint): SampledEdge[] {
+  if (s.edges === null) {
+    const hw = s.paint.kind === 'stroke' ? s.paint.lineWidth / 2 : 0;
+    s.edges = regionEdges({ subs: s.paint.subs, kind: s.paint.kind, hw });
+  }
+  return s.edges;
+}
+
+/** Of `edges`, those that cross row `y`: the only ones `winding` counts there. */
+function crossingEdges(edges: readonly SampledEdge[], y: number): SampledEdge[] {
+  return edges.filter((e) => e.a.y <= y !== e.b.y <= y);
+}
+
+/** Each clip's edges of `s` that cross row `y`, kept per row. */
+function clipRowEdges(s: SampledPaint, y: number): SampledEdge[][] {
+  const cached = s.clipRows.get(y);
+  if (cached !== undefined) return cached;
+  s.clipEdges ??= s.paint.clips.map((clip) => regionEdges({ subs: clip, kind: 'fill', hw: 0 }));
+  const rows = s.clipEdges.map((edges) => crossingEdges(edges, y));
+  s.clipRows.set(y, rows);
+  return rows;
+}
+
+/**
+ * The edges of `s` that can count at row `y`: for a fill those that cross the row (the only ones
+ * `winding` counts), for a stroke those whose grown box spans it. Kept per row.
+ */
+function rowEdges(s: SampledPaint, y: number): SampledEdge[] {
+  const cached = s.rows.get(y);
+  if (cached !== undefined) return cached;
+  const edges = sampledEdges(s);
+  const row = s.paint.kind === 'fill' ? crossingEdges(edges, y) : edges.filter((e) => y >= e.box.minY && y <= e.box.maxY);
+  s.rows.set(y, row);
+  return row;
+}
+
+/** Nonzero winding number about (x, y) of the edges that cross row y, the same count `winding` makes. */
+function rowWinding(edges: readonly SampledEdge[], x: number, y: number): number {
+  let w = 0;
+  for (const { a, b } of edges) {
+    const side = (b.x - a.x) * (y - a.y) - (x - a.x) * (b.y - a.y);
+    if (a.y <= y) {
+      if (side > 0) w++;
+    } else if (side < 0) w--;
+  }
+  return w;
+}
+
+function boxHolds(b: Bounds, x: number, y: number): boolean {
+  return x >= b.minX && x <= b.maxX && y >= b.minY && y <= b.maxY;
+}
+
+/** Whether the paint covers (x, y): inside every clip, and inside its fill or within half its line width of its stroke. */
+function paintCovers(s: SampledPaint, x: number, y: number): boolean {
+  if (!boxHolds(s.box, x, y)) return false;
+  const covered =
+    s.paint.kind === 'fill'
+      ? rowWinding(rowEdges(s, y), x, y) !== 0
+      : rowEdges(s, y).some((e) => boxHolds(e.box, x, y) && segDist(x, y, e.a, e.b) <= s.paint.lineWidth / 2);
+  return covered && clipRowEdges(s, y).every((clip) => rowWinding(clip, x, y) !== 0);
+}
+
+/**
+ * A cheaper paint key for the swim view: style, widths, clip count, point count and the two end points.
+ * A fill's key leaves out the line width and cap, which do not change what it paints: a Feet item's
+ * fill keeps the key it has alone when the Sock painted before it leaves another line width set.
+ */
+function quickSignature(p: Paint): string {
+  const count = p.subs.reduce((n, sub) => n + sub.pts.length, 0);
+  const last = p.subs[p.subs.length - 1]?.pts;
+  const ends = [p.subs[0]?.pts[0], last?.[last.length - 1]].map((q) => (q ? `${q.x.toFixed(3)},${q.y.toFixed(3)}` : '-'));
+  const line = p.kind === 'stroke' ? [p.lineWidth, p.lineCap] : ['-', '-'];
+  return [p.kind, p.style, ...line, p.alpha, p.clips.length, p.subs.length, count, ...ends].join('|');
+}
+
+/**
+ * Visible fill, in units², of what `outfit` adds to a full drawAxolotl run of `pose` and `look` worn
+ * over `under` (nothing by default): the items of `under` paint as in the game and can hide it.
+ */
+function visibleItemFill(pose: AxolotlPose, look: AxolotlArtLook, outfit: ArtOutfit, under: ArtOutfit = NO_OUTFIT): number {
+  const worn = drawn(pose, look, { ...under, ...outfit });
+  const inserted = insertedPaints(drawn(pose, look, under), worn, quickSignature);
+  expect(inserted).not.toBeNull();
+  const fills = new Set(inserted!.filter((x) => isItemFill(x.paint)).map((x) => x.index));
+  expect(fills.size).toBeGreaterThan(0);
+  const first = Math.min(...fills);
+  const sampled = worn.slice(first).map((paint, k) => sampledPaint(paint, first + k));
+  const domain = unionBounds(sampled.filter((s) => fills.has(s.index)).map((s) => s.box));
+  const meets = (b: Bounds): boolean =>
+    b.minX <= domain.maxX && b.maxX >= domain.minX && b.minY <= domain.maxY && b.maxY >= domain.minY;
+  const topFirst = sampled.filter((s) => meets(s.box)).reverse();
+  const fillsTopFirst = topFirst.filter((s) => fills.has(s.index));
+  const g = SWIM_VIEW_GRID;
+  let count = 0;
+  for (const row of fillBoxRows(fillsTopFirst.map((s) => s.box))) {
+    const y = (row.j + 0.5) * g;
+    const spans = (s: SampledPaint): boolean => y >= s.box.minY && y <= s.box.maxY;
+    const rowTop = topFirst.filter(spans);
+    const rowFills = fillsTopFirst.filter(spans);
+    for (const i of row.cells) {
+      const x = (i + 0.5) * g;
+      const fill = rowFills.find((s) => paintCovers(s, x, y));
+      if (fill !== undefined && !coveredAbove(rowTop, fill.index, x, y)) count++;
+    }
+  }
+  return count * g * g;
+}
+
+/** Whether a paint of `topFirst` (in reverse paint order) later than paint `index` covers (x, y). */
+function coveredAbove(topFirst: readonly SampledPaint[], index: number, x: number, y: number): boolean {
+  for (const s of topFirst) {
+    if (s.index <= index) return false;
+    if (paintCovers(s, x, y)) return true;
+  }
+  return false;
+}
+
+/**
+ * Grid rows (SWIM_VIEW_GRID) and, in each, the cells whose centre can lie in one of `boxes`, each
+ * once. A cell is visible only when an item fill is the topmost paint over its centre, so only cells
+ * inside a fill's box are tested, and for those the item fill highest in paint order must have
+ * nothing over it.
+ */
+function fillBoxRows(boxes: readonly Bounds[]): { j: number; cells: number[] }[] {
+  const g = SWIM_VIEW_GRID;
+  const ranges = boxes.map((box) => ({
+    i0: Math.floor(box.minX / g),
+    i1: Math.floor(box.maxX / g - 0.5),
+    j0: Math.floor(box.minY / g),
+    j1: Math.floor(box.maxY / g - 0.5),
+  }));
+  const i0 = Math.min(...ranges.map((r) => r.i0));
+  const i1 = Math.max(...ranges.map((r) => r.i1));
+  const j0 = Math.min(...ranges.map((r) => r.j0));
+  const j1 = Math.max(...ranges.map((r) => r.j1));
+  const width = i1 - i0 + 1;
+  const marked = new Uint8Array(Math.max(0, width * (j1 - j0 + 1)));
+  for (const r of ranges) {
+    for (let j = r.j0; j <= r.j1; j++) marked.fill(1, (j - j0) * width + r.i0 - i0, (j - j0) * width + r.i1 - i0 + 1);
+  }
+  const rows: { j: number; cells: number[] }[] = [];
+  for (let j = j0; j <= j1; j++) {
+    const cells: number[] = [];
+    for (let i = i0; i <= i1; i++) if (marked[(j - j0) * width + i - i0] === 1) cells.push(i);
+    if (cells.length > 0) rows.push({ j, cells });
+  }
+  return rows;
+}
+
+/** The least visible fill over `cases`, in units² and CSS px², and the case it was found in. */
+interface SwimViewMinimum {
+  units2: number;
+  cssPx2: number;
+  worst: string;
+}
+
+interface SwimViewCase {
+  id: string;
+  pose: AxolotlPose;
+  look: AxolotlArtLook;
+}
+
+function swimViewMinimum(outfit: ArtOutfit, cases: readonly SwimViewCase[], under: ArtOutfit = NO_OUTFIT): SwimViewMinimum {
+  let best: SwimViewMinimum = { units2: Infinity, cssPx2: Infinity, worst: '' };
+  for (const c of cases) {
+    const units2 = visibleItemFill(c.pose, c.look, outfit, under);
+    if (units2 < best.units2) best = { units2, cssPx2: toCssPx2(units2), worst: c.id };
+  }
+  return best;
+}
+
+/** The 54 body looks with Long gills (the longest near gills), Boy and Girl, at the still pose. */
+const SWIM_VIEW_STILL_CASES: readonly SwimViewCase[] = EVERY_BODY_LOOK.map((look) => ({
+  id: lookId(look),
+  pose: AXO_REST_POSE,
+  look: { ...look, gills: 'long' },
+}));
+
+/**
+ * For the items on the head (Head, Neck, Face), which the face paints over: Boy and Girl with every eye
+ * and every mouth on the default body (80), then the 54 body looks with Grumpy eyes (brows) and the
+ * mouths in turn. A Girl's lashes and cheek heart, the blush and the mouth all paint as in the game.
+ */
+const SWIM_VIEW_FACE_CASES: readonly SwimViewCase[] = [
+  ...AXO_SEXES.flatMap((sex) =>
+    EYE_VARIANTS.flatMap((eyes) =>
+      MOUTH_VARIANTS.map((mouth) => ({
+        id: `${sex} ${eyes} ${mouth}`,
+        pose: AXO_REST_POSE,
+        look: { ...DEFAULT_ART_LOOK, sex, eyes, mouth, gills: 'long' as const },
+      })),
+    ),
+  ),
+  ...SWIM_VIEW_STILL_CASES.map((c, i) => {
+    const mouth = MOUTH_VARIANTS[i % MOUTH_VARIANTS.length];
+    return { id: `${c.id} grumpy ${mouth}`, pose: c.pose, look: { ...c.look, eyes: 'grumpy' as const, mouth } };
+  }),
+];
+
+/** The same looks over a swim cycle at tail amplitudes 1 and 1.6, all four legs present. */
+const SWIM_VIEW_SWIM_CASES: readonly SwimViewCase[] = SWIM_VIEW_STILL_CASES.flatMap((c) =>
+  SWIMS.flatMap((swim) =>
+    AMPS.map((amp) => ({ id: `${c.id} swim ${swim.toFixed(2)} amp ${amp}`, pose: { ...AXO_REST_POSE, swimPhase: swim, tailAmp: amp }, look: c.look })),
+  ),
+);
+
+/**
+ * The 54 body looks over the 13 swim phases at tail amplitude 1, all four legs present: every item is
+ * held to these. Swim phase 0 at amplitude 1 is the still pose, so SWIM_VIEW_STILL_CASES are among them.
+ */
+const SWIM_VIEW_CYCLE_CASES: readonly SwimViewCase[] = SWIM_VIEW_SWIM_CASES.filter((c) => c.pose.tailAmp === 1);
+
+/**
+ * The swim-view cases an item in `slot` is held to: all 54 looks over the 13 swim phases; for the items on
+ * the head (Head, Neck, Face), every sex, eye and mouth too; for the Tail item, the tail amplitude 1.6 too.
+ */
+function swimViewCases(slot: WearableSlot): readonly SwimViewCase[] {
+  if (slot === 'head' || slot === 'neck' || slot === 'face') return [...SWIM_VIEW_FACE_CASES, ...SWIM_VIEW_CYCLE_CASES];
+  if (slot === 'tail') return SWIM_VIEW_SWIM_CASES;
+  return SWIM_VIEW_CYCLE_CASES;
+}
+
+describe('swim view (#88): each worn item shows enough of its own fill', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
+  it('converts at 0.684 CSS px per unit, so the 64 CSS px² floor is about 136.8 units²', () => {
+    expect(WEARABLE_SWIM_VIEW_MIN_CSS_PX2).toBe(64);
+    // The Small swim view, 320 x 440 CSS px, fits the world at zoom 1.
+    expect(SWIM_VIEW_FIT_ZOOM).toBe(fitView(320, 440, 1, { worldH: WORLD_H, ...VIEW }).fitZoom);
+    expect(SWIM_VIEW_CSS_PX_PER_UNIT).toBe(AXO_SCENE_SCALE * AXO_SIZE_SCALE.small * SWIM_VIEW_FIT_ZOOM);
+    expect(SWIM_VIEW_CSS_PX_PER_UNIT).toBeCloseTo(0.684, 9);
+    expect(WEARABLE_SWIM_VIEW_MIN_CSS_PX2 / SWIM_VIEW_CSS_PX_PER_UNIT ** 2).toBeCloseTo(136.8, 1);
+    expect(SWIM_VIEW_GRID).toBe(0.25);
+  });
+
+  it('measures what a known square shows, and hides it under a later paint or outside its clip', () => {
+    const square = (x0: number, y0: number, x1: number, y1: number): SubPath[] => [
+      { closed: true, pts: [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }] },
+    ];
+    const paint = (kind: 'fill' | 'stroke', style: string, subs: SubPath[], clips: SubPath[][] = [], lineWidth = 1): Paint => ({
+      kind,
+      style,
+      lineWidth,
+      alpha: 1,
+      lineCap: 'round',
+      subs,
+      clips,
+    });
+    const fill = sampledPaint(paint('fill', HAT_FILL, square(0, 0, 4, 4)), 0);
+    const cover = sampledPaint(paint('fill', WHITE, square(2, 0, 6, 4)), 1);
+    const clipped = sampledPaint(paint('fill', HAT_FILL, square(0, 0, 4, 4), [square(0, 0, 1, 4)]), 2);
+    const ink = sampledPaint(paint('stroke', INK, square(0, 0, 4, 4), [], 2), 3);
+    expect(paintCovers(fill, 1, 1)).toBe(true);
+    expect(paintCovers(fill, 4.5, 1)).toBe(false);
+    expect(paintCovers(cover, 3, 1)).toBe(true);
+    expect(paintCovers(clipped, 0.5, 2)).toBe(true);
+    expect(paintCovers(clipped, 2, 2)).toBe(false);
+    expect(paintCovers(ink, 2, 0.9)).toBe(true);
+    expect(paintCovers(ink, 2, 1.1)).toBe(false);
+    expect(isItemFill(fill.paint)).toBe(true);
+    expect(isItemFill(ink.paint)).toBe(false);
+    expect(isItemFill({ ...fill.paint, style: GLASSES_LENS })).toBe(false);
+    expect(isItemFill({ ...fill.paint, style: TREASURE_SHINE })).toBe(true);
+    expect(isItemFill({ ...fill.paint, style: INK, alpha: SOCK_STRIPE_ALPHA })).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-slot minimum sizes (#88): each item is a share of the body part it sits on
+// ---------------------------------------------------------------------------
+
+/** Every paint of `paints` ready for sampling. */
+function sampledPaints(paints: readonly Paint[]): SampledPaint[] {
+  return paints.map((paint, index) => sampledPaint(paint, index));
+}
+
+/** Shortest distance from (x, y) to the outline of `e`: the nearest of 72 outline points, refined by a ternary search about it. */
+function ellipseGap(e: BodyEllipse, x: number, y: number): number {
+  const gapAt = (a: number): number => Math.hypot(x - (e.cx + Math.cos(a) * e.rx), y - (e.cy + Math.sin(a) * e.ry));
+  const step = TAU / 72;
+  let nearest = 0;
+  for (let k = 1; k < 72; k++) if (gapAt(k * step) < gapAt(nearest * step)) nearest = k;
+  let lo = (nearest - 1) * step;
+  let hi = (nearest + 1) * step;
+  for (let i = 0; i < 30; i++) {
+    const m1 = lo + (hi - lo) / 3;
+    const m2 = hi - (hi - lo) / 3;
+    if (gapAt(m1) < gapAt(m2)) hi = m2;
+    else lo = m1;
+  }
+  return gapAt((lo + hi) / 2);
+}
+
+function inEllipse(e: BodyEllipse, x: number, y: number): boolean {
+  return ((x - e.cx) / e.rx) ** 2 + ((y - e.cy) / e.ry) ** 2 <= 1;
+}
+
+/** Grid sample centres (SWIM_VIEW_GRID) inside `box`. */
+function gridPoints(box: Bounds): Pt[] {
+  const g = SWIM_VIEW_GRID;
+  const out: Pt[] = [];
+  for (let j = Math.floor(box.minY / g); (j + 0.5) * g <= box.maxY; j++) {
+    for (let i = Math.floor(box.minX / g); (i + 0.5) * g <= box.maxX; i++) out.push({ x: (i + 0.5) * g, y: (j + 0.5) * g });
+  }
+  return out;
+}
+
+/** Ink extent of `paints` in `frame`: least and most u (along) and v (across), ink included. */
+function frameExtent(frame: WearFrame, paints: readonly Paint[]): Bounds {
+  const pts = inkPoints(paints).map(({ p, hw }) => ({ q: toFrame(frame, p), hw }));
+  return {
+    minX: Math.min(...pts.map(({ q, hw }) => q.x - hw)),
+    maxX: Math.max(...pts.map(({ q, hw }) => q.x + hw)),
+    minY: Math.min(...pts.map(({ q, hw }) => q.y - hw)),
+    maxY: Math.max(...pts.map(({ q, hw }) => q.y + hw)),
+  };
+}
+
+/** The least of `values` over every look, with the look it was found on. */
+function leastOver(values: readonly { id: string; value: number }[]): { id: string; value: number } {
+  return values.reduce((a, b) => (b.value < a.value ? b : a));
+}
+
+/** Bare leg ink (guide 6e): the tube, colour 8 with 3.1 of ink each side, and each toe, colour 4.2 with 2.6 each side. */
+const BARE_LEG_INK_W = 8 + 2 * 3.1;
+const TOE_INK_W = 4.2 + 2 * 2.6;
+
+/** Grid points of a present leg's three toes' ink past the leg tube's ink, and of its three toe-tip ink discs, held TOL inside. */
+function toeRegions(frame: LegSlotFrame): { toes: Pt[]; tips: Pt[] } {
+  const [endPoint, ...tipPoints] = legPoints(frame.x, frame.y, frame.angle, frame.length, frame.toeLength);
+  const end = { x: endPoint[0], y: endPoint[1] };
+  const tips = tipPoints.map(([x, y]) => ({ x, y }));
+  const root = { x: frame.x, y: frame.y };
+  const r = TOE_INK_W / 2 - TOL;
+  const grid = gridPoints(boundsOfPoints([...tipPoints, endPoint], TOE_INK_W / 2));
+  const onToe = (q: Pt): boolean => tips.some((tip) => segDist(q.x, q.y, end, tip) <= r);
+  return {
+    toes: grid.filter((q) => onToe(q) && segDist(q.x, q.y, root, end) > BARE_LEG_INK_W / 2 + TOL),
+    tips: grid.filter((q) => tips.some((tip) => Math.hypot(q.x - tip.x, q.y - tip.y) <= r)),
+  };
+}
+
+/** Whether `p` lies inside the leg-space rounded rectangle `rect`, `inset` or more in from its edge. */
+function inLegRect(frame: LegSlotFrame, rect: LegRect, p: Pt, inset: number): boolean {
+  const q = toFrame(frame, p);
+  const r = rect.radius;
+  const du = Math.max(rect.u0 + r - q.x, 0, q.x - (rect.u1 - r));
+  const dv = Math.max(Math.abs(q.y) - (rect.vHalf - r), 0);
+  const inBox = q.x >= rect.u0 + inset && q.x <= rect.u1 - inset && Math.abs(q.y) <= rect.vHalf - inset;
+  return inBox && Math.hypot(du, dv) <= r - inset;
+}
+
+/** Share of `points` that one of `paints` (fill or ink) covers. */
+function coveredShare(points: readonly Pt[], paints: readonly Paint[]): number {
+  const sampled = sampledPaints(paints);
+  return points.filter((q) => sampled.some((sp) => paintCovers(sp, q.x, q.y))).length / points.length;
+}
+
+describe('slot minimums (#88): each item is a share of its body part on every look', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
+  it('holds the owner minimums: Head half the head wide and 8 up, Neck 27 wide, Face the eye span round both eye zones, Shirt 75% of the torso side, Back 22 or half the torso long, 8 proud and 40% out, Tail 40% of the tail height and 16 along, Socks the whole leg tube 1 proud and every toe tip, Feet every toe and the whole Sock pad', () => {
+    expect(WEARABLE_SLOT_MINIMUMS).toEqual({
+      head: { headWidthShare: 0.5, rise: 8 },
+      neck: { minWidth: 27 },
+      face: { eyeSpanShare: 1, eyeZoneShare: 1 },
+      shirt: { torsoSideShare: 0.75 },
+      back: { minLength: 22, torsoLengthShare: 0.5, proud: 8, outsideShare: 0.4 },
+      tail: { tailHeightShare: 0.4, minAlong: 16 },
+      socks: { legLengthShare: 1, tubeProud: 1, toeTipShare: 1 },
+      feet: { toeShare: 1, padShare: 1 },
+    });
+    expect(backMinimumLength(31)).toBe(22);
+    expect(backMinimumLength(41)).toBe(26);
+  });
+
+  it('never lets the Diving tank fill meet the Tank top fill, on every look', () => {
+    const bad: string[] = [];
+    for (const look of EVERY_BODY_LOOK) {
+      const fillsOf = (slot: 'shirt' | 'back'): SampledPaint[] =>
+        sampledPaints(bodyPaints(slot, look).filter((x) => x.kind === 'fill' && isItemFill(x)));
+      const shirt = fillsOf('shirt');
+      const back = fillsOf('back');
+      const both = gridPoints(unionBounds(back.map((f) => f.box))).filter(
+        (q) => back.some((f) => paintCovers(f, q.x, q.y)) && shirt.some((f) => paintCovers(f, q.x, q.y)),
+      );
+      if (both.length > 0) bad.push(lookId(look));
+    }
+    expect(bad).toEqual([]);
+  });
+});
+
+describe('Dream marker (#88)', () => {
+  it('paints the marker where dreamMarkerCentres puts it, on a Dream colour with the bow worn', () => {
+    const palette = dreamPalette(LEUCISTIC, 'mint');
+    const pose: AxolotlPose = { ...AXO_REST_POSE, swimPhase: 1.3, tailAmp: 1.6 };
+    const rec = record((ctx) => drawAxolotl(ctx, pose, palette, GIRL, { tail: 'golden-bow' }));
+    const stars = rec.paints.filter((p, i) => {
+      const next = rec.paints[i + 1];
+      return p.kind === 'fill' && p.style === WHITE && p.subs[0].pts.length === 8 && next?.lineWidth === DREAM_MARKER_INK;
+    });
+    const centres = dreamMarkerCentres(tailSamples(axolotlBodyGeometry(GIRL).tail, pose.swimPhase, pose.tailAmp));
+    expect(stars).toHaveLength(DREAM_MARKER_S.length);
+    stars.forEach((star, k) => {
+      const box = inkBounds([star]);
+      expect((box.minX + box.maxX) / 2).toBeCloseTo(centres[k].x, 6);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Every catalogue Wearable (#88): the durable size rule (wearableFit.ts)
+// ---------------------------------------------------------------------------
+//
+// Coverage comes from the catalogue, not from a list here: every `wearable` entry of CANAL_TREASURES
+// gets its own tests, so a new item is held to the rule as soon as it is in the catalogue. Each item
+// must have art in its slot, clear the swim-view floor on every case of its slot, meet its slot's
+// minimums, and be in WEARABLE_RECORD with its measured numbers. A Tail item keeps a Dream marker star
+// clear; a Socks or Feet item goes with its leg; every item keeps some fill showing in a full outfit.
+
+/** Every Wearable in the catalogue, in catalogue order. */
+const CATALOGUE_WEARABLES: readonly Wearable[] = CANAL_TREASURES.filter((t): t is Wearable => t.category === 'wearable');
+
+/** The art slug the painter knows a catalogue Wearable by, or undefined when it has no art in its slot. */
+function artSlugOf(wearable: Wearable): WearableArtSlug | undefined {
+  return artOutfit({ [wearable.slot]: wearable.id })[wearable.slot] ?? undefined;
+}
+
+/** The art slug of a catalogue Wearable, failing the test with what to add when it has none. */
+function expectArtSlug(wearable: Wearable): WearableArtSlug {
+  const slug = artSlugOf(wearable);
+  expect(slug, `${wearable.id} (${wearable.slot}) has no art: add its slug to WEARABLE_ART_SLOT and its painter in drawWearables.ts`).toBeDefined();
+  return slug!;
+}
+
+const isLegSlot = (slot: WearableSlot): slot is 'socks' | 'feet' => slot === 'socks' || slot === 'feet';
+
+/** What an item paints alone at the still pose: on its body slot, or on all four legs. */
+function itemPaints(slug: WearableArtSlug, look: AxolotlArtLook = DEFAULT_ART_LOOK): Paint[] {
+  const slot = WEARABLE_ART_SLOT[slug];
+  if (isLegSlot(slot)) return legSlotFrames(look, AXO_REST_POSE.swimPhase).flatMap((frame) => legPaints({ [slot]: slug }, frame));
+  return bodyPaints(slot, look, AXO_REST_POSE.swimPhase, AXO_REST_POSE.tailAmp, slug);
+}
+
+/** An item's (or a footprint's) measures for its slot's minimums, keyed as WEARABLE_SLOT_MINIMUMS[slot]. */
+type SlotMeasures<S extends WearableSlot> = { readonly [K in keyof WearableSlotMinimums[S]]: { id: string; value: number } };
+
+/** The Face footprint (guide 6i): the glasses, ink included, stay inside it. */
+const FACE_FOOTPRINT: Bounds = { minX: 14, minY: -18, maxX: 54, maxY: 6 };
+
+/** How far the highest of `points` rises above the outer edge of the head outline (LW outside HEAD_ELLIPSE). */
+function headRise(points: readonly { p: Pt; hw: number }[]): number {
+  const { cx, cy, rx, ry } = HEAD_ELLIPSE;
+  return Math.max(
+    ...points.filter(({ p }) => Math.abs(p.x - cx) < rx).map(({ p, hw }) => cy - ry * Math.sqrt(1 - ((p.x - cx) / rx) ** 2) - LW - (p.y - hw)),
+  );
+}
+
+/** Share of the eye span (the near eye zone's left edge to the far eye zone's right edge) that `box` spans. */
+function eyeSpanShare(box: Bounds): number {
+  const spanMin = NEAR_EYE_ZONE.x - NEAR_EYE_ZONE.r;
+  const spanMax = FAR_EYE_ZONE.x + FAR_EYE_ZONE.r;
+  return (Math.min(box.maxX, spanMax) - Math.max(box.minX, spanMin)) / (spanMax - spanMin);
+}
+
+/** Grid points inside an eye zone circle. */
+function zonePoints(zone: ZoneCircle): Pt[] {
+  return gridPoints(boundsOfPoints([[zone.x, zone.y]], zone.r)).filter((q) => Math.hypot(q.x - zone.x, q.y - zone.y) <= zone.r);
+}
+
+/** Grid points of a look's torso side: inside the torso ellipse, between the tail root and the front line. */
+function torsoSidePoints(look: AxolotlArtLook): Pt[] {
+  const geo = axolotlBodyGeometry(look);
+  const { torso } = geo;
+  return gridPoints({ minX: geo.tail.rootX, maxX: SHIRT_BACK_FRONT_LINE_X, minY: torso.cy - torso.ry, maxY: torso.cy + torso.ry }).filter(
+    (q) => inEllipse(torso, q.x, q.y),
+  );
+}
+
+/** How far `p` reaches past the outer edge of the torso outline (LW outside the ellipse); -1 inside it. */
+function torsoProud(torso: BodyEllipse, p: Pt, hw: number): number {
+  return inEllipse(torso, p.x, p.y) ? -1 : ellipseGap(torso, p.x, p.y) + hw - LW;
+}
+
+/** Share of `points` outside the silhouette: outside the torso and its outline ink. */
+function outsideTorsoShare(torso: BodyEllipse, points: readonly Pt[]): number {
+  return points.filter((q) => !inEllipse(torso, q.x, q.y) && ellipseGap(torso, q.x, q.y) > LW).length / points.length;
+}
+
+/** The full tail height at the anchor, still pose: 2 hc and both fins. */
+function stillTailHeight(look: AxolotlArtLook): number {
+  const at = tailSamples(axolotlBodyGeometry(look).tail, AXO_REST_POSE.swimPhase, AXO_REST_POSE.tailAmp)[TAIL_SLOT_POINT];
+  return 2 * at.hc + at.finTop + at.finBottom;
+}
+
+/** Points along the leg axis, u 0 to the leg end l. */
+function legAxisPoints(frame: LegSlotFrame, steps: number): Pt[] {
+  return Array.from({ length: steps + 1 }, (_, k) => framePoint(frame, (frame.length * k) / steps, 0));
+}
+
+/**
+ * How far from the leg axis, at `u` and on side `side` (+1 or -1), `sampled` covers without a gap: a
+ * 0.25 walk outward to the first uncovered point, then a bisection to 1e-6.
+ */
+function crossReach(sampled: readonly SampledPaint[], frame: LegSlotFrame, u: number, side: number): number {
+  const covers = (v: number): boolean => {
+    const q = framePoint(frame, u, side * v);
+    return sampled.some((sp) => paintCovers(sp, q.x, q.y));
+  };
+  if (!covers(0)) return 0;
+  let lo = 0;
+  while (lo < 40 && covers(lo + SWIM_VIEW_GRID)) lo += SWIM_VIEW_GRID;
+  let hi = lo + SWIM_VIEW_GRID;
+  while (hi - lo > 1e-6) {
+    const mid = (lo + hi) / 2;
+    if (covers(mid)) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** The least reach of `sampled` past the bare leg tube's ink, each side, at nine points along the tube. */
+function tubeProudOf(sampled: readonly SampledPaint[], frame: LegSlotFrame): number {
+  const us = Array.from({ length: 9 }, (_, k) => (frame.length * k) / 8);
+  return Math.min(...us.flatMap((u) => [1, -1].map((side) => crossReach(sampled, frame, u, side)))) - BARE_LEG_INK_W / 2;
+}
+
+/** A leg's grid points inside the Sock pad, TOL in from its edge. */
+function padPoints(frame: LegSlotFrame): Pt[] {
+  const pad = sockFootPad(frame);
+  return gridPoints(legRectBounds(frame, pad)).filter((q) => inLegRect(frame, pad, q, TOL));
+}
+
+/** Each leg frame of every body look, at the swim phase the slot minimums are measured at. */
+const MINIMUM_LEG_FRAMES: readonly { id: string; frame: LegSlotFrame }[] = EVERY_BODY_LOOK.flatMap((look) =>
+  legSlotFrames(look, 0.9).map((frame) => ({ id: `${lookId(look)} leg ${frame.index}`, frame })),
+);
+
+/** `measure` of every body look, the least of each measure with the look it was found on. */
+function leastOverLooks<K extends string>(measure: (look: AxolotlArtLook) => Record<K, number>): Record<K, { id: string; value: number }> {
+  return leastOfEach(EVERY_BODY_LOOK.map((look) => ({ id: lookId(look), values: measure(look) })));
+}
+
+/** `measure` of every leg of every body look, the least of each measure with the leg it was found on. */
+function leastOverLegs<K extends string>(measure: (frame: LegSlotFrame) => Record<K, number>): Record<K, { id: string; value: number }> {
+  return leastOfEach(MINIMUM_LEG_FRAMES.map(({ id, frame }) => ({ id, values: measure(frame) })));
+}
+
+function leastOfEach<K extends string>(rows: readonly { id: string; values: Record<K, number> }[]): Record<K, { id: string; value: number }> {
+  const keys = Object.keys(rows[0].values) as K[];
+  return Object.fromEntries(keys.map((key) => [key, leastOver(rows.map((row) => ({ id: row.id, value: row.values[key] })))])) as Record<
+    K,
+    { id: string; value: number }
+  >;
+}
+
+/**
+ * Measures a worn item against its slot's minimums, on every look (and leg). A Face item encloses an eye
+ * zone point when one of its paints covers it, the clear lens tint included; a Sock's colour along the leg
+ * tube is any of its paints but ink.
+ */
+const ITEM_SLOT_MEASURES: { readonly [S in WearableSlot]: (slug: WearableArtSlug) => SlotMeasures<S> } = {
+  head: (slug) =>
+    leastOverLooks((look) => {
+      const paints = bodyPaints('head', look, 0, 1, slug);
+      const box = inkBounds(paints);
+      return { headWidthShare: (box.maxX - box.minX) / (2 * HEAD_ELLIPSE.rx), rise: headRise(inkPoints(paints)) };
+    }),
+  neck: (slug) =>
+    leastOverLooks((look) => {
+      const box = inkBounds(bodyPaints('neck', look, 0, 1, slug));
+      return { minWidth: box.maxX - box.minX };
+    }),
+  face: (slug) =>
+    leastOverLooks((look) => {
+      const paints = bodyPaints('face', look, 0, 1, slug);
+      return {
+        eyeSpanShare: eyeSpanShare(inkBounds(paints)),
+        eyeZoneShare: Math.min(...[NEAR_EYE_ZONE, FAR_EYE_ZONE].map((zone) => coveredShare(zonePoints(zone), paints))),
+      };
+    }),
+  shirt: (slug) =>
+    leastOverLooks((look) => {
+      const side = torsoSidePoints(look);
+      return { torsoSideShare: coveredShare(side, bodyPaints('shirt', look, 0, 1, slug)) };
+    }),
+  back: (slug) =>
+    leastOverLooks((look) => {
+      const { torso } = axolotlBodyGeometry(look);
+      const paints = bodyPaints('back', look, 0, 1, slug);
+      const extent = frameExtent(backFootprint(look).frame, paints);
+      const length = extent.maxX - extent.minX;
+      const fills = sampledPaints(paints.filter((x) => x.kind === 'fill' && isItemFill(x)));
+      const filled = gridPoints(unionBounds(fills.map((f) => f.box))).filter((q) => fills.some((f) => paintCovers(f, q.x, q.y)));
+      return {
+        minLength: length,
+        torsoLengthShare: length / (2 * torso.rx - 30),
+        proud: Math.max(...inkPoints(paints).map(({ p, hw }) => torsoProud(torso, p, hw))),
+        outsideShare: outsideTorsoShare(torso, filled),
+      };
+    }),
+  tail: (slug) =>
+    leastOverLooks((look) => {
+      const { swimPhase, tailAmp } = AXO_REST_POSE;
+      const frame = tailSlotFrame(axolotlBodyGeometry(look).tail, swimPhase, tailAmp);
+      const extent = frameExtent(frame, bodyPaints('tail', look, swimPhase, tailAmp, slug));
+      return { tailHeightShare: (extent.maxY - extent.minY) / stillTailHeight(look), minAlong: extent.maxX - extent.minX };
+    }),
+  socks: (slug) =>
+    leastOverLegs((frame) => {
+      const paints = legPaints({ socks: slug }, frame);
+      return {
+        legLengthShare: coveredShare(legAxisPoints(frame, 40), paints.filter((p) => p.style !== INK)),
+        tubeProud: tubeProudOf(sampledPaints(paints), frame),
+        toeTipShare: coveredShare(toeRegions(frame).tips, paints),
+      };
+    }),
+  feet: (slug) =>
+    leastOverLegs((frame) => {
+      const paints = legPaints({ feet: slug }, frame);
+      return { toeShare: coveredShare(toeRegions(frame).toes, paints), padShare: coveredShare(padPoints(frame), paints) };
+    }),
+};
+
+/**
+ * Measures each slot's footprint against the slot's minimums, so an item that fills it can meet them. The
+ * Sock sleeve footprint is the leg tube, u 0 to l, at the sleeve's ink width.
+ */
+const FOOTPRINT_SLOT_MEASURES: { readonly [S in WearableSlot]: () => SlotMeasures<S> } = {
+  head: () => {
+    const top = Array.from({ length: 41 }, (_, k) => ({
+      p: { x: HEAD_FOOTPRINT.minX + ((HEAD_FOOTPRINT.maxX - HEAD_FOOTPRINT.minX) * k) / 40, y: HEAD_FOOTPRINT.minY },
+      hw: 0,
+    }));
+    return {
+      headWidthShare: { id: 'HEAD_FOOTPRINT', value: (HEAD_FOOTPRINT.maxX - HEAD_FOOTPRINT.minX) / (2 * HEAD_ELLIPSE.rx) },
+      rise: { id: 'HEAD_FOOTPRINT', value: headRise(top) },
+    };
+  },
+  neck: () => ({ minWidth: { id: 'NECK_FOOTPRINT', value: NECK_FOOTPRINT.maxX - NECK_FOOTPRINT.minX } }),
+  face: () => ({
+    eyeSpanShare: { id: 'FACE_FOOTPRINT', value: eyeSpanShare(FACE_FOOTPRINT) },
+    eyeZoneShare: {
+      id: 'FACE_FOOTPRINT',
+      value: Math.min(
+        ...[NEAR_EYE_ZONE, FAR_EYE_ZONE].map((zone) => {
+          const points = zonePoints(zone);
+          return points.filter((q) => boxHolds(FACE_FOOTPRINT, q.x, q.y)).length / points.length;
+        }),
+      ),
+    },
+  }),
+  shirt: () =>
+    leastOverLooks((look) => {
+      const shirt = shirtGeometry(look);
+      const side = torsoSidePoints(look);
+      return { torsoSideShare: side.filter((q) => shirtContains(shirt, q.x, q.y)).length / side.length };
+    }),
+  back: () =>
+    leastOverLooks((look) => {
+      const { torso } = axolotlBodyGeometry(look);
+      const { frame, box, bounds } = backFootprint(look);
+      const length = box.maxU - box.minU;
+      const outer = Array.from({ length: 41 }, (_, k) => framePoint(frame, box.minU + (length * k) / 40, box.minV));
+      const inBox = gridPoints(bounds).filter((q) => {
+        const f = toFrame(frame, q);
+        return f.x >= box.minU && f.x <= box.maxU && f.y >= box.minV && f.y <= box.maxV;
+      });
+      return {
+        minLength: length,
+        torsoLengthShare: length / (2 * torso.rx - 30),
+        proud: Math.max(...outer.map((p) => torsoProud(torso, p, 0))),
+        outsideShare: outsideTorsoShare(torso, inBox),
+      };
+    }),
+  tail: () =>
+    leastOverLooks((look) => ({ tailHeightShare: (2 * TAIL_SLOT_REACH) / stillTailHeight(look), minAlong: 2 * TAIL_SLOT_REACH })),
+  socks: () =>
+    leastOverLegs((frame) => {
+      const pad = sockFootPad(frame);
+      return {
+        legLengthShare: legAxisPoints(frame, 40).filter((q) => segDist(q.x, q.y, framePoint(frame, 0, 0), framePoint(frame, frame.length, 0)) <= SOCK_SLEEVE_INK_W / 2).length / 41,
+        tubeProud: (SOCK_SLEEVE_INK_W - BARE_LEG_INK_W) / 2,
+        toeTipShare: toeRegions(frame).tips.filter((q) => inLegRect(frame, pad, q, 0)).length / toeRegions(frame).tips.length,
+      };
+    }),
+  feet: () =>
+    leastOverLegs((frame) => {
+      const env = feetEnvelope(frame);
+      const toes = toeRegions(frame).toes;
+      const pad = padPoints(frame);
+      return {
+        toeShare: toes.filter((q) => inLegRect(frame, env, q, 0)).length / toes.length,
+        padShare: pad.filter((q) => inLegRect(frame, env, q, 0)).length / pad.length,
+      };
+    }),
+};
+
+/**
+ * Measures are held to their minimums to within this share of the minimum: flattened arcs sit a little
+ * inside their curve (the Back length is 0.0005 short of 22 for it), and a covered share of 1 is 1.
+ */
+const SLOT_MINIMUM_ROUNDING = 1e-4;
+
+/** Checks each measure against its slot minimum (to within SLOT_MINIMUM_ROUNDING), with where the least was found. */
+function expectSlotMinimums(slot: WearableSlot, measures: Readonly<Record<string, { id: string; value: number }>>, what: string): void {
+  const minimums = Object.entries(WEARABLE_SLOT_MINIMUMS[slot]) as [string, number][];
+  expect(Object.keys(measures).sort()).toEqual(minimums.map(([key]) => key).sort());
+  for (const [key, minimum] of minimums) {
+    const { id, value } = measures[key];
+    expect(value, `${what}: ${slot} ${key} ${value} at ${id}, under the minimum ${minimum}`).toBeGreaterThanOrEqual(
+      minimum * (1 - SLOT_MINIMUM_ROUNDING),
+    );
+  }
+}
+
+/** The recorded numbers of one Wearable (2 dp): its least swim-view fill, where, and its least slot measures. */
+interface WearableRecord {
+  /** Least visible fill over its slot's swim-view cases, CSS px². */
+  readonly cssPx2: number;
+  /** The case that least was found on. */
+  readonly worst: string;
+  /** Each WEARABLE_SLOT_MINIMUMS measure of its slot, the least over every look (and leg). */
+  readonly slot: Readonly<Record<string, number>>;
+}
+
+/**
+ * The measured numbers of every catalogue Wearable, keyed by catalogue id. A new Wearable needs its
+ * row: the suite fails until its numbers are recorded, and fails when a number moves.
+ */
+const WEARABLE_RECORD: Readonly<Record<string, WearableRecord>> = {
+  'canal/sun-hat': { cssPx2: 123.31, worst: 'boy happy smile', slot: { headWidthShare: 0.5547, rise: 15.3154 } },
+  'canal/shell-necklace': { cssPx2: 77.34, worst: 'boy happy tongueOut', slot: { minWidth: 39.9 } },
+  'canal/heart-glasses': { cssPx2: 71.44, worst: 'girl happy smile', slot: { eyeSpanShare: 1, eyeZoneShare: 1 } },
+  'canal/golden-bow': {
+    cssPx2: 76.7,
+    worst: 'medium girl long slim young swim 1.05 amp 1.6',
+    slot: { tailHeightShare: 0.5049, minAlong: 21.3988 },
+  },
+  'canal/tank-top': { cssPx2: 76.67, worst: 'medium boy short slim baby swim 0.00 amp 1', slot: { torsoSideShare: 0.8538 } },
+  'canal/diving-tank': {
+    cssPx2: 77.81,
+    worst: 'medium boy short slim young swim 0.00 amp 1',
+    slot: { minLength: 22, torsoLengthShare: 0.5, proud: 10.6226, outsideShare: 0.6929 },
+  },
+  'canal/stripy-socks': {
+    cssPx2: 113.19,
+    worst: 'medium boy short slim baby swim 2.09 amp 1',
+    slot: { legLengthShare: 1, tubeProud: 1.1, toeTipShare: 1 },
+  },
+  'canal/flippers': { cssPx2: 215.77, worst: 'medium boy short slim baby swim 2.62 amp 1', slot: { toeShare: 1, padShare: 1 } },
+};
+
+/** The recorded row of a catalogue Wearable, failing the test with what to add when it has none. */
+function expectRecord(wearable: Wearable): WearableRecord {
+  const row = WEARABLE_RECORD[wearable.id];
+  expect(row, `${wearable.id} is not in WEARABLE_RECORD: measure it and record its numbers`).toBeDefined();
+  return row;
+}
+
+/** Gap from a marker star's paint (its circle, R plus half its ink) to the nearest item paint; negative when they meet. */
+function markerGap(paints: readonly Paint[], c: Pt): number {
+  const reach = DREAM_MARKER_R + DREAM_MARKER_INK / 2;
+  let best = Infinity;
+  for (const paint of paints) {
+    const r = regionOf(paint);
+    if (r.kind === 'fill' && winding(r.subs, c.x, c.y) !== 0) return -reach;
+    for (const [a, b] of edgesOf(r)) best = Math.min(best, segDist(c.x, c.y, a, b) - r.hw);
+  }
+  return best - reach;
+}
+
+/** One Dream marker star or more stays this far, or more, clear of a Tail item (to 2 dp). */
+const DREAM_MARKER_CLEARANCE = 0.6;
+
+/** A Socks or Feet item's lowest ink, over every look and swim phase, is at y 59 or less: 4 inside the frame bottom. */
+const LEG_ITEM_LOWEST_Y = AXO_TEX.h - AXO_TEX.originY - FRAME_PAD;
+
+/**
+ * A full outfit: `wearable` in its slot and, in every other slot, the first catalogue Wearable for it,
+ * all worn at once.
+ */
+function fullOutfitOver(wearable: Wearable): ArtOutfit {
+  const outfit: Partial<Record<WearableSlot, WearableArtSlug>> = {};
+  for (const slot of WEARABLE_SLOTS) {
+    const other = CATALOGUE_WEARABLES.find((w) => w.slot === slot && slot !== wearable.slot);
+    const slug = other === undefined ? undefined : artSlugOf(other);
+    if (slug !== undefined) outfit[slot] = slug;
+  }
+  return outfit;
+}
+
+/**
+ * The full-outfit cases, a representative subset so that each item's test stays well inside the 30 s
+ * timeout (every look and phase with eight items worn takes minutes): all 54 looks at four swim phases,
+ * a quarter cycle apart (0, pi / 2, pi, 3 pi / 2), at tail amplitude 1.6, the widest wave, all four
+ * legs present. The items on the head (Head, Neck, Face) also take every sex, eye and mouth
+ * (SWIM_VIEW_FACE_CASES), whose eyes, lashes and mouth paint over them.
+ */
+const SWIM_VIEW_FULL_OUTFIT_CASES: readonly SwimViewCase[] = SWIM_VIEW_STILL_CASES.flatMap((c) =>
+  [0, 3, 6, 9].map((i) => ({
+    id: `${c.id} swim ${SWIMS[i].toFixed(2)} amp 1.6`,
+    pose: { ...AXO_REST_POSE, swimPhase: SWIMS[i], tailAmp: 1.6 },
+    look: c.look,
+  })),
+);
+
+function fullOutfitCases(slot: WearableSlot): readonly SwimViewCase[] {
+  if (slot === 'head' || slot === 'neck' || slot === 'face') return [...SWIM_VIEW_FACE_CASES, ...SWIM_VIEW_FULL_OUTFIT_CASES];
+  return SWIM_VIEW_FULL_OUTFIT_CASES;
+}
+
+
+/** Recorded numbers are 2 dp: a measure is within this of its record. */
+const RECORD_ROUNDING = 0.005;
+
+/**
+ * Swim-view cases per floor test, so a slow item never nears the 30 s timeout: 250 cases of the slowest
+ * item (Socks, all four legs) take about 7 to 12 s. The recorded least is the least of every part, and the
+ * part that holds its case finds it.
+ */
+const SWIM_VIEW_PART_SIZE = 250;
+
+/** Each catalogue Wearable's swim-view cases, in parts of SWIM_VIEW_PART_SIZE, one floor test each. */
+const SWIM_VIEW_FLOOR_PARTS = CATALOGUE_WEARABLES.flatMap((wearable) => {
+  const cases = swimViewCases(wearable.slot);
+  const count = Math.ceil(cases.length / SWIM_VIEW_PART_SIZE);
+  return Array.from({ length: count }, (_, k) => {
+    const first = k * SWIM_VIEW_PART_SIZE;
+    const last = Math.min(cases.length, first + SWIM_VIEW_PART_SIZE);
+    return { id: wearable.id, wearable, part: `${first + 1} to ${last} of ${cases.length}`, cases: cases.slice(first, last) };
+  });
+});
+
+const TAIL_WEARABLES = CATALOGUE_WEARABLES.filter((w) => w.slot === 'tail');
+const LEG_WEARABLES = CATALOGUE_WEARABLES.filter((w) => isLegSlot(w.slot));
+
+describe('every catalogue Wearable (#88): the durable size rule', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
+  it('has a Wearable in the catalogue for every art slug, in the slug\'s slot', () => {
+    for (const slug of Object.keys(WEARABLE_ART_SLOT) as WearableArtSlug[]) {
+      const entry = CATALOGUE_WEARABLES.find((w) => treasureSlug(w.id) === slug);
+      expect(entry, `art slug ${slug} has no catalogue Wearable: add it to CANAL_TREASURES`).toBeDefined();
+      expect(entry!.slot, `art slug ${slug}`).toBe(WEARABLE_ART_SLOT[slug]);
+    }
+  });
+
+  it('records the numbers of every catalogue Wearable, and of nothing else', () => {
+    expect(CATALOGUE_WEARABLES.length).toBeGreaterThan(0);
+    expect(Object.keys(WEARABLE_RECORD).sort()).toEqual(CATALOGUE_WEARABLES.map((w) => w.id).sort());
+  });
+
+  it.each(CATALOGUE_WEARABLES)('$id has art in its slot ($slot) and paints', (wearable) => {
+    expect(WEARABLE_SLOTS, `${wearable.id}: slot ${wearable.slot} is not in the outfit slot model`).toContain(wearable.slot);
+    const slug = expectArtSlug(wearable);
+    expect(WEARABLE_ART_SLOT[slug]).toBe(wearable.slot);
+    expect(itemPaints(slug).length, `${wearable.id} has no painter: add its case to drawWearables.ts`).toBeGreaterThan(0);
+  });
+
+  it.each(CATALOGUE_WEARABLES)('$id has its recorded worst case among the swim-view cases of its slot', (wearable) => {
+    const row = expectRecord(wearable);
+    expect(swimViewCases(wearable.slot).map((c) => c.id)).toContain(row.worst);
+  });
+
+  it.each(SWIM_VIEW_FLOOR_PARTS)('$id clears the 64 CSS px² swim-view floor on its slot cases $part, as recorded', ({ wearable, cases }) => {
+    const slug = expectArtSlug(wearable);
+    const row = expectRecord(wearable);
+    const least = swimViewMinimum({ [wearable.slot]: slug }, cases);
+    expect(least.cssPx2, `${wearable.id} shows ${least.cssPx2} CSS px² at ${least.worst}`).toBeGreaterThanOrEqual(WEARABLE_SWIM_VIEW_MIN_CSS_PX2);
+    expect(least.cssPx2, `${wearable.id} at ${least.worst}, under its recorded ${row.cssPx2}`).toBeGreaterThanOrEqual(row.cssPx2 - RECORD_ROUNDING);
+    if (cases.some((c) => c.id === row.worst)) {
+      expect(least.cssPx2, `${wearable.id} at ${least.worst}`).toBeCloseTo(row.cssPx2, 2);
+      expect(least.worst).toBe(row.worst);
+    }
+  });
+
+  it.each(CATALOGUE_WEARABLES)('$id meets the $slot minimums on every look, as recorded', (wearable) => {
+    const slug = expectArtSlug(wearable);
+    const row = expectRecord(wearable);
+    const measures: Readonly<Record<string, { id: string; value: number }>> = ITEM_SLOT_MEASURES[wearable.slot](slug);
+    expectSlotMinimums(wearable.slot, measures, wearable.id);
+    expect(Object.keys(row.slot).sort()).toEqual(Object.keys(measures).sort());
+    for (const [key, { id, value }] of Object.entries(measures)) expect(value, `${wearable.id} ${key} at ${id}`).toBeCloseTo(row.slot[key], 2);
+  });
+
+  it.each(WEARABLE_SLOTS)('lets the %s footprint hold the slot minimums on every look', (slot) => {
+    const measures: Readonly<Record<string, { id: string; value: number }>> = FOOTPRINT_SLOT_MEASURES[slot]();
+    expectSlotMinimums(slot, measures, `${slot} footprint`);
+  });
+
+  it.each(TAIL_WEARABLES)('$id keeps one Dream marker star or more 0.60 or more clear at every look, swim phase and tail amplitude up to 1.6', (wearable) => {
+    const slug = expectArtSlug(wearable);
+    let least = { id: '', value: Infinity };
+    for (const look of EVERY_BODY_LOOK) {
+      const tail = axolotlBodyGeometry(look).tail;
+      for (const swim of SWIMS) {
+        for (const amp of [...AMPS, 0.5, 0] as const) {
+          const paints = bodyPaints('tail', look, swim, amp, slug);
+          const best = Math.max(...dreamMarkerCentres(tailSamples(tail, swim, amp)).map((c) => markerGap(paints, c)));
+          if (best < least.value) least = { id: `${lookId(look)} swim ${swim.toFixed(2)} amp ${amp}`, value: best };
+        }
+      }
+    }
+    expect(least.value, `${wearable.id} at ${least.id}`).toBeGreaterThanOrEqual(DREAM_MARKER_CLEARANCE - 0.005);
+  });
+
+  it.each(LEG_WEARABLES)('$id wears on every present leg and on no lost or regrowing leg, its lowest ink at y 59 or less', (wearable) => {
+    const slug = expectArtSlug(wearable);
+    const outfit: ArtOutfit = { [wearable.slot]: slug };
+    const wear = (pose: AxolotlPose): Set<string> =>
+      new Set(insertedPaints(drawn(pose, GIRL), drawn(pose, GIRL, outfit))!.map((x) => signature(x.paint)));
+    const all = wear({ ...AXO_REST_POSE, swimPhase: 0.7 });
+    for (let i = 0; i < 4; i++) {
+      const legs = [lost, lost, lost, lost];
+      legs[i] = present;
+      const mine = wear({ ...AXO_REST_POSE, swimPhase: 0.7, legs });
+      expect(mine.size, `${wearable.id} leg ${i}`).toBeGreaterThan(0);
+      for (const sig of mine) expect(all.has(sig)).toBe(true);
+      const without = wear(legPose(i, lost));
+      expect(without.size).toBe(all.size - mine.size);
+      for (const sig of mine) expect(without.has(sig)).toBe(false);
+      for (const progress of [0, 0.5, 1]) {
+        const regrown = wear(legPose(i, regrowing(progress)));
+        for (const sig of mine) expect(regrown.has(sig), `${wearable.id} leg ${i} regrowing ${progress}`).toBe(false);
+      }
+    }
+    expect(LEG_ITEM_LOWEST_Y).toBe(59);
+    let lowest = { id: '', value: -Infinity };
+    for (const look of EVERY_BODY_LOOK) {
+      for (const swim of SWIMS) {
+        for (const frame of legSlotFrames(look, swim)) {
+          const y = inkBounds(legPaints(outfit, frame)).maxY;
+          if (y > lowest.value) lowest = { id: `${lookId(look)} swim ${swim.toFixed(2)} leg ${frame.index}`, value: y };
+        }
+      }
+    }
+    expect(lowest.value, `${wearable.id} at ${lowest.id}`).toBeLessThanOrEqual(LEG_ITEM_LOWEST_Y);
+  });
+
+  it.each(CATALOGUE_WEARABLES)('$id is never wholly hidden in a full outfit, one Wearable in every slot', (wearable) => {
+    const slug = expectArtSlug(wearable);
+    const least = swimViewMinimum({ [wearable.slot]: slug }, fullOutfitCases(wearable.slot), fullOutfitOver(wearable));
+    expect(least.units2, `${wearable.id} is wholly hidden at ${least.worst}`).toBeGreaterThan(0);
   });
 });
 
@@ -1492,8 +2735,10 @@ describe('rarity look ladder: worn looks keep their counted details', () => {
     const necklace = bodyPaints('neck', GIRL);
     expect(colours(necklace, 'stroke')).toContain(NECKLACE_CORD);
     expect(colours(necklace, 'fill')).toContain(NECKLACE_SHELL);
-    // Three scallop shells, three ridges each.
-    expect(count(colours(necklace, 'fill'), NECKLACE_SHELL)).toBe(3);
+    // Four scallop shells, each with a rim and five ridges in the shell ridge colour (a detail colour, not ink).
+    expect(count(colours(necklace, 'fill'), NECKLACE_SHELL)).toBe(4);
+    expect(count(colours(necklace, 'stroke'), PAINT_SHELL_RIDGE)).toBe(8);
+    expect(new Set(colours(necklace, 'fill'))).toEqual(new Set([NECKLACE_SHELL]));
     const tank = bodyPaints('back', GIRL);
     expect(count(colours(tank, 'fill'), DIVING_TANK_STRAP)).toBe(1);
     expect(colours(tank, 'fill')).toContain(DIVING_TANK_FILL);

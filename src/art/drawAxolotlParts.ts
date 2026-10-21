@@ -12,7 +12,7 @@
  * Presentational only: no game state, no randomness.
  */
 import { ell, inkMany, line, seg, shape, type Seg } from './canvasKit';
-import { INK, WHITE, type MorphEyeRing } from './palette';
+import { CHEEK_HEART, INK, WHITE, type MorphEyeRing } from './palette';
 
 // ---------------------------------------------------------------------------
 // Look
@@ -372,6 +372,8 @@ function straightLid(r: number, backY: number, snoutY: number): EyeLid {
  * Eye geometry for a variant at prototype bead radius r (guide 6l). Sleepy's
  * lid control sits at 0.3r so the curve's middle dips 0.15r below the centre.
  * Curious places its glints on the 1.1r bead; glint 1 radius is 0.45r.
+ * Grumpy's lid runs through the centre, sloping down toward the snout, so the
+ * lower half of the bead shows; its brow is grumpyBrow().
  */
 export function eyeMarks(variant: EyeVariant, r: number): EyeMarks {
   const glint1: EyeDot = { x: r * 0.3, y: -r * 0.35, r: r * 0.38 };
@@ -399,7 +401,7 @@ export function eyeMarks(variant: EyeVariant, r: number): EyeMarks {
       };
     }
     case 'grumpy':
-      return { beadR: r, glints: [glint2], lid: straightLid(r, -0.05, -0.4) };
+      return { beadR: r, glints: [glint2], lid: straightLid(r, -0.2, 0.2) };
   }
 }
 
@@ -518,6 +520,60 @@ function paintEyelashes(ctx: CanvasRenderingContext2D, lashes: readonly EyeLash[
   ctx.restore();
 }
 
+/** A Grumpy brow line relative to its eye centre, from its back end (x1, y1) to its snout end (x2, y2). */
+export type EyeBrow = EyeLash;
+
+/**
+ * Grumpy brows (guide 6l), relative to each eye centre: a short stroke over the
+ * snout-side half of the bead, sloping down toward the snout (near about 17.9
+ * degrees, far about 18.2). The near brow sits between the near eye's top lash
+ * and the far eye's lashes; the far brow sits low, between the far lashes and
+ * the head's top edge, just above the lid.
+ */
+const GRUMPY_BROWS: ReadonlyMap<EyeSpot, EyeBrow> = new Map([
+  [NEAR_EYE, { x1: 0, y1: -7.9, x2: 4.5, y2: -6.45 }],
+  [FAR_EYE, { x1: 0.4, y1: -3.8, x2: 4.8, y2: -2.35 }],
+]);
+
+/** The Grumpy brow of NEAR_EYE or FAR_EYE, relative to its centre. A RangeError for any other eye. */
+export function grumpyBrow(spot: EyeSpot): EyeBrow {
+  const brow = GRUMPY_BROWS.get(spot);
+  if (!brow) throw new RangeError(`no Grumpy brow for the eye at (${spot.x}, ${spot.y})`);
+  return brow;
+}
+
+/** Local box of a Grumpy brow's paint: the white under-stroke with its round caps. */
+export function grumpyBrowInkBounds(spot: EyeSpot): Bounds {
+  const brow = grumpyBrow(spot);
+  return boundsOfPoints(
+    [
+      [spot.x + brow.x1, spot.y + brow.y1],
+      [spot.x + brow.x2, spot.y + brow.y2],
+    ],
+    EYELASH_UNDER / 2,
+  );
+}
+
+/**
+ * Paint a Grumpy brow: lash ink 2.0 over the lash white 3.6, round caps (set
+ * for the brow only, then restored), in the eye's translate but never squashed.
+ */
+function paintBrow(ctx: CanvasRenderingContext2D, spot: EyeSpot, brow: EyeBrow): void {
+  const path = new Path2D();
+  path.moveTo(brow.x1, brow.y1);
+  path.lineTo(brow.x2, brow.y2);
+  ctx.save();
+  ctx.translate(spot.x, spot.y);
+  ctx.lineCap = 'round';
+  ctx.lineWidth = EYELASH_UNDER;
+  ctx.strokeStyle = WHITE;
+  ctx.stroke(path);
+  ctx.lineWidth = EYELASH_INK;
+  ctx.strokeStyle = INK;
+  ctx.stroke(path);
+  ctx.restore();
+}
+
 function lidPath(lid: EyeLid): Path2D {
   const p = new Path2D();
   p.moveTo(lid.x1, lid.y1);
@@ -539,7 +595,9 @@ function belowLidPath(lid: EyeLid, beadR: number): Path2D {
  * vertically about the eye centre. Lid lines are clipped to the bead. An
  * optional morph `ring` is stroked just inside the bead edge, under the glints.
  * `eyelashes` (the Girl cue) paints under the bead, inside the eye transform,
- * so a blink squashes them too.
+ * so a blink squashes them too. Grumpy's brow paints last, outside the blink
+ * squash: squashed at blink 0.12 it would drop onto the closed eye and thin
+ * to about 0.4 units.
  */
 export function paintEye(
   ctx: CanvasRenderingContext2D,
@@ -588,6 +646,78 @@ export function paintEye(
     ctx.restore();
   }
   ctx.restore();
+  if (variant === 'grumpy') paintBrow(ctx, spot, grumpyBrow(spot));
+}
+
+// ---------------------------------------------------------------------------
+// Cheek heart (Girl cue, guide 6u)
+// ---------------------------------------------------------------------------
+
+/**
+ * Centre of the Girl cue cheek heart's curve (the middle of its smallest
+ * enclosing circle): on the cheek below and behind the near eye, between the
+ * gill-root zone and the mouth zone, near the near blush.
+ */
+export const CHEEK_HEART_CENTRE: LocalPoint = { x: 18.2, y: 9.6 };
+/** Width of the heart curve (the outline's centre line). */
+export const CHEEK_HEART_WIDTH = 7;
+/** Outline ink, over a white under-stroke that shows 0.8 outside the ink. */
+export const CHEEK_HEART_INK = 1.6;
+export const CHEEK_HEART_UNDER = 3.2;
+/** The heart paints at layer 10.2: after the blush (10), before the Head item (10.5). */
+export const CHEEK_HEART_LAYER = 10.2;
+/** Points round the heart curve. */
+const CHEEK_HEART_STEPS = 48;
+/** Half-width of the unscaled heart curve (x = 16 sin^3 t). */
+const HEART_CURVE_HALF_WIDTH = 16;
+
+/**
+ * Points round the cheek heart in local units, from the top notch clockwise:
+ * the heart curve x = 16 sin^3 t, y = -(13 cos t - 5 cos 2t - 2 cos 3t - cos 4t)
+ * (y down), scaled to CHEEK_HEART_WIDTH across about CHEEK_HEART_CENTRE.
+ */
+export function cheekHeartPoints(): LocalPoint[] {
+  const scale = CHEEK_HEART_WIDTH / (2 * HEART_CURVE_HALF_WIDTH);
+  const points: LocalPoint[] = [];
+  for (let k = 0; k < CHEEK_HEART_STEPS; k++) {
+    const t = (k / CHEEK_HEART_STEPS) * Math.PI * 2;
+    const x = HEART_CURVE_HALF_WIDTH * Math.sin(t) ** 3;
+    const y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+    points.push({ x: CHEEK_HEART_CENTRE.x + x * scale, y: CHEEK_HEART_CENTRE.y + y * scale });
+  }
+  return points;
+}
+
+/**
+ * Keep-clear circle about CHEEK_HEART_CENTRE holding all of the heart's paint,
+ * white under-stroke included (round joins, as every axolotl line).
+ */
+export const CHEEK_HEART_ZONE: ZoneCircle = {
+  x: CHEEK_HEART_CENTRE.x,
+  y: CHEEK_HEART_CENTRE.y,
+  r:
+    Math.max(...cheekHeartPoints().map((p) => Math.hypot(p.x - CHEEK_HEART_CENTRE.x, p.y - CHEEK_HEART_CENTRE.y))) +
+    CHEEK_HEART_UNDER / 2,
+};
+
+/**
+ * Paint the cheek heart (layer 10.2, the Girl cue): the white under-stroke, then
+ * the CHEEK_HEART fill over its inner half, then the ink outline.
+ */
+export function paintCheekHeart(ctx: CanvasRenderingContext2D): void {
+  const [first, ...rest] = cheekHeartPoints();
+  const path = new Path2D();
+  path.moveTo(first.x, first.y);
+  for (const p of rest) path.lineTo(p.x, p.y);
+  path.closePath();
+  ctx.lineWidth = CHEEK_HEART_UNDER;
+  ctx.strokeStyle = WHITE;
+  ctx.stroke(path);
+  ctx.fillStyle = CHEEK_HEART;
+  ctx.fill(path);
+  ctx.lineWidth = CHEEK_HEART_INK;
+  ctx.strokeStyle = INK;
+  ctx.stroke(path);
 }
 
 // ---------------------------------------------------------------------------
@@ -1248,8 +1378,8 @@ export const WEARABLE_SLOTS: readonly WearableSlot[] = [
 export type BodyWearableSlot = Exclude<WearableSlot, 'socks' | 'feet'>;
 /** Layer of each body Wearable (guide 6a). */
 export const WEARABLE_LAYERS: Readonly<Record<BodyWearableSlot, number>> = {
-  shirt: 8.2,
-  tail: 8.5,
+  shirt: 9.3,
+  tail: 9.2,
   neck: 9.5,
   back: 9.7,
   head: 10.5,
@@ -1288,7 +1418,12 @@ export const NEAR_EYE_ZONE: ZoneCircle = { x: NEAR_EYE.x, y: NEAR_EYE.y, r: NEAR
 export const FAR_EYE_ZONE: ZoneCircle = { x: FAR_EYE.x, y: FAR_EYE.y, r: FAR_EYE.r + EYE_ZONE_MARGIN };
 /** Holds all six gill roots plus the stem ink. */
 export const GILL_ROOT_ZONE: Bounds = { minX: -5, minY: -22, maxX: 12, maxY: 13 };
-/** Ink of the first four mouths plus 1 unit; every mouth variant stays inside it. */
+/**
+ * Ink of the first four mouths plus 1 unit; every mouth variant stays inside it.
+ * It boxes the mouth for the rig face part and the crops. It is not a keep-clear
+ * zone for Wearables (#88): the mouth paints at 11, over the Neck (9.5) and Head
+ * (10.5) items, so a Neck item under it never hides it.
+ */
 export const MOUTH_ZONE: Bounds = { minX: 24.4, minY: 2.6, maxX: 52.4, maxY: 21.3 };
 /** A Girl's lash reach circle about an eye: the prototype bead radius plus LASH_REACH. */
 export function lashReachCircle(spot: EyeSpot): ZoneCircle {
@@ -1296,10 +1431,10 @@ export function lashReachCircle(spot: EyeSpot): ZoneCircle {
 }
 export const NEAR_LASH_REACH: ZoneCircle = lashReachCircle(NEAR_EYE);
 export const FAR_LASH_REACH: ZoneCircle = lashReachCircle(FAR_EYE);
-/** No Shirt or Back ink at x -6.8 or more: 1.8 units short of the gill-root zone (guide 6i). */
-export const SHIRT_BACK_FRONT_LINE_X = -6.8;
-/** Width of the band just inside the torso edge that the Shirt never paints (guide 6i). */
-export const TORSO_EDGE_BAND = 3;
+/** No Shirt or Back ink past x -5.5: 0.5 units short of the gill-root zone (guide 6i; -6.8 before #88). */
+export const SHIRT_BACK_FRONT_LINE_X = -5.5;
+/** Width of the band just inside the torso edge that the Shirt never paints (guide 6i; 3 before #88). */
+export const TORSO_EDGE_BAND = 1;
 
 /** A wearable frame: an origin and the rotation of its u axis (x' for Back). v is u turned by +90 degrees. */
 export interface WearFrame {
@@ -1320,13 +1455,24 @@ export function framePoint(frame: WearFrame, u: number, v: number): LocalPoint {
 
 /** Head item anchor: the head top. */
 export const HEAD_SLOT_ANCHOR: LocalPoint = { x: 26, y: -23 };
-/** Head footprint: rests on the head outline, lowest point y -19.5, top no higher than y -46. */
-export const HEAD_FOOTPRINT: Bounds = { minX: 16, minY: -46, maxX: 36, maxY: -19.5 };
+/**
+ * Head footprint: rests on the head outline, lowest point y -19.5, back edge x
+ * 16. #88 grows it forward to x 46 (36 before) and lowers its top to y -44 (-46
+ * before): the Head item may pass the head outline forward and up.
+ */
+export const HEAD_FOOTPRINT: Bounds = { minX: 16, minY: -44, maxX: 46, maxY: -19.5 };
 
 /** Neck item anchor: the throat. */
 export const NECK_SLOT_ANCHOR: LocalPoint = { x: 17, y: 16 };
-/** Neck footprint, inside the silhouette; nothing hangs below it, so the front legs stay visible. */
-export const NECK_FOOTPRINT: Bounds = { minX: 13, minY: 11, maxX: 22, maxY: 21 };
+/**
+ * Neck footprint (#88): a collar box under the chin, below GILL_ROOT_ZONE (y 13)
+ * and over the mouth-zone box, its bottom LW / 2 under the head's lowest point
+ * (y 22.75). The Neck item's paint, not this box, keeps clear of CHEEK_HEART_ZONE
+ * and GILL_ROOT_ZONE and stays LW / 2 or more inside the outer edge of the
+ * silhouette's outline on every look, so the outline's outer half always shows
+ * and nothing hangs below it: the front legs stay visible.
+ */
+export const NECK_FOOTPRINT: Bounds = { minX: 2, minY: 13.1, maxX: 42, maxY: 22.75 };
 
 /** Face item anchor: between the eyes. */
 export const FACE_SLOT_ANCHOR: LocalPoint = { x: 35, y: -6.5 };
@@ -1378,10 +1524,10 @@ export function glassesOutlinePoints(stepsPerLens = 180): LocalPoint[] {
 
 // -- Shirt: the torso only (guide 6i) --
 
-/** The Shirt's front edge, ink included. */
-export const SHIRT_FRONT_X = -7.5;
-/** The front edge has a neckline: a concave arc bowing back this far, to x -10.5. */
-export const SHIRT_NECKLINE_DEPTH = 3;
+/** The Shirt's front edge, ink included: on the front line (-7.5 before #88). */
+export const SHIRT_FRONT_X = SHIRT_BACK_FRONT_LINE_X;
+/** The front edge has a neckline: a concave arc bowing back this far, to x -7 (3 before #88). */
+export const SHIRT_NECKLINE_DEPTH = 1.5;
 
 /** Shirt footprint for a look. */
 export interface ShirtGeometry {
@@ -1398,7 +1544,7 @@ export interface ShirtGeometry {
   readonly bounds: Bounds;
 }
 
-/** Shirt footprint of a look (guide 6i: over all 54 looks x -38 to -7.5, y -20 to 28). */
+/** Shirt footprint of a look (guide 6i: over all 54 looks x -38 to -5.5, y -22 to 30). */
 export function shirtGeometry(look: AxolotlArtLook): ShirtGeometry {
   const geo = axolotlBodyGeometry(look);
   const { torso } = geo;
@@ -1439,8 +1585,12 @@ export function shirtContains(shirt: ShirtGeometry, x: number, y: number): boole
 
 /** The Back anchor sits on the torso top edge at this local x. */
 export const BACK_ANCHOR_X = -17;
-/** The Back footprint in its frame, ink included: x' along the edge toward the snout, y' across (+ into the body). */
-export const BACK_FRAME_BOX = { minU: -9, maxU: 9, minV: -8, maxV: 5 } as const;
+/** The Back box's outer edge, ink included: y' -14, proud of the back against the water (#88; -8 before). */
+export const BACK_BOX_MIN_V = -14;
+/** The Back box's body-side edge, ink included: y' 3 into the body, so the Back fill never meets the Shirt's fill (#88; 5 before). */
+export const BACK_BOX_MAX_V = 3;
+/** The Back box is this long along the edge, or half the torso length (2 rx - 30) when that is more (#88). */
+export const BACK_BOX_MIN_LENGTH = 22;
 
 /**
  * Back frame on a torso: the origin is the point on the top edge at
@@ -1457,30 +1607,55 @@ export function backFrame(torso: BodyEllipse): WearFrame {
   };
 }
 
-/** Back footprint for a look: its frame, the four corners and the local box. */
+/** The Back footprint in its frame, ink included: x' along the edge toward the snout, y' across (+ into the body). */
+export interface BackFrameBox {
+  readonly minU: number;
+  readonly maxU: number;
+  readonly minV: number;
+  readonly maxV: number;
+}
+
+/**
+ * Back box on a torso (#88): its forward body-side corner (maxU, BACK_BOX_MAX_V)
+ * sits on SHIRT_BACK_FRONT_LINE_X, the forward-most point of the box as the
+ * frame rises toward the snout, and it runs back from there along the edge by
+ * BACK_BOX_MIN_LENGTH or half the torso length (2 rx - 30), whichever is more.
+ */
+export function backFrameBox(torso: BodyEllipse): BackFrameBox {
+  const frame = backFrame(torso);
+  const maxU =
+    (SHIRT_BACK_FRONT_LINE_X - frame.x + BACK_BOX_MAX_V * Math.sin(frame.angle)) / Math.cos(frame.angle);
+  const length = Math.max(BACK_BOX_MIN_LENGTH, (2 * torso.rx - 30) / 2);
+  return { minU: maxU - length, maxU, minV: BACK_BOX_MIN_V, maxV: BACK_BOX_MAX_V };
+}
+
+/** Back footprint for a look: its frame, its box in the frame, the four corners and the local box. */
 export interface BackFootprint {
   readonly frame: WearFrame;
+  readonly box: BackFrameBox;
   /** Corners in order: (minU,minV), (maxU,minV), (maxU,maxV), (minU,maxV). */
   readonly corners: readonly LocalPoint[];
   readonly bounds: Bounds;
 }
 
 export function backFootprint(look: AxolotlArtLook): BackFootprint {
-  const frame = backFrame(axolotlBodyGeometry(look).torso);
-  const { minU, maxU, minV, maxV } = BACK_FRAME_BOX;
+  const { torso } = axolotlBodyGeometry(look);
+  const frame = backFrame(torso);
+  const box = backFrameBox(torso);
+  const { minU, maxU, minV, maxV } = box;
   const corners = [
     framePoint(frame, minU, minV),
     framePoint(frame, maxU, minV),
     framePoint(frame, maxU, maxV),
     framePoint(frame, minU, maxV),
   ];
-  return { frame, corners, bounds: boundsOfPoints(corners.map((p): [number, number] => [p.x, p.y]), 0) };
+  return { frame, box, corners, bounds: boundsOfPoints(corners.map((p): [number, number] => [p.x, p.y]), 0) };
 }
 
 // -- Tail: the core top at tail point 4 (guide 6i) --
 
-/** The Tail footprint stays within this many units of its anchor. */
-export const TAIL_SLOT_REACH = 9;
+/** The Tail footprint stays within this many units of its anchor: it holds the taller Golden bow's ink (#88; 9, then 12, before). */
+export const TAIL_SLOT_REACH = 17.5;
 
 /**
  * Tail anchor frame: the core top at TAIL_SLOT_POINT, turned with the local
@@ -1548,24 +1723,36 @@ export interface LegRect {
 
 /** Corner radius of a foot pad and a Shoe, before it is capped to half of each side (guide 6i). */
 export const FOOT_CORNER_RADIUS = 8;
-/** Sock sleeve: colour width 10.4, `ol` 2.4, so ink width 15.2, round ends. */
-export const SOCK_SLEEVE_W = 10.4;
+/**
+ * Sock sleeve: colour width 11.6, `ol` 2.4, so ink width 16.4, round ends (#88; colour 10.4 before):
+ * the widest whose box stays clear of the near lash reach on a Slim look's near-front leg.
+ */
+export const SOCK_SLEEVE_W = 11.6;
 export const SOCK_SLEEVE_OL = 2.4;
 export const SOCK_SLEEVE_INK_W = SOCK_SLEEVE_W + 2 * SOCK_SLEEVE_OL;
 /** Foot pad and Shoe start this far behind the leg end (u = l - 2.0). */
 export const FOOT_BACK_U = 2;
-/** Feet envelope starts this far behind the leg end (u = l - 3.0). */
-export const FEET_ENVELOPE_BACK_U = 3;
-/** Foot pad reaches this far past the toe tips (u = l + t + 5.3). */
-export const SOCK_PAD_FRONT = 5.3;
-/** Shoe reaches this far past the toe tips (u = l + t + 6.8). */
-export const SHOE_FRONT = 6.8;
-/** Feet envelope reaches this far past the toe tips (u = l + t + 10.0). */
-export const FEET_ENVELOPE_FRONT = 10;
-/** Foot pad, Shoe and Feet envelope half widths, ink included; a Baby's pad and Shoe are narrower. */
-export const SOCK_PAD_HALF_WIDTH = { grown: 10.2, baby: 8.9 } as const;
-export const SHOE_HALF_WIDTH = { grown: 11.7, baby: 10.8 } as const;
-export const FEET_ENVELOPE_HALF_WIDTH = 12;
+/**
+ * Feet envelope starts this far behind the leg end (u = l - 2.0, where the pad, a Shoe and the
+ * Flippers start; #88, 3.0 before), so its wider back corner stays within 1 of the gill-root zone.
+ */
+export const FEET_ENVELOPE_BACK_U = 2;
+/** Foot pad reaches this far past the toe tips (u = l + t + 6.0; #88, 5.3 before). */
+export const SOCK_PAD_FRONT = 6;
+/** Shoe reaches this far past the toe tips (u = l + t + 7.6; #88, 6.8 before): 1.5 or more past the pad's ink, ink included. */
+export const SHOE_FRONT = 7.6;
+/**
+ * Feet envelope reaches this far past the toe tips (u = l + t + 10.3; #88, 10.0 before): as far as the
+ * frame bottom allows at half width 13.5, its square corner lowest at y 58.87 (4 or more inside the frame).
+ */
+export const FEET_ENVELOPE_FRONT = 10.3;
+/**
+ * Foot pad, Shoe and Feet envelope half widths, ink included; a Baby's pad and Shoe are narrower (#88:
+ * pad 10.2 and 8.9, Shoe 11.7 and 10.8, envelope 12 before).
+ */
+export const SOCK_PAD_HALF_WIDTH = { grown: 11.2, baby: 9.9 } as const;
+export const SHOE_HALF_WIDTH = { grown: 13.2, baby: 12.2 } as const;
+export const FEET_ENVELOPE_HALF_WIDTH = 13.5;
 
 function legRect(frame: LegSlotFrame, back: number, front: number, vHalf: number, radius: number): LegRect {
   const u0 = frame.length - back;
@@ -1587,8 +1774,9 @@ export function shoeRect(frame: LegSlotFrame): LegRect {
 
 /**
  * The Feet envelope: every Feet item (Shoe, Flippers) stays inside it. A plain
- * box (square corners, radius 0): the guide's measured extents (frame bottom
- * y 58.06, x -61.4 to 45.8) are its corners.
+ * box (square corners, radius 0): its measured extents (lowest y 58.87, x
+ * -62.6 to 47.2 over every look and swim phase; #88, y 58.06 and x -61.4 to
+ * 45.8 before) are its corners.
  */
 export function feetEnvelope(frame: LegSlotFrame): LegRect {
   return legRect(frame, FEET_ENVELOPE_BACK_U, FEET_ENVELOPE_FRONT, FEET_ENVELOPE_HALF_WIDTH, 0);

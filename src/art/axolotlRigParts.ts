@@ -19,7 +19,7 @@
  * An Iridescent tail that moves shows in three layers, so its stripe pair is
  * never bent: the tail part baked 'under' (layers 4 to 6.2), then the stripe
  * pair drawn live from rigPlacement's `stripe` polygons (tailStripe at the
- * shown tail), then the 'tail-over' part (6.5 to 8.2, the BodyLayers 'over'
+ * shown tail), then the 'tail-over' part (6.5 to 8, the BodyLayers 'over'
  * split). The still tail shows its full bake (the still stripe at x -10). The
  * tail has no sheen variant; the body bakes the 16 sheen steps and the still stripe.
  */
@@ -45,6 +45,8 @@ import {
   type LegLook,
 } from './drawAxolotl';
 import {
+  CHEEK_HEART_ZONE,
+  FAR_EYE,
   FAR_LASH_REACH,
   GILL_FILAMENT_OL,
   GILL_FILAMENT_W,
@@ -54,6 +56,7 @@ import {
   HEAD_ELLIPSE,
   HEAD_FOOTPRINT,
   MOUTH_ZONE,
+  NEAR_EYE,
   NEAR_LASH_REACH,
   NECK_FOOTPRINT,
   TAIL_SEGMENTS,
@@ -63,10 +66,12 @@ import {
   feetEnvelope,
   gillGeometry,
   gillSpecs,
+  grumpyBrowInkBounds,
   legAngle,
   legRectBounds,
   legSlotFrames,
   paintGill,
+  shirtGeometry,
   sockSleeveBounds,
   tailPointAt,
   tailSamples,
@@ -162,9 +167,9 @@ export type RigPartId =
 
 /**
  * One baked part: where it joins the axolotl and the box its texture covers.
- * Parts draw in rigParts order; the body and the tail share layers 4 to 8.2,
+ * Parts draw in rigParts order; the body and the tail share layers 4 to 8,
  * the body first, so the tail covers the seam overlap. An Iridescent tail adds
- * 'tail-over' (6.5 to 8.2) over the live stripe pair.
+ * 'tail-over' (6.5 to 8) over the live stripe pair.
  */
 export interface RigPartSpec {
   readonly id: RigPartId;
@@ -201,7 +206,7 @@ export interface RigPartVariant {
   readonly leg?: LegLook;
   /** Tail pose for 'tail' and 'tail-over'. Undefined is the straight tail (tail amplitude 0). */
   readonly tailPose?: RigTailPose;
-  /** Layers of 'tail': 'all' (4 to 8.2, the default), or 'under' (4 to 6.2) below the live Iridescent stripe. */
+  /** Layers of 'tail': 'all' (4 to 8, the default), or 'under' (4 to 6.2) below the live Iridescent stripe. */
   readonly tailLayers?: 'all' | 'under';
   /** Iridescent sheen phase in [0, 1) for 'body'. Undefined is the still stripe at x -10. */
   readonly sheen?: number;
@@ -611,7 +616,8 @@ function tailMaxDy(look: AxolotlArtLook): number {
 
 /**
  * Ink box of the face part: the head (the blush sits on the cheeks inside it),
- * the mouth zone (every mouth) and the footprint of each worn Neck, Back, Head and Face item.
+ * a Girl's cheek heart zone, the mouth zone (every mouth) and the footprint of
+ * each worn Shirt, Neck, Back, Head and Face item.
  */
 function facePartInk(look: AxolotlArtLook, outfit: ArtOutfit): Bounds {
   const head: Bounds = {
@@ -620,7 +626,8 @@ function facePartInk(look: AxolotlArtLook, outfit: ArtOutfit): Bounds {
     maxX: HEAD_ELLIPSE.cx + HEAD_ELLIPSE.rx,
     maxY: HEAD_ELLIPSE.cy + HEAD_ELLIPSE.ry,
   };
-  const boxes: Bounds[] = [head, MOUTH_ZONE];
+  const boxes: Bounds[] = [head, circleBounds(CHEEK_HEART_ZONE), MOUTH_ZONE];
+  if (wornSlug(outfit, 'shirt') !== undefined) boxes.push(shirtGeometry(look).bounds);
   if (wornSlug(outfit, 'neck') !== undefined) boxes.push(NECK_FOOTPRINT);
   if (wornSlug(outfit, 'back') !== undefined) boxes.push(backFootprint(look).bounds);
   if (wornSlug(outfit, 'head') !== undefined) boxes.push(HEAD_FOOTPRINT);
@@ -631,10 +638,11 @@ function facePartInk(look: AxolotlArtLook, outfit: ArtOutfit): Bounds {
 /**
  * The parts of an appearance in draw order (guide 6a): far gills (1), far legs
  * (2), their Socks and Feet (2.5, only when the outfit wears on the legs), near
- * legs (3) and theirs (3.5), the body then the tail (both 4 to 8.2: the tail
- * draws over the seam overlap), 'tail-over' (6.5 to 8.2, only on an Iridescent
- * palette; the tail's pivot, box and maxDy), the Tail item (8.5, only when one
- * is worn), near gills (9), the face (9.5 to 11.5) and the eyes (12).
+ * legs (3) and theirs (3.5), the body then the tail (both 4 to 8: the tail
+ * draws over the seam overlap), 'tail-over' (6.5 to 8, only on an Iridescent
+ * palette; the tail's pivot, box and maxDy), near gills (9), the Tail item
+ * (9.2, only when one is worn), the face (9.3 to 11.5, the Shirt item first)
+ * and the eyes (12).
  */
 export function rigParts(appearance: RigAppearance): RigPartSpec[] {
   const { look, palette, outfit } = appearance;
@@ -660,18 +668,23 @@ export function rigParts(appearance: RigAppearance): RigPartSpec[] {
   pushLegs(0, 2, 2.5);
   pushLegs(2, 3, 3.5);
   const tailRoot: LocalPoint = { x: geo.tail.rootX, y: g.straightCys[0] };
-  parts.push(makeSpec('body', [4, 8.2], { x: 0, y: 0 }, bodyPartInk(g)));
+  parts.push(makeSpec('body', [4, 8], { x: 0, y: 0 }, bodyPartInk(g)));
   const tailInk = tailPartInk(g);
   const tailDy = tailMaxDy(look);
-  parts.push(makeSpec('tail', [4, 8.2], tailRoot, tailInk, 1, tailDy));
-  if (palette.dream?.id === 'iridescent') parts.push(makeSpec('tail-over', [6.5, 8.2], tailRoot, tailInk, 1, tailDy));
+  parts.push(makeSpec('tail', [4, 8], tailRoot, tailInk, 1, tailDy));
+  if (palette.dream?.id === 'iridescent') parts.push(makeSpec('tail-over', [6.5, 8], tailRoot, tailInk, 1, tailDy));
+  pushGills(GILL_NEAR_IDS, 3, 9);
   if (wornSlug(outfit, 'tail') !== undefined) {
     const frame = g.stillTailFrame;
-    parts.push(makeSpec('tail-item', [8.5, 8.5], { x: frame.x, y: frame.y }, tailSlotBounds(frame)));
+    parts.push(makeSpec('tail-item', [9.2, 9.2], { x: frame.x, y: frame.y }, tailSlotBounds(frame)));
   }
-  pushGills(GILL_NEAR_IDS, 3, 9);
-  parts.push(makeSpec('face', [9.5, 11.5], { x: 0, y: 0 }, facePartInk(look, outfit)));
-  const eyes = unionBounds([circleBounds(FAR_LASH_REACH), circleBounds(NEAR_LASH_REACH)]);
+  parts.push(makeSpec('face', [9.3, 11.5], { x: 0, y: 0 }, facePartInk(look, outfit)));
+  const eyes = unionBounds([
+    circleBounds(FAR_LASH_REACH),
+    circleBounds(NEAR_LASH_REACH),
+    grumpyBrowInkBounds(FAR_EYE),
+    grumpyBrowInkBounds(NEAR_EYE),
+  ]);
   parts.push(makeSpec('eyes', [12, 12], { x: 0, y: 0 }, eyes, EYE_FRAME_BLINKS.length));
   return parts;
 }
@@ -713,7 +726,7 @@ function paintBodySlice(
   const pose: AxolotlPose = { ...RIG_STILL_POSE, swimPhase: tailPose.swimPhase, tailAmp: tailPose.tailAmp, sheen };
   ctx.save();
   clipToXBand(ctx, fromX, toX);
-  paintBodyLayers(ctx, pose, appearance.palette, appearance.look, appearance.outfit, layers);
+  paintBodyLayers(ctx, pose, appearance.palette, appearance.look, layers);
   ctx.restore();
 }
 

@@ -761,28 +761,29 @@ describe('part order and pivots', () => {
     const parts = rigParts(appearanceOf(DEFAULT_ART_LOOK, 0));
     expect(parts.map((p) => p.id)).toEqual([
       'gill-far-0', 'gill-far-1', 'gill-far-2', 'leg-0', 'leg-1', 'wear-leg-0', 'wear-leg-1', 'leg-2', 'leg-3',
-      'wear-leg-2', 'wear-leg-3', 'body', 'tail', 'tail-item', 'gill-near-0', 'gill-near-1', 'gill-near-2', 'face',
+      'wear-leg-2', 'wear-leg-3', 'body', 'tail', 'gill-near-0', 'gill-near-1', 'gill-near-2', 'tail-item', 'face',
       'eyes',
     ]);
     const layers = parts.map((p) => p.layer);
     expect([...layers].sort((a, b) => a - b)).toEqual(layers);
-    expect(parts.map((p) => p.layer)).toEqual([1, 1, 1, 2, 2, 2.5, 2.5, 3, 3, 3.5, 3.5, 4, 4, 8.5, 9, 9, 9, 9.5, 12]);
-    expect(specOf(parts, 'body').topLayer).toBe(8.2);
+    expect(parts.map((p) => p.layer)).toEqual([1, 1, 1, 2, 2, 2.5, 2.5, 3, 3, 3.5, 3.5, 4, 4, 9, 9, 9, 9.2, 9.3, 12]);
+    expect(specOf(parts, 'body').topLayer).toBe(8);
+    expect(specOf(parts, 'tail-item').topLayer).toBe(9.2);
     expect(specOf(parts, 'face').topLayer).toBe(11.5);
   });
 
-  it('adds the tail-over part (6.5 to 8.2) right after the tail on an Iridescent palette only', () => {
+  it('adds the tail-over part (6.5 to 8) right after the tail on an Iridescent palette only', () => {
     for (const palette of PALETTES) {
       const parts = rigParts({ look: DEFAULT_ART_LOOK, palette, outfit: FULL });
       const ids = parts.map((p) => p.id);
       const tail = ids.indexOf('tail');
-      expect(specOf(parts, 'tail')).toMatchObject({ layer: 4, topLayer: 8.2 });
+      expect(specOf(parts, 'tail')).toMatchObject({ layer: 4, topLayer: 8 });
       if (!isIridescent(palette)) {
         expect(ids, palette.dream?.id ?? 'plain').not.toContain('tail-over');
         continue;
       }
       expect(ids.indexOf('tail-over')).toBe(tail + 1);
-      expect(specOf(parts, 'tail-over')).toMatchObject({ layer: 6.5, topLayer: 8.2, frames: 1 });
+      expect(specOf(parts, 'tail-over')).toMatchObject({ layer: 6.5, topLayer: 8, frames: 1 });
       const layers = parts.map((p) => p.layer);
       expect([...layers].sort((a, b) => a - b)).toEqual(layers);
     }
@@ -943,7 +944,7 @@ describe('worn parts', () => {
   const count = (id: RigPartId, appearance: RigAppearance, variant: RigPartVariant = {}): number =>
     partPaints(id, appearance, variant).length;
 
-  it('paint more than bare, and a lost or regrowing leg wears nothing', () => {
+  it('paint more than bare, the body and tail paint no Wearable, and a lost or regrowing leg wears nothing', () => {
     const worn = appearanceOf(DEFAULT_ART_LOOK, 0);
     const bare = appearanceOf(DEFAULT_ART_LOOK, 0, NO_OUTFIT);
     for (let i = 0; i < 4; i++) {
@@ -957,7 +958,8 @@ describe('worn parts', () => {
     expect(count('tail-item', worn)).toBeGreaterThan(0);
     expect(count('tail-item', bare)).toBe(0);
     expect(count('face', worn)).toBeGreaterThan(count('face', bare));
-    expect(count('body', worn)).toBeGreaterThan(count('body', bare));
+    expect(count('body', worn)).toBe(count('body', bare));
+    expect(count('tail', worn)).toBe(count('tail', bare));
   });
 
   it('rejects frames a part does not have', () => {

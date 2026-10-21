@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-10-21
+
+### Added
+
+- Every Girl now has a pink heart on her cheek (#87).
+
+### Changed
+
+- Grumpy eyes now look grumpy: the lid slopes down toward the snout over a half bead, with a short brow (#87).
+- All eight Wearables are bigger and bolder, with thinner outlines, so each one is easy to see while swimming (#88). The eight are Sun hat, Heart glasses, Shell necklace (now a collar), Tank top, Diving tank, Golden bow, Stripy socks and Flippers. Shirt and Tail items now draw over the near gills.
+- Every Wearable added in future is checked automatically for a minimum size (#88).
+
 ## [0.21.0] - 2026-10-21
 
 ### Added

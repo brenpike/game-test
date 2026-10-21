@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-20
 - Updated: 2026-10-21. The area framework ([ADR 0014](0014-area-framework.md), issue #73) adds a fourth measured case, the dev test area taller than one screen, and the `?area` dev flag. The decision is unchanged.
+- Updated: 2026-10-21. Issues #87 and #88 change the parts table: the Tail and Shirt items move over the near gills, and a Girl's cheek heart joins the `face` part. The decision is unchanged.
 
 ## Context
 
@@ -35,14 +36,16 @@ Parts, in draw order, with their 6a layers:
 | `wear-leg-0`, `wear-leg-1` | 2.5 | Their Socks and Feet; only when the outfit wears something on the legs |
 | `leg-2`, `leg-3` (near legs) | 3 | Turned about the leg root |
 | `wear-leg-2`, `wear-leg-3` | 3.5 | As above |
-| `body` | 4 to 8.2 | The straight-tail bake, clipped to x >= the tail root |
-| `tail` | 4 to 8.2 | Drawn over the body; bent live |
-| `tail-over` | 6.5 to 8.2 | Iridescent only; bent with the tail |
-| `tail-item` | 8.5 | Only when a Tail item is worn; rides the shown tail's Tail frame |
+| `body` | 4 to 8 | The straight-tail bake, clipped to x >= the tail root |
+| `tail` | 4 to 8 | Drawn over the body; bent live |
+| `tail-over` | 6.5 to 8 | Iridescent only; bent with the tail |
 | `gill-near-0` to `gill-near-2` | 9 | As the far gills |
-| `face` | 9.5 to 11.5 | Neck item, Back item, blush, Head item, mouth, Face item |
-| `eyes` | 12 | Nearest blink frame |
+| `tail-item` | 9.2 | Only when a Tail item is worn; rides the shown tail's Tail frame, over the near gills |
+| `face` | 9.3 to 11.5 | Shirt item, Neck item, Back item, blush, a Girl's cheek heart (10.2), Head item, mouth, Face item |
+| `eyes` | 12 | Nearest blink frame; a Grumpy brow is part of it |
 | Twinkles | (glints) | Regeneration and leg-regrowth glints, as pooled sprites from one shared twinkle sheet |
+
+Issues #87 and #88 changed this table. Before them, `body` and `tail` held layers 4 to 8.2 (the Shirt item was 8.2, inside `body`), `tail-item` was 8.5 and came before the near gills, and `face` was 9.5 to 11.5. Now the Tail item (9.2) and the Shirt item (9.3) draw over the near gills, so a near gill never hides them: the near gills come before `tail-item`, and the Shirt is the first layer of `face`. The cheek heart (#87) paints in `face`, after the blush and before the Head item.
 
 **The seam.** The body part holds x >= the tail root. The tail part holds x <= the tail root + 4 (`RIG_SEAM_OVERLAP`), so the two overlap by 4 units, more than the 3.5 unit outline. The tail's bend is 0 at the root.
 The tail draws over the body, so the overlap always shows the tail's posed copy, and tail marks that reach past the root (a Patches spot) bend with the tail.
@@ -67,7 +70,7 @@ A moving Iridescent tail shows in three layers, so its stripe pair is never bent
 
 1. the tail baked 'under' (layers 4 to 6.2), bent as above;
 2. the stripe pair, drawn live as a flat-colour vector overlay (a Phaser `Graphics`) from polygons that `tailStripe` works out from `drawAxolotl`'s own `dreamPatternShapes` and `dreamClipPolygons`, at the shown tail and sheen step;
-3. `tail-over` (layers 6.5 to 8.2), bent with the tail.
+3. `tail-over` (layers 6.5 to 8), bent with the tail.
 
 The overlay is redrawn only when the shown tail or the sheen step changes. It repaints no texture and uploads nothing. On Canvas the tail stripe glides too.
 

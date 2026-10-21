@@ -34,6 +34,7 @@ import {
   gillInkBounds,
   legAngle,
   legSlotFrames,
+  paintCheekHeart,
   paintEye,
   paintGills,
   paintMouth,
@@ -68,14 +69,14 @@ export const AXO_TEX: TexSize = { w: 166, h: 142, originX: 102, originY: 79 };
 
 /**
  * Picture-button crops in local units: `face` for Eyes and Mouth (both eye
- * zones, every mouth, the snout), `gills` for Gills (every gill style at every
- * flutter phase and Age), `spots` for Spots (every spot mark of every Boy or
- * girl, Tail, Body and Age at every swim phase at tail amplitude 1, with 4
- * units of padding, plus the back of the head to x 7), `whole` (the AXO_TEX
- * frame) for every other option.
+ * zones, every mouth, the snout, a Girl's cheek heart and the Grumpy brows),
+ * `gills` for Gills (every gill style at every flutter phase and Age), `spots`
+ * for Spots (every spot mark of every Boy or girl, Tail, Body and Age at every
+ * swim phase at tail amplitude 1, with 4 units of padding, plus the back of the
+ * head to x 7), `whole` (the AXO_TEX frame) for every other option.
  */
 export const AXO_PREVIEW_CROPS: Readonly<Record<'face' | 'gills' | 'spots' | 'whole', Bounds>> = {
-  face: { minX: 14, minY: -20, maxX: 58, maxY: 24 },
+  face: { minX: 12, minY: -20, maxX: 58, maxY: 24 },
   gills: { minX: -63, minY: -77, maxX: 25, maxY: 22 },
   spots: { minX: -85, minY: -22, maxX: 7, maxY: 20 },
   whole: {
@@ -609,26 +610,26 @@ export function paintAxolotlLeg(
 }
 
 /**
- * Which of layers 4 to 8.2 paintBodyLayers paints: 'all' of them; 'under',
+ * Which of layers 4 to 8 paintBodyLayers paints: 'all' of them; 'under',
  * layers 4 to 6.2 (silhouette, fin bands and rays, belly, morph rim and
  * speckles), stopping before the 6.5 Dream block; 'over', only what follows
  * the Dream pattern (the Dream rim and marker, shines, flecks and shimmer,
- * spots, the Shirt item). 'under', the pattern, then 'over' paint as 'all'.
+ * spots). 'under', the pattern, then 'over' paint as 'all'.
  */
 export type BodyLayers = 'all' | 'under' | 'over';
 
 /**
- * Paint layers 4 to 8.2 of drawAxolotl: the merged silhouette, fin bands and
+ * Paint layers 4 to 8 of drawAxolotl: the merged silhouette, fin bands and
  * rays, belly, morph rim and speckles, the Dream overlay, shines, flecks and
- * shimmer, spots, then the Shirt item. Not the Tail item (8.5). `layers`
- * (default 'all') paints only the 'under' or 'over' part (BodyLayers).
+ * shimmer, then spots. No Wearable: the Shirt (9.3) and Tail (9.2) items paint
+ * over the near gills. `layers` (default 'all') paints only the 'under' or
+ * 'over' part (BodyLayers).
  */
 export function paintBodyLayers(
   ctx: CanvasRenderingContext2D,
   pose: AxolotlPose,
   palette: MorphPalette,
   look: AxolotlArtLook,
-  outfit: ArtOutfit,
   layers: BodyLayers = 'all',
 ): void {
   const swim = pose.swimPhase;
@@ -741,14 +742,12 @@ export function paintBodyLayers(
   // 8. spots (spot colour per morph, guide 3b; the player's Spots option, guide 6n)
   const spot = extras?.spot === undefined ? FRECKLE : extras.spot;
   if (spot !== null) paintSpots(ctx, look.spots, swim, pose.tailAmp, spot, geo.tail, torso);
-
-  // 8.2 Shirt item (guide 6i)
-  paintBodyWearable(ctx, 'shirt', outfit, look, swim, pose.tailAmp);
 }
 
 /**
- * Paint layers 9.5 to 11.5 of drawAxolotl, which sit over the near gills: the
- * Neck and Back items, blush, the Head item, the mouth, then the Face item.
+ * Paint layers 9.3 to 11.5 of drawAxolotl, which sit over the near gills and
+ * the Tail item (9.2): the Shirt, Neck and Back items, blush, a Girl's cheek
+ * heart, the Head item, the mouth, then the Face item.
  */
 export function paintFaceLayers(
   ctx: CanvasRenderingContext2D,
@@ -759,6 +758,9 @@ export function paintFaceLayers(
 ): void {
   const swim = pose.swimPhase;
   const extras = palette.extras;
+
+  // 9.3 Shirt item (guide 6i): over the near gills, so they never hide it
+  paintBodyWearable(ctx, 'shirt', outfit, look, swim, pose.tailAmp);
 
   // 9.5 Neck item, 9.7 Back item: from the body out, over the Shirt and the near gills
   paintBodyWearable(ctx, 'neck', outfit, look, swim, pose.tailAmp);
@@ -772,6 +774,9 @@ export function paintFaceLayers(
     ctx.fillStyle = BLUSH;
     ctx.fill(p);
   }
+
+  // 10.2 cheek heart: the Girl cue, off with the blush (the Collection Book silhouette)
+  if (look.sex === 'girl' && extras?.blush !== false) paintCheekHeart(ctx);
 
   // 10.5 Head item
   paintBodyWearable(ctx, 'head', outfit, look, swim, pose.tailAmp);
@@ -814,8 +819,9 @@ export function paintAxolotlGlints(ctx: CanvasRenderingContext2D, pose: AxolotlP
  * `outfit` is what the axolotl wears (guide 6a, 6i), none by default, and then
  * the painter makes exactly the calls it made before Wearables. Wearables paint
  * at their layers: Socks and Feet with their leg behind the silhouette (the Sock
- * first, then the Feet item), then the Shirt (8.2), Tail (8.5), Neck (9.5), Back
- * (9.7), Head (10.5) and Face (11.5) items. Eyes (layer 12) still paint last.
+ * first, then the Feet item), then, over the near gills (9), the Tail (9.2),
+ * Shirt (9.3), Neck (9.5), Back (9.7), Head (10.5) and Face (11.5) items. Eyes
+ * (layer 12) still paint last.
  * A leg wears its Socks and Feet only while its status is 'present', so a lost
  * or regrowing leg is the bare ghost; a Shirt never reads the leg state.
  */
@@ -851,16 +857,16 @@ export function drawAxolotl(
     if (i === 3) wearLegs(2, 3);
   }
 
-  // 4 to 8.2: silhouette, fins, belly, morph and Dream layers, shines, spots, Shirt item
-  paintBodyLayers(ctx, pose, palette, look, outfit);
-
-  // 8.5 Tail item (guide 6i)
-  paintBodyWearable(ctx, 'tail', outfit, look, swim, pose.tailAmp);
+  // 4 to 8: silhouette, fins, belly, morph and Dream layers, shines, spots
+  paintBodyLayers(ctx, pose, palette, look);
 
   // 9. near gills (in front of the body, sprouting from the cheek)
   paintGills(ctx, 'near', look.gills, tfl, palette.gillNearStem, palette.gillNearFilament, geo.gillLength);
 
-  // 9.5 to 11.5: Neck and Back items, blush, Head item, mouth, Face item
+  // 9.2 Tail item (guide 6i): over the near gills, so they never hide it
+  paintBodyWearable(ctx, 'tail', outfit, look, swim, pose.tailAmp);
+
+  // 9.3 to 11.5: Shirt, Neck and Back items, blush, cheek heart, Head item, mouth, Face item
   paintFaceLayers(ctx, pose, palette, look, outfit);
 
   // 12. eyes

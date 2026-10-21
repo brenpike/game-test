@@ -8,7 +8,9 @@ import {
   axolotlLegRoots,
   drawAxolotl,
 } from './drawAxolotl';
-import { LEUCISTIC, LW, T_STATIC, WHITE } from './palette';
+import { CHEEK_HEART, INK, LEUCISTIC, LW, T_STATIC, WHITE } from './palette';
+import { rigParts } from './axolotlRigParts';
+import { NO_OUTFIT } from './drawWearables';
 import {
   AXO_AGES,
   AXO_BODIES,
@@ -17,9 +19,17 @@ import {
   AXO_SIZE_SCALE,
   AXO_TAILS,
   BACK_ANCHOR_X,
-  BACK_FRAME_BOX,
+  BACK_BOX_MAX_V,
+  BACK_BOX_MIN_LENGTH,
+  BACK_BOX_MIN_V,
+  CHEEK_HEART_CENTRE,
+  CHEEK_HEART_INK,
+  CHEEK_HEART_LAYER,
+  CHEEK_HEART_UNDER,
+  CHEEK_HEART_ZONE,
   DEFAULT_ART_LOOK,
   EYES_LAYER,
+  EYE_LID_INK,
   EYELASH_INK,
   EYELASH_UNDER,
   EYE_VARIANTS,
@@ -68,8 +78,10 @@ import {
   NEAR_LASH_REACH,
   axolotlBodyGeometry,
   backFootprint,
+  backFrameBox,
   backFrame,
   boundsOfPoints,
+  cheekHeartPoints,
   eyeMarks,
   eyelashMarks,
   feetEnvelope,
@@ -78,6 +90,8 @@ import {
   gillInkBounds,
   gillSpecs,
   glassesNotches,
+  grumpyBrow,
+  grumpyBrowInkBounds,
   glassesOutlinePoints,
   legAngle,
   legRectBounds,
@@ -87,6 +101,7 @@ import {
   mouthInkBounds,
   MOUTH_INK,
   MOUTH_TICK_INK,
+  paintCheekHeart,
   paintEye,
   paintMouth,
   quadBounds,
@@ -107,6 +122,7 @@ import {
   type Bounds,
   type EyeLash,
   type EyeSpot,
+  type EyeVariant,
   type GillRoot,
   type LocalPoint,
   type MouthVariant,
@@ -821,11 +837,103 @@ describe('eye variants (guide 6l)', () => {
     expect(determined.y2).toBeGreaterThan(determined.y1);
 
     const grumpy = eyeMarks('grumpy', r);
-    expect(grumpy.glints).toHaveLength(1);
-    expect([grumpy.lid!.x1, grumpy.lid!.y1, grumpy.lid!.x2, grumpy.lid!.y2]).toEqual([-r, -0.05 * r, r, -0.4 * r]);
-    expect(grumpy.lid!.y1).toBeGreaterThan(grumpy.lid!.y2);
+    expect(grumpy.glints).toEqual([{ x: -r * 0.35, y: r * 0.35, r: r * 0.17 }]);
+    expect([grumpy.lid!.x1, grumpy.lid!.y1, grumpy.lid!.x2, grumpy.lid!.y2]).toEqual([-r, -0.2 * r, r, 0.2 * r]);
+  });
+
+  it('half-shuts Grumpy (#87): a straight lid through the middle, sloping down toward the snout, glint 2 only', () => {
+    for (const spot of [NEAR_EYE, FAR_EYE]) {
+      const r = spot.r;
+      const lid = eyeMarks('grumpy', r).lid!;
+      expect(lid.cx).toBe(0);
+      expect(lid.cy).toBeCloseTo((lid.y1 + lid.y2) / 2, 12);
+      expect(lid.y2).toBeGreaterThan(lid.y1);
+      expect(Math.abs((lid.y1 + lid.y2) / 2)).toBeLessThanOrEqual(0.1 * r);
+    }
+    const share = visibleBeadShare('grumpy');
+    expect(share).toBeGreaterThanOrEqual(0.45);
+    expect(share).toBeLessThanOrEqual(0.55);
+    expect(share).toBeCloseTo(0.5, 2);
+  });
+
+  it('keeps Determined as it was, and tells it from Grumpy by the bead shown, the glints and the brow', () => {
+    const r = NEAR_EYE.r;
+    const determined = eyeMarks('determined', r);
+    expect(determined.glints).toHaveLength(2);
+    expect(visibleBeadShare('determined')).toBeCloseTo(0.7585, 3);
+    expect(visibleBeadShare('determined')).toBeGreaterThanOrEqual(visibleBeadShare('grumpy') + 0.15);
+    expect(eyeMarks('grumpy', r).glints).not.toEqual(determined.glints);
+    const browed = EYE_VARIANTS.filter((variant) => browStrokes(variant, NEAR_EYE, 1).length > 0);
+    expect(browed).toEqual(['grumpy']);
   });
 });
+
+/** One stroke paintEye made: the state it was painted under, the scale y and its place in the call order. */
+interface EyeStroke {
+  readonly lineWidth: number;
+  readonly strokeStyle: string;
+  readonly lineCap: string;
+  readonly scaleY: number;
+  readonly order: number;
+}
+
+/** Every stroke and the index of the bead fill paintEye makes, with the eye `colour` #123456. */
+function recordEyeStrokes(variant: EyeVariant, spot: EyeSpot, blink: number, eyelashes = false) {
+  class StubPath2D {
+    moveTo(): void {}
+    lineTo(): void {}
+    quadraticCurveTo(): void {}
+    closePath(): void {}
+    ellipse(): void {}
+  }
+  vi.stubGlobal('Path2D', StubPath2D);
+  const state = { lineWidth: 0, strokeStyle: '', fillStyle: '', lineCap: 'round', scaleY: 1 };
+  const saved: (typeof state)[] = [];
+  const strokes: EyeStroke[] = [];
+  let order = 0;
+  let beadAt = -1;
+  const ctx = {
+    save: () => saved.push({ ...state }),
+    restore: () => Object.assign(state, saved.pop()!),
+    translate: () => {},
+    scale: (_x: number, y: number) => {
+      state.scaleY *= y;
+    },
+    clip: () => {},
+    fill: () => {
+      if (state.fillStyle === '#123456' && beadAt < 0) beadAt = order;
+      order++;
+    },
+    stroke: () => strokes.push({ ...state, order: order++ }),
+    set lineCap(v: string) {
+      state.lineCap = v;
+    },
+    set lineWidth(v: number) {
+      state.lineWidth = v;
+    },
+    set strokeStyle(v: string) {
+      state.strokeStyle = v;
+    },
+    set fillStyle(v: string) {
+      state.fillStyle = v;
+    },
+  } as unknown as CanvasRenderingContext2D;
+  try {
+    paintEye(ctx, variant, spot, blink, '#123456', undefined, eyelashes);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  return { strokes, beadAt, lineCapAfter: state.lineCap, unbalanced: saved.length };
+}
+
+/**
+ * The brow strokes paintEye makes, a Girl's lashes on: each round-capped lash-white-wide stroke and
+ * the stroke after it (lashes are butt-capped; the lid is ink only).
+ */
+function browStrokes(variant: EyeVariant, spot: EyeSpot, blink: number): EyeStroke[] {
+  const { strokes } = recordEyeStrokes(variant, spot, blink, true);
+  return strokes.flatMap((s, i) => (s.lineCap === 'round' && s.lineWidth === EYELASH_UNDER ? [s, strokes[i + 1]] : []));
+}
 
 describe('eye ring (guide 3b)', () => {
   const RING = { colour: '#cec9f0', width: 1.5 };
@@ -1392,6 +1500,17 @@ describe('eyelashes (Girl cue)', () => {
     }
   });
 
+  it('measure the Grumpy lashes on the #87 lid: lengths near 5.65 / 7.00 / 8.45, far 5.27 / 6.36 / 7.56, least ink past the bead 3.52', () => {
+    const lengths = (spot: EyeSpot): number[] =>
+      eyelashMarks('grumpy', spot.r).map((lash) => Math.hypot(lash.x2 - lash.x1, lash.y2 - lash.y1));
+    const guide = [5.65, 7.0, 8.45, 5.27, 6.36, 7.56];
+    [...lengths(NEAR_EYE), ...lengths(FAR_EYE)].forEach((len, i) => expect(len).toBeCloseTo(guide[i], 2));
+    const leastPastBead = Math.min(
+      ...eyes.flatMap((spot) => eyelashMarks('grumpy', spot.r).map((lash) => inkPastBead(lash, spot.r))),
+    );
+    expect(leastPastBead).toBeCloseTo(3.52, 2);
+  });
+
   it('root on the back half of the lid line inside the bead and rise above it on lidded eyes', () => {
     for (const variant of ['sleepy', 'determined', 'grumpy'] as const) {
       for (const spot of eyes) {
@@ -1460,7 +1579,7 @@ describe('eyelashes (Girl cue)', () => {
     expect(saved).toEqual([]);
   });
 
-  it('paint on layer 12, after every layer 11 mouth stroke, so no Wearable (layers 8.5 to 11.5) can cover them', () => {
+  it('paint on layer 12, after every layer 11 mouth stroke, so no Wearable (layers 9.2 to 11.5) can cover them', () => {
     class StubPath2D {
       moveTo(): void {}
       lineTo(): void {}
@@ -1493,6 +1612,296 @@ describe('eyelashes (Girl cue)', () => {
   });
 });
 
+/** Blinks the rig bakes the eyes at (EYE_FRAME_BLINKS): open, half shut and the 12% blink. */
+const RIG_BLINKS = [1, 0.56, 0.12] as const;
+
+function pointSegmentDistance(p: LocalPoint, a: LocalPoint, b: LocalPoint): number {
+  const vx = b.x - a.x;
+  const vy = b.y - a.y;
+  const u = Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / (vx * vx + vy * vy)));
+  return Math.hypot(p.x - a.x - u * vx, p.y - a.y - u * vy);
+}
+
+function cross(a: LocalPoint, b: LocalPoint, c: LocalPoint): number {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+/** Distance between segments ab and cd: 0 when they cross. */
+function segmentGap(a: LocalPoint, b: LocalPoint, c: LocalPoint, d: LocalPoint): number {
+  const crosses = cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0;
+  if (crosses) return 0;
+  return Math.min(
+    pointSegmentDistance(a, c, d),
+    pointSegmentDistance(b, c, d),
+    pointSegmentDistance(c, a, b),
+    pointSegmentDistance(d, a, b),
+  );
+}
+
+/** Whether p lies inside the convex polygon `poly` (either winding). */
+function isInConvex(poly: readonly LocalPoint[], p: LocalPoint): boolean {
+  const sides = poly.map((a, i) => Math.sign(cross(a, poly[(i + 1) % poly.length], p)));
+  return sides.every((s) => s >= 0) || sides.every((s) => s <= 0);
+}
+
+/** Distance from segment ab to the convex polygon `poly`: 0 when they meet. */
+function segmentPolygonGap(a: LocalPoint, b: LocalPoint, poly: readonly LocalPoint[]): number {
+  if (isInConvex(poly, a) || isInConvex(poly, b)) return 0;
+  return Math.min(...poly.map((c, i) => segmentGap(a, b, c, poly[(i + 1) % poly.length])));
+}
+
+/** A lash's ink stroke at a blink as a local polygon (corners in order round the butt-capped stroke). */
+function lashInkPolygon(spot: EyeSpot, lash: EyeLash, blink: number): LocalPoint[] {
+  const [a, b, c, d] = lashStrokeCorners(lash, EYELASH_INK, blink);
+  return [a, c, d, b].map((p) => ({ x: spot.x + p.x, y: spot.y + p.y }));
+}
+
+/** Ends of a Grumpy brow's centre line in local units, back end first. */
+function browEnds(spot: EyeSpot): [LocalPoint, LocalPoint] {
+  const brow = grumpyBrow(spot);
+  return [
+    { x: spot.x + brow.x1, y: spot.y + brow.y1 },
+    { x: spot.x + brow.x2, y: spot.y + brow.y2 },
+  ];
+}
+
+/** Every Grumpy lash ink stroke of both eyes at every rig blink, as local polygons. */
+const GRUMPY_LASH_INKS: readonly LocalPoint[][] = [NEAR_EYE, FAR_EYE].flatMap((spot) =>
+  eyelashMarks('grumpy', spot.r).flatMap((lash) => RIG_BLINKS.map((blink) => lashInkPolygon(spot, lash, blink))),
+);
+
+/** Least distance from the brow's centre line to any Grumpy lash ink, both eyes, every rig blink. */
+function browCentreToLashInk(spot: EyeSpot): number {
+  const [a, b] = browEnds(spot);
+  return Math.min(...GRUMPY_LASH_INKS.map((poly) => segmentPolygonGap(a, b, poly)));
+}
+
+const HEAD_EDGE_STEPS = 8000;
+const HEAD_EDGE: readonly LocalPoint[] = Array.from({ length: HEAD_EDGE_STEPS }, (_, k) => {
+  const a = (k / HEAD_EDGE_STEPS) * TAU;
+  return { x: HEAD_ELLIPSE.cx + HEAD_ELLIPSE.rx * Math.cos(a), y: HEAD_ELLIPSE.cy + HEAD_ELLIPSE.ry * Math.sin(a) };
+});
+
+/**
+ * How deep a local point sits inside the head ellipse: its distance to the head edge, negative
+ * outside. Depth is concave inside a convex shape, so a stroke is as deep as its shallowest end.
+ */
+function headDepth(p: LocalPoint): number {
+  const toEdge = Math.min(...HEAD_EDGE.map((e) => Math.hypot(e.x - p.x, e.y - p.y)));
+  return isInEllipse(p, HEAD_ELLIPSE) ? toEdge : -toEdge;
+}
+
+/** Degrees the brow turns down toward the snout (y down, +x is the snout). */
+function browDownAngle(brow: EyeLash): number {
+  return (Math.atan2(brow.y2 - brow.y1, brow.x2 - brow.x1) * 180) / Math.PI;
+}
+
+describe('Grumpy brows (#87, guide 6l)', () => {
+  const eyes = [NEAR_EYE, FAR_EYE] as const;
+
+  it('are short strokes over the snout-side half of each bead, at the guide ends', () => {
+    const ends = [...browEnds(NEAR_EYE), ...browEnds(FAR_EYE)].flatMap((p) => [p.x, p.y]);
+    const guide = [28, -13.9, 32.5, -12.45, 42.4, -10.8, 46.8, -9.35];
+    ends.forEach((value, i) => expect(value).toBeCloseTo(guide[i], 9));
+    for (const spot of eyes) {
+      const brow = grumpyBrow(spot);
+      expect(brow.x1).toBeGreaterThanOrEqual(0);
+      expect(brow.x2).toBeLessThanOrEqual(spot.r);
+      expect(brow.y1).toBeLessThan(0);
+      expect(brow.y2).toBeLessThan(0);
+    }
+    expect(() => grumpyBrow({ x: 0, y: 0, r: 6.4 })).toThrow(RangeError);
+  });
+
+  it('turn 12 to 20 degrees down toward the snout and run 4.6 or more on each eye', () => {
+    const near = grumpyBrow(NEAR_EYE);
+    const far = grumpyBrow(FAR_EYE);
+    expect(browDownAngle(near)).toBeCloseTo(17.86, 2);
+    expect(browDownAngle(far)).toBeCloseTo(18.24, 2);
+    expect(Math.hypot(near.x2 - near.x1, near.y2 - near.y1)).toBeCloseTo(4.73, 2);
+    expect(Math.hypot(far.x2 - far.x1, far.y2 - far.y1)).toBeCloseTo(4.63, 2);
+    for (const brow of [near, far]) {
+      expect(browDownAngle(brow)).toBeGreaterThanOrEqual(12);
+      expect(browDownAngle(brow)).toBeLessThanOrEqual(20);
+      expect(Math.hypot(brow.x2 - brow.x1, brow.y2 - brow.y1)).toBeGreaterThanOrEqual(4.6);
+    }
+  });
+
+  it('paint lash ink 2.0 over lash white 3.6 with round caps, after the bead, outside the blink squash', () => {
+    for (const spot of eyes) {
+      for (const blink of RIG_BLINKS) {
+        const { beadAt, lineCapAfter, unbalanced } = recordEyeStrokes('grumpy', spot, blink, true);
+        const brow = browStrokes('grumpy', spot, blink);
+        expect(brow.map((s) => [s.lineWidth, s.strokeStyle, s.lineCap, s.scaleY])).toEqual([
+          [EYELASH_UNDER, WHITE, 'round', 1],
+          [EYELASH_INK, INK, 'round', 1],
+        ]);
+        expect(brow[0].order).toBeGreaterThan(beadAt);
+        expect(lineCapAfter).toBe('round');
+        expect(unbalanced).toBe(0);
+      }
+    }
+  });
+
+  it('keep the brow ink 1.0 or more from every lash ink, and the white off it, at every rig blink', () => {
+    expect(browCentreToLashInk(NEAR_EYE) - EYELASH_INK / 2).toBeCloseTo(1.26, 2);
+    expect(browCentreToLashInk(FAR_EYE) - EYELASH_INK / 2).toBeCloseTo(1.13, 2);
+    for (const spot of eyes) {
+      expect(browCentreToLashInk(spot) - EYELASH_INK / 2).toBeGreaterThanOrEqual(1);
+      expect(browCentreToLashInk(spot) - EYELASH_UNDER / 2).toBeGreaterThan(0);
+    }
+  });
+
+  it('keep the white off the lid ink of the open eye', () => {
+    for (const spot of eyes) {
+      const lid = eyeMarks('grumpy', spot.r).lid!;
+      const [a, b] = browEnds(spot);
+      const lidA = { x: spot.x + lid.x1, y: spot.y + lid.y1 };
+      const lidB = { x: spot.x + lid.x2, y: spot.y + lid.y2 };
+      expect(segmentGap(a, b, lidA, lidB) - EYELASH_UNDER / 2 - EYE_LID_INK / 2).toBeGreaterThan(0.3);
+    }
+  });
+
+  it('stay inside the head inset LW / 2, below y -18.5 (1 under the Head slot), in the face crop and clear of the mouth zone', () => {
+    for (const spot of eyes) {
+      const box = grumpyBrowInkBounds(spot);
+      for (const end of browEnds(spot)) expect(headDepth(end)).toBeGreaterThanOrEqual(EYELASH_UNDER / 2 + LW / 2);
+      expect(box.minY).toBeGreaterThanOrEqual(-18.5);
+      expect(box.minY).toBeGreaterThanOrEqual(HEAD_FOOTPRINT.maxY + 1);
+      expectInside(box, AXO_PREVIEW_CROPS.face);
+      expect(box.maxY).toBeLessThan(CODE_MOUTH_ZONE.minY);
+    }
+    const near = grumpyBrowInkBounds(NEAR_EYE);
+    const far = grumpyBrowInkBounds(FAR_EYE);
+    const sides = [near.minX, near.minY, near.maxX, near.maxY, far.minX, far.minY, far.maxX, far.maxY];
+    const guide = [26.2, -15.7, 34.3, -10.65, 40.6, -12.6, 48.6, -7.55];
+    sides.forEach((value, i) => expect(value).toBeCloseTo(guide[i], 9));
+    expect(headDepth(browEnds(FAR_EYE)[1])).toBeCloseTo(3.63, 2);
+  });
+
+  it('sit inside the rig eyes part box', () => {
+    for (const look of [DEFAULT_ART_LOOK, { ...DEFAULT_ART_LOOK, eyes: 'grumpy' as const, sex: 'girl' as const }]) {
+      const eyesBox = rigParts({ look, palette: LEUCISTIC, outfit: NO_OUTFIT }).find((part) => part.id === 'eyes')!.box;
+      for (const spot of eyes) expectInside(grumpyBrowInkBounds(spot), eyesBox);
+    }
+  });
+});
+
+describe('cheek heart (#87, Girl cue, guide 6u)', () => {
+  const points = cheekHeartPoints();
+  const box = boundsOfPoints(
+    points.map((p): [number, number] => [p.x, p.y]),
+    0,
+  );
+  const zone = CHEEK_HEART_ZONE;
+  const zoneBox = boundsOfPoints([[zone.x, zone.y]], zone.r);
+
+  it('is 7 across, about 6.33 tall, centred at (18.2, 9.6), its curve box centre at about (18.2, 10.16)', () => {
+    expect(CHEEK_HEART_CENTRE).toEqual({ x: 18.2, y: 9.6 });
+    expect(box.maxX - box.minX).toBeCloseTo(7, 9);
+    expect(box.maxX - box.minX).toBeGreaterThanOrEqual(7 - 1e-9);
+    expect(box.maxY - box.minY).toBeCloseTo(6.33, 2);
+    expect((box.minX + box.maxX) / 2).toBeCloseTo(18.2, 9);
+    expect((box.minY + box.maxY) / 2).toBeCloseTo(10.16, 2);
+    expect([CHEEK_HEART_INK, CHEEK_HEART_UNDER, CHEEK_HEART_LAYER]).toEqual([1.6, 3.2, 10.2]);
+  });
+
+  it('holds all of its paint, white under-stroke included, in its zone: centre (18.2, 9.6), radius about 5.32 (the bottom tip, 3.72 out, plus the white 1.6)', () => {
+    expect(zone.x).toBe(18.2);
+    expect(zone.y).toBe(9.6);
+    expect(zone.r).toBeCloseTo(5.32, 2);
+    for (const p of points) {
+      expect(Math.hypot(p.x - zone.x, p.y - zone.y) + CHEEK_HEART_UNDER / 2).toBeLessThanOrEqual(zone.r + 1e-9);
+    }
+  });
+
+  it('sits below and behind the near eye, 13.0 or more from its centre', () => {
+    expect(box.maxX).toBeLessThan(NEAR_EYE.x);
+    expect(box.minY).toBeGreaterThan(NEAR_EYE.y);
+    const gap = Math.hypot(zone.x - NEAR_EYE.x, zone.y - NEAR_EYE.y) - zone.r;
+    expect(gap).toBeGreaterThanOrEqual(13);
+    expect(gap).toBeCloseTo(13.1, 2);
+  });
+
+  it('keeps its zone off both eye zones, both lash reach circles and every lash of every variant at every blink', () => {
+    for (const circle of [CODE_NEAR_EYE_ZONE, CODE_FAR_EYE_ZONE, NEAR_LASH_REACH, FAR_LASH_REACH]) {
+      expect(Math.hypot(zone.x - circle.x, zone.y - circle.y)).toBeGreaterThan(zone.r + circle.r);
+    }
+    for (const variant of EYE_VARIANTS) {
+      for (const spot of [NEAR_EYE, FAR_EYE]) {
+        for (const lash of eyelashMarks(variant, spot.r)) {
+          for (const blink of [...LASH_BLINKS, ...RIG_BLINKS]) {
+            const [a, b, c, d] = lashStrokeCorners(lash, EYELASH_UNDER, blink);
+            const poly = [a, c, d, b].map((p) => ({ x: spot.x + p.x, y: spot.y + p.y }));
+            expect(isInConvex(poly, zone)).toBe(false);
+            for (let i = 0; i < 4; i++) {
+              expect(pointSegmentDistance(zone, poly[i], poly[(i + 1) % 4])).toBeGreaterThan(zone.r);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('keeps its zone off the gill-root zone, the mouth zone, the Head slot and the glasses band', () => {
+    expect(boxCircleGap(CODE_GILL_ROOT_ZONE, zone)).toBeGreaterThan(0);
+    expect(boxCircleGap(CODE_MOUTH_ZONE, zone)).toBeGreaterThan(0);
+    expect(boxCircleGap(HEAD_FOOTPRINT, zone)).toBeGreaterThan(0);
+    for (const lens of GLASSES_LENSES) {
+      expect(Math.hypot(zone.x - lens.x, zone.y - lens.y)).toBeGreaterThan(zone.r + lens.r + GLASSES_BAND / 2);
+    }
+    expect(zoneBox.minX - CODE_GILL_ROOT_ZONE.maxX).toBeCloseTo(0.9, 1);
+    expect(CODE_MOUTH_ZONE.minX - zoneBox.maxX).toBeCloseTo(0.9, 1);
+  });
+
+  it('stays inside the head inset LW / 2 and the face, gills and whole crops', () => {
+    expect(headDepth(zone)).toBeGreaterThanOrEqual(zone.r + LW / 2);
+    for (const crop of [AXO_PREVIEW_CROPS.face, AXO_PREVIEW_CROPS.gills, AXO_PREVIEW_CROPS.whole]) {
+      expectInside(zoneBox, crop);
+    }
+  });
+
+  it('paints the white under-stroke, then the fill, then the ink outline, on one closed path', () => {
+    const calls: string[] = [];
+    class StubPath2D {
+      moveTo(): void {
+        calls.push('moveTo');
+      }
+      lineTo(): void {}
+      closePath(): void {
+        calls.push('closePath');
+      }
+    }
+    vi.stubGlobal('Path2D', StubPath2D);
+    const state = { lineWidth: 0, strokeStyle: '', fillStyle: '' };
+    const ctx = {
+      fill: () => calls.push(`fill:${state.fillStyle}`),
+      stroke: () => calls.push(`stroke:${state.strokeStyle}:${state.lineWidth}`),
+      set lineWidth(v: number) {
+        state.lineWidth = v;
+      },
+      set strokeStyle(v: string) {
+        state.strokeStyle = v;
+      },
+      set fillStyle(v: string) {
+        state.fillStyle = v;
+      },
+    } as unknown as CanvasRenderingContext2D;
+    try {
+      paintCheekHeart(ctx);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(calls).toEqual([
+      'moveTo',
+      'closePath',
+      `stroke:${WHITE}:${CHEEK_HEART_UNDER}`,
+      `fill:${CHEEK_HEART}`,
+      `stroke:${INK}:${CHEEK_HEART_INK}`,
+    ]);
+  });
+});
+
 describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)', () => {
   /** Ids of every look failing `holds`; expected empty. */
   function failingLooks(holds: (look: AxolotlArtLook) => boolean): string[] {
@@ -1519,7 +1928,7 @@ describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)',
     expect(failingLooks(fits)).toEqual([]);
   }, ENUMERATION_TIMEOUT_MS);
 
-  it('keeps eye marks inside the eye zones, and lashes inside the lash reach circle and the head, clear of the gill stems and Head slot', () => {
+  it('keeps eye marks inside the eye zones, lashes inside the lash reach circle and the head, clear of the gill stems and Head slot, and a Grumpy brow (no eye mark) to its own bound in the face crop', () => {
     const zones = [
       [NEAR_EYE, NEAR_EYE_ZONE],
       [FAR_EYE, FAR_EYE_ZONE],
@@ -1532,7 +1941,8 @@ describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)',
           const glintsIn = marks.glints.every((g) => Math.hypot(g.x, g.y) + g.r <= marks.beadR + 1e-9);
           const lashes = look.sex === 'girl' ? eyelashMarks(look.eyes, spot.r) : [];
           const lashesIn = lashes.every((lash) => lashPaintHolds(lash, spot));
-          return marks.beadR <= zone.r && glintsIn && lashesIn;
+          const browIn = look.eyes !== 'grumpy' || isInside(grumpyBrowInkBounds(spot), AXO_PREVIEW_CROPS.face);
+          return marks.beadR <= zone.r && glintsIn && lashesIn && browIn;
         }),
     );
     expect(failingLooks(eyesHold)).toEqual([]);
@@ -1624,7 +2034,7 @@ describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)',
             const anchor = { x: tp.x, y: tp.cy - tp.hc };
             const onCoreTop =
               Math.abs(anchor.x - painted.x) < 1e-9 && Math.abs(anchor.y - (painted.cy - painted.hc)) < 1e-9;
-            const footprint = { minX: anchor.x - 9, minY: anchor.y - 9, maxX: anchor.x + 9, maxY: anchor.y + 9 };
+            const footprint = boundsOfPoints([[anchor.x, anchor.y]], TAIL_SLOT_REACH);
             return onCoreTop && isInside(footprint, inner);
           }),
         );
@@ -1646,13 +2056,17 @@ describe('AXO_TEX and preview crops', () => {
     }
   });
 
-  it('crops the face round both eye zones, every mouth and the snout', () => {
+  it('crops the face round both eye zones, every mouth, the snout, the cheek heart and the Grumpy brows', () => {
     const face = AXO_PREVIEW_CROPS.face;
     for (const zone of [NEAR_EYE_ZONE, FAR_EYE_ZONE]) {
       expectInside({ minX: zone.x - zone.r, minY: zone.y - zone.r, maxX: zone.x + zone.r, maxY: zone.y + zone.r }, face);
     }
     for (const variant of MOUTH_VARIANTS) expectInside(mouthInkBounds(variant), face);
     expect(face.maxX).toBeGreaterThanOrEqual(HEAD_ELLIPSE.cx + HEAD_ELLIPSE.rx + 3.5);
+    const heart = CHEEK_HEART_ZONE;
+    expectInside(boundsOfPoints([[heart.x, heart.y]], heart.r), face);
+    for (const spot of [NEAR_EYE, FAR_EYE]) expectInside(grumpyBrowInkBounds(spot), face);
+    expect(face).toEqual({ minX: 12, minY: -20, maxX: 58, maxY: 24 });
   });
 
   it('crops the gills round every style and Age at every flutter phase', () => {
@@ -1695,11 +2109,8 @@ const FAR_LASH_REACH_ZONE = { x: 42, y: -7, r: 9.3 };
 /** Guide 6i mouth zone. */
 const MOUTH_ZONE_BOX: Bounds = { minX: 24.4, minY: 2.6, maxX: 52.4, maxY: 21.3 };
 
-/**
- * The guide rounds the Back item's furthest forward corner to x -6.8; built exactly
- * it is -6.7955 (a Regular Baby Girl), 0.0045 past the line.
- */
-const BACK_FRONT_ROUNDING = 0.005;
+/** The Back box's forward corner is built on the front line (#88): it may pass it by floating-point rounding only. */
+const BACK_FRONT_ROUNDING = 1e-9;
 
 /** Every Boy or girl, Tail, Body, Age and size: the fields the slot geometry reads (162 looks). */
 function everyBodyLook(): AxolotlArtLook[] {
@@ -1757,8 +2168,8 @@ describe('Wearable slots: layers and zones (guide 6a, 6i)', () => {
     expect(WEARABLE_SLOTS).toEqual(order);
   });
 
-  it('has the guide layer values, back to front: Shirt, Tail, Neck, Back, Head, Face, then the eyes', () => {
-    expect(WEARABLE_LAYERS).toEqual({ shirt: 8.2, tail: 8.5, neck: 9.5, back: 9.7, head: 10.5, face: 11.5 });
+  it('has the guide layer values, back to front: Tail, Shirt, Neck, Back, Head, Face, then the eyes', () => {
+    expect(WEARABLE_LAYERS).toEqual({ shirt: 9.3, tail: 9.2, neck: 9.5, back: 9.7, head: 10.5, face: 11.5 });
     expect(LEG_WEARABLE_LAYERS).toEqual({ far: 2.5, near: 3.5 });
     expect([0, 1, 2, 3].map(legSide)).toEqual(['far', 'far', 'near', 'near']);
     expect([0, 1, 2, 3].map(legWearableLayer)).toEqual([2.5, 2.5, 3.5, 3.5]);
@@ -1769,6 +2180,9 @@ describe('Wearable slots: layers and zones (guide 6a, 6i)', () => {
     expect(WEARABLE_LAYERS.back).toBeGreaterThan(WEARABLE_LAYERS.neck);
     expect(WEARABLE_LAYERS.neck).toBeGreaterThan(WEARABLE_LAYERS.shirt);
     expect(WEARABLE_LAYERS.back).toBeGreaterThan(WEARABLE_LAYERS.tail);
+    // The Tail and Shirt items are above the near gills (layer 9), so the gills never hide them.
+    expect(WEARABLE_LAYERS.shirt).toBeGreaterThan(WEARABLE_LAYERS.tail);
+    expect(WEARABLE_LAYERS.tail).toBeGreaterThan(9);
   });
 
   it('paints Socks and Feet behind the silhouette, so they can cover nothing on the body, head or gills', () => {
@@ -1790,10 +2204,10 @@ describe('Wearable slots: layers and zones (guide 6a, 6i)', () => {
     }
     expect(CODE_GILL_ROOT_ZONE).toEqual(GILL_ROOT_ZONE);
     expect(CODE_MOUTH_ZONE).toEqual(MOUTH_ZONE_BOX);
-    expect(SHIRT_BACK_FRONT_LINE_X).toBe(-6.8);
-    expect(TORSO_EDGE_BAND).toBe(3);
-    // 1.8 units from the front line to the gill-root zone.
-    expect(GILL_ROOT_ZONE.minX - SHIRT_BACK_FRONT_LINE_X).toBeCloseTo(1.8, 9);
+    expect(SHIRT_BACK_FRONT_LINE_X).toBe(-5.5);
+    expect(TORSO_EDGE_BAND).toBe(1);
+    // 0.5 units from the front line to the gill-root zone (#88: 1.8 before).
+    expect(GILL_ROOT_ZONE.minX - SHIRT_BACK_FRONT_LINE_X).toBeCloseTo(0.5, 9);
   });
 
   it('frames points as the leg and Back frames need: u along, v across', () => {
@@ -1811,8 +2225,8 @@ describe('Head, Neck and Face slots (guide 6i): on the head, they never move', (
     expect(FACE_SLOT_ANCHOR).toEqual({ x: 35, y: -6.5 });
   });
 
-  it('keeps the Head footprint on the head top: x 16 to 36, no lower than y -19.5, no higher than y -46', () => {
-    expect(HEAD_FOOTPRINT).toEqual({ minX: 16, minY: -46, maxX: 36, maxY: -19.5 });
+  it('keeps the Head footprint on the head top (#88): x 16 to 46, no lower than y -19.5, no higher than y -44', () => {
+    expect(HEAD_FOOTPRINT).toEqual({ minX: 16, minY: -44, maxX: 46, maxY: -19.5 });
     expect(HEAD_SLOT_ANCHOR.x).toBeGreaterThanOrEqual(HEAD_FOOTPRINT.minX);
     expect(HEAD_SLOT_ANCHOR.x).toBeLessThanOrEqual(HEAD_FOOTPRINT.maxX);
     expect(clearOfEyesAndGills(HEAD_FOOTPRINT)).toBe(true);
@@ -1823,30 +2237,25 @@ describe('Head, Neck and Face slots (guide 6i): on the head, they never move', (
     expect(HEAD_FOOTPRINT.minX).toBeGreaterThan(15.5);
   });
 
-  it('keeps the Neck footprint at the throat, x 13 to 22, y 11 to 21, clear of the eyes, gills and mouth zone', () => {
-    expect(NECK_FOOTPRINT).toEqual({ minX: 13, minY: 11, maxX: 22, maxY: 21 });
+  it('keeps the Neck footprint under the chin (#88), x 2 to 42, y 13.1 to 22.75: clear of the eyes, lashes and gill roots, over the mouth-zone box', () => {
+    expect(NECK_FOOTPRINT).toEqual({ minX: 2, minY: 13.1, maxX: 42, maxY: 22.75 });
     expect(clearOfEyesAndGills(NECK_FOOTPRINT)).toBe(true);
     expect(clearOfLashReach(NECK_FOOTPRINT)).toBe(true);
-    expect(boxesOverlap(NECK_FOOTPRINT, MOUTH_ZONE_BOX)).toBe(false);
+    // Below the gill-root zone, so the Neck item may reach behind x 12.
+    expect(NECK_FOOTPRINT.minY).toBeGreaterThan(GILL_ROOT_ZONE.maxY);
+    // The mouth zone is not keep-clear for a Wearable (#88): the mouth paints over the Neck item.
+    expect(boxesOverlap(NECK_FOOTPRINT, MOUTH_ZONE_BOX)).toBe(true);
+    expect(WEARABLE_LAYERS.neck).toBeLessThan(11);
+    // The Neck item's paint keeps off the cheek heart zone (wearableArt.test.ts); the box only holds it.
+    expect(boxCircleGap(NECK_FOOTPRINT, CHEEK_HEART_ZONE)).toBeLessThan(0);
   });
 
-  it('keeps the Neck footprint inside the silhouette (head or torso, outline included) on every look', () => {
-    const corners = (b: Bounds): LocalPoint[] => [
-      { x: b.minX, y: b.minY },
-      { x: b.maxX, y: b.minY },
-      { x: b.maxX, y: b.maxY },
-      { x: b.minX, y: b.maxY },
-    ];
-    const grow = (e: BodyEllipse): BodyEllipse => ({ ...e, rx: e.rx + LW, ry: e.ry + LW });
-    expect(
-      failingBodyLooks((look) => {
-        const torso = grow(axolotlBodyGeometry(look).torso);
-        const head = grow(HEAD_ELLIPSE);
-        return corners(NECK_FOOTPRINT).every((p) => isInEllipse(p, head) || isInEllipse(p, torso));
-      }),
-    ).toEqual([]);
-    // Nothing hangs below the silhouette: the Neck bottom is no lower than the head's lowest outline at its anchor.
-    expect(NECK_FOOTPRINT.maxY).toBeLessThanOrEqual(HEAD_ELLIPSE.cy + HEAD_ELLIPSE.ry + LW);
+  it('keeps the Neck footprint no lower than LW / 2 under the head\'s lowest point, so nothing hangs below the silhouette', () => {
+    // The outline ink is LW outside the head ellipse, so LW / 2 inside its outer edge is LW / 2 below the head's lowest point.
+    expect(NECK_FOOTPRINT.maxY).toBeCloseTo(HEAD_ELLIPSE.cy + HEAD_ELLIPSE.ry + LW / 2, 9);
+    // The Neck item's paint is held inside the silhouette on every look in wearableArt.test.ts.
+    expect(NECK_FOOTPRINT.minX).toBeGreaterThan(HEAD_ELLIPSE.cx - HEAD_ELLIPSE.rx);
+    expect(NECK_FOOTPRINT.maxX).toBeLessThan(HEAD_ELLIPSE.cx + HEAD_ELLIPSE.rx);
   });
 
   it('draws the glasses as one merged frame whose band keeps off both eye zones', () => {
@@ -1894,6 +2303,14 @@ describe('Head, Neck and Face slots (guide 6i): on the head, they never move', (
     expect(EYES_LAYER).toBeGreaterThan(WEARABLE_LAYERS.face);
   });
 
+  it('keeps the glasses band 1.40 clear of the cheek heart zone', () => {
+    const gap = Math.min(
+      ...glassesOutlinePoints(720).map((p) => Math.hypot(p.x - CHEEK_HEART_ZONE.x, p.y - CHEEK_HEART_ZONE.y)),
+    ) - GLASSES_BAND / 2 - CHEEK_HEART_ZONE.r;
+    expect(gap).toBeCloseTo(1.4, 2);
+    expect(gap).toBeGreaterThan(0);
+  });
+
   it('keeps the glasses about 1.0 from the near mouth tick and 0.7 from the Big grin back tick', () => {
     const gap = (tick: LocalPoint): number =>
       Math.min(...glassesOutlinePoints(720).map((p) => Math.hypot(p.x - tick.x, p.y - tick.y))) -
@@ -1907,20 +2324,21 @@ describe('Head, Neck and Face slots (guide 6i): on the head, they never move', (
 });
 
 describe('Shirt slot (guide 6i)', () => {
-  it('has the torso centre as its anchor, and the front edge at x -7.5 with a 3-unit neckline', () => {
-    expect(SHIRT_FRONT_X).toBe(-7.5);
-    expect(SHIRT_NECKLINE_DEPTH).toBe(3);
+  it('has the torso centre as its anchor, and the front edge on the front line, x -5.5, with a 1.5-unit neckline (#88)', () => {
+    expect(SHIRT_FRONT_X).toBe(-5.5);
+    expect(SHIRT_FRONT_X).toBe(SHIRT_BACK_FRONT_LINE_X);
+    expect(SHIRT_NECKLINE_DEPTH).toBe(1.5);
     for (const look of EVERY_BODY_LOOK) {
       const torso = axolotlBodyGeometry(look).torso;
       const shirt = shirtGeometry(look);
       expect(shirt.anchor).toEqual({ x: torso.cx, y: 4 });
-      expect(shirt.neckline.x).toBe(-7.5);
-      expect(shirt.neckline.apexX).toBeCloseTo(-10.5, 9);
+      expect(shirt.neckline.x).toBe(-5.5);
+      expect(shirt.neckline.apexX).toBeCloseTo(-7, 9);
       expect(shirt.neckline.yTop).toBeLessThan(shirt.neckline.yBottom);
     }
   });
 
-  it('stays inside the torso ellipse inset 3 all round, so the rim light and ink edge partner are never covered', () => {
+  it('stays inside the torso ellipse inset 1 all round (#88: 3 before), so body colour shows between it and the outline', () => {
     expect(
       failingBodyLooks((look) => {
         const torso = axolotlBodyGeometry(look).torso;
@@ -1943,8 +2361,8 @@ describe('Shirt slot (guide 6i)', () => {
     ).toEqual([]);
   });
 
-  it('leaves at least 2 units of body between the Shirt and the torso edge, all round', () => {
-    // Radii rx - 3 and ry - 3 put the Shirt 3 units in along both axes; round the diagonals it is never nearer than 2.
+  it('leaves at least 0.9 units of body between the Shirt and the torso edge, all round', () => {
+    // Radii rx - 1 and ry - 1 put the Shirt 1 unit in along both axes; round the diagonals it is a little nearer.
     const worst = Math.min(
       ...EVERY_BODY_LOOK.map((look) => {
         const torso = axolotlBodyGeometry(look).torso;
@@ -1959,10 +2377,11 @@ describe('Shirt slot (guide 6i)', () => {
         return nearest;
       }),
     );
-    expect(worst).toBeGreaterThanOrEqual(2);
+    expect(worst).toBeCloseTo(0.93, 2);
+    expect(worst).toBeGreaterThanOrEqual(0.9);
   });
 
-  it('is cut at the tail root at the rear and at x -7.5 at the front, off the head and the gill-root zone', () => {
+  it('is cut at the tail root at the rear and at x -5.5 at the front, off the head and the gill-root zone', () => {
     expect(
       failingBodyLooks((look) => {
         const geo = axolotlBodyGeometry(look);
@@ -1970,10 +2389,10 @@ describe('Shirt slot (guide 6i)', () => {
         const headStart = HEAD_ELLIPSE.cx - HEAD_ELLIPSE.rx;
         return (
           bounds.minX >= geo.tail.rootX - 1e-9 &&
-          bounds.maxX === -7.5 &&
-          bounds.maxX < SHIRT_BACK_FRONT_LINE_X &&
-          GILL_ROOT_ZONE.minX - bounds.maxX >= 2.5 &&
-          headStart - bounds.maxX >= 6.5 &&
+          bounds.maxX === -5.5 &&
+          bounds.maxX <= SHIRT_BACK_FRONT_LINE_X &&
+          GILL_ROOT_ZONE.minX - bounds.maxX >= 0.5 &&
+          headStart - bounds.maxX >= 4.5 &&
           clearOfEyesAndGills(bounds) &&
           clearOfLashReach(bounds)
         );
@@ -2016,16 +2435,15 @@ describe('Shirt slot (guide 6i)', () => {
     ).toEqual([]);
   });
 
-  it('measures x -38 to -7.5 and y -20 to 28 over every look', () => {
+  it('measures x -38 to -5.5 and y -22 to 30 over every look', () => {
     const boxes = EVERY_BODY_LOOK.map((look) => shirtGeometry(look).bounds);
-    expectBoxNear(unionBounds(boxes), { minX: -38, minY: -20, maxX: -7.5, maxY: 28 }, 0.05);
+    expectBoxNear(unionBounds(boxes), { minX: -38, minY: -22, maxX: -5.5, maxY: 30 }, 0.05);
   });
 });
 
 describe('Back slot (guide 6i)', () => {
   it('rests on the torso top edge at x -17', () => {
     expect(BACK_ANCHOR_X).toBe(-17);
-    expect(BACK_FRAME_BOX).toEqual({ minU: -9, maxU: 9, minV: -8, maxV: 5 });
     expect(
       failingBodyLooks((look) => {
         const torso = axolotlBodyGeometry(look).torso;
@@ -2057,34 +2475,62 @@ describe('Back slot (guide 6i)', () => {
     expect(Math.max(...frames.map((f) => f.angle))).toBeCloseTo(-0.07, 3);
   });
 
-  it('has its four corners at x -28.3 to -6.8 and y -31.6 to -2.0 over every look', () => {
-    const boxes = EVERY_BODY_LOOK.map((look) => backFootprint(look).bounds);
-    expectBoxNear(unionBounds(boxes), { minX: -28.3, minY: -31.6, maxX: -6.8, maxY: -2 }, 0.06);
+  it('has a look-dependent box (#88): y\' -14 to 3, 22 long or half the torso length (2 rx - 30), forward corner on the front line', () => {
+    expect([BACK_BOX_MIN_V, BACK_BOX_MAX_V, BACK_BOX_MIN_LENGTH]).toEqual([-14, 3, 22]);
+    expect(
+      failingBodyLooks((look) => {
+        const torso = axolotlBodyGeometry(look).torso;
+        const { frame, box, corners } = backFootprint(look);
+        const forward = framePoint(frame, box.maxU, box.maxV);
+        return (
+          box.minV === BACK_BOX_MIN_V &&
+          box.maxV === BACK_BOX_MAX_V &&
+          Math.abs(box.maxU - box.minU - Math.max(22, (2 * torso.rx - 30) / 2)) < 1e-9 &&
+          Math.abs(forward.x - SHIRT_BACK_FRONT_LINE_X) < 1e-9 &&
+          corners.every((c) => c.x <= forward.x + 1e-9) &&
+          JSON.stringify(backFrameBox(torso)) === JSON.stringify(box)
+        );
+      }),
+    ).toEqual([]);
   });
 
-  it('keeps its forward corner at x -6.8 or less, clear of the gill-root zone, the head, the eyes and the lashes', () => {
+  it('measures maxU 11.10 to 11.32 and minU -14.71 to -10.75: 22 long, 24 on a Young Chubby or Grown-up Slim or Regular, 26 on a Grown-up Chubby', () => {
+    const boxes = EVERY_BODY_LOOK.map((look) => backFootprint(look).box);
+    expect(Math.min(...boxes.map((b) => b.maxU))).toBeCloseTo(11.1, 2);
+    expect(Math.max(...boxes.map((b) => b.maxU))).toBeCloseTo(11.32, 2);
+    expect(Math.min(...boxes.map((b) => b.minU))).toBeCloseTo(-14.71, 2);
+    expect(Math.max(...boxes.map((b) => b.minU))).toBeCloseTo(-10.75, 2);
+    expect([...new Set(boxes.map((b) => Math.round(b.maxU - b.minU)))].sort()).toEqual([22, 24, 26]);
+  });
+
+  it('lays its body-side edge over the torso: both body-side corners inside the torso ellipse on every look', () => {
+    expect(
+      failingBodyLooks((look) => {
+        const torso = axolotlBodyGeometry(look).torso;
+        const { frame, box } = backFootprint(look);
+        return [box.minU, box.maxU].every((u) => isInEllipse(framePoint(frame, u, box.maxV), torso));
+      }),
+    ).toEqual([]);
+  });
+
+  it('has its four corners at x -32.8 to -5.5 and y -37.9 to -3.4 over every look', () => {
+    const boxes = EVERY_BODY_LOOK.map((look) => backFootprint(look).bounds);
+    expectBoxNear(unionBounds(boxes), { minX: -32.8, minY: -37.9, maxX: -5.5, maxY: -3.4 }, 0.06);
+  });
+
+  it('keeps its forward corner at x -5.5 or less, clear of the gill-root zone, the head, the eyes and the lashes', () => {
     expect(
       failingBodyLooks((look) => {
         const { bounds } = backFootprint(look);
         return (
           bounds.maxX <= SHIRT_BACK_FRONT_LINE_X + BACK_FRONT_ROUNDING &&
-          GILL_ROOT_ZONE.minX - bounds.maxX >= 1.8 - BACK_FRONT_ROUNDING &&
+          GILL_ROOT_ZONE.minX - bounds.maxX >= 0.5 - BACK_FRONT_ROUNDING &&
           bounds.maxX < HEAD_ELLIPSE.cx - HEAD_ELLIPSE.rx &&
           clearOfEyesAndGills(bounds) &&
           clearOfLashReach(bounds)
         );
       }),
     ).toEqual([]);
-  });
-
-  it('reaches x -6.8 (-6.7955 built exactly) on a Regular Baby Girl, the look where it reaches furthest', () => {
-    const reach = EVERY_BODY_LOOK.map((look) => ({ look, maxX: backFootprint(look).bounds.maxX })).sort(
-      (a, b) => b.maxX - a.maxX,
-    )[0];
-    expect(reach.maxX).toBeCloseTo(-6.8, 1);
-    expect(reach.look.age).toBe('baby');
-    expect(reach.look.sex).toBe('girl');
-    expect(reach.look.body).toBe('regular');
   });
 
   it('keeps every gill root and its stem ink clear, with no root inside its footprint', () => {
@@ -2132,8 +2578,8 @@ describe('Tail slot (guide 6i)', () => {
     ).toEqual([]);
   });
 
-  it('keeps its 9-unit footprint clear of the eyes, lashes, gills and the head, and in the frame', () => {
-    expect(TAIL_SLOT_REACH).toBe(9);
+  it('keeps its 17.5-unit footprint (#88: 9, then 12, before) clear of the eyes, lashes, gills and the head, and in the frame', () => {
+    expect(TAIL_SLOT_REACH).toBe(17.5);
     const inner = frameInner(FRAME_PAD);
     expect(
       failingBodyLooks((look) => {
@@ -2187,7 +2633,7 @@ describe('Socks and Feet slots (guide 6i, 6q)', () => {
     }
   });
 
-  it('has the guide pad, Shoe and Feet envelope in leg space (Young: l 14 or 15, t 8.5)', () => {
+  it('has the #88 pad, Shoe and Feet envelope in leg space (Young: l 14 or 15, t 8.5)', () => {
     const frames = legSlotFrames({ ...DEFAULT_ART_LOOK, age: 'young' }, 0);
     const far = frames[0];
     const near = frames[2];
@@ -2198,30 +2644,30 @@ describe('Socks and Feet slots (guide 6i, 6q)', () => {
       const t = 8.5;
       const pad = sockFootPad(frame);
       expect(pad.u0).toBeCloseTo(l - 2, 9);
-      expect(pad.u1).toBeCloseTo(l + t + 5.3, 9);
-      expect(pad.vHalf).toBe(10.2);
+      expect(pad.u1).toBeCloseTo(l + t + 6, 9);
+      expect(pad.vHalf).toBe(11.2);
       const shoe = shoeRect(frame);
       expect(shoe.u0).toBeCloseTo(l - 2, 9);
-      expect(shoe.u1).toBeCloseTo(l + t + 6.8, 9);
-      expect(shoe.vHalf).toBe(11.7);
+      expect(shoe.u1).toBeCloseTo(l + t + 7.6, 9);
+      expect(shoe.vHalf).toBe(13.2);
       const env = feetEnvelope(frame);
-      expect(env.u0).toBeCloseTo(l - 3, 9);
-      expect(env.u1).toBeCloseTo(l + t + 10, 9);
+      expect(env.u0).toBeCloseTo(l - 2, 9);
+      expect(env.u1).toBeCloseTo(l + t + 10.3, 9);
       expect(env.vHalf).toBe(FEET_ENVELOPE_HALF_WIDTH);
-      expect(env.vHalf).toBe(12);
+      expect(env.vHalf).toBe(13.5);
       expect(pad.radius).toBeLessThanOrEqual(8);
       expect(shoe.radius).toBeLessThanOrEqual(8);
       expect(env.radius).toBe(0);
     }
   });
 
-  it('narrows a Baby: pad +/-8.9, Shoe +/-10.8, toes 5.95, legs x0.7', () => {
+  it('narrows a Baby: pad +/-9.9, Shoe +/-12.2, toes 5.95, legs x0.7', () => {
     const baby = legSlotFrames({ ...DEFAULT_ART_LOOK, age: 'baby' }, 0);
     expect(baby.map((f) => f.length)).toEqual([14 * 0.7, 14 * 0.7, 15 * 0.7, 15 * 0.7]);
     expect(baby[0].toeLength).toBeCloseTo(5.95, 9);
-    expect(sockFootPad(baby[0]).vHalf).toBe(8.9);
-    expect(shoeRect(baby[0]).vHalf).toBe(10.8);
-    expect(feetEnvelope(baby[0]).vHalf).toBe(12);
+    expect(sockFootPad(baby[0]).vHalf).toBe(9.9);
+    expect(shoeRect(baby[0]).vHalf).toBe(12.2);
+    expect(feetEnvelope(baby[0]).vHalf).toBe(13.5);
   });
 
   it('keeps the pad and the Shoe inside the Feet envelope, and the Shoe over the pad at the sides and front', () => {
@@ -2261,7 +2707,7 @@ describe('Socks and Feet slots (guide 6i, 6q)', () => {
 
   it('keeps the Feet envelope off the eyes and lashes, and no more than 1 unit into the gill-root zone (behind the silhouette)', () => {
     // The envelope is a plain box, so its square corner can touch the zone's lower edge on a Baby Slim Boy's
-    // far-front leg (built: 0.79 deep). No Shoe reaches the corner (radius 8), and every leg layer is behind
+    // far-front leg (built: 0.72 deep; #88, 0.79 before). No Shoe reaches the corner (radius 8), and every leg layer is behind
     // the silhouette, so no root is covered.
     const depth = (b: Bounds): number =>
       Math.max(
@@ -2307,7 +2753,7 @@ describe('Socks and Feet slots (guide 6i, 6q)', () => {
     ).toEqual([]);
   });
 
-  it('measures the Feet envelope lowest at y 58.06 and x -61.4 to 45.8, in the frame with 4 or more units of padding', () => {
+  it('measures the Feet envelope lowest at y 58.87 (#88: 58.06 before) and x -62.6 to 47.2, in the frame with 4 or more units of padding', () => {
     const inner = frameInner(FRAME_PAD);
     const boxes: Bounds[] = [];
     for (const look of EVERY_BODY_LOOK) {
@@ -2323,10 +2769,10 @@ describe('Socks and Feet slots (guide 6i, 6q)', () => {
     const all = unionBounds(boxes);
     expectInside(all, inner);
     // Sampled swim phases, so a hair under the continuous lowest ink.
-    expect(all.maxY).toBeLessThanOrEqual(58.07);
-    expect(all.maxY).toBeGreaterThan(57.9);
-    expect(all.minX).toBeCloseTo(-61.4, 0);
-    expect(all.maxX).toBeCloseTo(45.8, 0);
+    expect(all.maxY).toBeLessThanOrEqual(58.88);
+    expect(all.maxY).toBeGreaterThan(58.7);
+    expect(all.minX).toBeCloseTo(-62.57, 1);
+    expect(all.maxX).toBeCloseTo(47.18, 1);
   });
 });
 
@@ -2388,10 +2834,14 @@ describe('every Wearable slot over every look and size', () => {
     expect(GLASSES_EXTENT.minX).toBeGreaterThan(GILL_ROOT_ZONE.maxX);
   });
 
-  it('measures Head to y -46, Back y -31.6, and the lowest ink 4 or more units inside the frame', () => {
+  it('measures Head to y -44 and x 46, Back y -37.9, and the lowest ink 4 or more units inside the frame', () => {
     const inner = frameInner(FRAME_PAD);
-    expect(HEAD_FOOTPRINT.minY).toBe(-46);
+    const backTop = Math.min(...EVERY_BODY_LOOK.map((look) => backFootprint(look).bounds.minY));
+    expect(backTop).toBeCloseTo(-37.86, 2);
+    expect(backTop).toBeGreaterThanOrEqual(inner.minY);
+    expect(HEAD_FOOTPRINT.minY).toBe(-44);
     expect(HEAD_FOOTPRINT.minY).toBeGreaterThanOrEqual(inner.minY);
-    expect(AXO_TEX.h - AXO_TEX.originY - 58.06).toBeCloseTo(4.94, 2);
+    expect(HEAD_FOOTPRINT.maxX).toBeLessThanOrEqual(inner.maxX);
+    expect(AXO_TEX.h - AXO_TEX.originY - 58.87).toBeCloseTo(4.13, 2);
   });
 });
