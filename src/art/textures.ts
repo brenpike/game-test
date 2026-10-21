@@ -49,6 +49,7 @@ import {
   paintLilyPad,
   paintReed,
   reedTextureSize,
+  type ChunkRow,
   type PadSpec,
   type ReedLook,
 } from './drawScenery';
@@ -127,6 +128,7 @@ const ICON_KINDS: readonly IconKind[] = [
   'girl',
   'pencil',
   'shirt',
+  'lock',
 ];
 
 export const bgKey = (i: number): string => `bg-${i}`;
@@ -376,6 +378,111 @@ export function bakeTextures(scene: Phaser.Scene, opts: BakeOptions): BakedTextu
   };
 
   return { info, bg, reeds, pads, worm, bug, sparkle, streak, bubbles, icons, stick, homeSpot, hiding };
+}
+
+// ---------------------------------------------------------------------------
+// Area scenery (tall areas, issue #73)
+// ---------------------------------------------------------------------------
+
+/**
+ * The baked scenery an area scene draws: background chunks by row then column
+ * (`bg[row][column]`, row 0 on top), the reeds and the lily pads. The canal's
+ * `BakedTextures` converts with {@link sceneryFromBaked}.
+ */
+export interface SceneryTextures {
+  /** Chunks, row by column. Each is 480 x 360 logical at bgScale, anchored top-left. */
+  readonly bg: readonly (readonly TexInfo[])[];
+  /** One per entry of the `reeds` option, same order. Anchor is the reed base. */
+  readonly reeds: readonly TexInfo[];
+  /** One per entry of the `pads` option, same order. Anchor is the pad centre. */
+  readonly pads: readonly TexInfo[];
+}
+
+export interface AreaSceneryOptions {
+  /** Prepended to every texture key, so two areas never share a key (for example `area2-`). */
+  readonly keyPrefix: string;
+  /** Texture pixels per logical unit for sprites. */
+  readonly bakeScale: number;
+  /** Scale for background chunks (min(bakeScale, 2) keeps them affordable). */
+  readonly bgScale: number;
+  /** Screens wide: chunks per row (PRD N2 area table). */
+  readonly screensWide: number;
+  /** Screens tall: rows (1 draws the one-row canal look). */
+  readonly screensTall: number;
+  /** Column indices that carry chinampa bank and willows. Top row only. */
+  readonly bankChunks: readonly number[];
+  /** Column index that carries the sun. Top row only. */
+  readonly sunChunk: number;
+  /** Injected randomness in [0, 1). */
+  readonly rand: () => number;
+  readonly reeds: readonly ReedLook[];
+  readonly pads: readonly PadSpec[];
+}
+
+export const areaBgKey = (prefix: string, row: number, column: number): string => `${prefix}bg-${row}-${column}`;
+/** Middle rows are one flat colour, so every middle chunk of an area shares this one texture. */
+export const areaDeepBgKey = (prefix: string): string => `${prefix}bg-deep`;
+export const areaReedKey = (prefix: string, i: number): string => `${prefix}reed-${i}`;
+export const areaPadKey = (prefix: string, i: number): string => `${prefix}pad-${i}`;
+
+/**
+ * Bake the scenery for an area of `screensWide` x `screensTall` screens (guide
+ * 7a, Area size). One row paints the canal look ('single'). With more rows the
+ * top row holds the sky, sun, clouds, bank, surface water and rays, the bottom
+ * row holds deep water and the bed, and every row between is flat deep water;
+ * bank and sun are on the top row only. The flat middle chunks all share one
+ * texture (key from {@link areaDeepBgKey}), so a tall area bakes fewer chunks
+ * than it shows. Random draws go row by row, then column by column.
+ */
+export function bakeAreaScenery(scene: Phaser.Scene, opts: AreaSceneryOptions): SceneryTextures {
+  const { keyPrefix, bakeScale, bgScale, rand, screensWide, screensTall } = opts;
+  const bankSet = new Set(opts.bankChunks);
+  const bgSize: TexSize = { w: BG_CHUNK.w, h: BG_CHUNK.h, originX: 0, originY: 0 };
+
+  let deep: TexInfo | undefined;
+  const bg: TexInfo[][] = [];
+  for (let r = 0; r < screensTall; r++) {
+    const row: ChunkRow = screensTall === 1 ? 'single' : r === 0 ? 'top' : r === screensTall - 1 ? 'bottom' : 'middle';
+    const cells: TexInfo[] = [];
+    for (let c = 0; c < screensWide; c++) {
+      if (row === 'middle') {
+        deep ??= bake(scene, areaDeepBgKey(keyPrefix), bgSize, bgScale, (ctx) =>
+          paintBackgroundChunk(ctx, { row, index: c, hasSun: false, hasBank: false, rand }),
+        );
+        cells.push(deep);
+        continue;
+      }
+      const onTop = row === 'single' || row === 'top';
+      const hasBank = onTop && bankSet.has(c);
+      cells.push(
+        bake(scene, areaBgKey(keyPrefix, r, c), bgSize, bgScale, (ctx) =>
+          paintBackgroundChunk(ctx, {
+            row,
+            index: c,
+            hasSun: onTop && c === opts.sunChunk,
+            hasBank,
+            bankCapLeft: hasBank && !bankSet.has(c - 1),
+            bankCapRight: hasBank && !bankSet.has(c + 1),
+            rand,
+          }),
+        ),
+      );
+    }
+    bg.push(cells);
+  }
+
+  const reeds = opts.reeds.map((look, i) =>
+    bake(scene, areaReedKey(keyPrefix, i), reedTextureSize(look), bakeScale, (ctx) => paintReed(ctx, look)),
+  );
+  const pads = opts.pads.map((spec, i) =>
+    bake(scene, areaPadKey(keyPrefix, i), padTextureSize(spec), bakeScale, (ctx) => paintLilyPad(ctx, spec)),
+  );
+  return { bg, reeds, pads };
+}
+
+/** The canal's baked scenery as {@link SceneryTextures}: one row of chunks, no re-bake. */
+export function sceneryFromBaked(baked: BakedTextures): SceneryTextures {
+  return { bg: [baked.bg], reeds: baked.reeds, pads: baked.pads };
 }
 
 /**

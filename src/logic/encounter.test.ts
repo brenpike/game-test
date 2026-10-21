@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createEncounter,
   createEncounterContext,
+  predatorSpecies,
   resetEncounter,
   stepEncounter,
   type EncounterContext,
@@ -10,8 +11,11 @@ import {
   type EncounterStepResult,
 } from './encounter';
 import { currentAt, reedDragAt } from './environment';
+import { TILAPIA_FACT } from './factCards';
 import { GAME_EVENTS, REGISTRY_KEYS } from './gameEvents';
+import type { HazardSpawn, HazardType } from './hazards';
 import { createLegs, isProtected, legSwimTuning, presentCount } from './legs';
+import { TILAPIA_SPECIES, type PredatorSpecies } from './predators';
 import { mulberry32 } from './rng';
 import { stepSwim, type SwimState } from './swimPhysics';
 import { inSafeArea } from './tilapia';
@@ -60,14 +64,14 @@ function typesOf(events: EncounterEvent[], keep: readonly EncounterEvent['type']
 function lungingAt(target: Point, legs: EncounterState['legs']): EncounterState {
   const state = createEncounter(zone);
   const tilapia = {
-    ...state.tilapias[0],
+    ...state.predators[0],
     pos: { x: target.x - 30, y: target.y },
     phase: 'lunge' as const,
     elapsed: 0,
     duration: TILAPIA.lungeDuration,
     aim: { x: 1, y: 0 },
   };
-  return { ...state, legs, tilapias: [tilapia] };
+  return { ...state, legs, predators: [tilapia] };
 }
 
 describe('createEncounter', () => {
@@ -75,16 +79,16 @@ describe('createEncounter', () => {
     const state = createEncounter(zone);
     expect(presentCount(state.legs)).toBe(LEGS.count);
     expect(isProtected(state.legs)).toBe(false);
-    expect(state.tilapias).toHaveLength(zone.tilapiaRoutes.length);
-    expect(state.tilapias[0].pos).toEqual(routeStart);
-    expect(state.tilapias[0].phase).toBe('patrol');
+    expect(state.predators).toHaveLength(zone.tilapiaRoutes.length);
+    expect(state.predators[0].pos).toEqual(routeStart);
+    expect(state.predators[0].phase).toBe('patrol');
     expect(state.tripOver).toBe(false);
   });
 
   it('makes one tilapia per route', () => {
     const second: TilapiaRoute = { id: 'second', waypoints: [{ x: 1500, y: 200 }] };
     const state = createEncounter({ ...zone, tilapiaRoutes: [...zone.tilapiaRoutes, second] });
-    expect(state.tilapias.map((tilapia) => tilapia.routeId)).toEqual(['tilapia-0', 'tilapia-1', 'tilapia-2', 'second']);
+    expect(state.predators.map((tilapia) => tilapia.routeId)).toEqual(['tilapia-0', 'tilapia-1', 'tilapia-2', 'second']);
   });
 });
 
@@ -132,7 +136,7 @@ describe('stepEncounter bump', () => {
   it('bumps a touching axolotl gently away with no leg loss, limited by bumpCooldown', () => {
     const start = createEncounter({ ...zone, tilapiaRoutes: [edgeRoute] });
     const first = stepEncounter(start, homeEdge, DT);
-    expect(first.events).toEqual([{ type: 'bump', tilapiaId: 'edge', from: edgeRoute.waypoints[0] }]);
+    expect(first.events).toEqual([{ type: 'bump', sourceId: 'edge', from: edgeRoute.waypoints[0] }]);
     expect(first.impulse?.x).toBeCloseTo(-TILAPIA.bumpSpeed, 9);
     expect(first.impulse?.y).toBeCloseTo(0, 9);
 
@@ -150,13 +154,13 @@ describe('stepEncounter safe area immunity', () => {
     const homeEdge: Point = { x: zone.safeArea.x1, y: 200 };
     const start = createEncounter({ ...zone, tilapiaRoutes: [{ id: 'edge', waypoints: [face] }] });
     const tilapia = {
-      ...start.tilapias[0],
+      ...start.predators[0],
       phase: 'lunge' as const,
       elapsed: 0,
       duration: TILAPIA.lungeDuration,
       aim: { x: -1, y: 0 },
     };
-    const lunging: EncounterState = { ...start, tilapias: [tilapia] };
+    const lunging: EncounterState = { ...start, predators: [tilapia] };
     const { state, events } = run(lunging, homeEdge, TILAPIA.lungeDuration + TILAPIA.cooldown + DT);
     expect(typesOf(events, ['hit', 'carriedHome'])).toEqual([]);
     expect(presentCount(state.legs)).toBe(4);
@@ -182,7 +186,7 @@ describe('stepEncounter same-frame order', () => {
     expect(typesOf(result.events, ['hit', 'regrowStart', 'carriedHome'])).toEqual([]);
     expect(presentCount(result.state.legs)).toBe(LEGS.count);
     expect(isProtected(result.state.legs)).toBe(false);
-    expect(result.state.tilapias[0].phase).toBe('cooldown');
+    expect(result.state.predators[0].phase).toBe('cooldown');
   });
 
   it('lands a hit in the first step after protected time has run out', () => {
@@ -252,9 +256,9 @@ describe('stepEncounter same-frame order', () => {
 describe('stepEncounter pause and dt', () => {
   it('leaves state unchanged at dt=0 through telegraph, cooldown, protected time and regrowth', () => {
     const telegraphing = run(createEncounter(zone), inRange, 5, createEncounterContext(), 'telegraph').state;
-    expect(telegraphing.tilapias[0].phase).toBe('telegraph');
+    expect(telegraphing.predators[0].phase).toBe('telegraph');
     const afterHit = run(telegraphing, inRange, 5, createEncounterContext(), 'hit').state;
-    expect(afterHit.tilapias[0].phase).toBe('cooldown');
+    expect(afterHit.predators[0].phase).toBe('cooldown');
     expect(isProtected(afterHit.legs)).toBe(true);
     expect(afterHit.legs.slots[0].status).toBe('regrowing');
 
@@ -270,14 +274,14 @@ describe('stepEncounter pause and dt', () => {
 
   it('caps dt at SWIM.dtMax', () => {
     const telegraphing = run(createEncounter(zone), inRange, 5, createEncounterContext(), 'telegraph').state;
-    const elapsed = telegraphing.tilapias[0].elapsed;
+    const elapsed = telegraphing.predators[0].elapsed;
     const stepped = stepEncounter(telegraphing, inRange, 1).state;
-    expect(stepped.tilapias[0].elapsed).toBeCloseTo(elapsed + SWIM.dtMax, 9);
+    expect(stepped.predators[0].elapsed).toBeCloseTo(elapsed + SWIM.dtMax, 9);
   });
 });
 
 function attackingCount(state: EncounterState): number {
-  return state.tilapias.filter((tilapia) => tilapia.phase === 'telegraph' || tilapia.phase === 'lunge').length;
+  return state.predators.filter((tilapia) => tilapia.phase === 'telegraph' || tilapia.phase === 'lunge').length;
 }
 
 function bodyGap(pos: Point, area: SafeArea): number {
@@ -314,7 +318,7 @@ interface WanderStats {
 function checkWanderStep(before: EncounterState, result: EncounterStepResult, target: Point, stats: WanderStats): void {
   const { state, events } = result;
   expect(attackingCount(state)).toBeLessThanOrEqual(1);
-  for (const tilapia of state.tilapias) {
+  for (const tilapia of state.predators) {
     expect(bodyGap(tilapia.pos, state.safeArea)).toBeGreaterThanOrEqual(TILAPIA.bodyRadius - 1e-9);
   }
   const hits = events.filter((event) => event.type === 'hit').length;
@@ -324,7 +328,7 @@ function checkWanderStep(before: EncounterState, result: EncounterStepResult, ta
   if (hits > 0) expect(inSafeArea(target, state.safeArea)).toBe(false);
   stats.hits += hits;
   for (const event of events) {
-    if (event.type === 'telegraph') stats.attackers.add(event.tilapiaId);
+    if (event.type === 'telegraph') stats.attackers.add(event.sourceId);
   }
 }
 
@@ -360,15 +364,15 @@ describe('several tilapia', () => {
     let secondTelegraph = -1;
     const telegraphs: string[] = [];
     for (let i = 0; i < Math.round(4 / DT) && secondTelegraph < 0; i++) {
-      const wasLunging = state.tilapias[0].phase === 'lunge';
+      const wasLunging = state.predators[0].phase === 'lunge';
       const result = stepEncounter(state, between, DT, noRegrowCtx);
       state = result.state;
       expect(attackingCount(state)).toBeLessThanOrEqual(1);
-      if (wasLunging && state.tilapias[0].phase !== 'lunge' && firstLungeEnd < 0) firstLungeEnd = i;
+      if (wasLunging && state.predators[0].phase !== 'lunge' && firstLungeEnd < 0) firstLungeEnd = i;
       for (const event of result.events) {
         if (event.type !== 'telegraph') continue;
-        telegraphs.push(event.tilapiaId);
-        if (event.tilapiaId === 'right') secondTelegraph = i;
+        telegraphs.push(event.sourceId);
+        if (event.sourceId === 'right') secondTelegraph = i;
       }
     }
     expect(telegraphs).toEqual(['left', 'right']);
@@ -394,17 +398,17 @@ describe('several tilapia', () => {
     const target: Point = { x: 1050, y: 200 };
     const start = createEncounter({ ...zone, tilapiaRoutes: [left, right] });
     const lunge = { phase: 'lunge' as const, elapsed: 0, duration: TILAPIA.lungeDuration };
-    const fromLeft = { ...start.tilapias[0], ...lunge, pos: { x: target.x - 30, y: 200 }, aim: { x: 1, y: 0 } };
-    const first = stepEncounter({ ...start, tilapias: [fromLeft, start.tilapias[1]] }, target, DT, noRegrowCtx);
+    const fromLeft = { ...start.predators[0], ...lunge, pos: { x: target.x - 30, y: 200 }, aim: { x: 1, y: 0 } };
+    const first = stepEncounter({ ...start, predators: [fromLeft, start.predators[1]] }, target, DT, noRegrowCtx);
     expect(typesOf(first.events, ['hit'])).toEqual(['hit']);
     expect(presentCount(first.state.legs)).toBe(LEGS.count - 1);
 
-    const fromRight = { ...first.state.tilapias[1], ...lunge, pos: { x: target.x + 30, y: 200 }, aim: { x: -1, y: 0 } };
-    const armed: EncounterState = { ...first.state, tilapias: [first.state.tilapias[0], fromRight] };
+    const fromRight = { ...first.state.predators[1], ...lunge, pos: { x: target.x + 30, y: 200 }, aim: { x: -1, y: 0 } };
+    const armed: EncounterState = { ...first.state, predators: [first.state.predators[0], fromRight] };
     const second = stepEncounter(armed, target, DT, noRegrowCtx);
     expect(isProtected(armed.legs)).toBe(true);
-    expect(second.state.tilapias[1].phase).toBe('cooldown');
-    expect(second.state.tilapias[1].elapsed).toBe(0);
+    expect(second.state.predators[1].phase).toBe('cooldown');
+    expect(second.state.predators[1].elapsed).toBe(0);
     expect(typesOf(second.events, ['hit', 'carriedHome'])).toEqual([]);
     expect(presentCount(second.state.legs)).toBe(LEGS.count - 1);
   });
@@ -431,8 +435,8 @@ describe('resetEncounter', () => {
     expect(presentCount(fresh.legs)).toBe(4);
     expect(isProtected(fresh.legs)).toBe(false);
     expect(fresh.legs.regrowQueue).toEqual([]);
-    expect(fresh.tilapias[0].pos).toEqual(routeStart);
-    expect(fresh.tilapias[0].phase).toBe('patrol');
+    expect(fresh.predators[0].pos).toEqual(routeStart);
+    expect(fresh.predators[0].phase).toBe('patrol');
     expect(fresh.bumpCooldownLeft).toBe(0);
     expect(fresh.tripOver).toBe(false);
     expect(fresh).toEqual(createEncounter(zone));
@@ -465,7 +469,7 @@ describe('Shell perk (A22, F11)', () => {
 
   it('blocks the first connected lunge: no leg lost, protected time and bump cooldown start, shellBlock not hit', () => {
     const result = stepEncounter(lungingAt(target, createEncounter(zone).legs), target, DT, shellCtx);
-    expect(result.events).toEqual([{ type: 'shellBlock', tilapiaId: 'tilapia-0', from: result.state.tilapias[0].pos }]);
+    expect(result.events).toEqual([{ type: 'shellBlock', sourceId: 'tilapia-0', from: result.state.predators[0].pos }]);
     expect(presentCount(result.state.legs)).toBe(LEGS.count);
     expect(result.state.legs.regrowQueue).toEqual([]);
     expect(result.state.legs.protectedLeft).toBe(LEGS.protectedTime);
@@ -478,7 +482,7 @@ describe('Shell perk (A22, F11)', () => {
   it('blocks only once per trip: the next connected lunge costs a leg', () => {
     const blocked = stepEncounter(lungingAt(target, createEncounter(zone).legs), target, DT, shellCtx).state;
     const unprotected = { ...blocked.legs, protectedLeft: 0 };
-    const armed: EncounterState = { ...blocked, legs: unprotected, tilapias: lungingAt(target, unprotected).tilapias };
+    const armed: EncounterState = { ...blocked, legs: unprotected, predators: lungingAt(target, unprotected).predators };
     const result = stepEncounter(armed, target, DT, shellCtx);
     expect(result.events.map((event) => event.type)).toEqual(['hit', 'regrowStart']);
     expect(presentCount(result.state.legs)).toBe(LEGS.count - 1);
@@ -496,7 +500,7 @@ describe('Shell perk (A22, F11)', () => {
     const armed: EncounterState = {
       ...blockedByTime.state,
       legs: unprotected,
-      tilapias: lungingAt(target, unprotected).tilapias,
+      predators: lungingAt(target, unprotected).predators,
     };
     const result = stepEncounter(armed, target, DT, shellCtx);
     expect(typesOf(result.events, ['hit', 'shellBlock'])).toEqual(['shellBlock']);
@@ -526,5 +530,113 @@ describe('Shell perk (A22, F11)', () => {
     const blocked = stepEncounter(lungingAt(target, createEncounter(zone).legs), target, DT, shellCtx).state;
     expect(blocked.shellUsed).toBe(true);
     expect(resetEncounter(blocked).shellUsed).toBe(false);
+  });
+});
+
+describe('hazard hits', () => {
+  const spikeType: HazardType = {
+    id: 'test-spike',
+    name: 'Test spike',
+    costsLeg: true,
+    reach: 0,
+    meetRange: 40,
+    fact: TILAPIA_FACT,
+  };
+  const weedType: HazardType = { ...spikeType, id: 'test-weed', name: 'Test weed', costsLeg: false };
+  const spike: HazardSpawn = { id: 'spike', type: spikeType, shape: { kind: 'circle', x: 1000, y: 200, r: 20 } };
+  const weed: HazardSpawn = { id: 'weed', type: weedType, shape: { kind: 'rect', x0: 980, x1: 1020, y0: 180, y1: 220 } };
+  const onHazard: Point = { x: 1005, y: 200 };
+  const spikeCentre: Point = { x: 1000, y: 200 };
+  const shellCtx = createEncounterContext({ legs: { ...LEGS, regrowTime: 1e9 }, shell: true });
+
+  function hazardEncounter(hazards: HazardSpawn[]): EncounterState {
+    return createEncounter({ ...zone, tilapiaRoutes: [], hazards });
+  }
+
+  it('costs one leg from the hazard centre and leaves the bump cooldown unchanged', () => {
+    const start: EncounterState = { ...hazardEncounter([spike]), bumpCooldownLeft: 0.5 };
+    const result = stepEncounter(start, onHazard, DT, noRegrowCtx);
+    expect(result.events).toEqual([
+      { type: 'hit', sourceId: 'spike', leg: 0, from: spikeCentre },
+      { type: 'regrowStart', leg: 0 },
+    ]);
+    expect(presentCount(result.state.legs)).toBe(LEGS.count - 1);
+    expect(result.state.legs.protectedLeft).toBe(LEGS.protectedTime);
+    expect(result.state.bumpCooldownLeft).toBeCloseTo(0.5 - DT, 9);
+    expect(result.impulse).toBeUndefined();
+  });
+
+  it('follows a hit with protected time that blocks a second hazard hit', () => {
+    const first = stepEncounter(hazardEncounter([spike]), onHazard, DT, noRegrowCtx).state;
+    const during = run(first, onHazard, LEGS.protectedTime - 2 * DT, noRegrowCtx);
+    expect(typesOf(during.events, ['hit', 'shellBlock', 'carriedHome'])).toEqual([]);
+    expect(presentCount(during.state.legs)).toBe(LEGS.count - 1);
+    const after = run(during.state, onHazard, 4 * DT, noRegrowCtx, 'hit');
+    expect(typesOf(after.events, ['protectedEnd', 'hit'])).toEqual(['protectedEnd', 'hit']);
+    expect(presentCount(after.state.legs)).toBe(LEGS.count - 2);
+  });
+
+  it('lets the Shell block the first hazard hit', () => {
+    const result = stepEncounter(hazardEncounter([spike]), onHazard, DT, shellCtx);
+    expect(result.events).toEqual([{ type: 'shellBlock', sourceId: 'spike', from: spikeCentre }]);
+    expect(presentCount(result.state.legs)).toBe(LEGS.count);
+    expect(result.state.legs.protectedLeft).toBe(LEGS.protectedTime);
+    expect(result.state.bumpCooldownLeft).toBe(0);
+    expect(result.state.shellUsed).toBe(true);
+  });
+
+  it('carries the axolotl home on the fourth leg', () => {
+    const { state, events } = run(hazardEncounter([spike]), onHazard, 60, noRegrowCtx, 'carriedHome');
+    const hits = events.filter((event) => event.type === 'hit');
+    expect(hits.map((event) => event.leg)).toEqual([0, 1, 2, 3]);
+    expect(typesOf(events, ['carriedHome'])).toEqual(['carriedHome']);
+    expect(events[events.length - 1]).toEqual({ type: 'carriedHome' });
+    expect(presentCount(state.legs)).toBe(0);
+    expect(state.tripOver).toBe(true);
+  });
+
+  it('never hits from a slow-only hazard', () => {
+    const { state, events } = run(hazardEncounter([weed]), onHazard, 10, shellCtx);
+    expect(typesOf(events, ['hit', 'shellBlock', 'carriedHome'])).toEqual([]);
+    expect(presentCount(state.legs)).toBe(LEGS.count);
+    expect(state.shellUsed).toBe(false);
+  });
+});
+
+describe('stagger across species', () => {
+  const testSpecies: PredatorSpecies = {
+    id: 'test-eel',
+    name: 'Test eel',
+    tuning: { ...TILAPIA, windup: TILAPIA.windup * 1.5 },
+    meetRange: 120,
+    fact: TILAPIA_FACT,
+  };
+  const left: TilapiaRoute = { id: 'left', waypoints: [{ x: 1000, y: 200 }] };
+  const eelRoute = { id: 'eel', waypoints: [{ x: 1100, y: 200 }], species: testSpecies };
+  const between: Point = { x: 1050, y: 200 };
+  const source = { ...zone, tilapiaRoutes: [left], predatorRoutes: [eelRoute] };
+
+  it('puts the tilapia first, then the other species, each with its own species', () => {
+    const state = createEncounter(source);
+    expect(state.predators.map((predator) => [predator.routeId, predator.species])).toEqual([
+      ['left', 'tilapia'],
+      ['eel', 'test-eel'],
+    ]);
+    expect(predatorSpecies(state, state.predators[0])).toBe(TILAPIA_SPECIES);
+    expect(predatorSpecies(state, state.predators[1])).toBe(testSpecies);
+  });
+
+  it('never lets the tilapia and the other species telegraph or lunge at once', () => {
+    let state = createEncounter(source);
+    const telegraphs = new Set<string>();
+    for (let i = 0; i < Math.round(20 / DT) && !state.tripOver; i++) {
+      const result = stepEncounter(state, between, DT, noRegrowCtx);
+      state = result.state;
+      expect(attackingCount(state)).toBeLessThanOrEqual(1);
+      for (const event of result.events) {
+        if (event.type === 'telegraph') telegraphs.add(event.sourceId);
+      }
+    }
+    expect([...telegraphs].sort()).toEqual(['eel', 'left']);
   });
 });

@@ -706,7 +706,7 @@ describe('stepTrip swimming', () => {
   it('passes a bump impulse through while swimming', () => {
     const edge: TripSource = { ...zone, tilapiaRoutes: [{ id: 'edge', waypoints: [{ x: 324, y: 200 }] }] };
     const result = stepTrip(createTrip(edge), { axolotlPos: { x: 300, y: 200 }, reduced: false, dashing: false }, DT, ctx);
-    expect(result.events).toEqual([{ type: 'bump', tilapiaId: 'edge', from: { x: 324, y: 200 } }]);
+    expect(result.events).toEqual([{ type: 'bump', sourceId: 'edge', from: { x: 324, y: 200 } }]);
     expect(result.impulse).toBeDefined();
   });
 });
@@ -1361,7 +1361,7 @@ describe('stranded axolotl rescue (C3 to C5, A11 to A16)', () => {
     expect(lunge).toBeDefined();
     expect(lunging.state.holdings.bag).toContain(WILD);
     const rescue = lunging.state.rescue as NonNullable<TripState['rescue']>;
-    const lunger = lunging.state.encounter.tilapias.find((tilapia) => tilapia.routeId === lunge?.tilapiaId);
+    const lunger = lunging.state.encounter.predators.find((tilapia) => tilapia.routeId === lunge?.sourceId);
     expect(lunger?.phase).toBe('lunge');
     const onTilapia: TripState = { ...lunging.state, rescue: { ...rescue, pos: { ...(lunger as { pos: Point }).pos } } };
     const away: TripState = { ...lunging.state, rescue: { ...rescue, pos: { x: home.x, y: home.y } } };
@@ -1434,7 +1434,7 @@ describe('meeting a tilapia', () => {
     let metStep = -1;
     let telegraphStep = -1;
     for (let i = 0; i < 20 * 60 && telegraphStep < 0; i++) {
-      pos = stepToward(pos, current.encounter.tilapias[0].pos, 150 * DT);
+      pos = stepToward(pos, current.encounter.predators[0].pos, 150 * DT);
       const result = stepAt(current, pos);
       current = result.state;
       if (metStep < 0 && current.metTilapia) metStep = i;

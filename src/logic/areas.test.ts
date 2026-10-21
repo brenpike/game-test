@@ -1,13 +1,94 @@
 import { describe, expect, it } from 'vitest';
-import { AREAS, CANAL_AREA, areaById, atExit, exitContact, exitOpen } from './areas';
+import {
+  AREAS,
+  CANAL_AREA,
+  CANAL_HABITAT,
+  HABITATS,
+  areaById,
+  areaFactCards,
+  atExit,
+  exitContact,
+  exitOpen,
+  habitatById,
+  isAreaBeaten,
+  isAreaUnlocked,
+  isNewArea,
+  newThingsByArea,
+  newestUnlockedAreaId,
+  resolveAreaId,
+  threatFactCards,
+  threatIds,
+  unlockedAreaIds,
+  type AreaData,
+  type NewThings,
+} from './areas';
 import { CANAL_TREASURES } from './catalogue';
 import { createCollectibles, snackDriftMaxSpeed, snackX, snackY } from './collectibles';
+import { DEV_TEST_AREA } from './devAreas';
+import { TILAPIA_FACT, type FactCard } from './factCards';
+import type { ElementType, HazardType } from './hazards';
+import { TILAPIA_SPECIES, type PredatorSpecies } from './predators';
+import { NO_STARS, type AreaStars, type AreaStarsRecord } from './stars';
 import { inSafeArea } from './tilapia';
 import { FINDS, LEGS, SWIM } from './tuning';
-import { CANAL_AREA_ID, DEFAULT_ZONE_SEED, SURF, buildCanalZone, inHomeSpot, swimBounds } from './zone';
+import {
+  CANAL_AREA_ID,
+  CANAL_LAYOUT,
+  DEFAULT_ZONE_SEED,
+  SURF,
+  buildCanalZone,
+  buildZone,
+  inHomeSpot,
+  swimBounds,
+  type AreaLayoutData,
+} from './zone';
 
 const EXTRA_SEEDS = [1, 2, 3, 42, 1234, 0xdeadbeef, 0x12345678, 987654321];
 const ALL_SEEDS = [DEFAULT_ZONE_SEED, ...EXTRA_SEEDS];
+const MAX_NEW_THREATS = 1;
+const MAX_NEW_ELEMENTS = 1;
+const EXIT_ONLY: AreaStars = { exit: true, special: false, legsOrRescue: false };
+const ALL_STARS: AreaStars = { exit: true, special: true, legsOrRescue: true };
+const SPECIAL_ONLY: AreaStars = { exit: false, special: true, legsOrRescue: false };
+/** The canal, then the dev test area as area 2. */
+const TWO_AREAS: readonly AreaData[] = [CANAL_AREA, { ...DEV_TEST_AREA, number: 2 }];
+const TEST_ID = DEV_TEST_AREA.id;
+
+function testFact(id: string): FactCard {
+  return { id, name: id, title: `Meet the ${id}`, body: `A ${id} for tests.` };
+}
+
+const TEST_PIKE: PredatorSpecies = { ...TILAPIA_SPECIES, id: 'test-pike', name: 'Test pike', fact: testFact('test-pike') };
+const TEST_GLASS: HazardType = { id: 'test-glass', name: 'Test glass', costsLeg: true, reach: 4, meetRange: 60, fact: testFact('test-glass') };
+const TEST_MUD: HazardType = { id: 'test-mud', name: 'Test mud', costsLeg: false, reach: 0, meetRange: 60, fact: testFact('test-mud') };
+const TEST_GATE: ElementType = { id: 'test-gate', name: 'Test gate', kind: 'cycle', period: 4, activeFor: 2 };
+const TEST_TIDE: ElementType = { id: 'test-tide', name: 'Test tide', kind: 'cycle', period: 6, activeFor: 3 };
+
+/** Canal layout data with these threats and elements in place of the canal's. */
+function layoutWith(
+  extra: Partial<Pick<AreaLayoutData, 'tilapiaRoutes' | 'predatorRoutes' | 'hazards' | 'elements'>>,
+): AreaLayoutData {
+  return { ...CANAL_LAYOUT, ...extra };
+}
+
+function areaWith(id: string, number: number, layout: AreaLayoutData): AreaData {
+  return { ...CANAL_AREA, id, number, layout };
+}
+
+function pikeRoute(id: string) {
+  return { id, waypoints: [{ x: 700, y: 262 }, { x: 790, y: 262 }], species: TEST_PIKE };
+}
+
+function glassAt(id: string, type: HazardType = TEST_GLASS) {
+  return { id, type, shape: { kind: 'circle' as const, x: 900, y: 290, r: 10 } };
+}
+
+/** Areas that add more than one new threat or element (PRD N2). */
+function areasOverNewLimit(areas: readonly AreaData[]): NewThings[] {
+  return newThingsByArea(areas).filter(
+    (things) => things.threats.length > MAX_NEW_THREATS || things.elements.length > MAX_NEW_ELEMENTS,
+  );
+}
 
 describe('CANAL_AREA', () => {
   it('is Area 1, the canal', () => {
@@ -32,6 +113,200 @@ describe('CANAL_AREA', () => {
     expect(Object.isFrozen(CANAL_AREA.exit)).toBe(true);
     expect(Object.isFrozen(CANAL_AREA.snackDrift)).toBe(true);
     expect(Object.isFrozen(AREAS)).toBe(true);
+  });
+});
+
+describe('habitats', () => {
+  it('has the canal habitat, holding Area 1', () => {
+    expect(CANAL_HABITAT).toEqual({ id: 'canal', name: 'Canal', look: 'canal' });
+    expect(HABITATS).toEqual([CANAL_HABITAT]);
+    expect(Object.isFrozen(CANAL_HABITAT)).toBe(true);
+    expect(Object.isFrozen(HABITATS)).toBe(true);
+    expect(CANAL_AREA.habitatId).toBe(CANAL_HABITAT.id);
+  });
+
+  it('finds a habitat by id', () => {
+    expect(habitatById('canal')).toBe(CANAL_HABITAT);
+    expect(habitatById('pond')).toBeUndefined();
+  });
+
+  it('puts every area in a known habitat', () => {
+    for (const area of AREAS) {
+      expect(habitatById(area.habitatId), area.id).toBeDefined();
+    }
+  });
+});
+
+describe('canal area layout', () => {
+  it('is the canal layout data and builds the canal zone', () => {
+    expect(CANAL_AREA.layout).toBe(CANAL_LAYOUT);
+    expect(buildZone(CANAL_AREA.layout, DEFAULT_ZONE_SEED)).toEqual(buildCanalZone());
+  });
+});
+
+describe('threats', () => {
+  it('names the tilapia for the canal, from its data or its zone', () => {
+    expect(threatIds(CANAL_LAYOUT)).toEqual(['tilapia']);
+    expect(threatIds(buildCanalZone())).toEqual(['tilapia']);
+    expect(threatFactCards(CANAL_LAYOUT)).toEqual([TILAPIA_FACT]);
+    expect(threatFactCards(buildCanalZone())).toEqual([TILAPIA_FACT]);
+  });
+
+  it('lists the tilapia, then predator species, then hazard types, each once', () => {
+    const layout = layoutWith({
+      predatorRoutes: [pikeRoute('pike-0'), pikeRoute('pike-1'), { ...pikeRoute('tilapia-x'), species: TILAPIA_SPECIES }],
+      hazards: [glassAt('glass-0'), glassAt('mud-0', TEST_MUD), glassAt('glass-1')],
+    });
+    expect(threatIds(layout)).toEqual(['tilapia', 'test-pike', 'test-glass', 'test-mud']);
+    expect(threatFactCards(layout)).toEqual([TILAPIA_FACT, TEST_PIKE.fact, TEST_GLASS.fact, TEST_MUD.fact]);
+  });
+
+  it('leaves out the tilapia when there are no tilapia routes', () => {
+    const layout = layoutWith({ tilapiaRoutes: [], hazards: [glassAt('glass-0')] });
+    expect(threatIds(layout)).toEqual(['test-glass']);
+    expect(threatIds(layoutWith({ tilapiaRoutes: [] }))).toEqual([]);
+  });
+
+  it('gives the tilapia card alone for the shipped areas', () => {
+    expect(areaFactCards()).toEqual([TILAPIA_FACT]);
+  });
+
+  it('gives fact cards in area-table order, each once', () => {
+    const areas = [
+      areaWith('one', 1, layoutWith({ hazards: [glassAt('glass-0')] })),
+      areaWith('two', 2, layoutWith({ tilapiaRoutes: [], predatorRoutes: [pikeRoute('pike-0')], hazards: [glassAt('glass-0')] })),
+    ];
+    expect(areaFactCards(areas)).toEqual([TILAPIA_FACT, TEST_GLASS.fact, TEST_PIKE.fact]);
+  });
+});
+
+describe('newThingsByArea', () => {
+  it('lets every area in AREAS add at most one new threat and one new element (PRD N2)', () => {
+    expect(newThingsByArea().map((things) => things.areaId)).toEqual(AREAS.map((area) => area.id));
+    expect(areasOverNewLimit(AREAS)).toEqual([]);
+  });
+
+  it('counts the canal tilapia as new in Area 1', () => {
+    expect(newThingsByArea()).toEqual([{ areaId: 'canal', threats: ['tilapia'], elements: [] }]);
+  });
+
+  it('does not count carried-forward threats and elements as new', () => {
+    const areas = [
+      areaWith('one', 1, layoutWith({ hazards: [], elements: [{ id: 'gate-0', type: TEST_GATE, offset: 0 }] })),
+      areaWith(
+        'two',
+        2,
+        layoutWith({
+          hazards: [glassAt('glass-0')],
+          elements: [
+            { id: 'gate-0', type: TEST_GATE, offset: 0 },
+            { id: 'gate-1', type: TEST_GATE, offset: 1 },
+          ],
+        }),
+      ),
+    ];
+    expect(newThingsByArea(areas)).toEqual([
+      { areaId: 'one', threats: ['tilapia'], elements: ['test-gate'] },
+      { areaId: 'two', threats: ['test-glass'], elements: [] },
+    ]);
+    expect(areasOverNewLimit(areas)).toEqual([]);
+  });
+
+  it('detects an area that adds two new threats or two new elements', () => {
+    const areas = [
+      CANAL_AREA,
+      areaWith('two-threats', 2, layoutWith({ predatorRoutes: [pikeRoute('pike-0')], hazards: [glassAt('glass-0')] })),
+      areaWith(
+        'two-elements',
+        3,
+        layoutWith({
+          elements: [
+            { id: 'gate-0', type: TEST_GATE, offset: 0 },
+            { id: 'tide-0', type: TEST_TIDE, offset: 0 },
+          ],
+        }),
+      ),
+    ];
+    expect(areasOverNewLimit(areas).map((things) => things.areaId)).toEqual(['two-threats', 'two-elements']);
+  });
+});
+
+describe('unlocking', () => {
+  const canalBeaten: AreaStarsRecord = { canal: EXIT_ONLY };
+
+  it('treats an area as beaten only when its exit star is recorded', () => {
+    expect(isAreaBeaten({}, 'canal')).toBe(false);
+    expect(isAreaBeaten({ canal: NO_STARS }, 'canal')).toBe(false);
+    expect(isAreaBeaten({ canal: SPECIAL_ONLY }, 'canal')).toBe(false);
+    expect(isAreaBeaten(canalBeaten, 'canal')).toBe(true);
+  });
+
+  it('always unlocks area 1', () => {
+    expect(unlockedAreaIds({})).toEqual(['canal']);
+    expect(unlockedAreaIds({}, TWO_AREAS)).toEqual(['canal']);
+    expect(isAreaUnlocked({}, 'canal', TWO_AREAS)).toBe(true);
+  });
+
+  it('unlocks area 2 when area 1 is beaten, with no star gates', () => {
+    expect(isAreaUnlocked({}, TEST_ID, TWO_AREAS)).toBe(false);
+    expect(isAreaUnlocked({ canal: SPECIAL_ONLY }, TEST_ID, TWO_AREAS)).toBe(false);
+    expect(unlockedAreaIds(canalBeaten, TWO_AREAS)).toEqual(['canal', TEST_ID]);
+    expect(isAreaUnlocked(canalBeaten, TEST_ID, TWO_AREAS)).toBe(true);
+  });
+
+  it('never unlocks an unknown area', () => {
+    expect(isAreaUnlocked(canalBeaten, 'pond', TWO_AREAS)).toBe(false);
+  });
+
+  it('names the newest unlocked area', () => {
+    expect(newestUnlockedAreaId({}, TWO_AREAS)).toBe('canal');
+    expect(newestUnlockedAreaId(canalBeaten, TWO_AREAS)).toBe(TEST_ID);
+    expect(newestUnlockedAreaId({ canal: ALL_STARS, [TEST_ID]: EXIT_ONLY }, TWO_AREAS)).toBe(TEST_ID);
+  });
+
+  it('throws when there are no areas', () => {
+    expect(() => newestUnlockedAreaId({}, [])).toThrow('no areas');
+  });
+});
+
+describe('isNewArea', () => {
+  it('marks the newest unlocked area while it has no stars', () => {
+    expect(isNewArea({}, 'canal', TWO_AREAS)).toBe(true);
+    expect(isNewArea({}, TEST_ID, TWO_AREAS)).toBe(false);
+    expect(isNewArea({ canal: EXIT_ONLY }, 'canal', TWO_AREAS)).toBe(false);
+    expect(isNewArea({ canal: EXIT_ONLY }, TEST_ID, TWO_AREAS)).toBe(true);
+  });
+
+  it('clears once the newest area has any star', () => {
+    expect(isNewArea({ canal: EXIT_ONLY, [TEST_ID]: SPECIAL_ONLY }, TEST_ID, TWO_AREAS)).toBe(false);
+    expect(isNewArea({ canal: SPECIAL_ONLY }, 'canal', TWO_AREAS)).toBe(false);
+  });
+
+  it('keeps Area 1 new in the shipped areas until it has a star', () => {
+    expect(isNewArea({}, 'canal')).toBe(true);
+    expect(isNewArea({ canal: EXIT_ONLY }, 'canal')).toBe(false);
+  });
+});
+
+describe('resolveAreaId', () => {
+  const canalBeaten: AreaStarsRecord = { canal: EXIT_ONLY };
+
+  it('keeps a saved id that names an unlocked area', () => {
+    expect(resolveAreaId('canal', canalBeaten, TWO_AREAS)).toBe('canal');
+    expect(resolveAreaId(TEST_ID, canalBeaten, TWO_AREAS)).toBe(TEST_ID);
+  });
+
+  it('falls back to the newest unlocked area for a locked, unknown or malformed id', () => {
+    expect(resolveAreaId(TEST_ID, {}, TWO_AREAS)).toBe('canal');
+    expect(resolveAreaId('pond', canalBeaten, TWO_AREAS)).toBe(TEST_ID);
+    for (const saved of [undefined, null, 7, {}, ['canal'], '']) {
+      expect(resolveAreaId(saved, canalBeaten, TWO_AREAS)).toBe(TEST_ID);
+    }
+  });
+
+  it('resolves to the canal in the shipped areas', () => {
+    expect(resolveAreaId(undefined, {})).toBe('canal');
+    expect(resolveAreaId(TEST_ID, { canal: EXIT_ONLY })).toBe('canal');
   });
 });
 

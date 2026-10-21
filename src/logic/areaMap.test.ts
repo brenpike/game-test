@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AREA_CELL_H,
+  AREA_CELL_W,
   AREA_MAP_BACK_BUTTON,
+  AREA_MAP_TITLE,
+  AREA_MARKER_CENTRE_Y,
   AREA_MARKER_PX,
+  AREA_NEW_PILL,
+  AREA_PILL_SLOT_PX,
+  AREA_STAR_PX,
+  AREA_STAR_ROW_W,
+  AREA_STAR_ROW_Y,
   areaMapKey,
   areaMapLayout,
   initialFocus,
@@ -12,20 +21,21 @@ import {
 } from './areaMap';
 import type { HudView, Rect, Size } from './hudLayout';
 
-/** Text size estimate that errs wide, the cardCopyFit.test constants. */
+/** Text size estimate of art guide 8's arithmetic: 0.6 em per bold letter, lines 1.2 em (a 20 px label panel is 32 tall). */
 const BOLD_EM = 0.6;
-const LINE_HEIGHT_EM = 1.25;
+const LINE_HEIGHT_EM = 1.2;
 
 const TITLE_PX = 28;
-const HABITAT_PX = 18;
+const HABITAT_PX = 20;
 const MESSAGE_PX = 20;
 const MARGIN = 16;
 const GAP = 12;
 const MIN_TARGET_PX = 48;
 const PRIMARY_PX = 64;
+const NEIGHBOUR_TARGET_GAP = 32;
+const CELL_GAP = 16;
 const EPS = 1e-6;
 
-const TITLE_TEXT = 'Pick an area!';
 const MESSAGE_TEXT = 'Beat Area 10 to unlock!';
 
 const SMALL_LANDSCAPE: HudView = { cssW: 460, cssH: 320 };
@@ -46,10 +56,17 @@ function wrapSize(text: string, px: number, wrapW: number): Size {
   return { w: Math.max(...lines) * charW, h: lines.length * px * LINE_HEIGHT_EM };
 }
 
+/** A text panel at most `wrapW` wide: the text wrapped inside its padding (`padX` across, `padY` down), plus the padding. */
+function panelSize(text: string, px: number, wrapW: number, padX: number, padY: number): Size {
+  const textSize = wrapSize(text, px, wrapW - 2 * padX);
+  return { w: textSize.w + 2 * padX, h: textSize.h + 2 * padY };
+}
+
+/** Art guide 8 panels: the title padded 8 all round, the labels and the message 8 across and 4 down. */
 const MEASURE: AreaMapMeasure = {
-  title: (wrapW) => wrapSize(TITLE_TEXT, TITLE_PX, wrapW),
-  habitat: (name, wrapW) => wrapSize(name, HABITAT_PX, wrapW),
-  message: (wrapW) => wrapSize(MESSAGE_TEXT, MESSAGE_PX, wrapW),
+  title: (wrapW) => panelSize(AREA_MAP_TITLE, TITLE_PX, wrapW, 8, 8),
+  habitat: (name, wrapW) => panelSize(name, HABITAT_PX, wrapW, 8, 4),
+  message: (wrapW) => panelSize(MESSAGE_TEXT, MESSAGE_PX, wrapW, 8, 4),
 };
 
 /** An area entry; areas after the first `unlocked` are locked. */
@@ -70,7 +87,21 @@ function tenAreas(unlocked = 4): AreaMapEntry[] {
   });
 }
 
-const ENTRY_SETS: readonly (readonly AreaMapEntry[])[] = [ONE_AREA, tenAreas()];
+/** The ten areas of the PRD N2 area table, in its five habitats, Areas 1 to 4 unlocked. */
+const PRD_AREAS: readonly AreaMapEntry[] = [
+  entry(1, 'canal', 'Canal', 4),
+  entry(2, 'pond', 'Lily pad pond', 4),
+  entry(3, 'pond', 'Lily pad pond', 4),
+  entry(4, 'chinampa', 'Chinampa gardens', 4),
+  entry(5, 'chinampa', 'Chinampa gardens', 4),
+  entry(6, 'cave', 'Spring cave', 4),
+  entry(7, 'cave', 'Spring cave', 4),
+  entry(8, 'deep', 'Deep canal', 4),
+  entry(9, 'deep', 'Deep canal', 4),
+  entry(10, 'deep', 'Deep canal', 4),
+];
+
+const ENTRY_SETS: readonly (readonly AreaMapEntry[])[] = [ONE_AREA, tenAreas(), PRD_AREAS];
 
 /** Room between two rects: the larger of the horizontal and vertical gaps (negative when they overlap). */
 function gapBetween(a: Rect, b: Rect): number {
@@ -111,10 +142,48 @@ function viewRect(view: HudView): Rect {
   return { x: 0, y: 0, w: view.cssW, h: view.cssH };
 }
 
-/** The content as a rect at the origin. */
-function contentRect(layout: AreaMapLayout): Rect {
-  return { x: 0, y: 0, w: layout.content.w, h: layout.content.h };
+/** The content as a rect at the origin, less `inset` on every side. */
+function contentRect(layout: AreaMapLayout, inset = 0): Rect {
+  return { x: inset, y: inset, w: layout.content.w - 2 * inset, h: layout.content.h - 2 * inset };
 }
+
+/** The title, failing the test when it is hidden. */
+function shownTitle(layout: AreaMapLayout): Rect {
+  if (layout.title === null) throw new Error('expected the title to show');
+  return layout.title;
+}
+
+/** The fixed screen parts that show: Back, the title when shown, and the message. */
+function fixedParts(layout: AreaMapLayout): Rect[] {
+  return [layout.back, ...(layout.title === null ? [] : [layout.title]), layout.message];
+}
+
+/** How far apart the furthest marker centres are across the axis: the path's winding. */
+function windOf(layout: AreaMapLayout): number {
+  const across = layout.path.map((point) => (layout.axis === 'x' ? point.y : point.x));
+  return Math.max(...across) - Math.min(...across);
+}
+
+/** The first cell of each habitat run, by entry index. */
+function runFirstCells(layout: AreaMapLayout, firstIndices: readonly number[]): Rect[] {
+  return firstIndices.map((index) => layout.nodes[index].cell);
+}
+
+describe('area marker cell', () => {
+  it('stacks the pill slot, the marker, a 12 px gap and the star row down an 80 x 112 cell', () => {
+    expect([AREA_CELL_W, AREA_CELL_H]).toEqual([80, 112]);
+    expect(AREA_MARKER_CENTRE_Y).toBe(44);
+    expect(AREA_STAR_ROW_Y).toBe(AREA_PILL_SLOT_PX + AREA_MARKER_PX + 12);
+    expect(AREA_STAR_ROW_Y + AREA_STAR_PX).toBe(AREA_CELL_H);
+    expect(AREA_STAR_ROW_W).toBe(AREA_CELL_W);
+  });
+
+  it('keeps the "New!" pill, centred on the marker top edge, inside the cell', () => {
+    const pillTop = AREA_MARKER_CENTRE_Y - AREA_MARKER_PX / 2 - AREA_NEW_PILL.h / 2;
+    expect(pillTop).toBe(0);
+    expect(AREA_NEW_PILL.w).toBeLessThanOrEqual(AREA_CELL_W);
+  });
+});
 
 describe('areaMapLayout', () => {
   it('scrolls along x on landscape and square canvases and along y on portrait ones', () => {
@@ -137,9 +206,13 @@ describe('areaMapLayout', () => {
     expect(layout.fits, name).toBe(true);
     expect(layout.nodes.map((node) => node.id), name).toEqual(entries.map((area) => area.id));
     for (const node of layout.nodes) {
+      expect(node.cell.w).toBe(AREA_CELL_W);
+      expect(node.cell.h).toBe(AREA_CELL_H);
       expect(node.target.w).toBeGreaterThanOrEqual(PRIMARY_PX);
       expect(node.target.h).toBeGreaterThanOrEqual(PRIMARY_PX);
+      expect(node.centre).toEqual({ x: node.cell.x + AREA_CELL_W / 2, y: node.cell.y + AREA_MARKER_CENTRE_Y });
       expect(node.centre).toEqual({ x: node.target.x + node.target.w / 2, y: node.target.y + node.target.h / 2 });
+      expect(inside(node.target, node.cell)).toBe(true);
     }
     expect(layout.back.w).toBeGreaterThanOrEqual(MIN_TARGET_PX);
     expect(layout.back.h).toBe(PRIMARY_PX);
@@ -148,22 +221,24 @@ describe('areaMapLayout', () => {
   it.each(CASES)('keeps $view.cssW x $view.cssH with $entries.length area(s) apart and in bounds', ({ view, layout }) => {
     const screen = viewRect(view);
     const inMargins = { x: MARGIN, y: MARGIN, w: view.cssW - 2 * MARGIN, h: view.cssH - 2 * MARGIN };
-    for (const fixed of [layout.back, layout.title, layout.message]) expect(inside(fixed, inMargins)).toBe(true);
+    const fixed = fixedParts(layout);
+    for (const part of fixed) expect(inside(part, inMargins)).toBe(true);
     expect(inside(layout.viewport, screen)).toBe(true);
-    expectApart([layout.back, layout.title, layout.message], 0);
-    for (const fixed of [layout.back, layout.title, layout.message]) {
-      expect(gapBetween(fixed, layout.viewport)).toBeGreaterThanOrEqual(GAP - EPS);
-    }
+    expectApart(fixed, 0);
+    for (const part of fixed) expect(gapBetween(part, layout.viewport)).toBeGreaterThanOrEqual(GAP - EPS);
 
-    const content = contentRect(layout);
-    const targets = layout.nodes.map((node) => node.target);
-    for (const rect of [...targets, ...layout.habitats.map((habitat) => habitat.rect)]) {
-      expect(inside(rect, content)).toBe(true);
-    }
-    expectApart(targets, GAP);
-    expectApart(layout.habitats.map((habitat) => habitat.rect), 0);
-    for (const habitat of layout.habitats) {
-      for (const target of targets) expect(gapBetween(habitat.rect, target)).toBeGreaterThanOrEqual(GAP - EPS);
+    const inner = contentRect(layout, MARGIN);
+    const cells = layout.nodes.map((node) => node.cell);
+    const labels = layout.habitats.map((habitat) => habitat.rect);
+    for (const rect of [...cells, ...labels]) expect(inside(rect, inner)).toBe(true);
+    expectApart(cells, CELL_GAP);
+    expectApart(
+      layout.nodes.map((node) => node.target),
+      NEIGHBOUR_TARGET_GAP,
+    );
+    expectApart(labels, GAP);
+    for (const label of labels) {
+      for (const cell of cells) expect(gapBetween(label, cell)).toBeGreaterThanOrEqual(GAP - EPS);
     }
   });
 
@@ -178,28 +253,55 @@ describe('areaMapLayout', () => {
     expect(layout.path).toEqual(layout.nodes.map((node) => node.centre));
   });
 
-  it('labels each habitat once, at the start of its run, in entry order', () => {
-    const layout = areaMapLayout(SMALL_LANDSCAPE, tenAreas(), MEASURE);
+  it.each(CASES)('winds the path up to 48 px, as much as the lane has room for, on $view.cssW x $view.cssH', ({ layout }) => {
+    expect(windOf(layout)).toBeLessThanOrEqual(48 + EPS);
+    const cross = layout.axis === 'x' ? 'h' : 'w';
+    const laneEnd = Math.max(...layout.nodes.map((node) => (layout.axis === 'x' ? node.cell.y + node.cell.h : node.cell.x + node.cell.w)));
+    const roomLeft = layout.content[cross] - MARGIN - laneEnd;
+    if (layout.nodes.length >= 4 && windOf(layout) < 48 - EPS) expect(roomLeft).toBeLessThan(1);
+  });
+
+  it('labels each habitat once, in the band at the start of its run, in entry order', () => {
+    const layout = areaMapLayout(LARGE, tenAreas(), MEASURE);
+    expect(layout.labelsAlong).toBe(false);
     expect(layout.habitats.map((habitat) => [habitat.id, habitat.name])).toEqual([
       ['canal', 'Canal'],
       ['chinampa', 'Chinampa gardens'],
       ['deep', 'Deep canal'],
     ]);
-    const firsts = [0, 3, 7].map((index) => layout.nodes[index].target);
+    const firsts = runFirstCells(layout, [0, 3, 7]);
     layout.habitats.forEach((habitat, index) => expect(habitat.rect.x).toBe(firsts[index].x));
-    for (const habitat of layout.habitats) expect(habitat.rect.y + habitat.rect.h).toBeLessThan(firsts[0].y);
+    const laneTop = Math.min(...layout.nodes.map((node) => node.cell.y));
+    for (const habitat of layout.habitats) expect(habitat.rect.y + habitat.rect.h + GAP).toBeLessThanOrEqual(laneTop + EPS);
   });
 
-  it('sets the habitat labels left of the markers on a portrait canvas', () => {
-    const layout = areaMapLayout(SMALL_PORTRAIT, tenAreas(), MEASURE);
-    const lanesLeft = Math.min(...layout.nodes.map((node) => node.target.x));
-    for (const habitat of layout.habitats) expect(habitat.rect.x + habitat.rect.w).toBeLessThanOrEqual(lanesLeft - GAP + EPS);
-  });
-
-  it('winds the path across the lane', () => {
+  it('moves the labels along the axis, 12 px before each run and centred across the lane, when the band leaves no room', () => {
     const layout = areaMapLayout(SMALL_LANDSCAPE, tenAreas(), MEASURE);
-    const ys = new Set(layout.path.map((point) => point.y));
-    expect(ys.size).toBeGreaterThan(1);
+    expect(layout.labelsAlong).toBe(true);
+    const firsts = runFirstCells(layout, [0, 3, 7]);
+    const laneMid = layout.nodes[0].cell.y + AREA_CELL_H / 2;
+    layout.habitats.forEach((habitat, index) => {
+      expect(habitat.rect.x + habitat.rect.w + GAP).toBeCloseTo(firsts[index].x);
+      expect(habitat.rect.y + habitat.rect.h / 2).toBeCloseTo(laneMid);
+    });
+  });
+
+  it('sets the habitat labels left of the cells on a portrait canvas', () => {
+    const layout = areaMapLayout(SMALL_PORTRAIT, tenAreas(), MEASURE);
+    expect(layout.labelsAlong).toBe(false);
+    const laneLeft = Math.min(...layout.nodes.map((node) => node.cell.x));
+    for (const habitat of layout.habitats) expect(habitat.rect.x + habitat.rect.w).toBeLessThanOrEqual(laneLeft - GAP + EPS);
+    const firsts = runFirstCells(layout, [0, 3, 7]);
+    layout.habitats.forEach((habitat, index) => expect(habitat.rect.y).toBe(firsts[index].y));
+  });
+
+  it('spaces markers 32 px apart across and cells 32 px apart down', () => {
+    const across = areaMapLayout(LARGE, tenAreas(), MEASURE).nodes;
+    expect(across[1].target.x - (across[0].target.x + AREA_MARKER_PX)).toBe(32);
+    expect(across[1].cell.x - (across[0].cell.x + AREA_CELL_W)).toBe(16);
+    const down = areaMapLayout(SMALL_PORTRAIT, tenAreas(), MEASURE).nodes;
+    expect(down[1].cell.y - (down[0].cell.y + AREA_CELL_H)).toBe(32);
+    expect(down[1].target.y - (down[0].target.y + AREA_MARKER_PX)).toBe(80);
   });
 
   it('centres a map shorter than the viewport, so it does not scroll', () => {
@@ -212,13 +314,76 @@ describe('areaMapLayout', () => {
 
   it('puts the title under Back when it does not fit beside it', () => {
     const layout = areaMapLayout(SMALL_PORTRAIT, ONE_AREA, MEASURE);
-    expect(layout.title.y).toBeGreaterThanOrEqual(layout.back.y + layout.back.h + GAP - EPS);
+    expect(shownTitle(layout).y).toBeGreaterThanOrEqual(layout.back.y + layout.back.h + GAP - EPS);
     const wide = areaMapLayout(LARGE, ONE_AREA, MEASURE);
-    expect(wide.title.x).toBeGreaterThanOrEqual(wide.back.x + wide.back.w + GAP - EPS);
+    expect(shownTitle(wide).x).toBeGreaterThanOrEqual(wide.back.x + wide.back.w + GAP - EPS);
   });
 
-  it('reports a canvas too short across the axis for a marker', () => {
-    expect(areaMapLayout({ cssW: 460, cssH: 200 }, ONE_AREA, MEASURE).fits).toBe(false);
+  it('hides the title (step 3) on a landscape canvas too narrow for it beside Back and too short with it under', () => {
+    const layout = areaMapLayout({ cssW: 400, cssH: 300 }, tenAreas(), MEASURE);
+    expect(layout.fitStep).toBe(3);
+    expect(layout.title).toBeNull();
+    expect(layout.labelsAlong).toBe(true);
+    expect(layout.fits).toBe(true);
+    expect(layout.viewport.y).toBe(layout.back.y + layout.back.h + GAP);
+  });
+
+  it('moves the labels along the axis (step 2) on a portrait canvas too narrow for the band', () => {
+    const layout = areaMapLayout({ cssW: 220, cssH: 400 }, tenAreas(), MEASURE);
+    expect(layout.axis).toBe('y');
+    expect(layout.fitStep).toBe(2);
+    expect(layout.labelsAlong).toBe(true);
+    expect(layout.title).not.toBeNull();
+    expect(layout.fits).toBe(true);
+  });
+
+  it('reports a canvas too short across the axis for a cell, keeping a title that hiding would not help', () => {
+    const layout = areaMapLayout({ cssW: 460, cssH: 200 }, ONE_AREA, MEASURE);
+    expect(layout.fits).toBe(false);
+    expect(layout.title).not.toBeNull();
+  });
+});
+
+describe('areaMapLayout against art guide 8 arithmetic (PRD N2 areas)', () => {
+  it('takes step 2 at 460 x 320: title beside Back, viewport 460 x 168, labels along the axis, lane 136, winding 24', () => {
+    const layout = areaMapLayout(SMALL_LANDSCAPE, PRD_AREAS, MEASURE);
+    const title = shownTitle(layout);
+    expect(title.w).toBeCloseTo(167.2);
+    expect(title.x).toBeGreaterThanOrEqual(layout.back.x + layout.back.w + GAP);
+    expect(layout.message.h).toBeCloseTo(32);
+    expect(layout.viewport).toEqual({ x: 0, y: 92, w: 460, h: 168 });
+    expect(layout.fitStep).toBe(2);
+    expect(layout.labelsAlong).toBe(true);
+    expect(Math.min(...layout.nodes.map((node) => node.cell.y))).toBeCloseTo(MARGIN);
+    expect(Math.max(...layout.nodes.map((node) => node.cell.y + node.cell.h))).toBeCloseTo(MARGIN + 136);
+    expect(windOf(layout)).toBeCloseTo(24);
+  });
+
+  it('takes step 1 at 320 x 440: title under Back, two-line message, viewport 320 x 202, labels in the band, lane 104, winding 24', () => {
+    const layout = areaMapLayout(SMALL_PORTRAIT, PRD_AREAS, MEASURE);
+    expect(shownTitle(layout).y).toBe(layout.back.y + layout.back.h + GAP);
+    expect(layout.message.h).toBeCloseTo(2 * MESSAGE_PX * LINE_HEIGHT_EM + 8);
+    expect(layout.viewport.w).toBe(320);
+    expect(layout.viewport.h).toBeCloseTo(202.4);
+    expect(layout.fitStep).toBe(1);
+    expect(layout.labelsAlong).toBe(false);
+    const widest = layout.habitats.reduce((best, habitat) => (habitat.rect.w > best.rect.w ? habitat : best));
+    expect(widest.name).toBe('Lily pad pond');
+    expect(widest.rect.w).toBeCloseTo(172);
+    const chinampa = layout.habitats.find((habitat) => habitat.id === 'chinampa');
+    expect(chinampa?.rect.h).toBeCloseTo(2 * HABITAT_PX * LINE_HEIGHT_EM + 8);
+    const laneLeft = Math.min(...layout.nodes.map((node) => node.cell.x));
+    const laneRight = Math.max(...layout.nodes.map((node) => node.cell.x + node.cell.w));
+    expect(laneLeft).toBeCloseTo(MARGIN + 172 + GAP);
+    expect(laneRight - laneLeft).toBeCloseTo(104);
+    expect(windOf(layout)).toBeCloseTo(24);
+  });
+
+  it('takes no step at 1280 x 720 and winds the full 48 px', () => {
+    const layout = areaMapLayout(LARGE, PRD_AREAS, MEASURE);
+    expect(layout.fitStep).toBe(0);
+    expect(layout.labelsAlong).toBe(false);
+    expect(windOf(layout)).toBe(48);
   });
 });
 
@@ -329,9 +494,13 @@ describe('scrollToFocus', () => {
     const along = layout.axis === 'x' ? 'w' : 'h';
     const max = layout.content[along] - layout.viewport[along];
     expect(max).toBeGreaterThan(0);
-    expect(scrollToFocus(layout, 9, 0, layout.viewport)).toBeCloseTo(max);
+    const last = layout.nodes[9].target;
+    const lastEnd = (layout.axis === 'x' ? last.x + last.w : last.y + last.h) + MARGIN;
+    expect(scrollToFocus(layout, 9, 0, layout.viewport)).toBeCloseTo(lastEnd - layout.viewport[along]);
     expect(scrollToFocus(layout, 9, max + 500, layout.viewport)).toBeCloseTo(max);
-    expect(scrollToFocus(layout, 0, max, layout.viewport)).toBe(0);
+    const first = layout.nodes[0].target;
+    const firstStart = Math.max(0, (layout.axis === 'x' ? first.x : first.y) - MARGIN);
+    expect(scrollToFocus(layout, 0, max, layout.viewport)).toBeCloseTo(firstStart);
     expect(scrollToFocus(layout, 0, -40, layout.viewport)).toBe(0);
   });
 

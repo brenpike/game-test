@@ -53,14 +53,14 @@ const ALL_CAPS_OUTFIT: readonly WornPerk[] = PERK_ORDER.flatMap((type, index) =>
 /** A tilapia mid-lunge 30 px left of `target`, aimed at it, so the next step connects. */
 function lungingAt(state: EncounterState): EncounterState {
   const tilapia = {
-    ...createEncounter(zone).tilapias[0],
+    ...createEncounter(zone).predators[0],
     pos: { x: target.x - 30, y: target.y },
     phase: 'lunge' as const,
     elapsed: 0,
     duration: TILAPIA.lungeDuration,
     aim: { x: 1, y: 0 },
   };
-  return { ...state, legs: { ...state.legs, protectedLeft: 0 }, tilapias: [tilapia] };
+  return { ...state, legs: { ...state.legs, protectedLeft: 0 }, predators: [tilapia] };
 }
 
 function eventTypes(events: readonly EncounterEvent[]): string[] {

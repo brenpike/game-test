@@ -14,6 +14,7 @@ import { meetsTilapia } from './factCards';
 import { createLegs, isProtected, presentCount, quantizeProgress, type LegsState } from './legs';
 import { isAxolotlFindId, type RealMorphId } from './morphs';
 import { DEFAULT_TRIP_SEED, nextTripSeed, placeTreasures, type PlacedFind } from './placement';
+import { TILAPIA_SPECIES, type PredatorState } from './predators';
 import { earnStars, type AreaStars } from './stars';
 import {
   createRescue,
@@ -535,6 +536,11 @@ function isPassedEvent(event: EncounterEvent): event is PassedEncounterEvent {
   return event.type !== 'carriedHome';
 }
 
+/** The tilapia among `predators`; the tilapia fact card is met only by a tilapia. */
+function tilapiaPredators(predators: readonly PredatorState[]): PredatorState[] {
+  return predators.filter((predator) => predator.species === TILAPIA_SPECIES.id);
+}
+
 /** How many `hit` events, each a leg lost, are in `events`. Runs every swimming frame, so it allocates nothing. */
 function countHits(events: readonly EncounterEvent[]): number {
   let hitCount = 0;
@@ -558,7 +564,7 @@ function stepSwimming(state: TripState, input: TripInput, step: number, ctx: Tri
   const pickup = pickUpNearby({ ...state, ...pots }, input.axolotlPos, ctx.finds, events);
   const rescued = stepRescue({ ...state, ...pickup }, input.axolotlPos, step, events);
   const metTilapia =
-    state.metTilapia || meetsTilapia(input.axolotlPos, result.state.tilapias, result.state.safeArea);
+    state.metTilapia || meetsTilapia(input.axolotlPos, tilapiaPredators(result.state.predators), result.state.safeArea);
   const inside = isInHomeSpot(input.axolotlPos, state.homeSpot);
   const next: TripState = {
     ...state,

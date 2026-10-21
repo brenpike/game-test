@@ -450,7 +450,11 @@ export class SwimScene extends Phaser.Scene {
     this.axolotlView = createAxolotlRigView(this, this.assets.axolotl);
     this.axolotl = this.axolotlView.root.setPosition(this.swim.x, this.swim.y).setDepth(DEPTH.axolotl);
     this.strandedView = new StrandedView(this, this.assets);
-    this.predatorView = new PredatorView(this, this.assets, this.trip.encounter.tilapias.length);
+    this.predatorView = new PredatorView(
+      this,
+      this.assets,
+      this.trip.encounter.predators.map((predator) => predator.species),
+    );
 
     this.bubbleImages = Array.from({ length: BUBBLE_MAX_ALIVE }, () =>
       this.add.image(0, 0, baked.bubbles[0].key).setVisible(false).setDepth(DEPTH.bubbles),

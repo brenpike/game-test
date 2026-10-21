@@ -1,12 +1,16 @@
+import { hazardCentre, legHazardAt, type HazardSpawn } from './hazards';
 import { createLegs, isProtected, speedUpRegrowth, tryHit, updateLegs, type LegsState } from './legs';
 import {
+  TILAPIA_SPECIES,
   bumpImpulse,
-  createTilapia,
-  stepTilapia,
+  createPredator,
+  stepPredator,
   touching,
-  type TilapiaContext,
-  type TilapiaState,
-} from './tilapia';
+  type PredatorContext,
+  type PredatorRoute,
+  type PredatorSpecies,
+  type PredatorState,
+} from './predators';
 import { LEGS, SWIM, TILAPIA, type LegTuning, type TilapiaTuning } from './tuning';
 import type { Vec2 } from './vec';
 import {
@@ -18,19 +22,28 @@ import {
   type ZoneLayout,
 } from './zone';
 
-/** The zone parts an encounter is built from. An `EncounterState` is one too, so it can be reset. */
-export type EncounterSource = Pick<ZoneLayout, 'safeArea' | 'tilapiaRoutes'>;
+/**
+ * The zone parts an encounter is built from. An `EncounterState` is one too, so it can be reset.
+ * Absent `predatorRoutes` or `hazards` mean none.
+ */
+export type EncounterSource = Pick<ZoneLayout, 'safeArea' | 'tilapiaRoutes'> & {
+  predatorRoutes?: readonly PredatorRoute[];
+  hazards?: readonly HazardSpawn[];
+};
 
 /**
- * Legs plus every tilapia for one trip. Immutable: `stepEncounter` returns a new object.
- * `tilapias[i]` patrols `tilapiaRoutes[i]`. `tripOver` is true after the fourth leg is lost;
+ * Legs plus every predator for one trip. Immutable: `stepEncounter` returns a new object.
+ * `predators` holds one tilapia per `tilapiaRoutes` entry, in order, then one predator per
+ * `predatorRoutes` entry, in order. `tripOver` is true after the fourth leg is lost;
  * every later step is a no-op until the encounter is reset.
  */
 export interface EncounterState {
   safeArea: SafeArea;
   tilapiaRoutes: TilapiaRoute[];
+  predatorRoutes: PredatorRoute[];
+  hazards: HazardSpawn[];
   legs: LegsState;
-  tilapias: TilapiaState[];
+  predators: PredatorState[];
   /** Seconds left before another bump can happen; 0 when a bump is ready. */
   bumpCooldownLeft: number;
   /** Whether this trip's Shell block is spent (PRD A22, F11); false at the start of every trip. */
@@ -38,10 +51,11 @@ export interface EncounterState {
   tripOver: boolean;
 }
 
-/** World limits and tuning for a step; `bounds` limits the tilapia centre. */
+/** World limits and tuning for a step; `bounds` limits the predator centre. */
 export interface EncounterContext {
   bounds: SwimBounds;
   legs: LegTuning;
+  /** Tilapia tuning; other species use their own. */
   tilapia: TilapiaTuning;
   /** Whether the outfit has a Shell perk. One flag, so Shell blocks at most one hit per trip (PRD F11). */
   shell: boolean;
@@ -49,16 +63,17 @@ export interface EncounterContext {
 
 /**
  * Encounter events, in the order they happened within the step.
- * `tilapiaId` is the route id of the tilapia involved. `leg` is a slot index.
- * `from` is the tilapia centre at the moment of the hit, Shell block or bump.
+ * `sourceId` is the route id of the predator involved, or the hazard id for a hazard hit.
+ * `leg` is a slot index. `from` is the predator centre at the moment of the hit, Shell block or
+ * bump, or the hazard shape centre for a hazard hit or block.
  * `shellBlock` is a hit the Shell perk blocked: no leg lost, protected time started (PRD A22).
  */
 export type EncounterEvent =
-  | { type: 'telegraph'; tilapiaId: string }
-  | { type: 'lunge'; tilapiaId: string; aim: Point }
-  | { type: 'hit'; tilapiaId: string; leg: number; from: Point }
-  | { type: 'shellBlock'; tilapiaId: string; from: Point }
-  | { type: 'bump'; tilapiaId: string; from: Point }
+  | { type: 'telegraph'; sourceId: string }
+  | { type: 'lunge'; sourceId: string; aim: Point }
+  | { type: 'hit'; sourceId: string; leg: number; from: Point }
+  | { type: 'shellBlock'; sourceId: string; from: Point }
+  | { type: 'bump'; sourceId: string; from: Point }
   | { type: 'regrowStart'; leg: number }
   | { type: 'regrown'; leg: number }
   | { type: 'protectedEnd' }
@@ -71,10 +86,17 @@ export interface EncounterStepResult {
   impulse?: Vec2;
 }
 
-interface TilapiaPass {
+interface HitPass {
   state: EncounterState;
   events: EncounterEvent[];
   hit: boolean;
+}
+
+/** What a hit came from. `bumpCooldown` absent leaves the bump cooldown unchanged (hazards). */
+interface HitSource {
+  id: string;
+  from: Point;
+  bumpCooldown?: number;
 }
 
 /** Default context: the canal swim bounds, the shared leg and tilapia tuning, and no Shell perk. */
@@ -82,24 +104,61 @@ export function createEncounterContext(overrides: Partial<EncounterContext> = {}
   return { bounds: swimBounds(), legs: LEGS, tilapia: TILAPIA, shell: false, ...overrides };
 }
 
-/** Starts a trip: every leg present, no protection, Shell unused, each tilapia at the start of its route. */
+/**
+ * Starts a trip: every leg present, no protection, Shell unused, each predator at the start of
+ * its route. Routes and hazards are copied; species and hazard types are shared.
+ */
 export function createEncounter(
   source: EncounterSource,
   legTuning: Pick<LegTuning, 'count'> = LEGS,
 ): EncounterState {
-  const tilapiaRoutes = source.tilapiaRoutes.map((route) => ({
-    id: route.id,
-    waypoints: route.waypoints.map((point) => ({ x: point.x, y: point.y })),
+  const tilapiaRoutes = source.tilapiaRoutes.map(copyRoute);
+  const predatorRoutes = (source.predatorRoutes ?? []).map((route) => ({
+    ...copyRoute(route),
+    species: route.species,
+  }));
+  const hazards = (source.hazards ?? []).map((hazard) => ({
+    id: hazard.id,
+    type: hazard.type,
+    shape: { ...hazard.shape },
   }));
   return {
     safeArea: { ...source.safeArea },
     tilapiaRoutes,
+    predatorRoutes,
+    hazards,
     legs: createLegs(legTuning),
-    tilapias: tilapiaRoutes.map(createTilapia),
+    predators: [
+      ...tilapiaRoutes.map((route) => createPredator(route, TILAPIA_SPECIES.id)),
+      ...predatorRoutes.map((route) => createPredator(route, route.species.id)),
+    ],
     bumpCooldownLeft: 0,
     shellUsed: false,
     tripOver: false,
   };
+}
+
+/**
+ * The species of `predator` as this encounter plays it: `TILAPIA_SPECIES` with `ctx.tilapia`
+ * tuning for a tilapia, else the species of its route in `state.predatorRoutes`.
+ * Throws when a non-tilapia predator has no matching route.
+ */
+export function predatorSpecies(
+  state: EncounterState,
+  predator: PredatorState,
+  ctx: EncounterContext = createEncounterContext(),
+): Readonly<PredatorSpecies> {
+  if (predator.species === TILAPIA_SPECIES.id) {
+    if (ctx.tilapia === TILAPIA_SPECIES.tuning) return TILAPIA_SPECIES;
+    return { ...TILAPIA_SPECIES, tuning: ctx.tilapia };
+  }
+  const route = state.predatorRoutes.find(
+    (candidate) => candidate.id === predator.routeId && candidate.species.id === predator.species,
+  );
+  if (!route) {
+    throw new Error(`predatorSpecies: no ${predator.species} route ${predator.routeId} in the encounter`);
+  }
+  return route.species;
 }
 
 /** Starts a new trip from a zone or from a finished or running encounter; same as `createEncounter`. */
@@ -116,14 +175,18 @@ export function resetEncounter(
  * unchanged with no events. `dt` is capped at `SWIM.dtMax` so lunge contact is sampled finely;
  * callers should clamp dt to the same limit, since time above it is dropped.
  *
- * Order within a step: legs first (regrowth, then protected time), then each tilapia in
- * route order, then one bump check. So a leg that finishes regrowing in the same step as a
- * hit emits `regrown` before `hit`.
+ * Order within a step: legs first (regrowth, then protected time), then each predator in
+ * `predators` order, then one hazard check, then one bump check. So a leg that finishes
+ * regrowing in the same step as a hit emits `regrown` before `hit`.
  *
- * Stagger: only one tilapia attacks at a time. A tilapia may start a telegraph only while no
- * other tilapia is telegraphing or lunging (judged on the states already stepped this step,
- * and the previous states of the rest), so two tilapia never telegraph or lunge at once. A
- * blocked tilapia keeps patrolling; a telegraph, lunge or cooldown already running goes on.
+ * Tuning: a tilapia uses `ctx.tilapia`; every other species uses its own tuning and rule hook
+ * (see `predatorSpecies`).
+ *
+ * Stagger (PRD A1): only one predator attacks at a time, whatever its species. A predator may
+ * start a telegraph only while no other predator is telegraphing or lunging (judged on the
+ * states already stepped this step, and the previous states of the rest), so two predators
+ * never telegraph or lunge at once. A blocked predator keeps patrolling; a telegraph, lunge or
+ * cooldown already running goes on.
  *
  * Within-step timing always favours the axolotl. A lunge contact can happen at any moment
  * inside the step, so a hit is judged against the kindest leg state over the whole step:
@@ -135,18 +198,25 @@ export function resetEncounter(
  * cost a leg, or end a trip, that a finer timeline would have spared.
  *
  * A connected lunge calls `tryHit`. While protected the hit costs no leg and emits nothing;
- * the tilapia then sits in cooldown inside its contact radius, so the bump check below can
+ * the predator then sits in cooldown inside its contact radius, so the bump check below can
  * push the axolotl gently away. Losing the last present leg emits `hit` then `carriedHome`
- * (exactly once) and ends the trip, even while another leg is regrowing.
+ * (exactly once) and ends the trip, even while another leg is regrowing. A predator hit starts
+ * the bump cooldown of that predator's species.
  *
- * Shell (PRD A22, F11): with `ctx.shell` on, the first connected lunge of the trip that
- * protected time does not block is blocked instead. It costs no leg, starts protected time
- * and the bump cooldown as a hit does, and emits `shellBlock`, never `hit`. A lunge that
- * protected time blocks leaves the Shell unused. Every later hit removes one leg as usual.
+ * Hazards: when no predator hit landed this step, protected time was not running at the step
+ * start and the trip is not over, the first leg-costing hazard touching the axolotl
+ * (`legHazardAt`) hits it the same way, with `from` at the hazard shape centre. A hazard hit
+ * leaves the bump cooldown unchanged. Slow-only hazards never hit.
  *
- * Bump: when no hit landed this step, the bump cooldown is ready and a non-lunging tilapia
- * touches the axolotl, emit `bump` and return `impulse`. A hit also starts the bump cooldown,
- * so a hit is never followed at once by a bump.
+ * Shell (PRD A22, F11): with `ctx.shell` on, the first hit of the trip, from a predator or a
+ * hazard, that protected time does not block is blocked instead. It costs no leg, starts
+ * protected time and, for a predator, the bump cooldown as a hit does, and emits `shellBlock`,
+ * never `hit`. A hit that protected time blocks leaves the Shell unused. Every later hit
+ * removes one leg as usual.
+ *
+ * Bump: when no hit landed this step, the bump cooldown is ready and a non-lunging predator
+ * touches the axolotl, emit `bump` and return `impulse`, using the bumper's species tuning.
+ * A predator hit also starts the bump cooldown, so a hit is never followed at once by a bump.
  */
 export function stepEncounter(
   state: EncounterState,
@@ -166,12 +236,20 @@ export function stepEncounter(
     bumpCooldownLeft: Math.max(0, state.bumpCooldownLeft - step),
   };
   const canHit = !isProtected(state.legs);
-  const pass = stepTilapias(timed, axolotlPos, step, ctx, canHit);
+  const pass = stepPredators(timed, axolotlPos, step, ctx, canHit);
   events.push(...pass.events);
-  if (pass.hit || pass.state.tripOver || pass.state.bumpCooldownLeft > 0) {
-    return { state: pass.state, events };
+  let current = pass.state;
+  let hit = pass.hit;
+  if (!hit && canHit && !current.tripOver) {
+    const hazardPass = applyHazard(current, axolotlPos, ctx);
+    current = hazardPass.state;
+    hit = hazardPass.hit;
+    events.push(...hazardPass.events);
   }
-  return applyBump(pass.state, axolotlPos, events, ctx);
+  if (hit || current.tripOver || current.bumpCooldownLeft > 0) {
+    return { state: current, events };
+  }
+  return applyBump(current, axolotlPos, events, ctx);
 }
 
 /** Outcome of eating snacks: the new encounter, its regrowth events and the leg slot each snack helped. */
@@ -184,7 +262,7 @@ export interface EncounterFeedResult {
 /**
  * Applies `snacks` eaten snacks to leg regrowth (PRD A19) with `speedUpRegrowth` and
  * `ctx.legs`. A finished trip, or snacks that change no leg (0 snacks, nothing regrowing),
- * return the input state unchanged with no events. Otherwise only `legs` changes; tilapia,
+ * return the input state unchanged with no events. Otherwise only `legs` changes; predators,
  * bump cooldown and protected time stay as they were. A leg a snack finishes emits the same
  * `regrown` then `regrowStart` events that `stepEncounter` emits when time finishes it.
  * `boosted` is the slot each snack helped, in eating order.
@@ -205,28 +283,35 @@ export function feedEncounter(
   };
 }
 
-/** Steps every tilapia; `canHit` false means protected time was running at the step start. */
-function stepTilapias(
+/** Steps every predator; `canHit` false means protected time was running at the step start. */
+function stepPredators(
   state: EncounterState,
   axolotlPos: Point,
   dt: number,
   ctx: EncounterContext,
   canHit: boolean,
-): TilapiaPass {
-  const tilapiaCtx: TilapiaContext = { safeArea: state.safeArea, bounds: ctx.bounds, tuning: ctx.tilapia };
-  let current: EncounterState = { ...state, tilapias: [...state.tilapias] };
+): HitPass {
+  let current: EncounterState = { ...state, predators: [...state.predators] };
   const events: EncounterEvent[] = [];
   let hit = false;
-  for (let i = 0; i < current.tilapias.length && !current.tripOver; i++) {
-    const telegraphBlocked = otherTilapiaAttacking(current.tilapias, i);
-    const result = stepTilapia(current.tilapias[i], axolotlPos, dt, { ...tilapiaCtx, telegraphBlocked });
-    current.tilapias[i] = result.state;
-    const tilapiaId = result.state.routeId;
+  for (let i = 0; i < current.predators.length && !current.tripOver; i++) {
+    const species = predatorSpecies(current, current.predators[i], ctx);
+    const predatorCtx: PredatorContext = {
+      safeArea: current.safeArea,
+      bounds: ctx.bounds,
+      tuning: species.tuning,
+      telegraphBlocked: otherPredatorAttacking(current.predators, i),
+      hook: species.hook,
+    };
+    const result = stepPredator(current.predators[i], axolotlPos, dt, predatorCtx);
+    current.predators[i] = result.state;
+    const sourceId = result.state.routeId;
     for (const event of result.events) {
-      if (event.type === 'telegraphStart') events.push({ type: 'telegraph', tilapiaId });
-      if (event.type === 'lungeStart') events.push({ type: 'lunge', tilapiaId, aim: event.aim });
+      if (event.type === 'telegraphStart') events.push({ type: 'telegraph', sourceId });
+      if (event.type === 'lungeStart') events.push({ type: 'lunge', sourceId, aim: event.aim });
       if (event.type === 'lungeEnd' && event.connected && canHit && !current.tripOver) {
-        const landed = applyHit(current, result.state, ctx);
+        const source: HitSource = { id: sourceId, from: result.state.pos, bumpCooldown: species.tuning.bumpCooldown };
+        const landed = applyHit(current, source, ctx);
         current = landed.state;
         events.push(...landed.events);
         hit = hit || landed.hit;
@@ -237,25 +322,32 @@ function stepTilapias(
 }
 
 /**
- * Whether any tilapia other than `tilapias[index]` is telegraphing or lunging. Entries before
+ * Whether any predator other than `predators[index]` is telegraphing or lunging. Entries before
  * `index` already hold this step's state, so a telegraph started earlier in the step counts.
  */
-function otherTilapiaAttacking(tilapias: readonly TilapiaState[], index: number): boolean {
-  return tilapias.some(
+function otherPredatorAttacking(predators: readonly PredatorState[], index: number): boolean {
+  return predators.some(
     (other, otherIndex) => otherIndex !== index && (other.phase === 'telegraph' || other.phase === 'lunge'),
   );
 }
 
+/** Hits the axolotl from the first leg-costing hazard it touches, if any; the bump cooldown is unchanged. */
+function applyHazard(state: EncounterState, axolotlPos: Point, ctx: EncounterContext): HitPass {
+  const hazard = legHazardAt(state.hazards, axolotlPos);
+  if (!hazard) return { state, events: [], hit: false };
+  return applyHit(state, { id: hazard.id, from: hazardCentre(hazard.shape) }, ctx);
+}
+
 /**
- * Applies a connected lunge from `tilapia`; a protected or legless axolotl loses nothing.
- * An unused Shell blocks the lunge instead of a leg loss.
+ * Applies a hit from `source`; a protected or legless axolotl loses nothing.
+ * An unused Shell blocks the hit instead of a leg loss.
  */
-function applyHit(state: EncounterState, tilapia: TilapiaState, ctx: EncounterContext): TilapiaPass {
-  if (ctx.shell && !state.shellUsed && !isProtected(state.legs)) return applyShellBlock(state, tilapia, ctx);
+function applyHit(state: EncounterState, source: HitSource, ctx: EncounterContext): HitPass {
+  if (ctx.shell && !state.shellUsed && !isProtected(state.legs)) return applyShellBlock(state, source, ctx);
   const result = tryHit(state.legs, ctx.legs);
   if (!result.hit) return { state, events: [], hit: false };
   const events: EncounterEvent[] = [
-    { type: 'hit', tilapiaId: tilapia.routeId, leg: result.legIndex, from: { ...tilapia.pos } },
+    { type: 'hit', sourceId: source.id, leg: result.legIndex, from: { ...source.from } },
   ];
   if (result.state.slots[result.legIndex].status === 'regrowing') {
     events.push({ type: 'regrowStart', leg: result.legIndex });
@@ -264,21 +356,21 @@ function applyHit(state: EncounterState, tilapia: TilapiaState, ctx: EncounterCo
   const next: EncounterState = {
     ...state,
     legs: result.state,
-    bumpCooldownLeft: ctx.tilapia.bumpCooldown,
+    bumpCooldownLeft: source.bumpCooldown ?? state.bumpCooldownLeft,
     tripOver: result.tripOver,
   };
   return { state: next, events, hit: true };
 }
 
-/** Blocks a connected lunge with the Shell: no leg lost, protected time and bump cooldown start. */
-function applyShellBlock(state: EncounterState, tilapia: TilapiaState, ctx: EncounterContext): TilapiaPass {
+/** Blocks a hit with the Shell: no leg lost, protected time starts, and the bump cooldown as a hit would. */
+function applyShellBlock(state: EncounterState, source: HitSource, ctx: EncounterContext): HitPass {
   const next: EncounterState = {
     ...state,
     legs: { ...state.legs, protectedLeft: ctx.legs.protectedTime },
-    bumpCooldownLeft: ctx.tilapia.bumpCooldown,
+    bumpCooldownLeft: source.bumpCooldown ?? state.bumpCooldownLeft,
     shellUsed: true,
   };
-  const events: EncounterEvent[] = [{ type: 'shellBlock', tilapiaId: tilapia.routeId, from: { ...tilapia.pos } }];
+  const events: EncounterEvent[] = [{ type: 'shellBlock', sourceId: source.id, from: { ...source.from } }];
   return { state: next, events, hit: true };
 }
 
@@ -288,14 +380,17 @@ function applyBump(
   events: EncounterEvent[],
   ctx: EncounterContext,
 ): EncounterStepResult {
-  const bumper = state.tilapias.find((tilapia) => touching(tilapia, axolotlPos, ctx.tilapia));
-  if (!bumper) return { state, events };
-  events.push({ type: 'bump', tilapiaId: bumper.routeId, from: { ...bumper.pos } });
-  return {
-    state: { ...state, bumpCooldownLeft: ctx.tilapia.bumpCooldown },
-    events,
-    impulse: bumpImpulse(bumper, axolotlPos, ctx.tilapia),
-  };
+  for (const predator of state.predators) {
+    const tuning = predatorSpecies(state, predator, ctx).tuning;
+    if (!touching(predator, axolotlPos, tuning)) continue;
+    events.push({ type: 'bump', sourceId: predator.routeId, from: { ...predator.pos } });
+    return {
+      state: { ...state, bumpCooldownLeft: tuning.bumpCooldown },
+      events,
+      impulse: bumpImpulse(predator, axolotlPos, tuning),
+    };
+  }
+  return { state, events };
 }
 
 /**
@@ -311,4 +406,8 @@ function regrowEvents(before: LegsState, after: LegsState): EncounterEvent[] {
     if (now === 'present') events.push({ type: 'regrown', leg });
   }
   return events;
+}
+
+function copyRoute(route: TilapiaRoute): TilapiaRoute {
+  return { id: route.id, waypoints: route.waypoints.map((point) => ({ x: point.x, y: point.y })) };
 }
