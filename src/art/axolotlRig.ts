@@ -10,9 +10,12 @@
  * texture anchor, so a root scaled by bake.displayScale(viewScale) shows the
  * axolotl exactly where today's sprite (origin at the anchor) shows it.
  *
- * Textures are painted and refreshed only while baking: setPose moves, turns,
- * swaps frames and writes the tail rope, and never repaints. Legs are baked
- * lazily, one texture per leg state. Destroy views before their bake.
+ * Textures are painted and refreshed only while baking and never repaint after
+ * a bake: setPose moves, turns, swaps frames and writes the tail ropes. The
+ * only thing drawn live is the Iridescent tail stripe, a flat-colour vector
+ * overlay (a Graphics between the 'under' tail and 'tail-over') with no
+ * texture upload, redrawn only when the shown tail or the sheen step changes.
+ * Legs are baked lazily, one texture per leg state. Destroy views before their bake.
  */
 import * as Phaser from 'phaser';
 import type { SpriteFrame } from '../logic/spriteAnchor';
@@ -41,6 +44,7 @@ import {
   type RigRenderer,
   type RigTwinkle,
 } from './axolotlRigParts';
+import type { TailStripe } from './axolotlRigStripe';
 import { beginDraw, type TexSize } from './canvasKit';
 import { AXO_SCENE_SCALE, AXO_TEX, type AxolotlPose, type LegLook } from './drawAxolotl';
 import { AXO_SIZE_SCALE, DEFAULT_ART_LOOK, type AxolotlArtLook } from './drawAxolotlParts';
@@ -101,7 +105,7 @@ export interface AxolotlRigView {
   destroy(): void;
 }
 
-type RigPartKind = 'gill' | 'leg' | 'wear-leg' | 'tail' | 'body' | 'tail-item' | 'face' | 'eyes';
+type RigPartKind = 'gill' | 'leg' | 'wear-leg' | 'tail' | 'tail-over' | 'body' | 'tail-item' | 'face' | 'eyes';
 
 /** One baked part: its spec, and the size and anchor of one of its frames. */
 interface RigSheet {
@@ -132,6 +136,14 @@ interface PoseMemo {
   legCount: number;
   legStatus: string[];
   legProgress: number[];
+}
+
+/** What the stripe Graphics last drew: the bake version, the shown tail and the sheen step. */
+interface StripeMemo {
+  version: number;
+  swimPhase: number;
+  tailAmp: number;
+  sheenFrame: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -264,13 +276,21 @@ function paintSheet(
   return info;
 }
 
-/** The variant painted as frame `frame` of a part's main texture. */
+function isTailPart(id: RigPartId): boolean {
+  return id === 'tail' || id === 'tail-over';
+}
+
+/**
+ * The variant painted as frame `frame` of a part's main texture. The tail
+ * parts: Canvas strip frame `frame` (tailStripPose), WebGL the straight tail;
+ * an Iridescent 'tail' bakes only its 'under' layers. Never a tail sheen.
+ */
 function partVariant(spec: RigPartSpec, frame: number, renderer: RigRenderer, iridescent: boolean): RigPartVariant {
-  if (spec.id === 'tail') {
-    if (renderer === 'canvas') {
-      return { tailPose: tailStripPose(frame % TAIL_STRIP_PHASES, Math.floor(frame / TAIL_STRIP_PHASES)) };
-    }
-    return frame === 0 ? {} : { sheen: sheenStepValue(frame - 1) };
+  if (isTailPart(spec.id)) {
+    const tailLayers = spec.id === 'tail' && iridescent ? 'under' : 'all';
+    if (renderer === 'webgl') return spec.id === 'tail' ? { tailLayers } : {};
+    const tailPose = tailStripPose(frame % TAIL_STRIP_PHASES, Math.floor(frame / TAIL_STRIP_PHASES));
+    return spec.id === 'tail' ? { tailPose, tailLayers } : { tailPose };
   }
   if (spec.id === 'body') return iridescent && frame < SHEEN_STEPS ? { sheen: sheenStepValue(frame) } : {};
   return { frame };
@@ -278,10 +298,7 @@ function partVariant(spec: RigPartSpec, frame: number, renderer: RigRenderer, ir
 
 /** How many frames a part's main texture holds. */
 function partFrames(spec: RigPartSpec, renderer: RigRenderer, iridescent: boolean): number {
-  if (spec.id === 'tail') {
-    if (renderer === 'canvas') return TAIL_STRIP_FRAMES;
-    return iridescent ? 1 + SHEEN_STEPS : 1;
-  }
+  if (isTailPart(spec.id)) return renderer === 'canvas' ? TAIL_STRIP_FRAMES : 1;
   if (spec.id === 'body') return iridescent ? SHEEN_STEPS + 1 : 1;
   return spec.frames;
 }
@@ -369,7 +386,10 @@ class RigBake implements AxolotlRigBake {
     return this.iridescentPalette;
   }
 
-  /** The exact still tail frame (WebGL only; Canvas shows strip frame 0, the same pose). */
+  /**
+   * The full still tail frame: on WebGL, and on Canvas for an Iridescent tail
+   * (whose strip bakes only 'under'); else null, and Canvas shows strip frame 0, the same pose.
+   */
   get tailStill(): TexInfo | null {
     return this.stillTail;
   }
@@ -471,12 +491,12 @@ class RigBake implements AxolotlRigBake {
   private bakePart(spec: RigPartSpec): TexInfo {
     const texKey = `${this.key}:${spec.id}`;
     const scale = this.scale;
-    const grow = spec.id === 'tail' && this.renderer === 'canvas' ? spec.maxDy : 0;
+    const grow = isTailPart(spec.id) && this.renderer === 'canvas' ? spec.maxDy : 0;
     const size = partSize(spec, grow);
     if (isLegPart(spec.id)) return makeInfo(texKey, scale, size);
-    if (spec.id === 'tail' && this.renderer === 'webgl') this.stillTail = this.bakeStillTail(spec);
     const { renderer, appearance } = this;
     const iridescent = this.iridescentPalette;
+    if (spec.id === 'tail' && (renderer === 'webgl' || iridescent)) this.stillTail = this.bakeStillTail(spec);
     const local = { x: -spec.box.minX, y: -spec.box.minY + grow };
     const info = bakeSheet(this.scene, texKey, size, scale, local, partFrames(spec, renderer, iridescent), (ctx, f) =>
       paintRigPart(ctx, spec.id, appearance, partVariant(spec, f, renderer, iridescent)),
@@ -485,7 +505,7 @@ class RigBake implements AxolotlRigBake {
     return info;
   }
 
-  /** WebGL: the tail bent at the still pose, the frame the 'still' tail mode shows. */
+  /** The full tail ('all' layers) bent at the still pose, the frame the 'still' tail mode shows (see tailStill). */
   private bakeStillTail(spec: RigPartSpec): TexInfo {
     const texKey = `${this.key}:tail-still`;
     const appearance = this.appearance;
@@ -603,19 +623,31 @@ function makePartImage(
   return new Phaser.GameObjects.Image(scene, at.x, at.y, textureKey, frame).setOrigin(info.originNormX, info.originNormY);
 }
 
+function createStripeMemo(): StripeMemo {
+  return { version: -1, swimPhase: Number.NaN, tailAmp: Number.NaN, sheenFrame: null };
+}
+
 class RigView implements AxolotlRigView {
   readonly root: Phaser.GameObjects.Container;
   private readonly scene: Phaser.Scene;
   private readonly owner: RigBake;
   private readonly placement: RigPlacement = createRigPlacement();
   private readonly memo: PoseMemo = createPoseMemo();
+  private stripeMemo: StripeMemo = createStripeMemo();
   private lastPose: AxolotlPose = RIG_STILL_POSE;
   private syncedVersion = -1;
   private parts: RigViewPart[] = [];
+  /** WebGL: the straight tail ('under' when Iridescent) and 'tail-over' bent along tailColumnXs. */
   private rope: Phaser.GameObjects.Rope | null = null;
-  private ropeFrame = 0;
-  private tailImage: Phaser.GameObjects.Image | null = null;
-  private tailFrame = 0;
+  private overRope: Phaser.GameObjects.Rope | null = null;
+  /** Canvas: the tail strip ('under' when Iridescent) and the 'tail-over' strip, both at stripFrame. */
+  private stripImage: Phaser.GameObjects.Image | null = null;
+  private overStripImage: Phaser.GameObjects.Image | null = null;
+  private stripFrame = 0;
+  /** The full still tail (bake.tailStill): WebGL always, Canvas when Iridescent. */
+  private stillImage: Phaser.GameObjects.Image | null = null;
+  /** The live Iridescent stripe pair between the tail and 'tail-over'. */
+  private stripe: Phaser.GameObjects.Graphics | null = null;
   private twinkleImages: Phaser.GameObjects.Image[] = [];
   private twinkleFrames: number[] = [];
   private destroyed = false;
@@ -668,12 +700,18 @@ class RigView implements AxolotlRigView {
     this.detach();
   }
 
-  /** Rebuild every child from the bake's current textures and show the last pose. */
+  /** Rebuild every child from the bake's current textures and parts, and show the last pose. */
   resync(): void {
     this.root.removeAll(true);
     this.parts = [];
     this.rope = null;
-    this.tailImage = null;
+    this.overRope = null;
+    this.stripImage = null;
+    this.overStripImage = null;
+    this.stripFrame = 0;
+    this.stillImage = null;
+    this.stripe = null;
+    this.stripeMemo = createStripeMemo();
     this.twinkleImages = [];
     this.twinkleFrames = [];
     for (const spec of this.owner.parts) this.addPart(spec);
@@ -694,6 +732,10 @@ class RigView implements AxolotlRigView {
       this.addTail(sheet);
       return;
     }
+    if (kind === 'tail-over') {
+      this.addTailOver(sheet);
+      return;
+    }
     const scale = this.owner.scale;
     const textureKey = this.partTextureKey(sheet, kind, index, this.lastPose);
     const image = makePartImage(this.scene, textureKey, sheet.info, 0, {
@@ -710,26 +752,51 @@ class RigView implements AxolotlRigView {
     return sheet.info.key;
   }
 
-  /** The tail child: WebGL a Rope on the straight tail plus the still Image; Canvas the strip Image. */
+  /** The tail children: WebGL a Rope on the straight tail, then the still Image; Canvas the strip Image, then the still Image when Iridescent. */
   private addTail(sheet: RigSheet): void {
-    const { spec, info } = sheet;
-    const scale = this.owner.scale;
-    const at = { x: spec.pivot.x * scale, y: spec.pivot.y * scale };
-    const still = this.owner.tailStill;
     if (this.owner.renderer === 'canvas') {
-      this.tailImage = makePartImage(this.scene, info.key, info, 0, at);
-      this.tailFrame = 0;
-      this.root.add(this.tailImage);
+      this.stripImage = this.addStripImage(sheet);
+    } else {
+      this.rope = this.addRope(sheet);
+    }
+    const still = this.owner.tailStill;
+    if (!still) {
+      if (this.owner.renderer === 'webgl') throw new Error(`rig bake "${this.owner.key}" has no still tail frame`);
       return;
     }
-    if (!still) throw new Error(`rig bake "${this.owner.key}" has no still tail frame`);
+    const { spec } = sheet;
+    const scale = this.owner.scale;
+    this.stillImage = makePartImage(this.scene, still.key, still, 0, { x: spec.pivot.x * scale, y: spec.pivot.y * scale });
+    this.root.add(this.stillImage);
+  }
+
+  /** The Iridescent children over the tail: the stripe Graphics, then 'tail-over' as a Rope (WebGL) or strip Image (Canvas). */
+  private addTailOver(sheet: RigSheet): void {
+    const stripe = new Phaser.GameObjects.Graphics(this.scene);
+    stripe.setVisible(false);
+    this.stripe = stripe;
+    this.root.add(stripe);
+    if (this.owner.renderer === 'canvas') this.overStripImage = this.addStripImage(sheet);
+    else this.overRope = this.addRope(sheet);
+  }
+
+  /** A Canvas strip Image of a tail part at strip frame 0, added to the root. */
+  private addStripImage(sheet: RigSheet): Phaser.GameObjects.Image {
+    const { spec, info } = sheet;
+    const scale = this.owner.scale;
+    const image = makePartImage(this.scene, info.key, info, 0, { x: spec.pivot.x * scale, y: spec.pivot.y * scale });
+    this.root.add(image);
+    return image;
+  }
+
+  /** A WebGL Rope on a tail part's straight frame, one point per tailColumnXs, added to the root. */
+  private addRope(sheet: RigSheet): Phaser.GameObjects.Rope {
+    const scale = this.owner.scale;
     const points = tailColumnXs(this.owner.look).map((x) => ({ x: x * scale, y: 0 }));
-    const rope = new Phaser.GameObjects.Rope(this.scene, 0, 0, info.key, 0, points);
-    this.rope = rope;
-    this.ropeFrame = 0;
-    this.writeRopeUvs();
-    this.tailImage = makePartImage(this.scene, still.key, still, 0, at);
-    this.root.add([rope, this.tailImage]);
+    const rope = new Phaser.GameObjects.Rope(this.scene, 0, 0, sheet.info.key, 0, points);
+    this.writeRopeUvs(rope, sheet.spec);
+    this.root.add(rope);
+    return rope;
   }
 
   private apply(pose: AxolotlPose): void {
@@ -737,6 +804,7 @@ class RigView implements AxolotlRigView {
     const placement = rigPlacement(owner.look, pose, owner.renderer, owner.iridescent, this.placement);
     for (const part of this.parts) this.placePart(part, placement, pose);
     this.placeTail(placement);
+    this.placeStripe(placement);
     this.placeTwinkles(placement.twinkles);
     rememberPose(this.memo, pose);
   }
@@ -770,6 +838,7 @@ class RigView implements AxolotlRigView {
         return;
       case 'face':
       case 'tail':
+      case 'tail-over':
         return;
     }
   }
@@ -781,35 +850,60 @@ class RigView implements AxolotlRigView {
     part.frame = 0;
   }
 
+  /** Show the still Image on a still tail (when there is one), else the ropes or strips; tail-over only while moving. */
   private placeTail(placement: RigPlacement): void {
     const { tail } = placement;
-    const image = this.tailImage;
-    if (!image) throw new Error('rig view has no tail');
-    const rope = this.rope;
-    if (!rope) {
-      const frame = tail.mode === 'still' ? 0 : tail.frame;
-      if (frame !== this.tailFrame) image.setFrame(frame);
-      this.tailFrame = frame;
+    const moving = tail.mode !== 'still';
+    const still = this.stillImage;
+    still?.setVisible(!moving);
+    const strip = this.stripImage;
+    if (strip) {
+      strip.setVisible(moving || !still);
+      this.overStripImage?.setVisible(moving);
+      const frame = moving ? tail.frame : 0;
+      if (frame === this.stripFrame) return;
+      strip.setFrame(frame);
+      this.overStripImage?.setFrame(frame);
+      this.stripFrame = frame;
       return;
     }
-    const roped = tail.mode !== 'still';
-    image.setVisible(!roped);
-    rope.setVisible(roped);
-    if (!roped) return;
-    const frame = placement.sheenFrame === null ? 0 : 1 + placement.sheenFrame;
-    if (frame !== this.ropeFrame) {
-      rope.setFrame(frame);
-      this.ropeFrame = frame;
-      this.writeRopeUvs();
+    const rope = this.rope;
+    if (!rope) throw new Error('rig view has no tail');
+    rope.setVisible(moving);
+    this.overRope?.setVisible(moving);
+    if (!moving) return;
+    const { spec } = this.owner.sheet('tail');
+    this.writeRopeVertices(rope, spec, tail.dy);
+    if (this.overRope) this.writeRopeVertices(this.overRope, spec, tail.dy);
+  }
+
+  /** Show the stripe on a moving Iridescent tail; redraw it only when the bake, the shown tail or the sheen step changed. */
+  private placeStripe(placement: RigPlacement): void {
+    const stripe = this.stripe;
+    if (!stripe) return;
+    const moving = placement.tail.mode !== 'still';
+    stripe.setVisible(moving);
+    if (!moving) return;
+    const memo = this.stripeMemo;
+    const { swimPhase, tailAmp } = placement.shownTail;
+    const version = this.owner.version;
+    if (
+      memo.version === version &&
+      memo.swimPhase === swimPhase &&
+      memo.tailAmp === tailAmp &&
+      memo.sheenFrame === placement.sheenFrame
+    ) {
+      return;
     }
-    this.writeRopeVertices(tail.dy);
+    drawStripe(stripe, placement.stripe, this.owner.scale);
+    memo.version = version;
+    memo.swimPhase = swimPhase;
+    memo.tailAmp = tailAmp;
+    memo.sheenFrame = placement.sheenFrame;
   }
 
   /** Rope UVs: each column's x across the straight tail frame, top and bottom of the part box. */
-  private writeRopeUvs(): void {
-    const rope = this.rope;
-    if (!rope) return;
-    const { spec } = this.owner.sheet('tail');
+  private writeRopeUvs(rope: Phaser.GameObjects.Rope, spec: RigPartSpec): void {
     const scale = this.owner.scale;
     const columns = tailColumnXs(this.owner.look);
     const { u0, v0, u1, v1, cutWidth, cutHeight } = rope.frame;
@@ -827,10 +921,7 @@ class RigView implements AxolotlRigView {
   }
 
   /** Rope vertices relative to the anchor: each column's top and bottom of the part box, shifted by its dy. */
-  private writeRopeVertices(dy: readonly number[]): void {
-    const rope = this.rope;
-    if (!rope) return;
-    const { spec } = this.owner.sheet('tail');
+  private writeRopeVertices(rope: Phaser.GameObjects.Rope, spec: RigPartSpec, dy: readonly number[]): void {
     const scale = this.owner.scale;
     const columns = tailColumnXs(this.owner.look);
     if (dy.length !== columns.length) {
@@ -876,6 +967,21 @@ function showFrame(part: RigViewPart, frame: number): void {
   if (part.frame === frame) return;
   part.image.setFrame(frame);
   part.frame = frame;
+}
+
+/** Clear `graphics` and fill each band's polygons in its flat colour, local units x `scale` from the anchor. */
+function drawStripe(graphics: Phaser.GameObjects.Graphics, stripe: TailStripe, scale: number): void {
+  graphics.clear();
+  for (const band of stripe) {
+    graphics.fillStyle(band.colour, band.alpha);
+    for (const polygon of band.polygons) {
+      graphics.beginPath();
+      graphics.moveTo(polygon[0] * scale, polygon[1] * scale);
+      for (let i = 2; i < polygon.length; i += 2) graphics.lineTo(polygon[i] * scale, polygon[i + 1] * scale);
+      graphics.closePath();
+      graphics.fillPath();
+    }
+  }
 }
 
 /** A live axolotl showing `bake`'s parts, added to `scene` at (0, 0) in the still pose. */
