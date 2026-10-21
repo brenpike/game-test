@@ -70,6 +70,19 @@ npm install
 | `npm run lint` | Lint the project (ESLint). |
 | `npm run typecheck` | Type-check only. |
 
+### Dev-only flags
+
+Add these to the address that `npm run dev` prints, for example `http://localhost:5173/?perf&renderer=canvas`.
+They work only on the dev server, never in the build (`npm run build`, `npm run preview`, or the live site). Flags combine.
+
+| Flag | What it does |
+|---|---|
+| `?perf` | Shows a frame-time overlay (live p50 and p95 frame time, p95 axolotl drawing time, and texture bakes) and logs a p50/p95 summary to the console every 30 s of frames. Stores and sends nothing. |
+| `?compare` | Runs only the rig compare view: the reference `drawAxolotl` on the left, the axolotl rig on the right, in the same pose. Keys: `x` `t` `b` `a` `z` `g` `e` `u` `s` cycle the look, `m` the morph, `d` the Dream colour, `o` the full outfit, `l` the leg state; `h` Tail Dash, `p` pause, `n` step, `r` still pose, `v` overlay the rig on the reference at 50%. Shift steps back. The on-screen legend lists them all; see [`src/scenes/RigCompareScene.ts`](src/scenes/RigCompareScene.ts). |
+| `?renderer=canvas` | Forces Phaser's Canvas renderer instead of WebGL. |
+
+On a phone they need the dev server, which is harder to reach on WSL2 (see [Testing on a phone](#testing-on-a-phone)).
+
 ## Controls
 
 | Action | Touch | Keyboard |
