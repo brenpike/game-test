@@ -6,6 +6,19 @@
  *
  * Plain numbers only: the painters and footprints in drawAxolotlParts.ts and
  * drawWearables.ts are built to them, and the tests hold every look to them.
+ *
+ * The rule, for every Wearable now and every one added later:
+ * - it shows WEARABLE_SWIM_VIEW_MIN_CSS_PX2 (64 CSS px²) or more of its own
+ *   visible paint in the swim view, on every look and at every swim phase;
+ * - it meets its slot's minimums in WEARABLE_SLOT_MINIMUMS;
+ * - it is listed in WEARABLE_RECORD in wearableArt.test.ts, with its measured
+ *   numbers.
+ * There are no per-item exceptions. To add a Wearable, add it to
+ * CANAL_TREASURES (src/logic/catalogue.ts) and give it art in drawWearables.ts:
+ * the suite in wearableArt.test.ts finds it in the catalogue and checks it, and
+ * fails until its numbers are recorded. The suite reads CANAL_TREASURES only,
+ * so a later area's Wearables are checked only once they are added there, or
+ * once the suite's catalogue source is extended to that area's list.
  */
 import { AXO_SCENE_SCALE } from './drawAxolotl';
 import { AXO_SIZE_SCALE } from './drawAxolotlParts';
