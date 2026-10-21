@@ -2,15 +2,19 @@ import { describe, expect, it } from 'vitest';
 import * as areaText from './areaText';
 import {
   AREA_BEATEN_TITLE,
+  AREA_MAP_TITLE,
+  NEW_AREA_LABEL,
   areaLabel,
+  areaStarsText,
   bestStarsLine,
   exitClosedText,
+  lockedAreaText,
   snacksLeftLabel,
   starLines,
   starsShortLine,
 } from './areaText';
 import { CANAL_TREASURES } from './catalogue';
-import { NO_STARS, type AreaStars } from './stars';
+import { NO_STARS, STARS_PER_AREA, type AreaStars } from './stars';
 
 /** The tripText.test banned list, plus "level" (areas are named "Area 1" in UI text). */
 const BANNED = [
@@ -64,7 +68,8 @@ function allStarLines(earned: AreaStars, specialName: string): string[] {
 
 /** Every output of every text helper over the samples. */
 function collectHelperOutputs(): string[] {
-  const outputs: string[] = [areaLabel(1), areaLabel(12)];
+  const outputs: string[] = [areaLabel(1), areaLabel(12), lockedAreaText(2), lockedAreaText(12)];
+  for (let count = 0; count <= STARS_PER_AREA; count += 1) outputs.push(areaStarsText(count));
   for (const left of SNACKS_LEFT_SAMPLES) outputs.push(snacksLeftLabel(left), exitClosedText(left));
   for (const earned of allStars()) {
     for (const name of SPECIAL_NAMES) outputs.push(...allStarLines(earned, name));
@@ -165,5 +170,32 @@ describe('star counts', () => {
     for (const earned of allStars()) {
       for (const best of allStars()) expect(starsShortLine(earned, best).length).toBeLessThanOrEqual(SHORT_LINE_MAX);
     }
+  });
+});
+
+describe('area map text', () => {
+  it('titles the map "Where to?" and tags new areas "New!"', () => {
+    expect(AREA_MAP_TITLE).toBe('Where to?');
+    expect(NEW_AREA_LABEL).toBe('New!');
+  });
+
+  it('names the area before the locked one', () => {
+    expect(lockedAreaText(2)).toBe('Beat Area 1 to unlock!');
+    expect(lockedAreaText(5)).toBe('Beat Area 4 to unlock!');
+  });
+
+  it.each([1, 0, -1, 2.5, Number.NaN])('rejects %s for the locked line', (areaNumber) => {
+    expect(() => lockedAreaText(areaNumber)).toThrow(RangeError);
+  });
+
+  it('reads the stars count for a screen reader', () => {
+    expect(areaStarsText(0)).toBe('0 of 3 stars');
+    expect(areaStarsText(1)).toBe('1 of 3 stars');
+    expect(areaStarsText(2)).toBe('2 of 3 stars');
+    expect(areaStarsText(STARS_PER_AREA)).toBe('3 of 3 stars');
+  });
+
+  it.each([-1, STARS_PER_AREA + 1, 1.5, Number.NaN])('rejects %s for the stars text', (count) => {
+    expect(() => areaStarsText(count)).toThrow(RangeError);
   });
 });

@@ -1,4 +1,4 @@
-import { areaById } from './areas';
+import { areaById, type AreaData } from './areas';
 import { treasureById } from './catalogue';
 import {
   createEncounter,
@@ -11,6 +11,7 @@ import {
   type EncounterState,
 } from './encounter';
 import { meetsTilapia } from './factCards';
+import { zoneThreats } from './hiding';
 import { createLegs, isProtected, presentCount, quantizeProgress, type LegsState } from './legs';
 import { isAxolotlFindId, type RealMorphId } from './morphs';
 import { DEFAULT_TRIP_SEED, nextTripSeed, placeTreasures, type PlacedFind } from './placement';
@@ -116,13 +117,16 @@ export interface TripState {
 
 /**
  * Optional trip start data: this trip's stranded axolotl (none by default), whether the tilapia
- * fact card was already seen (false by default) and the treasures lost on the last trip
- * (`returnedFinds`, none by default), which are always placed this trip (PRD A12, B9).
+ * fact card was already seen (false by default), the treasures lost on the last trip
+ * (`returnedFinds`, none by default), which are always placed this trip (PRD A12, B9), and the
+ * trip's area (`area`), read for its special treasure in place of looking the area id up in AREAS;
+ * a dev area, which is never in AREAS, passes it.
  */
 export interface TripOptions {
   stranding?: Stranding | null;
   tilapiaCardSeen?: boolean;
   returnedFinds?: readonly FindId[];
+  area?: Readonly<AreaData>;
 }
 
 /**
@@ -187,14 +191,27 @@ export function createTripContext(overrides: Partial<TripContext> = {}): TripCon
   return { encounter: createEncounterContext(), carry: CARRY, finds: FINDS, ...overrides };
 }
 
+/** The trip's area: `area` when given, else the AREAS entry for `areaId`. Throws when `area` has another id. */
+function tripArea(areaId: string, area: Readonly<AreaData> | undefined): Readonly<AreaData> | undefined {
+  if (area === undefined) {
+    return areaById(areaId);
+  }
+  if (area.id !== areaId) {
+    throw new Error(`createTrip: options.area ${area.id} is not the trip's area ${areaId}`);
+  }
+  return area;
+}
+
 /**
  * Starts a trip: swimming from the Home Spot with a fresh encounter, an empty Trip Bag and the
  * given `banked` find ids (de-duplicated). `tripSeed` picks a few unbanked treasures for this trip
  * with the area's trip treasure tuning, and places each in a spot from its pool, with every Dash
  * pot sealed (PRD B4). `options.returnedFinds`, the treasures lost on the last trip, are always
  * placed; the area's special treasure is always placed while unbanked, outside the mix (B9, H6).
+ * The area is `options.area` when given, else the AREAS entry for the source's area id. Spots on
+ * the rarity's risky side of the area's threats are picked more often (issue #70).
  * `options.stranding` sets this trip's stranded axolotl, waiting at its place; it never changes the
- * placement. Throws when a pool cannot be placed.
+ * placement. Throws when a pool cannot be placed or `options.area` is not the source's area.
  */
 export function createTrip(
   source: TripSource,
@@ -204,7 +221,7 @@ export function createTrip(
   options: TripOptions = {},
 ): TripState {
   const holdings = createHoldings(banked);
-  const special = areaById(source.areaId)?.specialTreasureId;
+  const special = tripArea(source.areaId, options.area)?.specialTreasureId;
   const placed = placeTreasures(source.finds, source.spots, holdings.banked, tripSeed, {
     mustPlace: options.returnedFinds ?? [],
     extras: special ? [special] : [],
@@ -212,6 +229,7 @@ export function createTrip(
     mainPath: source.mainPath,
     tilapiaRoutes: source.tilapiaRoutes,
     lungeRange: TILAPIA.lungeRange,
+    threats: zoneThreats(source),
   });
   return {
     phase: 'swimming',

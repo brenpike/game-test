@@ -194,9 +194,9 @@ export class CollectionBookView {
     return this.container.visible;
   }
 
-  /** Shows the book at once for these found morphs and the tilapia card, on the first morph page with Next focused. */
-  open(foundMorphs: readonly RealMorphId[], tilapiaCard: boolean): void {
-    this.sections = bookListing(foundMorphs, tilapiaCard);
+  /** Shows the book at once for these found morphs and hazards met, on the first morph page with Next focused. */
+  open(foundMorphs: readonly RealMorphId[], metHazards: readonly string[]): void {
+    this.sections = bookListing(foundMorphs, metHazards);
     this.pages = [];
     this.pageIndex = 0;
     this.setFocus(NEXT_INDEX);

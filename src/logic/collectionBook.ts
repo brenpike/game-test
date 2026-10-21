@@ -3,8 +3,9 @@
  * own section, and the fact cards, with pages and the CSS px layout of one featured entry. Pure
  * data; drawing lives in the scene and art layers.
  */
+import { areaFactCards } from './areas';
 import { DREAM_COLOURS, type DreamColour, type DreamColourId } from './catalogue';
-import { BOY_OR_GIRL_FACT, FACT_CARD_UNFOUND_HINT, TILAPIA_FACT } from './factCards';
+import { BOY_OR_GIRL_FACT, FACT_CARD_UNFOUND_HINT, TILAPIA_FACT, type FactCard } from './factCards';
 import type { Rect, Size } from './hudLayout';
 import {
   MORPH_UNFOUND_HINT,
@@ -150,6 +151,9 @@ const DREAM_COLOURS_HEADING = 'Dream colours';
 
 const FACT_CARDS_HEADING = 'Fact cards';
 
+/** Ids of the fact cards with Book art: the only cards that show a picture once found. */
+const BOOK_ART_FACT_CARD_IDS: ReadonlySet<string> = new Set([TILAPIA_FACT.id]);
+
 function createMorphEntry(morph: Readonly<RealMorph>, found: boolean): BookMorphEntry {
   if (!found) return { id: morph.id, found: false, name: MORPH_UNFOUND_NAME, badge: null, text: MORPH_UNFOUND_HINT };
   return { id: morph.id, found: true, name: morph.name, badge: morph.badge, badgeName: morph.name, text: morph.fact };
@@ -159,11 +163,11 @@ function createDreamColourEntry(colour: DreamColour): BookDreamColourEntry {
   return { id: colour.id, name: colour.name, patterned: colour.kind !== 'solid', label: DREAM_COLOUR_LABEL };
 }
 
-function createTilapiaEntry(found: boolean): BookFactCardEntry {
+function createFactCardEntry(card: Readonly<FactCard>, found: boolean): BookFactCardEntry {
   if (!found) {
-    return { id: TILAPIA_FACT.id, found: false, name: MORPH_UNFOUND_NAME, text: FACT_CARD_UNFOUND_HINT, hasPicture: false };
+    return { id: card.id, found: false, name: MORPH_UNFOUND_NAME, text: FACT_CARD_UNFOUND_HINT, hasPicture: false };
   }
-  return { id: TILAPIA_FACT.id, found: true, name: TILAPIA_FACT.name, text: TILAPIA_FACT.body, hasPicture: true };
+  return { id: card.id, found: true, name: card.name, text: card.body, hasPicture: BOOK_ART_FACT_CARD_IDS.has(card.id) };
 }
 
 function createBoyOrGirlEntry(): BookFactCardEntry {
@@ -178,17 +182,20 @@ function countedHeading(name: string, entries: readonly { found: boolean }[]): s
 /**
  * The Collection Book sections, always Morphs, Dream colours, then Fact cards. Morphs lists the eight
  * real morphs in REAL_MORPHS order, found when in `foundMorphs` (duplicates and order ignored).
- * Dream colours lists all 12 in catalogue order, each with DREAM_COLOUR_LABEL. Fact cards holds the
- * tilapia card, found only when `tilapiaFound` is true, then the boy or girl card, always found
- * and with no picture (PRD C14).
+ * Dream colours lists all 12 in catalogue order, each with DREAM_COLOUR_LABEL. Fact cards holds each
+ * card of `cards` in order (area-table order by default), found only when its id is in
+ * `metHazards`, with a picture only when found and it has Book art (today the tilapia), then the
+ * boy or girl card, always found and with no picture (PRD C14).
  */
 export function bookListing(
   foundMorphs: readonly RealMorphId[],
-  tilapiaFound: boolean,
+  metHazards: readonly string[],
+  cards: readonly Readonly<FactCard>[] = areaFactCards(),
 ): readonly [BookMorphSection, BookDreamColourSection, BookFactCardSection] {
   const owned = new Set(foundMorphs);
   const morphs = REAL_MORPHS.map((morph) => createMorphEntry(morph, owned.has(morph.id)));
-  const factCards = [createTilapiaEntry(tilapiaFound), createBoyOrGirlEntry()];
+  const met = new Set(metHazards);
+  const factCards = [...cards.map((card) => createFactCardEntry(card, met.has(card.id))), createBoyOrGirlEntry()];
   return [
     { category: 'morph', heading: countedHeading(MORPHS_HEADING, morphs), entries: morphs },
     { category: 'dreamColour', heading: DREAM_COLOURS_HEADING, entries: DREAM_COLOURS.map(createDreamColourEntry) },

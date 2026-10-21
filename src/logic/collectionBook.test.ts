@@ -15,7 +15,7 @@ import {
   type BookFeatureMeasure,
   type BookSection,
 } from './collectionBook';
-import { BOY_OR_GIRL_FACT, FACT_CARD_UNFOUND_HINT, TILAPIA_FACT } from './factCards';
+import { BOY_OR_GIRL_FACT, FACT_CARD_UNFOUND_HINT, TILAPIA_FACT, type FactCard } from './factCards';
 import type { HudView, Rect, Size } from './hudLayout';
 import { MORPH_UNFOUND_HINT, MORPH_UNFOUND_NAME, REAL_MORPHS, type RealMorphId } from './morphs';
 import { CHEST_BUTTON, UI, chestLayout, rowsPerPage, type ChestMeasure } from './tankUi';
@@ -87,13 +87,13 @@ function textSize(text: string, px: number, wrapW: number, em: number): Size {
 
 /** Every Collection Book listing, for each found state of every entry. */
 function everyListing(): (readonly BookSection[])[] {
-  return [bookListing([], false), bookListing(ALL_MORPHS, true), bookListing(['wild'], false)];
+  return [bookListing([], []), bookListing(ALL_MORPHS, ['tilapia']), bookListing(['wild'], [])];
 }
 
 /** Every featured (morph or fact card) entry, found and unfound. */
 function featuredEntries(): { name: string; text: string; hasPicture: boolean; hasBadge: boolean }[] {
-  const [unfoundMorphs, , unfoundCards] = bookListing([], false);
-  const [foundMorphs, , foundCards] = bookListing(ALL_MORPHS, true);
+  const [unfoundMorphs, , unfoundCards] = bookListing([], []);
+  const [foundMorphs, , foundCards] = bookListing(ALL_MORPHS, ['tilapia']);
   const morphs = [...unfoundMorphs.entries, ...foundMorphs.entries].map((entry) => ({
     name: entry.name,
     text: entry.text,
@@ -127,7 +127,7 @@ function longestHeading(): string {
 
 /** The longest page text: every Dream colour on its own page. */
 function longestPageText(): string {
-  const pageCount = bookPages(bookListing([], false), 1).length;
+  const pageCount = bookPages(bookListing([], []), 1).length;
   return pageText(pageCount, pageCount);
 }
 
@@ -185,7 +185,7 @@ describe('collection book text', () => {
   });
 
   it('labels Dream colours with the exact PRD wording and an em dash', () => {
-    const [, dreamColours] = bookListing([], false);
+    const [, dreamColours] = bookListing([], []);
     for (const entry of dreamColours.entries) {
       expect(entry.label).toBe('Dream colour — not found in nature');
       expect(entry.label).toContain('—');
@@ -209,7 +209,7 @@ describe('collection book text', () => {
 
 describe('bookListing', () => {
   it('always lists Morphs, Dream colours, then Fact cards', () => {
-    const sections = bookListing([], false);
+    const sections = bookListing([], []);
     expect(sections.map((section) => section.category)).toEqual(['morph', 'dreamColour', 'factCard']);
     expect(sections.map((section) => section.heading)).toEqual([
       'Morphs: 0 of 8 found',
@@ -219,10 +219,10 @@ describe('bookListing', () => {
   });
 
   it('counts found morphs and fact cards in the headings', () => {
-    const [morphs, , factCards] = bookListing(['wild', 'melanoid', 'wild'], true);
+    const [morphs, , factCards] = bookListing(['wild', 'melanoid', 'wild'], ['tilapia']);
     expect(morphs.heading).toBe('Morphs: 2 of 8 found');
     expect(factCards.heading).toBe('Fact cards: 2 of 2 found');
-    expect(bookListing(ALL_MORPHS, true)[0].heading).toBe('Morphs: 8 of 8 found');
+    expect(bookListing(ALL_MORPHS, ['tilapia'])[0].heading).toBe('Morphs: 8 of 8 found');
   });
 
   it('holds exactly the eight real morphs and no Dream colour id', () => {
@@ -244,14 +244,14 @@ describe('bookListing', () => {
 
   it('never shows a Dream colour as a morph', () => {
     const dreamNames = new Set(DREAM_COLOURS.map((colour) => colour.name));
-    const [morphs, dreamColours] = bookListing(ALL_MORPHS, true);
+    const [morphs, dreamColours] = bookListing(ALL_MORPHS, ['tilapia']);
     for (const entry of morphs.entries) expect(dreamNames.has(entry.name)).toBe(false);
     const morphIds = new Set<string>(ALL_MORPHS);
     for (const entry of dreamColours.entries) expect(morphIds.has(entry.id)).toBe(false);
   });
 
   it('shows a found morph with its name, badge and fact', () => {
-    const [morphs] = bookListing(ALL_MORPHS, false);
+    const [morphs] = bookListing(ALL_MORPHS, []);
     expect(morphs.entries).toEqual(
       REAL_MORPHS.map((morph) => ({
         id: morph.id,
@@ -265,7 +265,7 @@ describe('bookListing', () => {
   });
 
   it('gives the eight found morphs eight distinct badges', () => {
-    const [morphs] = bookListing(ALL_MORPHS, true);
+    const [morphs] = bookListing(ALL_MORPHS, ['tilapia']);
     const badges = morphs.entries.map((entry) => entry.badge);
     expect(badges).toHaveLength(8);
     expect(badges).not.toContain(null);
@@ -273,7 +273,7 @@ describe('bookListing', () => {
   });
 
   it('shows an unfound morph as "???" with the hint and no badge', () => {
-    const [morphs] = bookListing([], false);
+    const [morphs] = bookListing([], []);
     for (const entry of morphs.entries) {
       expect(entry).toEqual({ id: entry.id, found: false, name: '???', badge: null, text: MORPH_UNFOUND_HINT });
     }
@@ -281,8 +281,8 @@ describe('bookListing', () => {
   });
 
   it('tells found and unfound apart by name, text and badge, not only colour', () => {
-    const [found] = bookListing(ALL_MORPHS, true);
-    const [unfound] = bookListing([], false);
+    const [found] = bookListing(ALL_MORPHS, ['tilapia']);
+    const [unfound] = bookListing([], []);
     for (const [index, foundEntry] of found.entries.entries()) {
       const unfoundEntry = unfound.entries[index];
       expect(foundEntry.name).not.toBe(unfoundEntry.name);
@@ -290,8 +290,8 @@ describe('bookListing', () => {
       expect(foundEntry.badge).not.toBeNull();
       expect(unfoundEntry.badge).toBeNull();
     }
-    const [, , foundCards] = bookListing([], true);
-    const [, , unfoundCards] = bookListing([], false);
+    const [, , foundCards] = bookListing([], ['tilapia']);
+    const [, , unfoundCards] = bookListing([], []);
     expect(foundCards.entries[0].name).not.toBe(unfoundCards.entries[0].name);
     expect(foundCards.entries[0].text).not.toBe(unfoundCards.entries[0].text);
   });
@@ -310,9 +310,9 @@ describe('bookListing', () => {
   });
 
   it('holds the tilapia card only once the tilapia is met (C14)', () => {
-    const [, , met] = bookListing([], true);
+    const [, , met] = bookListing([], ['tilapia']);
     expect(met.entries[0]).toEqual({ id: 'tilapia', found: true, name: 'Tilapia', text: TILAPIA_FACT.body, hasPicture: true });
-    const [, , notMet] = bookListing(ALL_MORPHS, false);
+    const [, , notMet] = bookListing(ALL_MORPHS, []);
     expect(notMet.entries[0]).toEqual({
       id: 'tilapia',
       found: false,
@@ -329,11 +329,23 @@ describe('bookListing', () => {
       expect(factCards.entries[1]).toEqual(boyOrGirl);
     }
   });
+
+  it('lists the given fact cards in order before the boy or girl card, found when met, a picture only with Book art', () => {
+    const heron: FactCard = { id: 'heron', name: 'Heron', title: 'Meet the heron', body: 'Herons wade and hunt.' };
+    const [, , factCards] = bookListing([], ['heron', 'tilapia', 'moon'], [heron, TILAPIA_FACT]);
+    expect(factCards.entries.map((entry) => entry.id)).toEqual(['heron', 'tilapia', 'boyOrGirl']);
+    expect(factCards.entries[0]).toEqual({ id: 'heron', found: true, name: 'Heron', text: heron.body, hasPicture: false });
+    expect(factCards.entries[1].hasPicture).toBe(true);
+    expect(factCards.heading).toBe('Fact cards: 3 of 3 found');
+    const [, , unmet] = bookListing([], [], [heron, TILAPIA_FACT]);
+    expect(unmet.entries[0]).toEqual({ id: 'heron', found: false, name: '???', text: FACT_CARD_UNFOUND_HINT, hasPicture: false });
+    expect(unmet.heading).toBe('Fact cards: 1 of 3 found');
+  });
 });
 
 describe('bookPages', () => {
   it('gives each morph and fact card its own page and splits Dream colours by rows', () => {
-    const sections = bookListing(['wild'], true);
+    const sections = bookListing(['wild'], ['tilapia']);
     const pages = bookPages(sections, 5);
     expect(pages.map((page) => [page.section.category, page.entries.length])).toEqual([
       ...REAL_MORPHS.map(() => ['morph', 1]),
@@ -349,7 +361,7 @@ describe('bookPages', () => {
   });
 
   it('puts every Dream colour on its own page at one row per page', () => {
-    expect(bookPages(bookListing([], false), 1)).toHaveLength(REAL_MORPHS.length + 12 + 2);
+    expect(bookPages(bookListing([], []), 1)).toHaveLength(REAL_MORPHS.length + 12 + 2);
   });
 
   it('gives an empty section one page', () => {
@@ -359,7 +371,7 @@ describe('bookPages', () => {
   });
 
   it.each([0, -1, 1.5, Number.NaN])('throws for %s rows per page', (rows) => {
-    expect(() => bookPages(bookListing([], false), rows)).toThrow(RangeError);
+    expect(() => bookPages(bookListing([], []), rows)).toThrow(RangeError);
   });
 });
 
@@ -483,7 +495,7 @@ describe('collection book fit', () => {
   });
 
   it('gives at least one whole Dream colour row per page on every supported canvas', () => {
-    const [, dreamColours] = bookListing([], false);
+    const [, dreamColours] = bookListing([], []);
     const problems: string[] = [];
     for (const view of supportedCanvases()) {
       const { list } = chestLayout(view, BOOK_MEASURE);

@@ -18,8 +18,17 @@ export interface Size {
   h: number;
 }
 
-/** CSS viewport size in px. */
-export type HudView = StickView;
+/** The water's top and bottom rows as drawn on screen, in CSS px from the top of the canvas. */
+export interface ScreenWaterRows {
+  top: number;
+  bottom: number;
+}
+
+/**
+ * CSS viewport size in px. `waterRows` is set only for an area whose camera scrolls vertically;
+ * unset, the water rows are the canal's.
+ */
+export type HudView = StickView & { waterRows?: ScreenWaterRows };
 
 /**
  * HUD layout constants, in CSS px (the values HudScene uses). Banners show their text at
@@ -52,6 +61,29 @@ export const FIND_TOAST = Object.freeze({
   detailMinW: 90,
   nameWrapW: 360,
 });
+
+/**
+ * Returns the water rows on screen for a vertically scrolling area, clamped to the canvas: from the
+ * water line (`rows.surf`) or the screen top, whichever is lower, to the bed (`rows.bedTop`) or the
+ * screen bottom, whichever is higher.
+ *
+ * `cameraTop` is the world y at the camera's top edge (Phaser `camera.worldView.y`) and `zoom` the
+ * world-to-CSS-px zoom (fitView's `fitZoom`, not the device-pixel `zoom`). A world row y draws at
+ * (y - cameraTop) * zoom, the same mapping playMiddle uses for the canal, where the camera top is
+ * WORLD_H / 2 - cssH / (2 * fitZoom) (negative while letterboxed). Assumes some water is on
+ * screen; with the water wholly off screen, bottom is above top.
+ */
+export function screenWaterRows(
+  view: StickView,
+  rows: { surf: number; bedTop: number },
+  cameraTop: number,
+  zoom: number,
+): ScreenWaterRows {
+  return {
+    top: Math.max(0, (rows.surf - cameraTop) * zoom),
+    bottom: Math.min(view.cssH, (rows.bedTop - cameraTop) * zoom),
+  };
+}
 
 /**
  * The middle of the play area, where overlays cover only the status panels, as fractions of the
@@ -289,23 +321,28 @@ export function statusPanelsBox(controls: HudControls): Rect {
   return { x: left, y: top, w: right - left, h: bottom - top };
 }
 
+/** Returns the canal's water rows on screen: SURF to BED_TOP, the whole world fitted in view. */
+function canalWaterRows(view: StickView): ScreenWaterRows {
+  const { fitZoom } = fitView(view.cssW, view.cssH, 1, { worldH: WORLD_H, ...VIEW });
+  return {
+    top: view.cssH / 2 + (SURF - WORLD_H / 2) * fitZoom,
+    bottom: view.cssH / 2 + (BED_TOP - WORLD_H / 2) * fitZoom,
+  };
+}
+
 /**
  * Returns the middle of the play area: the full margin-inset width, from topFraction to
  * bottomFraction of the water as drawn on screen, between the surface and the top of the bed.
  * Inside it an overlay may cover only the status panels themselves, never open water.
  *
- * INVARIANT: the swim camera never scrolls vertically. fitView keeps the whole world height in
- * view (fitZoom <= cssH / WORLD_H) and fitWorldCamera in src/scenes/BootScene.ts sets camera
- * bounds exactly one view tall, centred on the world, so world row y always draws at
- * cssH / 2 + (y - WORLD_H / 2) * fitZoom.
- *
- * The water rows are the canal's (SURF to BED_TOP). An area with other water rows must pass its
- * own (X9).
+ * INVARIANT: the canal never scrolls vertically. fitView keeps the whole world height in view
+ * (fitZoom <= cssH / WORLD_H) and fitWorldCamera in src/scenes/BootScene.ts sets camera bounds
+ * exactly one view tall, centred on the world, so world row y always draws at
+ * cssH / 2 + (y - WORLD_H / 2) * fitZoom. A tall area scrolls, so it passes `view.waterRows`
+ * (see screenWaterRows) and this canal formula is skipped.
  */
 export function playMiddle(view: HudView): Rect {
-  const { fitZoom } = fitView(view.cssW, view.cssH, 1, { worldH: WORLD_H, ...VIEW });
-  const waterTop = view.cssH / 2 + (SURF - WORLD_H / 2) * fitZoom;
-  const waterBottom = view.cssH / 2 + (BED_TOP - WORLD_H / 2) * fitZoom;
+  const { top: waterTop, bottom: waterBottom } = view.waterRows ?? canalWaterRows(view);
   const top = waterTop + PLAY_MIDDLE.topFraction * (waterBottom - waterTop);
   const bottom = waterTop + PLAY_MIDDLE.bottomFraction * (waterBottom - waterTop);
   return { x: HUD.margin, y: top, w: view.cssW - 2 * HUD.margin, h: bottom - top };

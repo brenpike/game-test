@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AREAS, CANAL_AREA, areaById } from './areas';
 import { CANAL_TREASURES, RARITIES, treasureById, type Rarity } from './catalogue';
-import { coversAt, distanceToPath, inCave, meetsRarity, pastCurrent, routeDistance } from './hiding';
+import { DEV_TEST_AREA } from './devAreas';
+import { coversAt, distanceToPath, inCave, meetsRarity, pastCurrent, routeDistance, zoneThreats, type Threat } from './hiding';
 import { axolotlFindId } from './morphs';
 import {
   DEFAULT_TRIP_SEED,
@@ -13,7 +14,9 @@ import {
   type PlacementOptions,
   type RarityCounts,
 } from './placement';
+import { createTrip } from './trip';
 import {
+  LEGS,
   RISK,
   TILAPIA,
   TRIP_TREASURES,
@@ -23,7 +26,7 @@ import {
   type RiskTuning,
   type TripTreasureTuning,
 } from './tuning';
-import { buildCanalZone, type HidingSpot, type TilapiaRoute, type ZoneLayout } from './zone';
+import { buildCanalZone, buildZone, type HidingSpot, type TilapiaRoute, type ZoneLayout } from './zone';
 
 const ALL_SEEDS = [0xa70107, 1, 2, 3, 42, 1234, 0xdeadbeef, 0x12345678, 987654321];
 const TRIP_SEEDS = Array.from({ length: 25 }, (_, i) => i + 1);
@@ -567,6 +570,54 @@ describe('placeTreasures risk weight (issue #70)', () => {
     const random = vi.spyOn(Math, 'random');
     placeAll(zone, DEFAULT_TRIP_SEED, [], { ...withRoutes, extras: [specialId] });
     expect(random).not.toHaveBeenCalled();
+  });
+
+  it('gives the same placement from the canal threats as from its tilapia routes for trip seeds 1 to 25', () => {
+    const fromRoutes: PlacementOptions = { ...withRoutes, extras: [specialId] };
+    const fromThreats: PlacementOptions = { mainPath: zone.mainPath, threats: zoneThreats(zone), extras: [specialId] };
+    for (const seed of TRIP_SEEDS) {
+      expect(placeAll(zone, seed, [], fromThreats)).toEqual(placeAll(zone, seed, [], fromRoutes));
+    }
+  });
+
+  it('reads the threats in place of the tilapia routes, and empty threats give every spot a risk weight of 1', () => {
+    for (const seed of SEEDS_300) {
+      expect(placeAll(zone, seed, [], { ...withRoutes, threats: [] })).toEqual(placeAll(zone, seed, [], withoutRoutes));
+    }
+  });
+
+  it('weights a pool by distance to a leg-costing hazard shape like a route', () => {
+    const seeds = SEEDS_2000.concat(SEEDS_2000.map((seed) => seed + SEEDS_2000.length));
+    const legendary = idsOfRarity('legendary')[0];
+    const hazard: Threat[] = [{ kind: 'shape', shape: { kind: 'circle', x: 0, y: 0, r: 10 }, strike: 4 }];
+    expectShares(lineShares(legendary, seeds, { threats: hazard }), [4 / 9, 3 / 9, 2 / 9]);
+  });
+});
+
+describe('createTrip area option', () => {
+  const tripSeed = 1;
+  const devZone = buildZone(DEV_TEST_AREA.layout, DEFAULT_TRIP_SEED);
+  const specialId = DEV_TEST_AREA.specialTreasureId;
+
+  it('places the special treasure of a dev area passed as options.area', () => {
+    const trip = createTrip(devZone, LEGS, [], tripSeed, { area: DEV_TEST_AREA });
+    expect(trip.placed.map((placed) => placed.id)).toContain(specialId);
+  });
+
+  it('places no special treasure for a dev area left to the AREAS lookup', () => {
+    const trip = createTrip(devZone, LEGS, [], tripSeed);
+    expect(trip.placed.map((placed) => placed.id)).not.toContain(specialId);
+  });
+
+  it('gives the canal the same placement with or without its area passed', () => {
+    const canalZone = buildCanalZone();
+    for (const seed of TRIP_SEEDS) {
+      expect(createTrip(canalZone, LEGS, [], seed, { area: CANAL_AREA }).placed).toEqual(createTrip(canalZone, LEGS, [], seed).placed);
+    }
+  });
+
+  it('throws when options.area is not the source area', () => {
+    expect(() => createTrip(devZone, LEGS, [], tripSeed, { area: CANAL_AREA })).toThrow(/not the trip's area/);
   });
 });
 

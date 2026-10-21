@@ -10,8 +10,10 @@ import {
   controlKeepOuts,
   findToastBox,
   hudControls,
+  PLAY_MIDDLE,
   placeHudOverlays,
   playMiddle,
+  screenWaterRows,
   statusPanelsBox,
   type FindToastMeasure,
   type HudControls,
@@ -21,6 +23,7 @@ import {
   type HudOverlayRequest,
   type HudView,
   type Rect,
+  type ScreenWaterRows,
   type Size,
 } from './hudLayout';
 import { ALL_SNACKS_BANNER } from './tripText';
@@ -360,6 +363,98 @@ describe('playMiddle', () => {
       expect(rect.y + rect.h, `${view.cssW} x ${view.cssH}`).toBeLessThanOrEqual(0.7 * view.cssH + EPSILON);
       expect(rect.h).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('screenWaterRows', () => {
+  const view = { cssW: 400, cssH: 300 };
+  const tallRows = { surf: 80, bedTop: 678 };
+
+  it('measures the water from the camera top at zoom 1', () => {
+    expect(screenWaterRows(view, tallRows, 0, 1)).toEqual({ top: 80, bottom: 300 });
+    expect(screenWaterRows(view, tallRows, 40, 1)).toEqual({ top: 40, bottom: 300 });
+  });
+
+  it('clamps the top to the screen top once the water line has scrolled off', () => {
+    expect(screenWaterRows(view, tallRows, 200, 1)).toEqual({ top: 0, bottom: 300 });
+    expect(screenWaterRows(view, tallRows, 80, 1).top).toBe(0);
+  });
+
+  it('puts the bed on screen once the camera reaches the bottom of the area', () => {
+    expect(screenWaterRows(view, tallRows, 420, 1)).toEqual({ top: 0, bottom: 258 });
+    expect(screenWaterRows(view, tallRows, 678, 1).bottom).toBe(0);
+  });
+
+  it('clamps the bottom to the screen bottom while the bed is below the view', () => {
+    expect(screenWaterRows(view, tallRows, 378, 1).bottom).toBe(300);
+    expect(screenWaterRows(view, tallRows, 379, 1).bottom).toBe(299);
+  });
+
+  it('scales world rows by the zoom', () => {
+    expect(screenWaterRows(view, { surf: 80, bedTop: 400 }, 20, 0.5)).toEqual({ top: 30, bottom: 190 });
+  });
+
+  it('matches the canal rows when the camera is centred on the world, letterbox included', () => {
+    for (const canvas of [{ cssW: 320, cssH: 440 }, { cssW: 800, cssH: 600 }, { cssW: 414, cssH: 932 }]) {
+      const rows = { surf: 80, bedTop: 318 };
+      const fitZoom = Math.min(canvas.cssH / 360, canvas.cssW / 320);
+      const cameraTop = 180 - canvas.cssH / (2 * fitZoom);
+      const water = screenWaterRows({ cssW: canvas.cssW, cssH: 100000 }, rows, cameraTop, fitZoom);
+      const middle = playMiddle({ ...canvas, waterRows: water });
+      const canal = playMiddle(canvas);
+      expect(middle.y).toBeCloseTo(canal.y, 9);
+      expect(middle.h).toBeCloseTo(canal.h, 9);
+    }
+  });
+});
+
+describe('playMiddle with scrolled water rows', () => {
+  const view = { cssW: 400, cssH: 300 };
+  const tallRows = { surf: 80, bedTop: 678 };
+
+  /** The 30% to 70% band of a screen-water-rows pair. */
+  function bandOf(waterRows: ScreenWaterRows): { top: number; bottom: number } {
+    const span = waterRows.bottom - waterRows.top;
+    return { top: waterRows.top + 0.3 * span, bottom: waterRows.top + 0.7 * span };
+  }
+
+  it.each([
+    { note: 'top of a 2-screen-tall area', cameraTop: 0, top: 146, bottom: 234 },
+    { note: 'middle of a 2-screen-tall area', cameraTop: 210, top: 90, bottom: 210 },
+    { note: 'bottom of a 2-screen-tall area', cameraTop: 420, top: 77.4, bottom: 180.6 },
+  ])('measures the middle on screen at the $note', ({ cameraTop, top, bottom }) => {
+    const waterRows = screenWaterRows(view, tallRows, cameraTop, 1);
+    const rect = playMiddle({ ...view, waterRows });
+    expect(rect.x).toBe(HUD.margin);
+    expect(rect.w).toBe(view.cssW - 2 * HUD.margin);
+    expect(rect.y).toBeCloseTo(top, 9);
+    expect(rect.y + rect.h).toBeCloseTo(bottom, 9);
+    expect(rect.y).toBeCloseTo(bandOf(waterRows).top, 9);
+  });
+
+  it('puts the band fractions inside the water rows it is given', () => {
+    const waterRows = { top: 50, bottom: 250 };
+    const rect = playMiddle({ ...view, waterRows });
+    expect(rect.y).toBeCloseTo(50 + PLAY_MIDDLE.topFraction * 200, 9);
+    expect(rect.y + rect.h).toBeCloseTo(50 + PLAY_MIDDLE.bottomFraction * 200, 9);
+    expect(rect.y).toBeGreaterThanOrEqual(waterRows.top);
+    expect(rect.y + rect.h).toBeLessThanOrEqual(waterRows.bottom);
+  });
+
+  it('equals the canal result when waterRows is unset', () => {
+    for (const canvas of [SMALLEST, PORTRAIT, { cssW: 800, cssH: 600 }, { cssW: 414, cssH: 932 }]) {
+      expect(playMiddle({ ...canvas, waterRows: undefined })).toEqual(playMiddle(canvas));
+    }
+  });
+
+  it('keeps overlays clear of the scrolled middle', () => {
+    const waterRows = screenWaterRows({ cssW: 800, cssH: 600 }, tallRows, 210, 1);
+    const tall = { cssW: 800, cssH: 600, waterRows };
+    const controls = hudControls(tall, SIZES);
+    const keepOuts = controlKeepOuts(controls, { goHomeVisible: false });
+    const placed = placeHudOverlays(tall, controls, keepOuts, requestsFor(HUD_OVERLAY_PRIORITY, SMALL_TEXTS));
+    expectAllClear(tall, keepOuts, placed.map((entry) => entry.rect));
+    expect(placed.flatMap((entry) => placementProblems(tall, controls, entry))).toEqual([]);
   });
 });
 

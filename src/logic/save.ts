@@ -4,10 +4,11 @@
  *
  * Only the hub is saved: banked treasure ids (so owned Dream colours), the owned axolotls with their
  * names, looks, worn Dream colours and outfits, the chosen explorer, the Home Tank layout, the
- * Collection Book and the best stars per area. Never saved: the Trip Bag, any trip state, legs,
- * Shell blocks used this trip, the trip seed, the eaten snacks and the stranded axolotl left
- * waiting. The canal stays session-only, so a loaded game opens in the Home Tank and unbanked finds
- * reappear on the next trip in fresh spots (D3).
+ * Collection Book, the best stars per area, the last chosen area and the hazards met. Never saved:
+ * the Trip Bag, any trip state, legs, Shell blocks used this trip, and each area's memory: the trip
+ * seed, the eaten snacks, the stranded axolotl left waiting and the lost treasures. Area memory
+ * stays session-only, so a loaded game opens in the Home Tank and unbanked finds reappear on the
+ * next trip in fresh spots (D3).
  *
  * Additive rule: a new hub field loads with its default when an older save lacks it, with no
  * version bump. Only a change an old save cannot load by default (a rename, a new meaning) bumps
@@ -23,18 +24,29 @@
  * First-find cards (#83) came under the additive rule: a missing or non-array firstFindsSeen loads
  * as none seen; unknown kinds are dropped; each kind is kept once, in FIRST_FIND_KINDS order. Start
  * over erases the save, so the cards show again in the new game.
+ *
+ * Areas (#73) came under the additive rule, with no version bump: the hub's `lastAreaId` and
+ * `metHazards`. A missing, unknown or locked lastAreaId loads as the newest unlocked area. A missing
+ * or non-array metHazards loads as none met; unknown ids are dropped; each id is kept once, in
+ * areaFactCards order. Stars saved under an unknown area id are dropped.
+ *
+ * Legacy `book.tilapiaCard`: the Collection Book no longer holds the tilapia card, the hub's
+ * `metHazards` does. The encoder still writes `book.tilapiaCard` (true when 'tilapia' is met), so
+ * an older build reads the card, and the loader adds 'tilapia' to metHazards when it is exactly true.
  */
 import { DEFAULT_LOOK, LOOK_FIELDS, LOOK_FIELD_OPTIONS, copyLook, type AxolotlLook, type LookField } from './axolotlLook';
 import { cleanName, isValidName, unusedSuggestedName } from './axolotlNames';
-import { areaById } from './areas';
+import { areaById, resolveAreaId } from './areas';
 import { ownedDreamColours, treasureById, type DreamColourId } from './catalogue';
 import { wornDreamOrNone } from './dreamPaint';
+import { TILAPIA_FACT } from './factCards';
 import { FIRST_FIND_KINDS, type FirstFindKind } from './firstFind';
 import { REAL_MORPHS, axolotlFindId, isAxolotlFindId, type RealMorphId } from './morphs';
 import { repairOutfits, type Outfit } from './outfit';
 import {
   STARTER_AXOLOTL_ID,
   createSession,
+  orderedMetHazards,
   type CollectionBookState,
   type HubState,
   type OwnedAxolotl,
@@ -86,21 +98,32 @@ export interface LoadedSave {
   gate: SaveGate;
 }
 
-/** The hub as save text: `{"version":SAVE_VERSION,"hub":{...}}`, with only the HubState fields. */
+/**
+ * The Collection Book as saved: the CollectionBookState fields plus the legacy `tilapiaCard`, true
+ * when the tilapia is met, so an older build still reads the tilapia card.
+ */
+type SavedBook = CollectionBookState & { tilapiaCard: boolean };
+
+/** The hub as saved: every HubState field, with the book as a SavedBook. */
+type SavedHub = Omit<HubState, 'book'> & { book: SavedBook };
+
+/** The hub as save text: `{"version":SAVE_VERSION,"hub":{...}}`, with only the HubState fields and the legacy book.tilapiaCard. */
 export function encodeSave(hub: HubState): string {
   return JSON.stringify({ version: SAVE_VERSION, hub: savedHub(hub) });
 }
 
 /** An allowlisted copy of `hub`. A new HubState field, optional or not, fails the build here until it is saved. */
-function savedHub(hub: HubState): HubState {
+function savedHub(hub: HubState): SavedHub {
   return {
     banked: [...hub.banked],
     axolotls: hub.axolotls.map(savedAxolotl),
     tank: { placed: hub.tank.placed.map(savedPlacement) },
-    book: savedBook(hub.book),
+    book: savedBook(hub.book, hub.metHazards),
     stars: savedStars(hub.stars),
     explorerId: hub.explorerId,
     firstFindsSeen: [...hub.firstFindsSeen],
+    lastAreaId: hub.lastAreaId,
+    metHazards: [...hub.metHazards],
   } satisfies { [Key in keyof HubState]-?: unknown };
 }
 
@@ -134,11 +157,12 @@ function savedPlacement(placement: TankPlacement): TankPlacement {
   return { id: placement.id, x: placement.x, y: placement.y } satisfies { [Key in keyof TankPlacement]-?: unknown };
 }
 
-function savedBook(book: CollectionBookState): CollectionBookState {
+/** An allowlisted copy of `book` with the legacy tilapiaCard. A new CollectionBookState field fails the build here until it is saved. */
+function savedBook(book: CollectionBookState, metHazards: readonly string[]): SavedBook {
   return {
     foundMorphs: [...book.foundMorphs],
-    tilapiaCard: book.tilapiaCard,
-  } satisfies { [Key in keyof CollectionBookState]-?: unknown };
+    tilapiaCard: metHazards.includes(TILAPIA_FACT.id),
+  } satisfies { [Key in keyof SavedBook]-?: unknown };
 }
 
 function savedStars(stars: AreaStarsRecord): AreaStarsRecord {
@@ -191,19 +215,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * A whole HubState from a saved hub, each field repaired on its own. Outfits are repaired once the
- * axolotls and the banked ids are (repairOutfits).
+ * axolotls and the banked ids are (repairOutfits); the last chosen area once the stars are.
  */
 function repairedHub(saved: Record<string, unknown>): HubState {
   const banked = repairedBanked(saved.banked);
   const axolotls = repairOutfits(repairedAxolotls(saved.axolotls, ownedDreamColours(banked)), banked);
+  const stars = repairedStars(saved.stars);
   return {
     banked,
     axolotls,
     tank: repairedTank(saved.tank, banked),
     book: repairedBook(saved.book, axolotls),
-    stars: repairedStars(saved.stars),
+    stars,
     explorerId: repairedExplorerId(saved.explorerId, axolotls),
     firstFindsSeen: repairedFirstFindsSeen(saved.firstFindsSeen),
+    lastAreaId: resolveAreaId(saved.lastAreaId, stars),
+    metHazards: repairedMetHazards(saved.metHazards, saved.book),
   };
 }
 
@@ -304,15 +331,22 @@ function repairedTank(saved: unknown, banked: readonly string[]): TankLayout {
   return sanitizeLayout({ placed: saved.placed.filter(isPlacementShape) }, banked);
 }
 
-/** Found morphs (known ids plus every owned morph) in REAL_MORPHS order; the tilapia card only when exactly true. */
+/** Found morphs (known ids plus every owned morph) in REAL_MORPHS order. */
 function repairedBook(saved: unknown, axolotls: readonly OwnedAxolotl[]): CollectionBookState {
   const record = isRecord(saved) ? saved : {};
   const savedFound: unknown[] = Array.isArray(record.foundMorphs) ? record.foundMorphs : [];
   const found = new Set<unknown>([...savedFound, ...axolotls.map((axolotl) => axolotl.morph)]);
-  return {
-    foundMorphs: REAL_MORPHS.map((morph) => morph.id).filter((id) => found.has(id)),
-    tilapiaCard: record.tilapiaCard === true,
-  };
+  return { foundMorphs: REAL_MORPHS.map((morph) => morph.id).filter((id) => found.has(id)) };
+}
+
+/**
+ * The saved hazards met, plus the tilapia when the saved book's legacy tilapiaCard is exactly true:
+ * known ids only, each once, in areaFactCards order; a non-array is none met.
+ */
+function repairedMetHazards(saved: unknown, savedBook: unknown): string[] {
+  const met: unknown[] = Array.isArray(saved) ? saved : [];
+  const legacyTilapia = isRecord(savedBook) && savedBook.tilapiaCard === true ? [TILAPIA_FACT.id] : [];
+  return orderedMetHazards([...met, ...legacyTilapia]);
 }
 
 /** Stars of known areas only (own keys), each star true only when exactly true; missing is none. */
@@ -342,10 +376,10 @@ function repairedFirstFindsSeen(saved: unknown): FirstFindKind[] {
   return FIRST_FIND_KINDS.filter((kind) => saved.includes(kind));
 }
 
-/** The session a save read starts: the loaded hub with a fresh canal, else a new session. */
+/** The session a save read starts: the loaded hub with fresh memory for every area, else a new session. */
 export function sessionFromSave(read: SaveRead): Session {
   const fresh = createSession();
-  return read.kind === 'loaded' ? { hub: read.hub, canal: fresh.canal } : fresh;
+  return read.kind === 'loaded' ? { hub: read.hub, areas: fresh.areas } : fresh;
 }
 
 /**

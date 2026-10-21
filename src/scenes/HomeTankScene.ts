@@ -28,6 +28,7 @@ import { wornIds } from '../logic/outfit';
 import { outfitPerks } from '../logic/perks';
 import { spriteFrameBounds } from '../logic/spriteAnchor';
 import {
+  areaMemory,
   bestStars,
   canRescueMore,
   chooseExplorer,
@@ -505,7 +506,7 @@ export class HomeTankScene extends Phaser.Scene {
       ending,
       this.session.hub.banked.length,
       areaStars,
-      this.session.canal.waitingStranded,
+      areaMemory(this.session, this.area.id).waitingStranded,
       dueFirstFindCards(this.session.hub.banked, this.session.hub.firstFindsSeen),
     );
     this.refreshHubFocus();
@@ -642,10 +643,10 @@ export class HomeTankScene extends Phaser.Scene {
     this.showHub(this.hubIndexOf('treasureChest'));
   }
 
-  /** Opens the Collection Book over the hub (PRD C12, C14) with the found morphs and the tilapia card. */
+  /** Opens the Collection Book over the hub (PRD C12, C14) with the found morphs and the hazards met. */
   private openBook(): void {
     this.leaveHub('book');
-    this.book.open(this.session.hub.book.foundMorphs, this.session.hub.book.tilapiaCard);
+    this.book.open(this.session.hub.book.foundMorphs, this.session.hub.metHazards);
   }
 
   /** The Collection Book closed: back to the hub with Collection Book focused. */

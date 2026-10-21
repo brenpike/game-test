@@ -7,6 +7,28 @@ import { STARS_PER_AREA, starCount, type AreaStars } from './stars';
 /** Title of the card shown when the open exit is reached (PRD H5). */
 export const AREA_BEATEN_TITLE = 'Area beaten!';
 
+/** Title of the area map (art guide section 8, "Area map" row). */
+export const AREA_MAP_TITLE = 'Where to?';
+
+/** Tag on a newly unlocked area on the area map. */
+export const NEW_AREA_LABEL = 'New!';
+
+/** Locked-area line (art guide section 8): names the area to beat, which is the one before. */
+export function lockedAreaText(areaNumber: number): string {
+  if (!Number.isInteger(areaNumber) || areaNumber < 2) {
+    throw new RangeError(`lockedAreaText needs an integer area number of 2 or more, got ${areaNumber}`);
+  }
+  return `Beat ${areaLabel(areaNumber - 1)} to unlock!`;
+}
+
+/** Stars count for a screen reader or aria-like label, such as "2 of 3 stars". */
+export function areaStarsText(count: number): string {
+  if (!Number.isInteger(count) || count < 0 || count > STARS_PER_AREA) {
+    throw new RangeError(`areaStarsText needs an integer from 0 to ${STARS_PER_AREA}, got ${count}`);
+  }
+  return `${count} of ${STARS_PER_AREA} stars`;
+}
+
 /** UI name of area `areaNumber`, such as "Area 1". */
 export function areaLabel(areaNumber: number): string {
   return `Area ${areaNumber}`;

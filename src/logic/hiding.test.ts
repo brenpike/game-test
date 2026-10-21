@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { RARITIES } from './catalogue';
+import type { FactCard } from './factCards';
+import type { HazardSpawn, HazardType } from './hazards';
 import {
   MAIN_PATH_REACH,
   PAD_COVER_DEPTH,
   PAST_CURRENT_DEPTH,
+  RISK_COMMON_MARGIN,
   coversAt,
   distanceToPath,
   inCave,
@@ -11,14 +14,20 @@ import {
   isDeep,
   meetsRarity,
   meetsRiskRule,
+  meetsThreatRiskRule,
   pastCurrent,
+  riskBands,
+  riskDistance,
   routeDistance,
   spotMatchesLabels,
   turnDistance,
   underPad,
   withinLungeRange,
+  zoneThreats,
   type HidingGeometry,
+  type Threat,
 } from './hiding';
+import { TILAPIA_SPECIES, type PredatorRoute, type PredatorSpecies } from './predators';
 import { RISK, TILAPIA } from './tuning';
 import { SURF, type CurrentZone, type HidingSpot, type TilapiaRoute } from './zone';
 
@@ -439,5 +448,172 @@ describe('meetsRarity with tilapia routes', () => {
     expect(spotMatchesLabels(spotAt(130, 200), GEO)).toBe(true);
     expect(spotMatchesLabels(spotAt(130, 200), near)).toBe(false);
     expect(spotMatchesLabels(spotAt(130, 200), near, { ...RISK, band: { ...RISK.band, common: { over: 0, upTo: 150 } } })).toBe(true);
+  });
+});
+
+function testFact(id: string): FactCard {
+  return { id, name: id, title: `Meet the ${id}`, body: `A ${id} for tests.` };
+}
+
+/** A test predator with a shorter strike than the tilapia. */
+const TEST_EEL: PredatorSpecies = {
+  ...TILAPIA_SPECIES,
+  id: 'test-eel',
+  name: 'Test eel',
+  tuning: { ...TILAPIA_SPECIES.tuning, lungeRange: 80 },
+  fact: testFact('test-eel'),
+};
+const TEST_SPIKE: HazardType = { id: 'test-spike', name: 'Test spike', costsLeg: true, reach: 20, meetRange: 60, fact: testFact('test-spike') };
+const TEST_WEED: HazardType = { id: 'test-weed', name: 'Test weed', costsLeg: false, reach: 20, meetRange: 60, fact: testFact('test-weed') };
+
+/** A long line route along y = 0, so a spot at (5000, d) is d px from it and far from every turn. */
+const LINE_ROUTE: TilapiaRoute = { id: 'line', waypoints: [{ x: 0, y: 0 }, { x: 10000, y: 0 }] };
+const EEL_ROUTE: PredatorRoute = { id: 'eel', waypoints: [{ x: 0, y: 1000 }, { x: 10000, y: 1000 }], species: TEST_EEL };
+const SPIKE: HazardSpawn = { id: 'spike-0', type: TEST_SPIKE, shape: { kind: 'circle', x: 5000, y: 1000, r: 10 } };
+const WEED: HazardSpawn = { id: 'weed-0', type: TEST_WEED, shape: { kind: 'rect', x0: 0, x1: 10000, y0: 900, y1: 1100 } };
+
+describe('riskBands', () => {
+  it('gives exactly RISK.band for the tilapia lunge range', () => {
+    expect(riskBands(TILAPIA.lungeRange)).toEqual(RISK.band);
+  });
+
+  it('scales the bands with the strike range, the Common edge RISK_COMMON_MARGIN past it', () => {
+    expect(RISK_COMMON_MARGIN).toBe(60);
+    expect(riskBands(80)).toEqual({
+      common: { over: 140, upTo: Infinity },
+      rare: { over: 80, upTo: 140 },
+      epic: { over: 40, upTo: 80 },
+      legendary: { over: -Infinity, upTo: 40 },
+    });
+  });
+});
+
+describe('zoneThreats', () => {
+  it('lists the tilapia routes, then the predator routes, then the leg-costing hazards, each with its strike', () => {
+    const threats = zoneThreats({ tilapiaRoutes: [LINE_ROUTE], predatorRoutes: [EEL_ROUTE], hazards: [SPIKE] });
+    expect(threats).toEqual([
+      { kind: 'route', route: LINE_ROUTE, strike: TILAPIA.lungeRange, tilapia: true },
+      { kind: 'route', route: EEL_ROUTE, strike: 80, tilapia: false },
+      { kind: 'shape', shape: SPIKE.shape, strike: TEST_SPIKE.reach },
+    ]);
+  });
+
+  it('ignores slow-only hazards and absent predator routes or hazards', () => {
+    expect(zoneThreats({ tilapiaRoutes: [], hazards: [WEED] })).toEqual([]);
+    expect(zoneThreats({ tilapiaRoutes: [] })).toEqual([]);
+  });
+});
+
+describe('riskDistance', () => {
+  it('measures to the nearest threat: a closed route loop or a hazard shape edge', () => {
+    const threats = zoneThreats({ tilapiaRoutes: [LINE_ROUTE], predatorRoutes: [EEL_ROUTE], hazards: [SPIKE] });
+    expect(riskDistance({ x: 5000, y: 300 }, threats)).toBe(300);
+    expect(riskDistance({ x: 5000, y: 960 }, threats)).toBe(30);
+    expect(riskDistance({ x: 5000, y: 1005 }, threats)).toBe(0);
+    expect(riskDistance({ x: 2000, y: 960 }, threats)).toBe(40);
+  });
+
+  it('matches routeDistance for tilapia routes alone', () => {
+    const threats = zoneThreats({ tilapiaRoutes: [SQUARE_ROUTE, PROBE_ROUTE] });
+    for (const pos of [{ x: 50, y: -30 }, { x: 150, y: 50 }, { x: 4000, y: 10 }]) {
+      expect(riskDistance(pos, threats)).toBe(routeDistance(pos, [SQUARE_ROUTE, PROBE_ROUTE]));
+    }
+  });
+
+  it('is Infinity with no threats', () => {
+    expect(riskDistance({ x: 0, y: 0 }, [])).toBe(Infinity);
+  });
+});
+
+describe('meetsThreatRiskRule', () => {
+  const tilapiaOnly = zoneThreats({ tilapiaRoutes: [LINE_ROUTE] });
+
+  it.each([
+    ['common', 200, false],
+    ['common', 200.001, true],
+    ['rare', 140.001, true],
+    ['rare', 200, true],
+    ['epic', 70.001, true],
+    ['epic', 140, true],
+    ['epic', 140.001, false],
+    ['legendary', 70, true],
+    ['legendary', 70.001, false],
+  ] as const)('with one tilapia route, %s at %f px gives %s like meetsRiskRule', (rarity, distance, expected) => {
+    const pos = { x: 5000, y: distance };
+    expect(meetsThreatRiskRule(pos, rarity, tilapiaOnly)).toBe(expected);
+    expect(meetsThreatRiskRule(pos, rarity, tilapiaOnly)).toBe(meetsRiskRule(pos, rarity, [LINE_ROUTE]));
+  });
+
+  it('uses a predator route\'s own strike range for its bands', () => {
+    const eel = zoneThreats({ tilapiaRoutes: [], predatorRoutes: [EEL_ROUTE] });
+    expect(meetsThreatRiskRule({ x: 5000, y: 1000 - 100 }, 'rare', eel)).toBe(true);
+    expect(meetsThreatRiskRule({ x: 5000, y: 1000 - 60 }, 'epic', eel)).toBe(true);
+    expect(meetsThreatRiskRule({ x: 5000, y: 1000 - 40 }, 'legendary', eel)).toBe(true);
+    expect(meetsThreatRiskRule({ x: 5000, y: 1000 - 141 }, 'common', eel)).toBe(true);
+  });
+
+  it('uses a leg-costing hazard\'s reach from its shape edge for its bands', () => {
+    const spike = zoneThreats({ tilapiaRoutes: [], hazards: [SPIKE] });
+    expect(meetsThreatRiskRule({ x: 5000, y: 1000 - 10 - 10 }, 'legendary', spike)).toBe(true);
+    expect(meetsThreatRiskRule({ x: 5000, y: 1000 - 10 - 15 }, 'epic', spike)).toBe(true);
+    expect(meetsThreatRiskRule({ x: 5000, y: 1000 - 10 - 50 }, 'rare', spike)).toBe(true);
+    expect(meetsThreatRiskRule({ x: 5000, y: 1000 - 10 - 81 }, 'common', spike)).toBe(true);
+  });
+
+  it('ranks a spot by the riskiest band any threat gives, not by the nearest threat', () => {
+    const mixed = zoneThreats({
+      tilapiaRoutes: [LINE_ROUTE],
+      predatorRoutes: [{ ...EEL_ROUTE, waypoints: [{ x: 0, y: 230 }, { x: 10000, y: 230 }] }],
+    });
+    const pos = { x: 5000, y: 130 };
+    expect(riskDistance(pos, mixed)).toBe(100);
+    expect(meetsThreatRiskRule(pos, 'epic', mixed)).toBe(true);
+    expect(meetsThreatRiskRule(pos, 'rare', mixed)).toBe(false);
+    expect(meetsThreatRiskRule({ x: 5000, y: 120 }, 'epic', mixed)).toBe(true);
+    expect(meetsThreatRiskRule({ x: 5000, y: 180 }, 'epic', mixed)).toBe(true);
+    expect(meetsThreatRiskRule({ x: 5000, y: 180 }, 'rare', mixed)).toBe(false);
+  });
+
+  it('ignores slow-only hazards', () => {
+    const withWeed = zoneThreats({ tilapiaRoutes: [LINE_ROUTE], hazards: [WEED] });
+    expect(meetsThreatRiskRule({ x: 5000, y: 300 }, 'common', withWeed)).toBe(true);
+    expect(meetsThreatRiskRule({ x: 5000, y: 900 }, 'common', withWeed)).toBe(true);
+  });
+
+  it('keeps the turn clearance from every predator route waypoint, edge allowed', () => {
+    const eel = zoneThreats({ tilapiaRoutes: [], predatorRoutes: [EEL_ROUTE] });
+    expect(meetsThreatRiskRule({ x: 0, y: 1000 - RISK.turnClearance }, 'epic', eel)).toBe(true);
+    expect(meetsThreatRiskRule({ x: 0, y: 1000 - RISK.turnClearance + 0.001 }, 'epic', eel)).toBe(false);
+  });
+
+  it('is true for every rarity with no threats or no waypoints', () => {
+    const emptyRoute: Threat = { kind: 'route', route: { id: 'empty', waypoints: [] }, strike: 140, tilapia: false };
+    for (const rarity of RARITIES) {
+      expect(meetsThreatRiskRule({ x: 0, y: 0 }, rarity, [])).toBe(true);
+      expect(meetsThreatRiskRule({ x: 0, y: 0 }, rarity, [emptyRoute])).toBe(true);
+    }
+  });
+
+  it('reads the tilapia bands and the clearance from the tuning it is given', () => {
+    const tight = { ...RISK, band: { ...RISK.band, legendary: { over: -Infinity, upTo: 10 } }, turnClearance: 0 };
+    expect(meetsThreatRiskRule({ x: 5000, y: 20 }, 'legendary', tilapiaOnly, tight)).toBe(false);
+    expect(meetsThreatRiskRule({ x: 0, y: 5 }, 'legendary', tilapiaOnly, tight)).toBe(true);
+  });
+});
+
+describe('meetsRarity with every threat', () => {
+  it('with no threats, applies the hiding rules alone', () => {
+    const geo: HidingGeometry = { ...GEO, predatorRoutes: [], hazards: [{ ...WEED, shape: { kind: 'circle', x: 130, y: 200, r: 5 } }] };
+    expect(meetsRarity({ x: 130, y: 200, container: false }, 'common', geo)).toBe(true);
+    expect(meetsRarity({ x: 950, y: 250, container: true }, 'legendary', geo)).toBe(true);
+  });
+
+  it('applies the risk ladder for predator routes and leg-costing hazards', () => {
+    const nearEel: HidingGeometry = { ...GEO, predatorRoutes: [{ ...EEL_ROUTE, waypoints: [{ x: -1000, y: 150 }, { x: 2000, y: 150 }] }] };
+    const nearSpike: HidingGeometry = { ...GEO, hazards: [{ ...SPIKE, shape: { kind: 'circle', x: 130, y: 100, r: 10 } }] };
+    expect(meetsRarity({ x: 130, y: 200, container: false }, 'common', nearEel)).toBe(false);
+    expect(spotMatchesLabels(spotAt(130, 200), nearEel)).toBe(false);
+    expect(meetsRarity({ x: 130, y: 200, container: false }, 'common', nearSpike)).toBe(true);
+    expect(spotMatchesLabels(spotAt(130, 160), nearSpike)).toBe(false);
   });
 });
