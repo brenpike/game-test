@@ -681,13 +681,13 @@ Product owner decisions, 2026-10-20:
 
 Built in 0.20.0 (PR #85): B2, B7, B8, C11, C15, the Testing Decisions and open questions 83 to 88 hold the built rules.
 
-### Treasure checklist (request)
+### Treasure checklist (decision)
 
 Owner request (issue #69): the player can see every treasure, so they know what they have and what they still need to find.
 The Treasure Chest shows every catalogue treasure, found or not, in catalogue order within each section. A found treasure shows as today (C11).
 An unfound treasure shows a flat silhouette of its icon, in the style of the unfound-morph silhouette (C12), with a "?" and its rarity badge and rarity name. An unfound Dream colour's silhouette is a plain swatch.
 A silhouette fills in once its treasure is banked. "X of Y found" stays. Found and unfound are never told apart by colour alone (X2).
-Issue #69's recommendations, awaiting owner confirmation: it lives in the Treasure Chest, not a new screen; an unfound treasure's name shows as "???", with a hint by rarity based on B6; and an unfound Wearable shows its slot but not its perk.
+Issue #69's recommendations: it lives in the Treasure Chest, not a new screen; an unfound treasure's name shows as "???", with a hint by rarity based on B6; and an unfound Wearable shows its slot but not its perk.
 Built in 0.20.0 (PR #85): C11 holds the built rules; open questions 89 to 92 track the owner's confirmation.
 
 ### Rarer treasures nearer hazards (decision)
@@ -831,7 +831,7 @@ The same decision sets at least 3 tilapia in the canal (A1).
 | 103 | How does a rig axolotl blink? | Built: three baked eye frames, open, half and closed, on the existing blink timing. Awaiting owner confirmation. |
 | 104 | How does a regrowing leg show on the rig? | Built: each leg state is its own baked leg. A regrowing leg re-bakes at each of the trip's 10 progress steps (`LEG_PROGRESS_STEPS`), never every frame. A lost or regrowing leg wears no sock or shoe (open question 73). Awaiting owner confirmation. |
 | 105 | How does the Iridescent sheen move on the rig (F15, F16, open question 50)? | Built: the body has 16 baked sheen steps, one every 0.25 seconds. The tail stripe is drawn live as a flat-colour vector overlay, so it is never bent with the tail, and no texture is repainted. Under reduced motion and on picture buttons the sheen stays still at x -10 ([art style guide](../art-style-guide.md) 6p). Open: is a live vector overlay fine under "no live per-frame repaint"? Recommended yes, since it repaints and uploads no texture. Awaiting owner confirmation. |
-| 106 | Are X11 and the frame-time Success Metrics bullet the right bar? | Recommended: yes, the budget in ADR 0013 (p95 frame time at most 33 ms under 6x CPU throttling and at most 16.7 ms on the owner's phone, and axolotl drawing at most 2 ms a frame), in its four cases (the fourth is the dev test area, taller than one screen, with the explorer and a rescue while the camera scrolls both ways, via `?area=dev-test-area&perf` in a dev build; to be measured by the owner). Awaiting owner confirmation. |
+| 106 | Are X11 and the frame-time Success Metrics bullet the right bar? | Recommended: yes, the budget in ADR 0013 (p95 frame time at most 33 ms under 6x CPU throttling and at most 16.7 ms on the owner's phone, and axolotl drawing at most 2 ms a frame), in its four cases (the fourth is the dev test area, taller than one screen, with the explorer and a rescue, via `?area=dev-test-area` in a dev build; to be measured by the owner). Awaiting owner confirmation. |
 | 107 | How do the gills move on the rig, and are the rig's approximations acceptable? | Built: each gill has 10 baked flutter frames plus a small live turn. The accepted approximations, each bounded by a test, are: on WebGL the Hearts, Tie-dye and Tie-dye galaxy tail patterns bend with the tail (worst 4.88, 12.38 and 2.37 units at a full dash), and the outline thins a little on the steepest tail bends. Recommended: accept, after the owner checks them by eye in `?compare`. Awaiting owner confirmation. |
 | 108 | How does restyling show that "Surprise me" does nothing on the Colour, Boy or girl, Dream colour, and Outfit tabs (F6, F16)? | Built: it is hidden there, not shown as disabled, because the game has no disabled look. Its place is kept, so Cancel and Done never move between tabs. Tab does not reach it, and a stray "Surprise me" action does nothing. This holds on both Outfit views. Awaiting owner confirmation. |
 | 109 | What does "Surprise me" do on the Boy or girl step (F1, F17)? | Built: it always switches to the other one, because there are only two. If the name is a suggested name that does not fit the new boy or girl, it becomes a random suggested name that fits. A suggested name that fits (a name for anyone) stays, and a typed name always stays. Awaiting owner confirmation. |
