@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createEncounter, createEncounterContext } from './encounter';
+import { meetsTilapia, type FactCard } from './factCards';
+import type { HazardType } from './hazards';
+import { TILAPIA_SPECIES, type PredatorSpecies } from './predators';
 import { GAME_EVENTS, REGISTRY_KEYS } from './gameEvents';
 import { createLegs, isProtected, presentCount, tryHit, type LegsState } from './legs';
 import { CANAL_AREA } from './areas';
@@ -16,7 +19,7 @@ import {
   idleTripSnapshot,
   keepExploring,
   legsSnapshot,
-  markTilapiaCardSeen,
+  markFactCardSeen,
   newTrip,
   sameTripSnapshot,
   stepTrip,
@@ -1113,7 +1116,7 @@ describe('snapshots', () => {
       found: [foundInfo(PLANT), foundInfo(HAT)],
       ending: null,
       rescue: null,
-      tilapiaCardDue: false,
+      factCardDue: null,
     });
     const done = tripSnapshot(goHome(state).state);
     expect(done.ending).toEqual({ reason: 'wentHome', returned: [], bankedThisTrip: [PLANT, HAT] });
@@ -1251,8 +1254,8 @@ describe('stranded axolotl rescue (C3 to C5, A11 to A16)', () => {
   it('starts with no stranded axolotl and the tilapia card unseen by default', () => {
     const trip = createTrip(zone);
     expect(trip.rescue).toBeNull();
-    expect(trip.tilapiaCardSeen).toBe(false);
-    expect(trip.metTilapia).toBe(false);
+    expect(trip.factCardsSeen).toEqual([]);
+    expect(trip.met).toEqual([]);
     const stranded = rescueTrip();
     expect(stranded.rescue?.pos).toEqual(strandPlace);
     expect(tripSnapshot(stranded).rescue).toEqual({ id: WILD, morph: 'wild', status: 'waiting' });
@@ -1378,8 +1381,8 @@ describe('stranded axolotl rescue (C3 to C5, A11 to A16)', () => {
     const done = goHome({ ...walk(rescueTrip(), [strandPlace]).state, inHomeSpot: true }).state;
     const fresh = newTrip(done);
     expect(fresh.rescue).toBeNull();
-    expect(fresh.tilapiaCardSeen).toBe(false);
-    expect(fresh.metTilapia).toBe(false);
+    expect(fresh.factCardsSeen).toEqual([]);
+    expect(fresh.met).toEqual([]);
   });
 });
 
@@ -1390,42 +1393,42 @@ describe('meeting a tilapia', () => {
 
   it('is not met inside the safe area, then met once outside within range', () => {
     const safe = walk(createTrip(meetZone), [home, inSafe, inSafe]).state;
-    expect(safe.metTilapia).toBe(false);
-    expect(tripSnapshot(safe).tilapiaCardDue).toBe(false);
+    expect(safe.met).toEqual([]);
+    expect(tripSnapshot(safe).factCardDue).toBeNull();
     const met = stepAt(safe, outSafe).state;
-    expect(met.metTilapia).toBe(true);
-    expect(tripSnapshot(met).tilapiaCardDue).toBe(true);
+    expect(met.met).toEqual(['tilapia']);
+    expect(tripSnapshot(met).factCardDue).toBe('tilapia');
     const back = stepAt(met, inSafe).state;
-    expect(back.metTilapia).toBe(true);
+    expect(back.met).toEqual(['tilapia']);
   });
 
   it('is not met outside the safe area when every tilapia is out of range', () => {
-    expect(walk(createTrip(findZone), [outside, spotA]).state.metTilapia).toBe(false);
+    expect(walk(createTrip(findZone), [outside, spotA]).state.met).toEqual([]);
   });
 
   it('is never due when the tilapia card was already seen', () => {
-    const seen = createTrip(meetZone, LEGS, [], DEFAULT_TRIP_SEED, { tilapiaCardSeen: true });
+    const seen = createTrip(meetZone, LEGS, [], DEFAULT_TRIP_SEED, { factCardsSeen: ['tilapia'] });
     const met = stepAt(seen, outSafe).state;
-    expect(met.metTilapia).toBe(true);
-    expect(tripSnapshot(met).tilapiaCardDue).toBe(false);
+    expect(met.met).toEqual(['tilapia']);
+    expect(tripSnapshot(met).factCardDue).toBeNull();
   });
 
   it('is no longer due once the card is marked seen, and stays met', () => {
     const met = stepAt(createTrip(meetZone), outSafe).state;
-    expect(tripSnapshot(met).tilapiaCardDue).toBe(true);
-    const seen = markTilapiaCardSeen(met);
+    expect(tripSnapshot(met).factCardDue).toBe('tilapia');
+    const seen = markFactCardSeen(met, 'tilapia');
     expect(seen).not.toBe(met);
-    expect(seen).toEqual({ ...met, tilapiaCardSeen: true });
-    expect(met.tilapiaCardSeen).toBe(false);
-    expect(tripSnapshot(seen).tilapiaCardDue).toBe(false);
+    expect(seen).toEqual({ ...met, factCardsSeen: ['tilapia'] });
+    expect(met.factCardsSeen).toEqual([]);
+    expect(tripSnapshot(seen).factCardDue).toBeNull();
     const later = stepAt(seen, outSafe).state;
-    expect(later.metTilapia).toBe(true);
-    expect(tripSnapshot(later).tilapiaCardDue).toBe(false);
+    expect(later.met).toEqual(['tilapia']);
+    expect(tripSnapshot(later).factCardDue).toBeNull();
   });
 
   it('returns the same object when the card was already seen', () => {
-    const seen = createTrip(meetZone, LEGS, [], DEFAULT_TRIP_SEED, { tilapiaCardSeen: true });
-    expect(markTilapiaCardSeen(seen)).toBe(seen);
+    const seen = createTrip(meetZone, LEGS, [], DEFAULT_TRIP_SEED, { factCardsSeen: ['tilapia'] });
+    expect(markFactCardSeen(seen, 'tilapia')).toBe(seen);
   });
 
   it('meets a tilapia on a step before any telegraph when swimming toward route 0', () => {
@@ -1437,7 +1440,7 @@ describe('meeting a tilapia', () => {
       pos = stepToward(pos, current.encounter.predators[0].pos, 150 * DT);
       const result = stepAt(current, pos);
       current = result.state;
-      if (metStep < 0 && current.metTilapia) metStep = i;
+      if (metStep < 0 && current.met.includes('tilapia')) metStep = i;
       if (result.events.some((event) => event.type === 'telegraph')) telegraphStep = i;
     }
     expect(metStep).toBeGreaterThanOrEqual(0);
@@ -1445,8 +1448,99 @@ describe('meeting a tilapia', () => {
   });
 });
 
+describe('meeting hazards and predators', () => {
+  const testFact = (id: string): FactCard => ({ id, name: id, title: id, body: id });
+  const TEST_PIKE: PredatorSpecies = { ...TILAPIA_SPECIES, id: 'test-pike', name: 'Test pike', fact: testFact('test-pike') };
+  const TEST_MUD: HazardType = {
+    id: 'test-mud',
+    name: 'Test mud',
+    costsLeg: false,
+    reach: 0,
+    meetRange: 60,
+    fact: testFact('test-mud'),
+  };
+  const mudAt = (id: string, x: number) => ({ id, type: TEST_MUD, shape: { kind: 'circle' as const, x, y: 200, r: 10 } });
+  const pikeAt = (id: string, x: number) => ({ id, waypoints: [{ x, y: 200 }], species: TEST_PIKE });
+  const threatZone: TripSource = {
+    ...zone,
+    finds: [],
+    spots: [],
+    tilapiaRoutes: [],
+    predatorRoutes: [pikeAt('pike', 1300)],
+    hazards: [mudAt('mud-1', 500), mudAt('mud-2', 1250)],
+  };
+  const atMud: Point = { x: 500 + 10 + 60, y: 200 };
+  const pastMud: Point = { x: 500 + 10 + 60.5, y: 200 };
+  const atBoth: Point = { x: 1240, y: 200 };
+  const inSafe: Point = { x: zone.safeArea.x1 - 10, y: 200 };
+
+  it('meets a hazard at exactly its meet range from the shape edge, not past it', () => {
+    expect(stepAt(createTrip(threatZone), pastMud).state.met).toEqual([]);
+    expect(stepAt(createTrip(threatZone), atMud).state.met).toEqual(['test-mud']);
+  });
+
+  it('gives the hazard and predator ids met, each once, in meet order', () => {
+    const mud = stepAt(createTrip(threatZone), atMud).state;
+    expect(mud.met).toEqual(['test-mud']);
+    const both = stepAt(mud, atBoth).state;
+    expect(both.met).toEqual(['test-mud', 'test-pike']);
+    expect(walk(both, [atMud, atBoth]).state.met).toEqual(['test-mud', 'test-pike']);
+  });
+
+  it('lists predators before hazards when both are met on one step', () => {
+    expect(stepAt(createTrip(threatZone), atBoth).state.met).toEqual(['test-pike', 'test-mud']);
+  });
+
+  it('meets nothing inside the safe area', () => {
+    const near: TripSource = { ...threatZone, hazards: [mudAt('mud-near', zone.safeArea.x1 + 20)] };
+    expect(stepAt(createTrip(near), inSafe).state.met).toEqual([]);
+  });
+
+  it('makes the first met card not yet seen due, in meet order', () => {
+    const both = walk(createTrip(threatZone), [atMud, atBoth]).state;
+    expect(tripSnapshot(both).factCardDue).toBe('test-mud');
+    const mudSeen = markFactCardSeen(both, 'test-mud');
+    expect(tripSnapshot(mudSeen).factCardDue).toBe('test-pike');
+    const allSeen = markFactCardSeen(mudSeen, 'test-pike');
+    expect(allSeen.factCardsSeen).toEqual(['test-mud', 'test-pike']);
+    expect(tripSnapshot(allSeen).factCardDue).toBeNull();
+  });
+
+  it('never makes a card due that was seen but not met, nor one met after it was seen', () => {
+    const seen = createTrip(threatZone, LEGS, [], DEFAULT_TRIP_SEED, { factCardsSeen: ['test-pike'] });
+    expect(tripSnapshot(seen).factCardDue).toBeNull();
+    const mud = stepAt(seen, atMud).state;
+    expect(tripSnapshot(mud).factCardDue).toBe('test-mud');
+    const both = stepAt(markFactCardSeen(mud, 'test-mud'), atBoth).state;
+    expect(both.met).toEqual(['test-mud', 'test-pike']);
+    expect(tripSnapshot(both).factCardDue).toBeNull();
+  });
+
+  it('copies factCardsSeen from the options', () => {
+    const options = { factCardsSeen: ['test-mud'] };
+    const trip = createTrip(threatZone, LEGS, [], DEFAULT_TRIP_SEED, options);
+    expect(trip.factCardsSeen).toEqual(['test-mud']);
+    expect(trip.factCardsSeen).not.toBe(options.factCardsSeen);
+  });
+
+  it('makes the tilapia card due on the same step as the tilapia meet rule (meetsTilapia, range 180)', () => {
+    let current = createTrip(zone);
+    let pos: Point = { x: home.x, y: home.y };
+    let dueStep = -1;
+    let ruleStep = -1;
+    for (let i = 0; i < 20 * 60 && dueStep < 0; i++) {
+      pos = stepToward(pos, current.encounter.predators[0].pos, 150 * DT);
+      current = stepAt(current, pos).state;
+      if (ruleStep < 0 && meetsTilapia(pos, current.encounter.predators, current.encounter.safeArea)) ruleStep = i;
+      if (dueStep < 0 && tripSnapshot(current).factCardDue === 'tilapia') dueStep = i;
+    }
+    expect(ruleStep).toBeGreaterThanOrEqual(0);
+    expect(dueStep).toBe(ruleStep);
+  });
+});
+
 describe('rescue and tilapia snapshots', () => {
-  it('detects rescue-status and tilapiaCardDue changes', () => {
+  it('detects rescue-status and factCardDue changes', () => {
     const base: TripSnapshot = { ...idleTripSnapshot(), rescue: { id: WILD, morph: 'wild', status: 'waiting' } };
     const rescue = base.rescue as NonNullable<TripSnapshot['rescue']>;
     expect(sameTripSnapshot(base, { ...base, rescue: { ...rescue } })).toBe(true);
@@ -1455,7 +1549,8 @@ describe('rescue and tilapia snapshots', () => {
       { ...base, rescue: { ...rescue, status: 'following' } },
       { ...base, rescue: { ...rescue, status: 'safe' } },
       { ...base, rescue: { id: axolotlFindId('melanoid'), morph: 'melanoid', status: 'waiting' } },
-      { ...base, tilapiaCardDue: true },
+      { ...base, factCardDue: 'tilapia' },
+      { ...base, factCardDue: 'test-mud' },
     ];
     for (const changed of changes) {
       expect(sameTripSnapshot(base, changed)).toBe(false);
@@ -1466,7 +1561,7 @@ describe('rescue and tilapia snapshots', () => {
   it('starts idle with no rescue and no tilapia card due', () => {
     expect(idleTripSnapshot()).toEqual(tripSnapshot(createTrip(zone)));
     expect(idleTripSnapshot().rescue).toBeNull();
-    expect(idleTripSnapshot().tilapiaCardDue).toBe(false);
+    expect(idleTripSnapshot().factCardDue).toBeNull();
   });
 });
 

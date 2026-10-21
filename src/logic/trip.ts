@@ -4,18 +4,19 @@ import {
   createEncounter,
   createEncounterContext,
   feedEncounter,
+  predatorSpecies,
   stepEncounter,
   type EncounterContext,
   type EncounterEvent,
   type EncounterSource,
   type EncounterState,
 } from './encounter';
-import { meetsTilapia } from './factCards';
+import { metThreatIds, type ThreatSighting } from './factCards';
+import { shapeDistance } from './hazards';
 import { zoneThreats } from './hiding';
 import { createLegs, isProtected, presentCount, quantizeProgress, type LegsState } from './legs';
 import { isAxolotlFindId, type RealMorphId } from './morphs';
 import { DEFAULT_TRIP_SEED, nextTripSeed, placeTreasures, type PlacedFind } from './placement';
-import { TILAPIA_SPECIES, type PredatorState } from './predators';
 import { earnStars, type AreaStars } from './stars';
 import {
   createRescue,
@@ -85,8 +86,9 @@ export interface CarryState {
  * during this trip and `justBanked` the ids of the latest banking (empty once the player keeps
  * exploring). `heldAt` is where the axolotl is held while 'banked', else null. `ending` is set only
  * in 'ended'. `rescue` is this trip's stranded axolotl, or null when there is none; once reached its
- * id is a Trip Bag find like any other. `tilapiaCardSeen` is whether the tilapia fact card was
- * already seen before this trip, and `metTilapia` whether the axolotl met a tilapia this trip.
+ * id is a Trip Bag find like any other. `factCardsSeen` is the hazard and predator ids whose fact
+ * cards were seen, before or during this trip, and `met` the hazard and predator ids the axolotl met
+ * this trip, in meet order.
  * `legsLost` is how many legs tilapia hits took this trip; a leg grown back still counts.
  */
 export interface TripState {
@@ -110,21 +112,21 @@ export interface TripState {
   heldAt: Point | null;
   ending: TripEnding | null;
   rescue: RescueState | null;
-  tilapiaCardSeen: boolean;
-  metTilapia: boolean;
+  factCardsSeen: string[];
+  met: string[];
   legsLost: number;
 }
 
 /**
- * Optional trip start data: this trip's stranded axolotl (none by default), whether the tilapia
- * fact card was already seen (false by default), the treasures lost on the last trip
+ * Optional trip start data: this trip's stranded axolotl (none by default), the hazard and
+ * predator ids whose fact cards were already seen (none by default), the treasures lost on the last trip
  * (`returnedFinds`, none by default), which are always placed this trip (PRD A12, B9), and the
  * trip's area (`area`), read for its special treasure in place of looking the area id up in AREAS;
  * a dev area, which is never in AREAS, passes it.
  */
 export interface TripOptions {
   stranding?: Stranding | null;
-  tilapiaCardSeen?: boolean;
+  factCardsSeen?: readonly string[];
   returnedFinds?: readonly FindId[];
   area?: Readonly<AreaData>;
 }
@@ -252,8 +254,8 @@ export function createTrip(
     heldAt: null,
     ending: null,
     rescue: options.stranding ? createRescue(options.stranding) : null,
-    tilapiaCardSeen: options.tilapiaCardSeen ?? false,
-    metTilapia: false,
+    factCardsSeen: [...(options.factCardsSeen ?? [])],
+    met: [],
     legsLost: 0,
   };
 }
@@ -264,7 +266,7 @@ export function createTrip(
  * the seed after this trip's) picks this trip's treasures afresh, and every Dash pot is sealed
  * again. The treasures returned when carried home (`ending.returned`) come back this trip, always
  * placed, and the area's special treasure is always placed while unbanked, outside the mix. It
- * passes no other trip options, so the new trip has no stranded axolotl and the tilapia card counts
+ * passes no other trip options, so the new trip has no stranded axolotl and every fact card counts
  * as unseen. Any other phase returns the input state unchanged.
  */
 export function newTrip(state: TripState, tripSeed: number = nextTripSeed(state.tripSeed)): TripState {
@@ -296,12 +298,12 @@ export function keepExploring(state: TripState): TripState {
 }
 
 /**
- * The trip with the tilapia fact card seen, so it is no longer due (the player closed it). Every
- * other field is unchanged; an already-seen trip is returned as is.
+ * The trip with the fact card of hazard or predator `id` seen, so it is no longer due (the player
+ * closed it). Every other field is unchanged; a trip where it was already seen is returned as is.
  */
-export function markTilapiaCardSeen(state: TripState): TripState {
-  if (state.tilapiaCardSeen) return state;
-  return { ...state, tilapiaCardSeen: true };
+export function markFactCardSeen(state: TripState, id: string): TripState {
+  if (state.factCardsSeen.includes(id)) return state;
+  return { ...state, factCardsSeen: [...state.factCardsSeen, id] };
 }
 
 /**
@@ -390,7 +392,7 @@ export function beatArea(state: TripState, ctx: StarContext): TripStepResult {
  * Before the banking check, a waiting stranded axolotl within reach goes into the Trip Bag and
  * onto `found` (`rescued`); a following one swims behind the axolotl and a safe one swims to its
  * rest point by the Home Spot. It is never part of the encounter, so it cannot be hit. The first
- * step where the axolotl meets a tilapia sets `metTilapia`. When the carry starts, a following
+ * step where the axolotl meets a hazard or predator adds its id to `met`. When the carry starts, a following
  * stranded axolotl goes back to its place.
  * Carrying: the encounter is not stepped, so legs stay frozen, and nothing is picked up. The
  * carry follows `input.reduced` on every step (`followReducedMotion`); on arrival `arrivedHome` is
@@ -446,7 +448,7 @@ export function foundInfos(ids: readonly FindId[]): FoundInfo[] {
 
 /**
  * Trip display state: the phase, the quantized legs display state, the finds, the ending, the
- * stranded axolotl and whether the tilapia fact card is due. `banked` counts banked treasures only,
+ * stranded axolotl and the fact card due. `banked` counts banked treasures only,
  * not rescued axolotls; `bag` includes a following axolotl.
  */
 export function tripSnapshot(state: TripState): TripSnapshot {
@@ -460,7 +462,7 @@ export function tripSnapshot(state: TripState): TripSnapshot {
     found: foundInfos(state.found),
     ending: state.ending ? copyEnding(state.ending) : null,
     rescue: state.rescue ? rescueSnapshot(state.rescue, state) : null,
-    tilapiaCardDue: state.metTilapia && !state.tilapiaCardSeen,
+    factCardDue: factCardDue(state),
   };
 }
 
@@ -479,7 +481,7 @@ export function idleTripSnapshot(): TripSnapshot {
     found: [],
     ending: null,
     rescue: null,
-    tilapiaCardDue: false,
+    factCardDue: null,
   };
 }
 
@@ -495,13 +497,18 @@ export function sameTripSnapshot(a: TripSnapshot, b: TripSnapshot): boolean {
     sameIds(foundIds(a.found), foundIds(b.found)) &&
     sameEnding(a.ending, b.ending) &&
     sameRescue(a.rescue, b.rescue) &&
-    a.tilapiaCardDue === b.tilapiaCardDue
+    a.factCardDue === b.factCardDue
   );
 }
 
 function sameRescue(a: RescueSnapshot | null, b: RescueSnapshot | null): boolean {
   if (a === null || b === null) return a === b;
   return a.id === b.id && a.morph === b.morph && a.status === b.status;
+}
+
+/** The first id met this trip whose fact card is not seen yet, or null when there is none. */
+function factCardDue(state: TripState): string | null {
+  return state.met.find((id) => !state.factCardsSeen.includes(id)) ?? null;
 }
 
 function rescueSnapshot(rescue: RescueState, state: TripState): RescueSnapshot {
@@ -554,9 +561,39 @@ function isPassedEvent(event: EncounterEvent): event is PassedEncounterEvent {
   return event.type !== 'carriedHome';
 }
 
-/** The tilapia among `predators`; the tilapia fact card is met only by a tilapia. */
-function tilapiaPredators(predators: readonly PredatorState[]): PredatorState[] {
-  return predators.filter((predator) => predator.species === TILAPIA_SPECIES.id);
+/**
+ * Every predator and hazard of `encounter` not in `met` as the axolotl at `pos` sees it, predators
+ * first, in encounter order: a predator by centre distance and its species meet range, a hazard by
+ * shape distance and its type meet range.
+ */
+function unmetSightings(
+  encounter: EncounterState,
+  pos: Point,
+  met: readonly string[],
+  ctx: EncounterContext,
+): ThreatSighting[] {
+  const sightings: ThreatSighting[] = [];
+  for (const predator of encounter.predators) {
+    if (met.includes(predator.species)) continue;
+    const { meetRange } = predatorSpecies(encounter, predator, ctx);
+    sightings.push({ id: predator.species, distance: distanceTo(predator.pos, pos), meetRange });
+  }
+  for (const hazard of encounter.hazards) {
+    if (met.includes(hazard.type.id)) continue;
+    sightings.push({ id: hazard.type.id, distance: shapeDistance(pos, hazard.shape), meetRange: hazard.type.meetRange });
+  }
+  return sightings;
+}
+
+/**
+ * `met` with the ids of the hazards and predators the axolotl at `pos` meets now appended, in
+ * sighting order. Runs every swimming frame, so it returns `met` itself when nothing new is met.
+ */
+function meetThreats(met: string[], encounter: EncounterState, pos: Point, ctx: EncounterContext): string[] {
+  const sightings = unmetSightings(encounter, pos, met, ctx);
+  if (sightings.length === 0) return met;
+  const metNow = metThreatIds(pos, encounter.safeArea, sightings);
+  return metNow.length === 0 ? met : [...met, ...metNow];
 }
 
 /** How many `hit` events, each a leg lost, are in `events`. Runs every swimming frame, so it allocates nothing. */
@@ -581,8 +618,7 @@ function stepSwimming(state: TripState, input: TripInput, step: number, ctx: Tri
   const pots = touchPots(state, input, ctx.finds, events);
   const pickup = pickUpNearby({ ...state, ...pots }, input.axolotlPos, ctx.finds, events);
   const rescued = stepRescue({ ...state, ...pickup }, input.axolotlPos, step, events);
-  const metTilapia =
-    state.metTilapia || meetsTilapia(input.axolotlPos, tilapiaPredators(result.state.predators), result.state.safeArea);
+  const met = meetThreats(state.met, result.state, input.axolotlPos, ctx.encounter);
   const inside = isInHomeSpot(input.axolotlPos, state.homeSpot);
   const next: TripState = {
     ...state,
@@ -590,7 +626,7 @@ function stepSwimming(state: TripState, input: TripInput, step: number, ctx: Tri
     ...rescued,
     encounter: result.state,
     inHomeSpot: inside,
-    metTilapia,
+    met,
     legsLost,
   };
   if (inside && next.holdings.bag.length > 0) return bankAtHomeSpot(next, input.axolotlPos, events);

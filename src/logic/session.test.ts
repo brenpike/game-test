@@ -53,6 +53,7 @@ import {
   keepExploring,
   newTrip,
   stepTrip,
+  tripSnapshot,
   type TripEvent,
   type TripState,
 } from './trip';
@@ -122,7 +123,7 @@ function startTrip(session: Session, freshSeed: number): TripState {
 }
 
 /**
- * The trip a session starts with its stranded axolotl, tilapia card state and lost treasures, as the
+ * The trip a session starts with its stranded axolotl, fact cards seen and lost treasures, as the
  * scene flow builds it.
  */
 function startRescueTrip(session: Session, freshSeed: number): TripState {
@@ -130,7 +131,7 @@ function startRescueTrip(session: Session, freshSeed: number): TripState {
   const stranding = pickStranding(start.ownedMorphs, start.waitingStranded, zone.strandingPlaces, start.tripSeed);
   return createTrip(zone, LEGS, start.banked, start.tripSeed, {
     stranding,
-    tilapiaCardSeen: start.tilapiaCardSeen,
+    factCardsSeen: start.factCardsSeen,
     returnedFinds: start.returnedFinds,
   });
 }
@@ -193,7 +194,7 @@ function record(banked: string[], tripSeed: number, eatenSnacks: string[] = []):
     eatenSnacks,
     tripSeed,
     waitingStranded: null,
-    metTilapia: false,
+    met: [],
     returnedFinds: [],
   };
 }
@@ -280,7 +281,7 @@ describe('createSession', () => {
       ...record([], 8),
       rescued: [{ morph: 'melanoid', sex: 'girl' }],
       waitingStranded: waiting,
-      metTilapia: true,
+      met: ['tilapia'],
     });
     expect(JSON.parse(JSON.stringify(rescued))).toEqual(rescued);
     const starred = recordTripEnd(played, beatenRecord({ exit: true, special: false, legsOrRescue: true }, 8));
@@ -302,7 +303,7 @@ describe('tripStart seeds (B4)', () => {
       tripSeed: FIRST_SEED,
       ownedMorphs: [STARTER_MORPH],
       waitingStranded: null,
-      tilapiaCardSeen: false,
+      factCardsSeen: [],
       returnedFinds: [],
     });
   });
@@ -316,7 +317,7 @@ describe('tripStart seeds (B4)', () => {
       tripSeed: nextTripSeed(FIRST_SEED),
       ownedMorphs: [STARTER_MORPH],
       waitingStranded: null,
-      tilapiaCardSeen: false,
+      factCardsSeen: [],
       returnedFinds: [],
     });
     expect(tripStart(session, 5).tripSeed).toBe(start.tripSeed);
@@ -374,7 +375,7 @@ describe('tripEndRecord', () => {
       eatenSnacks: [zone.collectibles[0].id, zone.collectibles[1].id],
       tripSeed: FIRST_SEED,
       waitingStranded: null,
-      metTilapia: ended.metTilapia,
+      met: ended.met,
       returnedFinds: [],
     });
   });
@@ -454,13 +455,27 @@ describe('recordTripEnd', () => {
   });
 
   it('unlocks the tilapia card once a tilapia is met and keeps it unlocked', () => {
-    const met = recordTripEnd(withStarter(), { ...record([], 1), metTilapia: true });
+    const met = recordTripEnd(withStarter(), { ...record([], 1), met: ['tilapia'] });
     expect(met.hub.metHazards).toEqual(['tilapia']);
-    expect(tripStart(met, 0).tilapiaCardSeen).toBe(true);
+    expect(tripStart(met, 0).factCardsSeen).toEqual(['tilapia']);
     const later = recordTripEnd(met, record([], 2));
     expect(later.hub.metHazards).toEqual(['tilapia']);
-    const again = recordTripEnd(later, { ...record([], 3), metTilapia: true });
+    const again = recordTripEnd(later, { ...record([], 3), met: ['tilapia'] });
     expect(again.hub.metHazards).toEqual(['tilapia']);
+  });
+
+  it('drops met ids that are no known hazard or predator', () => {
+    const met = recordTripEnd(withStarter(), { ...record([], 1), met: ['test-mud', 'tilapia', 'test-pike'] });
+    expect(met.hub.metHazards).toEqual(['tilapia']);
+    const unknownOnly = recordTripEnd(withStarter(), { ...record([], 1), met: ['test-mud'] });
+    expect(unknownOnly.hub.metHazards).toEqual([]);
+  });
+
+  it('hands out a copy of the hazards met as the fact cards seen', () => {
+    const session = recordTripEnd(withStarter(), { ...record([], 1), met: ['tilapia'] });
+    const start = tripStart(session, 0);
+    expect(start.factCardsSeen).toEqual(['tilapia']);
+    expect(start.factCardsSeen).not.toBe(session.hub.metHazards);
   });
 
   it('keeps the tank and the axolotls across records', () => {
@@ -695,17 +710,21 @@ describe('stranded axolotl rescue across trips (C1, C4 to C6, A11, A12)', () => 
 
   it('unlocks the tilapia card after a trip that met a tilapia, then starts trips with it seen', () => {
     const trip = startRescueTrip(withStarter(), FIRST_SEED);
-    expect(trip.tilapiaCardSeen).toBe(false);
+    expect(trip.factCardsSeen).toEqual([]);
     const met = stepAt(trip, inRange);
-    expect(met.metTilapia).toBe(true);
+    expect(met.met).toEqual(['tilapia']);
+    expect(tripSnapshot(met).factCardDue).toBe('tilapia');
     const ended = goHome(stepAt(met, zone.start)).state;
     expect(ended.phase).toBe('ended');
     const rec = tripEndRecord(ended, []);
-    expect(rec.metTilapia).toBe(true);
+    expect(rec.met).toEqual(['tilapia']);
+    expect(rec.met).not.toBe(ended.met);
     const after = recordTripEnd(withStarter(), rec);
     expect(after.hub.metHazards).toEqual(['tilapia']);
-    expect(tripStart(after, 0).tilapiaCardSeen).toBe(true);
-    expect(startRescueTrip(after, 0).tilapiaCardSeen).toBe(true);
+    expect(tripStart(after, 0).factCardsSeen).toEqual(['tilapia']);
+    const next = startRescueTrip(after, 0);
+    expect(next.factCardsSeen).toEqual(['tilapia']);
+    expect(tripSnapshot(stepAt(next, inRange)).factCardDue).toBeNull();
   });
 });
 
@@ -721,7 +740,7 @@ describe('area beaten (H5, H6, H7, A12, open question 14)', () => {
       eatenSnacks: [],
       tripSeed: FIRST_SEED,
       waitingStranded: null,
-      metTilapia: ended.metTilapia,
+      met: ended.met,
       returnedFinds: [],
       stars: { areaId: CANAL_AREA_ID, earned: ended.ending?.stars },
     });
@@ -1412,9 +1431,9 @@ describe('per-area memory (#73)', () => {
   });
 
   it('counts the tilapia card seen in every area once a tilapia was met in any', () => {
-    const met = recordTripEnd(withStarter(), { ...record([], 1), areaId: DEV_ID, metTilapia: true });
+    const met = recordTripEnd(withStarter(), { ...record([], 1), areaId: DEV_ID, met: ['tilapia'] });
     expect(met.hub.metHazards).toEqual(['tilapia']);
-    expect(tripStart(met, 0, CANAL_AREA_ID).tilapiaCardSeen).toBe(true);
+    expect(tripStart(met, 0, CANAL_AREA_ID).factCardsSeen).toEqual(['tilapia']);
   });
 });
 
@@ -1444,7 +1463,7 @@ describe('chooseArea (#73)', () => {
 
 describe('Start over (#73)', () => {
   it('resets the last chosen area, the hazards met and every area memory', () => {
-    const played = recordTripEnd(withStarter(), { ...record([PLANT], 3, ['snack-1']), metTilapia: true });
+    const played = recordTripEnd(withStarter(), { ...record([PLANT], 3, ['snack-1']), met: ['tilapia'] });
     expect(played.hub.metHazards).toEqual(['tilapia']);
     const fresh = createSession();
     expect(fresh.hub.lastAreaId).toBe(CANAL_AREA_ID);

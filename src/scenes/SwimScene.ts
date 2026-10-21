@@ -30,7 +30,6 @@ import {
 } from '../logic/collectibles';
 import { TURN_SQUASH, bodyPoint, drawnAxolotl, type DrawnAxolotl } from '../logic/drawnAxolotl';
 import { currentAt, reedDragAt, reedsNear } from '../logic/environment';
-import { TILAPIA_FACT } from '../logic/factCards';
 import {
   GAME_EVENTS,
   REGISTRY_KEYS,
@@ -58,7 +57,7 @@ import {
   eatSnacks,
   goHome,
   keepExploring,
-  markTilapiaCardSeen,
+  markFactCardSeen,
   sameTripSnapshot,
   stepTrip,
   tripAxolotlPos,
@@ -308,7 +307,7 @@ export class SwimScene extends Phaser.Scene {
     const stranding = pickStranding(start.ownedMorphs, start.waitingStranded, zone.strandingPlaces, start.tripSeed);
     this.trip = createTrip(zone, LEGS, start.banked, start.tripSeed, {
       stranding,
-      tilapiaCardSeen: start.tilapiaCardSeen,
+      factCardsSeen: start.factCardsSeen,
       returnedFinds: start.returnedFinds,
     });
     this.dashKeyLatched = true;
@@ -788,10 +787,9 @@ export class SwimScene extends Phaser.Scene {
     this.publishSnapshot(tripSnapshot(this.trip));
   }
 
-  /** The player closed the tilapia fact card: it is no longer due this trip. */
+  /** The player closed a fact card: it is no longer due this trip. */
   private handleFactCardSeen(payload: FactCardSeenPayload): void {
-    if (payload.id !== TILAPIA_FACT.id) return;
-    this.trip = markTilapiaCardSeen(this.trip);
+    this.trip = markFactCardSeen(this.trip, payload.id);
   }
 
   private handleHidden(): void {

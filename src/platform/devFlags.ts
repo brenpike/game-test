@@ -1,11 +1,14 @@
 import { DEV_FLAGS_MARK, parseDevFlags, type DevFlags } from '../logic/devFlags';
 
 /**
- * Reads the developer query flags (`?perf`, `?compare`, `?renderer=canvas`) from the page URL.
+ * Reads the developer query flags (`?perf`, `?compare`, `?renderer=canvas`, `?area=<id>`) from the page URL.
+ * `?area=dev-test-area` asks for the dev-and-test area; the caller ignores unknown ids.
  * Every flag is off outside dev builds. Logs the flags to the console when any flag is on.
  */
 export function readDevFlags(): DevFlags {
   const flags = parseDevFlags(window.location.search, import.meta.env.DEV);
-  if (flags.perf || flags.compare || flags.renderer !== 'auto') console.info(DEV_FLAGS_MARK, flags);
+  if (flags.perf || flags.compare || flags.renderer !== 'auto' || flags.area !== null) {
+    console.info(DEV_FLAGS_MARK, flags);
+  }
   return flags;
 }

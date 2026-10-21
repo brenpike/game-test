@@ -5,7 +5,8 @@ import { DEPTH } from '../art/layers';
 import { INK, UI_PANEL, UI_PANEL_PINK, WHITE } from '../art/palette';
 import { iconKey, type TexInfo } from '../art/textures';
 import { exitClosedText, snacksLeftLabel } from '../logic/areaText';
-import { TILAPIA_FACT } from '../logic/factCards';
+import { threatFactCards, threatIds } from '../logic/areas';
+import type { FactCard as FactCardData } from '../logic/factCards';
 import { pickToastAnnouncement } from '../logic/findToast';
 import {
   GAME_EVENTS,
@@ -284,8 +285,8 @@ export class HudScene extends Phaser.Scene {
   /** How many of the trip's finds the pop-up has been given. */
   private announcedCount = 0;
   private factCard!: FactCard;
-  /** Whether the tilapia fact card has shown this trip, so it shows at most once while still due. */
-  private factCardShown = false;
+  /** Ids of the fact cards shown this trip, so each shows at most once while still due. */
+  private factCardsShown: string[] = [];
 
   constructor() {
     super(SCENE_KEYS.hud);
@@ -308,7 +309,7 @@ export class HudScene extends Phaser.Scene {
     this.hintActive = false;
     this.hintHeld = false;
     this.announcedCount = 0;
-    this.factCardShown = false;
+    this.factCardsShown = [];
   }
 
   create(): void {
@@ -931,20 +932,31 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Shows the tilapia fact card with play paused, as Pause does but with the card in place of the
-   * pause overlay: once per trip, while swimming and not already paused, when the snapshot says it is due.
+   * Shows the fact card the snapshot says is due with play paused, as Pause does but with the card
+   * in place of the pause overlay: once per id per trip, while swimming and not already paused.
    */
   private showFactCardWhenDue(snapshot: TripSnapshot): void {
-    if (!snapshot.tilapiaCardDue || this.factCardShown || this.paused || snapshot.phase !== 'swimming') return;
-    this.factCardShown = true;
+    const dueId = snapshot.factCardDue;
+    if (dueId === null || this.factCardsShown.includes(dueId) || this.paused || snapshot.phase !== 'swimming') return;
+    const card = this.threatFactCard(dueId);
+    this.factCardsShown.push(dueId);
     this.holdSwim();
-    this.factCard.show();
+    this.factCard.show(card);
     this.game.events.emit(GAME_EVENTS.PAUSED);
   }
 
-  /** After OK on the fact card: tells the swim scene the card was seen, then resumes play. */
+  /** The fact card of hazard or predator `id` in this zone. Throws when the zone has no such threat. */
+  private threatFactCard(id: string): Readonly<FactCardData> {
+    const index = threatIds(this.assets.zone).indexOf(id);
+    if (index < 0) throw new Error(`HudScene: no hazard or predator ${id} in the zone`);
+    return threatFactCards(this.assets.zone)[index];
+  }
+
+  /** After OK on the fact card: tells the swim scene that card was seen, then resumes play. */
   private closeFactCard(): void {
-    const payload: FactCardSeenPayload = { id: TILAPIA_FACT.id };
+    const shownId = this.factCardsShown[this.factCardsShown.length - 1];
+    if (shownId === undefined) throw new Error('HudScene: a fact card closed before any was shown');
+    const payload: FactCardSeenPayload = { id: shownId };
     this.game.events.emit(HUD_EVENTS.FACT_CARD_SEEN, payload);
     this.resumeSwim();
   }

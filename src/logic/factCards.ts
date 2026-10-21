@@ -52,3 +52,26 @@ export function meetsTilapia(
   if (inSafeArea(pos, safeArea)) return false;
   return tilapias.some((tilapia) => Math.hypot(tilapia.pos.x - pos.x, tilapia.pos.y - pos.y) <= range);
 }
+
+/**
+ * One hazard or predator as the axolotl sees it: its id, its distance in px from the axolotl (as
+ * that threat measures it) and the range within which the axolotl meets it.
+ */
+export interface ThreatSighting {
+  id: string;
+  distance: number;
+  meetRange: number;
+}
+
+/**
+ * Ids of the threats the axolotl at `pos` meets: none inside the safe area (edges count as inside),
+ * else each sighting within its meet range (inclusive), each id once, in sighting order.
+ */
+export function metThreatIds(pos: Point, safeArea: SafeArea, sightings: readonly ThreatSighting[]): string[] {
+  if (inSafeArea(pos, safeArea)) return [];
+  const metIds: string[] = [];
+  for (const sighting of sightings) {
+    if (sighting.distance <= sighting.meetRange && !metIds.includes(sighting.id)) metIds.push(sighting.id);
+  }
+  return metIds;
+}

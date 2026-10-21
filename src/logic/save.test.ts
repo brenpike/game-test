@@ -80,7 +80,7 @@ function playedSession(): Session {
     eatenSnacks: ['canal/snack-0'],
     tripSeed: 77,
     waitingStranded: { morph: 'copper', sex: 'boy', placeId: 'canal/stranding-0' },
-    metTilapia: true,
+    met: ['tilapia'],
     returnedFinds: [BOAT],
     stars: { areaId: CANAL_AREA_ID, earned: { exit: true, special: false, legsOrRescue: true } },
   });
@@ -569,7 +569,7 @@ function dressedSession(): Session {
     eatenSnacks: [],
     tripSeed: 78,
     waitingStranded: null,
-    metTilapia: false,
+    met: [],
     returnedFinds: [],
   });
   return chooseExplorer(setOutfit(withWearables, WILD, fullOutfit()), WILD);
@@ -786,6 +786,13 @@ describe('last chosen area and hazards met (#73, D2)', () => {
     const hub = loadedHub(json);
     expect(hub.lastAreaId).toBe(CANAL_AREA_ID);
     expect(hub.metHazards).toEqual(['tilapia']);
+  });
+
+  it('starts a trip from a loaded save with the fact cards of the hazards met seen', () => {
+    const loaded = sessionFromSave(decodeSave(encodeSave(playedSession().hub)));
+    expect(tripStart(loaded, 0).factCardsSeen).toEqual(['tilapia']);
+    const fresh = sessionFromSave(decodeSave(encodeSave(createSession().hub)));
+    expect(tripStart(fresh, 0).factCardsSeen).toEqual([]);
   });
 
   it('writes the legacy book.tilapiaCard, true only once the tilapia is met', () => {
