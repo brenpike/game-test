@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-10-21
+
+### Added
+
+- Choosing an axolotl in the Home Tank opens a card with its name: Restyle, Outfit and, once you own a Dream colour, Dream colour. Outfit and Dream colour open straight on their tabs (#82).
+
+### Changed
+
+- Tapping an axolotl in the Home Tank, or pressing Enter or Space on it, now opens its choices card before restyle (#82).
+
 ## [0.22.0] - 2026-10-21
 
 ### Added

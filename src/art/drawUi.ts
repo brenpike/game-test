@@ -71,7 +71,8 @@ export type IconKind =
   | 'girl'
   | 'pencil'
   | 'shirt'
-  | 'lock';
+  | 'lock'
+  | 'paintDrop';
 
 /**
  * House icon (guide 7d), shared by the Home Spot flag and every "go home" UI.
@@ -529,6 +530,29 @@ export function paintIcon(ctx: CanvasRenderingContext2D, kind: IconKind, size: n
       hole.arc(16, 22.08, 1.95, 0, TAU);
       ctx.fillStyle = WHITE;
       ctx.fill(hole);
+      break;
+    }
+    case 'paintDrop': {
+      // Paint drop (guide 8, Paint drop icon): a leaning drop OUTLINE (never a filled drop, that is the
+      // Axanthic badge), a small filled ink droplet, and a splash line. Ink 3.0, no fill, no shine.
+      // Body: circle r 7.5 about (13.5, 17.5); tip (20, 4) leaning right. The sides are the two tangents
+      // from the tip: left tangent point (9.27, 11.29), right tangent point (20.98, 16.93). Tip rounded r 1.5.
+      ctx.lineWidth = 3;
+      const drop = new Path2D();
+      drop.moveTo(9.27, 11.29);
+      drop.arcTo(20, 4, 20.98, 16.93, 1.5);
+      drop.lineTo(20.98, 16.93);
+      drop.arc(13.5, 17.5, 7.5, Math.atan2(16.93 - 17.5, 20.98 - 13.5), Math.atan2(11.29 - 17.5, 9.27 - 13.5) + TAU, false);
+      ctx.stroke(drop);
+      // Small ink droplet r 2.2 at (26.5, 21).
+      const bead = new Path2D();
+      bead.arc(26.5, 21, 2.2, 0, TAU);
+      ctx.fill(bead);
+      // Splash line under the body, (7, 29) to (20, 29).
+      const splash = new Path2D();
+      splash.moveTo(7, 29);
+      splash.lineTo(20, 29);
+      ctx.stroke(splash);
       break;
     }
   }
