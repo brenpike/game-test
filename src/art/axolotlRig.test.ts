@@ -79,6 +79,13 @@ import {
   type RigTwinkle,
 } from './axolotlRigParts';
 import { tailStripe } from './axolotlRigStripe';
+import type * as AxolotlRigStripe from './axolotlRigStripe';
+
+// tailStripe runs as itself; the spy only counts calls (rigPlacement's stripe memo).
+vi.mock('./axolotlRigStripe', async (importOriginal) => {
+  const actual = await importOriginal<typeof AxolotlRigStripe>();
+  return { ...actual, tailStripe: vi.fn(actual.tailStripe) };
+});
 
 const TAU = Math.PI * 2;
 
@@ -1096,6 +1103,44 @@ describe('placement', () => {
       }
     }
     expect(filled).toBeGreaterThan(0);
+  });
+
+  it('runs tailStripe only when the look, the shown tail or the sheen step changes', () => {
+    const calls = vi.mocked(tailStripe);
+    const toX = axolotlBodyGeometry(DEFAULT_ART_LOOK).tail.rootX + RIG_SEAM_OVERLAP;
+    const live = pose({ swimPhase: 1.3, tailAmp: 1.4, sheen: 0.3 });
+    const nudged = pose({ swimPhase: 1.3 + 1e-3, tailAmp: 1.4, sheen: 0.3, gillPhase: 2 });
+    const reSheened = pose({ swimPhase: 1.3 + 1e-3, tailAmp: 1.4, sheen: 0.7 });
+
+    // Canvas: a nudge inside one strip frame shows the same tail, so the stripe is kept as filled.
+    const canvas = createRigPlacement();
+    calls.mockClear();
+    rigPlacement(DEFAULT_ART_LOOK, live, 'canvas', true, canvas);
+    const shown = { ...canvas.shownTail };
+    rigPlacement(DEFAULT_ART_LOOK, nudged, 'canvas', true, canvas);
+    expect(canvas.shownTail).toEqual(shown);
+    expect(calls).toHaveBeenCalledTimes(1);
+    rigPlacement(DEFAULT_ART_LOOK, reSheened, 'canvas', true, canvas);
+    expect(calls).toHaveBeenCalledTimes(2);
+    const sheen = sheenStepValue(canvas.sheenFrame ?? 0);
+    expect(canvas.stripe).toEqual(tailStripe(DEFAULT_ART_LOOK, shown.swimPhase, shown.tailAmp, sheen, toX));
+
+    // WebGL shows the live tail: a new swim phase re-runs it, an unchanged tail and sheen step do not.
+    const webgl = createRigPlacement();
+    calls.mockClear();
+    rigPlacement(DEFAULT_ART_LOOK, live, 'webgl', true, webgl);
+    rigPlacement(DEFAULT_ART_LOOK, pose({ swimPhase: 1.3, tailAmp: 1.4, sheen: 0.3, gillPhase: 2 }), 'webgl', true, webgl);
+    expect(calls).toHaveBeenCalledTimes(1);
+    rigPlacement(DEFAULT_ART_LOOK, nudged, 'webgl', true, webgl);
+    expect(calls).toHaveBeenCalledTimes(2);
+
+    // A still tail empties the stripe and forgets it; another look re-runs it.
+    rigPlacement(DEFAULT_ART_LOOK, RIG_STILL_POSE, 'webgl', true, webgl);
+    expect(webgl.stripe.map((band) => band.polygons.length)).toEqual([0, 0]);
+    rigPlacement(DEFAULT_ART_LOOK, nudged, 'webgl', true, webgl);
+    expect(calls).toHaveBeenCalledTimes(3);
+    rigPlacement({ ...DEFAULT_ART_LOOK }, nudged, 'webgl', true, webgl);
+    expect(calls).toHaveBeenCalledTimes(4);
   });
 
   it('bends the tail by renderer, and moves a still Iridescent sheen off the still tail', () => {

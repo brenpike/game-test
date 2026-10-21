@@ -898,15 +898,35 @@ function placeTail(
   tailShear(look, shown.swimPhase, shown.tailAmp, out.tail.dy);
 }
 
-/** Fill `out.stripe` for the shown tail on a moving Iridescent tail, else empty both bands. */
+/** The tailStripe inputs a placement's `stripe` was last filled for. */
+interface StripeInputs {
+  look: AxolotlArtLook;
+  swimPhase: number;
+  tailAmp: number;
+  sheen: number | undefined;
+}
+
+const stripeInputs = new WeakMap<RigPlacement, StripeInputs>();
+
+/**
+ * Fill `out.stripe` for the shown tail on a moving Iridescent tail, else empty both bands.
+ * Runs tailStripe only when the look, the shown tail or the sheen step changed since `out` was last filled.
+ */
 function placeStripe(g: RigLookGeometry, look: AxolotlArtLook, iridescent: boolean, out: RigPlacement): void {
   if (!iridescent || out.tail.mode === 'still') {
     for (const band of out.stripe) band.polygons.length = 0;
+    stripeInputs.delete(out);
     return;
   }
   const sheen = out.sheenFrame === null ? undefined : sheenStepValue(out.sheenFrame);
   const { swimPhase, tailAmp } = out.shownTail;
+  const last = stripeInputs.get(out);
+  if (last && last.look === look && last.swimPhase === swimPhase && last.tailAmp === tailAmp && last.sheen === sheen) {
+    return;
+  }
+  stripeInputs.delete(out);
   tailStripe(look, swimPhase, tailAmp, sheen, g.geo.tail.rootX + RIG_SEAM_OVERLAP, out.stripe);
+  stripeInputs.set(out, { look, swimPhase, tailAmp, sheen });
 }
 
 function placeTwinkles(g: RigLookGeometry, pose: AxolotlPose, shown: RigShownTail, out: RigTwinkle[]): void {
