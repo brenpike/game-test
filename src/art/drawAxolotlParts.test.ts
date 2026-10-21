@@ -2633,7 +2633,7 @@ describe('Socks and Feet slots (guide 6i, 6q)', () => {
     }
   });
 
-  it('has the guide pad, Shoe and Feet envelope in leg space (Young: l 14 or 15, t 8.5)', () => {
+  it('has the #88 pad, Shoe and Feet envelope in leg space (Young: l 14 or 15, t 8.5)', () => {
     const frames = legSlotFrames({ ...DEFAULT_ART_LOOK, age: 'young' }, 0);
     const far = frames[0];
     const near = frames[2];
@@ -2644,30 +2644,30 @@ describe('Socks and Feet slots (guide 6i, 6q)', () => {
       const t = 8.5;
       const pad = sockFootPad(frame);
       expect(pad.u0).toBeCloseTo(l - 2, 9);
-      expect(pad.u1).toBeCloseTo(l + t + 5.3, 9);
-      expect(pad.vHalf).toBe(10.2);
+      expect(pad.u1).toBeCloseTo(l + t + 6, 9);
+      expect(pad.vHalf).toBe(11.2);
       const shoe = shoeRect(frame);
       expect(shoe.u0).toBeCloseTo(l - 2, 9);
-      expect(shoe.u1).toBeCloseTo(l + t + 6.8, 9);
-      expect(shoe.vHalf).toBe(11.7);
+      expect(shoe.u1).toBeCloseTo(l + t + 7.6, 9);
+      expect(shoe.vHalf).toBe(13.2);
       const env = feetEnvelope(frame);
-      expect(env.u0).toBeCloseTo(l - 3, 9);
-      expect(env.u1).toBeCloseTo(l + t + 10, 9);
+      expect(env.u0).toBeCloseTo(l - 2, 9);
+      expect(env.u1).toBeCloseTo(l + t + 10.3, 9);
       expect(env.vHalf).toBe(FEET_ENVELOPE_HALF_WIDTH);
-      expect(env.vHalf).toBe(12);
+      expect(env.vHalf).toBe(13.5);
       expect(pad.radius).toBeLessThanOrEqual(8);
       expect(shoe.radius).toBeLessThanOrEqual(8);
       expect(env.radius).toBe(0);
     }
   });
 
-  it('narrows a Baby: pad +/-8.9, Shoe +/-10.8, toes 5.95, legs x0.7', () => {
+  it('narrows a Baby: pad +/-9.9, Shoe +/-12.2, toes 5.95, legs x0.7', () => {
     const baby = legSlotFrames({ ...DEFAULT_ART_LOOK, age: 'baby' }, 0);
     expect(baby.map((f) => f.length)).toEqual([14 * 0.7, 14 * 0.7, 15 * 0.7, 15 * 0.7]);
     expect(baby[0].toeLength).toBeCloseTo(5.95, 9);
-    expect(sockFootPad(baby[0]).vHalf).toBe(8.9);
-    expect(shoeRect(baby[0]).vHalf).toBe(10.8);
-    expect(feetEnvelope(baby[0]).vHalf).toBe(12);
+    expect(sockFootPad(baby[0]).vHalf).toBe(9.9);
+    expect(shoeRect(baby[0]).vHalf).toBe(12.2);
+    expect(feetEnvelope(baby[0]).vHalf).toBe(13.5);
   });
 
   it('keeps the pad and the Shoe inside the Feet envelope, and the Shoe over the pad at the sides and front', () => {
@@ -2707,7 +2707,7 @@ describe('Socks and Feet slots (guide 6i, 6q)', () => {
 
   it('keeps the Feet envelope off the eyes and lashes, and no more than 1 unit into the gill-root zone (behind the silhouette)', () => {
     // The envelope is a plain box, so its square corner can touch the zone's lower edge on a Baby Slim Boy's
-    // far-front leg (built: 0.79 deep). No Shoe reaches the corner (radius 8), and every leg layer is behind
+    // far-front leg (built: 0.72 deep; #88, 0.79 before). No Shoe reaches the corner (radius 8), and every leg layer is behind
     // the silhouette, so no root is covered.
     const depth = (b: Bounds): number =>
       Math.max(
@@ -2753,7 +2753,7 @@ describe('Socks and Feet slots (guide 6i, 6q)', () => {
     ).toEqual([]);
   });
 
-  it('measures the Feet envelope lowest at y 58.06 and x -61.4 to 45.8, in the frame with 4 or more units of padding', () => {
+  it('measures the Feet envelope lowest at y 58.87 (#88: 58.06 before) and x -62.6 to 47.2, in the frame with 4 or more units of padding', () => {
     const inner = frameInner(FRAME_PAD);
     const boxes: Bounds[] = [];
     for (const look of EVERY_BODY_LOOK) {
@@ -2769,10 +2769,10 @@ describe('Socks and Feet slots (guide 6i, 6q)', () => {
     const all = unionBounds(boxes);
     expectInside(all, inner);
     // Sampled swim phases, so a hair under the continuous lowest ink.
-    expect(all.maxY).toBeLessThanOrEqual(58.07);
-    expect(all.maxY).toBeGreaterThan(57.9);
-    expect(all.minX).toBeCloseTo(-61.4, 0);
-    expect(all.maxX).toBeCloseTo(45.8, 0);
+    expect(all.maxY).toBeLessThanOrEqual(58.88);
+    expect(all.maxY).toBeGreaterThan(58.7);
+    expect(all.minX).toBeCloseTo(-62.57, 1);
+    expect(all.maxX).toBeCloseTo(47.18, 1);
   });
 });
 
@@ -2842,6 +2842,6 @@ describe('every Wearable slot over every look and size', () => {
     expect(HEAD_FOOTPRINT.minY).toBe(-44);
     expect(HEAD_FOOTPRINT.minY).toBeGreaterThanOrEqual(inner.minY);
     expect(HEAD_FOOTPRINT.maxX).toBeLessThanOrEqual(inner.maxX);
-    expect(AXO_TEX.h - AXO_TEX.originY - 58.06).toBeCloseTo(4.94, 2);
+    expect(AXO_TEX.h - AXO_TEX.originY - 58.87).toBeCloseTo(4.13, 2);
   });
 });

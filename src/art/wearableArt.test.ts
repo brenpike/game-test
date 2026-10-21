@@ -5,7 +5,7 @@
  * clip it was painted under, so the tests can ask where ink landed and in what order.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { AXO_REST_POSE, AXO_SCENE_SCALE, AXO_TEX, drawAxolotl, type AxolotlPose, type LegLook } from './drawAxolotl';
+import { AXO_REST_POSE, AXO_SCENE_SCALE, AXO_TEX, drawAxolotl, legPoints, type AxolotlPose, type LegLook } from './drawAxolotl';
 import {
   AXO_AGES,
   AXO_BODIES,
@@ -43,6 +43,7 @@ import {
   boundsOfPoints,
   backFootprint,
   feetEnvelope,
+  legRectBounds,
   legSlotFrames,
   shirtGeometry,
   sockFootPad,
@@ -53,6 +54,7 @@ import {
   type BodyEllipse,
   type BodyWearableSlot,
   type Bounds,
+  type LegRect,
   type LegSlotFrame,
   type WearFrame,
   type WearableSlot,
@@ -114,9 +116,9 @@ const TAU = Math.PI * 2;
 const FRAME_PAD = 4;
 /** Flattened arcs sit inside their circle by their sagitta (under 0.002 here); geometry is held to this. */
 const TOL = 0.005;
-/** The Sock sleeve's ink and colour widths (guide 6i). */
-const SLEEVE_INK_W = 15.2;
-const SLEEVE_COLOUR_W = 10.4;
+/** The Sock sleeve's ink and colour widths (guide 6i; #88: 15.2 and 10.4 before). */
+const SLEEVE_INK_W = 16.4;
+const SLEEVE_COLOUR_W = 11.6;
 
 // ---------------------------------------------------------------------------
 // A recording canvas context
@@ -654,7 +656,7 @@ function firstEyePaint(paints: readonly Paint[]): number {
 
 const SOCKS_AND_FEET: ArtOutfit = { socks: 'stripy-socks', feet: 'flippers' };
 
-/** The Sock sleeve's paints: its 15.2 ink stroke, its 10.4 colour stroke and its alpha 0.30 stripes. */
+/** The Sock sleeve's paints: its 16.4 ink stroke, its 11.6 colour stroke and its alpha 0.30 stripes. */
 const isSleevePaint = (p: Paint): boolean =>
   (p.kind === 'stroke' && (p.lineWidth === SLEEVE_INK_W || p.lineWidth === SLEEVE_COLOUR_W)) ||
   (p.kind === 'fill' && p.alpha === SOCK_STRIPE_ALPHA);
@@ -1541,7 +1543,7 @@ describe('footprints (guide 6i), ink included, and the frame (guide 11)', { time
               const q = toFrame(frame, pt);
               const onSleeve = isSleevePaint(p);
               if (onSleeve) {
-                // Within the sleeve's ink radius (7.6) of the leg axis (u 0 to l), round ends. Its colour stroke
+                // Within the sleeve's ink radius (8.2) of the leg axis (u 0 to l), round ends. Its colour stroke
                 // carries its own half width, so a stroke's points are measured with it.
                 const d = segDist(q.x, q.y, { x: 0, y: 0 }, { x: frame.length, y: 0 });
                 if (d + hw > SLEEVE_INK_W / 2 + TOL) bad.push(`${lookId(look)} sleeve`);
@@ -1599,6 +1601,18 @@ describe('footprints (guide 6i), ink included, and the frame (guide 11)', { time
         expect(backOfFan).toBeCloseTo(pad.u0, 3);
       }
     }
+  });
+
+  it('keeps the lowest Socks and Flippers ink at y 56.24 on every look and swim phase, 4 or more above the frame bottom (#88: the frame did not grow)', () => {
+    let lowest = -Infinity;
+    for (const look of EVERY_BODY_LOOK) {
+      for (const swim of SWIMS) {
+        for (const frame of legSlotFrames(look, swim)) lowest = Math.max(lowest, inkBounds(legPaints(SOCKS_AND_FEET, frame)).maxY);
+      }
+    }
+    expect(lowest).toBeLessThanOrEqual(AXO_TEX.h - AXO_TEX.originY - FRAME_PAD);
+    // A Chubby Girl's near-rear leg at swim phase pi / 2 (#88: 55.90 before).
+    expect(lowest).toBeCloseTo(56.24, 2);
   });
 
   it('keeps every Wearable, ink included, in the texture frame with 4 or more units of padding', () => {
@@ -1672,6 +1686,10 @@ describe('item ink (#88): every worn silhouette uses the 2.0 item ink', () => {
 // clipped paint covers a point only inside every active clip. Fills use the nonzero rule; a stroke
 // covers every point within half its width of its path (round caps and joins, a slight over-cover at
 // a butt end). Only paints whose box meets the box of the item's fills are tested.
+//
+// A Socks or Feet item is one item on four legs, so its visible fill is the sum over all four legs of
+// what shows of it as worn: each leg's wear at its own layer (far 2.5, near 3.5), under the near legs,
+// the silhouette and everything after them. All four legs are present.
 
 /** Sample grid step in local units; each sample stands for one step x step cell, on a grid fixed to the origin. */
 const SWIM_VIEW_GRID = 0.25;
@@ -1689,19 +1707,42 @@ function isItemFill(p: Paint): boolean {
   return p.style !== INK && paintOpacity(p) >= 0.5;
 }
 
-/** A paint ready for sampling: its box (ink included, cut to its clips) and its stroke edges. */
+/** An edge of a paint and its box, grown by half the line width for a stroke: a point outside that box is out of the stroke. */
+interface SampledEdge {
+  a: Pt;
+  b: Pt;
+  box: Bounds;
+}
+
+/**
+ * A paint ready for sampling: its box (ink included, cut to its clips) and, built on first use, its
+ * edges (every subpath closed for a fill, as `winding` reads it) and, per sampled row y, the edges
+ * that can count there, its own and each clip's.
+ */
 interface SampledPaint {
   index: number;
   paint: Paint;
   box: Bounds;
-  edges: [Pt, Pt][];
+  edges: SampledEdge[] | null;
+  rows: Map<number, SampledEdge[]>;
+  clipEdges: SampledEdge[][] | null;
+  clipRows: Map<number, SampledEdge[][]>;
 }
 
 function subsBox(subs: readonly SubPath[], pad: number): Bounds {
-  return boundsOfPoints(
-    subs.flatMap((s) => s.pts.map((q): [number, number] => [q.x, q.y])),
-    pad,
-  );
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const sub of subs) {
+    for (const q of sub.pts) {
+      minX = Math.min(minX, q.x);
+      minY = Math.min(minY, q.y);
+      maxX = Math.max(maxX, q.x);
+      maxY = Math.max(maxY, q.y);
+    }
+  }
+  return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
 }
 
 function sampledPaint(paint: Paint, index: number): SampledPaint {
@@ -1710,8 +1751,71 @@ function sampledPaint(paint: Paint, index: number): SampledPaint {
     const c = subsBox(clip, 0);
     return { minX: Math.max(b.minX, c.minX), minY: Math.max(b.minY, c.minY), maxX: Math.min(b.maxX, c.maxX), maxY: Math.min(b.maxY, c.maxY) };
   }, subsBox(paint.subs, hw));
-  const edges = paint.kind === 'stroke' ? edgesOf({ subs: paint.subs, kind: 'stroke', hw }) : [];
-  return { index, paint, box, edges };
+  return { index, paint, box, edges: null, rows: new Map(), clipEdges: null, clipRows: new Map() };
+}
+
+/** The edges of a region, each with its box grown by `hw`. */
+function regionEdges(r: Region): SampledEdge[] {
+  return edgesOf(r).map(([a, b]) => ({
+    a,
+    b,
+    box: boundsOfPoints(
+      [
+        [a.x, a.y],
+        [b.x, b.y],
+      ],
+      r.hw,
+    ),
+  }));
+}
+
+/** The edges of `s`, each with its box grown by half the line width of a stroke. */
+function sampledEdges(s: SampledPaint): SampledEdge[] {
+  if (s.edges === null) {
+    const hw = s.paint.kind === 'stroke' ? s.paint.lineWidth / 2 : 0;
+    s.edges = regionEdges({ subs: s.paint.subs, kind: s.paint.kind, hw });
+  }
+  return s.edges;
+}
+
+/** Of `edges`, those that cross row `y`: the only ones `winding` counts there. */
+function crossingEdges(edges: readonly SampledEdge[], y: number): SampledEdge[] {
+  return edges.filter((e) => e.a.y <= y !== e.b.y <= y);
+}
+
+/** Each clip's edges of `s` that cross row `y`, kept per row. */
+function clipRowEdges(s: SampledPaint, y: number): SampledEdge[][] {
+  const cached = s.clipRows.get(y);
+  if (cached !== undefined) return cached;
+  s.clipEdges ??= s.paint.clips.map((clip) => regionEdges({ subs: clip, kind: 'fill', hw: 0 }));
+  const rows = s.clipEdges.map((edges) => crossingEdges(edges, y));
+  s.clipRows.set(y, rows);
+  return rows;
+}
+
+/**
+ * The edges of `s` that can count at row `y`: for a fill those that cross the row (the only ones
+ * `winding` counts), for a stroke those whose grown box spans it. Kept per row.
+ */
+function rowEdges(s: SampledPaint, y: number): SampledEdge[] {
+  const cached = s.rows.get(y);
+  if (cached !== undefined) return cached;
+  const edges = sampledEdges(s);
+  const row = s.paint.kind === 'fill' ? crossingEdges(edges, y) : edges.filter((e) => y >= e.box.minY && y <= e.box.maxY);
+  s.rows.set(y, row);
+  return row;
+}
+
+/** Nonzero winding number about (x, y) of the edges that cross row y, the same count `winding` makes. */
+function rowWinding(edges: readonly SampledEdge[], x: number, y: number): number {
+  let w = 0;
+  for (const { a, b } of edges) {
+    const side = (b.x - a.x) * (y - a.y) - (x - a.x) * (b.y - a.y);
+    if (a.y <= y) {
+      if (side > 0) w++;
+    } else if (side < 0) w--;
+  }
+  return w;
 }
 
 function boxHolds(b: Bounds, x: number, y: number): boolean {
@@ -1723,9 +1827,9 @@ function paintCovers(s: SampledPaint, x: number, y: number): boolean {
   if (!boxHolds(s.box, x, y)) return false;
   const covered =
     s.paint.kind === 'fill'
-      ? winding(s.paint.subs, x, y) !== 0
-      : s.edges.some(([a, b]) => segDist(x, y, a, b) <= s.paint.lineWidth / 2);
-  return covered && s.paint.clips.every((clip) => winding(clip, x, y) !== 0);
+      ? rowWinding(rowEdges(s, y), x, y) !== 0
+      : rowEdges(s, y).some((e) => boxHolds(e.box, x, y) && segDist(x, y, e.a, e.b) <= s.paint.lineWidth / 2);
+  return covered && clipRowEdges(s, y).every((clip) => rowWinding(clip, x, y) !== 0);
 }
 
 /** A cheaper paint key for the swim view: style, widths, clip count, point count and the two end points. */
@@ -1749,15 +1853,62 @@ function visibleItemFill(pose: AxolotlPose, look: AxolotlArtLook, outfit: ArtOut
   const meets = (b: Bounds): boolean =>
     b.minX <= domain.maxX && b.maxX >= domain.minX && b.minY <= domain.maxY && b.maxY >= domain.minY;
   const topFirst = sampled.filter((s) => meets(s.box)).reverse();
+  const fillsTopFirst = topFirst.filter((s) => fills.has(s.index));
   const g = SWIM_VIEW_GRID;
   let count = 0;
-  for (let j = Math.floor(domain.minY / g); (j + 0.5) * g <= domain.maxY; j++) {
-    for (let i = Math.floor(domain.minX / g); (i + 0.5) * g <= domain.maxX; i++) {
-      const top = topFirst.find((s) => paintCovers(s, (i + 0.5) * g, (j + 0.5) * g));
-      if (top !== undefined && fills.has(top.index)) count++;
+  for (const row of fillBoxRows(fillsTopFirst.map((s) => s.box))) {
+    const y = (row.j + 0.5) * g;
+    const spans = (s: SampledPaint): boolean => y >= s.box.minY && y <= s.box.maxY;
+    const rowTop = topFirst.filter(spans);
+    const rowFills = fillsTopFirst.filter(spans);
+    for (const i of row.cells) {
+      const x = (i + 0.5) * g;
+      const fill = rowFills.find((s) => paintCovers(s, x, y));
+      if (fill !== undefined && !coveredAbove(rowTop, fill.index, x, y)) count++;
     }
   }
   return count * g * g;
+}
+
+/** Whether a paint of `topFirst` (in reverse paint order) later than paint `index` covers (x, y). */
+function coveredAbove(topFirst: readonly SampledPaint[], index: number, x: number, y: number): boolean {
+  for (const s of topFirst) {
+    if (s.index <= index) return false;
+    if (paintCovers(s, x, y)) return true;
+  }
+  return false;
+}
+
+/**
+ * Grid rows (SWIM_VIEW_GRID) and, in each, the cells whose centre can lie in one of `boxes`, each
+ * once. A cell is visible only when an item fill is the topmost paint over its centre, so only cells
+ * inside a fill's box are tested, and for those the item fill highest in paint order must have
+ * nothing over it.
+ */
+function fillBoxRows(boxes: readonly Bounds[]): { j: number; cells: number[] }[] {
+  const g = SWIM_VIEW_GRID;
+  const ranges = boxes.map((box) => ({
+    i0: Math.floor(box.minX / g),
+    i1: Math.floor(box.maxX / g - 0.5),
+    j0: Math.floor(box.minY / g),
+    j1: Math.floor(box.maxY / g - 0.5),
+  }));
+  const i0 = Math.min(...ranges.map((r) => r.i0));
+  const i1 = Math.max(...ranges.map((r) => r.i1));
+  const j0 = Math.min(...ranges.map((r) => r.j0));
+  const j1 = Math.max(...ranges.map((r) => r.j1));
+  const width = i1 - i0 + 1;
+  const marked = new Uint8Array(Math.max(0, width * (j1 - j0 + 1)));
+  for (const r of ranges) {
+    for (let j = r.j0; j <= r.j1; j++) marked.fill(1, (j - j0) * width + r.i0 - i0, (j - j0) * width + r.i1 - i0 + 1);
+  }
+  const rows: { j: number; cells: number[] }[] = [];
+  for (let j = j0; j <= j1; j++) {
+    const cells: number[] = [];
+    for (let i = i0; i <= i1; i++) if (marked[(j - j0) * width + i - i0] === 1) cells.push(i);
+    if (cells.length > 0) rows.push({ j, cells });
+  }
+  return rows;
 }
 
 /** The least visible fill over `cases`, in units² and CSS px², and the case it was found in. */
@@ -1816,6 +1967,9 @@ const SWIM_VIEW_SWIM_CASES: readonly SwimViewCase[] = SWIM_VIEW_STILL_CASES.flat
     AMPS.map((amp) => ({ id: `${c.id} swim ${swim.toFixed(2)} amp ${amp}`, pose: { ...AXO_REST_POSE, swimPhase: swim, tailAmp: amp }, look: c.look })),
   ),
 );
+
+/** The 54 body looks over a swim cycle at tail amplitude 1, all four legs present, for the Socks and Feet items. */
+const SWIM_VIEW_LEG_CASES: readonly SwimViewCase[] = SWIM_VIEW_SWIM_CASES.filter((c) => c.pose.tailAmp === 1);
 
 describe('swim view (#88): each worn item shows enough of its own fill', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
   it('converts at 0.684 CSS px per unit, so the 64 CSS px² floor is about 136.8 units²', () => {
@@ -1903,6 +2057,16 @@ describe('swim view (#88): each worn item shows enough of its own fill', { timeo
     const least = expectSwimView('golden-bow', SWIM_VIEW_SWIM_CASES.filter((c) => c.pose.tailAmp === 1.6), 163.9375, 'medium girl long slim young swim 1.05 amp 1.6');
     expect(least.cssPx2).toBeCloseTo(76.7, 2);
   });
+
+  it('shows the Stripy socks at 241.9 units², 113.2 CSS px², or more summed over the four legs at every look and swim phase (#88: 194.5 units², 91.0 CSS px² before), over the floor', () => {
+    const least = expectSwimView('stripy-socks', SWIM_VIEW_LEG_CASES, 241.9375, 'medium boy short slim baby swim 2.09 amp 1');
+    expect(least.cssPx2).toBeCloseTo(113.19, 2);
+  });
+
+  it('shows the Flippers at 461.2 units², 215.8 CSS px², or more summed over the four legs at every look and swim phase (#88: 400.4 units², 187.3 CSS px² before), over the floor', () => {
+    const least = expectSwimView('flippers', SWIM_VIEW_LEG_CASES, 461.1875, 'medium boy short slim baby swim 2.62 amp 1');
+    expect(least.cssPx2).toBeCloseTo(215.77, 2);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1961,8 +2125,43 @@ function leastOver(values: readonly { id: string; value: number }[]): { id: stri
   return values.reduce((a, b) => (b.value < a.value ? b : a));
 }
 
+/** Bare leg ink (guide 6e): the tube, colour 8 with 3.1 of ink each side, and each toe, colour 4.2 with 2.6 each side. */
+const BARE_LEG_INK_W = 8 + 2 * 3.1;
+const TOE_INK_W = 4.2 + 2 * 2.6;
+
+/** Grid points of a present leg's three toes' ink past the leg tube's ink, and of its three toe-tip ink discs, held TOL inside. */
+function toeRegions(frame: LegSlotFrame): { toes: Pt[]; tips: Pt[] } {
+  const [endPoint, ...tipPoints] = legPoints(frame.x, frame.y, frame.angle, frame.length, frame.toeLength);
+  const end = { x: endPoint[0], y: endPoint[1] };
+  const tips = tipPoints.map(([x, y]) => ({ x, y }));
+  const root = { x: frame.x, y: frame.y };
+  const r = TOE_INK_W / 2 - TOL;
+  const grid = gridPoints(boundsOfPoints([...tipPoints, endPoint], TOE_INK_W / 2));
+  const onToe = (q: Pt): boolean => tips.some((tip) => segDist(q.x, q.y, end, tip) <= r);
+  return {
+    toes: grid.filter((q) => onToe(q) && segDist(q.x, q.y, root, end) > BARE_LEG_INK_W / 2 + TOL),
+    tips: grid.filter((q) => tips.some((tip) => Math.hypot(q.x - tip.x, q.y - tip.y) <= r)),
+  };
+}
+
+/** Whether `p` lies inside the leg-space rounded rectangle `rect`, `inset` or more in from its edge. */
+function inLegRect(frame: LegSlotFrame, rect: LegRect, p: Pt, inset: number): boolean {
+  const q = toFrame(frame, p);
+  const r = rect.radius;
+  const du = Math.max(rect.u0 + r - q.x, 0, q.x - (rect.u1 - r));
+  const dv = Math.max(Math.abs(q.y) - (rect.vHalf - r), 0);
+  const inBox = q.x >= rect.u0 + inset && q.x <= rect.u1 - inset && Math.abs(q.y) <= rect.vHalf - inset;
+  return inBox && Math.hypot(du, dv) <= r - inset;
+}
+
+/** Share of `points` that one of `paints` (fill or ink) covers. */
+function coveredShare(points: readonly Pt[], paints: readonly Paint[]): number {
+  const sampled = sampledPaints(paints);
+  return points.filter((q) => sampled.some((sp) => paintCovers(sp, q.x, q.y))).length / points.length;
+}
+
 describe('slot minimums (#88): each item is a share of its body part on every look', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
-  it('holds the owner minimums: Head half the head wide and 8 up, Neck 27 wide, Face the eye span round both eye zones, Shirt 75% of the torso side, Back 22 or half the torso long, 8 proud and 40% out, Tail 40% of the tail height and 16 along', () => {
+  it('holds the owner minimums: Head half the head wide and 8 up, Neck 27 wide, Face the eye span round both eye zones, Shirt 75% of the torso side, Back 22 or half the torso long, 8 proud and 40% out, Tail 40% of the tail height and 16 along, Socks the whole leg tube 1 proud and every toe tip, Feet every toe and the whole Sock pad', () => {
     expect(WEARABLE_SLOT_MINIMUMS).toEqual({
       head: { headWidthShare: 0.5, rise: 8 },
       neck: { minWidth: 27 },
@@ -1970,6 +2169,8 @@ describe('slot minimums (#88): each item is a share of its body part on every lo
       shirt: { torsoSideShare: 0.75 },
       back: { minLength: 22, torsoLengthShare: 0.5, proud: 8, outsideShare: 0.4 },
       tail: { tailHeightShare: 0.4, minAlong: 16 },
+      socks: { legLengthShare: 1, tubeProud: 1, toeTipShare: 1 },
+      feet: { toeShare: 1, padShare: 1 },
     });
     expect(backMinimumLength(31)).toBe(22);
     expect(backMinimumLength(41)).toBe(26);
@@ -2080,6 +2281,56 @@ describe('slot minimums (#88): each item is a share of its body part on every lo
     const leastAlong = leastOver(along);
     expect(leastAlong.value, leastAlong.id).toBeGreaterThanOrEqual(WEARABLE_SLOT_MINIMUMS.tail.minAlong);
     expect(leastAlong.value).toBeCloseTo(21.4, 2);
+  });
+
+  it('runs the Stripy socks sleeve the whole leg tube, 1.1 proud of the bare leg ink each side, and covers all three toe tips with the pad, ink included, on every look and leg', () => {
+    // The leg painter's ink widths are the ones measured against.
+    const legInks = new Set(drawn(AXO_REST_POSE, DEFAULT_ART_LOOK).filter((p) => p.kind === 'stroke' && p.style === INK).map((p) => p.lineWidth));
+    expect(legInks.has(BARE_LEG_INK_W)).toBe(true);
+    expect(legInks.has(TOE_INK_W)).toBe(true);
+    const lengths: { id: string; value: number }[] = [];
+    const prouds: { id: string; value: number }[] = [];
+    const tips: { id: string; value: number }[] = [];
+    for (const look of EVERY_BODY_LOOK) {
+      for (const frame of legSlotFrames(look, 0.9)) {
+        const id = `${lookId(look)} leg ${frame.index}`;
+        const paints = legPaints({ socks: 'stripy-socks' }, frame);
+        const colour = paints.find((p) => p.kind === 'stroke' && p.lineWidth === SLEEVE_COLOUR_W)!;
+        const along = colour.subs.flatMap((sub) => sub.pts.map((q) => toFrame(frame, q).x));
+        const l = frame.length;
+        lengths.push({ id, value: (Math.min(Math.max(...along), l) - Math.max(Math.min(...along), 0)) / l });
+        const ink = paints.find((p) => p.kind === 'stroke' && p.style === INK && p.lineWidth === SLEEVE_INK_W)!;
+        prouds.push({ id, value: (ink.lineWidth - BARE_LEG_INK_W) / 2 });
+        tips.push({ id, value: coveredShare(toeRegions(frame).tips, paints.filter((p) => !isSleevePaint(p))) });
+      }
+    }
+    // The sleeve's ends are turned into the frame and back, so its share is 1 to within float rounding.
+    const length = leastOver(lengths);
+    expect(length.value, length.id).toBeGreaterThanOrEqual(WEARABLE_SLOT_MINIMUMS.socks.legLengthShare - 1e-9);
+    const proud = leastOver(prouds);
+    expect(proud.value, proud.id).toBeGreaterThanOrEqual(WEARABLE_SLOT_MINIMUMS.socks.tubeProud);
+    expect(proud.value).toBeCloseTo(1.1, 9);
+    const tip = leastOver(tips);
+    expect(tip.value, tip.id).toBeGreaterThanOrEqual(WEARABLE_SLOT_MINIMUMS.socks.toeTipShare);
+  });
+
+  it('covers all three toes and the whole Sock pad with the Flippers, ink included, on every look and leg', () => {
+    const toes: { id: string; value: number }[] = [];
+    const pads: { id: string; value: number }[] = [];
+    for (const look of EVERY_BODY_LOOK) {
+      for (const frame of legSlotFrames(look, 0.9)) {
+        const id = `${lookId(look)} leg ${frame.index}`;
+        const paints = legPaints({ feet: 'flippers' }, frame);
+        toes.push({ id, value: coveredShare(toeRegions(frame).toes, paints) });
+        const pad = sockFootPad(frame);
+        const padPoints = gridPoints(legRectBounds(frame, pad)).filter((q) => inLegRect(frame, pad, q, TOL));
+        pads.push({ id, value: coveredShare(padPoints, paints) });
+      }
+    }
+    const toe = leastOver(toes);
+    expect(toe.value, toe.id).toBeGreaterThanOrEqual(WEARABLE_SLOT_MINIMUMS.feet.toeShare);
+    const pad = leastOver(pads);
+    expect(pad.value, pad.id).toBeGreaterThanOrEqual(WEARABLE_SLOT_MINIMUMS.feet.padShare);
   });
 
   it('never lets the Diving tank fill meet the Tank top fill, on every look', () => {

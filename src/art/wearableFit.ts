@@ -71,6 +71,24 @@ export interface FaceSlotMinimum {
   readonly eyeZoneShare: number;
 }
 
+/** Socks minimum: the sleeve along and across the leg, and the foot pad over the toe tips. */
+export interface SocksSlotMinimum {
+  /** Share of the leg tube, u 0 to the leg end l, the sleeve's colour runs along. */
+  readonly legLengthShare: number;
+  /** The sleeve's ink reaches at least this many units past the bare leg tube's ink on each side. */
+  readonly tubeProud: number;
+  /** Share of the three toe tips' ink (a disc of the toe ink's half width about each tip) the pad covers, its own ink included. */
+  readonly toeTipShare: number;
+}
+
+/** Feet minimum: the item over the toes and over the Sock's foot pad. */
+export interface FeetSlotMinimum {
+  /** Share of the three toes' ink, past the leg tube's ink, the item covers, its own ink included. */
+  readonly toeShare: number;
+  /** Share of the Sock's foot pad, ink included, the item covers, its own ink included. */
+  readonly padShare: number;
+}
+
 /** Per-slot minimum sizes: every look meets each value or more. */
 export interface WearableSlotMinimums {
   readonly head: HeadSlotMinimum;
@@ -79,6 +97,8 @@ export interface WearableSlotMinimums {
   readonly shirt: ShirtSlotMinimum;
   readonly back: BackSlotMinimum;
   readonly tail: TailSlotMinimum;
+  readonly socks: SocksSlotMinimum;
+  readonly feet: FeetSlotMinimum;
 }
 
 export const WEARABLE_SLOT_MINIMUMS: WearableSlotMinimums = {
@@ -88,6 +108,8 @@ export const WEARABLE_SLOT_MINIMUMS: WearableSlotMinimums = {
   shirt: { torsoSideShare: 0.75 },
   back: { minLength: 22, torsoLengthShare: 0.5, proud: 8, outsideShare: 0.4 },
   tail: { tailHeightShare: 0.4, minAlong: 16 },
+  socks: { legLengthShare: 1, tubeProud: 1, toeTipShare: 1 },
+  feet: { toeShare: 1, padShare: 1 },
 };
 
 /** Least Back ink length along the back edge on a torso of x radius `torsoRx`: the torso length is 2 rx - 30. */

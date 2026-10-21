@@ -23,9 +23,14 @@
 import { ell, inkMany, line, seg, shape } from './canvasKit';
 import { roundedPolygon, type Pt } from './drawBadges';
 import {
+  FEET_ENVELOPE_FRONT,
+  FEET_ENVELOPE_HALF_WIDTH,
+  FOOT_BACK_U,
   GLASSES_BAND,
   GLASSES_LENSES,
   HEAD_ELLIPSE,
+  SOCK_SLEEVE_OL,
+  SOCK_SLEEVE_W,
   WEARABLE_SLOTS,
   axolotlBodyGeometry,
   backFootprint,
@@ -171,9 +176,14 @@ const GLASSES_BAND_W = GLASSES_BAND - 2 * GLASSES_BAND_OL;
 const CORD_W = 4.6;
 const CORD_BACK_W = 4;
 const CORD_OL = 0.6;
-/** Sock sleeve: colour 10.4, `ol` 2.4 (guide 6i). */
-const SLEEVE_W = 10.4;
-const SLEEVE_OL = 2.4;
+/**
+ * Flippers fan half widths, ink included, at the back edge and at u = l + 3 (#88: 8.5 and 11.0
+ * before), grown with the Feet envelope's half width (FEET_ENVELOPE_HALF_WIDTH, 12 to 13.5).
+ */
+const FLIPPER_BACK_HALF = 9.5;
+const FLIPPER_MID_HALF = 12.4;
+/** Flippers ridge ends across the fan, at the 13.5 half width (#88: 6 before). */
+const FLIPPER_RIDGE_V = 6.75;
 
 /** Colour of a nearer or farther item: far-leg items are mixed toward ink (guide 6a). */
 type Tone = (colour: string) => string;
@@ -742,18 +752,18 @@ function footPadPath(frame: LegSlotFrame): Path2D {
 }
 
 /**
- * Common: a #efdcba sleeve (colour 10.4, `ol` 2.4) from the leg root to the leg
+ * Common: a #efdcba sleeve (colour 11.6, `ol` 2.4) from the leg root to the leg
  * end, a foot pad over the toes, three stripes across the sleeve (the same
  * colour darkened: ink at alpha 0.30, not a second colour) and one shine on the
  * pad. In leg space: u along the leg from the root, v across it.
  */
 function paintStripySocks(ctx: CanvasRenderingContext2D, frame: LegSlotFrame, tone: Tone): void {
   const l = frame.length;
-  inkMany(ctx, [seg(line(0, 0, l, 0), SLEEVE_W, tone(SOCK_FILL), SLEEVE_OL)]);
+  inkMany(ctx, [seg(line(0, 0, l, 0), SOCK_SLEEVE_W, tone(SOCK_FILL), SOCK_SLEEVE_OL)]);
   ctx.save();
   ctx.globalAlpha = SOCK_STRIPE_ALPHA;
   ctx.fillStyle = INK;
-  for (const u of [l - 3, l - 5.4, l - 7.8]) ctx.fill(rectPath(u - 0.8, -SLEEVE_W / 2, u + 0.8, SLEEVE_W / 2));
+  for (const u of [l - 3, l - 5.4, l - 7.8]) ctx.fill(rectPath(u - 0.8, -SOCK_SLEEVE_W / 2, u + 0.8, SOCK_SLEEVE_W / 2));
   ctx.restore();
   shape(ctx, footPadPath(frame), tone(SOCK_FILL), ITEM_LW);
   shine(ctx, l + 5, -4.5, 2.2, 0.9);
@@ -766,24 +776,25 @@ function paintStripySocks(ctx: CanvasRenderingContext2D, frame: LegSlotFrame, to
 /**
  * Rare: a #ffe14a fan from the ankle (guide 6i Flippers construction), `shape`
  * 2.0, one #ff82bf cuff band, three internal fan ridges (texture, not a counted
- * detail) and one shine. The construction is ink included, so the path is 1.0
- * inside it: the back edge at u l - 1 with v +/-7.5, opening to v +/-10 at
- * u l + 3 and +/-11 at u l + t + 4, and a rounded tip at u l + t + 9. It
- * fully covers the Sock's foot pad at the sides and front, so the Sock shows
- * above it at the back. The cuff starts at the back edge, which is its first
- * ink line; the shine sits clear of the ink.
+ * detail) and one shine. The construction is ink included and fills the Feet
+ * envelope's width and front (#88), so the path is 1.0 inside it: the back edge
+ * at the pad's back, u l - 1, with v +/-8.5, opening to v +/-11.4 at u l + 3 and
+ * +/-12.5 at u l + t + 4, and a rounded tip at u l + t + 9.3. It fully covers
+ * the Sock's foot pad at the sides and front, so the Sock shows above it at the
+ * back. The cuff starts at the back edge, which is its first ink line; the
+ * shine sits clear of the ink.
  */
 function paintFlippers(ctx: CanvasRenderingContext2D, frame: LegSlotFrame, tone: Tone): void {
   const l = frame.length;
   const t = frame.toeLength;
   const half = ITEM_LW / 2;
-  const back = l - 2 + half;
+  const back = l - FOOT_BACK_U + half;
   const mid = l + 3;
   const side = l + t + 4;
-  const tip = l + t + 10 - half;
-  const vBack = 8.5 - half;
-  const vMid = 11 - half;
-  const vSide = 12 - half;
+  const tip = l + t + FEET_ENVELOPE_FRONT - half;
+  const vBack = FLIPPER_BACK_HALF - half;
+  const vMid = FLIPPER_MID_HALF - half;
+  const vSide = FEET_ENVELOPE_HALF_WIDTH - half;
   const fan = new Path2D();
   fan.moveTo(back, -vBack);
   fan.lineTo(mid, -vMid);
@@ -799,8 +810,8 @@ function paintFlippers(ctx: CanvasRenderingContext2D, frame: LegSlotFrame, tone:
     const ridges = new Path2D();
     for (const [u, v] of [
       [tip - 1.6, 0],
-      [tip - 2.2, -6],
-      [tip - 2.2, 6],
+      [tip - 2.2, -FLIPPER_RIDGE_V],
+      [tip - 2.2, FLIPPER_RIDGE_V],
     ]) {
       ridges.moveTo(l + 3.5, 0);
       ridges.lineTo(u, v);

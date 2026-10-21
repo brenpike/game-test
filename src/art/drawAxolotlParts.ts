@@ -1723,24 +1723,36 @@ export interface LegRect {
 
 /** Corner radius of a foot pad and a Shoe, before it is capped to half of each side (guide 6i). */
 export const FOOT_CORNER_RADIUS = 8;
-/** Sock sleeve: colour width 10.4, `ol` 2.4, so ink width 15.2, round ends. */
-export const SOCK_SLEEVE_W = 10.4;
+/**
+ * Sock sleeve: colour width 11.6, `ol` 2.4, so ink width 16.4, round ends (#88; colour 10.4 before):
+ * the widest whose box stays clear of the near lash reach on a Slim look's near-front leg.
+ */
+export const SOCK_SLEEVE_W = 11.6;
 export const SOCK_SLEEVE_OL = 2.4;
 export const SOCK_SLEEVE_INK_W = SOCK_SLEEVE_W + 2 * SOCK_SLEEVE_OL;
 /** Foot pad and Shoe start this far behind the leg end (u = l - 2.0). */
 export const FOOT_BACK_U = 2;
-/** Feet envelope starts this far behind the leg end (u = l - 3.0). */
-export const FEET_ENVELOPE_BACK_U = 3;
-/** Foot pad reaches this far past the toe tips (u = l + t + 5.3). */
-export const SOCK_PAD_FRONT = 5.3;
-/** Shoe reaches this far past the toe tips (u = l + t + 6.8). */
-export const SHOE_FRONT = 6.8;
-/** Feet envelope reaches this far past the toe tips (u = l + t + 10.0). */
-export const FEET_ENVELOPE_FRONT = 10;
-/** Foot pad, Shoe and Feet envelope half widths, ink included; a Baby's pad and Shoe are narrower. */
-export const SOCK_PAD_HALF_WIDTH = { grown: 10.2, baby: 8.9 } as const;
-export const SHOE_HALF_WIDTH = { grown: 11.7, baby: 10.8 } as const;
-export const FEET_ENVELOPE_HALF_WIDTH = 12;
+/**
+ * Feet envelope starts this far behind the leg end (u = l - 2.0, where the pad, a Shoe and the
+ * Flippers start; #88, 3.0 before), so its wider back corner stays within 1 of the gill-root zone.
+ */
+export const FEET_ENVELOPE_BACK_U = 2;
+/** Foot pad reaches this far past the toe tips (u = l + t + 6.0; #88, 5.3 before). */
+export const SOCK_PAD_FRONT = 6;
+/** Shoe reaches this far past the toe tips (u = l + t + 7.6; #88, 6.8 before): 1.5 or more past the pad's ink, ink included. */
+export const SHOE_FRONT = 7.6;
+/**
+ * Feet envelope reaches this far past the toe tips (u = l + t + 10.3; #88, 10.0 before): as far as the
+ * frame bottom allows at half width 13.5, its square corner lowest at y 58.87 (4 or more inside the frame).
+ */
+export const FEET_ENVELOPE_FRONT = 10.3;
+/**
+ * Foot pad, Shoe and Feet envelope half widths, ink included; a Baby's pad and Shoe are narrower (#88:
+ * pad 10.2 and 8.9, Shoe 11.7 and 10.8, envelope 12 before).
+ */
+export const SOCK_PAD_HALF_WIDTH = { grown: 11.2, baby: 9.9 } as const;
+export const SHOE_HALF_WIDTH = { grown: 13.2, baby: 12.2 } as const;
+export const FEET_ENVELOPE_HALF_WIDTH = 13.5;
 
 function legRect(frame: LegSlotFrame, back: number, front: number, vHalf: number, radius: number): LegRect {
   const u0 = frame.length - back;
@@ -1762,8 +1774,9 @@ export function shoeRect(frame: LegSlotFrame): LegRect {
 
 /**
  * The Feet envelope: every Feet item (Shoe, Flippers) stays inside it. A plain
- * box (square corners, radius 0): the guide's measured extents (frame bottom
- * y 58.06, x -61.4 to 45.8) are its corners.
+ * box (square corners, radius 0): its measured extents (lowest y 58.87, x
+ * -62.6 to 47.2 over every look and swim phase; #88, y 58.06 and x -61.4 to
+ * 45.8 before) are its corners.
  */
 export function feetEnvelope(frame: LegSlotFrame): LegRect {
   return legRect(frame, FEET_ENVELOPE_BACK_U, FEET_ENVELOPE_FRONT, FEET_ENVELOPE_HALF_WIDTH, 0);
