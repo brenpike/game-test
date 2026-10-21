@@ -241,6 +241,8 @@ function placeTankLayer(image: Phaser.GameObjects.Image, info: TexInfo, frame: T
 export class HomeTankScene extends Phaser.Scene {
   private assets!: GameAssets;
   private arrival: TripEnding | null = null;
+  /** Id of the area the arrival card is about, from the start data. */
+  private arrivalAreaId = '';
   private session!: Session;
   private area!: Readonly<AreaData>;
   private motion!: MotionProfile;
@@ -280,6 +282,7 @@ export class HomeTankScene extends Phaser.Scene {
   init(data: HomeTankStart): void {
     this.assets = data.assets;
     this.arrival = data.arrival;
+    this.arrivalAreaId = data.areaId;
     this.clock = 0;
     this.mode = 'hub';
     this.exploring = false;
@@ -295,7 +298,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.view = readSceneView(this.scale);
     this.motion = motionProfile(this.registry.get(REGISTRY_KEYS.reducedMotion) === true);
     this.session = readSession(this.registry);
-    this.area = zoneArea(this.assets.zone.areaId);
+    this.area = zoneArea(areaById(this.arrivalAreaId) ? this.arrivalAreaId : this.session.hub.lastAreaId);
     this.frame = tankFrame(this.view.cssW, this.view.cssH);
     useCssCamera(this.cameras.main, this.view.fit.dpr);
     this.cameras.main.setBackgroundColor(HOME_TANK_WALL);

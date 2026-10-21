@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import { areaById } from '../logic/areas';
 import type { Collectible } from '../logic/collectibles';
 import type { RealMorphId } from '../logic/morphs';
 import {
@@ -19,16 +20,21 @@ import {
   tripEndRecord,
   type AxolotlStyle,
   type Session,
+  type TripEndRecord,
 } from '../logic/session';
 import type { TripState } from '../logic/trip';
 import { TRIP_REGISTRY_KEYS, type TripEnding, type TripSnapshot } from '../logic/tripEvents';
 import { backupUnreadableSave, eraseStoredSave, readStoredSave, writeStoredSave } from '../platform/saveStorage';
-import { SCENE_KEYS, type GameAssets } from './BootScene';
+import { SCENE_KEYS, type GameAssets, type SwimStart } from './BootScene';
 
-/** What the Home Tank scene starts from: the game assets and how the last trip ended (null from the title). */
+/**
+ * What the Home Tank scene starts from: the game assets, how the last trip ended (null from the
+ * title) and the id of the area the arrival card is about, always an area in AREAS.
+ */
 export interface HomeTankStart {
   assets: GameAssets;
   arrival: TripEnding | null;
+  areaId: string;
 }
 
 /**
@@ -112,7 +118,7 @@ export function openHomeTank(scene: Phaser.Scene, assets: GameAssets): void {
     openCreator(scene, assets);
     return;
   }
-  const start: HomeTankStart = { assets, arrival: null };
+  const start: HomeTankStart = { assets, arrival: null, areaId: readSession(scene.registry).hub.lastAreaId };
   scene.scene.start(SCENE_KEYS.homeTank, start);
 }
 
@@ -145,21 +151,34 @@ export function finishCreator(
  * Tank even with one owned axolotl: remembers `id` as the explorer, saving it to the device by
  * writeSession when it changed (D1), then starts the swim, which takes the remembered explorer
  * (explorerAxolotl) in its own look, Dream colour and outfit, with that outfit's perks (F12).
+ * The swim is in the dev area when one was asked for, else in the last chosen area.
  * Throws when no owned axolotl has `id`.
  */
 export function goExploring(scene: Phaser.Scene, assets: GameAssets, id: string): void {
   const current = readSession(scene.registry);
   const next = chooseExplorer(current, id);
   if (next.hub.explorerId !== current.hub.explorerId) writeSession(scene.registry, next);
-  scene.scene.start(SCENE_KEYS.swim, assets);
+  const start: SwimStart = { assets, areaId: assets.devAreaId ?? next.hub.lastAreaId };
+  scene.scene.start(SCENE_KEYS.swim, start);
+}
+
+/**
+ * The record of a trip in a dev area, which is never in AREAS: kept in that area's own memory, but
+ * with no stars, so the hub's stars only ever hold real areas.
+ */
+function withoutStars(record: TripEndRecord): TripEndRecord {
+  const starless: TripEndRecord = { ...record };
+  delete starless.stars;
+  return starless;
 }
 
 /**
  * The single way back from a trip, whether the player went home, was carried home or beat the area
  * (#31): takes the ended trip, its snacks and, when the area was beaten, the stars earned in the
- * zone's area into the session (PRD H7), stops the HUD and opens the Home Tank with the tank arrival
- * card for the trip's ending, its stars included. Throws when the trip has not ended, or beat the
- * area with no stars.
+ * trip's area into the session (PRD H7), stops the HUD and opens the Home Tank with the tank arrival
+ * card for the trip's ending, its stars included. A trip in a dev area (not in AREAS) earns no stars
+ * and the Home Tank shows the last chosen area instead; the last chosen area is never changed here.
+ * Throws when the trip has not ended, or beat the area with no stars.
  */
 export function returnToHomeTank(
   scene: Phaser.Scene,
@@ -167,17 +186,20 @@ export function returnToHomeTank(
   trip: TripState,
   snacks: readonly Collectible[],
 ): void {
-  const record = tripEndRecord(trip, snacks, assets.zone.areaId);
+  const realArea = areaById(trip.areaId) !== undefined;
+  const fullRecord = tripEndRecord(trip, snacks, trip.areaId);
+  const record = realArea ? fullRecord : withoutStars(fullRecord);
   const ending = trip.ending;
   if (ending === null) throw new Error('returnToHomeTank: the ended trip has no ending');
-  writeSession(scene.registry, recordTripEnd(readSession(scene.registry), record));
+  const session = recordTripEnd(readSession(scene.registry), record);
+  writeSession(scene.registry, session);
   const arrival: TripEnding = {
     reason: ending.reason,
     returned: [...ending.returned],
     bankedThisTrip: [...ending.bankedThisTrip],
     ...(ending.stars === undefined ? {} : { stars: { ...ending.stars } }),
   };
-  const start: HomeTankStart = { assets, arrival };
+  const start: HomeTankStart = { assets, arrival, areaId: realArea ? trip.areaId : session.hub.lastAreaId };
   scene.scene.stop(SCENE_KEYS.hud);
   scene.scene.start(SCENE_KEYS.homeTank, start);
 }

@@ -10,7 +10,7 @@ import { canalGlowShows, canalTreasureLook, rarityGlowAlpha } from '../logic/rar
 import type { TripEvent } from '../logic/trip';
 import { isHeld, type FindId, type Holdings } from '../logic/tripBag';
 import type { Vec2 } from '../logic/vec';
-import { BED_TOP, type CurrentZone, type Point, type ZoneLayout } from '../logic/zone';
+import type { CurrentZone, Point, ZoneLayout } from '../logic/zone';
 import type { GameAssets } from './BootScene';
 
 const TAU = Math.PI * 2;
@@ -168,7 +168,7 @@ export class TreasureView {
     this.assets = assets;
     this.hintMultiplier = hintMultiplier;
     const hiding = assets.baked.hiding;
-    const baseY = BED_TOP + BED_SINK_PX;
+    const baseY = zone.bedTop + BED_SINK_PX;
     const caveX = (zone.cave.x0 + zone.cave.x1) / 2;
     bakedImage(scene, hiding.caveBack, caveX, baseY, DEPTH.caveBack);
     bakedImage(scene, hiding.caveFront, caveX, baseY, DEPTH.caveFront);

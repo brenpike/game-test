@@ -24,10 +24,12 @@ import {
   controlKeepOuts,
   hudControls,
   placeHudOverlays,
+  screenWaterRows,
   type HudControlSizes,
   type HudControls,
   type HudOverlayId,
   type HudOverlayRequest,
+  type HudView,
   type Rect,
   type Size,
 } from '../logic/hudLayout';
@@ -45,6 +47,7 @@ import {
 import { ALL_SNACKS_BANNER, BANKING_HINT, GO_HOME_LABEL, LEGS_LABEL, TRIP_BAG_LABEL, tripBagStatus } from '../logic/tripText';
 import { LEGS } from '../logic/tuning';
 import { add, clampLen } from '../logic/vec';
+import { SURF, WORLD_H, type ZoneLayout } from '../logic/zone';
 import { BankingCard } from './BankingCard';
 import {
   SCENE_KEYS,
@@ -54,8 +57,10 @@ import {
   readSceneView,
   uiTextStyle,
   useCssCamera,
+  zoneFor,
   type GameAssets,
   type SceneView,
+  type SwimStart,
   type UiButton,
 } from './BootScene';
 import { FactCard } from './FactCard';
@@ -221,7 +226,11 @@ function holdTimer(timer: Phaser.Time.TimerEvent | null, held: boolean): void {
  */
 export class HudScene extends Phaser.Scene {
   private assets!: GameAssets;
+  /** The zone of the area being swum, from the swim start. */
+  private zone!: ZoneLayout;
   private view!: SceneView;
+  /** World y at the swim camera's top edge when the overlays were last placed; null until placed. */
+  private overlayCameraTop: number | null = null;
   private motion!: MotionProfile;
   private paused = false;
   private collected = 0;
@@ -292,8 +301,10 @@ export class HudScene extends Phaser.Scene {
     super(SCENE_KEYS.hud);
   }
 
-  init(data: GameAssets): void {
-    this.assets = data;
+  init(data: SwimStart): void {
+    this.assets = data.assets;
+    this.zone = zoneFor(data.assets, data.areaId);
+    this.overlayCameraTop = null;
     this.paused = false;
     this.bannerTimer = null;
     this.bannerActive = false;
@@ -362,6 +373,30 @@ export class HudScene extends Phaser.Scene {
   update(_time: number, deltaMs: number): void {
     this.updateStick();
     this.foundPopup.update(deltaMs);
+    if (this.scrollsVertically() && this.swimCameraTop() !== this.overlayCameraTop) this.layoutOverlays();
+  }
+
+  // ---- view ----------------------------------------------------------------
+
+  /** Whether the area is taller than one screen, so the swim camera may scroll vertically. */
+  private scrollsVertically(): boolean {
+    return this.zone.height > WORLD_H;
+  }
+
+  /** World y at the swim camera's top edge. */
+  private swimCameraTop(): number {
+    return this.scene.get(SCENE_KEYS.swim).cameras.main.worldView.y;
+  }
+
+  /**
+   * The view the HUD layout reads. A one-screen-tall area leaves `waterRows` unset (the canal's
+   * rows); a taller area sets them from where the swim camera shows the water now.
+   */
+  private hudView(): HudView {
+    if (!this.scrollsVertically()) return this.view;
+    const { cssW, cssH, fit } = this.view;
+    const rows = { surf: SURF, bedTop: this.zone.bedTop };
+    return { cssW, cssH, waterRows: screenWaterRows(this.view, rows, this.swimCameraTop(), fit.fitZoom) };
   }
 
   // ---- build ---------------------------------------------------------------
@@ -563,7 +598,7 @@ export class HudScene extends Phaser.Scene {
 
   /** Measures the status panels and buttons, lays them out through hudControls() and positions every control. */
   private layoutControls(): void {
-    this.controls = hudControls(this.view, this.measureControls());
+    this.controls = hudControls(this.hudView(), this.measureControls());
     this.placeCounter(this.controls.counter);
     this.placeLegs(this.controls.legs);
     this.placeTripBag(this.controls.bag);
@@ -659,7 +694,7 @@ export class HudScene extends Phaser.Scene {
   private measureTripBag(): Size {
     this.bagCountW = widestText(
       this.bagCount,
-      Array.from({ length: this.assets.zone.finds.length + 2 }, (_, count) => String(count)),
+      Array.from({ length: this.zone.finds.length + 2 }, (_, count) => String(count)),
     );
     const statusW = widestText(this.bagStatus, [tripBagStatus(0), tripBagStatus(1)]);
     this.drawTripBag();
@@ -737,7 +772,8 @@ export class HudScene extends Phaser.Scene {
     if (this.bannerActive) requests.push(bannerRequest('snackBanner', this.bannerText, bannerBoxes));
     if (this.foundPopup.hasFind()) requests.push({ id: 'findToast', boxAt: (maxW) => this.foundPopup.box(maxW) });
     const keepOuts = controlKeepOuts(this.controls, { goHomeVisible: this.goHomeButton.container.visible });
-    for (const { id, rect, textPx } of placeHudOverlays(this.view, this.controls, keepOuts, requests)) {
+    if (this.scrollsVertically()) this.overlayCameraTop = this.swimCameraTop();
+    for (const { id, rect, textPx } of placeHudOverlays(this.hudView(), this.controls, keepOuts, requests)) {
       this.placeOverlay(id, rect, textPx, id === 'hint' ? hintBoxes : bannerBoxes);
     }
   }
@@ -947,9 +983,9 @@ export class HudScene extends Phaser.Scene {
 
   /** The fact card of hazard or predator `id` in this zone. Throws when the zone has no such threat. */
   private threatFactCard(id: string): Readonly<FactCardData> {
-    const index = threatIds(this.assets.zone).indexOf(id);
+    const index = threatIds(this.zone).indexOf(id);
     if (index < 0) throw new Error(`HudScene: no hazard or predator ${id} in the zone`);
-    return threatFactCards(this.assets.zone)[index];
+    return threatFactCards(this.zone)[index];
   }
 
   /** After OK on the fact card: tells the swim scene that card was seen, then resumes play. */
