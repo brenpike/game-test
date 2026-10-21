@@ -14,7 +14,7 @@ Version 0.19.0 is playable in one canal zone:
 - Swim with the on-screen swim pad, or the arrow keys or WASD.
 - Use Tail Dash, ride the current, and eat snacks.
 - Dodge three tilapia. A hit costs a leg, and legs regrow. If you lose all four, you are carried home, you lose the finds you had not banked, and the snacks start over.
-- Find hidden treasures: Decorations, Wearables, and Paint shells for Dream colours. Each has a rarity badge, and hint sparkles help you look.
+- Find hidden treasures: Decorations, Wearables, and Paint shells for Dream colours. Each has a rarity badge, and hint sparkles help you look. Once revealed or found, a treasure glows faintly in its rarity's colour; it never glows while hidden.
 - Each trip hides only a few treasures, in hiding spots that shuffle each trip. Rarer treasures hide nearer the tilapia, so they are harder to get.
 - The snack counter shows how many snacks are left. The last 3 snacks sparkle, and snacks drift slowly.
 - The exit opens when every snack is eaten. While it is closed, it shows a padlock sign and a message.
@@ -32,7 +32,8 @@ Version 0.19.0 is playable in one canal zone:
 - Dress your axolotls in outfits on the restyle screen's Outfit tab: eight slots (Head, Neck, Face, Shirt, Back, Tail, Socks, and Feet), one Wearable you banked in each. Each Wearable gives one small perk on trips: Speed, Regrowth, Dash (a longer Tail Dash), Shell (blocks one hit per trip), Treasure sense (hint sparkles from further away), or Snack magnet (pulls nearby snacks to you). Each perk shows with an icon and words, and each perk type has a cap. Only the axolotl you take exploring uses its perks. A lost leg's sock and shoe come back when the leg has fully regrown.
 - Press Go exploring to pick which axolotl goes on the trip. The card shows each axolotl in its outfit and the chosen one's perks, and Change outfit takes you to its Outfit tab first. The game remembers your pick.
 - Decorate your Home Tank with the Decorations you banked, by touch or keyboard.
-- Open the Treasure Chest to see the Decorations, Wearables, and Dream colours you banked. Each Wearable shows its slot and its perk, with the perk's icon.
+- Open the Treasure Chest to see every Decoration, Wearable, and Dream colour. The ones you banked show in full; the ones you have not found yet show as silhouettes with their rarity and a hint for where to look. Each section has a line saying what its items are for. Each Wearable you banked shows its slot and its perk, with the perk's icon.
+- The first Decoration, Wearable, and Paint shell you bank each get a one-time card after the trip. The Paint shell card's "Try it now!" opens the Dream colour tab.
 - Open the Collection Book to see the morphs you rescued, with a fun fact for each, the Dream colours, and the fact cards: the tilapia card and the "Boy or girl?" card.
 - Your progress saves on your device by itself: your axolotls, treasures, Home Tank and stars. There is no save button.
 - Start over from the title screen to erase everything and make a new axolotl. It asks twice before it erases anything.
@@ -89,6 +90,7 @@ npm install
 | Rename and restyle | Tap a tab to jump to a step (arrow buttons page the tabs when they do not all fit), tap a picture button to pick it, More colours button on the Dream colour tab to see more, Surprise me, Done, and Cancel buttons. On the Outfit tab, tap a slot, then tap a Wearable or None; Back to slots goes back, and More slots or More wearables shows more | Same as making your axolotl, with Tab/Shift+Tab also reaching the tabs, More colours, More slots, More wearables, Back to slots, and Cancel, plus Esc to cancel (on an Outfit slot's Wearables, Esc goes back to the slots) |
 | Close the trip-end message (also the "Area beaten" message) | OK button | Enter or Space |
 | Close the tilapia fact card | OK button | Enter, Space, P, or Esc |
+| First-find card (after the trip-end message) | Try it now! or Maybe later button on the Paint shell card, OK button on the others | Tab/Shift+Tab or Left/Right to choose, Enter or Space to press, Esc to close |
 | Treasure Chest | Back, Next, and Close buttons | Left/Right to turn pages, Tab/Shift+Tab to move focus, Enter or Space to press, Esc to close |
 | Collection Book | Back, Next, and Close buttons | Left/Right to turn pages, Tab/Shift+Tab to move focus, Enter or Space to press, Esc to close |
 | Decorate | Tap a Decoration in the tray to place it, drag it to move it, Put away button, Done button | Tab/Shift+Tab to pick, Enter or Space to place or select, arrow keys to move, Delete or Backspace to put it away, Esc for Done |
