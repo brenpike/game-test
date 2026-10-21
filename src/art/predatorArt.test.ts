@@ -9,14 +9,29 @@ import { HALO_RX, HALO_RY, paintProtectedHalo } from './drawEffects';
 import { paintLegIcon } from './drawLegIcons';
 import { paintTilapia, type TilapiaPose } from './drawTilapia';
 import {
+  ALERT_FILL,
+  BUBBLE_FILL,
+  BUBBLE_STROKE,
+  CARRY_RIM,
   EYE,
   INK,
   LEGS_FILL,
   LW,
+  POOF_PUFF,
+  POOF_SHINE,
+  POOF_SPARKLE,
+  PROTECTED_RING_GLINT,
+  PROTECTED_RING_INNER,
+  PROTECTED_RING_OUTER,
+  TILAPIA_BARS,
   TILAPIA_BELLY,
   TILAPIA_BODY,
   TILAPIA_FIN,
+  TILAPIA_LINE,
+  TILAPIA_MOUTH,
+  TILAPIA_SHINE,
   UI_PANEL,
+  UI_PRIMARY,
   WHITE,
 } from './palette';
 
@@ -49,25 +64,62 @@ const RING_GLINT_MID = Math.PI * 1.25;
 const TAU = Math.PI * 2;
 const EPS = 1e-9;
 
-/** Contrast ratios exactly as the guide prints them (3g, 10), to 2 decimals. */
+/**
+ * Every palette constant behind the tilapia, telegraph, legs display, leg-loss puff,
+ * protected ring and carried-home bubble rows, with the literal value the guide prints
+ * (3a, 3d, 3g, 7c). Written out here, never read from the palette, so a palette change
+ * that the guide does not record fails.
+ */
+const DOCUMENTED_COLOURS: readonly (readonly [string, string, string])[] = [
+  ['INK', INK, '#2b2350'],
+  ['WHITE', WHITE, '#ffffff'],
+  ['UI_PANEL', UI_PANEL, '#ffffff'],
+  ['EYE (tilapia eye)', EYE, '#1b1535'],
+  ['TILAPIA_BODY', TILAPIA_BODY, '#c2d2bb'],
+  ['TILAPIA_FIN', TILAPIA_FIN, '#d4e0d0'],
+  ['TILAPIA_BELLY', TILAPIA_BELLY, '#e3eadf'],
+  ['TILAPIA_BARS', TILAPIA_BARS, 'rgba(70,95,80,0.22)'],
+  ['TILAPIA_LINE', TILAPIA_LINE, 'rgba(70,95,80,0.4)'],
+  ['TILAPIA_SHINE', TILAPIA_SHINE, 'rgba(255,255,255,0.6)'],
+  ['TILAPIA_MOUTH', TILAPIA_MOUTH, '#e8567e'],
+  ['ALERT_FILL (telegraph bubble)', ALERT_FILL, '#ffe14a'],
+  ['LEGS_FILL', LEGS_FILL, '#e8567e'],
+  ['UI_PRIMARY (regrowing mark)', UI_PRIMARY, '#ffe14a'],
+  ['POOF_PUFF', POOF_PUFF, '#ffffff'],
+  ['POOF_SHINE', POOF_SHINE, '#cfeeff'],
+  ['POOF_SPARKLE', POOF_SPARKLE, '#ffe14a'],
+  ['PROTECTED_RING_OUTER', PROTECTED_RING_OUTER, '#2b2350'],
+  ['PROTECTED_RING_INNER', PROTECTED_RING_INNER, '#ffffff'],
+  ['PROTECTED_RING_GLINT', PROTECTED_RING_GLINT, '#ffffff'],
+  ['BUBBLE_FILL (carried-home bubble)', BUBBLE_FILL, 'rgba(255,255,255,0.38)'],
+  ['CARRY_RIM', CARRY_RIM, 'rgba(255,255,255,0.9)'],
+  ['BUBBLE_STROKE (carried-home bubble)', BUBBLE_STROKE, 'rgba(43,35,80,0.85)'],
+];
+
+/** Contrast ratios of the real constants, exactly as the guide prints them (3g, 10), to 2 decimals. */
 const DOCUMENTED_RATIOS: readonly (readonly [string, string, string, number])[] = [
   ['TILAPIA_BODY vs INK', TILAPIA_BODY, INK, 9.07],
   ['TILAPIA_FIN vs INK', TILAPIA_FIN, INK, 10.54],
   ['TILAPIA_BELLY vs INK', TILAPIA_BELLY, INK, 11.72],
   ['EYE vs TILAPIA_BODY', EYE, TILAPIA_BODY, 10.98],
+  ['ALERT_FILL vs INK', ALERT_FILL, INK, 11.05],
   ['LEGS_FILL vs UI_PANEL', LEGS_FILL, UI_PANEL, 3.46],
   ['LEGS_FILL vs INK', LEGS_FILL, INK, 4.16],
-  ['WHITE vs INK (protected ring)', WHITE, INK, 14.39],
+  ['UI_PRIMARY vs INK', UI_PRIMARY, INK, 11.05],
+  ['POOF_PUFF vs INK', POOF_PUFF, INK, 14.39],
+  ['POOF_SPARKLE vs INK', POOF_SPARKLE, INK, 11.05],
+  ['PROTECTED_RING_INNER vs PROTECTED_RING_OUTER', PROTECTED_RING_INNER, PROTECTED_RING_OUTER, 14.39],
 ];
 
 /**
  * "Fill or ink is X:1 or better on any background" (guide 3g, 10): the square root of the
- * pair ratio, which the guide prints rounded down to 2 decimals.
+ * pair ratio must be at least the printed value and within 0.01 of it.
  */
 const DOCUMENTED_WORST_CASE: readonly (readonly [string, string, string, number])[] = [
   ['TILAPIA_BODY or INK', TILAPIA_BODY, INK, 3.01],
   ['TILAPIA_BELLY or INK', TILAPIA_BELLY, INK, 3.42],
-  ['protected ring, WHITE or INK', WHITE, INK, 3.79],
+  ['ALERT_FILL or INK', ALERT_FILL, INK, 3.32],
+  ['protected ring, PROTECTED_RING_INNER or PROTECTED_RING_OUTER', PROTECTED_RING_INNER, PROTECTED_RING_OUTER, 3.79],
 ];
 
 // ---------------------------------------------------------------------------
@@ -219,6 +271,12 @@ function ellipseOf(op: Op): number[] {
 // Documented ratios
 // ---------------------------------------------------------------------------
 
+describe('palette values match the guide (3a, 3d, 3g, 7c)', () => {
+  it.each(DOCUMENTED_COLOURS)('%s is %s as printed', (_name, constant, documented) => {
+    expect(constant).toBe(documented);
+  });
+});
+
 describe('contrast ratios match the guide (3g, 10)', () => {
   it.each(DOCUMENTED_RATIOS)('%s is %s:1 as printed', (_name, a, b, documented) => {
     expect(contrastRatio(a, b).toFixed(2)).toBe(documented.toFixed(2));
@@ -252,6 +310,23 @@ describe('tilapia colours (guide 3g)', () => {
     expect(belly[0].globalAlpha).toBe(1);
     expect(calls.map(([name]) => name)).toContain('clip');
   });
+
+  it.each(TILAPIA_POSES)(
+    '%s: bars, fin rays, gill line, shine and lunge mouth use their own palette values (7c)',
+    (pose) => {
+      const { ops } = record((ctx) => paintTilapia(ctx, pose));
+      const strokesIn = (style: string): Op[] => ops.filter((op) => isStroke(op) && op.strokeStyle === style);
+      const fillsIn = (style: string): Op[] => ops.filter((op) => isFill(op) && op.fillStyle === style);
+      // three bars, 4.5 wide
+      const bars = strokesIn(TILAPIA_BARS);
+      expect(bars).toHaveLength(3);
+      for (const op of bars) expect(op.lineWidth).toBeCloseTo(4.5, 9);
+      // fin rays 1.5 (tail and dorsal) and the gill line 2
+      expect(strokesIn(TILAPIA_LINE).map((op) => op.lineWidth).sort()).toEqual([1.5, 1.5, 2]);
+      expect(fillsIn(TILAPIA_SHINE)).toHaveLength(1);
+      expect(fillsIn(TILAPIA_MOUTH)).toHaveLength(pose === 'lunge' ? 1 : 0);
+    },
+  );
 
   it.each(TILAPIA_POSES)('%s: the eye bead is EYE only when the eye is open', (pose) => {
     const { ops } = record((ctx) => paintTilapia(ctx, pose));
@@ -290,7 +365,8 @@ describe('protected ring (guide 6q)', () => {
 
   it('strokes only opaque #rrggbb colours at alpha 1, with no fill and no dashes', () => {
     const { ops, calls } = rec();
-    expect(ops.length).toBeGreaterThan(0);
+    // the outer line, the inner line and the glint: nothing else
+    expect(ops).toHaveLength(3);
     for (const op of ops) {
       expect(isStroke(op), op.op).toBe(true);
       expect(op.strokeStyle).toMatch(/^#[0-9a-f]{6}$/i);
@@ -303,9 +379,15 @@ describe('protected ring (guide 6q)', () => {
 
   it('has an ink line, a white line set inside it, and a white glint', () => {
     const { ops } = rec();
-    const outer = ops.find((op) => op.strokeStyle === INK && Math.abs(op.lineWidth - RING_OUTER_W) < EPS);
-    const inner = ops.find((op) => op.strokeStyle === WHITE && Math.abs(op.lineWidth - RING_INNER_W) < EPS);
-    const glint = ops.find((op) => op.strokeStyle === WHITE && Math.abs(op.lineWidth - RING_GLINT_W) < EPS);
+    const outer = ops.find(
+      (op) => op.strokeStyle === PROTECTED_RING_OUTER && Math.abs(op.lineWidth - RING_OUTER_W) < EPS,
+    );
+    const inner = ops.find(
+      (op) => op.strokeStyle === PROTECTED_RING_INNER && Math.abs(op.lineWidth - RING_INNER_W) < EPS,
+    );
+    const glint = ops.find(
+      (op) => op.strokeStyle === PROTECTED_RING_GLINT && Math.abs(op.lineWidth - RING_GLINT_W) < EPS,
+    );
     expect(outer).toBeDefined();
     expect(inner).toBeDefined();
     expect(glint).toBeDefined();
