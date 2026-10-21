@@ -19,7 +19,6 @@ import {
   AXO_BODIES,
   AXO_SEXES,
   AXO_TAILS,
-  BACK_FRAME_BOX,
   DEFAULT_ART_LOOK,
   HEAD_FOOTPRINT,
   NECK_FOOTPRINT,
@@ -27,7 +26,6 @@ import {
   WEARABLE_SLOTS,
   axolotlBodyGeometry,
   backFootprint,
-  backFrame,
   feetEnvelope,
   framePoint,
   legRectBounds,
@@ -206,9 +204,8 @@ export function slotFootprintPaths(slot: WearableSlot, look: AxolotlArtLook, ins
     case 'shirt':
       return [shirtCuePath(shirtGeometry(look), inset)];
     case 'back': {
-      const { minU, maxU, minV, maxV } = BACK_FRAME_BOX;
-      const frame = backFrame(axolotlBodyGeometry(look).torso);
-      return [framePolygon(frame, minU + inset, maxU - inset, minV + inset, maxV - inset)];
+      const { frame, box } = backFootprint(look);
+      return [framePolygon(frame, box.minU + inset, box.maxU - inset, box.minV + inset, box.maxV - inset)];
     }
     case 'tail': {
       const anchor = tailSlotFrame(axolotlBodyGeometry(look).tail, RIG_STILL_POSE.swimPhase, RIG_STILL_POSE.tailAmp);

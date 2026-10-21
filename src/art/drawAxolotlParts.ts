@@ -1426,10 +1426,10 @@ export function lashReachCircle(spot: EyeSpot): ZoneCircle {
 }
 export const NEAR_LASH_REACH: ZoneCircle = lashReachCircle(NEAR_EYE);
 export const FAR_LASH_REACH: ZoneCircle = lashReachCircle(FAR_EYE);
-/** No Shirt or Back ink at x -6.8 or more: 1.8 units short of the gill-root zone (guide 6i). */
-export const SHIRT_BACK_FRONT_LINE_X = -6.8;
-/** Width of the band just inside the torso edge that the Shirt never paints (guide 6i). */
-export const TORSO_EDGE_BAND = 3;
+/** No Shirt or Back ink past x -5.5: 0.5 units short of the gill-root zone (guide 6i; -6.8 before #88). */
+export const SHIRT_BACK_FRONT_LINE_X = -5.5;
+/** Width of the band just inside the torso edge that the Shirt never paints (guide 6i; 3 before #88). */
+export const TORSO_EDGE_BAND = 1;
 
 /** A wearable frame: an origin and the rotation of its u axis (x' for Back). v is u turned by +90 degrees. */
 export interface WearFrame {
@@ -1517,10 +1517,10 @@ export function glassesOutlinePoints(stepsPerLens = 180): LocalPoint[] {
 
 // -- Shirt: the torso only (guide 6i) --
 
-/** The Shirt's front edge, ink included. */
-export const SHIRT_FRONT_X = -7.5;
-/** The front edge has a neckline: a concave arc bowing back this far, to x -10.5. */
-export const SHIRT_NECKLINE_DEPTH = 3;
+/** The Shirt's front edge, ink included: on the front line (-7.5 before #88). */
+export const SHIRT_FRONT_X = SHIRT_BACK_FRONT_LINE_X;
+/** The front edge has a neckline: a concave arc bowing back this far, to x -7 (3 before #88). */
+export const SHIRT_NECKLINE_DEPTH = 1.5;
 
 /** Shirt footprint for a look. */
 export interface ShirtGeometry {
@@ -1537,7 +1537,7 @@ export interface ShirtGeometry {
   readonly bounds: Bounds;
 }
 
-/** Shirt footprint of a look (guide 6i: over all 54 looks x -38 to -7.5, y -20 to 28). */
+/** Shirt footprint of a look (guide 6i: over all 54 looks x -38 to -5.5, y -22 to 30). */
 export function shirtGeometry(look: AxolotlArtLook): ShirtGeometry {
   const geo = axolotlBodyGeometry(look);
   const { torso } = geo;
@@ -1578,8 +1578,12 @@ export function shirtContains(shirt: ShirtGeometry, x: number, y: number): boole
 
 /** The Back anchor sits on the torso top edge at this local x. */
 export const BACK_ANCHOR_X = -17;
-/** The Back footprint in its frame, ink included: x' along the edge toward the snout, y' across (+ into the body). */
-export const BACK_FRAME_BOX = { minU: -9, maxU: 9, minV: -8, maxV: 5 } as const;
+/** The Back box's outer edge, ink included: y' -14, proud of the back against the water (#88; -8 before). */
+export const BACK_BOX_MIN_V = -14;
+/** The Back box's body-side edge, ink included: y' 3 into the body, so the Back fill never meets the Shirt's fill (#88; 5 before). */
+export const BACK_BOX_MAX_V = 3;
+/** The Back box is this long along the edge, or half the torso length (2 rx - 30) when that is more (#88). */
+export const BACK_BOX_MIN_LENGTH = 22;
 
 /**
  * Back frame on a torso: the origin is the point on the top edge at
@@ -1596,30 +1600,55 @@ export function backFrame(torso: BodyEllipse): WearFrame {
   };
 }
 
-/** Back footprint for a look: its frame, the four corners and the local box. */
+/** The Back footprint in its frame, ink included: x' along the edge toward the snout, y' across (+ into the body). */
+export interface BackFrameBox {
+  readonly minU: number;
+  readonly maxU: number;
+  readonly minV: number;
+  readonly maxV: number;
+}
+
+/**
+ * Back box on a torso (#88): its forward body-side corner (maxU, BACK_BOX_MAX_V)
+ * sits on SHIRT_BACK_FRONT_LINE_X, the forward-most point of the box as the
+ * frame rises toward the snout, and it runs back from there along the edge by
+ * BACK_BOX_MIN_LENGTH or half the torso length (2 rx - 30), whichever is more.
+ */
+export function backFrameBox(torso: BodyEllipse): BackFrameBox {
+  const frame = backFrame(torso);
+  const maxU =
+    (SHIRT_BACK_FRONT_LINE_X - frame.x + BACK_BOX_MAX_V * Math.sin(frame.angle)) / Math.cos(frame.angle);
+  const length = Math.max(BACK_BOX_MIN_LENGTH, (2 * torso.rx - 30) / 2);
+  return { minU: maxU - length, maxU, minV: BACK_BOX_MIN_V, maxV: BACK_BOX_MAX_V };
+}
+
+/** Back footprint for a look: its frame, its box in the frame, the four corners and the local box. */
 export interface BackFootprint {
   readonly frame: WearFrame;
+  readonly box: BackFrameBox;
   /** Corners in order: (minU,minV), (maxU,minV), (maxU,maxV), (minU,maxV). */
   readonly corners: readonly LocalPoint[];
   readonly bounds: Bounds;
 }
 
 export function backFootprint(look: AxolotlArtLook): BackFootprint {
-  const frame = backFrame(axolotlBodyGeometry(look).torso);
-  const { minU, maxU, minV, maxV } = BACK_FRAME_BOX;
+  const { torso } = axolotlBodyGeometry(look);
+  const frame = backFrame(torso);
+  const box = backFrameBox(torso);
+  const { minU, maxU, minV, maxV } = box;
   const corners = [
     framePoint(frame, minU, minV),
     framePoint(frame, maxU, minV),
     framePoint(frame, maxU, maxV),
     framePoint(frame, minU, maxV),
   ];
-  return { frame, corners, bounds: boundsOfPoints(corners.map((p): [number, number] => [p.x, p.y]), 0) };
+  return { frame, box, corners, bounds: boundsOfPoints(corners.map((p): [number, number] => [p.x, p.y]), 0) };
 }
 
 // -- Tail: the core top at tail point 4 (guide 6i) --
 
-/** The Tail footprint stays within this many units of its anchor (9 before #88 grew the Golden bow). */
-export const TAIL_SLOT_REACH = 12;
+/** The Tail footprint stays within this many units of its anchor: it holds the taller Golden bow's ink (#88; 9, then 12, before). */
+export const TAIL_SLOT_REACH = 17.5;
 
 /**
  * Tail anchor frame: the core top at TAIL_SLOT_POINT, turned with the local

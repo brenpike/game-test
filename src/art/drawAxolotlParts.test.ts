@@ -19,7 +19,9 @@ import {
   AXO_SIZE_SCALE,
   AXO_TAILS,
   BACK_ANCHOR_X,
-  BACK_FRAME_BOX,
+  BACK_BOX_MAX_V,
+  BACK_BOX_MIN_LENGTH,
+  BACK_BOX_MIN_V,
   CHEEK_HEART_CENTRE,
   CHEEK_HEART_INK,
   CHEEK_HEART_LAYER,
@@ -76,6 +78,7 @@ import {
   NEAR_LASH_REACH,
   axolotlBodyGeometry,
   backFootprint,
+  backFrameBox,
   backFrame,
   boundsOfPoints,
   cheekHeartPoints,
@@ -2106,11 +2109,8 @@ const FAR_LASH_REACH_ZONE = { x: 42, y: -7, r: 9.3 };
 /** Guide 6i mouth zone. */
 const MOUTH_ZONE_BOX: Bounds = { minX: 24.4, minY: 2.6, maxX: 52.4, maxY: 21.3 };
 
-/**
- * The guide rounds the Back item's furthest forward corner to x -6.8; built exactly
- * it is -6.7955 (a Regular Baby Girl), 0.0045 past the line.
- */
-const BACK_FRONT_ROUNDING = 0.005;
+/** The Back box's forward corner is built on the front line (#88): it may pass it by floating-point rounding only. */
+const BACK_FRONT_ROUNDING = 1e-9;
 
 /** Every Boy or girl, Tail, Body, Age and size: the fields the slot geometry reads (162 looks). */
 function everyBodyLook(): AxolotlArtLook[] {
@@ -2204,10 +2204,10 @@ describe('Wearable slots: layers and zones (guide 6a, 6i)', () => {
     }
     expect(CODE_GILL_ROOT_ZONE).toEqual(GILL_ROOT_ZONE);
     expect(CODE_MOUTH_ZONE).toEqual(MOUTH_ZONE_BOX);
-    expect(SHIRT_BACK_FRONT_LINE_X).toBe(-6.8);
-    expect(TORSO_EDGE_BAND).toBe(3);
-    // 1.8 units from the front line to the gill-root zone.
-    expect(GILL_ROOT_ZONE.minX - SHIRT_BACK_FRONT_LINE_X).toBeCloseTo(1.8, 9);
+    expect(SHIRT_BACK_FRONT_LINE_X).toBe(-5.5);
+    expect(TORSO_EDGE_BAND).toBe(1);
+    // 0.5 units from the front line to the gill-root zone (#88: 1.8 before).
+    expect(GILL_ROOT_ZONE.minX - SHIRT_BACK_FRONT_LINE_X).toBeCloseTo(0.5, 9);
   });
 
   it('frames points as the leg and Back frames need: u along, v across', () => {
@@ -2337,20 +2337,21 @@ describe('Head, Neck and Face slots (guide 6i): on the head, they never move', (
 });
 
 describe('Shirt slot (guide 6i)', () => {
-  it('has the torso centre as its anchor, and the front edge at x -7.5 with a 3-unit neckline', () => {
-    expect(SHIRT_FRONT_X).toBe(-7.5);
-    expect(SHIRT_NECKLINE_DEPTH).toBe(3);
+  it('has the torso centre as its anchor, and the front edge on the front line, x -5.5, with a 1.5-unit neckline (#88)', () => {
+    expect(SHIRT_FRONT_X).toBe(-5.5);
+    expect(SHIRT_FRONT_X).toBe(SHIRT_BACK_FRONT_LINE_X);
+    expect(SHIRT_NECKLINE_DEPTH).toBe(1.5);
     for (const look of EVERY_BODY_LOOK) {
       const torso = axolotlBodyGeometry(look).torso;
       const shirt = shirtGeometry(look);
       expect(shirt.anchor).toEqual({ x: torso.cx, y: 4 });
-      expect(shirt.neckline.x).toBe(-7.5);
-      expect(shirt.neckline.apexX).toBeCloseTo(-10.5, 9);
+      expect(shirt.neckline.x).toBe(-5.5);
+      expect(shirt.neckline.apexX).toBeCloseTo(-7, 9);
       expect(shirt.neckline.yTop).toBeLessThan(shirt.neckline.yBottom);
     }
   });
 
-  it('stays inside the torso ellipse inset 3 all round, so the rim light and ink edge partner are never covered', () => {
+  it('stays inside the torso ellipse inset 1 all round (#88: 3 before), so body colour shows between it and the outline', () => {
     expect(
       failingBodyLooks((look) => {
         const torso = axolotlBodyGeometry(look).torso;
@@ -2373,8 +2374,8 @@ describe('Shirt slot (guide 6i)', () => {
     ).toEqual([]);
   });
 
-  it('leaves at least 2 units of body between the Shirt and the torso edge, all round', () => {
-    // Radii rx - 3 and ry - 3 put the Shirt 3 units in along both axes; round the diagonals it is never nearer than 2.
+  it('leaves at least 0.9 units of body between the Shirt and the torso edge, all round', () => {
+    // Radii rx - 1 and ry - 1 put the Shirt 1 unit in along both axes; round the diagonals it is a little nearer.
     const worst = Math.min(
       ...EVERY_BODY_LOOK.map((look) => {
         const torso = axolotlBodyGeometry(look).torso;
@@ -2389,10 +2390,11 @@ describe('Shirt slot (guide 6i)', () => {
         return nearest;
       }),
     );
-    expect(worst).toBeGreaterThanOrEqual(2);
+    expect(worst).toBeCloseTo(0.93, 2);
+    expect(worst).toBeGreaterThanOrEqual(0.9);
   });
 
-  it('is cut at the tail root at the rear and at x -7.5 at the front, off the head and the gill-root zone', () => {
+  it('is cut at the tail root at the rear and at x -5.5 at the front, off the head and the gill-root zone', () => {
     expect(
       failingBodyLooks((look) => {
         const geo = axolotlBodyGeometry(look);
@@ -2400,10 +2402,10 @@ describe('Shirt slot (guide 6i)', () => {
         const headStart = HEAD_ELLIPSE.cx - HEAD_ELLIPSE.rx;
         return (
           bounds.minX >= geo.tail.rootX - 1e-9 &&
-          bounds.maxX === -7.5 &&
-          bounds.maxX < SHIRT_BACK_FRONT_LINE_X &&
-          GILL_ROOT_ZONE.minX - bounds.maxX >= 2.5 &&
-          headStart - bounds.maxX >= 6.5 &&
+          bounds.maxX === -5.5 &&
+          bounds.maxX <= SHIRT_BACK_FRONT_LINE_X &&
+          GILL_ROOT_ZONE.minX - bounds.maxX >= 0.5 &&
+          headStart - bounds.maxX >= 4.5 &&
           clearOfEyesAndGills(bounds) &&
           clearOfLashReach(bounds)
         );
@@ -2446,16 +2448,15 @@ describe('Shirt slot (guide 6i)', () => {
     ).toEqual([]);
   });
 
-  it('measures x -38 to -7.5 and y -20 to 28 over every look', () => {
+  it('measures x -38 to -5.5 and y -22 to 30 over every look', () => {
     const boxes = EVERY_BODY_LOOK.map((look) => shirtGeometry(look).bounds);
-    expectBoxNear(unionBounds(boxes), { minX: -38, minY: -20, maxX: -7.5, maxY: 28 }, 0.05);
+    expectBoxNear(unionBounds(boxes), { minX: -38, minY: -22, maxX: -5.5, maxY: 30 }, 0.05);
   });
 });
 
 describe('Back slot (guide 6i)', () => {
   it('rests on the torso top edge at x -17', () => {
     expect(BACK_ANCHOR_X).toBe(-17);
-    expect(BACK_FRAME_BOX).toEqual({ minU: -9, maxU: 9, minV: -8, maxV: 5 });
     expect(
       failingBodyLooks((look) => {
         const torso = axolotlBodyGeometry(look).torso;
@@ -2487,34 +2488,62 @@ describe('Back slot (guide 6i)', () => {
     expect(Math.max(...frames.map((f) => f.angle))).toBeCloseTo(-0.07, 3);
   });
 
-  it('has its four corners at x -28.3 to -6.8 and y -31.6 to -2.0 over every look', () => {
-    const boxes = EVERY_BODY_LOOK.map((look) => backFootprint(look).bounds);
-    expectBoxNear(unionBounds(boxes), { minX: -28.3, minY: -31.6, maxX: -6.8, maxY: -2 }, 0.06);
+  it('has a look-dependent box (#88): y\' -14 to 3, 22 long or half the torso length (2 rx - 30), forward corner on the front line', () => {
+    expect([BACK_BOX_MIN_V, BACK_BOX_MAX_V, BACK_BOX_MIN_LENGTH]).toEqual([-14, 3, 22]);
+    expect(
+      failingBodyLooks((look) => {
+        const torso = axolotlBodyGeometry(look).torso;
+        const { frame, box, corners } = backFootprint(look);
+        const forward = framePoint(frame, box.maxU, box.maxV);
+        return (
+          box.minV === BACK_BOX_MIN_V &&
+          box.maxV === BACK_BOX_MAX_V &&
+          Math.abs(box.maxU - box.minU - Math.max(22, (2 * torso.rx - 30) / 2)) < 1e-9 &&
+          Math.abs(forward.x - SHIRT_BACK_FRONT_LINE_X) < 1e-9 &&
+          corners.every((c) => c.x <= forward.x + 1e-9) &&
+          JSON.stringify(backFrameBox(torso)) === JSON.stringify(box)
+        );
+      }),
+    ).toEqual([]);
   });
 
-  it('keeps its forward corner at x -6.8 or less, clear of the gill-root zone, the head, the eyes and the lashes', () => {
+  it('measures maxU 11.10 to 11.32 and minU -14.71 to -10.75: 22 long, 24 on a Young Chubby or Grown-up Slim or Regular, 26 on a Grown-up Chubby', () => {
+    const boxes = EVERY_BODY_LOOK.map((look) => backFootprint(look).box);
+    expect(Math.min(...boxes.map((b) => b.maxU))).toBeCloseTo(11.1, 2);
+    expect(Math.max(...boxes.map((b) => b.maxU))).toBeCloseTo(11.32, 2);
+    expect(Math.min(...boxes.map((b) => b.minU))).toBeCloseTo(-14.71, 2);
+    expect(Math.max(...boxes.map((b) => b.minU))).toBeCloseTo(-10.75, 2);
+    expect([...new Set(boxes.map((b) => Math.round(b.maxU - b.minU)))].sort()).toEqual([22, 24, 26]);
+  });
+
+  it('lays its body-side edge over the torso: both body-side corners inside the torso ellipse on every look', () => {
+    expect(
+      failingBodyLooks((look) => {
+        const torso = axolotlBodyGeometry(look).torso;
+        const { frame, box } = backFootprint(look);
+        return [box.minU, box.maxU].every((u) => isInEllipse(framePoint(frame, u, box.maxV), torso));
+      }),
+    ).toEqual([]);
+  });
+
+  it('has its four corners at x -32.8 to -5.5 and y -37.9 to -3.4 over every look', () => {
+    const boxes = EVERY_BODY_LOOK.map((look) => backFootprint(look).bounds);
+    expectBoxNear(unionBounds(boxes), { minX: -32.8, minY: -37.9, maxX: -5.5, maxY: -3.4 }, 0.06);
+  });
+
+  it('keeps its forward corner at x -5.5 or less, clear of the gill-root zone, the head, the eyes and the lashes', () => {
     expect(
       failingBodyLooks((look) => {
         const { bounds } = backFootprint(look);
         return (
           bounds.maxX <= SHIRT_BACK_FRONT_LINE_X + BACK_FRONT_ROUNDING &&
-          GILL_ROOT_ZONE.minX - bounds.maxX >= 1.8 - BACK_FRONT_ROUNDING &&
+          GILL_ROOT_ZONE.minX - bounds.maxX >= 0.5 - BACK_FRONT_ROUNDING &&
           bounds.maxX < HEAD_ELLIPSE.cx - HEAD_ELLIPSE.rx &&
           clearOfEyesAndGills(bounds) &&
           clearOfLashReach(bounds)
         );
       }),
     ).toEqual([]);
-  });
-
-  it('reaches x -6.8 (-6.7955 built exactly) on a Regular Baby Girl, the look where it reaches furthest', () => {
-    const reach = EVERY_BODY_LOOK.map((look) => ({ look, maxX: backFootprint(look).bounds.maxX })).sort(
-      (a, b) => b.maxX - a.maxX,
-    )[0];
-    expect(reach.maxX).toBeCloseTo(-6.8, 1);
-    expect(reach.look.age).toBe('baby');
-    expect(reach.look.sex).toBe('girl');
-    expect(reach.look.body).toBe('regular');
   });
 
   it('keeps every gill root and its stem ink clear, with no root inside its footprint', () => {
@@ -2562,8 +2591,8 @@ describe('Tail slot (guide 6i)', () => {
     ).toEqual([]);
   });
 
-  it('keeps its 12-unit footprint (#88: 9 before) clear of the eyes, lashes, gills and the head, and in the frame', () => {
-    expect(TAIL_SLOT_REACH).toBe(12);
+  it('keeps its 17.5-unit footprint (#88: 9, then 12, before) clear of the eyes, lashes, gills and the head, and in the frame', () => {
+    expect(TAIL_SLOT_REACH).toBe(17.5);
     const inner = frameInner(FRAME_PAD);
     expect(
       failingBodyLooks((look) => {
@@ -2818,8 +2847,11 @@ describe('every Wearable slot over every look and size', () => {
     expect(GLASSES_EXTENT.minX).toBeGreaterThan(GILL_ROOT_ZONE.maxX);
   });
 
-  it('measures Head to y -44 and x 46, Back y -31.6, and the lowest ink 4 or more units inside the frame', () => {
+  it('measures Head to y -44 and x 46, Back y -37.9, and the lowest ink 4 or more units inside the frame', () => {
     const inner = frameInner(FRAME_PAD);
+    const backTop = Math.min(...EVERY_BODY_LOOK.map((look) => backFootprint(look).bounds.minY));
+    expect(backTop).toBeCloseTo(-37.86, 2);
+    expect(backTop).toBeGreaterThanOrEqual(inner.minY);
     expect(HEAD_FOOTPRINT.minY).toBe(-44);
     expect(HEAD_FOOTPRINT.minY).toBeGreaterThanOrEqual(inner.minY);
     expect(HEAD_FOOTPRINT.maxX).toBeLessThanOrEqual(inner.maxX);

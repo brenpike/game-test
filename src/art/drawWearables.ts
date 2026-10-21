@@ -27,12 +27,13 @@ import {
   GLASSES_LENSES,
   WEARABLE_SLOTS,
   axolotlBodyGeometry,
-  backFrame,
+  backFootprint,
   glassesNotches,
   shirtGeometry,
   sockFootPad,
   tailSlotFrame,
   type AxolotlArtLook,
+  type BackFrameBox,
   type BodyWearableSlot,
   type LegSlotFrame,
   type WearFrame,
@@ -253,8 +254,8 @@ function gem(ctx: CanvasRenderingContext2D, x: number, y: number, fill: string, 
   ctx.fill(ellipsePath(x - 0.8, y - 0.9, 0.8, 0.5, -0.7));
 }
 
-/** The Legendary static 4-point star (guide 4e): outer R 3, inner 0.38 R, white with ink 1.6. */
-function legendStar(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
+/** The Legendary static 4-point star (guide 4e): outer R 3, inner 0.38 R, white with ink 1.6 unless `ink` says otherwise. */
+function legendStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, ink = DETAIL_LW): void {
   const p = new Path2D();
   for (let k = 0; k < 8; k++) {
     const a = -Math.PI / 2 + (k * Math.PI) / 4;
@@ -263,7 +264,7 @@ function legendStar(ctx: CanvasRenderingContext2D, cx: number, cy: number): void
     else p.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
   }
   p.closePath();
-  shape(ctx, p, TREASURE_STAR, DETAIL_LW);
+  shape(ctx, p, TREASURE_STAR, ink);
 }
 
 /**
@@ -416,31 +417,48 @@ function paintHeartGlasses(ctx: CanvasRenderingContext2D): void {
 // Tail: Golden bow (Legendary)
 // ---------------------------------------------------------------------------
 
-/** The 7e bow icon's scale on the tail, and how far the bow centre sits into the tail core (frame y'). */
-const BOW_K = 0.75;
+/** Scale of a piece of the 7e bow icon on the tail: along it (x') and across it (y'). */
+interface BowScale {
+  readonly x: number;
+  readonly y: number;
+}
+/**
+ * #88 grows the 7e icon (0.75 of it before) taller, not wider: the loops stand
+ * 1.6 of the icon up off the tail. The ribbon tail toward the tail tip is short
+ * (0.9 across), so a Dream marker star past it stays clear at every swim phase;
+ * the one toward the head hangs longer (1.4 across), where no marker is.
+ */
+const BOW_LOOP_SCALE: BowScale = { x: 0.8, y: 1.6 };
+const BOW_TIP_TAIL_SCALE: BowScale = { x: 0.75, y: 0.9 };
+const BOW_HEAD_TAIL_SCALE: BowScale = { x: 0.8, y: 1.4 };
+/** How far the bow centre sits into the tail core (frame y'). */
 const BOW_DROP = 0.9;
 /** The knot's radii. */
 const KNOT_RX = 3;
 const KNOT_RY = 3.2;
-/** The bow's trim bands' ink lines. */
-const BOW_BAND_LW = 0.8;
+/** The bow's trim bands' ink lines, and the gem's and star's outlines: thin, so the bow's own ink hides little of it (#88). */
+const BOW_BAND_LW = 0.6;
+const BOW_DETAIL_LW = 1.2;
+/** The 7e icon's bands: across the ribbon tails at icon y 6.4 to 9.2, and up each loop at icon x 5.6 to 8.4. */
+const BOW_TAIL_BAND_Y: readonly [number, number] = [6.4, 9.2];
+const BOW_LOOP_BAND_X: readonly [number, number] = [5.6, 8.4];
+
+/** Icon points `xy` (x, y pairs) placed in the Tail frame at `scale`, the icon centre BOW_DROP into the core. */
+function bowPoints(xy: readonly number[], scale: BowScale): Pt[] {
+  const out: Pt[] = [];
+  for (let i = 0; i < xy.length; i += 2) out.push({ x: xy[i] * scale.x, y: xy[i + 1] * scale.y + BOW_DROP });
+  return out;
+}
 
 /**
  * Legendary: one merged `blob` silhouette (ink 2.0 outside the fill) of two
- * loops, two short tails and a knot, #ffd9e6, with #ffc12e bands on the tails
- * and the loops, one gem on the knot and one static 4-point star above it.
- * Painted in the Tail frame (x' along the local tail direction, y' down);
- * everything, ink included, stays within TAIL_SLOT_REACH (12) of the anchor.
- * #88 grows the icon from 0.5 to 0.75 of the 7e icon (the guide's 0.64 and
- * more) with the item ink; the band lines are 0.8 so the gold still shows.
+ * loops, two ribbon tails and a knot, #ffd9e6, with #ffc12e bands on the
+ * ribbon tails and the loops, one gem on the knot and one static 4-point star
+ * above it. Painted in the Tail frame (x' along the local tail direction toward
+ * the head, y' down); everything, ink included, stays within TAIL_SLOT_REACH of
+ * the anchor, and the bow is no more than 11 either side of it along the tail.
  */
 function paintGoldenBow(ctx: CanvasRenderingContext2D): void {
-  const k = BOW_K;
-  const at = (xy: readonly number[]): Pt[] => {
-    const out: Pt[] = [];
-    for (let i = 0; i < xy.length; i += 2) out.push({ x: xy[i] * k, y: xy[i + 1] * k + BOW_DROP });
-    return out;
-  };
   const mirror = (xy: readonly number[]): number[] => xy.map((v, i) => (i % 2 === 0 ? -v : v));
   const tailL = [-1.2, 1.2, -10.2, 7.2, -6.4, 10.6, 1.2, 4.6];
   const loopL = [-1, -1.6, -10.8, -8.2, -10.9, 2.6, -1, 0.4];
@@ -449,28 +467,33 @@ function paintGoldenBow(ctx: CanvasRenderingContext2D): void {
     readonly inner?: () => void;
   }
   const pieces: Piece[] = [];
-  for (const xy of [tailL, mirror(tailL)]) {
+  for (const [xy, scale] of [
+    [tailL, BOW_TIP_TAIL_SCALE],
+    [mirror(tailL), BOW_HEAD_TAIL_SCALE],
+  ] as const) {
+    const [y0, y1] = BOW_TAIL_BAND_Y.map((y) => y * scale.y + BOW_DROP);
     pieces.push({
       path: roundedPolygon(
-        at(xy),
-        [1, 2.2, 2.2, 1].map((r) => r * k),
+        bowPoints(xy, scale),
+        [1, 2.2, 2.2, 1].map((r) => r * scale.x),
       ),
-      inner: () => trimBand(ctx, { x0: -10, x1: 10, y0: 5.7, y1: 7.8 }, GOLD_TRIM, true, BOW_BAND_LW),
+      inner: () => trimBand(ctx, { x0: -12, x1: 12, y0, y1 }, GOLD_TRIM, true, BOW_BAND_LW),
     });
   }
+  const [bandX0, bandX1] = BOW_LOOP_BAND_X.map((x) => x * BOW_LOOP_SCALE.x);
   for (const [x0, x1, xy] of [
-    [-6.3, -4.2, loopL],
-    [4.2, 6.3, mirror(loopL)],
+    [-bandX1, -bandX0, loopL],
+    [bandX0, bandX1, mirror(loopL)],
   ] as const) {
     pieces.push({
       path: roundedPolygon(
-        at(xy),
-        [1.2, 3.6, 3.6, 1.2].map((r) => r * k),
+        bowPoints(xy, BOW_LOOP_SCALE),
+        [1.2, 3.6, 3.6, 1.2].map((r) => r * BOW_LOOP_SCALE.x),
       ),
-      inner: () => trimBand(ctx, { x0, x1, y0: -10, y1: 10 }, GOLD_TRIM, false, BOW_BAND_LW),
+      inner: () => trimBand(ctx, { x0, x1, y0: -20, y1: 20 }, GOLD_TRIM, false, BOW_BAND_LW),
     });
   }
-  const knotY = -0.4 * k + BOW_DROP;
+  const knotY = -0.4 * BOW_LOOP_SCALE.y + BOW_DROP;
   pieces.push({ path: ellipsePath(0, knotY, KNOT_RX, KNOT_RY) });
   ctx.strokeStyle = INK;
   ctx.lineWidth = 2 * ITEM_LW;
@@ -485,8 +508,8 @@ function paintGoldenBow(ctx: CanvasRenderingContext2D): void {
       ctx.restore();
     }
   }
-  gem(ctx, 0, knotY, BOW_GEM);
-  legendStar(ctx, 0, knotY - KNOT_RY - STAR_R);
+  gem(ctx, 0, knotY, BOW_GEM, BOW_DETAIL_LW);
+  legendStar(ctx, 0, knotY - KNOT_RY - STAR_R, BOW_DETAIL_LW);
 }
 
 // ---------------------------------------------------------------------------
@@ -498,7 +521,10 @@ function paintGoldenBow(ctx: CanvasRenderingContext2D): void {
  * neckline arc in the same ink, one shine. The footprint is ink included, so the
  * path is the footprint's inset ellipse offset inward by half the ink (an exact
  * offset curve, so the ink never reaches the torso edge band), cut at the tail
- * root at the rear and at the front edge, whose neckline bows back 3 units.
+ * root at the rear and at the front edge on the front line, whose neckline bows
+ * back SHIRT_NECKLINE_DEPTH (1.5). #88 narrows the edge band to 1 and moves the
+ * front edge up to the front line, so the top covers the torso side as one
+ * strong colour mass.
  */
 function paintTankTop(ctx: CanvasRenderingContext2D, look: AxolotlArtLook): void {
   const shirt = shirtGeometry(look);
@@ -531,7 +557,7 @@ function paintTankTop(ctx: CanvasRenderingContext2D, look: AxolotlArtLook): void
   const body = new Path2D();
   top.forEach((p, i) => (i === 0 ? body.moveTo(p.x, p.y) : body.lineTo(p.x, p.y)));
   for (let i = steps; i >= 0; i--) body.lineTo(flip(top[i]).x, flip(top[i]).y);
-  // The neckline: a concave front edge whose ink-included apex is x -10.5, so its path apex is 1.0 further back.
+  // The neckline: a concave front edge whose ink-included apex is x -7, so its path apex is 1.0 further back.
   const apex = shirt.neckline.apexX - half;
   body.quadraticCurveTo(2 * apex - xf, e.cy, top[0].x, top[0].y);
   body.closePath();
@@ -548,37 +574,49 @@ function paintTankTop(ctx: CanvasRenderingContext2D, look: AxolotlArtLook): void
 // Back: Diving tank (Rare)
 // ---------------------------------------------------------------------------
 
+/** The Diving tank's domed ends: half-ellipses this deep along the tank, the tank's full height across. */
+const TANK_CAP_RX = 4;
+/** The Diving tank's valve: how far it stands out of the tank's front end, its height, and its corner radius. */
+const VALVE_OUT = 3;
+const VALVE_H = 8;
+const VALVE_R = 1.5;
+/** The strap band's width, and where its centre sits along the capsule from the rear. */
+const STRAP_W = 4;
+const STRAP_AT = 0.55;
+
 /**
- * Rare: #d4cfe6. A capsule body and a valve block merged into one `blob`
- * outline (ink 2.0, all outside the fill), one #ffe14a strap band across the
- * body's full height between two 1.2 ink lines, one shine. Painted in the Back
- * frame (x' along the torso edge toward the snout, y' + into the body). The
- * footprint (x' -9 to 9, y' -8 to 5) is ink included; the fills are still the
- * 2.8 smaller all round they were with the guide's ink, so 0.8 of the footprint
- * is left clear: the body fill is x' -6.1 to 2.6, y' -5.1 to 2.1, and the
- * valve fill reaches x' 6.1. The guide's shine at (-5.2,-4.6) falls outside
- * that fill, so the shine sits on the capsule's left cap.
+ * Rare: #d4cfe6. A tank with domed ends lying along the back and a valve block
+ * on its front end merged into one `blob` (ink 2.0, all outside the fill), one
+ * #ffe14a strap band across the tank's full height between two 1.2 ink lines,
+ * one shine on the rear dome, clear of the strap. Painted in the Back frame (x'
+ * along the torso edge toward the snout, y' + into the body). The box
+ * (backFrameBox, by look) is ink included, so the fills are ITEM_LW inside it:
+ * the tank runs the box's length less the valve, the valve reaches the front of
+ * the box, and the tank stands proud of the back against the water (#88).
  */
-function paintDivingTank(ctx: CanvasRenderingContext2D): void {
-  const top = -5.1;
-  const bottom = 2.1;
-  const left = -6.1;
-  const right = 2.6;
+function paintDivingTank(ctx: CanvasRenderingContext2D, box: BackFrameBox): void {
+  const top = box.minV + ITEM_LW;
+  const bottom = box.maxV - ITEM_LW;
+  const rear = box.minU + ITEM_LW;
+  const front = box.maxU - ITEM_LW;
+  const capFront = front - VALVE_OUT;
   const r = (bottom - top) / 2;
+  const mid = top + r;
   const body = new Path2D();
-  body.moveTo(left + r, top);
-  body.lineTo(right - r, top);
-  body.arc(right - r, top + r, r, -Math.PI / 2, Math.PI / 2);
-  body.lineTo(left + r, bottom);
-  body.arc(left + r, top + r, r, Math.PI / 2, (3 * Math.PI) / 2);
+  body.moveTo(rear + TANK_CAP_RX, top);
+  body.lineTo(capFront - TANK_CAP_RX, top);
+  body.ellipse(capFront - TANK_CAP_RX, mid, TANK_CAP_RX, r, 0, -Math.PI / 2, Math.PI / 2);
+  body.lineTo(rear + TANK_CAP_RX, bottom);
+  body.ellipse(rear + TANK_CAP_RX, mid, TANK_CAP_RX, r, 0, Math.PI / 2, (3 * Math.PI) / 2);
   body.closePath();
-  const valve = roundRectPath(1.5, -3.5, 6.1, 0.5, 1);
+  const valve = roundRectPath(capFront - TANK_CAP_RX, mid - VALVE_H / 2, front, mid + VALVE_H / 2, VALVE_R);
   blobs(ctx, [body, valve], DIVING_TANK_FILL);
+  const strap = rear + (capFront - rear) * STRAP_AT;
   ctx.save();
   ctx.clip(body);
-  trimBand(ctx, { x0: -3.4, x1: 0.2, y0: top - 1, y1: bottom + 1 }, DIVING_TANK_STRAP, false);
+  trimBand(ctx, { x0: strap - STRAP_W / 2, x1: strap + STRAP_W / 2, y0: top - 1, y1: bottom + 1 }, DIVING_TANK_STRAP, false);
   ctx.restore();
-  shine(ctx, -4.6, -2.6, 1.2, 0.55, -0.5);
+  shine(ctx, rear + TANK_CAP_RX - 0.4, top + 3, 2, 1, -0.3);
 }
 
 // ---------------------------------------------------------------------------
@@ -710,9 +748,11 @@ export function paintBodyWearable(
     case 'tank-top':
       paintTankTop(ctx, look);
       break;
-    case 'diving-tank':
-      inFrame(ctx, backFrame(axolotlBodyGeometry(look).torso), () => paintDivingTank(ctx));
+    case 'diving-tank': {
+      const back = backFootprint(look);
+      inFrame(ctx, back.frame, () => paintDivingTank(ctx, back.box));
       break;
+    }
     default:
       break;
   }

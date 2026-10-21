@@ -12,6 +12,7 @@ import {
   axolotlBodyGeometry,
   backFootprint,
   feetEnvelope,
+  framePoint,
   legRectBounds,
   legSlotFrames,
   shirtGeometry,
@@ -164,5 +165,25 @@ describe('slotFootprintPaths', () => {
       }
     }
     expect(failing).toEqual([]);
+  });
+
+  it('outlines the Back box of each look (#88: it depends on the torso), CUE_INSET inside its corners', () => {
+    const failing: string[] = [];
+    for (const look of EVERY_BODY_LOOK) {
+      const { frame, box } = backFootprint(look);
+      const [path] = slotFootprintPaths('back', look, CUE_INSET) as unknown as HullPath2D[];
+      const expected = [
+        framePoint(frame, box.minU + CUE_INSET, box.minV + CUE_INSET),
+        framePoint(frame, box.maxU - CUE_INSET, box.minV + CUE_INSET),
+        framePoint(frame, box.maxU - CUE_INSET, box.maxV - CUE_INSET),
+        framePoint(frame, box.minU + CUE_INSET, box.maxV - CUE_INSET),
+      ];
+      const matches = path.points.length === 4 && path.points.every(([x, y], i) => Math.hypot(x - expected[i].x, y - expected[i].y) < 1e-9);
+      if (!matches) failing.push(lookId(look));
+    }
+    expect(failing).toEqual([]);
+    // Looks differ: a Grown-up Chubby box is 26 long, a Baby's 22.
+    const lengths = new Set(EVERY_BODY_LOOK.map((look) => Math.round(backFootprint(look).box.maxU - backFootprint(look).box.minU)));
+    expect([...lengths].sort()).toEqual([22, 24, 26]);
   });
 });
