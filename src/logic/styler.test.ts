@@ -3,8 +3,10 @@ import {
   DEFAULT_LOOK,
   LOOK_FIELD_OPTIONS,
   isAxolotlLook,
+  sameLook,
   type AxolotlLook,
   type AxolotlSex,
+  type LookField,
 } from './axolotlLook';
 import { isValidName, nameFits, suggestedNamesFor } from './axolotlNames';
 import { CANAL_TREASURES, DREAM_COLOURS, WEARABLE_SLOTS, treasureById, type DreamColourId } from './catalogue';
@@ -40,6 +42,7 @@ import {
   type StylerAction,
   type StylerAxolotl,
   type StylerFocusKind,
+  type StylerMode,
   type StylerState,
   type StylerWearer,
 } from './styler';
@@ -51,7 +54,7 @@ import {
   stepLookField,
   type StylerStep,
 } from './stylerSteps';
-import { NONE_LABEL, REAL_COLOUR_LABEL } from './stylerText';
+import { NONE_LABEL, REAL_COLOUR_LABEL, surpriseShown } from './stylerText';
 
 const SEED_COUNT = 300;
 
@@ -103,6 +106,13 @@ function tabStops(state: StylerState, shiftKey: boolean): StylerFocusKind[] {
     stops.push(current.focus.kind);
   }
   return stops;
+}
+
+/** The look field `step` chooses; throws on a step that is not part of the look. */
+function lookFieldOf(step: StylerStep): LookField {
+  const field = stepLookField(step);
+  if (field === null) throw new Error(`${step} has no look field`);
+  return field;
 }
 
 function optionIds(state: StylerState): string[] {
@@ -608,67 +618,48 @@ describe('setName', () => {
 });
 
 describe('surprise', () => {
-  function expectValid(state: StylerState): void {
-    expect(isAxolotlLook(state.look)).toBe(true);
-    expect(['boy', 'girl']).toContain(state.look.sex);
-    expect(isValidName(state.name)).toBe(true);
-    expect(suggestedNamesFor(state.look.sex)).toContain(state.name);
-    expect(MORPH_IDS).toContain(state.morph);
+  /** The look steps Surprise me shows on in `mode`: Boy or girl in the creator, then Eyes to Size. */
+  function lookSteps(mode: StylerMode): StylerStep[] {
+    return STYLER_STEPS.filter((step) => stepLookField(step) !== null && (mode === 'creator' || step !== 'sex'));
   }
 
-  it('creator: always a valid look with sex set and a fitting name, on the same step', () => {
+  /** The state of `mode` on `step`: the creator from step 1, or a restyle of OWNED. */
+  function stateOn(mode: StylerMode, step: StylerStep): StylerState {
+    return mode === 'creator' ? creatorOn(step) : restyleOn(step);
+  }
+
+  /** Surprise me pressed on `before` with `seed`, its result checked to keep the step, the Dream colour, the outfit and the focus. */
+  function pressSurprise(before: StylerState, seed: number): StylerState {
+    const result = reduceStyler(before, { type: 'surprise' }, mulberry32(seed));
+    const after = result.state;
+    expect(result.effect).toBeUndefined();
+    expect(after.step).toBe(before.step);
+    expect(after.dreamColour).toBe(before.dreamColour);
+    expect(after.outfit).toEqual(before.outfit);
+    expect(after.outfitView).toBe(before.outfitView);
+    expect(after.outfitSlot).toBe(before.outfitSlot);
+    expect(after.focus).toEqual({ kind: 'surprise' });
+    return after;
+  }
+
+  it('creator Colour: a whole new valid axolotl, never the same one, reaching every morph and both sexes', () => {
     const morphs = new Set<RealMorphId>();
     const sexes = new Set<AxolotlSex>();
+    const before = creator();
+    expect(before.step).toBe('colour');
     for (let seed = 1; seed <= SEED_COUNT; seed++) {
-      const before = creatorOn(STYLER_STEPS[seed % STYLER_STEPS.length]);
-      const result = reduceStyler(before, { type: 'surprise' }, mulberry32(seed));
-      expectValid(result.state);
-      expect(result.state.step).toBe(before.step);
-      expect(result.state.focus).toEqual({ kind: 'surprise' });
-      expect(result.effect).toBeUndefined();
-      morphs.add(result.state.morph);
-      sexes.add(result.state.look.sex);
+      const after = pressSurprise(before, seed);
+      expect(isAxolotlLook(after.look)).toBe(true);
+      expect(isValidName(after.name)).toBe(true);
+      expect(suggestedNamesFor(after.look.sex)).toContain(after.name);
+      expect(MORPH_IDS).toContain(after.morph);
+      const same = after.name === before.name && after.morph === before.morph && sameLook(after.look, before.look);
+      expect(same).toBe(false);
+      morphs.add(after.morph);
+      sexes.add(after.look.sex);
     }
     expect(morphs).toEqual(new Set(MORPH_IDS));
     expect(sexes).toEqual(new Set(['boy', 'girl']));
-  });
-
-  it('restyle: never changes the morph or sex, and the name fits', () => {
-    for (let seed = 1; seed <= SEED_COUNT; seed++) {
-      const before = restyleOn(RESTYLE_STEPS[seed % RESTYLE_STEPS.length]);
-      const after = surprise(before, mulberry32(seed));
-      expectValid(after);
-      expect(after.morph).toBe('melanoid');
-      expect(after.look.sex).toBe('girl');
-      expect(after.step).toBe(before.step);
-    }
-  });
-
-  it('always changes something', () => {
-    for (let seed = 1; seed <= SEED_COUNT; seed++) {
-      const before = creatorOn('eyes');
-      const after = surprise(before, mulberry32(seed));
-      const same =
-        after.name === before.name &&
-        after.morph === before.morph &&
-        JSON.stringify(after.look) === JSON.stringify(before.look);
-      expect(same).toBe(false);
-    }
-  });
-
-  it('reaches every mouth in the creator and restyle', () => {
-    const creatorMouths = new Set<string>();
-    const restyleMouths = new Set<string>();
-    const creatorBefore = creatorOn('mouth');
-    const restyleBefore = restyleOn('mouth');
-    for (let seed = 1; seed <= SEED_COUNT; seed++) {
-      creatorMouths.add(reduceStyler(creatorBefore, { type: 'surprise' }, mulberry32(seed)).state.look.mouth);
-      restyleMouths.add(surprise(restyleBefore, mulberry32(seed)).look.mouth);
-    }
-    const allMouths = new Set(LOOK_FIELD_OPTIONS.mouth.map((option) => option.id));
-    expect(allMouths.size).toBe(8);
-    expect(creatorMouths).toEqual(allMouths);
-    expect(restyleMouths).toEqual(allMouths);
   });
 
   it('steps the name after SURPRISE_ROLLS matching rolls', () => {
@@ -693,6 +684,90 @@ describe('surprise', () => {
     expect(after.morph).toBe(MORPH_IDS[0]);
     expect(after.name).toBe('Gilly');
     expect(draws).toBe(SURPRISE_ROLLS * 11);
+  });
+
+  it.each(['creator', 'restyle'] as const)('%s look steps: only that look field changes, to every other option', (mode) => {
+    for (const step of lookSteps(mode)) {
+      const field = lookFieldOf(step);
+      const before = stateOn(mode, step);
+      const reached = new Set<string>();
+      for (let seed = 1; seed <= SEED_COUNT; seed++) {
+        const after = pressSurprise(before, seed);
+        expect(after.look[field]).not.toBe(before.look[field]);
+        expect(after.look).toEqual({ ...before.look, [field]: after.look[field] });
+        expect(after.morph).toBe(before.morph);
+        if (step !== 'sex') expect(after.name).toBe(before.name);
+        reached.add(after.look[field]);
+      }
+      const others = LOOK_FIELD_OPTIONS[field].map((option) => option.id).filter((id) => id !== before.look[field]);
+      expect([...reached].sort()).toEqual([...others].sort());
+    }
+  });
+
+  it.each(['creator', 'restyle'] as const)('%s Name: another suggested name that fits, reaching every other one', (mode) => {
+    const before = stateOn(mode, 'name');
+    const fitting = suggestedNamesFor(before.look.sex);
+    const reached = new Set<string>();
+    for (let seed = 1; seed <= SEED_COUNT; seed++) {
+      const after = pressSurprise(before, seed);
+      expect(fitting).toContain(after.name);
+      expect(after.name.toLowerCase()).not.toBe(before.name.toLowerCase());
+      expect(after.look).toEqual(before.look);
+      expect(after.morph).toBe(before.morph);
+      expect(chosenIndex(after)).toBeGreaterThanOrEqual(0);
+      reached.add(after.name);
+    }
+    expect([...reached].sort()).toEqual(fitting.filter((name) => name !== before.name).sort());
+  });
+
+  it('Name: never the same name in other case, and a typed name becomes a fitting suggested one', () => {
+    const lower = setName(creatorOn('name', { look: { ...DEFAULT_LOOK, sex: 'boy' } }), 'bubbles');
+    const typed = setName(restyleOn('name'), 'Zed');
+    for (let seed = 1; seed <= SEED_COUNT; seed++) {
+      expect(pressSurprise(lower, seed).name).not.toBe('Bubbles');
+      const fromTyped = pressSurprise(typed, seed).name;
+      expect(suggestedNamesFor('girl')).toContain(fromTyped);
+      expect(nameFits(fromTyped, 'girl')).toBe(true);
+    }
+  });
+
+  it('creator Boy or girl: always switches, and only a name that no longer fits is replaced by one that does', () => {
+    const cases: [AxolotlSex, string, boolean][] = [
+      ['girl', 'Lily', false],
+      ['girl', 'lily', false],
+      ['boy', 'Milo', false],
+      ['girl', 'Bubbles', true],
+      ['boy', 'Bubbles', true],
+      ['girl', 'Zed', true],
+    ];
+    for (const [sex, name, kept] of cases) {
+      const before = setName(creatorOn('sex', { look: { ...DEFAULT_LOOK, sex } }), name);
+      expect(before.name).toBe(name);
+      const otherSex: AxolotlSex = sex === 'boy' ? 'girl' : 'boy';
+      for (let seed = 1; seed <= SEED_COUNT; seed++) {
+        const after = pressSurprise(before, seed);
+        expect(after.look).toEqual({ ...before.look, sex: otherSex });
+        if (kept) expect(after.name).toBe(name);
+        else expect(suggestedNamesFor(otherSex)).toContain(after.name);
+        expect(nameFits(after.name, otherSex)).toBe(true);
+      }
+    }
+  });
+
+  it.each<StylerStep>(['colour', 'sex'])('restyle %s hides Surprise me, and pressing it changes nothing', (step) => {
+    const state = restyleOn(step);
+    expect(focusOrder(state)).not.toContain('surprise');
+    expect(visibleButtons(state)).not.toContain('surprise');
+    expect(reduceStyler(state, { type: 'surprise' }, noRandom)).toEqual({ state });
+    expect(surprise(state, noRandom)).toBe(state);
+  });
+
+  it('every other restyle tab shows Surprise me before Cancel', () => {
+    for (const step of RESTYLE_STEPS.filter((candidate) => surpriseShown('restyle', candidate))) {
+      const buttons = visibleButtons(restyleOn(step));
+      expect(buttons.indexOf('surprise')).toBeGreaterThanOrEqual(0);
+      expect(buttons.indexOf('surprise')).toBe(buttons.indexOf('cancel') - 1);
+    }
   });
 });
 
@@ -912,10 +987,19 @@ describe('Dream colour step', () => {
     }
   });
 
-  it('tab order: tabs, colours, More colours, Surprise me, Cancel, Done', () => {
-    expect(focusOrder(dreamOn(ALL_DREAMS))).toEqual(['tab', 'option', 'moreColours', 'surprise', 'cancel', 'done']);
-    expect(focusOrder(dreamOn(['mint']))).toEqual(['tab', 'option', 'surprise', 'cancel', 'done']);
+  it('tab order: tabs, colours, More colours, Cancel, Done', () => {
+    expect(focusOrder(dreamOn(ALL_DREAMS))).toEqual(['tab', 'option', 'moreColours', 'cancel', 'done']);
+    expect(focusOrder(dreamOn(['mint']))).toEqual(['tab', 'option', 'cancel', 'done']);
     expect(visibleButtons(dreamOn(ALL_DREAMS))).toContain('moreColours');
+  });
+
+  it('hides Surprise me with or without owned Dream colours, and pressing it changes nothing', () => {
+    for (const state of [dreamOn([]), dreamOn(['mint']), dreamOn(ALL_DREAMS, PAINTED), withDreamsPerPage(dreamOn(ALL_DREAMS), 3)]) {
+      expect(focusOrder(state)).not.toContain('surprise');
+      expect(visibleButtons(state)).not.toContain('surprise');
+      expect(reduceStyler(state, { type: 'surprise' }, noRandom)).toEqual({ state });
+      expect(surprise(state, noRandom)).toBe(state);
+    }
   });
 
   it('Tab follows the order and wraps; Shift+Tab reverses it', () => {
@@ -1202,16 +1286,16 @@ describe('Outfit step', () => {
 
   it('focus order: slots view, More, choices view with Back to slots, and with the tab row hidden', () => {
     const slots = outfitStart();
-    expect(focusOrder(slots)).toEqual(['tab', 'option', 'surprise', 'cancel', 'done']);
-    expect(focusOrder(withOutfitPerPage(slots, 3))).toEqual(['tab', 'option', 'moreOutfit', 'surprise', 'cancel', 'done']);
+    expect(focusOrder(slots)).toEqual(['tab', 'option', 'cancel', 'done']);
+    expect(focusOrder(withOutfitPerPage(slots, 3))).toEqual(['tab', 'option', 'moreOutfit', 'cancel', 'done']);
     expect(focusOrder(withTabsHidden(slots, true))).toEqual(focusOrder(slots));
     const head = openSlot('head');
-    expect(focusOrder(head)).toEqual(['tab', 'option', 'backToSlots', 'surprise', 'cancel', 'done']);
-    expect(visibleButtons(head)).toEqual(['backToSlots', 'surprise', 'cancel', 'done']);
+    expect(focusOrder(head)).toEqual(['tab', 'option', 'backToSlots', 'cancel', 'done']);
+    expect(visibleButtons(head)).toEqual(['backToSlots', 'cancel', 'done']);
     const paged = withOutfitPerPage(head, 1);
-    expect(focusOrder(paged)).toEqual(['tab', 'option', 'moreOutfit', 'backToSlots', 'surprise', 'cancel', 'done']);
+    expect(focusOrder(paged)).toEqual(['tab', 'option', 'moreOutfit', 'backToSlots', 'cancel', 'done']);
     const hidden = withTabsHidden(paged, true);
-    expect(focusOrder(hidden)).toEqual(['backToSlots', 'option', 'moreOutfit', 'surprise', 'cancel', 'done']);
+    expect(focusOrder(hidden)).toEqual(['backToSlots', 'option', 'moreOutfit', 'cancel', 'done']);
     expect(focusOrder(withTabsHidden(hidden, false))).toEqual(focusOrder(paged));
   });
 
@@ -1236,10 +1320,26 @@ describe('Outfit step', () => {
     expect(withTabsHidden(onOption, true).tabsHidden).toBe(true);
   });
 
-  it('Surprise me never changes the outfit, the view or the open slot', () => {
-    const states = [outfitStart(), pickId(openSlot('head'), 'canal/sun-hat'), restyleOn('eyes', DRESSED)];
+  it('hides Surprise me in the slots and choices views, paged or not, tab row shown or hidden, and pressing it changes nothing', () => {
+    const states = [
+      outfitStart(),
+      withOutfitPerPage(outfitStart(), 3),
+      withTabsHidden(outfitStart(), true),
+      pickId(openSlot('head'), 'canal/sun-hat'),
+      withOutfitPerPage(openSlot('head'), 1),
+      withTabsHidden(withOutfitPerPage(openSlot('head'), 1), true),
+    ];
+    for (const state of states) {
+      expect(focusOrder(state)).not.toContain('surprise');
+      expect(visibleButtons(state)).not.toContain('surprise');
+      expect(reduceStyler(state, { type: 'surprise' }, noRandom)).toEqual({ state });
+      expect(surprise(state, noRandom)).toBe(state);
+    }
+  });
+
+  it('Surprise me on another tab never changes the outfit, the view or the open slot', () => {
+    const before = restyleOn('eyes', DRESSED);
     for (let seed = 1; seed <= SEED_COUNT; seed++) {
-      const before = states[seed % states.length];
       const after = reduceStyler(before, { type: 'surprise' }, mulberry32(seed)).state;
       expect(after.outfit).toEqual(before.outfit);
       expect(after.outfitView).toBe(before.outfitView);

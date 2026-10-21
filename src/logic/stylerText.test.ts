@@ -35,6 +35,8 @@ import {
   stepHelper,
   stepTabLabel,
   stepTitle,
+  surpriseHelper,
+  surpriseShown,
   wornOnLabel,
 } from './stylerText';
 import type { StylerMode } from './stylerUi';
@@ -98,6 +100,7 @@ function everyStylerText(): string[] {
     ...STYLER_STEPS.map((step, index) => stepHeading(index, STYLER_STEPS.length, step)),
     ...MODES.flatMap((mode) => RESTYLE_STEPS.map((step) => stepHelper(mode, step))),
     ...MODES.flatMap((mode) => RESTYLE_STEPS.map((step) => stepHelper(mode, step, 1))),
+    ...MODES.flatMap((mode) => RESTYLE_STEPS.flatMap((step) => surpriseHelper(mode, step) ?? [])),
     ...everyOutfitText(),
   ];
 }
@@ -228,16 +231,73 @@ describe('styler text', () => {
     expect(MORE_COLOURS_LABEL).toBe('More colours');
   });
 
-  it('picks the helper for each step and mode', () => {
-    expect(stepHelper('creator', 'colour')).toBe(CREATOR_FIXED_HELPER);
-    expect(stepHelper('creator', 'sex')).toBe(CREATOR_FIXED_HELPER);
-    expect(stepHelper('creator', 'eyes')).toBe(CREATOR_HELPER);
-    expect(stepHelper('creator', 'size')).toBe(CREATOR_HELPER);
-    expect(stepHelper('creator', 'name')).toBe(NAME_HELPER);
+  it('picks the helper for each step and mode, then what Surprise me picks there', () => {
+    expect(stepHelper('creator', 'colour')).toBe(`${CREATOR_FIXED_HELPER} Surprise me picks a whole new axolotl.`);
+    expect(stepHelper('creator', 'sex')).toBe(`${CREATOR_FIXED_HELPER} Surprise me picks boy or girl.`);
+    expect(stepHelper('creator', 'eyes')).toBe(`${CREATOR_HELPER} Surprise me picks new eyes.`);
+    expect(stepHelper('creator', 'size')).toBe(`${CREATOR_HELPER} Surprise me picks a new size.`);
+    expect(stepHelper('creator', 'name')).toBe(`${NAME_HELPER} Surprise me picks a new name.`);
     expect(stepHelper('restyle', 'colour')).toBe(READ_ONLY_HELPER);
     expect(stepHelper('restyle', 'sex')).toBe(READ_ONLY_HELPER);
-    expect(stepHelper('restyle', 'gills')).toBe(RESTYLE_HELPER);
-    expect(stepHelper('restyle', 'name')).toBe(NAME_HELPER);
+    expect(stepHelper('restyle', 'gills')).toBe(`${RESTYLE_HELPER} Surprise me picks new gills.`);
+    expect(stepHelper('restyle', 'name')).toBe(`${NAME_HELPER} Surprise me picks a new name.`);
+  });
+
+  it('shows Surprise me on every creator step, and in restyle on every step but Colour, Boy or girl, Dream colour and Outfit', () => {
+    const shown = (mode: StylerMode): Record<string, boolean> =>
+      Object.fromEntries(RESTYLE_STEPS.map((step) => [step, surpriseShown(mode, step)]));
+    expect(shown('restyle')).toEqual({
+      colour: false,
+      dream: false,
+      outfit: false,
+      sex: false,
+      eyes: true,
+      mouth: true,
+      gills: true,
+      spots: true,
+      tail: true,
+      body: true,
+      age: true,
+      size: true,
+      name: true,
+    });
+    for (const step of STYLER_STEPS) expect(surpriseShown('creator', step)).toBe(true);
+    expect(surpriseShown('creator', 'dream')).toBe(false);
+    expect(surpriseShown('creator', 'outfit')).toBe(false);
+  });
+
+  it('says what Surprise me picks on each step where it shows, and nothing where it hides', () => {
+    expect(Object.fromEntries(STYLER_STEPS.map((step) => [step, surpriseHelper('creator', step)]))).toEqual({
+      colour: 'Surprise me picks a whole new axolotl.',
+      sex: 'Surprise me picks boy or girl.',
+      eyes: 'Surprise me picks new eyes.',
+      mouth: 'Surprise me picks a new mouth.',
+      gills: 'Surprise me picks new gills.',
+      spots: 'Surprise me picks new spots.',
+      tail: 'Surprise me picks a new tail.',
+      body: 'Surprise me picks a new body.',
+      age: 'Surprise me picks a new age.',
+      size: 'Surprise me picks a new size.',
+      name: 'Surprise me picks a new name.',
+    });
+    for (const step of RESTYLE_STEPS) {
+      const sentence = surpriseHelper('restyle', step);
+      if (surpriseShown('restyle', step)) expect(sentence).toBe(surpriseHelper('creator', step));
+      else expect(sentence).toBeNull();
+    }
+  });
+
+  it('ends each helper with the Surprise me sentence where there is one, and only there', () => {
+    for (const mode of MODES) {
+      for (const step of RESTYLE_STEPS) {
+        for (const ownedDreamCount of [0, 1]) {
+          const helper = stepHelper(mode, step, ownedDreamCount);
+          const sentence = surpriseHelper(mode, step);
+          expect(helper.includes('Surprise me')).toBe(sentence !== null);
+          if (sentence !== null) expect(helper.endsWith(`. ${sentence}`)).toBe(true);
+        }
+      }
+    }
   });
 
   it('picks the Dream colour helper by how many Dream colours are owned', () => {
@@ -245,7 +305,7 @@ describe('styler text', () => {
     expect(stepHelper('restyle', 'dream', 0)).toBe(NO_DREAMS_HELPER);
     expect(stepHelper('restyle', 'dream', 1)).toBe(DREAM_HELPER);
     expect(stepHelper('restyle', 'dream', 5)).toBe(DREAM_HELPER);
-    expect(stepHelper('restyle', 'eyes', 3)).toBe(RESTYLE_HELPER);
+    expect(stepHelper('restyle', 'eyes', 3)).toBe(`${RESTYLE_HELPER} Surprise me picks new eyes.`);
   });
 
   it('uses the agreed Outfit labels and slots helper', () => {

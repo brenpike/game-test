@@ -26,6 +26,8 @@ import {
   stepHelper,
   stepTabLabel,
   stepTitle,
+  surpriseHelper,
+  surpriseShown,
   wornOnLabel,
 } from './stylerText';
 import {
@@ -272,15 +274,26 @@ function stepsOf(mode: StylerMode): readonly StylerStep[] {
   return mode === 'restyle' ? RESTYLE_STEPS : STYLER_STEPS;
 }
 
+/** The helper line of `step` in `mode` with `ownedDreamCount` Dream colours, without its Surprise me sentence. */
+function helperWithoutSurprise(mode: StylerMode, step: StylerStep, ownedDreamCount: number): string {
+  const helper = stepHelper(mode, step, ownedDreamCount);
+  const sentence = surpriseHelper(mode, step);
+  if (sentence === null) return helper;
+  if (!helper.endsWith(` ${sentence}`)) throw new Error(`${mode} ${step}: the helper does not end with its Surprise me sentence`);
+  return helper.slice(0, helper.length - sentence.length - 1);
+}
+
 /**
  * The styler measure for `step` in `mode`, as the scene measures it, with every option label (on Dream
  * colour, the Dream colour labels too) and the taller of its helpers with no and with every Dream colour.
+ * `withSurprise` false measures the helpers without their Surprise me sentence.
  */
-function measureFor(mode: StylerMode, step: StylerStep, outfitView?: OutfitView): StylerMeasure {
+function measureFor(mode: StylerMode, step: StylerStep, outfitView?: OutfitView, withSurprise = true): StylerMeasure {
   if (step === 'outfit') return outfitMeasureFor(outfitView ?? 'slots');
   const index = STYLER_STEPS.indexOf(step);
   const labels = step === 'dream' ? DREAM_OPTION_LABELS : OPTION_LABELS;
-  const helpers = [stepHelper(mode, step, 0), stepHelper(mode, step, DREAM_COLOURS.length)];
+  const helperOf = withSurprise ? stepHelper : helperWithoutSurprise;
+  const helpers = [helperOf(mode, step, 0), helperOf(mode, step, DREAM_COLOURS.length)];
   const longestLabel = labels.reduce((longest, label) => (label.length > longest.length ? label : longest), '');
   const longestWord = Math.max(...labels.flatMap((label) => label.split(' ').map((word) => word.length)));
   return {
@@ -909,8 +922,9 @@ describe('stylerLayout Outfit step', () => {
         expect(isInside(label, inner)).toBe(true);
       }
       const { done, cancel, surprise } = layout.nav;
-      for (const rect of [outfit.backToSlots, done, cancel, surprise]) {
-        if (rect === null) throw new Error('Back to slots, Done, Cancel and Surprise me all show');
+      expect(surprise).toBeNull();
+      for (const rect of [outfit.backToSlots, done, cancel]) {
+        if (rect === null) throw new Error('Back to slots, Done and Cancel all show');
         expect(isInside(rect, inner)).toBe(true);
         expect(rect.h).toBeGreaterThanOrEqual(PRIMARY_H);
       }
@@ -1065,11 +1079,11 @@ describe('stylerLayout Outfit step', () => {
         const back = outfitOf(layout).backToSlots;
         if (back === null) throw new Error('the choices view has Back to slots');
         expect(back).toMatchObject(BACK_TO_SLOTS_BUTTON);
-        const { surprise } = layout.nav;
-        const before = back.y + back.h <= surprise.y + 1e-9 || (Math.abs(back.y - surprise.y) < 1e-9 && back.x < surprise.x);
+        const { cancel, done } = layout.nav;
+        if (cancel === null || done === null) throw new Error('the choices view has Cancel and Done');
+        const next = layout.cancelInTabRow ? done : cancel;
+        const before = back.y + back.h <= next.y + 1e-9 || (Math.abs(back.y - next.y) < 1e-9 && back.x < next.x);
         expect(before).toBe(true);
-        expect(layout.nav.done).not.toBeNull();
-        expect(layout.nav.cancel).not.toBeNull();
       }
     }
   });
@@ -1254,5 +1268,146 @@ describe('nameCursorShown', () => {
 
   it('shows the cursor at a negative or not-a-number time', () => {
     for (const seconds of [-0.75, -0.25, Number.NaN, Number.POSITIVE_INFINITY]) expect(nameCursorShown(seconds, true)).toBe(true);
+  });
+});
+
+describe('restyle Surprise me', () => {
+  /** Every canvas the Surprise me checks run on: the smallest, then every supported canvas. */
+  const VIEWS: readonly HudView[] = [...SMALLEST, ...supportedCanvases()];
+
+  /** True on the restyle steps that hide Surprise me: Colour, Boy or girl, Dream colour and Outfit. */
+  function hidesSurprise(step: StylerStep): boolean {
+    return step === 'colour' || step === 'sex' || step === 'dream' || step === 'outfit';
+  }
+
+  /** Every restyle screen layout on `view`, with its screen case. */
+  function restyleLayoutsOn(view: HudView): [ScreenCase, StylerLayout][] {
+    return screensOf('restyle').map((screenCase): [ScreenCase, StylerLayout] => {
+      const [step, count, outfitView] = screenCase;
+      return [screenCase, layoutFor(view, 'restyle', step, count, outfitView)];
+    });
+  }
+
+  /** Back to slots when it is a step button (the Outfit choices view with the tab row shown), else null. */
+  function leadButtonOf(layout: StylerLayout): Rect | null {
+    return layout.tabs === null ? null : (layout.outfit?.backToSlots ?? null);
+  }
+
+  /**
+   * Where the step buttons go when Surprise me keeps its place: Back to slots (when it is a step
+   * button), Surprise me, Cancel (unless it ends the tab row) and Done, in greedy centred rows at the
+   * bottom of the panel padding or, on a landscape canvas, stacked in a right column ending there.
+   */
+  function reservedPlaces(view: HudView, layout: StylerLayout): Rect[] {
+    const inner = panelInner(layout);
+    const sizes: Size[] = [
+      ...(leadButtonOf(layout) === null ? [] : [BACK_TO_SLOTS_BUTTON]),
+      SURPRISE_BUTTON,
+      ...(layout.cancelInTabRow ? [] : [CANCEL_BUTTON]),
+      DONE_BUTTON,
+    ];
+    const bottom = inner.y + inner.h;
+    if (view.cssW > view.cssH) return columnPlaces(sizes, inner.x + inner.w, bottom);
+    return rowPlaces(sizes, inner.x + inner.w / 2, inner.w, bottom);
+  }
+
+  /** `sizes` stacked UI.gap apart in a right column ending at `right` and `bottom`, each centred in it. */
+  function columnPlaces(sizes: readonly Size[], right: number, bottom: number): Rect[] {
+    const columnW = Math.max(...sizes.map((size) => size.w));
+    let y = bottom - sizes.reduce((sum, size) => sum + size.h, 0) - UI.gap * (sizes.length - 1);
+    return sizes.map((size) => {
+      const rect = { x: right - columnW + (columnW - size.w) / 2, y, w: size.w, h: size.h };
+      y += size.h + UI.gap;
+      return rect;
+    });
+  }
+
+  /** `sizes` in greedy rows UI.gap apart that fit `maxW`, each centred on `centreX`, the last ending at `bottom`. */
+  function rowPlaces(sizes: readonly Size[], centreX: number, maxW: number, bottom: number): Rect[] {
+    const rows: Size[][] = [];
+    for (const size of sizes) {
+      const row = rows[rows.length - 1];
+      const rowW = row === undefined ? 0 : row.reduce((sum, item) => sum + item.w + UI.gap, 0);
+      if (row !== undefined && rowW + size.w <= maxW) row.push(size);
+      else rows.push([size]);
+    }
+    const rowsH = rows.reduce((sum, row) => sum + Math.max(...row.map((size) => size.h)) + UI.gap, -UI.gap);
+    let rowTop = bottom - rowsH;
+    return rows.flatMap((row) => {
+      const rowH = Math.max(...row.map((size) => size.h));
+      let x = centreX - (row.reduce((sum, size) => sum + size.w, 0) + UI.gap * (row.length - 1)) / 2;
+      const rects = row.map((size) => {
+        const rect = { x, y: rowTop + (rowH - size.h) / 2, w: size.w, h: size.h };
+        x += size.w + UI.gap;
+        return rect;
+      });
+      rowTop += rowH + UI.gap;
+      return rects;
+    });
+  }
+
+  it('shows exactly where surpriseShown says, in both modes and on every step', () => {
+    for (const step of RESTYLE_STEPS) expect(surpriseShown('restyle', step)).toBe(!hidesSurprise(step));
+    for (const step of STYLER_STEPS) expect(surpriseShown('creator', step)).toBe(true);
+  });
+
+  it('is null on restyle Colour, Boy or girl, Dream colour and Outfit, and shows on every other step', () => {
+    let tabRowHidden = 0;
+    let tabRowShown = 0;
+    for (const view of VIEWS) {
+      for (const [[step, count, outfitView], layout] of restyleLayoutsOn(view)) {
+        const label = `${view.cssW}x${view.cssH} ${step}${outfitView ? ` ${outfitView}` : ''} x${count}`;
+        expect(`${label}: ${layout.nav.surprise === null}`).toBe(`${label}: ${hidesSurprise(step)}`);
+        if (outfitView === 'choices' && layout.tabs === null) tabRowHidden += 1;
+        if (outfitView === 'choices' && layout.tabs !== null) tabRowShown += 1;
+      }
+      for (const [step, count] of screensOf('creator')) {
+        expect(layoutFor(view, 'creator', step, count).nav.surprise).not.toBeNull();
+      }
+    }
+    expect(tabRowHidden).toBeGreaterThan(0);
+    expect(tabRowShown).toBeGreaterThan(0);
+  }, MATRIX_TIMEOUT_MS);
+
+  it('keeps the Surprise me place where it hides, so Back to slots, Cancel and Done never move', () => {
+    let hidden = 0;
+    for (const view of VIEWS) {
+      for (const [[step], layout] of restyleLayoutsOn(view)) {
+        const places = reservedPlaces(view, layout);
+        const lead = leadButtonOf(layout);
+        const surpriseIndex = lead === null ? 0 : 1;
+        const others = [...(lead === null ? [] : [lead]), ...(layout.cancelInTabRow ? [] : [layout.nav.cancel]), layout.nav.done];
+        expect(others).toEqual(places.filter((_place, index) => index !== surpriseIndex));
+        if (hidesSurprise(step)) hidden += 1;
+        else expect(layout.nav.surprise).toEqual(places[surpriseIndex]);
+      }
+    }
+    expect(hidden).toBeGreaterThan(0);
+  }, MATRIX_TIMEOUT_MS);
+
+  it('leaves Done, and Cancel among the step buttons, where a tab with Surprise me puts them', () => {
+    let compared = 0;
+    for (const view of VIEWS) {
+      const eyes = layoutFor(view, 'restyle', 'eyes', MAX_STEP_OPTIONS);
+      for (const [[step], layout] of restyleLayoutsOn(view)) {
+        if (!hidesSurprise(step) || leadButtonOf(layout) !== null || layout.cancelInTabRow !== eyes.cancelInTabRow) continue;
+        if (!layout.cancelInTabRow) expect(layout.nav.cancel).toEqual(eyes.nav.cancel);
+        expect(layout.nav.done).toEqual(eyes.nav.done);
+        compared += 1;
+      }
+    }
+    expect(compared).toBeGreaterThan(0);
+  }, MATRIX_TIMEOUT_MS);
+
+  it.each(SMALLEST)('never changes the fit step with the Surprise me helper sentence on %j', (view) => {
+    for (const mode of MODES) {
+      for (const [step, count] of screensOf(mode)) {
+        if (step === 'outfit') continue;
+        const screen = screenFor(mode, step, count);
+        const withSentence = stylerLayout(view, screen, measureFor(mode, step, undefined, true)).fitStep;
+        const withoutSentence = stylerLayout(view, screen, measureFor(mode, step, undefined, false)).fitStep;
+        expect(`${mode} ${step} x${count}: ${withSentence}`).toBe(`${mode} ${step} x${count}: ${withoutSentence}`);
+      }
+    }
   });
 });
