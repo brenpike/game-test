@@ -61,7 +61,7 @@ A stretch of flowing water in an area that pushes the axolotl, and that rarer tr
 The axolotl's first power, a short burst of speed that works with any number of legs and is the only way to break a Dash pot.
 
 **Hiding spot**:
-A place in an area where a treasure can hide, picked fresh each trip for each treasure picked for that trip, from that treasure's pool.
+A place in an area where a treasure can hide, picked fresh each trip for each treasure picked for that trip, from that treasure's pool. Each rarity's spots sit in their own risk band, nearer a tilapia's patrol route the rarer the treasure (B10).
 
 **Dash pot**:
 A pot only Tail Dash can break, where Legendary treasures hide.
