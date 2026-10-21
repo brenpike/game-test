@@ -2031,7 +2031,7 @@ describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)',
             const anchor = { x: tp.x, y: tp.cy - tp.hc };
             const onCoreTop =
               Math.abs(anchor.x - painted.x) < 1e-9 && Math.abs(anchor.y - (painted.cy - painted.hc)) < 1e-9;
-            const footprint = { minX: anchor.x - 9, minY: anchor.y - 9, maxX: anchor.x + 9, maxY: anchor.y + 9 };
+            const footprint = boundsOfPoints([[anchor.x, anchor.y]], TAIL_SLOT_REACH);
             return onCoreTop && isInside(footprint, inner);
           }),
         );
@@ -2222,8 +2222,8 @@ describe('Head, Neck and Face slots (guide 6i): on the head, they never move', (
     expect(FACE_SLOT_ANCHOR).toEqual({ x: 35, y: -6.5 });
   });
 
-  it('keeps the Head footprint on the head top: x 16 to 36, no lower than y -19.5, no higher than y -46', () => {
-    expect(HEAD_FOOTPRINT).toEqual({ minX: 16, minY: -46, maxX: 36, maxY: -19.5 });
+  it('keeps the Head footprint on the head top (#88): x 16 to 46, no lower than y -19.5, no higher than y -44', () => {
+    expect(HEAD_FOOTPRINT).toEqual({ minX: 16, minY: -44, maxX: 46, maxY: -19.5 });
     expect(HEAD_SLOT_ANCHOR.x).toBeGreaterThanOrEqual(HEAD_FOOTPRINT.minX);
     expect(HEAD_SLOT_ANCHOR.x).toBeLessThanOrEqual(HEAD_FOOTPRINT.maxX);
     expect(clearOfEyesAndGills(HEAD_FOOTPRINT)).toBe(true);
@@ -2234,28 +2234,36 @@ describe('Head, Neck and Face slots (guide 6i): on the head, they never move', (
     expect(HEAD_FOOTPRINT.minX).toBeGreaterThan(15.5);
   });
 
-  it('keeps the Neck footprint at the throat, x 13 to 22, y 11 to 21, clear of the eyes, gills and mouth zone', () => {
-    expect(NECK_FOOTPRINT).toEqual({ minX: 13, minY: 11, maxX: 22, maxY: 21 });
+  it('keeps the Neck footprint at the throat (#88), x 14 to 24.2, y 15 to 20.5, clear of the eyes, gills, mouth zone and cheek heart', () => {
+    expect(NECK_FOOTPRINT).toEqual({ minX: 14, minY: 15, maxX: 24.2, maxY: 20.5 });
     expect(clearOfEyesAndGills(NECK_FOOTPRINT)).toBe(true);
     expect(clearOfLashReach(NECK_FOOTPRINT)).toBe(true);
     expect(boxesOverlap(NECK_FOOTPRINT, MOUTH_ZONE_BOX)).toBe(false);
+    expect(MOUTH_ZONE_BOX.minX - NECK_FOOTPRINT.maxX).toBeCloseTo(0.2, 9);
+    // Wholly below the cheek heart zone, and below the gill-root zone, so the Neck item may reach left of x 12.
+    expect(NECK_FOOTPRINT.minY - (CHEEK_HEART_ZONE.y + CHEEK_HEART_ZONE.r)).toBeCloseTo(0.08, 2);
+    expect(NECK_FOOTPRINT.minY).toBeGreaterThan(GILL_ROOT_ZONE.maxY);
   });
 
-  it('keeps the Neck footprint inside the silhouette (head or torso, outline included) on every look', () => {
-    const corners = (b: Bounds): LocalPoint[] => [
-      { x: b.minX, y: b.minY },
-      { x: b.maxX, y: b.minY },
-      { x: b.maxX, y: b.maxY },
-      { x: b.minX, y: b.maxY },
-    ];
-    const grow = (e: BodyEllipse): BodyEllipse => ({ ...e, rx: e.rx + LW, ry: e.ry + LW });
+  it('keeps the Neck footprint LW / 2 or more inside the outer edge of the silhouette outline (head or torso) on every look', () => {
+    const edge: LocalPoint[] = [];
+    const b = NECK_FOOTPRINT;
+    for (let k = 0; k <= 100; k++) {
+      const t = k / 100;
+      const x = b.minX + (b.maxX - b.minX) * t;
+      const y = b.minY + (b.maxY - b.minY) * t;
+      edge.push({ x, y: b.minY }, { x, y: b.maxY }, { x: b.minX, y }, { x: b.maxX, y });
+    }
+    // The outline ink is LW outside each ellipse, so LW / 2 inside its outer edge is LW / 2 outside the ellipse.
+    const holds = (p: LocalPoint, e: BodyEllipse): boolean => isInEllipse(p, e) || distToEllipseEdge(p.x, p.y, e) <= LW / 2;
     expect(
       failingBodyLooks((look) => {
-        const torso = grow(axolotlBodyGeometry(look).torso);
-        const head = grow(HEAD_ELLIPSE);
-        return corners(NECK_FOOTPRINT).every((p) => isInEllipse(p, head) || isInEllipse(p, torso));
+        const torso = axolotlBodyGeometry(look).torso;
+        return edge.every((p) => holds(p, HEAD_ELLIPSE) || holds(p, torso));
       }),
     ).toEqual([]);
+    // The tightest point is the bottom back corner, on the head outline: 1.67 outside the head ellipse.
+    expect(distToEllipseEdge(b.minX, b.maxY, HEAD_ELLIPSE)).toBeCloseTo(1.67, 2);
     // Nothing hangs below the silhouette: the Neck bottom is no lower than the head's lowest outline at its anchor.
     expect(NECK_FOOTPRINT.maxY).toBeLessThanOrEqual(HEAD_ELLIPSE.cy + HEAD_ELLIPSE.ry + LW);
   });
@@ -2303,6 +2311,14 @@ describe('Head, Neck and Face slots (guide 6i): on the head, they never move', (
   it('lets the glasses band reach the lash reach circles, because the eye layer paints above it', () => {
     expect(clearOfLashReach(GLASSES_EXTENT)).toBe(false);
     expect(EYES_LAYER).toBeGreaterThan(WEARABLE_LAYERS.face);
+  });
+
+  it('keeps the glasses band 1.40 clear of the cheek heart zone', () => {
+    const gap = Math.min(
+      ...glassesOutlinePoints(720).map((p) => Math.hypot(p.x - CHEEK_HEART_ZONE.x, p.y - CHEEK_HEART_ZONE.y)),
+    ) - GLASSES_BAND / 2 - CHEEK_HEART_ZONE.r;
+    expect(gap).toBeCloseTo(1.4, 2);
+    expect(gap).toBeGreaterThan(0);
   });
 
   it('keeps the glasses about 1.0 from the near mouth tick and 0.7 from the Big grin back tick', () => {
@@ -2543,8 +2559,8 @@ describe('Tail slot (guide 6i)', () => {
     ).toEqual([]);
   });
 
-  it('keeps its 9-unit footprint clear of the eyes, lashes, gills and the head, and in the frame', () => {
-    expect(TAIL_SLOT_REACH).toBe(9);
+  it('keeps its 12-unit footprint (#88: 9 before) clear of the eyes, lashes, gills and the head, and in the frame', () => {
+    expect(TAIL_SLOT_REACH).toBe(12);
     const inner = frameInner(FRAME_PAD);
     expect(
       failingBodyLooks((look) => {
@@ -2799,10 +2815,11 @@ describe('every Wearable slot over every look and size', () => {
     expect(GLASSES_EXTENT.minX).toBeGreaterThan(GILL_ROOT_ZONE.maxX);
   });
 
-  it('measures Head to y -46, Back y -31.6, and the lowest ink 4 or more units inside the frame', () => {
+  it('measures Head to y -44 and x 46, Back y -31.6, and the lowest ink 4 or more units inside the frame', () => {
     const inner = frameInner(FRAME_PAD);
-    expect(HEAD_FOOTPRINT.minY).toBe(-46);
+    expect(HEAD_FOOTPRINT.minY).toBe(-44);
     expect(HEAD_FOOTPRINT.minY).toBeGreaterThanOrEqual(inner.minY);
+    expect(HEAD_FOOTPRINT.maxX).toBeLessThanOrEqual(inner.maxX);
     expect(AXO_TEX.h - AXO_TEX.originY - 58.06).toBeCloseTo(4.94, 2);
   });
 });

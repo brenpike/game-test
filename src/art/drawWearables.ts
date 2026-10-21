@@ -3,7 +3,10 @@
  * Sun hat, Shell necklace, Heart glasses, Golden bow, Tank top, Diving tank,
  * Stripy socks and Flippers, painted on the anchors and footprints of
  * drawAxolotlParts.ts. Each is the 7e catalogue icon's design re-fitted to its
- * footprint, with ink widths never scaled (guide 4b).
+ * footprint, with ink widths never scaled (guide 4b). Every worn silhouette
+ * (`shape`, inkedShape and `blob`) uses the item ink ITEM_LW 2.0 (#88): thinner
+ * than the guide's 2.8, so more of each small item shows as colour in the swim
+ * view. A `blob` strokes twice that, so 2.0 shows outside its fill.
  *
  * Painters never mutate the context they are given: each item runs between
  * save() and restore(), so drawAxolotl's own state is untouched. Fixed colours
@@ -20,6 +23,7 @@
 import { ell, inkMany, line, seg, shape } from './canvasKit';
 import { roundedPolygon, type Pt } from './drawBadges';
 import {
+  GLASSES_BAND,
   GLASSES_LENSES,
   WEARABLE_SLOTS,
   axolotlBodyGeometry,
@@ -145,20 +149,27 @@ export function wearsOnLegs(outfit: ArtOutfit): boolean {
 // Ink and drawing helpers
 // ---------------------------------------------------------------------------
 
-/** Wearable silhouette ink (guide 4b, `shape`; guide 6i line rules). */
-const ITEM_LW = 2.8;
+/** Wearable silhouette ink (guide 4b, `shape`; guide 6i line rules), thinned from 2.8 for #88. */
+const ITEM_LW = 2;
 /** Small parts inside an item: gem outline, star outline. */
 const DETAIL_LW = 1.6;
 /** Thin ink lines on each side of a trim band. */
 const BAND_LW = 1.2;
-/** Small shells on the necklace. */
-const SMALL_SHELL_LW = 2;
+/**
+ * Necklace shell outline (2.0 before #88). In the 5.5 tall Neck footprint a 2.0
+ * outline leaves at most 1.5 of colour across a shell, so the shells take the
+ * band ink.
+ */
+const SHELL_LW = BAND_LW;
 /** Gem radius and Legendary star radius (guide 6i). */
 const GEM_R = 2.5;
 const STAR_R = 3;
-/** Glasses band and necklace cord: colour 1.5 with 1.0 of ink each side, 3.5 in all (guide 4b, 6i). */
-const BAND_W = 1.5;
-const BAND_OL = 1.0;
+/** Glasses band: colour 2.1 with 0.7 of ink each side, the 3.5 of GLASSES_BAND in all (guide 4b, 6i; #88). */
+const GLASSES_BAND_OL = 0.7;
+const GLASSES_BAND_W = GLASSES_BAND - 2 * GLASSES_BAND_OL;
+/** Necklace cord: colour 2.2 with 0.6 of ink each side, 3.4 in all (#88). */
+const CORD_W = 2.2;
+const CORD_OL = 0.6;
 /** Sock sleeve: colour 10.4, `ol` 2.4 (guide 6i). */
 const SLEEVE_W = 10.4;
 const SLEEVE_OL = 2.4;
@@ -220,6 +231,19 @@ function rectPath(x0: number, y0: number, x1: number, y1: number): Path2D {
 function shine(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, rot = 0): void {
   ctx.fillStyle = TREASURE_SHINE;
   ctx.fill(ellipsePath(x, y, rx, ry, rot));
+}
+
+/**
+ * One `blob` of several paths: every ink stroke (2 x ITEM_LW, so ITEM_LW shows
+ * outside the fills) before every fill, so the paths merge into one silhouette
+ * with no ink across a joint.
+ */
+function blobs(ctx: CanvasRenderingContext2D, paths: readonly Path2D[], fill: string): void {
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 2 * ITEM_LW;
+  for (const path of paths) ctx.stroke(path);
+  ctx.fillStyle = fill;
+  for (const path of paths) ctx.fill(path);
 }
 
 /** A round gem of radius 2.5 with a small glint. `ink` is the outline width. */
@@ -290,33 +314,35 @@ function trimBand(
 // ---------------------------------------------------------------------------
 
 /**
- * Common: a wide brim ellipse and a rounded crown, `shape` 2.8, one shine, no
- * trim. Footprint (guide 6i Head): x 16 to 36, lowest ink y -19.5, top above -46.
+ * Common: a wide brim ellipse and a domed crown merged into one `blob`, so the
+ * hat is one colour mass with its ink all outside; one shine, no trim. Ink
+ * included it fills HEAD_FOOTPRINT: x 16 to 46, lowest ink y -19.5 on the head
+ * top, crown top y -41.4. The brim tilts up toward the snout, keeping 1.8 or
+ * more over the glasses band and gem, reaches forward past the head outline,
+ * and the crown rises above it, as the Head item may (#88).
  */
 function paintSunHat(ctx: CanvasRenderingContext2D): void {
-  shape(ctx, ellipsePath(26, -24.8, 8.5, 3.8), HAT_FILL, ITEM_LW);
+  const brim = ellipsePath(31, -25.18, 13, 3.6, -0.06);
   const crown = new Path2D();
-  crown.moveTo(21.4, -26.2);
-  crown.bezierCurveTo(21, -32.5, 22.2, -39.2, 26, -39.2);
-  crown.bezierCurveTo(29.8, -39.2, 31, -32.5, 30.6, -26.2);
-  crown.quadraticCurveTo(26, -21.8, 21.4, -26.2);
+  crown.moveTo(24, -25.6);
+  crown.bezierCurveTo(23.4, -32.8, 26, -39.4, 30.8, -39.4);
+  crown.bezierCurveTo(35.6, -39.4, 38.2, -32.8, 37.6, -25.6);
   crown.closePath();
-  shape(ctx, crown, HAT_FILL, ITEM_LW);
-  shine(ctx, 24.4, -33.6, 0.8, 2.2, 0.15);
+  blobs(ctx, [brim, crown], HAT_FILL);
+  shine(ctx, 27.2, -33.2, 1.1, 3, 0.2);
 }
 
 // ---------------------------------------------------------------------------
 // Neck: Shell necklace (Rare)
 // ---------------------------------------------------------------------------
 
-/** A fan-shaped shell with three ridges, hinge at (hx, hy), opening toward `dir` radians. */
-function paintFanShell(ctx: CanvasRenderingContext2D, hx: number, hy: number, dir: number, r: number): void {
-  const half = 0.8;
+/** A fan-shaped shell with three ridges, hinge at (hx, hy), opening toward `dir` radians, `half` either side. */
+function paintFanShell(ctx: CanvasRenderingContext2D, hx: number, hy: number, dir: number, r: number, half: number): void {
   const fan = new Path2D();
   fan.moveTo(hx, hy);
   fan.arc(hx, hy, r, dir - half, dir + half);
   fan.closePath();
-  shape(ctx, fan, NECKLACE_SHELL, SMALL_SHELL_LW);
+  shape(ctx, fan, NECKLACE_SHELL, SHELL_LW);
   const ridges = new Path2D();
   for (const a of [dir - half * 0.5, dir, dir + half * 0.5]) {
     ridges.moveTo(hx + Math.cos(a) * r * 0.3, hy + Math.sin(a) * r * 0.3);
@@ -328,27 +354,22 @@ function paintFanShell(ctx: CanvasRenderingContext2D, hx: number, hy: number, di
 }
 
 /**
- * Rare: a cord loop (the second colour, the Rare detail) with three scallop
- * shells at the bottom. The 7e icon fitted to the throat, x 13 to 22, y 11 to
- * 21. The guide's cord (tube 3.2, `ol` 2.4, ink 8.0 wide) cannot fit a 9 wide
- * footprint, so the cord is the 3.5 wide band of the glasses (1.5 with 1.0 of
- * ink each side) and the shells are small fans.
+ * Rare: a cord (the second colour, the Rare detail) slung across the throat
+ * with a cluster of three scallop shells on it: the largest hangs down in
+ * front, and one opens to each side from behind it. The 7e icon fitted to
+ * NECK_FOOTPRINT (x 14 to 24.2, y 15 to 20.5), which sits below the cheek heart
+ * zone and LW / 2 inside the outer edge of the silhouette outline (#88). The
+ * guide's cord (tube 3.2, `ol` 2.4, ink 8.0 wide) cannot fit a footprint 5.5
+ * tall, so the cord is a 3.4 wide band (2.2 with 0.6 of ink each side), and the
+ * shells take the thin SHELL_LW.
  */
 function paintShellNecklace(ctx: CanvasRenderingContext2D): void {
-  const cx = 17.5;
-  const cy = 13.9;
-  const rx = 2.7;
-  const ry = 2.2;
   const cord = new Path2D();
-  cord.ellipse(cx, cy, rx, ry, 0, Math.PI / 2 - 2, Math.PI / 2 + 2);
-  inkMany(ctx, [seg(cord, BAND_W, NECKLACE_CORD, BAND_OL)]);
-  const side = 0.45;
-  for (const sign of [-1, 1]) {
-    const hx = cx + sign * rx * Math.sin(side);
-    const hy = cy + ry * Math.cos(side);
-    paintFanShell(ctx, hx, hy, Math.PI / 2 - sign * 0.3, 2);
-  }
-  paintFanShell(ctx, cx, cy + ry, Math.PI / 2, 2.4);
+  cord.moveTo(15.7, 16.7);
+  cord.quadraticCurveTo(19.1, 18.9, 22.5, 16.7);
+  inkMany(ctx, [seg(cord, CORD_W, NECKLACE_CORD, CORD_OL)]);
+  for (const sign of [-1, 1]) paintFanShell(ctx, 19.1 + sign * 1.1, 17.6, Math.PI / 2 - sign * (Math.PI / 2), 2.8, 0.75);
+  paintFanShell(ctx, 19.1, 16, Math.PI / 2, 3.8, 0.6);
 }
 
 // ---------------------------------------------------------------------------
@@ -373,8 +394,11 @@ function glassesPath(): Path2D {
 
 /**
  * Epic: the glasses construction (guide 6i): one merged frame of two lens
- * circles, drawn as one outline with no inner seam, band 3.5 (colour 1.5, ink
- * 1.0 each side), a clear lens tint (white at 0.25), one gem at the bridge. The
+ * circles, drawn as one outline with no inner seam, band 3.5 (colour 2.1, ink
+ * 0.7 each side: #88 thins the guide's 1.0 so the band shows more colour, as
+ * its inner edge sits on the eye zones and its outer edge keeps 1.8 under the
+ * Head item and 0.7 from the mouth, so it cannot widen), a clear lens tint
+ * (white at 0.25), one gem at the bridge. The
  * eyes paint above it, so beads, glints and a Girl's lashes always show. The
  * bridge gem sits above the top notch, the only place a radius 2.5 gem clears
  * both eye zones and stays inside the Face footprint (y -18); its outline is
@@ -384,7 +408,7 @@ function paintHeartGlasses(ctx: CanvasRenderingContext2D): void {
   const frame = glassesPath();
   ctx.fillStyle = GLASSES_LENS;
   ctx.fill(frame);
-  inkMany(ctx, [seg(frame, BAND_W, GLASSES_FRAME, BAND_OL)]);
+  inkMany(ctx, [seg(frame, GLASSES_BAND_W, GLASSES_FRAME, GLASSES_BAND_OL)]);
   gem(ctx, 35.25, -14.85, GLASSES_GEM, BAND_LW);
 }
 
@@ -393,21 +417,22 @@ function paintHeartGlasses(ctx: CanvasRenderingContext2D): void {
 // ---------------------------------------------------------------------------
 
 /** The 7e bow icon's scale on the tail, and how far the bow centre sits into the tail core (frame y'). */
-const BOW_K = 0.5;
+const BOW_K = 0.75;
 const BOW_DROP = 0.9;
-/** The bow's visible outline outside its fill, and its trim bands' ink lines. */
-const BOW_INK = 1.4;
+/** The knot's radii. */
+const KNOT_RX = 3;
+const KNOT_RY = 3.2;
+/** The bow's trim bands' ink lines. */
 const BOW_BAND_LW = 0.8;
 
 /**
- * Legendary: one merged `blob` silhouette (stroked 2.8, so 1.4 shows outside
- * the fill) of two loops, two short tails and a knot, #ffd9e6, with #ffc12e
- * bands on the tails and the loops, one gem on the knot and one static 4-point
- * star above it. Painted in the Tail frame (x' along the local tail direction,
- * y' down); everything, ink included, stays within 9 units of the anchor. The
- * guide's 0.64 icon scale with 2.8 of ink outside the fill reaches past 9
- * units, so the icon is scaled to 0.5 with the thinner outline, and the band
- * lines are 0.8 so the gold still shows.
+ * Legendary: one merged `blob` silhouette (ink 2.0 outside the fill) of two
+ * loops, two short tails and a knot, #ffd9e6, with #ffc12e bands on the tails
+ * and the loops, one gem on the knot and one static 4-point star above it.
+ * Painted in the Tail frame (x' along the local tail direction, y' down);
+ * everything, ink included, stays within TAIL_SLOT_REACH (12) of the anchor.
+ * #88 grows the icon from 0.5 to 0.75 of the 7e icon (the guide's 0.64 and
+ * more) with the item ink; the band lines are 0.8 so the gold still shows.
  */
 function paintGoldenBow(ctx: CanvasRenderingContext2D): void {
   const k = BOW_K;
@@ -430,26 +455,25 @@ function paintGoldenBow(ctx: CanvasRenderingContext2D): void {
         at(xy),
         [1, 2.2, 2.2, 1].map((r) => r * k),
       ),
-      inner: () => trimBand(ctx, { x0: -8, x1: 8, y0: 4.1, y1: 5.5 }, GOLD_TRIM, true, BOW_BAND_LW),
+      inner: () => trimBand(ctx, { x0: -10, x1: 10, y0: 5.7, y1: 7.8 }, GOLD_TRIM, true, BOW_BAND_LW),
     });
   }
   for (const [x0, x1, xy] of [
-    [-4.2, -2.8, loopL],
-    [2.8, 4.2, mirror(loopL)],
+    [-6.3, -4.2, loopL],
+    [4.2, 6.3, mirror(loopL)],
   ] as const) {
     pieces.push({
       path: roundedPolygon(
         at(xy),
         [1.2, 3.6, 3.6, 1.2].map((r) => r * k),
       ),
-      inner: () => trimBand(ctx, { x0, x1, y0: -8, y1: 8 }, GOLD_TRIM, false, BOW_BAND_LW),
+      inner: () => trimBand(ctx, { x0, x1, y0: -10, y1: 10 }, GOLD_TRIM, false, BOW_BAND_LW),
     });
   }
   const knotY = -0.4 * k + BOW_DROP;
-  const knotRy = 2.6;
-  pieces.push({ path: ellipsePath(0, knotY, 2.4, knotRy) });
+  pieces.push({ path: ellipsePath(0, knotY, KNOT_RX, KNOT_RY) });
   ctx.strokeStyle = INK;
-  ctx.lineWidth = 2 * BOW_INK;
+  ctx.lineWidth = 2 * ITEM_LW;
   for (const piece of pieces) ctx.stroke(piece.path);
   for (const piece of pieces) {
     ctx.fillStyle = BOW_FILL;
@@ -462,7 +486,7 @@ function paintGoldenBow(ctx: CanvasRenderingContext2D): void {
     }
   }
   gem(ctx, 0, knotY, BOW_GEM);
-  legendStar(ctx, 0, knotY - knotRy - STAR_R);
+  legendStar(ctx, 0, knotY - KNOT_RY - STAR_R);
 }
 
 // ---------------------------------------------------------------------------
@@ -470,7 +494,7 @@ function paintGoldenBow(ctx: CanvasRenderingContext2D): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Common: #86e660 across the whole Shirt footprint, `shape` 2.8 all round, the
+ * Common: #86e660 across the whole Shirt footprint, `shape` 2.0 all round, the
  * neckline arc in the same ink, one shine. The footprint is ink included, so the
  * path is the footprint's inset ellipse offset inward by half the ink (an exact
  * offset curve, so the ink never reaches the torso edge band), cut at the tail
@@ -507,7 +531,7 @@ function paintTankTop(ctx: CanvasRenderingContext2D, look: AxolotlArtLook): void
   const body = new Path2D();
   top.forEach((p, i) => (i === 0 ? body.moveTo(p.x, p.y) : body.lineTo(p.x, p.y)));
   for (let i = steps; i >= 0; i--) body.lineTo(flip(top[i]).x, flip(top[i]).y);
-  // The neckline: a concave front edge whose ink-included apex is x -10.5, so its path apex is 1.4 further back.
+  // The neckline: a concave front edge whose ink-included apex is x -10.5, so its path apex is 1.0 further back.
   const apex = shirt.neckline.apexX - half;
   body.quadraticCurveTo(2 * apex - xf, e.cy, top[0].x, top[0].y);
   body.closePath();
@@ -526,11 +550,12 @@ function paintTankTop(ctx: CanvasRenderingContext2D, look: AxolotlArtLook): void
 
 /**
  * Rare: #d4cfe6. A capsule body and a valve block merged into one `blob`
- * outline (ink 2.8, all outside the fill), one #ffe14a strap band across the
+ * outline (ink 2.0, all outside the fill), one #ffe14a strap band across the
  * body's full height between two 1.2 ink lines, one shine. Painted in the Back
  * frame (x' along the torso edge toward the snout, y' + into the body). The
- * footprint (x' -9 to 9, y' -8 to 5) is ink included, so the fills are 2.8
- * smaller all round: the body fill is x' -6.1 to 2.6, y' -5.1 to 2.1, and the
+ * footprint (x' -9 to 9, y' -8 to 5) is ink included; the fills are still the
+ * 2.8 smaller all round they were with the guide's ink, so 0.8 of the footprint
+ * is left clear: the body fill is x' -6.1 to 2.6, y' -5.1 to 2.1, and the
  * valve fill reaches x' 6.1. The guide's shine at (-5.2,-4.6) falls outside
  * that fill, so the shine sits on the capsule's left cap.
  */
@@ -548,13 +573,7 @@ function paintDivingTank(ctx: CanvasRenderingContext2D): void {
   body.arc(left + r, top + r, r, Math.PI / 2, (3 * Math.PI) / 2);
   body.closePath();
   const valve = roundRectPath(1.5, -3.5, 6.1, 0.5, 1);
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 2 * ITEM_LW;
-  ctx.stroke(body);
-  ctx.stroke(valve);
-  ctx.fillStyle = DIVING_TANK_FILL;
-  ctx.fill(body);
-  ctx.fill(valve);
+  blobs(ctx, [body, valve], DIVING_TANK_FILL);
   ctx.save();
   ctx.clip(body);
   trimBand(ctx, { x0: -3.4, x1: 0.2, y0: top - 1, y1: bottom + 1 }, DIVING_TANK_STRAP, false);
@@ -600,10 +619,10 @@ function paintStripySocks(ctx: CanvasRenderingContext2D, frame: LegSlotFrame, to
 
 /**
  * Rare: a #ffe14a fan from the ankle (guide 6i Flippers construction), `shape`
- * 2.8, one #ff82bf cuff band, three internal fan ridges (texture, not a counted
- * detail) and one shine. The construction is ink included, so the path is 1.4
- * inside it: the back edge at u l - 0.6 with v +/-7.1, opening to v +/-9.6 at
- * u l + 3 and +/-10.6 at u l + t + 4, and a rounded tip at u l + t + 8.6. It
+ * 2.0, one #ff82bf cuff band, three internal fan ridges (texture, not a counted
+ * detail) and one shine. The construction is ink included, so the path is 1.0
+ * inside it: the back edge at u l - 1 with v +/-7.5, opening to v +/-10 at
+ * u l + 3 and +/-11 at u l + t + 4, and a rounded tip at u l + t + 9. It
  * fully covers the Sock's foot pad at the sides and front, so the Sock shows
  * above it at the back. The cuff starts at the back edge, which is its first
  * ink line; the shine sits clear of the ink.

@@ -1450,13 +1450,22 @@ export function framePoint(frame: WearFrame, u: number, v: number): LocalPoint {
 
 /** Head item anchor: the head top. */
 export const HEAD_SLOT_ANCHOR: LocalPoint = { x: 26, y: -23 };
-/** Head footprint: rests on the head outline, lowest point y -19.5, top no higher than y -46. */
-export const HEAD_FOOTPRINT: Bounds = { minX: 16, minY: -46, maxX: 36, maxY: -19.5 };
+/**
+ * Head footprint: rests on the head outline, lowest point y -19.5, back edge x
+ * 16. #88 grows it forward to x 46 (36 before) and lowers its top to y -44 (-46
+ * before): the Head item may pass the head outline forward and up.
+ */
+export const HEAD_FOOTPRINT: Bounds = { minX: 16, minY: -44, maxX: 46, maxY: -19.5 };
 
 /** Neck item anchor: the throat. */
 export const NECK_SLOT_ANCHOR: LocalPoint = { x: 17, y: 16 };
-/** Neck footprint, inside the silhouette; nothing hangs below it, so the front legs stay visible. */
-export const NECK_FOOTPRINT: Bounds = { minX: 13, minY: 11, maxX: 22, maxY: 21 };
+/**
+ * Neck footprint (#88): wholly below CHEEK_HEART_ZONE (lowest y 14.92), left of
+ * MOUTH_ZONE and below GILL_ROOT_ZONE, and LW / 2 or more inside the outer edge
+ * of the silhouette's outline on every look, so the outline's outer half always
+ * shows; nothing hangs below it, so the front legs stay visible.
+ */
+export const NECK_FOOTPRINT: Bounds = { minX: 14, minY: 15, maxX: 24.2, maxY: 20.5 };
 
 /** Face item anchor: between the eyes. */
 export const FACE_SLOT_ANCHOR: LocalPoint = { x: 35, y: -6.5 };
@@ -1609,8 +1618,8 @@ export function backFootprint(look: AxolotlArtLook): BackFootprint {
 
 // -- Tail: the core top at tail point 4 (guide 6i) --
 
-/** The Tail footprint stays within this many units of its anchor. */
-export const TAIL_SLOT_REACH = 9;
+/** The Tail footprint stays within this many units of its anchor (9 before #88 grew the Golden bow). */
+export const TAIL_SLOT_REACH = 12;
 
 /**
  * Tail anchor frame: the core top at TAIL_SLOT_POINT, turned with the local
