@@ -519,7 +519,7 @@ These are not part of the MVP. Several are planned next.
 - Breeding (simple genetics).
 - Three challenge levels.
 - Restoring the lake and the Glow Gills power.
-- The heron: a second enemy that strikes near the surface ("stay deep") (see N3).
+- New predators and hazards, such as the heron (see N3).
 - The GFP morph.
 - Capacitor iOS and Android apps.
 - Cloud saves, accounts, and sync.
@@ -540,16 +540,47 @@ The N IDs exist so issues can link to them.
 Each one follows [ADR 0007](../adr/0007-kid-safety-and-privacy.md) and [ADR 0008](../adr/0008-gentle-fail-state.md).
 
 1. **N1 Tank Top Model** (issue #27). The first feature after the MVP. It starts from the Home Tank. The player tries on owned Wearables with a preview, then does a short strut or pose in a spotlight. It ends with a cheerful, kid-friendly reaction. There is no failing and no harsh scoring.
-2. **N2 Area chain and Xochimilco refuge** (issue #32). New areas: a lily pad pond, the chinampa gardens, a spring cave, and a deep canal. Each area is harder: more tilapia, stronger currents, faster snacks (some dart away a little), and new hazards (N3). Beating an area unlocks the next. Some areas may need stars to unlock. Each beaten area restores part of Xochimilco and grows a safe axolotl refuge, based on real conservation work. The refuge visibly grows, and beating an area clears its trash from the refuge. Beating every area completes the refuge and beats the game, with a kind "refuge complete" ending. The game stays playable afterwards.
-3. **N3 Environmental hazards** (issue #32). Each new area adds one hazard. Area 1 keeps the tilapia as its only hazard. The first time the player meets a hazard, a fact card appears, like A21. Hazards:
-    - A sharp can or broken bottle: touching it costs a leg.
-    - Fishing line or a net: it snags and slows the axolotl briefly. No leg is lost.
-    - Murky, polluted water: staying in it too long costs a leg.
-    - Plastic bits that look like worms: eating one makes the axolotl queasy and slow for a moment.
-    - A crayfish: it patrols the bottom slowly. Its pinch costs a leg.
-    - A carp: it stirs up mud, so there is less to see.
-    - A heron: a shadow warns before it strikes.
-    - Fishing boats, like Xochimilco's trajineras, with people fishing. Some snacks are lures on a fishing line, and eating a lure costs a leg. The line and the boat's shadow are always visible, so kids can learn to spot the trap. It is shown gently: the line tugs, the axolotl wriggles free, and a hook is never shown in the axolotl.
+2. **N2 Area chain and Xochimilco refuge** (epic issue #32; issues #73 to #78). The next post-MVP phase has at least 10 areas, with room to keep adding more. A habitat is a place that holds one or more areas, with its own look and its own signature predator, marked in the area table below. From this phase on, a habitat is a group of areas, not another name for one area. X9, the glossary's "Area / Habitat" row, and CONTEXT.md change to match in the area framework PR (issue #73).
+    - Area table: the table below is the one place that lists each area's habitat, starting size, tilapia, and new things. Other sections link to it and do not repeat it. Sizes are in screens, wide x tall, and are starting points, except that area 4 stays the first area taller than one screen, so it is the first area that scrolls up and down. Each area adds at most one new hazard or predator and at most one new timing or puzzle element, and the table has one cell for each. Sizes and scrolling do not count toward this limit. Carry-forward: within a habitat, each later area keeps that habitat's earlier hazards and its signature predator, so area 7 keeps the crayfish and areas 9 and 10 keep the black bass. Across habitats nothing carries forward except the tilapia, which follows the table's tilapia column. Area 10 is the exception below, because it mixes the tilapia with every earlier predator.
+
+        | Area | Habitat | Starting size | Tilapia | New hazard or predator | New timing or puzzle element |
+        |---|---|---|---|---|---|
+        | 1 | Canal (the MVP) | 4 x 1 | Yes (A1) | Tilapia (signature predator) | None |
+        | 2 | Lily pad pond | About 5 x 1 | Yes | Plastic worms | None |
+        | 3 | Lily pad pond | About 6 x 1 | Yes | Heron (signature predator) | The heron's shadow cycle (timing) |
+        | 4 | Chinampa gardens | About 6 x 2 | Fewer than in the pond | Fishing line or a net | None |
+        | 5 | Chinampa gardens | About 7 x 2 | Fewer than in the pond | Garter snake (signature predator) | None |
+        | 6 | Spring cave | About 7 x 2 | None | Crayfish (signature predator) | Glow-plant puzzle |
+        | 7 | Spring cave | About 8 x 2 | None | Pulsing current | Pebble puzzle |
+        | 8 | Deep canal | About 8 x 2 | Yes | Black bass (signature predator) | None |
+        | 9 | Deep canal | About 9 x 2 | Yes | Murky water | None |
+        | 10 | Deep canal | About 10 x 2 | Yes | Trajinera boats | None |
+
+        Area 10 is the finale: it mixes the tilapia with every earlier predator.
+    - Growth: across the chain, from area 1 to area 10, areas grow in size, length, complexity, and risk. Along the way they bring more snacks, faster snacks (some dart away a little), stronger currents, and the timing and puzzle elements in the area table.
+    - Unlocking: beating area N unlocks area N+1. There are no star gates, so stars stay a bonus. This replaces "some areas may need stars to unlock".
+    - Area map: after the player chooses the explorer in the Go exploring flow (F7), an area map shows the habitats as a path. Each area shows its stars and whether it is locked. Any unlocked area can be replayed. Unlocked areas are saved.
+    - Refuge: each beaten area restores part of Xochimilco and clears its trash from a safe axolotl refuge, based on real conservation work there. The refuge grows one section per habitat. Beating area 10 completes the refuge for this phase, with a kind "refuge complete" ending, and the game stays playable afterwards (issue #74). When later versions add areas 11 and up, the refuge keeps growing, and the area 10 ending becomes a milestone, not the end.
+3. **N3 Hazards and predators** (issues #32 and #73). A hazard is defined in the glossary. A predator is a kind of hazard: an animal that hunts and strikes, like the tilapia. The glossary's "Tilapia / predator" row and CONTEXT.md change to match in the area framework PR (issue #73). The N2 area table says which area brings each new hazard, predator, and timing or puzzle element. The first time the player meets a new hazard or predator, a fact card appears, like A21.
+    - Guardrails:
+        - Every hazard and predator is gentle and never scary, and every hit is avoidable with skill.
+        - Every predator gives a visible warning before every strike, like the tilapia's telegraph before its lunge.
+        - A predator's strike that connects is a hit, and A4, A5, A11, and A22 apply to it as they do to a tilapia's hit.
+        - Timing and puzzle elements stay simple for ages 8 to 12. A stuck player gets a gentle hint, and every area can always be finished (issue #77).
+    - Predators:
+        - Tilapia: as in the MVP (the A rows).
+        - Heron: it strikes near the surface ("stay deep"). Its shadow sweeps over the water on a cycle and warns before it strikes, so the player swims between passes.
+        - Garter snake: it swims at the surface, and a ripple warns before it lunges.
+        - Crayfish: it patrols the rocky bottom slowly, and its claws open before it pinches.
+        - Black bass: it is big and fast, with a long lunge and a clear warning first.
+    - Hazards:
+        - Plastic worms: plastic bits that look like worms. Eating one makes the axolotl queasy and slow for a moment.
+        - Fishing line or a net: it snags and slows the axolotl briefly. No leg is lost.
+        - Pulsing current: a current that pulses on a cycle and can slow the axolotl.
+        - Murky water: murky, polluted water. Staying in it too long costs a leg.
+        - Trajinera boats: fishing boats, like Xochimilco's trajineras, with people fishing. Some snacks are lures on a fishing line, and eating a lure costs a leg. The line and the boat's shadow are always visible, so kids can learn to spot the trap. It is shown gently: the line tugs, the axolotl wriggles free, and a hook is never shown in the axolotl.
+        - A hazard that costs a leg counts as a hit: A5 and A22 apply to it as they do to a tilapia's hit (owner decision, issue #73).
+    - Areas 11 and up: the carp, which stirs up mud so there is less to see; the sharp can or broken bottle, which costs a leg when touched; and gates. New habitats also wait for areas 11 and up.
 4. **N4 Feeding the tank** (issue #33). The player brings snacks home and feeds the axolotls in the tank. Happy axolotls give a small, capped bonus on the next trip, such as a hint sparkle. There is no penalty for not feeding. Axolotls are never sad or sick.
 5. **N5 Wearable sets** (issue #36). Examples: unicorn (horn, shirt, socks, and hooves), shark, astronaut, pirate, dinosaur, deep-sea diver, and superhero. A set covers 4 to 8 of the 8 slots. Pieces are found one at a time across trips. There are three kinds of set:
     - Common sets: quick, good first goals.
@@ -565,7 +596,7 @@ Each one follows [ADR 0007](../adr/0007-kid-safety-and-privacy.md) and [ADR 0008
 Direction from the project owner: in time, the setting gains much more depth.
 It becomes several connected habitats that a player swims between during one trip.
 
-Habitats are real freshwater places only. Axolotls live only in fresh water, so there are no coral reefs and no "magic reef" for now.
+Habitats are real freshwater places only, until the much later areas in the design note below. Axolotls live only in fresh water, so there are no coral reefs and no "magic reef" for now.
 Candidate habitats:
 
 - Xochimilco canals.
@@ -578,6 +609,62 @@ Candidate habitats:
 Each habitat can have its own look, hazards, treasures, and fun facts.
 The MVP keeps one canal area but must not block this (see X9 and Implementation Decision 8).
 The area chain and refuge goal (N2) are the first steps.
+
+### Later areas beyond realism (design note)
+
+Direction from the project owner, 2026-10-20 (issue #32).
+Much later areas may drift from realism, for example to a volcano, space, land, or fairytale and fantasy places.
+Predators and hazards change with the landscape too, for example aliens in space areas and fairytale creatures in fantasy areas.
+The N3 guardrails still apply.
+Fantasy areas and imaginary creatures are labelled as imaginary, like Dream colours are labelled "not found in nature".
+Fact cards stay true to real animals and real places.
+Areas 1 to 10 stay in real Xochimilco habitats.
+
+### Rarity glow (decision, not built yet)
+
+Owner request (issue #68): a treasure has a faint glow in its rarity's colour, so a player can tell its rarity at a glance.
+The glow is about as faint as the GFP halo ([art style guide](../art-style-guide.md) 3c). It never pulses faster than once every 2.4 seconds, and it is static under reduced motion.
+It shows wherever a treasure is drawn: in the area once revealed (B8), in the Trip Bag, on the banking card, in the Treasure Chest, and on placed Decorations. Paint shells and Dream colour swatches glow by their own rarity too.
+Colour stays the weakest cue. The rarity badge shape and name still carry rarity (B2, X2), and the glow never replaces them.
+Product owner decisions, 2026-10-20:
+
+- Common becomes green everywhere, for the glow and the Common badge ([art style guide](../art-style-guide.md) 3e). It stays clearly apart from the reed green (`#86e660`) and the GFP halo (`#7dff8f`) in the canal.
+- Legendary keeps gold (`#ffc12e`).
+- No glow while a treasure is hidden. The glow appears once it is revealed (B8), and the hint sparkle (B7) stays the only cue for a hidden treasure.
+
+The PR that builds it updates the rarity B rows and art style guide 3e, 7e, and section 9. Until then, those rows stay as they are.
+
+### Treasure checklist (request, not built yet)
+
+Owner request (issue #69): the player can see every treasure, so they know what they have and what they still need to find.
+The Treasure Chest shows every catalogue treasure, found or not, in catalogue order within each section. A found treasure shows as today (C11).
+An unfound treasure shows a flat silhouette of its icon, in the style of the unfound-morph silhouette (C12), with a "?" and its rarity badge and rarity name. An unfound Dream colour's silhouette is a plain swatch.
+A silhouette fills in once its treasure is banked. "X of Y found" stays. Found and unfound are never told apart by colour alone (X2).
+Recommended, awaiting owner confirmation in the PR that builds it: it lives in the Treasure Chest, not a new screen; an unfound treasure's name shows as "???", with a hint by rarity based on B6; and an unfound Wearable shows its slot but not its perk.
+That PR updates C11 and the art style guide (section 8). Until then, C11 stays as it is. It starts after outfits (issue #16) merges.
+
+### Rarer treasures nearer hazards (decision)
+
+Owner request (issue #70): rarer treasures are harder to get, as well as harder to find, by sitting near a hazard (in area 1, the tilapia). The risk ladder below says how near each rarity's spots sit.
+Each hiding spot gets a pure, tested risk measure, for example its distance from each tilapia's patrol route and lunge range. Placement picks spots by both how well hidden and how risky they are for the rarity.
+Product owner decisions, 2026-10-20:
+
+- Risk ladder. In each area, each rarity's hiding spots sit in one band of the risk measure, one row per rarity in the table below, listed from least to most risky. A spot is riskier the nearer it is to the nearest tilapia patrol route. Lunge range is the distance within which a tilapia starts a lunge (A3), and a spot is within lunge range when it is that close to any point of a tilapia's patrol route. The bands never overlap, and each band is strictly riskier than the row above it, checked by a test between adjacent rows.
+
+    | Rarity | Risk band |
+    |---|---|
+    | Common | Never within lunge range, in the band furthest from the route. |
+    | Rare | Outside lunge range, in the band closest to the route (near the edge of a patrol). |
+    | Epic | Within lunge range, short of its deepest part, so grabbing one means watching the telegraph. |
+    | Legendary | Within lunge range, in its deepest part, closest to the route, so grabbing one means watching the telegraph. It also needs Tail Dash, as B6 says. |
+
+- Fairness. Every treasure can always be grabbed without being hit, by timing or Tail Dash. No spot sits where a tilapia rests or turns, so a skilled player never loses a leg by force. It stays kid-safe and never scary.
+- No change to the hint sparkle (B7) or to the rarity glow decisions (issue #68).
+- If too few spots meet a rarity's risk rule, more spots are added as area data.
+
+This ladder is defined for the tilapia only: it applies in area 1 and in any area that has a tilapia. It does not cover hazards with no patrol route or lunge range (such as plastic worms, fishing lines, currents, and murky water), or areas without a tilapia.
+The area framework (N3, issue #73) defines a generic risk measure and band rule for those other hazards and predators, including areas without a tilapia, and updates this ladder in its PR.
+Built in 0.19.0 (PR #84): B6 and B10, the Testing Decisions, the Tuning values, and CONTEXT.md (Hiding spot) hold the built rules. The owner approved re-laying the canal so the bands can hold (issue #70).
 
 ### Shuffled hiding spots (decision)
 
@@ -791,6 +878,7 @@ Early slices may use a placeholder find and an interim home.
 | Special treasure | The one treasure per area that earns a star when the area is beaten with it owned. | |
 | Hazard | Something in an area that can slow the axolotl or cost a leg, such as the tilapia. New hazards come after the MVP (N3). | |
 | Refuge | The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2). | |
+| Area map | The map where the player picks an unlocked area to explore (N2). Not in the MVP. | |
 | Tank Top Model | Trying on Wearables and posing in a spotlight, started from the Home Tank (N1). Not in the MVP. | |
 | Wearable set | A themed group of Wearables that unlocks a small bonus when worn together (N5). A Wearable's optional set ID says which set it belongs to. | |
 | Character creator | The step-by-step screens at first launch where the player makes a starter axolotl: 11 steps, one choice per step, from Colour to Name (F1). | |
