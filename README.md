@@ -6,7 +6,7 @@ It is mostly fun, with real axolotl facts along the way.
 
 ## What you can do now
 
-Version 0.20.2 is playable in one canal zone:
+Version 0.21.0 is playable in one canal zone:
 
 - Make your own axolotl the first time you play, one step at a time in 11 steps: colour (one of eight real morphs), boy or girl (with a boy or girl sign), eyes, mouth (eight to choose from), gills, spots, tail, body, age, size, and name. Every choice is a big picture button that shows it on your axolotl, and the preview changes as you pick. On the first step, Surprise me picks a whole new axolotl at random, with a name that fits. On the other steps, it picks something new for that step only. The other seven colours are the ones you rescue.
 - Type a name, or pick a suggested one that fits a boy or a girl, so typing is optional. Names stay on your device.
@@ -30,7 +30,8 @@ Version 0.20.2 is playable in one canal zone:
 - Rename and restyle your axolotl from the Home Tank: tap it, or move the focus to it (its name shows) and press Enter. Restyling starts on Eyes and uses the same step screens, with tabs to jump between steps, plus a Dream colour tab and an Outfit tab. Every step shows the outfit you are choosing. Its colour and boy or girl show but cannot change. Cancel leaves without keeping the changes.
 - Give your axolotls Dream colours: on the restyle screen's Dream colour tab, put any Dream colour you banked on any axolotl, or pick Real colour to take it off. One Dream colour can be on lots of axolotls at once, and spots show on top of it. Dream colours are not found in nature.
 - Dress your axolotls in outfits on the restyle screen's Outfit tab: eight slots (Head, Neck, Face, Shirt, Back, Tail, Socks, and Feet), one Wearable you banked in each. Each Wearable gives one small perk on trips: Speed, Regrowth, Dash (a longer Tail Dash), Shell (blocks one hit per trip), Treasure sense (hint sparkles from further away), or Snack magnet (pulls nearby snacks to you). Each perk shows with an icon and words, and each perk type has a cap. Only the axolotl you take exploring uses its perks. A lost leg's sock and shoe come back when the leg has fully regrown.
-- Press Go exploring to pick which axolotl goes on the trip. The card shows each axolotl in its outfit and the chosen one's perks, and Change outfit takes you to its Outfit tab first. The game remembers your pick.
+- Press Go exploring to pick which axolotl goes on the trip. The card shows each axolotl in its outfit and the chosen one's perks, and Change outfit takes you to its Outfit tab first. The game remembers your pick. Go! then opens the area map.
+- Pick where to explore on the area map: each area shows your best stars, a lock if you cannot play it yet, and "New!" when you just unlocked it. Replay any area you have beaten. Beat an area to unlock the next one. Only Area 1 exists so far.
 - Decorate your Home Tank with the Decorations you banked, by touch or keyboard.
 - Open the Treasure Chest to see every Decoration, Wearable, and Dream colour. The ones you banked show in full; the ones you have not found yet show as silhouettes with their rarity and a hint for where to look. Each section has a line saying what its items are for. Each Wearable you banked shows its slot and its perk, with the perk's icon.
 - The first Decoration, Wearable, and Paint shell you bank each get a one-time card after the trip. The Paint shell card's "Try it now!" opens the Dream colour tab.
@@ -79,6 +80,7 @@ They work only on the dev server, never in the build (`npm run build`, `npm run 
 |---|---|
 | `?perf` | Shows a frame-time overlay (live p50 and p95 frame time, p95 axolotl drawing time, and texture bakes) and logs a p50/p95 summary to the console every 30 s of frames. Stores and sends nothing. |
 | `?compare` | Runs only the rig compare view: the reference `drawAxolotl` on the left, the axolotl rig on the right, in the same pose. Keys: `x` `t` `b` `a` `z` `g` `e` `u` `s` cycle the look, `m` the morph, `d` the Dream colour, `o` the full outfit, `l` the leg state; `h` Tail Dash, `p` pause, `n` step, `r` still pose, `v` overlay the rig on the reference at 50%. Shift steps back. The on-screen legend lists them all; see [`src/scenes/RigCompareScene.ts`](src/scenes/RigCompareScene.ts). |
+| `?area=<id>` | Loads a test area instead of the area map. For example, `?area=dev-test-area` loads a 6 x 2 screen test area for play-testing and the frame-time check. Absent from the production build. |
 | `?renderer=canvas` | Forces Phaser's Canvas renderer instead of WebGL. |
 
 On a phone they need the dev server, which is harder to reach on WSL2 (see [Testing on a phone](#testing-on-a-phone)).
@@ -97,7 +99,8 @@ On a phone they need the dev server, which is harder to reach on WSL2 (see [Test
 | Keep your finds safe | Swim into the Home Spot ring | Swim into the Home Spot ring |
 | Keep exploring or Go home | Keep exploring or Go home button | Left/Right or Tab to choose, Enter or Space to press, H for Go home |
 | Go home from the Home Spot | Go home button (top-right, at the Home Spot) | H |
-| Go exploring (from the Home Tank) | Go exploring button, then on the card tap an axolotl to pick it, More axolotls to see more, and Go!, Change outfit, or Back | Tab/Shift+Tab or arrow keys to choose a hub button, Enter or Space to press; on the card, arrow keys to move between axolotls, Enter or Space to pick one or press a button, Tab/Shift+Tab to reach the axolotls, More axolotls, Go!, Change outfit, and Back, Esc for Back |
+| Go exploring (from the Home Tank) | Go exploring button, then on the card tap an axolotl to pick it, More axolotls to see more, and Go! (opens the area map), Change outfit, or Back | Tab/Shift+Tab or arrow keys to choose a hub button, Enter or Space to press; on the card, arrow keys to move between axolotls, Enter or Space to pick one or press a button, Tab/Shift+Tab to reach the axolotls, More axolotls, Go!, Change outfit, and Back, Esc for Back |
+| Area map (after Go!) | Tap an area marker to start it, Back button to go back, drag or use the mouse wheel to scroll the map | Tab/Shift+Tab or arrow keys along the path to choose an area, Enter or Space to start, Esc or Back to go back |
 | Beat Area 1 | Swim into the open exit at the far end of the canal | Swim into the open exit at the far end of the canal |
 | Pick an axolotl (Home Tank) | Tap the axolotl | Tab/Shift+Tab or arrow keys past the hub buttons to focus it and show its name, Enter or Space to restyle it |
 | Rename and restyle | Tap a tab to jump to a step (arrow buttons page the tabs when they do not all fit), tap a picture button to pick it, More colours button on the Dream colour tab to see more, Surprise me, Done, and Cancel buttons. Surprise me changes the current step only, and is not on the Colour, Boy or girl, Dream colour, and Outfit tabs. On the Outfit tab, tap a slot, then tap a Wearable or None; Back to slots goes back, and More slots or More wearables shows more | Same as making your axolotl, with Tab/Shift+Tab also reaching the tabs (but not Surprise me on the Colour, Boy or girl, Dream colour, and Outfit tabs), More colours, More slots, More wearables, Back to slots, and Cancel, plus Esc to cancel (on an Outfit slot's Wearables, Esc goes back to the slots) |

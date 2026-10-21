@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-20
+- Updated: 2026-10-21. The area framework ([ADR 0014](0014-area-framework.md), issue #73) adds a fourth measured case, the dev test area taller than one screen, and the `?area` dev flag. The decision is unchanged.
 
 ## Context
 
@@ -91,13 +92,14 @@ No shared cap replaces them until the measurements below say one is needed.
 
 **Stance.** No texture is repainted after a bake. The only live drawing is the Iridescent tail stripe, which is a vector redraw with no texture upload.
 
-**Dev flags.** Three query flags exist only under `npm run dev`. `src/logic/devFlags.ts` parses them (pure), and `main.ts` loads the dev modules with `import.meta.env.DEV` dynamic imports:
+**Dev flags.** Four query flags exist only under `npm run dev`. `src/logic/devFlags.ts` parses them (pure), and `main.ts` loads the dev modules with `import.meta.env.DEV` dynamic imports:
 
 - `?perf` adds the frame-time overlay (`src/scenes/PerfOverlay.ts`). It stores and sends nothing.
 - `?compare` runs only the rig compare scene (`src/scenes/RigCompareScene.ts`): `drawAxolotl` painted live beside a rig view in the same pose, with keys to cycle every look option, morph, Dream colour, the full outfit, leg states and the pose, and an overlay toggle at 50% alpha.
 - `?renderer=canvas` forces the Canvas renderer.
+- `?area=<id>` swims every trip in that dev area (`src/logic/devAreas.ts`, [ADR 0014](0014-area-framework.md)), skipping the area map. Only `dev-test-area` exists.
 
-None of them is in the `vite build` output: a search of the built files for the marker strings `glam-gills-dev-perf`, `glam-gills-dev-compare` and `glam-gills-dev-flags` finds nothing, and the build is a single index chunk.
+None of them is in the `vite build` output: a search of the built files for the marker strings `glam-gills-dev-perf`, `glam-gills-dev-compare`, `glam-gills-dev-flags` and `glam-gills-dev-areas`, and for the dev area id `dev-test-area`, finds nothing, and the build is a single index chunk.
 
 ## Budget
 
@@ -113,16 +115,21 @@ None of them is in the `vite build` output: a search of the built files for the 
 
 ## Method
 
-Three cases, each on WebGL and with `?renderer=canvas`:
+Four cases, each on WebGL and with `?renderer=canvas`:
 
 1. The canal, with the explorer and a stranded axolotl following on a rescue.
 2. The Home Tank with four axolotls.
 3. The title screen.
+4. The dev test area, 6 x 2 screens, so taller than one screen, with the explorer and a stranded axolotl following on a rescue, while the camera scrolls both ways. It runs in a dev build with `?area=dev-test-area&perf`. The dev area is absent from the production build: a search of `dist` for `glam-gills-dev-areas` finds nothing. Every area is baked at boot ([ADR 0014](0014-area-framework.md)), and the dev area's scenery takes about 33 MB in a dev build, so this case also shows what a large area costs.
 
 `?perf` times each frame from one render to the next, and the rig's share of it. It shows live p50 and p95 twice a second, and logs one line to the console for each 30 s window of frame time (`formatFrameSummary`): frames, p50, p95 and max frame time, axolotl p50 and p95, and bake count.
 A window starts again when the running scenes change or the page is hidden.
 
 The canal is measured on `main`'s canal layout at the time this merges. If the treasure looks work has landed by then, the canal case includes a revealed treasure showing. The results note which layout was used.
+
+If the axolotl looks work has landed when the dev area case is measured, the explorer wears an outfit in it.
+
+If a case misses the budget and areas need culling or streaming (drawing or loading only the part of an area near the camera), it must not change the canal's look: the canal shows the same at every point of a trip as it does now.
 
 ## Results
 
@@ -142,6 +149,10 @@ The owner runs these. Every cell is to be measured.
 | Title screen | 6x throttled stand-in | Canvas | To be measured | To be measured | To be measured | To be measured |
 | Title screen | Owner's phone | WebGL | To be measured | To be measured | To be measured | To be measured |
 | Title screen | Owner's phone | Canvas | To be measured | To be measured | To be measured | To be measured |
+| Dev test area (6 x 2), explorer and rescue | 6x throttled stand-in | WebGL | To be measured | To be measured | To be measured | To be measured |
+| Dev test area (6 x 2), explorer and rescue | 6x throttled stand-in | Canvas | To be measured | To be measured | To be measured | To be measured |
+| Dev test area (6 x 2), explorer and rescue | Owner's phone | WebGL | To be measured | To be measured | To be measured | To be measured |
+| Dev test area (6 x 2), explorer and rescue | Owner's phone | Canvas | To be measured | To be measured | To be measured | To be measured |
 
 ## Measured fidelity
 
