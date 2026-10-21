@@ -1,5 +1,4 @@
-import { inSafeArea } from './tilapia';
-import type { Point, SafeArea } from './zone';
+import { inSafeArea, type Point, type SafeArea } from './zone';
 
 /** A Collection Book fact card. */
 export interface FactCard {

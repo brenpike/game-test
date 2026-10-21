@@ -1,6 +1,5 @@
 import { CANAL_TREASURES, type Rarity } from './catalogue';
 import { mulberry32 } from './rng';
-import { inSafeArea } from './tilapia';
 import { FINDS } from './tuning';
 
 export const WORLD_H = 360;
@@ -279,6 +278,13 @@ export function swimBounds(): SwimBounds {
 /** Whether a point lies inside a current zone (inclusive edges). */
 export function isInsideCurrent(pos: Point, zone: CurrentZone): boolean {
   return pos.x >= zone.x0 && pos.x <= zone.x1 && pos.y >= zone.y0 && pos.y <= zone.y1;
+}
+
+/** Whether a point lies inside the safe area (inclusive edges). */
+export function inSafeArea(point: Point, safeArea: SafeArea): boolean {
+  return (
+    point.x >= safeArea.x0 && point.x <= safeArea.x1 && point.y >= safeArea.y0 && point.y <= safeArea.y1
+  );
 }
 
 /** Whether a point is at the Home Spot: centre distance at most the radius (inclusive). */
