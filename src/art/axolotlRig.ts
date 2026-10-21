@@ -307,13 +307,45 @@ function isLegPart(id: RigPartId): boolean {
   return id.startsWith('leg-') || id.startsWith('wear-leg-');
 }
 
-/** The shared twinkle strip at `scale` (TWINKLE_RADII frames), baked on first use and kept for the session. */
-function twinkleSheet(scene: Phaser.Scene, scale: number): TexInfo {
+/** How many bakes hold each shared twinkle strip, per texture manager. */
+const twinkleHolds = new WeakMap<Phaser.Textures.TextureManager, Map<string, number>>();
+
+function twinkleHoldsOf(scene: Phaser.Scene): Map<string, number> {
+  let holds = twinkleHolds.get(scene.textures);
+  if (!holds) {
+    holds = new Map();
+    twinkleHolds.set(scene.textures, holds);
+  }
+  return holds;
+}
+
+/**
+ * The shared twinkle strip at `scale` (TWINKLE_RADII frames), baked on first
+ * hold and shared by every bake at that scale. Each hold is let go with
+ * releaseTwinkleSheet; the strip is removed when its last holder lets go.
+ */
+function holdTwinkleSheet(scene: Phaser.Scene, scale: number): TexInfo {
   const key = `axo-rig-twinkle-${scale}`;
   const box = TWINKLE_BOX;
   const size: TexSize = { w: box.maxX - box.minX, h: box.maxY - box.minY, originX: -box.minX, originY: -box.minY };
-  if (scene.textures.exists(key)) return makeInfo(key, scale, size);
-  return bakeSheet(scene, key, size, scale, { x: -box.minX, y: -box.minY }, TWINKLE_RADII.length, paintTwinkleFrame);
+  const info = scene.textures.exists(key)
+    ? makeInfo(key, scale, size)
+    : bakeSheet(scene, key, size, scale, { x: -box.minX, y: -box.minY }, TWINKLE_RADII.length, paintTwinkleFrame);
+  const holds = twinkleHoldsOf(scene);
+  holds.set(key, (holds.get(key) ?? 0) + 1);
+  return info;
+}
+
+/** Let go of one hold on the twinkle strip `key`, removing it when no bake holds it. */
+function releaseTwinkleSheet(scene: Phaser.Scene, key: string): void {
+  const holds = twinkleHoldsOf(scene);
+  const left = (holds.get(key) ?? 0) - 1;
+  if (left > 0) {
+    holds.set(key, left);
+    return;
+  }
+  holds.delete(key);
+  if (scene.textures.exists(key)) scene.textures.remove(key);
 }
 
 class RigBake implements AxolotlRigBake {
@@ -424,6 +456,8 @@ class RigBake implements AxolotlRigBake {
     if (this.destroyed) return;
     for (const view of [...this.views]) view.destroy();
     this.removeOwned();
+    if (this.twinkles) releaseTwinkleSheet(this.scene, this.twinkles.key);
+    this.twinkles = null;
     this.destroyed = true;
   }
 
@@ -477,11 +511,14 @@ class RigBake implements AxolotlRigBake {
       this.sheetsById = new Map();
       this.stillTail = null;
       for (const spec of this.partOrder) this.sheetsById.set(spec.id, { spec, info: this.bakePart(spec) });
-      this.twinkles = twinkleSheet(this.scene, scale);
+      const heldTwinkles = this.twinkles;
+      this.twinkles = holdTwinkleSheet(this.scene, scale);
       this.frameInfo = makeInfo(this.key, scale, AXO_TEX);
       this.bakedKey = rigAppearanceKey(this.appearance, scale);
       this.bakes += 1;
       for (const view of this.views) view.resync();
+      // Hold the new strip before letting go of the old, so a strip this bake keeps is never removed and re-baked.
+      if (heldTwinkles) releaseTwinkleSheet(this.scene, heldTwinkles.key);
     } finally {
       stopRigTiming(started);
     }

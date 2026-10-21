@@ -79,8 +79,7 @@ export class StrandedView {
     }
     const status = rescueStatus(rescue, frame.trip.holdings, frame.trip.phase);
     this.advancePhases(status, frame);
-    this.showSex(rescue.sex);
-    this.showMorph(rescue.morph);
+    this.showRescue(rescue.sex, rescue.morph);
     this.view.setPose(this.poseFor(frame));
 
     const look = this.lookFor(rescue, status, frame);
@@ -100,17 +99,15 @@ export class StrandedView {
     this.bake.destroy();
   }
 
-  /** Swaps to the rescued look for `sex` when the baked one differs (a new rescue), re-baking the parts. */
-  private showSex(sex: AxolotlSex): void {
-    if (this.bake.look.sex === sex) return;
-    this.bake.setAppearance({ look: rescuedLook(sex) });
-  }
-
-  /** Swaps to `morph`'s colours when the baked ones differ (a new rescue), re-baking the parts. */
-  private showMorph(morph: RealMorphId): void {
+  /**
+   * Swaps to the rescued look for `sex` and `morph`'s colours when either differs from the baked
+   * ones (a new rescue), re-baking the parts once even when both change.
+   */
+  private showRescue(sex: AxolotlSex, morph: RealMorphId): void {
     const palette = MORPH_PALETTES[morph];
-    if (this.bake.palette === palette) return;
-    this.bake.setAppearance({ palette });
+    const newSex = this.bake.look.sex !== sex;
+    if (!newSex && this.bake.palette === palette) return;
+    this.bake.setAppearance(newSex ? { look: rescuedLook(sex), palette } : { palette });
   }
 
   /** Tail and legs paddle slowly while waiting or safe; gills flutter at 0.6x while waiting. */
