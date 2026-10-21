@@ -1,13 +1,22 @@
-import { CANAL_TREASURES, type Rarity } from './catalogue';
+import { CANAL_TREASURES, type Rarity, type Treasure } from './catalogue';
+import type { ElementSpawn, HazardSpawn } from './hazards';
+import type { PredatorRoute } from './predators';
 import { mulberry32 } from './rng';
-import { inSafeArea } from './tilapia';
 import { FINDS } from './tuning';
 
+/** Height of one screen in world px; the canal is one screen tall. */
 export const WORLD_H = 360;
+/** Water surface y in every area. */
 export const SURF = 80;
+/** Top of the bed in a one-screen-tall area such as the canal. */
 export const BED_TOP = 318;
+/** Width of one screen in world px. */
 export const SCREEN_W = 480;
+/** Depth of the bed below the water in every area: WORLD_H - BED_TOP. */
+export const BED_DEPTH = WORLD_H - BED_TOP;
+/** Screens across the canal. */
 export const ZONE_SCREENS = 4;
+/** Width of the canal in world px. */
 export const ZONE_W = SCREEN_W * ZONE_SCREENS;
 
 export const DEFAULT_ZONE_SEED = 0xa70107;
@@ -17,80 +26,30 @@ const TAU = Math.PI * 2;
 const REED_SPREAD = 20;
 const REED_PATCH_PAD = 10;
 const REED_DRAG_MUL = 2.5;
-const SNACK_WORMS = 10;
-const SNACK_BUGS = 6;
-const SNACKS_IN_CURRENT = 4;
+const REED_BASE_Y = 326;
 const SNACK_MIN_SPACING = 40;
 const SNACK_START_CLEARANCE = 90;
 const SNACK_MAX_ATTEMPTS = 400;
-const PAD_COUNT = 6;
-const SAFE_AREA: Readonly<SafeArea> = Object.freeze({ x0: 40, x1: 300, y0: SURF, y1: BED_TOP });
-const HOME_SPOT_RADIUS = 72;
-const PAD_SPOT_INDEX = 2;
-const PAD_SPOT_Y = 100;
 const SPOT_HOME_CLEARANCE = FINDS.pickupRadius + 8;
-const CAVE_SPOTS: readonly (readonly [number, number, Rarity, boolean])[] = [
-  [1492, 206, 'legendary', true],
-  [1552, 206, 'legendary', true],
-  [1612, 206, 'legendary', true],
-  [1492, 266, 'epic', false],
-  [1552, 266, 'epic', false],
-  [1612, 266, 'epic', false],
-];
-const CURRENT_SPOTS: readonly (readonly [number, number, Rarity, boolean])[] = [
-  [1200, 140, 'legendary', true],
-  [1200, 200, 'legendary', true],
-  [1200, 260, 'legendary', true],
-  [1260, 140, 'epic', false],
-  [1260, 200, 'epic', false],
-  [1260, 260, 'epic', false],
-];
 
 /** One row of reed hiding spots: a spot at this depth in every column of its bed. */
-interface ReedSpotRow {
+export interface ReedSpotRow {
   y: number;
   rarity: Rarity;
   tag: string;
 }
 
 /** A reed bed: the first reeds stand on its columns, and its hiding spots sit on them. */
-interface ReedBed {
+export interface ReedBed {
   columns: readonly number[];
   rows: readonly ReedSpotRow[];
 }
 
-const REED_BEDS: readonly ReedBed[] = [
-  {
-    columns: [316, 372, 428, 484],
-    rows: [
-      { y: 172, rarity: 'common', tag: 'a' },
-      { y: 228, rarity: 'common', tag: 'b' },
-    ],
-  },
-  { columns: [580, 640], rows: [{ y: 110, rarity: 'rare', tag: 'top' }] },
-  { columns: [1316, 1376, 1436], rows: [{ y: 288, rarity: 'rare', tag: 'deep' }] },
-  { columns: [1700], rows: [{ y: 288, rarity: 'rare', tag: 'deep' }] },
-];
-const TILAPIA_ROUTES: readonly (readonly (readonly [number, number])[])[] = [
-  [
-    [700, 262],
-    [790, 262],
-    [790, 296],
-    [700, 296],
-  ],
-  [
-    [1080, 100],
-    [1145, 100],
-    [1145, 296],
-    [1080, 296],
-  ],
-  [
-    [1432, 110],
-    [1588, 110],
-    [1588, 144],
-    [1432, 144],
-  ],
-];
+/** A fixed hiding spot as area data: x, y, rarity and whether a Dash pot sits there. */
+export type FixedSpotData = readonly [number, number, Rarity, boolean];
+
+/** A tilapia patrol loop as area data: its waypoints as [x, y] pairs. */
+export type RoutePoints = readonly (readonly [number, number])[];
 
 /** Structural 2D point; matches any `{ x, y }` vector shape. */
 export interface Point {
@@ -223,7 +182,12 @@ export interface ZoneLayout {
   areaId: string;
   width: number;
   height: number;
+  /** Top of the bed: height - BED_DEPTH. */
+  bedTop: number;
+  /** Screens across. */
   chunks: number;
+  /** Screens down. */
+  rows: number;
   start: Point;
   reeds: ReedSpec[];
   reedPatches: ReedPatch[];
@@ -234,6 +198,9 @@ export interface ZoneLayout {
   sunChunk: number;
   safeArea: SafeArea;
   tilapiaRoutes: TilapiaRoute[];
+  predatorRoutes: PredatorRoute[];
+  hazards: HazardSpawn[];
+  elements: ElementSpawn[];
   homeSpot: HomeSpot;
   finds: FindSpawn[];
   spots: HidingSpot[];
@@ -242,6 +209,52 @@ export interface ZoneLayout {
   strandingPlaces: StrandingPlace[];
 }
 
+/** An area's size in world px. */
+export interface AreaSize {
+  width: number;
+  height: number;
+  bedTop: number;
+}
+
+/**
+ * Everything buildZone reads to build one area's layout. Fixed data only: the seed adds the reed
+ * shapes, snacks and pads.
+ */
+export interface AreaLayoutData {
+  /** Area id; prefixes the hiding spot ids. */
+  readonly id: string;
+  readonly screensWide: number;
+  readonly screensTall: number;
+  readonly start: Readonly<Point>;
+  /** Home Spot safe area; no predator enters it. */
+  readonly safeArea: Readonly<SafeArea>;
+  readonly homeSpotRadius: number;
+  readonly reedBeds: readonly Readonly<ReedBed>[];
+  readonly caveSpots: readonly FixedSpotData[];
+  readonly currentSpots: readonly FixedSpotData[];
+  readonly currents: readonly Readonly<CurrentZone>[];
+  readonly cave: Readonly<CaveArea>;
+  readonly tilapiaRoutes: readonly RoutePoints[];
+  readonly predatorRoutes: readonly Readonly<PredatorRoute>[];
+  readonly hazards: readonly Readonly<HazardSpawn>[];
+  readonly elements: readonly Readonly<ElementSpawn>[];
+  readonly mainPath: readonly Readonly<Point>[];
+  readonly strandingPlaces: readonly Readonly<StrandingPlace>[];
+  /** Catalogue treasures hidden in this area, in catalogue order. */
+  readonly treasures: readonly Treasure[];
+  readonly snackWorms: number;
+  readonly snackBugs: number;
+  /** How many snacks start inside the first current; 0 when the area has no current. */
+  readonly snacksInCurrent: number;
+  readonly padCount: number;
+  /** Index of the pad with a hiding spot under it. */
+  readonly padSpotIndex: number;
+  readonly padSpotY: number;
+  readonly bankChunks: readonly number[];
+  readonly sunChunk: number;
+}
+
+/** The canal cave. */
 export const CAVE: Readonly<CaveArea> = Object.freeze({ id: `${CANAL_AREA_ID}/cave`, x0: 1480, x1: 1640, y0: 200, y1: 318 });
 
 /** The main swim path: the middle of the canal from the Home Spot to the far end. */
@@ -263,6 +276,95 @@ export const STRANDING_PLACES: readonly Readonly<StrandingPlace>[] = Object.free
   Object.freeze({ id: `${CANAL_AREA_ID}/strand-4`, x: 1860, y: 260 }),
 ]);
 
+/** The canal, Area 1, as area data: 4 screens across, 1 down. */
+export const CANAL_LAYOUT: Readonly<AreaLayoutData> = Object.freeze({
+  id: CANAL_AREA_ID,
+  screensWide: ZONE_SCREENS,
+  screensTall: 1,
+  start: Object.freeze({ x: 120, y: 200 }),
+  safeArea: Object.freeze({ x0: 40, x1: 300, y0: SURF, y1: BED_TOP }),
+  homeSpotRadius: 72,
+  reedBeds: Object.freeze([
+    Object.freeze({
+      columns: Object.freeze([316, 372, 428, 484]),
+      rows: Object.freeze([
+        Object.freeze({ y: 172, rarity: 'common', tag: 'a' }),
+        Object.freeze({ y: 228, rarity: 'common', tag: 'b' }),
+      ]),
+    }),
+    Object.freeze({
+      columns: Object.freeze([580, 640] as const),
+      rows: Object.freeze([Object.freeze({ y: 110, rarity: 'rare', tag: 'top' })]),
+    }),
+    Object.freeze({
+      columns: Object.freeze([1316, 1376, 1436]),
+      rows: Object.freeze([Object.freeze({ y: 288, rarity: 'rare', tag: 'deep' })]),
+    }),
+    Object.freeze({
+      columns: Object.freeze([1700]),
+      rows: Object.freeze([Object.freeze({ y: 288, rarity: 'rare', tag: 'deep' })]),
+    }),
+  ]),
+  caveSpots: Object.freeze([
+    Object.freeze([1492, 206, 'legendary', true] as const),
+    Object.freeze([1552, 206, 'legendary', true] as const),
+    Object.freeze([1612, 206, 'legendary', true] as const),
+    Object.freeze([1492, 266, 'epic', false] as const),
+    Object.freeze([1552, 266, 'epic', false] as const),
+    Object.freeze([1612, 266, 'epic', false] as const),
+  ]),
+  currentSpots: Object.freeze([
+    Object.freeze([1200, 140, 'legendary', true] as const),
+    Object.freeze([1200, 200, 'legendary', true] as const),
+    Object.freeze([1200, 260, 'legendary', true] as const),
+    Object.freeze([1260, 140, 'epic', false] as const),
+    Object.freeze([1260, 200, 'epic', false] as const),
+    Object.freeze([1260, 260, 'epic', false] as const),
+  ]),
+  currents: Object.freeze([
+    Object.freeze({ id: 'current-0', x0: 760, x1: 1160, y0: 120, y1: 280, force: Object.freeze({ x: -70, y: 0 }) }),
+  ]),
+  cave: CAVE,
+  /**
+   * Three fixed patrol loops, left to right along the canal. The closest two, `tilapia-1` and
+   * `tilapia-2`, are 287 px apart, more than twice the lunge range of 140 px.
+   */
+  tilapiaRoutes: Object.freeze([
+    Object.freeze([
+      Object.freeze([700, 262] as const),
+      Object.freeze([790, 262] as const),
+      Object.freeze([790, 296] as const),
+      Object.freeze([700, 296] as const),
+    ]),
+    Object.freeze([
+      Object.freeze([1080, 100] as const),
+      Object.freeze([1145, 100] as const),
+      Object.freeze([1145, 296] as const),
+      Object.freeze([1080, 296] as const),
+    ]),
+    Object.freeze([
+      Object.freeze([1432, 110] as const),
+      Object.freeze([1588, 110] as const),
+      Object.freeze([1588, 144] as const),
+      Object.freeze([1432, 144] as const),
+    ]),
+  ]),
+  predatorRoutes: Object.freeze([]),
+  hazards: Object.freeze([]),
+  elements: Object.freeze([]),
+  mainPath: MAIN_PATH,
+  strandingPlaces: STRANDING_PLACES,
+  treasures: CANAL_TREASURES,
+  snackWorms: 10,
+  snackBugs: 6,
+  snacksInCurrent: 4,
+  padCount: 6,
+  padSpotIndex: 2,
+  padSpotY: 100,
+  bankChunks: Object.freeze([1, 3] as const),
+  sunChunk: 0,
+} satisfies AreaLayoutData);
+
 /** Minimum distance between two hiding spots, so one pickup radius never reaches two spots. */
 export const SPOT_MIN_SPACING = 2 * FINDS.pickupRadius + 8;
 
@@ -271,14 +373,29 @@ export function waveY(x: number, t: number): number {
   return SURF + 1.6 * Math.sin(x * 0.045 + t * 1.6) + 0.8 * Math.sin(x * 0.11 - t * 1.1);
 }
 
-/** Rectangle the axolotl centre may occupy inside the canal zone. */
-export function swimBounds(): SwimBounds {
-  return { minX: 40, maxX: ZONE_W - 40, minY: SURF + 14, maxY: BED_TOP - 22 };
+/** Size in world px of an area `wide` screens across and `tall` screens down. */
+export function areaSize(wide: number, tall: number): AreaSize {
+  const height = WORLD_H * tall;
+  return { width: SCREEN_W * wide, height, bedTop: height - BED_DEPTH };
+}
+
+const CANAL_SIZE: Readonly<AreaSize> = Object.freeze(areaSize(ZONE_SCREENS, 1));
+
+/** Rectangle the axolotl centre may occupy inside an area; the canal when no size is given. */
+export function swimBounds(size: Pick<ZoneLayout, 'width' | 'bedTop'> = CANAL_SIZE): SwimBounds {
+  return { minX: 40, maxX: size.width - 40, minY: SURF + 14, maxY: size.bedTop - 22 };
 }
 
 /** Whether a point lies inside a current zone (inclusive edges). */
 export function isInsideCurrent(pos: Point, zone: CurrentZone): boolean {
   return pos.x >= zone.x0 && pos.x <= zone.x1 && pos.y >= zone.y0 && pos.y <= zone.y1;
+}
+
+/** Whether a point lies inside the safe area (inclusive edges). */
+export function inSafeArea(point: Point, safeArea: SafeArea): boolean {
+  return (
+    point.x >= safeArea.x0 && point.x <= safeArea.x1 && point.y >= safeArea.y0 && point.y <= safeArea.y1
+  );
 }
 
 /** Whether a point is at the Home Spot: centre distance at most the radius (inclusive). */
@@ -300,7 +417,7 @@ function reedBaseX(rand: () => number, bed: ReedBed, index: number): number {
   return left + draw * (right - left);
 }
 
-function buildReedCluster(rand: () => number, bed: ReedBed, firstIndex: number): ReedSpec[] {
+function buildReedCluster(rand: () => number, bed: ReedBed, firstIndex: number, baseOffset: number): ReedSpec[] {
   // INVARIANT: each bed makes the same rand() draws in the same order as the old jittered clusters
   // (one spare draw where the jitter was, the count, then 11 per reed), so snacks and pads stay
   // identical for every seed.
@@ -311,7 +428,7 @@ function buildReedCluster(rand: () => number, bed: ReedBed, firstIndex: number):
     reeds.push({
       id: `reed-${firstIndex + i}`,
       bx: reedBaseX(rand, bed, i),
-      by: 326 + rand() * 8,
+      by: REED_BASE_Y + baseOffset + rand() * 8,
       tipY: 34 + rand() * 38,
       lean: (rand() - 0.5) * 16,
       bend: (rand() - 0.5) * 10,
@@ -326,21 +443,21 @@ function buildReedCluster(rand: () => number, bed: ReedBed, firstIndex: number):
   return reeds;
 }
 
-function patchAroundReeds(reeds: ReedSpec[]): ReedPatch {
+function patchAroundReeds(reeds: ReedSpec[], bedTop: number): ReedPatch {
   const xs = reeds.flatMap((reed) => [reed.bx, reed.bx + reed.lean]);
   return {
     x0: Math.min(...xs) - REED_PATCH_PAD,
     x1: Math.max(...xs) + REED_PATCH_PAD,
     y0: SURF,
-    y1: BED_TOP,
+    y1: bedTop,
     dragMul: REED_DRAG_MUL,
   };
 }
 
-function shuffleKinds(rand: () => number): CollectibleKind[] {
+function shuffleKinds(rand: () => number, data: AreaLayoutData): CollectibleKind[] {
   const kinds: CollectibleKind[] = [
-    ...Array.from({ length: SNACK_WORMS }, (): CollectibleKind => 'worm'),
-    ...Array.from({ length: SNACK_BUGS }, (): CollectibleKind => 'bug'),
+    ...Array.from({ length: data.snackWorms }, (): CollectibleKind => 'worm'),
+    ...Array.from({ length: data.snackBugs }, (): CollectibleKind => 'bug'),
   ];
   for (let i = kinds.length - 1; i > 0; i--) {
     const swapIndex = Math.floor(rand() * (i + 1));
@@ -369,18 +486,25 @@ function pickSnackSpot(rand: () => number, area: SwimBounds, placed: Point[], st
     }
   }
   throw new Error(
-    `buildCanalZone: no clear snack spot in x ${area.minX}..${area.maxX}, y ${area.minY}..${area.maxY}`,
+    `buildZone: no clear snack spot in x ${area.minX}..${area.maxX}, y ${area.minY}..${area.maxY}`,
   );
 }
 
-function snackAreas(current: CurrentZone, bounds: SwimBounds): SwimBounds[] {
-  const inCurrent: SwimBounds = {
-    minX: Math.max(current.x0, bounds.minX),
-    maxX: Math.min(current.x1, bounds.maxX),
-    minY: Math.max(current.y0, bounds.minY),
-    maxY: Math.min(current.y1, bounds.maxY),
-  };
-  const strataCount = SNACK_WORMS + SNACK_BUGS - SNACKS_IN_CURRENT;
+/**
+ * Where each snack is picked: `snacksInCurrent` in the first current, then one vertical stripe of
+ * the swim bounds per remaining snack. An area with no current puts every snack in a stripe.
+ */
+function snackAreas(data: AreaLayoutData, current: CurrentZone | undefined, bounds: SwimBounds): SwimBounds[] {
+  const inCurrentCount = current ? data.snacksInCurrent : 0;
+  const inCurrent: SwimBounds[] = current
+    ? Array.from({ length: inCurrentCount }, () => ({
+        minX: Math.max(current.x0, bounds.minX),
+        maxX: Math.min(current.x1, bounds.maxX),
+        minY: Math.max(current.y0, bounds.minY),
+        maxY: Math.min(current.y1, bounds.maxY),
+      }))
+    : [];
+  const strataCount = data.snackWorms + data.snackBugs - inCurrentCount;
   const strataWidth = (bounds.maxX - bounds.minX) / strataCount;
   const strata = Array.from({ length: strataCount }, (_, i): SwimBounds => ({
     minX: bounds.minX + i * strataWidth,
@@ -388,52 +512,66 @@ function snackAreas(current: CurrentZone, bounds: SwimBounds): SwimBounds[] {
     minY: bounds.minY,
     maxY: bounds.maxY,
   }));
-  return [...Array.from({ length: SNACKS_IN_CURRENT }, () => inCurrent), ...strata];
+  return [...inCurrent, ...strata];
 }
 
-function buildSnacks(rand: () => number, current: CurrentZone, start: Point): CollectibleSpawn[] {
-  const kinds = shuffleKinds(rand);
+function buildSnacks(
+  rand: () => number,
+  data: AreaLayoutData,
+  current: CurrentZone | undefined,
+  bounds: SwimBounds,
+): CollectibleSpawn[] {
+  const kinds = shuffleKinds(rand, data);
   const placed: Point[] = [];
-  for (const area of snackAreas(current, swimBounds())) {
-    placed.push(pickSnackSpot(rand, area, placed, start));
+  for (const area of snackAreas(data, current, bounds)) {
+    placed.push(pickSnackSpot(rand, area, placed, data.start));
   }
   return placed
     .sort((a, b) => a.x - b.x)
     .map((spot, i) => ({ id: `snack-${i}`, kind: kinds[i], x: spot.x, y: spot.y }));
 }
 
-function buildPads(rand: () => number): PadSpec[] {
-  const slotWidth = ZONE_W / PAD_COUNT;
-  const pads = Array.from({ length: PAD_COUNT }, (_, i): PadSpec => ({
+function buildPads(rand: () => number, padCount: number, width: number): PadSpec[] {
+  const slotWidth = width / padCount;
+  const pads = Array.from({ length: padCount }, (_, i): PadSpec => ({
     x: i * slotWidth + 60 + rand() * (slotWidth - 120),
     rx: 21 + rand() * 5,
     flower: rand() < 0.35,
   }));
   if (!pads.some((pad) => pad.flower)) {
-    pads[Math.floor(rand() * PAD_COUNT)].flower = true;
+    pads[Math.floor(rand() * padCount)].flower = true;
   }
   return pads;
 }
 
 /**
- * Three fixed patrol loops, ids `tilapia-0` to `tilapia-2`, left to right along the canal. The
- * closest two routes, `tilapia-1` and `tilapia-2`, are 287 px apart, more than twice the lunge
- * range of 140 px.
+ * The area's fixed tilapia patrol loops, ids `tilapia-0` upward in data order. In the canal they
+ * run left to right, and the closest two routes, `tilapia-1` and `tilapia-2`, are 287 px apart,
+ * more than twice the lunge range of 140 px.
  */
-function buildTilapiaRoutes(): TilapiaRoute[] {
-  return TILAPIA_ROUTES.map((points, i) => ({
+function buildTilapiaRoutes(routes: readonly RoutePoints[]): TilapiaRoute[] {
+  return routes.map((points, i) => ({
     id: `tilapia-${i}`,
     waypoints: points.map(([x, y]) => ({ x, y })),
   }));
 }
 
+function copyPredatorRoute(route: Readonly<PredatorRoute>): PredatorRoute {
+  return {
+    id: route.id,
+    waypoints: route.waypoints.map((point) => ({ x: point.x, y: point.y })),
+    species: route.species,
+  };
+}
+
 function fixedSpots(
-  points: readonly (readonly [number, number, Rarity, boolean])[],
+  areaId: string,
+  points: readonly FixedSpotData[],
   prefix: string,
   cover: HidingCover,
 ): HidingSpot[] {
   return points.map(([x, y, rarity, container], i) => ({
-    id: `${CANAL_AREA_ID}/spot-${prefix}-${i + 1}`,
+    id: `${areaId}/spot-${prefix}-${i + 1}`,
     cover,
     rarity,
     container,
@@ -443,10 +581,10 @@ function fixedSpots(
 }
 
 /** One bed's reed hiding spots: one per row and column, ids `spot-reeds-<bed>-<column>-<tag>`. */
-function bedSpots(bed: ReedBed, bedIndex: number): HidingSpot[] {
+function bedSpots(areaId: string, bed: ReedBed, bedIndex: number): HidingSpot[] {
   return bed.rows.flatMap((row) =>
     bed.columns.map((column): HidingSpot => ({
-      id: `${CANAL_AREA_ID}/spot-reeds-${bedIndex}-${column}-${row.tag}`,
+      id: `${areaId}/spot-reeds-${bedIndex}-${column}-${row.tag}`,
       cover: 'reeds',
       rarity: row.rarity,
       container: false,
@@ -456,19 +594,24 @@ function bedSpots(bed: ReedBed, bedIndex: number): HidingSpot[] {
   );
 }
 
-function padSpot(pads: PadSpec[]): HidingSpot {
+function padSpot(data: AreaLayoutData, pads: PadSpec[]): HidingSpot {
   return {
-    id: `${CANAL_AREA_ID}/spot-pad-${PAD_SPOT_INDEX}`,
+    id: `${data.id}/spot-pad-${data.padSpotIndex}`,
     cover: 'pad',
     rarity: 'rare',
     container: false,
-    x: pads[PAD_SPOT_INDEX].x,
-    y: PAD_SPOT_Y,
+    x: pads[data.padSpotIndex].x,
+    y: data.padSpotY,
   };
 }
 
-function isSpotClear(candidate: HidingSpot, accepted: HidingSpot[], safeArea: SafeArea, homeSpot: HomeSpot): boolean {
-  const bounds = swimBounds();
+function isSpotClear(
+  candidate: HidingSpot,
+  accepted: HidingSpot[],
+  bounds: SwimBounds,
+  safeArea: SafeArea,
+  homeSpot: HomeSpot,
+): boolean {
   const inBounds =
     candidate.x >= bounds.minX && candidate.x <= bounds.maxX && candidate.y >= bounds.minY && candidate.y <= bounds.maxY;
   const clearOfHome =
@@ -481,73 +624,92 @@ function isSpotClear(candidate: HidingSpot, accepted: HidingSpot[], safeArea: Sa
 
 /**
  * Hiding spots: the fixed cave, past-current and reed spots (area data, never dropped), then the
- * spot under pad PAD_SPOT_INDEX, whose x comes from this seed's pads. The pad spot is dropped if it
+ * spot under pad `padSpotIndex`, whose x comes from this seed's pads. The pad spot is dropped if it
  * is out of the water, in the safe area, near the ring or too close to an accepted spot.
  */
-function buildSpots(pads: PadSpec[], safeArea: SafeArea, homeSpot: HomeSpot): HidingSpot[] {
+function buildSpots(
+  data: AreaLayoutData,
+  pads: PadSpec[],
+  bounds: SwimBounds,
+  safeArea: SafeArea,
+  homeSpot: HomeSpot,
+): HidingSpot[] {
   const spots = [
-    ...fixedSpots(CAVE_SPOTS, 'cave', 'cave'),
-    ...fixedSpots(CURRENT_SPOTS, 'current', 'pastCurrent'),
-    ...REED_BEDS.flatMap(bedSpots),
+    ...fixedSpots(data.id, data.caveSpots, 'cave', 'cave'),
+    ...fixedSpots(data.id, data.currentSpots, 'current', 'pastCurrent'),
+    ...data.reedBeds.flatMap((bed, bedIndex) => bedSpots(data.id, bed, bedIndex)),
   ];
-  const candidate = padSpot(pads);
-  if (isSpotClear(candidate, spots, safeArea, homeSpot)) {
+  const candidate = padSpot(data, pads);
+  if (isSpotClear(candidate, spots, bounds, safeArea, homeSpot)) {
     spots.push(candidate);
   }
   return spots;
 }
 
-/** One find per canal treasure, in catalogue order; its pool is every spot of the same rarity. */
-function buildFinds(spots: HidingSpot[]): FindSpawn[] {
-  return CANAL_TREASURES.map((treasure) => ({
+/** One find per area treasure, in catalogue order; its pool is every spot of the same rarity. */
+function buildFinds(treasures: readonly Treasure[], spots: HidingSpot[]): FindSpawn[] {
+  return treasures.map((treasure) => ({
     id: treasure.id,
     pool: spots.filter((spot) => spot.rarity === treasure.rarity).map((spot) => spot.id),
   }));
 }
 
-/** Deterministically builds the 4-screen canal zone layout from a mulberry32 seed. */
-export function buildCanalZone(seed: number = DEFAULT_ZONE_SEED): ZoneLayout {
+/**
+ * Deterministically builds an area's zone layout from its data and a mulberry32 seed. The rules
+ * read the layout's width, height and bedTop, never the canal constants.
+ */
+export function buildZone(data: Readonly<AreaLayoutData>, seed: number): ZoneLayout {
   const rand = mulberry32(seed);
-  const start: Point = { x: 120, y: 200 };
+  const size = areaSize(data.screensWide, data.screensTall);
+  const bounds = swimBounds(size);
+  const start: Point = { x: data.start.x, y: data.start.y };
 
   const reeds: ReedSpec[] = [];
   const reedPatches: ReedPatch[] = [];
-  for (const bed of REED_BEDS) {
-    const cluster = buildReedCluster(rand, bed, reeds.length);
+  for (const bed of data.reedBeds) {
+    const cluster = buildReedCluster(rand, bed, reeds.length, size.height - WORLD_H);
     reeds.push(...cluster);
-    reedPatches.push(patchAroundReeds(cluster));
+    reedPatches.push(patchAroundReeds(cluster, size.bedTop));
   }
 
-  const currents: CurrentZone[] = [
-    { id: 'current-0', x0: 760, x1: 1160, y0: 120, y1: 280, force: { x: -70, y: 0 } },
-  ];
+  const currents: CurrentZone[] = data.currents.map((current) => ({ ...current, force: { ...current.force } }));
 
-  const collectibles = buildSnacks(rand, currents[0], start);
-  const pads = buildPads(rand);
-  const safeArea: SafeArea = { ...SAFE_AREA };
-  const homeSpot: HomeSpot = { x: start.x, y: start.y, radius: HOME_SPOT_RADIUS };
-  const spots = buildSpots(pads, safeArea, homeSpot);
+  const collectibles = buildSnacks(rand, data, currents[0], bounds);
+  const pads = buildPads(rand, data.padCount, size.width);
+  const safeArea: SafeArea = { ...data.safeArea };
+  const homeSpot: HomeSpot = { x: start.x, y: start.y, radius: data.homeSpotRadius };
+  const spots = buildSpots(data, pads, bounds, safeArea, homeSpot);
 
   return {
-    areaId: CANAL_AREA_ID,
-    width: ZONE_W,
-    height: WORLD_H,
-    chunks: ZONE_SCREENS,
+    areaId: data.id,
+    width: size.width,
+    height: size.height,
+    bedTop: size.bedTop,
+    chunks: data.screensWide,
+    rows: data.screensTall,
     start,
     reeds,
     reedPatches,
     currents,
     collectibles,
     pads,
-    bankChunks: [1, 3],
-    sunChunk: 0,
+    bankChunks: [...data.bankChunks],
+    sunChunk: data.sunChunk,
     safeArea,
-    tilapiaRoutes: buildTilapiaRoutes(),
+    tilapiaRoutes: buildTilapiaRoutes(data.tilapiaRoutes),
+    predatorRoutes: data.predatorRoutes.map(copyPredatorRoute),
+    hazards: data.hazards.map((hazard) => ({ ...hazard, shape: { ...hazard.shape } })),
+    elements: data.elements.map((element) => ({ ...element })),
     homeSpot,
-    finds: buildFinds(spots),
+    finds: buildFinds(data.treasures, spots),
     spots,
-    cave: { ...CAVE },
-    mainPath: MAIN_PATH.map((point) => ({ ...point })),
-    strandingPlaces: STRANDING_PLACES.map((place) => ({ ...place })),
+    cave: { ...data.cave },
+    mainPath: data.mainPath.map((point) => ({ ...point })),
+    strandingPlaces: data.strandingPlaces.map((place) => ({ ...place })),
   };
+}
+
+/** Deterministically builds the 4-screen canal zone layout from a mulberry32 seed. */
+export function buildCanalZone(seed: number = DEFAULT_ZONE_SEED): ZoneLayout {
+  return buildZone(CANAL_LAYOUT, seed);
 }

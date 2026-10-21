@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import { areaById } from '../logic/areas';
 import type { Collectible } from '../logic/collectibles';
 import type { RealMorphId } from '../logic/morphs';
 import {
@@ -12,6 +13,7 @@ import {
 import {
   SESSION_REGISTRY_KEY,
   addStarter,
+  chooseArea,
   chooseExplorer,
   createSession,
   needsStarter,
@@ -19,16 +21,29 @@ import {
   tripEndRecord,
   type AxolotlStyle,
   type Session,
+  type TripEndRecord,
 } from '../logic/session';
 import type { TripState } from '../logic/trip';
 import { TRIP_REGISTRY_KEYS, type TripEnding, type TripSnapshot } from '../logic/tripEvents';
 import { backupUnreadableSave, eraseStoredSave, readStoredSave, writeStoredSave } from '../platform/saveStorage';
-import { SCENE_KEYS, type GameAssets } from './BootScene';
+import { SCENE_KEYS, type GameAssets, type SwimStart } from './BootScene';
 
-/** What the Home Tank scene starts from: the game assets and how the last trip ended (null from the title). */
+/**
+ * What the Home Tank scene starts from: the game assets, how the last trip ended (null from the
+ * title) and the id of the area the arrival card is about, always an area in AREAS. `openExplorer`
+ * true (Back on the area map) opens the explorer card at once, with the saved explorer chosen and
+ * Go! focused.
+ */
 export interface HomeTankStart {
   assets: GameAssets;
   arrival: TripEnding | null;
+  areaId: string;
+  openExplorer?: boolean;
+}
+
+/** What the area map scene starts from: the game assets. */
+export interface AreaMapStart {
+  assets: GameAssets;
 }
 
 /**
@@ -112,7 +127,7 @@ export function openHomeTank(scene: Phaser.Scene, assets: GameAssets): void {
     openCreator(scene, assets);
     return;
   }
-  const start: HomeTankStart = { assets, arrival: null };
+  const start: HomeTankStart = { assets, arrival: null, areaId: readSession(scene.registry).hub.lastAreaId };
   scene.scene.start(SCENE_KEYS.homeTank, start);
 }
 
@@ -141,25 +156,90 @@ export function finishCreator(
 }
 
 /**
- * Starts a trip from Go! on the explorer card (PRD F7), which opens from Go exploring in the Home
- * Tank even with one owned axolotl: remembers `id` as the explorer, saving it to the device by
- * writeSession when it changed (D1), then starts the swim, which takes the remembered explorer
- * (explorerAxolotl) in its own look, Dream colour and outfit, with that outfit's perks (F12).
+ * Go! on the explorer card (PRD F7), which opens from Go exploring in the Home Tank even with one
+ * owned axolotl: remembers `id` as the explorer, saving it to the device by writeSession when it
+ * changed (D1), then opens the area map (PRD N2), where the player picks the area. When a dev area
+ * was asked for (dev builds only), the map is skipped and the trip starts in the dev area at once.
  * Throws when no owned axolotl has `id`.
  */
 export function goExploring(scene: Phaser.Scene, assets: GameAssets, id: string): void {
   const current = readSession(scene.registry);
   const next = chooseExplorer(current, id);
   if (next.hub.explorerId !== current.hub.explorerId) writeSession(scene.registry, next);
-  scene.scene.start(SCENE_KEYS.swim, assets);
+  if (assets.devAreaId !== null) {
+    startSwim(scene, assets, assets.devAreaId);
+    return;
+  }
+  const start: AreaMapStart = { assets };
+  scene.scene.start(SCENE_KEYS.areaMap, start);
+}
+
+/**
+ * Starts the swim in area `areaId`, which takes the remembered explorer (explorerAxolotl) in its own
+ * look, Dream colour and outfit, with that outfit's perks (F12).
+ */
+function startSwim(scene: Phaser.Scene, assets: GameAssets, areaId: string): void {
+  const start: SwimStart = { assets, areaId };
+  scene.scene.start(SCENE_KEYS.swim, start);
+}
+
+/**
+ * A press on an unlocked marker on the area map (PRD N2): remembers `areaId` as the last chosen area,
+ * saving it to the device by writeSession when it changed (D1), so a reload keeps it, then starts the
+ * swim there. Throws when no area in AREAS has `areaId`, or when it is locked (chooseArea).
+ */
+export function startTripIn(scene: Phaser.Scene, assets: GameAssets, areaId: string): void {
+  const current = readSession(scene.registry);
+  const next = chooseArea(current, areaId);
+  if (next.hub.lastAreaId !== current.hub.lastAreaId) writeSession(scene.registry, next);
+  startSwim(scene, assets, areaId);
+}
+
+/**
+ * Back on the area map (art guide 8): opens the Home Tank with no arrival card and the explorer card
+ * open at once, the saved explorer chosen and Go! focused.
+ */
+export function backToExplorerCard(scene: Phaser.Scene, assets: GameAssets): void {
+  const start: HomeTankStart = {
+    assets,
+    arrival: null,
+    areaId: readSession(scene.registry).hub.lastAreaId,
+    openExplorer: true,
+  };
+  scene.scene.start(SCENE_KEYS.homeTank, start);
+}
+
+/**
+ * The record of a trip in a dev area, which is never in AREAS: kept in that area's own memory, but
+ * with no stars, so the hub's stars only ever hold real areas.
+ */
+function withoutStars(record: TripEndRecord): TripEndRecord {
+  const starless: TripEndRecord = { ...record };
+  delete starless.stars;
+  return starless;
+}
+
+/**
+ * The arrival card's ending for a trip in a dev area (not in AREAS): a plain return with what was
+ * returned and banked, and no stars, since the Home Tank shows the last chosen area, which the dev
+ * area did not beat.
+ */
+function devAreaArrival(ending: TripEnding): TripEnding {
+  return {
+    reason: ending.reason === 'areaBeaten' ? 'wentHome' : ending.reason,
+    returned: [...ending.returned],
+    bankedThisTrip: [...ending.bankedThisTrip],
+  };
 }
 
 /**
  * The single way back from a trip, whether the player went home, was carried home or beat the area
  * (#31): takes the ended trip, its snacks and, when the area was beaten, the stars earned in the
- * zone's area into the session (PRD H7), stops the HUD and opens the Home Tank with the tank arrival
- * card for the trip's ending, its stars included. Throws when the trip has not ended, or beat the
- * area with no stars.
+ * trip's area into the session (PRD H7), stops the HUD and opens the Home Tank with the tank arrival
+ * card for the trip's ending, its stars included. A trip in a dev area (not in AREAS) earns no stars
+ * and the Home Tank shows the last chosen area instead, with a plain return for its arrival card
+ * (devAreaArrival), so it never shows that area as beaten; the last chosen area is never changed
+ * here. Throws when the trip has not ended, or beat the area with no stars.
  */
 export function returnToHomeTank(
   scene: Phaser.Scene,
@@ -167,17 +247,22 @@ export function returnToHomeTank(
   trip: TripState,
   snacks: readonly Collectible[],
 ): void {
-  const record = tripEndRecord(trip, snacks, assets.zone.areaId);
+  const realArea = areaById(trip.areaId) !== undefined;
+  const fullRecord = tripEndRecord(trip, snacks, trip.areaId);
+  const record = realArea ? fullRecord : withoutStars(fullRecord);
   const ending = trip.ending;
   if (ending === null) throw new Error('returnToHomeTank: the ended trip has no ending');
-  writeSession(scene.registry, recordTripEnd(readSession(scene.registry), record));
-  const arrival: TripEnding = {
-    reason: ending.reason,
-    returned: [...ending.returned],
-    bankedThisTrip: [...ending.bankedThisTrip],
-    ...(ending.stars === undefined ? {} : { stars: { ...ending.stars } }),
-  };
-  const start: HomeTankStart = { assets, arrival };
+  const session = recordTripEnd(readSession(scene.registry), record);
+  writeSession(scene.registry, session);
+  const arrival: TripEnding = realArea
+    ? {
+        reason: ending.reason,
+        returned: [...ending.returned],
+        bankedThisTrip: [...ending.bankedThisTrip],
+        ...(ending.stars === undefined ? {} : { stars: { ...ending.stars } }),
+      }
+    : devAreaArrival(ending);
+  const start: HomeTankStart = { assets, arrival, areaId: realArea ? trip.areaId : session.hub.lastAreaId };
   scene.scene.stop(SCENE_KEYS.hud);
   scene.scene.start(SCENE_KEYS.homeTank, start);
 }

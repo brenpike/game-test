@@ -3,11 +3,11 @@
  * and per-trip chance (PRD B4); lost treasures and the area's special treasure are always placed
  * (B4, B9); banked treasures never are (B9). Each picked treasure takes a free spot from its own
  * pool, every one of which meets its rarity rule (B6), with spots farther from the main swim path
- * picked more often (B4) and spots on the rarity's risky side of the tilapia routes picked more
+ * picked more often (B4) and spots on the rarity's risky side of the area's threats picked more
  * often (issue #70). Every draw comes from seeded trip rngs.
  */
 import { RARITIES, treasureById, type Rarity } from './catalogue';
-import { distanceToPath, routeDistance } from './hiding';
+import { distanceToPath, riskDistance, routeDistance, type Threat } from './hiding';
 import { mulberry32 } from './rng';
 import { RISK, TRIP_TREASURES, type RarerRarity, type RiskSide, type RiskTuning, type TripTreasureTuning } from './tuning';
 import type { FindSpawn, HidingSpot, Point, TilapiaRoute } from './zone';
@@ -35,8 +35,16 @@ export interface PlacementOptions {
   tuning?: TripTreasureTuning;
   /** Main swim path for spot weights; absent or empty gives every spot an equal weight. */
   mainPath?: readonly Point[];
-  /** The area's tilapia routes for risk weights; absent or empty gives every spot a risk weight of 1. */
+  /**
+   * The area's tilapia routes for risk weights when `threats` is absent; absent or empty gives every
+   * spot a risk weight of 1.
+   */
   tilapiaRoutes?: readonly TilapiaRoute[];
+  /**
+   * The area's threats (zoneThreats) for risk weights, read in place of `tilapiaRoutes` when given;
+   * empty gives every spot a risk weight of 1.
+   */
+  threats?: readonly Threat[];
   /** The tilapia lunge range in px the routes go with. The risk weights read route distance only, not this. */
   lungeRange?: number;
   /** Risk tuning for the risk weights; RISK when absent. */
@@ -160,11 +168,29 @@ function cachedDistance(spot: HidingSpot, mainPath: readonly Point[], distanceBy
   return distance;
 }
 
-/** The spot's distance to the nearest tilapia route, computed once per spot and kept in `distanceById`. */
-function cachedRouteDistance(spot: HidingSpot, routes: readonly TilapiaRoute[], distanceById: Map<string, number>): number {
+/** Measures a spot's distance to the nearest threat. */
+type RiskMeasure = (pos: Point) => number;
+
+/**
+ * The risk distance measure from the options: the nearest threat when `threats` is given, else the
+ * nearest tilapia route. Undefined when there is nothing to measure against.
+ */
+function riskMeasureFor(options: Pick<PlacementOptions, 'threats' | 'tilapiaRoutes'>): RiskMeasure | undefined {
+  const { threats, tilapiaRoutes } = options;
+  if (threats !== undefined) {
+    return threats.length === 0 ? undefined : (pos) => riskDistance(pos, threats);
+  }
+  if (tilapiaRoutes === undefined || tilapiaRoutes.length === 0) {
+    return undefined;
+  }
+  return (pos) => routeDistance(pos, tilapiaRoutes);
+}
+
+/** The spot's distance to the nearest threat, computed once per spot and kept in `distanceById`. */
+function cachedRiskDistance(spot: HidingSpot, measure: RiskMeasure, distanceById: Map<string, number>): number {
   const cached = distanceById.get(spot.id);
   if (cached !== undefined) return cached;
-  const distance = routeDistance(spot, routes);
+  const distance = measure(spot);
   distanceById.set(spot.id, distance);
   return distance;
 }
@@ -207,13 +233,13 @@ function riskWeights(
   pool: readonly HidingSpot[],
   rarity: Rarity,
   risk: RiskTuning,
-  routes: readonly TilapiaRoute[] | undefined,
+  measure: RiskMeasure | undefined,
   distanceById: Map<string, number>,
 ): Map<string, number> {
-  if (routes === undefined || routes.length === 0) {
+  if (measure === undefined) {
     return new Map(pool.map((spot) => [spot.id, 1]));
   }
-  const distances = pool.map((spot) => cachedRouteDistance(spot, routes, distanceById));
+  const distances = pool.map((spot) => cachedRiskDistance(spot, measure, distanceById));
   return linearWeights(pool, distances, risk.unfavouredWeight, risk.favouredWeight, risk.favoured[rarity]);
 }
 
@@ -283,7 +309,8 @@ export function placeTreasures(
 
   const usedSpotIds = new Set<string>();
   const distanceById = new Map<string, number>();
-  const routeDistanceById = new Map<string, number>();
+  const riskDistanceById = new Map<string, number>();
+  const riskMeasure = riskMeasureFor(options);
   const spotRng = mulberry32(tripSeed);
   const placed: PlacedFind[] = [];
   for (const find of unbanked) {
@@ -296,7 +323,7 @@ export function placeTreasures(
     const rarity = rarityById.get(find.id) as Rarity;
     const weights = multiplyWeights(
       spotWeights(pool, tuning, options.mainPath, distanceById),
-      riskWeights(pool, rarity, risk, options.tilapiaRoutes, routeDistanceById),
+      riskWeights(pool, rarity, risk, riskMeasure, riskDistanceById),
     );
     const spot = spotById.get(drawWeighted(free, weights, spotRng)) as HidingSpot;
     usedSpotIds.add(spot.id);

@@ -5,7 +5,7 @@ import type { TexInfo } from '../art/textures';
 import type { MotionProfile } from '../logic/motion';
 import type { TripEvent } from '../logic/trip';
 import type { Vec2 } from '../logic/vec';
-import { BED_TOP, type HomeSpot } from '../logic/zone';
+import type { HomeSpot } from '../logic/zone';
 import type { GameAssets } from './BootScene';
 
 const TAU = Math.PI * 2;
@@ -49,7 +49,8 @@ function bakedImage(scene: Phaser.Scene, info: TexInfo, x: number, y: number, de
 }
 
 /**
- * Draws the Home Spot (burrow, marker flag, safe-ring dots) and the flag twinkle burst on banking.
+ * Draws the Home Spot (burrow on the bed at `bedTop`, marker flag, safe-ring dots) and the flag
+ * twinkle burst on banking.
  * Visual only: every timer here is driven by the frame `dt` and the scene clock, so it freezes with
  * the scene, and nothing here changes game state. Treasures are drawn by TreasureView.
  */
@@ -61,10 +62,10 @@ export class HomeSpotView {
   private readonly twinkles: Twinkle[];
   private burstAge = BURST_LIFE_S;
 
-  constructor(scene: Phaser.Scene, assets: GameAssets, homeSpot: HomeSpot) {
+  constructor(scene: Phaser.Scene, assets: GameAssets, homeSpot: HomeSpot, bedTop: number) {
     this.assets = assets;
     const art = assets.baked.homeSpot;
-    const burrowY = BED_TOP + BURROW_SINK_PX;
+    const burrowY = bedTop + BURROW_SINK_PX;
     bakedImage(scene, art.burrow, homeSpot.x, burrowY, DEPTH.homeSpot);
     this.flagBase = { x: homeSpot.x + BURROW_FLAG_OFFSET.x, y: burrowY + BURROW_FLAG_OFFSET.y };
     this.flag = bakedImage(scene, art.flag, this.flagBase.x, this.flagBase.y, DEPTH.homeSpot);

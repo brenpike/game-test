@@ -77,8 +77,8 @@ export interface RescueSnapshot {
  * `justBanked` is the find ids of the latest banking, shown on the banked card. `found` is every
  * treasure picked up this trip, in pickup order, including ones banked since; it resets each trip.
  * `ending` is set only once the trip has ended. `found` never lists rescued axolotls.
- * `rescue` is this trip's stranded axolotl, or null when there is none. `tilapiaCardDue` is whether
- * the axolotl met a tilapia this trip and the tilapia fact card was not seen before.
+ * `rescue` is this trip's stranded axolotl, or null when there is none. `factCardDue` is the id of
+ * the first hazard or predator met this trip whose fact card is not seen yet, or null when none is.
  */
 export interface TripSnapshot {
   phase: TripPhase;
@@ -90,7 +90,7 @@ export interface TripSnapshot {
   found: FoundInfo[];
   ending: TripEnding | null;
   rescue: RescueSnapshot | null;
-  tilapiaCardDue: boolean;
+  factCardDue: string | null;
 }
 
 /** Payload type for each event; `undefined` marks payload-less events. */

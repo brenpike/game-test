@@ -9,6 +9,7 @@ import type { TexInfo } from '../art/textures';
 import type { EncounterState } from '../logic/encounter';
 import { isProtected } from '../logic/legs';
 import type { MotionProfile } from '../logic/motion';
+import { TILAPIA_SPECIES } from '../logic/predators';
 import { anchorWorld } from '../logic/spriteAnchor';
 import { phaseProgress, type TilapiaPhase, type TilapiaState } from '../logic/tilapia';
 import type { TripEvent } from '../logic/trip';
@@ -126,7 +127,7 @@ function axolotlSizeFactor(axolotl: Phaser.GameObjects.Container, bake: AxolotlR
 export class PredatorView {
   private readonly scene: Phaser.Scene;
   private readonly assets: GameAssets;
-  private readonly tilapias: TilapiaSprites[];
+  private readonly predators: TilapiaSprites[];
   private readonly poofs: LegEffect[];
   private readonly regrowSparkles: LegEffect[];
   private readonly boostStars: LegEffect[];
@@ -142,11 +143,15 @@ export class PredatorView {
   /** Seconds the Shell sparkle has shown; SHELL_LIFE_S when it is not showing. */
   private shellAge = SHELL_LIFE_S;
 
-  constructor(scene: Phaser.Scene, assets: GameAssets, tilapiaCount: number) {
+  /**
+   * `speciesIds` holds the species id of each encounter predator, in `predators` order.
+   * Throws for a species with no art; only the tilapia has art.
+   */
+  constructor(scene: Phaser.Scene, assets: GameAssets, speciesIds: readonly string[]) {
     this.scene = scene;
     this.assets = assets;
     const predator = assets.predator;
-    this.tilapias = Array.from({ length: tilapiaCount }, () => this.createTilapiaSprites());
+    this.predators = speciesIds.map((speciesId) => this.createPredatorSprites(speciesId));
     this.halo = bakedImage(scene, predator.halo, DEPTH.halo).setVisible(false);
     this.carryBubble = bakedImage(scene, predator.carryBubble, DEPTH.bubbles).setVisible(false);
     this.effectLook = assets.axolotl.look;
@@ -195,8 +200,8 @@ export class PredatorView {
 
   /** Draws one frame. Call after the axolotl rig root has its final transform for the frame. */
   render(frame: PredatorFrame): void {
-    frame.encounter.tilapias.forEach((tilapia, i) => {
-      this.renderTilapia(this.tilapias[i], tilapia, frame);
+    frame.encounter.predators.forEach((predator, i) => {
+      this.renderTilapia(this.predators[i], predator, frame);
     });
     this.refreshEffectLook();
     this.renderHalo(frame);
@@ -219,7 +224,10 @@ export class PredatorView {
     this.carryBubble.setVisible(false);
   }
 
-  private createTilapiaSprites(): TilapiaSprites {
+  private createPredatorSprites(speciesId: string): TilapiaSprites {
+    if (speciesId !== TILAPIA_SPECIES.id) {
+      throw new Error(`PredatorView: no art for predator species ${speciesId}`);
+    }
     const predator = this.assets.predator;
     return {
       body: bakedImage(this.scene, predator.tilapia.swim, DEPTH.tilapia),

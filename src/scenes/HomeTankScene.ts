@@ -28,6 +28,7 @@ import { wornIds } from '../logic/outfit';
 import { outfitPerks } from '../logic/perks';
 import { spriteFrameBounds } from '../logic/spriteAnchor';
 import {
+  areaMemory,
   bestStars,
   canRescueMore,
   chooseExplorer,
@@ -230,8 +231,9 @@ function placeTankLayer(image: Phaser.GameObjects.Image, info: TexInfo, frame: T
  * in its morph's colours and its own look (still poses under reduced motion), the animated surface
  * line, the hub actions Go exploring, Decorate, Treasure Chest and Collection Book, by touch and by
  * keyboard, and the best-stars badge of the area (H7). Every axolotl wears its outfit (PRD C10, F8).
- * Go exploring opens the explorer card (PRD F7), even with one axolotl, and Go! there starts the
- * trip; its Change outfit opens the restyle Outfit tab and comes back to the card. After a trip
+ * Go exploring opens the explorer card (PRD F7), even with one axolotl, and Go! there opens the
+ * area map (PRD N2), whose Back opens this scene with the card open again (HomeTankStart
+ * openExplorer); its Change outfit opens the restyle Outfit tab and comes back to the card. After a trip
  * the tank arrival card shows first and takes every key and press until it closes; after beating
  * the area it is the "Area beaten" card, and closing it leaves the player in the hub. The hub focus
  * runs over the hub buttons and then the axolotls, and a tap on an axolotl, or Enter on a focused
@@ -240,6 +242,10 @@ function placeTankLayer(image: Phaser.GameObjects.Image, info: TexInfo, frame: T
 export class HomeTankScene extends Phaser.Scene {
   private assets!: GameAssets;
   private arrival: TripEnding | null = null;
+  /** Id of the area the arrival card is about, from the start data. */
+  private arrivalAreaId = '';
+  /** Whether the explorer card opens at once (Back on the area map), from the start data. */
+  private openExplorerOnCreate = false;
   private session!: Session;
   private area!: Readonly<AreaData>;
   private motion!: MotionProfile;
@@ -279,6 +285,8 @@ export class HomeTankScene extends Phaser.Scene {
   init(data: HomeTankStart): void {
     this.assets = data.assets;
     this.arrival = data.arrival;
+    this.arrivalAreaId = data.areaId;
+    this.openExplorerOnCreate = data.openExplorer === true;
     this.clock = 0;
     this.mode = 'hub';
     this.exploring = false;
@@ -294,7 +302,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.view = readSceneView(this.scale);
     this.motion = motionProfile(this.registry.get(REGISTRY_KEYS.reducedMotion) === true);
     this.session = readSession(this.registry);
-    this.area = zoneArea(this.assets.zone.areaId);
+    this.area = zoneArea(areaById(this.arrivalAreaId) ? this.arrivalAreaId : this.session.hub.lastAreaId);
     this.frame = tankFrame(this.view.cssW, this.view.cssH);
     useCssCamera(this.cameras.main, this.view.fit.dpr);
     this.cameras.main.setBackgroundColor(HOME_TANK_WALL);
@@ -336,6 +344,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.layout();
     this.animate(0);
     if (this.arrival !== null) this.showArrival(this.arrival);
+    else if (this.openExplorerOnCreate) this.openExplorerCard('go', this.session.hub.explorerId);
     this.refreshHubFocus();
   }
 
@@ -505,7 +514,7 @@ export class HomeTankScene extends Phaser.Scene {
       ending,
       this.session.hub.banked.length,
       areaStars,
-      this.session.canal.waitingStranded,
+      areaMemory(this.session, this.area.id).waitingStranded,
       dueFirstFindCards(this.session.hub.banked, this.session.hub.firstFindsSeen),
     );
     this.refreshHubFocus();
@@ -609,7 +618,7 @@ export class HomeTankScene extends Phaser.Scene {
     writeSession(this.registry, this.session);
   }
 
-  /** Go! on the explorer card, once: removes the card and starts the trip with `id` through the scene flow. */
+  /** Go! on the explorer card, once: removes the card and goes on with `id` as the explorer through the scene flow (goExploring). */
   private startExploring(id: string): void {
     if (this.exploring) return;
     this.exploring = true;
@@ -642,10 +651,10 @@ export class HomeTankScene extends Phaser.Scene {
     this.showHub(this.hubIndexOf('treasureChest'));
   }
 
-  /** Opens the Collection Book over the hub (PRD C12, C14) with the found morphs and the tilapia card. */
+  /** Opens the Collection Book over the hub (PRD C12, C14) with the found morphs and the hazards met. */
   private openBook(): void {
     this.leaveHub('book');
-    this.book.open(this.session.hub.book.foundMorphs, this.session.hub.book.tilapiaCard);
+    this.book.open(this.session.hub.book.foundMorphs, this.session.hub.metHazards);
   }
 
   /** The Collection Book closed: back to the hub with Collection Book focused. */

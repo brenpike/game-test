@@ -65,7 +65,22 @@ export function waveY(x: number, t: number): number {
 // Background chunk
 // ---------------------------------------------------------------------------
 
+/**
+ * Which row of an area a chunk is (guide 7a, Area size). 'single' is a one-row
+ * area, the canal: the top row and the bottom row in one. 'top' holds the sky,
+ * sun, clouds, bank, surface water and rays, with no bed. 'middle' is deep
+ * water only. 'bottom' is deep water down to the bed, with its lip, mud and
+ * pebbles.
+ */
+export type ChunkRow = 'single' | 'top' | 'middle' | 'bottom';
+
 export interface ChunkOptions {
+  /**
+   * Row of the area this chunk belongs to. Default 'single', which paints
+   * exactly the one-row canal chunk. `hasSun` and `hasBank` only count on
+   * 'single' and 'top' chunks (the sky is only there).
+   */
+  readonly row?: ChunkRow;
   /** Chunk index along the world. The canal bed edge is a function of world x, so chunks tile. */
   readonly index: number;
   /** Paint the sun (one chunk only). */
@@ -395,21 +410,37 @@ function paintBed(ctx: CanvasRenderingContext2D, index: number, rand: () => numb
   }
 }
 
+/** Flat deep water over the whole chunk: the last stop of the water gradient, so rows meet with no seam (7a). */
+function paintDeepWater(ctx: CanvasRenderingContext2D): void {
+  ctx.fillStyle = WATER_DEEP;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+}
+
 /**
- * Paint one 480 x 360 background chunk: sky, sun (optional), clouds, bank and
- * willows (optional), water from SURF + 3 down, static light rays, canal bed
- * with lip, mud and pebbles. Reeds, haze, surface line and pads are separate
- * layers. The caller sets the transform so one logical unit is one unit here.
+ * Paint one 480 x 360 background chunk. A 'single' chunk (the default) is
+ * sky, sun (optional), clouds, bank and willows (optional), water from
+ * SURF + 3 down, static light rays, canal bed with lip, mud and pebbles. A
+ * 'top' chunk is the same without the bed; a 'middle' chunk is flat deep
+ * water; a 'bottom' chunk is flat deep water with the bed (guide 7a, Area
+ * size). Reeds, haze, surface line and pads are separate layers. The caller
+ * sets the transform so one logical unit is one unit here.
  */
 export function paintBackgroundChunk(ctx: CanvasRenderingContext2D, opts: ChunkOptions): void {
   const { rand } = opts;
-  paintSky(ctx);
-  if (opts.hasSun) paintSun(ctx);
-  paintClouds(ctx, rand, opts.hasSun ? 16 : 120);
-  if (opts.hasBank) paintBank(ctx, opts);
-  paintWater(ctx);
-  paintRays(ctx, rand);
-  paintBed(ctx, opts.index, rand);
+  const row = opts.row ?? 'single';
+  const hasSky = row === 'single' || row === 'top';
+  const hasBed = row === 'single' || row === 'bottom';
+  if (hasSky) {
+    paintSky(ctx);
+    if (opts.hasSun) paintSun(ctx);
+    paintClouds(ctx, rand, opts.hasSun ? 16 : 120);
+    if (opts.hasBank) paintBank(ctx, opts);
+    paintWater(ctx);
+    paintRays(ctx, rand);
+  } else {
+    paintDeepWater(ctx);
+  }
+  if (hasBed) paintBed(ctx, opts.index, rand);
 }
 
 // ---------------------------------------------------------------------------

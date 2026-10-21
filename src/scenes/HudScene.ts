@@ -5,7 +5,8 @@ import { DEPTH } from '../art/layers';
 import { INK, UI_PANEL, UI_PANEL_PINK, WHITE } from '../art/palette';
 import { iconKey, type TexInfo } from '../art/textures';
 import { exitClosedText, snacksLeftLabel } from '../logic/areaText';
-import { TILAPIA_FACT } from '../logic/factCards';
+import { threatFactCards, threatIds } from '../logic/areas';
+import type { FactCard as FactCardData } from '../logic/factCards';
 import { pickToastAnnouncement } from '../logic/findToast';
 import {
   GAME_EVENTS,
@@ -23,11 +24,14 @@ import {
   controlKeepOuts,
   hudControls,
   placeHudOverlays,
+  screenWaterRows,
   type HudControlSizes,
   type HudControls,
   type HudOverlayId,
   type HudOverlayRequest,
+  type HudView,
   type Rect,
+  type ScreenWaterRows,
   type Size,
 } from '../logic/hudLayout';
 import type { LegStatus } from '../logic/legs';
@@ -44,6 +48,7 @@ import {
 import { ALL_SNACKS_BANNER, BANKING_HINT, GO_HOME_LABEL, LEGS_LABEL, TRIP_BAG_LABEL, tripBagStatus } from '../logic/tripText';
 import { LEGS } from '../logic/tuning';
 import { add, clampLen } from '../logic/vec';
+import { SURF, WORLD_H, type ZoneLayout } from '../logic/zone';
 import { BankingCard } from './BankingCard';
 import {
   SCENE_KEYS,
@@ -53,8 +58,10 @@ import {
   readSceneView,
   uiTextStyle,
   useCssCamera,
+  zoneFor,
   type GameAssets,
   type SceneView,
+  type SwimStart,
   type UiButton,
 } from './BootScene';
 import { FactCard } from './FactCard';
@@ -102,6 +109,10 @@ const FACT_CARD_DEPTH = DEPTH.ui + 9;
 const OVERLAY_DEPTH = DEPTH.ui + 10;
 // INVARIANT: the capture zone sits below every HUD button in depth so Pause, Dash and the pause overlay win the press.
 const STICK_ZONE_DEPTH = DEPTH.ui - 1;
+/** Tall areas: a move of the water band on screen, in CSS px, that re-places the overlays at once. */
+const OVERLAY_REPLACE_PX = 8;
+/** Tall areas: after a smaller move of the water band, the overlays are re-placed once this many ms have passed since the last placing. */
+const OVERLAY_SETTLE_MS = 100;
 
 /**
  * Event names the HUD sends to the swim scene. Values never repeat a `GAME_EVENTS` or
@@ -213,6 +224,20 @@ function holdTimer(timer: Phaser.Time.TimerEvent | null, held: boolean): void {
 }
 
 /**
+ * Whether the overlays placed for the water band `placed` (null when none were placed yet) need
+ * placing again for the band `now` on a canvas `cssH` tall, `ageMs` after they were placed: never
+ * when the band has not moved; else when either edge moved by OVERLAY_REPLACE_PX or more, when an
+ * edge reached or left the canvas edge it is clamped to, or once OVERLAY_SETTLE_MS have passed.
+ */
+function waterBandMoved(placed: ScreenWaterRows | null, now: ScreenWaterRows, cssH: number, ageMs: number): boolean {
+  if (placed === null) return true;
+  const shift = Math.max(Math.abs(now.top - placed.top), Math.abs(now.bottom - placed.bottom));
+  if (shift === 0) return false;
+  const clampChanged = (now.top <= 0) !== (placed.top <= 0) || (now.bottom >= cssH) !== (placed.bottom >= cssH);
+  return shift >= OVERLAY_REPLACE_PX || clampChanged || ageMs >= OVERLAY_SETTLE_MS;
+}
+
+/**
  * Screen-space UI over the swim scene: snack counter, legs display, Trip Bag display, Pause, Dash,
  * the contextual Go home button, swim pad, pause overlay, the snack and first-trip hint
  * banners, the find pop-up and the banking card. When the trip ends the swim scene stops this
@@ -220,7 +245,13 @@ function holdTimer(timer: Phaser.Time.TimerEvent | null, held: boolean): void {
  */
 export class HudScene extends Phaser.Scene {
   private assets!: GameAssets;
+  /** The zone of the area being swum, from the swim start. */
+  private zone!: ZoneLayout;
   private view!: SceneView;
+  /** Tall areas: the water band on screen when the overlays were last placed; null until placed. */
+  private overlayWaterRows: ScreenWaterRows | null = null;
+  /** Tall areas: ms since the overlays were last placed. */
+  private overlayAgeMs = 0;
   private motion!: MotionProfile;
   private paused = false;
   private collected = 0;
@@ -284,15 +315,18 @@ export class HudScene extends Phaser.Scene {
   /** How many of the trip's finds the pop-up has been given. */
   private announcedCount = 0;
   private factCard!: FactCard;
-  /** Whether the tilapia fact card has shown this trip, so it shows at most once while still due. */
-  private factCardShown = false;
+  /** Ids of the fact cards shown this trip, so each shows at most once while still due. */
+  private factCardsShown: string[] = [];
 
   constructor() {
     super(SCENE_KEYS.hud);
   }
 
-  init(data: GameAssets): void {
-    this.assets = data;
+  init(data: SwimStart): void {
+    this.assets = data.assets;
+    this.zone = zoneFor(data.assets, data.areaId);
+    this.overlayWaterRows = null;
+    this.overlayAgeMs = 0;
     this.paused = false;
     this.bannerTimer = null;
     this.bannerActive = false;
@@ -308,7 +342,7 @@ export class HudScene extends Phaser.Scene {
     this.hintActive = false;
     this.hintHeld = false;
     this.announcedCount = 0;
-    this.factCardShown = false;
+    this.factCardsShown = [];
   }
 
   create(): void {
@@ -361,6 +395,50 @@ export class HudScene extends Phaser.Scene {
   update(_time: number, deltaMs: number): void {
     this.updateStick();
     this.foundPopup.update(deltaMs);
+    if (this.scrollsVertically()) this.followWaterBand(deltaMs);
+  }
+
+  // ---- view ----------------------------------------------------------------
+
+  /** Whether the area is taller than one screen, so the swim camera may scroll vertically. */
+  private scrollsVertically(): boolean {
+    return this.zone.height > WORLD_H;
+  }
+
+  /** World y at the swim camera's top edge. */
+  private swimCameraTop(): number {
+    return this.scene.get(SCENE_KEYS.swim).cameras.main.worldView.y;
+  }
+
+  /** Tall areas: the water band on screen now, from where the swim camera shows the water. */
+  private swimWaterRows(): ScreenWaterRows {
+    const rows = { surf: SURF, bedTop: this.zone.bedTop };
+    return screenWaterRows(this.view, rows, this.swimCameraTop(), this.view.fit.fitZoom);
+  }
+
+  /**
+   * The view the HUD layout reads. A one-screen-tall area leaves `waterRows` unset (the canal's
+   * rows); a taller area sets them from where the swim camera shows the water now.
+   */
+  private hudView(): HudView {
+    if (!this.scrollsVertically()) return this.view;
+    const { cssW, cssH } = this.view;
+    return { cssW, cssH, waterRows: this.swimWaterRows() };
+  }
+
+  /**
+   * Tall areas only: re-places the overlays as the swim camera scrolls the water band on screen.
+   * Placing re-wraps the banner text and redraws the panels, so it is throttled rather than run on
+   * every scrolled frame: at once when the band moved by OVERLAY_REPLACE_PX or more, or an edge
+   * reached or left the canvas edge it is clamped to; after a smaller move, once OVERLAY_SETTLE_MS
+   * have passed since the last placing, so the overlays settle on the exact band as scrolling slows.
+   * A band that has not moved never re-places them.
+   */
+  private followWaterBand(deltaMs: number): void {
+    this.overlayAgeMs += Math.max(0, deltaMs);
+    if (waterBandMoved(this.overlayWaterRows, this.swimWaterRows(), this.view.cssH, this.overlayAgeMs)) {
+      this.layoutOverlays();
+    }
   }
 
   // ---- build ---------------------------------------------------------------
@@ -562,7 +640,7 @@ export class HudScene extends Phaser.Scene {
 
   /** Measures the status panels and buttons, lays them out through hudControls() and positions every control. */
   private layoutControls(): void {
-    this.controls = hudControls(this.view, this.measureControls());
+    this.controls = hudControls(this.hudView(), this.measureControls());
     this.placeCounter(this.controls.counter);
     this.placeLegs(this.controls.legs);
     this.placeTripBag(this.controls.bag);
@@ -658,7 +736,7 @@ export class HudScene extends Phaser.Scene {
   private measureTripBag(): Size {
     this.bagCountW = widestText(
       this.bagCount,
-      Array.from({ length: this.assets.zone.finds.length + 2 }, (_, count) => String(count)),
+      Array.from({ length: this.zone.finds.length + 2 }, (_, count) => String(count)),
     );
     const statusW = widestText(this.bagStatus, [tripBagStatus(0), tripBagStatus(1)]);
     this.drawTripBag();
@@ -736,7 +814,12 @@ export class HudScene extends Phaser.Scene {
     if (this.bannerActive) requests.push(bannerRequest('snackBanner', this.bannerText, bannerBoxes));
     if (this.foundPopup.hasFind()) requests.push({ id: 'findToast', boxAt: (maxW) => this.foundPopup.box(maxW) });
     const keepOuts = controlKeepOuts(this.controls, { goHomeVisible: this.goHomeButton.container.visible });
-    for (const { id, rect, textPx } of placeHudOverlays(this.view, this.controls, keepOuts, requests)) {
+    const view = this.hudView();
+    if (view.waterRows !== undefined) {
+      this.overlayWaterRows = view.waterRows;
+      this.overlayAgeMs = 0;
+    }
+    for (const { id, rect, textPx } of placeHudOverlays(view, this.controls, keepOuts, requests)) {
       this.placeOverlay(id, rect, textPx, id === 'hint' ? hintBoxes : bannerBoxes);
     }
   }
@@ -931,20 +1014,31 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * Shows the tilapia fact card with play paused, as Pause does but with the card in place of the
-   * pause overlay: once per trip, while swimming and not already paused, when the snapshot says it is due.
+   * Shows the fact card the snapshot says is due with play paused, as Pause does but with the card
+   * in place of the pause overlay: once per id per trip, while swimming and not already paused.
    */
   private showFactCardWhenDue(snapshot: TripSnapshot): void {
-    if (!snapshot.tilapiaCardDue || this.factCardShown || this.paused || snapshot.phase !== 'swimming') return;
-    this.factCardShown = true;
+    const dueId = snapshot.factCardDue;
+    if (dueId === null || this.factCardsShown.includes(dueId) || this.paused || snapshot.phase !== 'swimming') return;
+    const card = this.threatFactCard(dueId);
+    this.factCardsShown.push(dueId);
     this.holdSwim();
-    this.factCard.show();
+    this.factCard.show(card);
     this.game.events.emit(GAME_EVENTS.PAUSED);
   }
 
-  /** After OK on the fact card: tells the swim scene the card was seen, then resumes play. */
+  /** The fact card of hazard or predator `id` in this zone. Throws when the zone has no such threat. */
+  private threatFactCard(id: string): Readonly<FactCardData> {
+    const index = threatIds(this.zone).indexOf(id);
+    if (index < 0) throw new Error(`HudScene: no hazard or predator ${id} in the zone`);
+    return threatFactCards(this.zone)[index];
+  }
+
+  /** After OK on the fact card: tells the swim scene that card was seen, then resumes play. */
   private closeFactCard(): void {
-    const payload: FactCardSeenPayload = { id: TILAPIA_FACT.id };
+    const shownId = this.factCardsShown[this.factCardsShown.length - 1];
+    if (shownId === undefined) throw new Error('HudScene: a fact card closed before any was shown');
+    const payload: FactCardSeenPayload = { id: shownId };
     this.game.events.emit(HUD_EVENTS.FACT_CARD_SEEN, payload);
     this.resumeSwim();
   }

@@ -39,8 +39,15 @@ _Avoid_: death, die, game over, wipe, fail
 ### Areas and exploring
 
 **Area**:
-A named part of the world, also called a habitat, such as the canal (Area 1), where each area is a level that is beaten by reaching its open exit.
+A level that belongs to one **Habitat**, such as the canal (Area 1), W x H screens in size and built from area data; it is beaten by reaching its open exit.
 _Avoid_: map; "level" in UI text (say "Area 1")
+
+**Habitat**:
+A group of areas that share a look, such as the canal; only the canal habitat exists so far.
+_Avoid_: using it as another name for one area
+
+**Area map**:
+The screen after the explorer card's Go! where the player picks an unlocked **Area** to explore or replay, with the areas on a winding path by **Habitat**, each with its stars, and a padlock on each locked area (N2).
 
 **Exit**:
 The way out of an area, which stays closed until every snack in the area is eaten.
@@ -61,7 +68,7 @@ A stretch of flowing water in an area that pushes the axolotl, and that rarer tr
 The axolotl's first power, a short burst of speed that works with any number of legs and is the only way to break a Dash pot.
 
 **Hiding spot**:
-A place in an area where a treasure can hide, picked fresh each trip for each treasure picked for that trip, from that treasure's pool. Each rarity's spots sit in their own risk band, nearer a tilapia's patrol route the rarer the treasure (B10).
+A place in an area where a treasure can hide, picked fresh each trip for each treasure picked for that trip, from that treasure's pool. Each rarity's spots sit in their own risk band, nearer a threat (a predator's patrol route or a leg-costing hazard) the rarer the treasure (B10).
 
 **Dash pot**:
 A pot only Tail Dash can break, where Legendary treasures hide.
@@ -70,23 +77,27 @@ A pot only Tail Dash can break, where Legendary treasures hide.
 The small sparkle, readable without colour, that appears near a hidden treasure and on each of the last 3 snacks.
 _Avoid_: hint star
 
-### Tilapia and legs
+### Hazards, predators and legs
 
 **Hazard**:
-Something in an area that can slow the axolotl or cost a leg, such as the tilapia.
+Something in an area, defined as data with its own rules, that may cost the axolotl a leg or only slow it, such as a predator.
+
+**Predator**:
+A kind of **Hazard**: an animal that hunts, with a visible warning before every strike; every predator follows the same shared rules, and each species is data.
+_Avoid_: monster
 
 **Tilapia**:
-The invasive fish that patrol the canal, also called the predator.
+The invasive fish that patrol the canal, the first **Predator**.
 _Avoid_: monster
 
 **Telegraph**:
-The warning (a glint and a wind-up pose) before a lunge.
+A predator's visible warning before a lunge; the tilapia's is a glint and a wind-up pose.
 
 **Lunge**:
-The tilapia's quick dash at the axolotl.
+A predator's strike; the tilapia's is a quick dash at the axolotl.
 
 **Hit**:
-A lunge that connects.
+A predator's strike, or a **Hazard** that costs a leg, that connects.
 
 **Protected time**:
 A short time after a hit when no second hit can land.
@@ -200,7 +211,7 @@ The in-game book of morphs and fact cards, nicknamed the Axolotl-dex in game.
 A short, true fact about axolotls or their world.
 
 **Save**:
-Progress kept in device storage by itself: banked treasures, the axolotls, the tank, the Collection Book, and stars; never anything from a trip in progress.
+Progress kept in device storage by itself: banked treasures, the axolotls, the tank, the Collection Book, stars, the last chosen area, and the hazards and predators met; never anything from a trip in progress.
 _Avoid_: banking (banking moves trip finds to ownership)
 
 **Start over**:
@@ -217,24 +228,25 @@ A themed group of Wearables, named by a Wearable's optional set ID, that unlocks
 **Refuge**:
 The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 
-**Area map**:
-The map where the player picks an unlocked **Area** to explore (N2); not in the MVP.
-
 ## Relationships
 
-- A **Trip** has exactly one **Explorer**, starts at the **Home Spot** in one **Area**, and ends by **Go home**, **Carried home**, or reaching the open **Exit**
+- A **Trip** has exactly one **Explorer**, starts at the **Home Spot** in the **Area** picked on the **Area map**, and ends by **Go home**, **Carried home**, or reaching the open **Exit**
 - Only the **Explorer**'s **Outfit** applies on a **Trip**
 - A **Trip** has one **Trip Bag**, which holds zero or more **Trip finds**
 - A **Trip find** is either a **Treasure** or a rescued **Stranded axolotl**
 - **Banking** at the **Home Spot**, **Go home**, or reaching the open **Exit** empties the **Trip Bag** into permanent ownership
 - **Carried home** sends every unbanked **Trip find** back into the **Area** and starts the **Snacks** over; banked items and **Stars** are untouched
 - An **Area** has exactly one **Exit**, one **Special treasure**, many **Snacks**, many **Hiding spots**, and up to 3 **Stars**
+- An **Area** belongs to exactly one **Habitat**; a **Habitat** holds one or more **Areas**
+- Each **Area** adds at most one new **Hazard** or **Predator** and at most one new timing or puzzle element that no earlier **Area** has
+- Area 1 is always unlocked, and beating Area N (earning its exit **Star**) unlocks Area N+1; there are no star gates, and any unlocked **Area** can be replayed from the **Area map**
 - The **Exit** opens only when every **Snack** in its **Area** is eaten
 - Each **Trip** picks a few unbanked **Treasures** and one **Hiding spot** per **Treasure** picked for that **Trip**, from that **Treasure**'s pool; no two **Treasures** share a spot in one **Trip**
 - A Legendary **Treasure** always hides in a **Dash pot**, which only **Tail Dash** can break
 - A **Hint sparkle** marks a hidden **Treasure** when the axolotl is near, and each of the last 3 **Snacks**
-- A **Tilapia** is a **Hazard**; its **Telegraph** always comes before a **Lunge**
-- A **Hit** is a **Lunge** that connects and starts **Protected time**; it causes exactly one **Leg loss**, except a hit blocked by a Shell **Perk** (at most one per trip), which costs no leg
+- A **Predator** is a **Hazard**, and a **Tilapia** is a **Predator**; a **Predator**'s **Telegraph** always comes before its **Lunge**, and only one **Predator** in an **Area** warns or lunges at a time
+- A **Hit** is a **Lunge** that connects, or a touch on a **Hazard** that costs a leg; it starts **Protected time** and causes exactly one **Leg loss**, except a hit blocked by a Shell **Perk** (at most one per trip), which costs no leg; a **Hazard** that only slows never hits
+- The first time the **Explorer** meets a **Hazard** or **Predator**, its **Fun-fact card** shows, once per **Save**
 - Each **Leg loss** is undone by **Regrowth**, one leg at a time; eating a **Snack** speeds up **Regrowth**
 - Losing the fourth leg means the axolotl is **Carried home**
 - A **Treasure** is exactly one of **Decoration**, **Wearable**, or **Paint shell**, and has exactly one **Rarity**
@@ -267,4 +279,7 @@ The map where the player picks an unlocked **Area** to explore (N2); not in the 
 - "sex" in code (`AxolotlSex`, the `sex` look field, the `sex` styler step) means **Boy or girl** in the UI: resolved: say **Boy or girl** in UI text and docs; "sex" survives in code only.
 - "Tail" names three things: the **Tail** look option (tail length), the Tail Wearable **Slot**, and **Tail Dash**: resolved: **Tail** alone means the look option; say "Tail slot" for the Wearable slot and **Tail Dash** for the power.
 - "medium" (`'medium'`) is an id of both **Tail** and **Size**: resolved: always name the field with it (Medium tail, Medium size); the ids are distinct per field.
-- "Tilapia" and "predator" are used for the same fish (PRD glossary, `src/scenes/PredatorView.ts`, `src/art/predatorTextures.ts`): resolved: **Tilapia** is the term; "predator" is an accepted synonym, and "monster" is avoided.
+- "Tilapia" and "predator" were used for the same fish (PRD glossary, `src/scenes/PredatorView.ts`, `src/art/predatorTextures.ts`): resolved: a **Predator** is the kind of **Hazard** that hunts, and the **Tilapia** is the first **Predator**; say **Tilapia** for the fish, and avoid "monster".
+- "habitat" was another name for one **Area** before the area framework (#73): resolved: a **Habitat** is a group of **Areas** that share a look.
+- `tilapiaRoutes` and `predatorRoutes` both hold predator patrol routes in area data: resolved: the **Tilapia** keeps its own `tilapiaRoutes` column, matching the PRD area table's tilapia column, and every other species goes in `predatorRoutes`.
+- `metHazards` (the hub's met list) holds **Predator** ids too, such as `'tilapia'`: resolved: a **Predator** is a **Hazard**, so "hazards met" covers both.

@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import { bakeAreaMapTextures, type AreaMapTextures } from '../art/areaMapTextures';
 import { bakeAreaTextures, type AreaTextures } from '../art/areaTextures';
 import { createAxolotlRigBake, type AxolotlRigBake } from '../art/axolotlRig';
 import type { ReedLook } from '../art/drawScenery';
@@ -9,36 +10,55 @@ import { bakeTankTextures, type TankTextures } from '../art/tankTextures';
 import { bakeTreasureTextures, type TreasureTextures } from '../art/treasureTextures';
 import {
   TEX,
+  bakeAreaScenery,
   bakeSizedButton,
   bakeTextures,
   buttonKey,
   iconKey,
+  sceneryFromBaked,
   type BakedTextures,
   type ButtonFill,
   type ButtonShape,
   type ButtonVisual,
+  type SceneryTextures,
   type TexInfo,
 } from '../art/textures';
 import { BUTTON_PRESS_OFFSET, BUTTON_SQUARE, BUTTON_WIDE, type IconKind } from '../art/drawUi';
+import { AREAS, type AreaData } from '../logic/areas';
 import { mulberry32 } from '../logic/rng';
 import { TANK } from '../logic/tank';
 import { VIEW } from '../logic/tuning';
 import { fitView, type ViewFit } from '../logic/viewport';
-import { DEFAULT_ZONE_SEED, WORLD_H, buildCanalZone, type ReedSpec, type ZoneLayout } from '../logic/zone';
+import { CANAL_AREA_ID, DEFAULT_ZONE_SEED, WORLD_H, buildZone, type ReedSpec, type ZoneLayout } from '../logic/zone';
 
 /** Scene keys, in render order (later scenes draw on top). */
 export const SCENE_KEYS = Object.freeze({
   boot: 'Boot',
   title: 'Title',
   homeTank: 'HomeTank',
+  areaMap: 'AreaMap',
   swim: 'Swim',
   hud: 'Hud',
   creator: 'Creator',
 } as const);
 
-/** Everything the boot scene prepares, handed from scene to scene as start data. */
+/**
+ * Game registry key for a dev area: main.ts sets it (dev builds only, from `?area=<id>`) before the
+ * boot scene runs. Never equals a `REGISTRY_KEYS`, `TRIP_REGISTRY_KEYS`, `SESSION_REGISTRY_KEY` or
+ * `SAVE_GATE_REGISTRY_KEY` value.
+ */
+export const DEV_AREA_REGISTRY_KEY = 'devArea';
+
+/**
+ * Everything the boot scene prepares, handed from scene to scene as start data. `areas` is AREAS
+ * plus the dev area when one was asked for; `zones` and `scenery` hold each of those areas' layout
+ * and baked scenery by area id. `devAreaId` is the dev area's id, or null.
+ */
 export interface GameAssets {
-  zone: ZoneLayout;
+  areas: readonly Readonly<AreaData>[];
+  zones: Readonly<Record<string, ZoneLayout>>;
+  scenery: Readonly<Record<string, SceneryTextures>>;
+  devAreaId: string | null;
   baked: BakedTextures;
   axolotl: AxolotlRigBake;
   predator: PredatorTextures;
@@ -46,6 +66,34 @@ export interface GameAssets {
   tank: TankTextures;
   morph: MorphTextures;
   area: AreaTextures;
+  areaMap: AreaMapTextures;
+}
+
+/** What the swim scene and its HUD start from: the game assets and the id of the area to swim in. */
+export interface SwimStart {
+  assets: GameAssets;
+  areaId: string;
+}
+
+/** The area with id `areaId` among the assets' areas. Throws when there is none. */
+export function areaFor(assets: GameAssets, areaId: string): Readonly<AreaData> {
+  const area = assets.areas.find((candidate) => candidate.id === areaId);
+  if (area === undefined) throw new Error(`areaFor: no area ${areaId}`);
+  return area;
+}
+
+/** The zone layout of area `areaId`. Throws when the assets hold none. */
+export function zoneFor(assets: GameAssets, areaId: string): ZoneLayout {
+  const zone: ZoneLayout | undefined = assets.zones[areaId];
+  if (zone === undefined) throw new Error(`zoneFor: no zone for area ${areaId}`);
+  return zone;
+}
+
+/** The baked scenery of area `areaId`. Throws when the assets hold none. */
+export function sceneryFor(assets: GameAssets, areaId: string): SceneryTextures {
+  const scenery: SceneryTextures | undefined = assets.scenery[areaId];
+  if (scenery === undefined) throw new Error(`sceneryFor: no scenery for area ${areaId}`);
+  return scenery;
 }
 
 /** CSS viewport size plus the fitted view derived from the Scale Manager. */
@@ -289,7 +337,38 @@ function toReedLook(reed: ReedSpec): ReedLook {
   };
 }
 
-/** Builds the canal zone, bakes every texture at the fitted scale, then starts the title. */
+/**
+ * Every area's scenery by area id: the canal's from its `bakeTextures` result, every other area
+ * baked with its id as the key prefix.
+ */
+function bakeScenery(
+  scene: Phaser.Scene,
+  zones: Readonly<Record<string, ZoneLayout>>,
+  baked: BakedTextures,
+  bakeScale: number,
+): Record<string, SceneryTextures> {
+  const scenery: Record<string, SceneryTextures> = {};
+  for (const [id, zone] of Object.entries(zones)) {
+    scenery[id] =
+      id === CANAL_AREA_ID
+        ? sceneryFromBaked(baked)
+        : bakeAreaScenery(scene, {
+            keyPrefix: `${id}:`,
+            bakeScale,
+            bgScale: Math.min(bakeScale, 2),
+            screensWide: zone.chunks,
+            screensTall: zone.rows,
+            bankChunks: zone.bankChunks,
+            sunChunk: zone.sunChunk,
+            rand: mulberry32(ART_SEED),
+            reeds: zone.reeds.map(toReedLook),
+            pads: zone.pads,
+          });
+  }
+  return scenery;
+}
+
+/** Builds every area's zone, bakes every texture at the fitted scale, then starts the title. */
 export class BootScene extends Phaser.Scene {
   constructor() {
     super(SCENE_KEYS.boot);
@@ -298,7 +377,12 @@ export class BootScene extends Phaser.Scene {
   create(): void {
     const { fit } = readSceneView(this.scale);
     const bakeScale = Math.min(VIEW.bakeScaleMax, Math.max(fit.bakeScale, fit.dpr));
-    const zone = buildCanalZone();
+    const devArea = this.registry.get(DEV_AREA_REGISTRY_KEY) as Readonly<AreaData> | undefined;
+    const areas = devArea === undefined ? [...AREAS] : [...AREAS, devArea];
+    const zones: Record<string, ZoneLayout> = {};
+    for (const area of areas) zones[area.id] = buildZone(area.layout, DEFAULT_ZONE_SEED);
+    const zone = zones[CANAL_AREA_ID];
+    if (zone === undefined) throw new Error('BootScene: no canal area');
     const baked = bakeTextures(this, {
       bakeScale,
       bgScale: Math.min(bakeScale, 2),
@@ -309,6 +393,7 @@ export class BootScene extends Phaser.Scene {
       reeds: zone.reeds.map(toReedLook),
       pads: zone.pads,
     });
+    const scenery = bakeScenery(this, zones, baked, bakeScale);
     const axolotl = createAxolotlRigBake(this, TEX.axolotl, bakeScale);
     const predator = bakePredatorTextures(this, bakeScale);
     const treasure = bakeTreasureTextures(this, bakeScale);
@@ -318,7 +403,21 @@ export class BootScene extends Phaser.Scene {
       rand: mulberry32(TANK_ART_SEED),
     });
     const area = bakeAreaTextures(this, bakeScale);
-    const assets: GameAssets = { zone, baked, axolotl, predator, treasure, tank, morph, area };
+    const areaMap = bakeAreaMapTextures(this, bakeScale);
+    const assets: GameAssets = {
+      areas,
+      zones,
+      scenery,
+      devAreaId: devArea?.id ?? null,
+      baked,
+      axolotl,
+      predator,
+      treasure,
+      tank,
+      morph,
+      area,
+      areaMap,
+    };
     this.scene.start(SCENE_KEYS.title, assets);
   }
 }

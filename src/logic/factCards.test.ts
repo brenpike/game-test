@@ -6,6 +6,8 @@ import {
   TILAPIA_FACT,
   TILAPIA_MEET_RANGE,
   meetsTilapia,
+  metThreatIds,
+  type ThreatSighting,
 } from './factCards';
 import { TILAPIA } from './tuning';
 import type { SafeArea } from './zone';
@@ -122,5 +124,37 @@ describe('meetsTilapia', () => {
     const tilapias = [{ pos: { x: 250, y: 50 } }];
     expect(meetsTilapia(pos, tilapias, SAFE_AREA, 50)).toBe(true);
     expect(meetsTilapia(pos, tilapias, SAFE_AREA, 49)).toBe(false);
+  });
+});
+
+describe('metThreatIds', () => {
+  const pos = { x: 200, y: 50 };
+
+  it('gives the ids of the sightings within their meet range (inclusive), in sighting order', () => {
+    const sightings: ThreatSighting[] = [
+      { id: 'test-mud', distance: 60, meetRange: 60 },
+      { id: 'test-far', distance: 60.001, meetRange: 60 },
+      { id: 'tilapia', distance: 10, meetRange: TILAPIA_MEET_RANGE },
+    ];
+    expect(metThreatIds(pos, SAFE_AREA, sightings)).toEqual(['test-mud', 'tilapia']);
+  });
+
+  it('gives each id once', () => {
+    const sightings: ThreatSighting[] = [
+      { id: 'tilapia', distance: 10, meetRange: TILAPIA_MEET_RANGE },
+      { id: 'test-mud', distance: 0, meetRange: 60 },
+      { id: 'tilapia', distance: 20, meetRange: TILAPIA_MEET_RANGE },
+    ];
+    expect(metThreatIds(pos, SAFE_AREA, sightings)).toEqual(['tilapia', 'test-mud']);
+  });
+
+  it('meets nothing inside the safe area, edges included', () => {
+    const sightings: ThreatSighting[] = [{ id: 'tilapia', distance: 0, meetRange: TILAPIA_MEET_RANGE }];
+    expect(metThreatIds({ x: 50, y: 50 }, SAFE_AREA, sightings)).toEqual([]);
+    expect(metThreatIds({ x: 100, y: 50 }, SAFE_AREA, sightings)).toEqual([]);
+  });
+
+  it('meets nothing with no sightings', () => {
+    expect(metThreatIds(pos, SAFE_AREA, [])).toEqual([]);
   });
 });

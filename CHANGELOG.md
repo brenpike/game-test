@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-21
+
+### Added
+
+- An area map opens after Go!. Pick an area, replay one you beat, and see its stars, a lock on areas you cannot play yet, and "New!" on one you just unlocked (#73).
+- Unlocking: beat an area to unlock the next one. Only Area 1 exists so far (#73).
+- A dev-only `?area=<id>` flag loads a test area for play-testing and the frame-time check. It is absent from the production build (#73).
+
+### Changed
+
+- Go exploring opens the area map after the explorer card (#73).
+- The tilapia now runs on shared predator rules, with no change in play (#73).
+- Fact cards and the Collection Book now come from data. The tilapia card is unchanged (#73).
+
 ## [0.20.2] - 2026-10-21
 
 ### Fixed

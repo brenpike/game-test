@@ -88,7 +88,7 @@ describe('feedEncounter', () => {
     expect(result.events).toEqual([]);
     expect(result.boosted).toEqual([0]);
     expect(result.state.legs.slots[0]).toEqual({ status: 'regrowing', progress: LEGS.snackSpeedUp });
-    expect(result.state.tilapias).toBe(state.tilapias);
+    expect(result.state.predators).toBe(state.predators);
     expect(result.state.bumpCooldownLeft).toBe(0.4);
     expect(result.state.tripOver).toBe(false);
   });

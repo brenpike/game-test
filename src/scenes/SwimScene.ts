@@ -13,8 +13,8 @@ import {
   T_STATIC,
   WATER_SHALLOW,
 } from '../art/palette';
-import { BUBBLE_RADII, type TexInfo } from '../art/textures';
-import { areaById, atExit, exitContact, exitOpen, type AreaData } from '../logic/areas';
+import { BUBBLE_RADII, type SceneryTextures, type TexInfo } from '../art/textures';
+import { atExit, exitContact, exitOpen, type AreaData } from '../logic/areas';
 import { BUBBLE_MAX_ALIVE, bubblePos, createBubbles, updateBubbles, type BubbleSystem } from '../logic/bubbles';
 import {
   SPARKLE_SNACKS_LEFT,
@@ -30,7 +30,6 @@ import {
 } from '../logic/collectibles';
 import { TURN_SQUASH, bodyPoint, drawnAxolotl, type DrawnAxolotl } from '../logic/drawnAxolotl';
 import { currentAt, reedDragAt, reedsNear } from '../logic/environment';
-import { TILAPIA_FACT } from '../logic/factCards';
 import {
   GAME_EVENTS,
   REGISTRY_KEYS,
@@ -58,7 +57,7 @@ import {
   eatSnacks,
   goHome,
   keepExploring,
-  markTilapiaCardSeen,
+  markFactCardSeen,
   sameTripSnapshot,
   stepTrip,
   tripAxolotlPos,
@@ -71,15 +70,19 @@ import {
 import { TRIP_EVENTS, TRIP_REGISTRY_KEYS, type TripSnapshot } from '../logic/tripEvents';
 import { LEGS, SWIM } from '../logic/tuning';
 import { len, type Vec2 } from '../logic/vec';
-import { SURF, WORLD_H, ZONE_W, swimBounds, waveY, type CurrentZone } from '../logic/zone';
+import { SURF, swimBounds, waveY, type CurrentZone, type ZoneLayout } from '../logic/zone';
 import {
   SCENE_KEYS,
+  areaFor,
   blinkAt,
   cssColor,
   fitWorldCamera,
   readSceneView,
+  sceneryFor,
+  zoneFor,
   type GameAssets,
   type SceneView,
+  type SwimStart,
 } from './BootScene';
 import { ExitView } from './ExitView';
 import { HomeSpotView } from './HomeSpotView';
@@ -167,14 +170,18 @@ function placeBaked(image: Phaser.GameObjects.Image, info: TexInfo): Phaser.Game
 }
 
 /**
- * The canal zone: swimming, snacks, currents, reeds, bubbles, Tail Dash, the tilapia, the Home
- * Spot, the hidden treasures (hint stars, Dash pots, the cave and the past-the-current marker) and
- * the stranded axolotl.
+ * One area of any size, the canal or another: swimming, snacks, currents, reeds, bubbles, Tail
+ * Dash, the tilapia, the Home Spot, the hidden treasures (hint stars, Dash pots, the cave and the
+ * past-the-current marker) and the stranded axolotl. The camera follows the axolotl across the
+ * area; a one-screen-tall area such as the canal never scrolls vertically.
  * One scene start is one trip: it starts from the session and, once the trip ends, hands the trip
  * back to the session and opens the Home Tank.
  */
 export class SwimScene extends Phaser.Scene {
+  private start!: SwimStart;
   private assets!: GameAssets;
+  private zone!: ZoneLayout;
+  private scenery!: SceneryTextures;
   private motion!: MotionProfile;
   private view!: SceneView;
   private bounds!: SwimBounds;
@@ -249,8 +256,9 @@ export class SwimScene extends Phaser.Scene {
     super(SCENE_KEYS.swim);
   }
 
-  init(data: GameAssets): void {
-    this.assets = data;
+  init(data: SwimStart): void {
+    this.start = data;
+    this.assets = data.assets;
     this.clock = 0;
     this.allDone = false;
     this.leaving = false;
@@ -275,15 +283,15 @@ export class SwimScene extends Phaser.Scene {
   }
 
   create(): void {
-    const zone = this.assets.zone;
-    const area = areaById(zone.areaId);
-    if (!area) {
-      throw new Error(`SwimScene: no area data for area "${zone.areaId}"`);
-    }
+    const areaId = this.start.areaId;
+    const zone = zoneFor(this.assets, areaId);
+    const area = areaFor(this.assets, areaId);
+    this.zone = zone;
     this.area = area;
+    this.scenery = sceneryFor(this.assets, areaId);
     this.view = readSceneView(this.scale);
     this.motion = motionProfile(this.registry.get(REGISTRY_KEYS.reducedMotion) === true);
-    this.bounds = swimBounds();
+    this.bounds = swimBounds(zone);
     this.rand = mulberry32(SIM_SEED);
     this.swim = { x: zone.start.x, y: zone.start.y, vx: 0, vy: 0, facing: 1 };
     this.lastFacing = this.swim.facing;
@@ -292,7 +300,7 @@ export class SwimScene extends Phaser.Scene {
     // INVARIANT: trip seeds are never saved. The first trip of the session is random; later
     // trips use nextTripSeed of the last trip's seed (tripStart).
     const session = readSession(this.registry);
-    const start = tripStart(session, Math.floor(Math.random() * 0x100000000) >>> 0);
+    const start = tripStart(session, Math.floor(Math.random() * 0x100000000) >>> 0, area.id);
     const explorer = explorerAxolotl(session);
     // INVARIANT: perks are worked out once, with every leg present. The feet rule (Socks and Feet
     // count only with a leg present) never changes them in play: the hit that takes the last leg
@@ -308,8 +316,9 @@ export class SwimScene extends Phaser.Scene {
     const stranding = pickStranding(start.ownedMorphs, start.waitingStranded, zone.strandingPlaces, start.tripSeed);
     this.trip = createTrip(zone, LEGS, start.banked, start.tripSeed, {
       stranding,
-      tilapiaCardSeen: start.tilapiaCardSeen,
+      factCardsSeen: start.factCardsSeen,
       returnedFinds: start.returnedFinds,
+      area,
     });
     this.dashKeyLatched = true;
     this.tripCtx = perkTripContext(this.perks, this.bounds);
@@ -334,7 +343,7 @@ export class SwimScene extends Phaser.Scene {
     this.publishSnapshot(tripSnapshot(this.trip));
     this.captureDrawnFrame();
     this.renderFrame(0);
-    this.scene.launch(SCENE_KEYS.hud, this.assets);
+    this.scene.launch(SCENE_KEYS.hud, this.start);
   }
 
   /**
@@ -386,7 +395,7 @@ export class SwimScene extends Phaser.Scene {
     const steer = this.computeSteer();
     this.lastSteer = steer;
 
-    const zone = this.assets.zone;
+    const zone = this.zone;
     const pos = { x: this.swim.x, y: this.swim.y };
     this.dashingThisFrame = this.dash.phase === 'dashing';
     this.swim = stepSwim(
@@ -412,24 +421,23 @@ export class SwimScene extends Phaser.Scene {
   // ---- setup ---------------------------------------------------------------
 
   private buildWorld(): void {
-    const { zone, baked } = this.assets;
-    baked.bg.forEach((info, i) => {
-      this.add.image(i * info.w, 0, info.key).setOrigin(0, 0).setScale(1 / info.scale).setDepth(DEPTH.bg);
-    });
+    const { zone, scenery } = this;
+    const baked = this.assets.baked;
+    scenery.bg.forEach((row, r) => this.placeBackgroundRow(row, r));
     this.reeds = zone.reeds.map((reed, i) =>
-      placeBaked(this.add.image(reed.bx, reed.by, baked.reeds[i].key), baked.reeds[i]).setDepth(DEPTH.reeds),
+      placeBaked(this.add.image(reed.bx, reed.by, scenery.reeds[i].key), scenery.reeds[i]).setDepth(DEPTH.reeds),
     );
     this.reedNudge = zone.reeds.map(() => 0);
 
     const haze = cssColor(HAZE);
     this.add
-      .rectangle(0, SURF, ZONE_W, WORLD_H - SURF, haze.color, haze.alpha)
+      .rectangle(0, SURF, zone.width, zone.height - SURF, haze.color, haze.alpha)
       .setOrigin(0, 0)
       .setDepth(DEPTH.haze);
     this.streaks = zone.currents.flatMap((current) => this.buildStreaks(current));
 
-    this.homeSpotView = new HomeSpotView(this, this.assets, this.trip.homeSpot);
-    this.exitView = new ExitView(this, this.assets, this.area.exit, exitOpen(this.snackTally.left));
+    this.homeSpotView = new HomeSpotView(this, this.assets, this.trip.homeSpot, zone.bedTop);
+    this.exitView = new ExitView(this, this.assets, this.area.exit, zone.bedTop, exitOpen(this.snackTally.left));
     this.treasureView = new TreasureView(this, this.assets, zone, this.trip.placed, this.perks.hintMultiplier);
 
     this.snacks.clear();
@@ -450,7 +458,11 @@ export class SwimScene extends Phaser.Scene {
     this.axolotlView = createAxolotlRigView(this, this.assets.axolotl);
     this.axolotl = this.axolotlView.root.setPosition(this.swim.x, this.swim.y).setDepth(DEPTH.axolotl);
     this.strandedView = new StrandedView(this, this.assets);
-    this.predatorView = new PredatorView(this, this.assets, this.trip.encounter.tilapias.length);
+    this.predatorView = new PredatorView(
+      this,
+      this.assets,
+      this.trip.encounter.predators.map((predator) => predator.species),
+    );
 
     this.bubbleImages = Array.from({ length: BUBBLE_MAX_ALIVE }, () =>
       this.add.image(0, 0, baked.bubbles[0].key).setVisible(false).setDepth(DEPTH.bubbles),
@@ -459,7 +471,7 @@ export class SwimScene extends Phaser.Scene {
     this.surfaceFill = cssColor(WATER_SHALLOW);
     this.surfaceLine = cssColor(SURFACE_LINE);
     this.pads = zone.pads.map((pad, i) =>
-      placeBaked(this.add.image(pad.x, SURF, baked.pads[i].key), baked.pads[i]).setDepth(DEPTH.pads),
+      placeBaked(this.add.image(pad.x, SURF, scenery.pads[i].key), scenery.pads[i]).setDepth(DEPTH.pads),
     );
     this.sparkles = Array.from({ length: SPARKLE_POOL }, () => ({
       image: placeBaked(this.add.image(0, 0, baked.sparkle.key), baked.sparkle)
@@ -467,6 +479,17 @@ export class SwimScene extends Phaser.Scene {
         .setDepth(DEPTH.fx),
       age: SPARKLE_LIFE_S,
     }));
+  }
+
+  /** Background chunk row `row` (row 0 on top), each chunk at its column and row in the area. */
+  private placeBackgroundRow(chunks: readonly TexInfo[], row: number): void {
+    chunks.forEach((info, column) => {
+      this.add
+        .image(column * info.w, row * info.h, info.key)
+        .setOrigin(0, 0)
+        .setScale(1 / info.scale)
+        .setDepth(DEPTH.bg);
+    });
   }
 
   /** The Common hint star, the one the last snacks share (PRD H3). */
@@ -491,7 +514,7 @@ export class SwimScene extends Phaser.Scene {
 
   private setupCamera(): void {
     const camera = this.cameras.main;
-    fitWorldCamera(camera, this.view.fit, ZONE_W, WORLD_H);
+    fitWorldCamera(camera, this.view.fit, this.zone.width, this.zone.height);
     this.followPoint.set(this.swim.x, this.swim.y);
     camera.startFollow(this.followPoint, false, this.motion.cameraLerp, this.motion.cameraLerp);
     camera.centerOn(this.swim.x, this.swim.y);
@@ -784,10 +807,9 @@ export class SwimScene extends Phaser.Scene {
     this.publishSnapshot(tripSnapshot(this.trip));
   }
 
-  /** The player closed the tilapia fact card: it is no longer due this trip. */
+  /** The player closed a fact card: it is no longer due this trip. */
   private handleFactCardSeen(payload: FactCardSeenPayload): void {
-    if (payload.id !== TILAPIA_FACT.id) return;
-    this.trip = markTilapiaCardSeen(this.trip);
+    this.trip = markFactCardSeen(this.trip, payload.id);
   }
 
   private handleHidden(): void {
@@ -816,7 +838,7 @@ export class SwimScene extends Phaser.Scene {
     this.view = readSceneView(this.scale);
     const camera = this.cameras.main;
     camera.setSize(this.scale.width, this.scale.height);
-    fitWorldCamera(camera, this.view.fit, ZONE_W, WORLD_H);
+    fitWorldCamera(camera, this.view.fit, this.zone.width, this.zone.height);
   }
 
   private handleShutdown(): void {
@@ -953,7 +975,7 @@ export class SwimScene extends Phaser.Scene {
   }
 
   private renderReeds(dt: number, t: number): void {
-    const zone = this.assets.zone;
+    const zone = this.zone;
     const sway = this.motion.reedSway;
     const near = sway ? new Set(reedsNear(this.swim, zone.reeds, REED_TOUCH_RADIUS)) : null;
     zone.reeds.forEach((reed, i) => {
@@ -1104,7 +1126,7 @@ export class SwimScene extends Phaser.Scene {
   private renderSurface(t: number): void {
     const view = this.cameras.main.worldView;
     const x0 = Math.max(0, Math.floor(view.x / SURFACE_STEP - 1) * SURFACE_STEP);
-    const x1 = Math.min(ZONE_W, view.right + SURFACE_STEP);
+    const x1 = Math.min(this.zone.width, view.right + SURFACE_STEP);
     const steps = Math.max(1, Math.ceil((x1 - x0) / SURFACE_STEP));
     const xs = Array.from({ length: steps + 1 }, (_, k) => Math.min(x0 + k * SURFACE_STEP, x1));
 
@@ -1128,7 +1150,7 @@ export class SwimScene extends Phaser.Scene {
   }
 
   private renderPads(t: number): void {
-    this.assets.zone.pads.forEach((pad, i) => {
+    this.zone.pads.forEach((pad, i) => {
       const slope = (waveY(pad.x + 3, t) - waveY(pad.x - 3, t)) / 6;
       this.pads[i].setPosition(pad.x, waveY(pad.x, t) - 1).setRotation(Math.atan(slope));
     });

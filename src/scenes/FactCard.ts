@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { INK, UI_PANEL } from '../art/palette';
 import { CARD, cardTextWidth, fitCard } from '../logic/cardFit';
-import { FACT_CARD_OK_LABEL, TILAPIA_FACT } from '../logic/factCards';
+import { FACT_CARD_OK_LABEL, type FactCard as FactCardData } from '../logic/factCards';
 import {
   createButton,
   cssColor,
@@ -17,7 +17,7 @@ const DIM_COVER = 8192;
 const MIN_SHOW_MS = 800;
 
 /**
- * Tilapia fact card over the paused swim scene (PRD A21): an ink dim that swallows every press, a
+ * A hazard or predator fact card over the paused swim scene (PRD A21): an ink dim that swallows every press, a
  * white panel with the bold title, the centred body and one wide primary OK button that always
  * shows the focus ring. Appears and leaves at once in both motion modes. OK hides the card and
  * calls `onClose`; it ignores presses for the first MIN_SHOW_MS the card shows.
@@ -44,8 +44,8 @@ export class FactCard {
       .setOrigin(0, 0)
       .setInteractive();
     this.panel = scene.add.graphics();
-    this.title = scene.add.text(0, 0, TILAPIA_FACT.title, { ...uiTextStyle(CARD.titlePx, dpr), align: 'center' });
-    this.body = scene.add.text(0, 0, TILAPIA_FACT.body, { ...uiTextStyle(CARD.bodyPx, dpr, false), align: 'center' });
+    this.title = scene.add.text(0, 0, '', { ...uiTextStyle(CARD.titlePx, dpr), align: 'center' });
+    this.body = scene.add.text(0, 0, '', { ...uiTextStyle(CARD.bodyPx, dpr, false), align: 'center' });
     this.button = createButton(scene, assets.baked, {
       fill: 'primary',
       shape: 'wide',
@@ -68,8 +68,10 @@ export class FactCard {
     return this.container.visible;
   }
 
-  /** Shows the card at once. */
-  show(): void {
+  /** Shows `card` at once: its title and body, laid out from that text. */
+  show(card: Readonly<FactCardData>): void {
+    this.title.setText(card.title);
+    this.body.setText(card.body);
     this.shownAt = this.scene.time.now;
     this.layout(this.view);
     this.container.setVisible(true);
@@ -95,8 +97,8 @@ export class FactCard {
   }
 
   /**
-   * Centres the panel on a canvas that has room for it. fitCard() sizes it from the title, the body
-   * (clipped to whole lines only when nothing fits) and the button: it tightens the padding on a
+   * Centres the panel on a canvas that has room for it. fitCard() sizes it from the current title, the
+   * current body (clipped to whole lines only when nothing fits) and the button: it tightens the padding on a
    * short screen and keeps the button inside the canvas. Safe to call before show() and after hide().
    */
   layout(view: SceneView): void {
@@ -107,7 +109,7 @@ export class FactCard {
     this.body.setWordWrapWidth(textW, true);
     this.body.setMaxLines(0);
     const lineH = this.body.getTextMetrics().fontSize;
-    const bodyLines = this.body.getWrappedText(TILAPIA_FACT.body).length;
+    const bodyLines = this.body.getWrappedText(this.body.text).length;
     const availH = cssH - 2 * CARD.margin;
     const fit = fitCard(availH, [
       { kind: 'fixed', height: this.title.height },

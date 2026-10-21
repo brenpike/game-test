@@ -5,7 +5,6 @@ import type { TexInfo } from '../art/textures';
 import type { AreaExit } from '../logic/areas';
 import type { MotionProfile } from '../logic/motion';
 import type { Vec2 } from '../logic/vec';
-import { BED_TOP } from '../logic/zone';
 import type { GameAssets } from './BootScene';
 
 const TAU = Math.PI * 2;
@@ -38,9 +37,9 @@ function showBaked(image: Phaser.GameObjects.Image, info: TexInfo): void {
 }
 
 /**
- * Draws the area exit: the gate standing on the bed under the exit centre and the round sign above
- * it, both closed (slats, padlock) or open (clear opening, arrow), and a twinkle burst around the
- * sign when it opens. Visual only: the burst is driven by the frame `dt`, so it freezes with the
+ * Draws the area exit: the gate standing on the bed (at `bedTop`) under the exit centre and the
+ * round sign above it, both closed (slats, padlock) or open (clear opening, arrow), and a twinkle
+ * burst around the sign when it opens. Visual only: the burst is driven by the frame `dt`, so it freezes with the
  * scene, and nothing here changes game state. An exit already open when the view is built shows
  * open with no burst.
  */
@@ -53,12 +52,12 @@ export class ExitView {
   private open: boolean;
   private burstAge = BURST_LIFE_S;
 
-  constructor(scene: Phaser.Scene, assets: GameAssets, exit: AreaExit, open: boolean) {
+  constructor(scene: Phaser.Scene, assets: GameAssets, exit: AreaExit, bedTop: number, open: boolean) {
     this.assets = assets;
     this.open = open;
     const art = assets.area.exit;
-    this.gate = bakedImage(scene, open ? art.gateOpen : art.gateClosed, exit.x, BED_TOP, DEPTH.homeSpot);
-    this.signCentre = { x: exit.x, y: BED_TOP - GATE_H - SIGN_GAP_PX - SIGN_SIZE / 2 };
+    this.gate = bakedImage(scene, open ? art.gateOpen : art.gateClosed, exit.x, bedTop, DEPTH.homeSpot);
+    this.signCentre = { x: exit.x, y: bedTop - GATE_H - SIGN_GAP_PX - SIGN_SIZE / 2 };
     this.sign = bakedImage(
       scene,
       open ? art.signOpen : art.signClosed,

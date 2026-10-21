@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_LOOK, type AxolotlLook } from './axolotlLook';
 import { suggestedNamesFor } from './axolotlNames';
 import { CANAL_TREASURES, WEARABLE_SLOTS, ownedDreamColours, type Wearable } from './catalogue';
+import { DEV_TEST_AREA } from './devAreas';
 import { dueFirstFindCards } from './firstFind';
 import { REGISTRY_KEYS } from './gameEvents';
 import { STARTER_MORPH, axolotlFindId } from './morphs';
@@ -67,18 +68,19 @@ const STYLED: AxolotlLook = {
 /**
  * A session built through the session API: a starter and a rescued wild axolotl, both restyled, the
  * wild one wearing the mint Dream colour, a Paint shell, a Decoration placed in the tank and a
- * Wearable banked, the tilapia card, canal stars, and canal memory (eaten snacks, a trip seed, a
+ * Wearable banked, the tilapia met, canal stars, and canal memory (eaten snacks, a trip seed, a
  * waiting axolotl, a lost treasure) that must never be saved.
  */
 function playedSession(): Session {
   const started = addStarter(createSession(), { name: 'Bubbles', look: { ...STYLED, sex: 'boy' } });
   const afterTrip = recordTripEnd(started, {
+    areaId: CANAL_AREA_ID,
     banked: [PLANT, MINT_SHELL, HAT],
     rescued: [{ morph: 'wild', sex: 'girl' }],
     eatenSnacks: ['canal/snack-0'],
     tripSeed: 77,
     waitingStranded: { morph: 'copper', sex: 'boy', placeId: 'canal/stranding-0' },
-    metTilapia: true,
+    met: ['tilapia'],
     returnedFinds: [BOAT],
     stars: { areaId: CANAL_AREA_ID, earned: { exit: true, special: false, legsOrRescue: true } },
   });
@@ -130,7 +132,9 @@ describe('save round trip', () => {
       outfit: emptyOutfit(),
     });
     expect(hub.tank.placed.map((placement) => placement.id)).toEqual([PLANT]);
-    expect(hub.book).toEqual({ foundMorphs: [STARTER_MORPH, 'wild'], tilapiaCard: true });
+    expect(hub.book).toEqual({ foundMorphs: [STARTER_MORPH, 'wild'] });
+    expect(hub.metHazards).toEqual(['tilapia']);
+    expect(hub.lastAreaId).toBe(CANAL_AREA_ID);
     expect(hub.stars).toEqual({ [CANAL_AREA_ID]: { exit: true, special: false, legsOrRescue: true } });
   });
 
@@ -145,6 +149,8 @@ describe('save round trip', () => {
       'book',
       'explorerId',
       'firstFindsSeen',
+      'lastAreaId',
+      'metHazards',
       'stars',
       'tank',
     ]);
@@ -175,12 +181,12 @@ describe('save round trip', () => {
     expect(json.hub.axolotls[0].mood).toBeUndefined();
   });
 
-  it('opens with a fresh canal, so the game never resumes mid-trip (D3)', () => {
+  it('opens with fresh memory for every area, so the game never resumes mid-trip (D3)', () => {
     const session = playedSession();
-    expect(session.canal.lastTripSeed).not.toBeNull();
+    expect(session.areas.canal.lastTripSeed).not.toBeNull();
     const loaded = sessionFromSave(decodeSave(encodeSave(session.hub)));
     expect(loaded.hub).toEqual(session.hub);
-    expect(loaded.canal).toEqual(createSession().canal);
+    expect(loaded.areas).toEqual(createSession().areas);
   });
 
   it('after a reload, finds left unbanked mid-trip rejoin the canal (D3)', () => {
@@ -378,13 +384,22 @@ describe('field-by-field repair', () => {
   });
 
   it('keeps known found morphs in REAL_MORPHS order, adds every owned morph, and needs tilapiaCard exactly true', () => {
-    const hub = hubWith('book', { foundMorphs: ['melanoid', 'unicorn', 'copper', 3], tilapiaCard: 'true' });
-    expect(hub.book).toEqual({ foundMorphs: [STARTER_MORPH, 'wild', 'copper', 'melanoid'], tilapiaCard: false });
+    const json = savedJson();
+    const book = { foundMorphs: ['melanoid', 'unicorn', 'copper', 3], tilapiaCard: 'true' };
+    const hub = loadedHub({ ...json, hub: { ...json.hub, book, metHazards: undefined } });
+    expect(hub.book).toEqual({ foundMorphs: [STARTER_MORPH, 'wild', 'copper', 'melanoid'] });
+    expect(hub.metHazards).toEqual([]);
   });
 
   it('finds every owned morph when the book is missing', () => {
     const hub = hubWith('book', undefined);
-    expect(hub.book).toEqual({ foundMorphs: [STARTER_MORPH, 'wild'], tilapiaCard: false });
+    expect(hub.book).toEqual({ foundMorphs: [STARTER_MORPH, 'wild'] });
+  });
+
+  it('drops stars saved under an unknown area id, such as a dev area', () => {
+    const earned = { exit: true, special: true, legsOrRescue: true };
+    const hub = hubWith('stars', { [DEV_TEST_AREA.id]: earned, [CANAL_AREA_ID]: earned });
+    expect(hub.stars).toEqual({ [CANAL_AREA_ID]: earned });
   });
 
   it('keeps stars of known areas only, each star only when exactly true', () => {
@@ -462,7 +477,7 @@ describe('loadSave', () => {
   it('loads a save with the gate open', () => {
     const loaded = loadSave({ available: true, raw });
     expect(loaded.session.hub).toEqual(playedSession().hub);
-    expect(loaded.session.canal).toEqual(createSession().canal);
+    expect(loaded.session.areas.canal).toEqual(createSession().areas.canal);
     expect(loaded.backup).toBeNull();
     expect(loaded.gate).toBe('open');
   });
@@ -499,7 +514,7 @@ describe('bankedMidTrip', () => {
     const session = playedSession();
     const next = bankedMidTrip(session, [BOAT, PLANT, 'canal/paint-shell-galaxy', BOAT]);
     expect(next.hub.banked).toEqual([...session.hub.banked, BOAT, 'canal/paint-shell-galaxy']);
-    expect(next.canal).toBe(session.canal);
+    expect(next.areas.canal).toBe(session.areas.canal);
     expect(session.hub.banked).not.toContain(BOAT);
   });
 
@@ -548,12 +563,13 @@ function dressedSession(): Session {
   const played = playedSession();
   const banked = WEARABLES.map((wearable) => wearable.id);
   const withWearables = recordTripEnd(played, {
+    areaId: CANAL_AREA_ID,
     banked,
     rescued: [],
     eatenSnacks: [],
     tripSeed: 78,
     waitingStranded: null,
-    metTilapia: false,
+    met: [],
     returnedFinds: [],
   });
   return chooseExplorer(setOutfit(withWearables, WILD, fullOutfit()), WILD);
@@ -752,5 +768,85 @@ describe('first-find cards seen (#83, D2)', () => {
       kind: 'paintShell',
       pictureId: MINT_SHELL,
     });
+  });
+});
+
+/** `savedJson` with hub fields replaced by `fields` (undefined removes a field), decoded. */
+function hubWithFields(fields: Record<string, unknown>): HubState {
+  const json = savedJson();
+  return loadedHub({ ...json, hub: { ...json.hub, ...fields } });
+}
+
+describe('last chosen area and hazards met (#73, D2)', () => {
+  it('round-trips the last chosen area and the hazards met', () => {
+    const session = playedSession();
+    const json = JSON.parse(encodeSave(session.hub));
+    expect(json.hub.lastAreaId).toBe(CANAL_AREA_ID);
+    expect(json.hub.metHazards).toEqual(['tilapia']);
+    const hub = loadedHub(json);
+    expect(hub.lastAreaId).toBe(CANAL_AREA_ID);
+    expect(hub.metHazards).toEqual(['tilapia']);
+  });
+
+  it('starts a trip from a loaded save with the fact cards of the hazards met seen', () => {
+    const loaded = sessionFromSave(decodeSave(encodeSave(playedSession().hub)));
+    expect(tripStart(loaded, 0).factCardsSeen).toEqual(['tilapia']);
+    const fresh = sessionFromSave(decodeSave(encodeSave(createSession().hub)));
+    expect(tripStart(fresh, 0).factCardsSeen).toEqual([]);
+  });
+
+  it('writes the legacy book.tilapiaCard, true only once the tilapia is met', () => {
+    expect(JSON.parse(encodeSave(playedSession().hub)).hub.book).toEqual({
+      foundMorphs: [STARTER_MORPH, 'wild'],
+      tilapiaCard: true,
+    });
+    const unmet = addStarter(createSession(), { name: 'Bubbles', look: DEFAULT_LOOK });
+    expect(JSON.parse(encodeSave(unmet.hub)).hub.book).toEqual({ foundMorphs: [STARTER_MORPH], tilapiaCard: false });
+  });
+
+  it('loads an older save with neither field as the newest unlocked area and only its legacy tilapia card', () => {
+    const hub = hubWithFields({ lastAreaId: undefined, metHazards: undefined });
+    expect(hub.lastAreaId).toBe(CANAL_AREA_ID);
+    expect(hub.metHazards).toEqual(['tilapia']);
+    const unmet = hubWithFields({
+      lastAreaId: undefined,
+      metHazards: undefined,
+      book: { foundMorphs: [STARTER_MORPH] },
+    });
+    expect(unmet.metHazards).toEqual([]);
+  });
+
+  it('adds the tilapia when the legacy book.tilapiaCard is exactly true', () => {
+    const book = { foundMorphs: [STARTER_MORPH], tilapiaCard: true };
+    expect(hubWithFields({ metHazards: [], book }).metHazards).toEqual(['tilapia']);
+    expect(hubWithFields({ metHazards: undefined, book }).metHazards).toEqual(['tilapia']);
+    expect(hubWithFields({ metHazards: [], book: { ...book, tilapiaCard: 1 } }).metHazards).toEqual([]);
+  });
+
+  it.each([
+    ['not an array', 'tilapia'],
+    ['null', null],
+  ])('reads hazards met that are %s as none', (_label, metHazards) => {
+    expect(hubWithFields({ metHazards, book: { foundMorphs: [] } }).metHazards).toEqual([]);
+  });
+
+  it('keeps known hazard ids only, each once, in areaFactCards order', () => {
+    const hub = hubWithFields({ metHazards: ['shark', 'tilapia', 3, 'tilapia'], book: { foundMorphs: [] } });
+    expect(hub.metHazards).toEqual(['tilapia']);
+  });
+
+  it.each([
+    ['unknown', 'moon'],
+    ['a dev area', DEV_TEST_AREA.id],
+    ['not a string', 7],
+    ['missing', undefined],
+  ])('loads a last chosen area that is %s as the newest unlocked area', (_label, lastAreaId) => {
+    expect(hubWithFields({ lastAreaId }).lastAreaId).toBe(CANAL_AREA_ID);
+  });
+
+  it('never saves the per-area memory', () => {
+    const raw = encodeSave(playedSession().hub);
+    expect(raw).not.toContain('"areas":');
+    expect(raw).not.toContain('canal/snack-0');
   });
 });

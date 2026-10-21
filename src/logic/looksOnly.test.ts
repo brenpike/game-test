@@ -135,7 +135,7 @@ function aroundRadius(radius: number): number[] {
 /** Lunge hit, touch, snack and find pickup results at fixed points around the session's first trip. */
 function hitAreaProbe(session: Session): boolean[] {
   const trip = startTrip(session);
-  const tilapia = trip.encounter.tilapias[0];
+  const tilapia = trip.encounter.predators[0];
   const centre = tilapia.pos;
   const lunging = { ...tilapia, phase: 'lunge' as const };
   const patrolling = { ...tilapia, phase: 'patrol' as const };

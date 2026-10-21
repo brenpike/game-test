@@ -70,7 +70,8 @@ export type IconKind =
   | 'boy'
   | 'girl'
   | 'pencil'
-  | 'shirt';
+  | 'shirt'
+  | 'lock';
 
 /**
  * House icon (guide 7d), shared by the Home Spot flag and every "go home" UI.
@@ -510,6 +511,24 @@ export function paintIcon(ctx: CanvasRenderingContext2D, kind: IconKind, size: n
       // Shirt (guide 8, Change outfit): a sleeveless top. Outline only, ink 3.0.
       ctx.lineWidth = 3;
       ctx.stroke(shirtIconPath());
+      break;
+    }
+    case 'lock': {
+      // Lock (guide 8, Lock icon): the 7g exit sign padlock at x 1.5 about the box centre.
+      // Shackle: ink stroke 3.9 (2.6 x 1.5), a half circle of radius 5.1 round (16, 10.38).
+      ctx.lineWidth = 3.9;
+      const shackle = new Path2D();
+      shackle.moveTo(10.9, 14.88);
+      shackle.lineTo(10.9, 10.38);
+      shackle.arc(16, 10.38, 5.1, Math.PI, TAU);
+      shackle.lineTo(21.1, 14.88);
+      ctx.stroke(shackle);
+      // Body: filled ink rounded rectangle 16.5 x 13.5, corner radius 3.75, white keyhole dot r 1.95.
+      ctx.fill(roundedRect(7.75, 15.18, 16.5, 13.5, 3.75));
+      const hole = new Path2D();
+      hole.arc(16, 22.08, 1.95, 0, TAU);
+      ctx.fillStyle = WHITE;
+      ctx.fill(hole);
       break;
     }
   }
