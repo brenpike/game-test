@@ -15,6 +15,13 @@
  * The body draws first and the tail over it, so the overlap always shows the
  * tail's posed copy (still bake, rope or strip) and never the body's straight
  * one: tail marks that reach past the root (a Patches spot) bend with the tail.
+ *
+ * An Iridescent tail that moves shows in three layers, so its stripe pair is
+ * never bent: the tail part baked 'under' (layers 4 to 6.2), then the stripe
+ * pair drawn live from rigPlacement's `stripe` polygons (tailStripe at the
+ * shown tail), then the 'tail-over' part (6.5 to 8.2, the BodyLayers 'over'
+ * split). The still tail shows its full bake (the still stripe at x -10). The
+ * tail has no sheen variant; the body bakes the 16 sheen steps and the still stripe.
  */
 import { TAU } from './canvasKit';
 import {
@@ -34,6 +41,7 @@ import {
   regenGlintRadius,
   regenGlintSpots,
   type AxolotlPose,
+  type BodyLayers,
   type LegLook,
 } from './drawAxolotl';
 import {
@@ -77,6 +85,7 @@ import {
   type ZoneCircle,
 } from './drawAxolotlParts';
 import { outfitKey, paintBodyWearable, paintLegWearables, wearsOnLegs, wornSlug, type ArtOutfit } from './drawWearables';
+import { tailStripe, type TailStripe } from './axolotlRigStripe';
 import { LW, T_STATIC, type MorphPalette } from './palette';
 
 // ---------------------------------------------------------------------------
@@ -144,6 +153,7 @@ export type RigPartId =
   | `leg-${LegIndex}`
   | `wear-leg-${LegIndex}`
   | 'tail'
+  | 'tail-over'
   | 'body'
   | 'tail-item'
   | `gill-near-${GillIndex}`
@@ -153,7 +163,8 @@ export type RigPartId =
 /**
  * One baked part: where it joins the axolotl and the box its texture covers.
  * Parts draw in rigParts order; the body and the tail share layers 4 to 8.2,
- * the body first, so the tail covers the seam overlap.
+ * the body first, so the tail covers the seam overlap. An Iridescent tail adds
+ * 'tail-over' (6.5 to 8.2) over the live stripe pair.
  */
 export interface RigPartSpec {
   readonly id: RigPartId;
@@ -188,9 +199,11 @@ export interface RigPartVariant {
   readonly frame?: number;
   /** The leg's look, for 'leg-i' and 'wear-leg-i'. Undefined is present. */
   readonly leg?: LegLook;
-  /** Tail pose for 'tail'. Undefined is the straight tail (tail amplitude 0). */
+  /** Tail pose for 'tail' and 'tail-over'. Undefined is the straight tail (tail amplitude 0). */
   readonly tailPose?: RigTailPose;
-  /** Iridescent sheen phase in [0, 1) for 'tail' and 'body'. Undefined is the still stripe at x -10. */
+  /** Layers of 'tail': 'all' (4 to 8.2, the default), or 'under' (4 to 6.2) below the live Iridescent stripe. */
+  readonly tailLayers?: 'all' | 'under';
+  /** Iridescent sheen phase in [0, 1) for 'body'. Undefined is the still stripe at x -10. */
   readonly sheen?: number;
 }
 
@@ -256,6 +269,12 @@ export interface RigPlacement {
   eyesFrame: number;
   /** sheenFrame(pose.sheen) on an Iridescent axolotl, else null. */
   sheenFrame: number | null;
+  /**
+   * The Iridescent stripe pair to draw live between 'tail' ('under') and
+   * 'tail-over': tailStripe at the shown tail and sheen step, to x
+   * rootX + RIG_SEAM_OVERLAP. Both bands hold no polygons on a still tail or a non-Iridescent axolotl.
+   */
+  readonly stripe: TailStripe;
   /** Regeneration glints along the shown tail, then the glints beside each regrowing leg. */
   readonly twinkles: RigTwinkle[];
 }
@@ -613,11 +632,12 @@ function facePartInk(look: AxolotlArtLook, outfit: ArtOutfit): Bounds {
  * The parts of an appearance in draw order (guide 6a): far gills (1), far legs
  * (2), their Socks and Feet (2.5, only when the outfit wears on the legs), near
  * legs (3) and theirs (3.5), the body then the tail (both 4 to 8.2: the tail
- * draws over the seam overlap), the Tail item (8.5, only when one is worn),
- * near gills (9), the face (9.5 to 11.5) and the eyes (12).
+ * draws over the seam overlap), 'tail-over' (6.5 to 8.2, only on an Iridescent
+ * palette; the tail's pivot, box and maxDy), the Tail item (8.5, only when one
+ * is worn), near gills (9), the face (9.5 to 11.5) and the eyes (12).
  */
 export function rigParts(appearance: RigAppearance): RigPartSpec[] {
-  const { look, outfit } = appearance;
+  const { look, palette, outfit } = appearance;
   const g = rigLookGeometry(look);
   const { geo } = g;
   const legWear = wearsOnLegs(outfit);
@@ -641,7 +661,10 @@ export function rigParts(appearance: RigAppearance): RigPartSpec[] {
   pushLegs(2, 3, 3.5);
   const tailRoot: LocalPoint = { x: geo.tail.rootX, y: g.straightCys[0] };
   parts.push(makeSpec('body', [4, 8.2], { x: 0, y: 0 }, bodyPartInk(g)));
-  parts.push(makeSpec('tail', [4, 8.2], tailRoot, tailPartInk(g), 1, tailMaxDy(look)));
+  const tailInk = tailPartInk(g);
+  const tailDy = tailMaxDy(look);
+  parts.push(makeSpec('tail', [4, 8.2], tailRoot, tailInk, 1, tailDy));
+  if (palette.dream?.id === 'iridescent') parts.push(makeSpec('tail-over', [6.5, 8.2], tailRoot, tailInk, 1, tailDy));
   if (wornSlug(outfit, 'tail') !== undefined) {
     const frame = g.stillTailFrame;
     parts.push(makeSpec('tail-item', [8.5, 8.5], { x: frame.x, y: frame.y }, tailSlotBounds(frame)));
@@ -677,7 +700,7 @@ function clipToXBand(ctx: CanvasRenderingContext2D, fromX: number, toX: number):
   ctx.clip(band);
 }
 
-/** paintBodyLayers at a tail pose and sheen, clipped to an x band. */
+/** paintBodyLayers (`layers` of them) at a tail pose and sheen, clipped to an x band. */
 function paintBodySlice(
   ctx: CanvasRenderingContext2D,
   appearance: RigAppearance,
@@ -685,11 +708,12 @@ function paintBodySlice(
   sheen: number | undefined,
   fromX: number,
   toX: number,
+  layers: BodyLayers,
 ): void {
   const pose: AxolotlPose = { ...RIG_STILL_POSE, swimPhase: tailPose.swimPhase, tailAmp: tailPose.tailAmp, sheen };
   ctx.save();
   clipToXBand(ctx, fromX, toX);
-  paintBodyLayers(ctx, pose, appearance.palette, appearance.look, appearance.outfit);
+  paintBodyLayers(ctx, pose, appearance.palette, appearance.look, appearance.outfit, layers);
   ctx.restore();
 }
 
@@ -718,10 +742,12 @@ function paintRigWearLeg(ctx: CanvasRenderingContext2D, appearance: RigAppearanc
  * texture anchor). Gill g frame k: paintGill at the still gill phase plus
  * 2 pi k / 6. Legs: paintAxolotlLeg at the still leg angle in `variant.leg`.
  * A wear-leg paints its Socks and Feet in the still leg frame, and nothing on
- * a lost or regrowing leg. Tail: paintBodyLayers at `variant.tailPose`
- * (default straight) clipped to x <= rootX + RIG_SEAM_OVERLAP. Body: the same,
- * straight, clipped to x >= rootX. Both take `variant.sheen`. Tail item, face:
- * their painters at the still pose. Eyes: paintEyes at EYE_FRAME_BLINKS[frame].
+ * a lost or regrowing leg. Tail: paintBodyLayers (`variant.tailLayers`,
+ * default 'all') at `variant.tailPose` (default straight) and the still stripe,
+ * clipped to x <= rootX + RIG_SEAM_OVERLAP. Tail-over: the same with the
+ * 'over' layers. Body: paintBodyLayers straight at `variant.sheen`, clipped to
+ * x >= rootX. Tail item, face: their painters at the still pose. Eyes:
+ * paintEyes at EYE_FRAME_BLINKS[frame].
  */
 export function paintRigPart(
   ctx: CanvasRenderingContext2D,
@@ -733,12 +759,17 @@ export function paintRigPart(
   const still = RIG_STILL_POSE;
   const straight: RigTailPose = { swimPhase: still.swimPhase, tailAmp: 0 };
   const rootX = rigLookGeometry(look).geo.tail.rootX;
+  const tailPose = variant.tailPose ?? straight;
+  const seamX = rootX + RIG_SEAM_OVERLAP;
   switch (id) {
     case 'tail':
-      paintBodySlice(ctx, appearance, variant.tailPose ?? straight, variant.sheen, -SEAM_CLIP_REACH, rootX + RIG_SEAM_OVERLAP);
+      paintBodySlice(ctx, appearance, tailPose, undefined, -SEAM_CLIP_REACH, seamX, variant.tailLayers ?? 'all');
+      return;
+    case 'tail-over':
+      paintBodySlice(ctx, appearance, tailPose, undefined, -SEAM_CLIP_REACH, seamX, 'over');
       return;
     case 'body':
-      paintBodySlice(ctx, appearance, straight, variant.sheen, rootX, SEAM_CLIP_REACH);
+      paintBodySlice(ctx, appearance, straight, variant.sheen, rootX, SEAM_CLIP_REACH, 'all');
       return;
     case 'tail-item':
       paintBodyWearable(ctx, 'tail', outfit, look, still.swimPhase, still.tailAmp);
@@ -783,6 +814,10 @@ export function createRigPlacement(): RigPlacement {
     tailItem: { x: 0, y: 0, rotation: 0 },
     eyesFrame: 0,
     sheenFrame: null,
+    stripe: [
+      { colour: 0, alpha: 0, polygons: [] },
+      { colour: 0, alpha: 0, polygons: [] },
+    ],
     twinkles: [],
   };
 }
@@ -863,6 +898,17 @@ function placeTail(
   tailShear(look, shown.swimPhase, shown.tailAmp, out.tail.dy);
 }
 
+/** Fill `out.stripe` for the shown tail on a moving Iridescent tail, else empty both bands. */
+function placeStripe(g: RigLookGeometry, look: AxolotlArtLook, iridescent: boolean, out: RigPlacement): void {
+  if (!iridescent || out.tail.mode === 'still') {
+    for (const band of out.stripe) band.polygons.length = 0;
+    return;
+  }
+  const sheen = out.sheenFrame === null ? undefined : sheenStepValue(out.sheenFrame);
+  const { swimPhase, tailAmp } = out.shownTail;
+  tailStripe(look, swimPhase, tailAmp, sheen, g.geo.tail.rootX + RIG_SEAM_OVERLAP, out.stripe);
+}
+
 function placeTwinkles(g: RigLookGeometry, pose: AxolotlPose, shown: RigShownTail, out: RigTwinkle[]): void {
   let count = 0;
   const sparkle = Math.min(1, Math.max(0, pose.sparkle));
@@ -890,9 +936,11 @@ function placeTwinkles(g: RigLookGeometry, pose: AxolotlPose, shown: RigShownTai
  * live leg angle less the still one. Tail: 'still' at the still tail (and a
  * still sheen, or no Iridescent), else 'rope' on WebGL and 'strip' on Canvas.
  * The Tail item rides the shown tail's Tail frame. Eyes: the nearest
- * EYE_FRAME_BLINKS. Twinkles: the regeneration glints along the shown tail and
- * the glints beside each regrowing leg, sized as drawAxolotl sizes them, each
- * at the nearest TWINKLE_RADII frame. Reuses `out` (allocation-light); the
+ * EYE_FRAME_BLINKS. Stripe: on an Iridescent tail that is not 'still', the
+ * stripe pair at the shown tail and the shown sheen step (the still stripe
+ * when the sheen is undefined), else empty. Twinkles: the regeneration glints
+ * along the shown tail and the glints beside each regrowing leg, sized as
+ * drawAxolotl sizes them, each at the nearest TWINKLE_RADII frame. Reuses `out` (allocation-light); the
  * per-look geometry is cached by look object, so pass the same look each frame.
  */
 export function rigPlacement(
@@ -912,6 +960,7 @@ export function rigPlacement(
   out.tailItem.rotation = frame.angle - g.stillTailFrame.angle;
   out.eyesFrame = nearestIndex(EYE_FRAME_BLINKS, pose.blink);
   out.sheenFrame = iridescent ? sheenFrame(pose.sheen) : null;
+  placeStripe(g, look, iridescent, out);
   placeTwinkles(g, pose, out.shownTail, out.twinkles);
   return out;
 }

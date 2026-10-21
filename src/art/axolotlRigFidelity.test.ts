@@ -5,15 +5,17 @@
  * rigPlacement's rotations; twinkle frames move to their centres. The tail
  * part on WebGL is the straight bake sheared by tailShear, linear in x between
  * tailColumnXs (what a Rope does); on Canvas it is the strip frame baked at
- * shownTail. The painters run against a recording context (the stub-Path2D
- * approach of axolotlRig.test.ts, copied here: a test file is never imported),
- * so every fill and stroke is kept as flattened polygons in local units with
- * its clips. drawAxolotl's own recording is cut into its layer painters' runs,
- * each checked equal to that painter recorded alone. The tail part draws over
- * the body part, so the body shows only past rootX + RIG_SEAM_OVERLAP; a seam
- * guard checks paintBodyLayers there is the same at every tail pose. One claim
- * the rig does not meet yet (the WebGL rope's Iridescent stripe) stays on
- * record as an it.fails 'KNOWN GAP' test, with what was measured.
+ * shownTail. A moving Iridescent tail shows as the glue shows it: the tail
+ * part baked 'under' (sheared or at the strip pose), then rigPlacement's
+ * stripe polygons as unclipped fills, then 'tail-over' the same way as the
+ * tail; the still tail is its full still bake. The painters run against a
+ * recording context (the stub-Path2D approach of axolotlRig.test.ts, copied
+ * here: a test file is never imported), so every fill and stroke is kept as
+ * flattened polygons in local units with its clips. drawAxolotl's own
+ * recording is cut into its layer painters' runs, each checked equal to that
+ * painter recorded alone. The tail parts draw over the body part, so the body
+ * shows only past rootX + RIG_SEAM_OVERLAP; a seam guard checks
+ * paintBodyLayers there is the same at every tail pose.
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -91,7 +93,9 @@ import {
   type RigPartVariant,
   type RigPlacement,
   type RigRenderer,
+  type RigTailPose,
 } from './axolotlRigParts';
+import type { TailStripe } from './axolotlRigStripe';
 
 const TAU = Math.PI * 2;
 
@@ -530,9 +534,12 @@ function ropeShear(xs: readonly number[], dy: readonly number[]): PointMap {
   return (p) => ({ x: p.x, y: p.y + ropeDyAt(xs, dy, p.x) });
 }
 
-/** One part as shown: its paints in local units, and the x band it is clipped to (tail and body only). */
+/** A shown part: a rig part, or the Iridescent stripe pair the glue draws live between 'tail' and 'tail-over'. */
+type ShownPartId = RigPartId | 'tail-stripe';
+
+/** One part as shown: its paints in local units, and the x band it is clipped to (the tail parts and body only). */
 interface ShownPart {
-  readonly id: RigPartId;
+  readonly id: ShownPartId;
   readonly paints: Paint[];
   readonly band: Bounds | null;
 }
@@ -580,46 +587,94 @@ function bandedPart(id: RigPartId, paints: readonly Paint[], f: PointMap): Shown
 const sheenOf = (placement: RigPlacement): number | undefined =>
   placement.sheenFrame === null ? undefined : sheenStepValue(placement.sheenFrame);
 
-function showTail(appearance: RigAppearance, placement: RigPlacement): ShownPart {
-  const sheen = sheenOf(placement);
-  if (placement.tail.mode === 'rope') {
-    const shear = ropeShear(tailColumnXs(appearance.look), placement.tail.dy);
-    return bandedPart('tail', bakedPaints('tail', appearance, { sheen }), shear);
-  }
-  const tailPose = { swimPhase: placement.shownTail.swimPhase, tailAmp: placement.shownTail.tailAmp };
-  return bandedPart('tail', bakedPaints('tail', appearance, { tailPose, sheen }), keep);
+const isIridescent = (palette: MorphPalette): boolean => palette.dream?.id === 'iridescent';
+
+/** Whether the tail shows split round the live stripe: an Iridescent tail that is not 'still'. */
+const splitsTail = (appearance: RigAppearance, placement: RigPlacement): boolean =>
+  isIridescent(appearance.palette) && placement.tail.mode !== 'still';
+
+/** How the tail parts show: the pose they are baked at (none: straight, for the rope) and the map onto the live drawing. */
+function tailView(appearance: RigAppearance, placement: RigPlacement): { variant: RigPartVariant; f: PointMap } {
+  if (placement.tail.mode === 'rope') return { variant: {}, f: ropeShear(tailColumnXs(appearance.look), placement.tail.dy) };
+  const tailPose: RigTailPose = { swimPhase: placement.shownTail.swimPhase, tailAmp: placement.shownTail.tailAmp };
+  return { variant: { tailPose }, f: keep };
 }
 
-/** One part shown at the placement: turned about its pivot, bent, or as baked. */
-function showPart(spec: RigPartSpec, appearance: RigAppearance, live: AxolotlPose, placement: RigPlacement): ShownPart {
+/** A flat [x0, y0, x1, y1, ...] polygon as a closed subpath. */
+function polygonSub(poly: readonly number[]): SubPath {
+  const pts: Pt[] = [];
+  for (let i = 0; i < poly.length; i += 2) pts.push({ x: poly[i], y: poly[i + 1] });
+  return { pts, closed: true };
+}
+
+/** One stripe band as an unclipped fill of its run polygons. */
+function stripeBandPaint(band: TailStripe[number]): Paint {
+  return {
+    kind: 'fill',
+    style: `#${band.colour.toString(16).padStart(6, '0')}`,
+    lineWidth: 1,
+    alpha: band.alpha,
+    lineCap: 'round',
+    subs: band.polygons.map(polygonSub),
+    clips: [],
+  };
+}
+
+/** The live stripe pair as unclipped fills, white band first. */
+function stripePart(stripe: TailStripe): ShownPart {
+  return { id: 'tail-stripe', paints: stripe.map(stripeBandPaint), band: null };
+}
+
+/** The tail as shown: the full bake; or, split, the 'under' bake then the live stripe pair. */
+function showTail(appearance: RigAppearance, placement: RigPlacement): ShownPart[] {
+  const { variant, f } = tailView(appearance, placement);
+  if (!splitsTail(appearance, placement)) return [bandedPart('tail', bakedPaints('tail', appearance, variant), f)];
+  return [
+    bandedPart('tail', bakedPaints('tail', appearance, { ...variant, tailLayers: 'under' }), f),
+    stripePart(placement.stripe),
+  ];
+}
+
+/** 'tail-over' as shown: like the tail when split, and hidden on a still tail. */
+function showTailOver(appearance: RigAppearance, placement: RigPlacement): ShownPart[] {
+  if (!splitsTail(appearance, placement)) return [];
+  const { variant, f } = tailView(appearance, placement);
+  return [bandedPart('tail-over', bakedPaints('tail-over', appearance, variant), f)];
+}
+
+/** One part shown at the placement: turned about its pivot, bent, or as baked (the tail parts may show as none or two). */
+function showPart(spec: RigPartSpec, appearance: RigAppearance, live: AxolotlPose, placement: RigPlacement): ShownPart[] {
   const { id, pivot } = spec;
   const gill = GILL_PART_IDS.indexOf(id);
   if (gill >= 0) {
     const g = placement.gills[gill];
-    return shownPart(id, bakedPaints(id, appearance, { frame: g.frame }), turnAbout(pivot, g.rotation));
+    return [shownPart(id, bakedPaints(id, appearance, { frame: g.frame }), turnAbout(pivot, g.rotation))];
   }
   const leg = Math.max(LEG_PART_IDS.indexOf(id), WEAR_LEG_PART_IDS.indexOf(id));
   if (leg >= 0) {
     const turn = turnAbout(pivot, placement.legs[leg].rotation);
-    return shownPart(id, bakedPaints(id, appearance, { leg: live.legs?.[leg] }), turn);
+    return [shownPart(id, bakedPaints(id, appearance, { leg: live.legs?.[leg] }), turn)];
   }
   switch (id) {
     case 'tail':
       return showTail(appearance, placement);
+    case 'tail-over':
+      return showTailOver(appearance, placement);
     case 'body':
-      return bandedPart(id, bakedPaints(id, appearance, { sheen: sheenOf(placement) }), keep);
+      return [bandedPart(id, bakedPaints(id, appearance, { sheen: sheenOf(placement) }), keep)];
     case 'tail-item': {
       const item = placement.tailItem;
-      return shownPart(id, bakedPaints(id, appearance, {}), turnAbout(pivot, item.rotation, item));
+      return [shownPart(id, bakedPaints(id, appearance, {}), turnAbout(pivot, item.rotation, item))];
     }
     case 'eyes':
-      return shownPart(id, bakedPaints(id, appearance, { frame: placement.eyesFrame }), keep);
+      return [shownPart(id, bakedPaints(id, appearance, { frame: placement.eyesFrame }), keep)];
     default:
-      return shownPart(id, bakedPaints(id, appearance, {}), keep);
+      return [shownPart(id, bakedPaints(id, appearance, {}), keep)];
   }
 }
 
-const isIridescent = (palette: MorphPalette): boolean => palette.dream?.id === 'iridescent';
+/** The tail parts and the body, which every tail check composes. */
+const TAIL_AND_BODY: readonly RigPartId[] = ['tail', 'tail-over', 'body'];
 
 /** Compose the rig at `live` on `renderer`: every part (or only those in `only`) and every twinkle. */
 function composeRig(
@@ -631,17 +686,32 @@ function composeRig(
   const placement = rigPlacement(appearance.look, live, renderer, isIridescent(appearance.palette));
   const parts = rigParts(appearance)
     .filter((spec) => !only || only.includes(spec.id))
-    .map((spec) => showPart(spec, appearance, live, placement));
+    .flatMap((spec) => showPart(spec, appearance, live, placement));
   const twinkles = placement.twinkles.map((t) =>
     recordPaints((ctx) => paintTwinkleFrame(ctx, t.frame)).map((p) => mapPaint(p, (q) => ({ x: q.x + t.x, y: q.y + t.y }))),
   );
   return { placement, parts, twinkles };
 }
 
-function partOf(composition: Composition, id: RigPartId): ShownPart {
+function partOf(composition: Composition, id: ShownPartId): ShownPart {
   const part = composition.parts.find((p) => p.id === id);
   if (!part) throw new Error(`no shown part ${id}`);
   return part;
+}
+
+const hasPart = (composition: Composition, id: ShownPartId): boolean => composition.parts.some((p) => p.id === id);
+
+/** The shown tail parts and body, in draw order. */
+const tailAndBody = (composition: Composition): ShownPart[] =>
+  composition.parts.filter((p) => p.id === 'tail' || p.id === 'tail-over' || p.id === 'body');
+
+/**
+ * The x band where a banded part shows: a tail part's whole band; the body's
+ * only past rootX + RIG_SEAM_OVERLAP (its band starts at rootX), as the tail parts draw over the overlap.
+ */
+function shownBand(part: ShownPart): Bounds | null {
+  if (part.id !== 'body' || !part.band) return part.band;
+  return { ...part.band, minX: part.band.minX + RIG_SEAM_OVERLAP };
 }
 
 // ---------------------------------------------------------------------------
@@ -724,12 +794,12 @@ function silhouetteOf(paints: readonly Paint[], label: string): Paint {
   return sil;
 }
 
-/** Envelope of the composed silhouette ink: the tail part's (bent) within its band, the body part's within its band. */
+/** Envelope of the composed silhouette ink: the tail part's (bent) within its band, the body part's where it shows. */
 function composedSilhouette(composition: Composition): Envelope {
   const env: Envelope = new Map();
   for (const id of ['tail', 'body'] as const) {
     const part = partOf(composition, id);
-    const band = part.band!;
+    const band = shownBand(part)!;
     addEnvelope(env, silhouetteOf(part.paints, id).subs, band.minX, band.maxX);
   }
   return env;
@@ -1094,11 +1164,12 @@ function insertedOrThrow(base: ShownPart, worn: ShownPart): Paint[] {
 
 /**
  * Every Wearable paint of the rig composed at `live` in `outfit`: the wear-leg
- * and Tail item parts whole, and what the outfit adds to the tail, body and face parts.
+ * and Tail item parts whole, and what the outfit adds to the tail, tail-over
+ * (when shown), body and face parts.
  */
 function wearPaints(appearance: RigAppearance, live: AxolotlPose, renderer: RigRenderer): { composed: Composition; wear: WearPaint[] } {
   const composed = composeRig(appearance, live, renderer);
-  const bare = composeRig({ ...appearance, outfit: NO_OUTFIT }, live, renderer, ['tail', 'body', 'face']);
+  const bare = composeRig({ ...appearance, outfit: NO_OUTFIT }, live, renderer, [...TAIL_AND_BODY, 'face']);
   const noGlasses = composeRig({ ...appearance, outfit: { ...appearance.outfit, face: null } }, live, renderer, ['face']);
   const wear: WearPaint[] = [];
   const add = (part: RigPartId, paints: readonly Paint[], overSilhouette: boolean, lashes: boolean): void => {
@@ -1106,7 +1177,9 @@ function wearPaints(appearance: RigAppearance, live: AxolotlPose, renderer: RigR
   };
   for (const id of WEAR_LEG_PART_IDS) add(id, partOf(composed, id).paints, false, true);
   add('tail-item', partOf(composed, 'tail-item').paints, true, true);
-  for (const id of ['tail', 'body'] as const) add(id, insertedOrThrow(partOf(bare, id), partOf(composed, id)), true, true);
+  for (const id of TAIL_AND_BODY) {
+    if (hasPart(composed, id)) add(id, insertedOrThrow(partOf(bare, id), partOf(composed, id)), true, true);
+  }
   add('face', insertedOrThrow(partOf(bare, 'face'), partOf(noGlasses, 'face')), true, true);
   add('face', insertedOrThrow(partOf(noGlasses, 'face'), partOf(composed, 'face')), true, false);
   return { composed, wear };
@@ -1194,14 +1267,14 @@ function centroid(pts: readonly Pt[]): Pt {
   return { x: x / pts.length, y: y / pts.length };
 }
 
-/** Marker centres the composed rig shows: each part's markers whose centre lies in its band. */
+/** Marker centres the composed rig shows: each tail part's and the body's markers whose centre lies where it shows. */
 function composedMarkers(composition: Composition): Pt[] {
-  return (['tail', 'body'] as const).flatMap((id) => {
-    const part = partOf(composition, id);
+  return tailAndBody(composition).flatMap((part) => {
+    const band = shownBand(part);
     return part.paints
       .filter(isMarker)
       .map((p) => centroid(p.subs[0].pts))
-      .filter((c) => inBand(part.band, c.x));
+      .filter((c) => inBand(band, c.x));
   });
 }
 
@@ -1210,26 +1283,32 @@ const drawnMarkers = (runs: ReadonlyMap<DrawnRunId, Paint[]>): Pt[] =>
     .filter(isMarker)
     .map((p) => centroid(p.subs[0].pts));
 
-/** Whether (x, y) is inside the composed silhouette: the tail part's within its band, or the body part's within its band. */
+/** Whether (x, y) is inside the composed silhouette: the tail part's within its band, or the body part's where it shows. */
 function insideComposedSilhouette(composition: Composition, x: number, y: number): boolean {
   return (['tail', 'body'] as const).some((id) => {
     const part = partOf(composition, id);
-    return inBand(part.band, x) && winding(silhouetteOf(part.paints, id).subs, x, y) !== 0;
+    return inBand(shownBand(part), x) && winding(silhouetteOf(part.paints, id).subs, x, y) !== 0;
   });
 }
 
 /** Sample points of a pattern paint: its points and each subpath's centroid. */
 const patternSamples = (p: Paint): Pt[] => p.subs.flatMap((s) => [...s.pts, centroid(s.pts)]);
 
-/** Pattern sample points the composed rig shows (in their part's band and every clip) that fall outside its silhouette. */
+/** The pattern paints of a shown part: the clipped pattern of a bake, or every live stripe band. */
+const shownPatternPaints = (part: ShownPart): Paint[] => (part.id === 'tail-stripe' ? part.paints : patternPaints(part.paints));
+
+/**
+ * Pattern sample points the composed rig shows (where their part shows, and in
+ * every clip) that fall outside its silhouette: the tail and body bakes' patterns and the live stripe pair.
+ */
 function patternLeaks(composition: Composition): { shown: number; leaks: number } {
   let shown = 0;
   let leaks = 0;
-  for (const id of ['tail', 'body'] as const) {
-    const part = partOf(composition, id);
-    for (const paint of patternPaints(part.paints)) {
+  for (const part of composition.parts) {
+    const band = shownBand(part);
+    for (const paint of shownPatternPaints(part)) {
       for (const q of patternSamples(paint)) {
-        if (!inBand(part.band, q.x) || !paint.clips.every((clip) => winding(clip, q.x, q.y) !== 0)) continue;
+        if (!inBand(band, q.x) || !paint.clips.every((clip) => winding(clip, q.x, q.y) !== 0)) continue;
         shown++;
         if (!insideComposedSilhouette(composition, q.x, q.y)) leaks++;
       }
@@ -1256,36 +1335,101 @@ function bodyStripeMismatches(body: ShownPart, drawn: readonly Paint[], toX: num
   return mismatches;
 }
 
-/** The y span a fill covers in column x (sampled every `step`), or null. */
-function coverSpan(paint: Paint, band: Bounds | null, x: number, step: number): { min: number; max: number } | null {
-  let min = Infinity;
-  let max = -Infinity;
-  for (let y = -STRIPE_REACH_Y; y <= STRIPE_REACH_Y; y += step) {
-    if (!fillCovers(paint, band, x, y)) continue;
-    min = Math.min(min, y);
-    max = Math.max(max, y);
-  }
-  return min <= max ? { min, max } : null;
-}
+/** A closed y interval on one column, low end first. */
+type Interval = readonly [number, number];
 
 /**
- * Largest per-column gap between the composed tail part's stripes and
- * drawAxolotl's, over integer x from the tail tip to the tail root: the shift
- * of the covered y span's ends, or the whole span where only one side covers.
+ * The y intervals of column x inside the nonzero winding of `subs` (each
+ * closed), from the exact crossings of their edges; an edge counts from its left
+ * end up to, not at, its right end, so a column on a shared vertex counts it once.
  */
-function tailStripeGap(tail: ShownPart, drawn: readonly Paint[], tipX: number, rootX: number): number {
-  const stripes = patternPaints(tail.paints);
+function columnCover(subs: readonly SubPath[], x: number): Interval[] {
+  const crossings: { y: number; dir: number }[] = [];
+  for (const s of subs) {
+    const n = s.pts.length;
+    for (let i = 0; i < n; i++) {
+      const a = s.pts[i];
+      const b = s.pts[(i + 1) % n];
+      if ((a.x <= x) === (b.x <= x)) continue;
+      crossings.push({ y: a.y + ((b.y - a.y) * (x - a.x)) / (b.x - a.x), dir: b.x > a.x ? 1 : -1 });
+    }
+  }
+  crossings.sort((p, q) => p.y - q.y);
+  const out: Interval[] = [];
+  let w = 0;
+  let from = 0;
+  for (const c of crossings) {
+    const before = w;
+    w += c.dir;
+    if (before === 0 && w !== 0) from = c.y;
+    else if (before !== 0 && w === 0 && c.y > from) out.push([from, c.y]);
+  }
+  return out;
+}
+
+/** Where two sorted interval lists overlap. */
+function intersectCover(a: readonly Interval[], b: readonly Interval[]): Interval[] {
+  const out: Interval[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    const lo = Math.max(a[i][0], b[j][0]);
+    const hi = Math.min(a[i][1], b[j][1]);
+    if (hi > lo) out.push([lo, hi]);
+    if (a[i][1] < b[j][1]) i++;
+    else j++;
+  }
+  return out;
+}
+
+/** The y span a fill covers in column x (inside its subpaths, every clip and its part's band), or null. */
+function coverSpan(paint: Paint, band: Bounds | null, x: number): { min: number; max: number } | null {
+  if (!inBand(band, x)) return null;
+  let cover = columnCover(paint.subs, x);
+  for (const clip of paint.clips) cover = intersectCover(cover, columnCover(clip, x));
+  return cover.length === 0 ? null : { min: cover[0][0], max: cover[cover.length - 1][1] };
+}
+
+/** Column step of the tail cover checks, local units. */
+const COLUMN_STEP = 0.25;
+
+/**
+ * Largest per-column gap between composed fills (in their part's band) and
+ * drawAxolotl's, paint by paint, over x every COLUMN_STEP from the tail tip to
+ * the tail root: the shift of the covered y span's ends, or the whole span
+ * where only one side covers.
+ */
+function tailCoverGap(composed: readonly Paint[], band: Bounds | null, drawn: readonly Paint[], look: AxolotlArtLook): number {
+  if (composed.length !== drawn.length) return Infinity;
+  const { rootX, length } = axolotlBodyGeometry(look).tail;
   let worst = 0;
-  for (let x = Math.ceil(tipX); x < rootX; x++) {
-    for (let k = 0; k < stripes.length; k++) {
-      const a = coverSpan(stripes[k], tail.band, x, 0.1);
-      const b = coverSpan(drawn[k], null, x, 0.1);
+  for (let i = 0; rootX - length + i * COLUMN_STEP <= rootX; i++) {
+    const x = rootX - length + i * COLUMN_STEP;
+    for (let k = 0; k < composed.length; k++) {
+      const a = coverSpan(composed[k], band, x);
+      const b = coverSpan(drawn[k], null, x);
       if (a && b) worst = Math.max(worst, Math.abs(a.min - b.min), Math.abs(a.max - b.max));
       else if (a || b) worst = Math.max(worst, (a ?? b)!.max - (a ?? b)!.min);
     }
   }
   return worst;
 }
+
+/** Live tail stripe tolerance per column, local units. */
+const STRIPE_TOL = 0.1;
+/** Across offsets of the still stripe pair from (x -10, torso cy) (guide 6p): white 5 wide, a gap of 2, tint 3. */
+const STILL_STRIPE_OFFSETS: readonly Interval[] = [
+  [-2.5, 2.5],
+  [-7.5, -4.5],
+];
+/** Dream patterns the rope bends with the tail bake, measured for ADR 0013. */
+const ROPE_PATTERN_DREAMS = ['hearts', 'tie-dye', 'tie-dye-galaxy'] as const satisfies readonly DreamLookId[];
+/** Measured per-column bound of each rope-bent tail pattern, rounded up (ADR 0013; measured 4.88, 12.38, 2.37). */
+const ROPE_PATTERN_BOUND: Readonly<Record<(typeof ROPE_PATTERN_DREAMS)[number], number>> = {
+  hearts: 5,
+  'tie-dye': 12.5,
+  'tie-dye-galaxy': 2.5,
+};
 
 /** Iridescent cases: every look at one sheen step on one renderer, and the default look at every step on both. */
 const IRIDESCENT_CASES: readonly [AxolotlArtLook, number, RigRenderer][] = [
@@ -1306,15 +1450,10 @@ function iridescentAt(
 ): { composed: Composition; runs: Map<DrawnRunId, Paint[]>; drawnBody: Paint[] } {
   const palette = iridescentPalette(n);
   const live = iridescentPose(n, m);
-  const composed = composeRig({ look, palette, outfit: NO_OUTFIT }, live, renderer, ['tail', 'body']);
+  const composed = composeRig({ look, palette, outfit: NO_OUTFIT }, live, renderer, TAIL_AND_BODY);
   expect(composed.placement.sheenFrame).toBe(m);
   const runs = drawnRuns(shownPose(live, composed), palette, look, NO_OUTFIT);
   return { composed, runs, drawnBody: patternPaints(runOf(runs, 'body-layers')) };
-}
-
-function iridescentTailGap(look: AxolotlArtLook, composed: Composition, drawnBody: readonly Paint[]): number {
-  const tail = axolotlBodyGeometry(look).tail;
-  return tailStripeGap(partOf(composed, 'tail'), drawnBody, tail.rootX - tail.length, tail.rootX);
 }
 
 describe('Dream colours on the composed rig', { timeout: TIMEOUT_MS }, () => {
@@ -1338,7 +1477,7 @@ describe('Dream colours on the composed rig', { timeout: TIMEOUT_MS }, () => {
     const leaks: string[] = [];
     for (const [look, palette, live, renderer] of cases) {
       const appearance: RigAppearance = { look, palette, outfit: NO_OUTFIT };
-      const composed = composeRig(appearance, live, renderer, ['tail', 'body']);
+      const composed = composeRig(appearance, live, renderer, TAIL_AND_BODY);
       const dream = palette.dream!.id;
       const pattern = patternLeaks(composed);
       shownByDream.set(dream, (shownByDream.get(dream) ?? 0) + pattern.shown);
@@ -1360,11 +1499,10 @@ describe('Dream colours on the composed rig', { timeout: TIMEOUT_MS }, () => {
     expect(worst.canvas).toBeLessThanOrEqual(EXACT);
   });
 
-  it('shows the Iridescent stripe exactly on the body piece at every sheen step, and the strip tail exactly on Canvas', () => {
+  it('shows the Iridescent stripe exactly on the body piece at every sheen step', () => {
     let bodyMismatches = 0;
     let bodyGap = 0;
     const envelope: Record<RigRenderer, number> = { webgl: 0, canvas: 0 };
-    let canvasTailGap = 0;
     for (let n = 0; n < IRIDESCENT_CASES.length; n++) {
       const [look, m, renderer] = IRIDESCENT_CASES[n];
       const { composed, runs, drawnBody } = iridescentAt(look, n, m, renderer);
@@ -1375,49 +1513,99 @@ describe('Dream colours on the composed rig', { timeout: TIMEOUT_MS }, () => {
       for (let k = 0; k < 2; k++) bodyGap = Math.max(bodyGap, subsGap(stripes[k].subs, drawnBody[k].subs));
       bodyMismatches += bodyStripeMismatches(body, drawnBody, DREAM_FACE_LIMIT_X);
       envelope[renderer] = Math.max(envelope[renderer], envelopeGap(composedSilhouette(composed), drawnSilhouette(runOf(runs, 'body-layers'))));
-      if (renderer === 'canvas') canvasTailGap = Math.max(canvasTailGap, iridescentTailGap(look, composed, drawnBody));
     }
-    // Measured: body stripe 0 with no cover mismatch; tail silhouette envelope 0.654 on WebGL, 0 on Canvas;
-    // the Canvas strip tail's stripe 0.
+    // Measured: body stripe 0 with no cover mismatch; tail silhouette envelope 0.654 on WebGL, 0 on Canvas.
     expect(bodyGap).toBeLessThanOrEqual(EXACT);
     expect(bodyMismatches).toBe(0);
     expect(envelope.webgl).toBeLessThanOrEqual(ENVELOPE_TOL);
     expect(envelope.canvas).toBeLessThanOrEqual(EXACT);
-    expect(canvasTailGap).toBeLessThanOrEqual(EXACT);
   });
 
-  // FINDING (#46, for ADR 0013): the WebGL rope bends the tail bake, Iridescent stripe included, but
-  // drawAxolotl's stripe pair is two straight 45 degree bands the waving tail swims through. The rope
-  // moves the stripe by the tail's own bend, so its covered span per column lands up to 10.4 units
-  // from drawAxolotl's over these cases (amplitude 1.6), not within ENVELOPE_TOL. Canvas, whose strip
-  // frames bake the stripe at the shown pose, matches exactly (above).
-  // it.fails keeps the claim on record until the rig shows the tail stripe straight on WebGL.
-  it.fails('KNOWN GAP: keeps the WebGL rope tail\'s Iridescent stripe within 1.0 of drawAxolotl', () => {
-    let worst = 0;
+  // FINDING (#46, fixed): the WebGL rope once bent the whole tail bake, Iridescent stripe included, but
+  // drawAxolotl's stripe pair is two straight 45 degree bands the waving tail swims through: the rope
+  // moved the stripe by the tail's own bend, up to 10.4 units per column off drawAxolotl's (amplitude
+  // 1.6). And the Canvas strip frames baked the tail without the sheen, so their stripe sat at the
+  // still x -10 whatever the sheen. A moving Iridescent tail now shows 'under', the live stripe pair
+  // (rigPlacement's stripe: tailStripe at the shown tail and sheen step) and 'tail-over', on both renderers.
+  it('draws the live Iridescent tail stripe within 0.1 of drawAxolotl on WebGL and Canvas', () => {
+    const worst: Record<RigRenderer, { gap: number; at: string }> = {
+      webgl: { gap: 0, at: '' },
+      canvas: { gap: 0, at: '' },
+    };
     IRIDESCENT_CASES.forEach(([look, m], n) => {
-      const { composed, drawnBody } = iridescentAt(look, n, m, 'webgl');
-      worst = Math.max(worst, iridescentTailGap(look, composed, drawnBody));
+      for (const renderer of RENDERERS) {
+        const { composed, drawnBody } = iridescentAt(look, n, m, renderer);
+        expect(composed.parts.map((p) => p.id)).toEqual(['body', 'tail', 'tail-stripe', 'tail-over']);
+        expect(patternPaints(partOf(composed, 'tail').paints)).toEqual([]);
+        expect(patternPaints(partOf(composed, 'tail-over').paints)).toEqual([]);
+        const gap = tailCoverGap(partOf(composed, 'tail-stripe').paints, null, drawnBody, look);
+        if (gap > worst[renderer].gap) worst[renderer] = { gap, at: `${lookId(look)} sheen step ${m}` };
+      }
     });
-    expect(worst).toBeLessThanOrEqual(ENVELOPE_TOL);
+    // Measured: 3.6e-14 units on WebGL, 4.3e-14 on Canvas (float noise): the live polygons are
+    // drawAxolotl's stripe quads cut by its own inset Dream clip, at the shown tail and sheen step.
+    expect(worst.webgl.gap, worst.webgl.at).toBeLessThanOrEqual(STRIPE_TOL);
+    expect(worst.canvas.gap, worst.canvas.at).toBeLessThanOrEqual(STRIPE_TOL);
   });
 
   it('holds the still Iridescent stripe at x -10 when the sheen is undefined', () => {
+    const bandsShown = [0, 0];
     for (let n = 0; n < EVERY_BODY_LOOK.length; n++) {
       const look = EVERY_BODY_LOOK[n];
       const palette = iridescentPalette(n);
       const renderer = RENDERERS[n % 2];
       const live = pose({ swimPhase: 2.2, tailAmp: 1.2 });
-      const composed = composeRig({ look, palette, outfit: NO_OUTFIT }, live, renderer, ['tail', 'body']);
+      const composed = composeRig({ look, palette, outfit: NO_OUTFIT }, live, renderer, TAIL_AND_BODY);
       expect(composed.placement.sheenFrame).toBeNull();
       const torsoCy = axolotlBodyGeometry(look).torso.cy;
-      for (const id of ['tail', 'body'] as const) {
-        const white = patternPaints(partOf(composed, id).paints)[0];
-        const centre = centroid(white.subs[0].pts);
-        expect(centre.x).toBeCloseTo(IRIDESCENT_STILL_X, 9);
-        if (id === 'body') expect(centre.y).toBeCloseTo(torsoCy, 9);
-      }
+      const stripe = partOf(composed, 'tail-stripe').paints;
+      STILL_STRIPE_OFFSETS.forEach(([from, to], k) => {
+        const pts = stripe[k].subs.flatMap((s) => s.pts);
+        if (pts.length > 0) bandsShown[k]++;
+        for (const p of pts) {
+          const across = (p.x - IRIDESCENT_STILL_X + (p.y - torsoCy)) * Math.SQRT1_2;
+          expect(across).toBeGreaterThanOrEqual(from - EXACT);
+          expect(across).toBeLessThanOrEqual(to + EXACT);
+        }
+      });
+      const white = patternPaints(partOf(composed, 'body').paints)[0];
+      const centre = centroid(white.subs[0].pts);
+      expect(centre.x).toBeCloseTo(IRIDESCENT_STILL_X, 9);
+      expect(centre.y).toBeCloseTo(torsoCy, 9);
       const drawn = patternPaints(runOf(drawnRuns(shownPose(live, composed), palette, look, NO_OUTFIT), 'body-layers'));
       expect(bodyStripeMismatches(partOf(composed, 'body'), drawn, DREAM_FACE_LIMIT_X)).toBe(0);
+      expect(tailCoverGap(stripe, null, drawn, look)).toBeLessThanOrEqual(STRIPE_TOL);
+    }
+    expect(bandsShown.every((count) => count > 0)).toBe(true);
+  });
+
+  // FINDING (#46, for ADR 0013; measured only, no fix): the Hearts, Tie-dye and Tie-dye galaxy tail
+  // patterns ride the rope's bend with the tail bake, while drawAxolotl places them on the live tail.
+  // Per-column covered span (every 0.25 units, tip to root) at amplitude 1.6 over every look, measured
+  // against drawAxolotl: Hearts 4.88 units (Girl Short Slim Baby, swim 3.442), Tie-dye 12.38 (Boy
+  // Medium Chubby Baby, swim 0.300), Tie-dye galaxy 2.37 (Girl Medium Regular Baby, swim 5.536).
+  // The bounds below hold these on record; they are not a fidelity claim.
+  it('measures the rope tail\'s Hearts, Tie-dye and Tie-dye galaxy patterns against drawAxolotl', () => {
+    const worst = new Map<DreamLookId, { gap: number; at: string }>();
+    for (const dream of ROPE_PATTERN_DREAMS) {
+      worst.set(dream, { gap: 0, at: '' });
+      for (let n = 0; n < EVERY_BODY_LOOK.length; n++) {
+        const look = EVERY_BODY_LOOK[n];
+        const palette = axolotlPalette(MORPHS[n % MORPHS.length], dream);
+        const live = pose({ swimPhase: SWIMS[n % SWIMS.length] + 0.3, tailAmp: AXO_MAX_TAIL_AMP });
+        const composed = composeRig({ look, palette, outfit: NO_OUTFIT }, live, 'webgl', ['tail']);
+        expect(composed.placement.tail.mode).toBe('rope');
+        const tail = partOf(composed, 'tail');
+        const fills = patternPaints(tail.paints).filter((p) => p.kind === 'fill');
+        const drawn = patternPaints(runOf(drawnRuns(live, palette, look, NO_OUTFIT), 'body-layers')).filter((p) => p.kind === 'fill');
+        expect(fills.length).toBeGreaterThan(0);
+        const gap = tailCoverGap(fills, tail.band, drawn, look);
+        if (gap > worst.get(dream)!.gap) worst.set(dream, { gap, at: `${lookId(look)} swim ${live.swimPhase.toFixed(3)}` });
+      }
+    }
+    for (const dream of ROPE_PATTERN_DREAMS) {
+      const { gap, at } = worst.get(dream)!;
+      expect(gap, `${dream} ${at}`).toBeLessThanOrEqual(ROPE_PATTERN_BOUND[dream]);
     }
   });
 });
@@ -1443,6 +1631,10 @@ function stillGaps(look: AxolotlArtLook, palette: MorphPalette, outfit: ArtOutfi
     expect(composed.twinkles).toEqual([]);
     const shown = new Set<DrawnRunId>(['body-layers', 'glints']);
     for (const part of composed.parts) {
+      if (part.id === 'tail-stripe' || part.id === 'tail-over') {
+        failures.push(`${lookId(look)} ${renderer}: ${part.id} shown on the still tail`);
+        continue;
+      }
       shown.add(part.id);
       let gap: number;
       if (part.id === 'tail') gap = paintsGap(part.paints, bodyLayers);

@@ -78,6 +78,7 @@ import {
   type RigPartVariant,
   type RigTwinkle,
 } from './axolotlRigParts';
+import { tailStripe } from './axolotlRigStripe';
 
 const TAU = Math.PI * 2;
 
@@ -515,6 +516,8 @@ const PALETTES: readonly MorphPalette[] = [
   axolotlPalette('wild', 'tie-dye'),
   axolotlPalette('axanthic', 'tie-dye-galaxy'),
 ];
+const IRIDESCENT = axolotlPalette('leucistic', 'iridescent');
+const isIridescent = (palette: MorphPalette): boolean => palette.dream?.id === 'iridescent';
 
 /**
  * Every Boy or girl, Tail, Body and Age (54 looks; size only scales the bake),
@@ -566,8 +569,10 @@ function specOf(parts: readonly RigPartSpec[], id: RigPartId): RigPartSpec {
 /** Every variant a part is baked in, for the box checks. */
 function variantsOf(spec: RigPartSpec, palette: MorphPalette): RigPartVariant[] {
   if (spec.id.startsWith('leg-') || spec.id.startsWith('wear-leg-')) return LEG_LOOKS.map((leg) => ({ leg }));
-  if (spec.id === 'tail' || spec.id === 'body') {
-    const sheens = palette.dream?.id === 'iridescent' ? [0, 0.5, sheenStepValue(SHEEN_STEPS - 1)] : [];
+  if (spec.id === 'tail') return [{}, { tailLayers: 'under' }];
+  if (spec.id === 'tail-over') return [{}];
+  if (spec.id === 'body') {
+    const sheens = isIridescent(palette) ? [0, 0.5, sheenStepValue(SHEEN_STEPS - 1)] : [];
     return [{}, ...sheens.map((sheen) => ({ sheen }))];
   }
   return Array.from({ length: spec.frames }, (_, frame) => ({ frame }));
@@ -759,10 +764,28 @@ describe('part order and pivots', () => {
     expect(specOf(parts, 'face').topLayer).toBe(11.5);
   });
 
+  it('adds the tail-over part (6.5 to 8.2) right after the tail on an Iridescent palette only', () => {
+    for (const palette of PALETTES) {
+      const parts = rigParts({ look: DEFAULT_ART_LOOK, palette, outfit: FULL });
+      const ids = parts.map((p) => p.id);
+      const tail = ids.indexOf('tail');
+      expect(specOf(parts, 'tail')).toMatchObject({ layer: 4, topLayer: 8.2 });
+      if (!isIridescent(palette)) {
+        expect(ids, palette.dream?.id ?? 'plain').not.toContain('tail-over');
+        continue;
+      }
+      expect(ids.indexOf('tail-over')).toBe(tail + 1);
+      expect(specOf(parts, 'tail-over')).toMatchObject({ layer: 6.5, topLayer: 8.2, frames: 1 });
+      const layers = parts.map((p) => p.layer);
+      expect([...layers].sort((a, b) => a - b)).toEqual(layers);
+    }
+    expect(PALETTES.some(isIridescent)).toBe(true);
+  });
+
   it('puts every pivot on the joint drawAxolotl uses, and records it from the box corner', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
     for (const look of EVERY_BODY_LOOK) {
       const geo = axolotlBodyGeometry(look);
-      const parts = rigParts(appearanceOf(look, 0));
+      const parts = rigParts({ look, palette: IRIDESCENT, outfit: FULL });
       const gills = [...gillSpecs(look.gills, 'far', geo.gillLength), ...gillSpecs(look.gills, 'near', geo.gillLength)];
       const gillIds: RigPartId[] = ['gill-far-0', 'gill-far-1', 'gill-far-2', 'gill-near-0', 'gill-near-1', 'gill-near-2'];
       for (let i = 0; i < gillIds.length; i++) expect(specOf(parts, gillIds[i]).pivot).toEqual({ x: gills[i].bx, y: gills[i].by });
@@ -776,10 +799,14 @@ describe('part order and pivots', () => {
       const tail = specOf(parts, 'tail');
       expect(tail.pivot.x).toBe(geo.tail.rootX);
       expect(tail.pivot.y).toBe(tailSamples(geo.tail, 0, 0)[0].cy);
+      const over = specOf(parts, 'tail-over');
+      expect(over.pivot).toEqual(tail.pivot);
+      expect(over.box).toEqual(tail.box);
+      expect(over.pivotOffset).toEqual(tail.pivotOffset);
       for (const spec of parts) {
         expect(spec.pivotOffset.x).toBeCloseTo(spec.pivot.x - spec.box.minX, 12);
         expect(spec.pivotOffset.y).toBeCloseTo(spec.pivot.y - spec.box.minY, 12);
-        expect(spec.maxDy).toBe(spec.id === 'tail' ? tail.maxDy : 0);
+        expect(spec.maxDy).toBe(spec.id === 'tail' || spec.id === 'tail-over' ? tail.maxDy : 0);
       }
     }
   });
@@ -797,7 +824,7 @@ describe('tail and body seam', () => {
     }
   });
 
-  it('holds the bend at 0 across the overlap and at the root, and copies the tip', () => {
+  it('holds the bend at 0 across the overlap and at the root, and copies the tip', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
     for (const look of EVERY_BODY_LOOK) {
       const geo = axolotlBodyGeometry(look);
       for (const swim of SWIMS) {
@@ -829,6 +856,20 @@ describe('tail and body seam', () => {
       expect(specOf(parts, 'body').box.minX).toBeLessThanOrEqual(rootX);
       expect(bodyInk.minX).toBeGreaterThanOrEqual(rootX - 1e-9);
       expect(bodyInk.minX).toBeLessThanOrEqual(rootX + 1e-9);
+    }
+  });
+
+  it('splits the Iridescent tail: under then tail-over paint the full tail less its stripe pair, never the sheen', () => {
+    const appearance: RigAppearance = { look: DEFAULT_ART_LOOK, palette: IRIDESCENT, outfit: FULL };
+    for (const tailPose of [undefined, ...BENT_TAIL_POSES]) {
+      const at = tailPose ? { tailPose } : {};
+      const all = partPaints('tail', appearance, at);
+      const under = partPaints('tail', appearance, { ...at, tailLayers: 'under' });
+      const over = partPaints('tail-over', appearance, at);
+      expect(under.length).toBeGreaterThan(0);
+      expect(over.length).toBeGreaterThan(0);
+      expect(under.length + 2 + over.length).toBe(all.length);
+      expect(partPaints('tail', appearance, { ...at, sheen: 0.5 })).toEqual(all);
     }
   });
 });
@@ -864,6 +905,30 @@ describe('part boxes hold all their ink', { timeout: ENUMERATION_TIMEOUT_MS }, (
       expect(tail.maxDy).toBe(most);
     }
     expect(failures).toEqual([]);
+  });
+
+  it('for the Iridescent tail under and tail-over parts, straight and at every strip pose', () => {
+    const failures: string[] = [];
+    let painted = 0;
+    for (let n = 0; n < EVERY_BODY_LOOK.length; n++) {
+      const look = EVERY_BODY_LOOK[n];
+      const appearance: RigAppearance = { look, palette: IRIDESCENT, outfit: n % 2 === 0 ? FULL : NO_OUTFIT };
+      const parts = rigParts(appearance);
+      for (const [id, layers] of [['tail', 'under'], ['tail-over', undefined]] as const) {
+        const spec = specOf(parts, id);
+        const grown: Bounds = { ...spec.box, minY: spec.box.minY - spec.maxDy, maxY: spec.box.maxY + spec.maxDy };
+        for (const tailPose of [undefined, ...BENT_TAIL_POSES]) {
+          const variant: RigPartVariant = { ...(tailPose && { tailPose }), ...(layers && { tailLayers: layers }) };
+          const ink = paintInkBounds(partPaints(id, appearance, variant));
+          if (isEmpty(ink)) continue;
+          painted++;
+          const room = spare(ink, tailPose ? grown : spec.box);
+          if (room < 1) failures.push(`${lookId(look)} ${id} ${JSON.stringify(variant)}: spare ${room.toFixed(3)}`);
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+    expect(painted).toBe(EVERY_BODY_LOOK.length * 2 * (1 + BENT_TAIL_POSES.length));
   });
 });
 
@@ -1004,9 +1069,33 @@ describe('placement', () => {
         expect(placed.tailItem.rotation).toBe(0);
         expect(placed.eyesFrame).toBe(0);
         expect(placed.sheenFrame).toBeNull();
+        expect(placed.stripe.map((band) => band.polygons.length)).toEqual([0, 0]);
         expect(placed.twinkles).toEqual([]);
       }
     }
+  });
+
+  it('fills the stripe with tailStripe at the shown tail on a moving Iridescent tail, else leaves it empty', () => {
+    const out = createRigPlacement();
+    expect(out.stripe.map((band) => band.polygons.length)).toEqual([0, 0]);
+    let filled = 0;
+    for (const look of [DEFAULT_ART_LOOK, EVERY_BODY_LOOK[EVERY_BODY_LOOK.length - 1]]) {
+      const toX = axolotlBodyGeometry(look).tail.rootX + RIG_SEAM_OVERLAP;
+      for (const renderer of ['webgl', 'canvas'] as const) {
+        for (const live of [pose({ swimPhase: 1.3, tailAmp: 1.4 }), pose({ swimPhase: 4, tailAmp: AXO_MAX_TAIL_AMP, sheen: 0.3 }), pose({ sheen: 0.7 })]) {
+          const plain = rigPlacement(look, live, renderer, false, out);
+          expect(plain.stripe.map((band) => band.polygons.length)).toEqual([0, 0]);
+          const placed = rigPlacement(look, live, renderer, true, out);
+          expect(placed.tail.mode).not.toBe('still');
+          const sheen = placed.sheenFrame === null ? undefined : sheenStepValue(placed.sheenFrame);
+          const { swimPhase, tailAmp } = placed.shownTail;
+          expect(placed.stripe).toEqual(tailStripe(look, swimPhase, tailAmp, sheen, toX));
+          filled += placed.stripe[0].polygons.length > 0 ? 1 : 0;
+          expect(rigPlacement(look, RIG_STILL_POSE, renderer, true, out).stripe.map((band) => band.polygons.length)).toEqual([0, 0]);
+        }
+      }
+    }
+    expect(filled).toBeGreaterThan(0);
   });
 
   it('bends the tail by renderer, and moves a still Iridescent sheen off the still tail', () => {
