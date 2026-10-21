@@ -8,12 +8,22 @@ import { describe, expect, it, vi } from 'vitest';
 import { HALO_RX, HALO_RY, paintProtectedHalo } from './drawEffects';
 import { paintLegIcon } from './drawLegIcons';
 import { paintTilapia, type TilapiaPose } from './drawTilapia';
-import { INK, LEGS_FILL, LW, TILAPIA_BODY, TILAPIA_FIN, UI_PANEL, WHITE } from './palette';
+import {
+  EYE,
+  INK,
+  LEGS_FILL,
+  LW,
+  TILAPIA_BELLY,
+  TILAPIA_BODY,
+  TILAPIA_FIN,
+  UI_PANEL,
+  WHITE,
+} from './palette';
 
-/** Every tilapia pose; the record type makes a missing pose a type error. */
-const POSE_SET: Readonly<Record<TilapiaPose, true>> = { swim: true, windup: true, lunge: true, rest: true };
-const TILAPIA_POSES = Object.keys(POSE_SET) as TilapiaPose[];
-/** Tilapia outer-edge fills against the ink outline (guide 3g). */
+/** Every tilapia pose and whether its eye is the open bead (guide 7c); a missing pose is a type error. */
+const POSE_EYE_OPEN: Readonly<Record<TilapiaPose, boolean>> = { swim: true, windup: true, lunge: true, rest: false };
+const TILAPIA_POSES = Object.keys(POSE_EYE_OPEN) as TilapiaPose[];
+/** Tilapia fills that reach the outer edge, against the ink outline (guide 3g). */
 const TILAPIA_INK_RATIO = 9;
 /** Luminance a fill needs for 9:1 against INK. */
 const TILAPIA_MIN_LUMINANCE = 0.607;
@@ -23,13 +33,42 @@ const TILAPIA_BLOBS = 4;
 const LEGS_PANEL_RATIO = 3;
 /** Leg capsules: the leg and three toes. */
 const LEG_PARTS = 4;
-/** Protected ring widths and inset (guide 6q). */
+/** Legs display ink width, dash and gap (guide 6q, 12). */
+const LEG_ICON_INK = 2.4;
+const LEG_ICON_DASH = [2, 4.6];
+/** Protected ring radii, widths, inset and glint (guide 6q). */
+const RING_RX = 84;
+const RING_RY = 54;
 const RING_OUTER_W = 2.0;
 const RING_INNER_W = 2.4;
 const RING_INNER_INSET = 2.2;
 const RING_GLINT_W = 3;
+const RING_GLINT_INSET = 2.7;
+const RING_GLINT_LEN = 0.5;
+const RING_GLINT_MID = Math.PI * 1.25;
 const TAU = Math.PI * 2;
 const EPS = 1e-9;
+
+/** Contrast ratios exactly as the guide prints them (3g, 10), to 2 decimals. */
+const DOCUMENTED_RATIOS: readonly (readonly [string, string, string, number])[] = [
+  ['TILAPIA_BODY vs INK', TILAPIA_BODY, INK, 9.07],
+  ['TILAPIA_FIN vs INK', TILAPIA_FIN, INK, 10.54],
+  ['TILAPIA_BELLY vs INK', TILAPIA_BELLY, INK, 11.72],
+  ['EYE vs TILAPIA_BODY', EYE, TILAPIA_BODY, 10.98],
+  ['LEGS_FILL vs UI_PANEL', LEGS_FILL, UI_PANEL, 3.46],
+  ['LEGS_FILL vs INK', LEGS_FILL, INK, 4.16],
+  ['WHITE vs INK (protected ring)', WHITE, INK, 14.39],
+];
+
+/**
+ * "Fill or ink is X:1 or better on any background" (guide 3g, 10): the square root of the
+ * pair ratio, which the guide prints rounded down to 2 decimals.
+ */
+const DOCUMENTED_WORST_CASE: readonly (readonly [string, string, string, number])[] = [
+  ['TILAPIA_BODY or INK', TILAPIA_BODY, INK, 3.01],
+  ['TILAPIA_BELLY or INK', TILAPIA_BELLY, INK, 3.42],
+  ['protected ring, WHITE or INK', WHITE, INK, 3.79],
+];
 
 // ---------------------------------------------------------------------------
 // Colour maths
@@ -177,6 +216,22 @@ function ellipseOf(op: Op): number[] {
 }
 
 // ---------------------------------------------------------------------------
+// Documented ratios
+// ---------------------------------------------------------------------------
+
+describe('contrast ratios match the guide (3g, 10)', () => {
+  it.each(DOCUMENTED_RATIOS)('%s is %s:1 as printed', (_name, a, b, documented) => {
+    expect(contrastRatio(a, b).toFixed(2)).toBe(documented.toFixed(2));
+  });
+
+  it.each(DOCUMENTED_WORST_CASE)('%s is %s:1 or better on any background', (_name, a, b, documented) => {
+    const worst = Math.sqrt(contrastRatio(a, b));
+    expect(worst).toBeGreaterThanOrEqual(documented);
+    expect(worst).toBeLessThan(documented + 0.01);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Tilapia
 // ---------------------------------------------------------------------------
 
@@ -184,9 +239,24 @@ describe('tilapia colours (guide 3g)', () => {
   it.each([
     ['TILAPIA_BODY', TILAPIA_BODY],
     ['TILAPIA_FIN', TILAPIA_FIN],
-  ])('%s is at least 9:1 against INK', (_name, fill) => {
+    ['TILAPIA_BELLY', TILAPIA_BELLY],
+  ])('%s reaches the outer edge, so it is at least 9:1 against INK', (_name, fill) => {
     expect(relativeLuminance(fill)).toBeGreaterThanOrEqual(TILAPIA_MIN_LUMINANCE);
     expect(contrastRatio(fill, INK)).toBeGreaterThanOrEqual(TILAPIA_INK_RATIO);
+  });
+
+  it.each(TILAPIA_POSES)('%s: the belly band is an opaque TILAPIA_BELLY fill inside the body clip', (pose) => {
+    const { ops, calls } = record((ctx) => paintTilapia(ctx, pose));
+    const belly = ops.filter((op) => isFill(op) && op.fillStyle === TILAPIA_BELLY);
+    expect(belly).toHaveLength(1);
+    expect(belly[0].globalAlpha).toBe(1);
+    expect(calls.map(([name]) => name)).toContain('clip');
+  });
+
+  it.each(TILAPIA_POSES)('%s: the eye bead is EYE only when the eye is open', (pose) => {
+    const { ops } = record((ctx) => paintTilapia(ctx, pose));
+    const beads = ops.filter((op) => isFill(op) && op.fillStyle === EYE);
+    expect(beads).toHaveLength(POSE_EYE_OPEN[pose] ? 1 : 0);
   });
 
   it.each(TILAPIA_POSES)('%s: every outer-edge fill is TILAPIA_BODY or TILAPIA_FIN, inked in opaque INK', (pose) => {
@@ -240,9 +310,11 @@ describe('protected ring (guide 6q)', () => {
     expect(inner).toBeDefined();
     expect(glint).toBeDefined();
 
+    expect(HALO_RX).toBe(RING_RX);
+    expect(HALO_RY).toBe(RING_RY);
     const [, , outerRx, outerRy, , outerStart, outerEnd] = ellipseOf(outer as Op);
-    expect(outerRx).toBeCloseTo(HALO_RX, 9);
-    expect(outerRy).toBeCloseTo(HALO_RY, 9);
+    expect(outerRx).toBeCloseTo(RING_RX, 9);
+    expect(outerRy).toBeCloseTo(RING_RY, 9);
     expect(outerEnd - outerStart).toBeCloseTo(TAU, 9);
 
     const [, , innerRx, innerRy, , innerStart, innerEnd] = ellipseOf(inner as Op);
@@ -250,9 +322,14 @@ describe('protected ring (guide 6q)', () => {
     expect(outerRy - innerRy).toBeCloseTo(RING_INNER_INSET, 9);
     expect(innerEnd - innerStart).toBeCloseTo(TAU, 9);
 
-    const [, , glintRx, , , glintStart, glintEnd] = ellipseOf(glint as Op);
-    expect(glintRx).toBeLessThan(outerRx);
-    expect(glintEnd - glintStart).toBeLessThan(TAU);
+    const [, , glintRx, glintRy, , glintStart, glintEnd] = ellipseOf(glint as Op);
+    expect(outerRx - glintRx).toBeCloseTo(RING_GLINT_INSET, 9);
+    expect(outerRy - glintRy).toBeCloseTo(RING_GLINT_INSET, 9);
+    expect(glintEnd - glintStart).toBeCloseTo(RING_GLINT_LEN, 9);
+    expect((glintStart + glintEnd) / 2).toBeCloseTo(RING_GLINT_MID, 9);
+    // the glint's outer edge stays inside the ink line's inner edge
+    expect(glintRx + RING_GLINT_W / 2).toBeLessThanOrEqual(outerRx - RING_OUTER_W / 2);
+    expect(glintRy + RING_GLINT_W / 2).toBeLessThanOrEqual(outerRy - RING_OUTER_W / 2);
   });
 });
 
@@ -273,16 +350,23 @@ describe('leg icons (guide 3g, 10)', () => {
       expect(op.fillStyle).toBe(LEGS_FILL);
       expect(op.globalAlpha).toBe(1);
     }
-    expect(ops.filter((op) => isStroke(op) && op.strokeStyle === INK)).toHaveLength(LEG_PARTS);
+    const inks = ops.filter((op) => isStroke(op) && op.strokeStyle === INK);
+    expect(inks).toHaveLength(LEG_PARTS);
+    // the fill covers the inner half of the stroke, so 2 x ink shows as ink 2.4 outside
+    for (const op of inks) expect(op.lineWidth).toBeCloseTo(2 * LEG_ICON_INK, 9);
     expect(calls.map(([name]) => name)).not.toContain('setLineDash');
   });
 
-  it("'outline' (the regrowing base) has no fill and a dashed ink edge", () => {
+  it("'outline' (the regrowing base) has no fill and a dashed ink edge, ink 2.4, dash 2, gap 4.6", () => {
     const { ops, calls } = record((ctx) => paintLegIcon(ctx, 'outline'));
     expect(ops.filter(isFill)).toEqual([]);
     const strokes = ops.filter(isStroke);
     expect(strokes).toHaveLength(LEG_PARTS);
-    for (const op of strokes) expect(op.strokeStyle).toBe(INK);
-    expect(calls.map(([name]) => name)).toContain('setLineDash');
+    for (const op of strokes) {
+      expect(op.strokeStyle).toBe(INK);
+      expect(op.lineWidth).toBeCloseTo(LEG_ICON_INK, 9);
+    }
+    const dashes = calls.filter(([name]) => name === 'setLineDash').map(([, args]) => args[0]);
+    expect(dashes).toContainEqual(LEG_ICON_DASH);
   });
 });
