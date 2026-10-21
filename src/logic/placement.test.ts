@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AREAS, CANAL_AREA, areaById } from './areas';
 import { CANAL_TREASURES, RARITIES, treasureById, type Rarity } from './catalogue';
-import { coversAt, distanceToPath, inCave, meetsRarity, pastCurrent } from './hiding';
+import { coversAt, distanceToPath, inCave, meetsRarity, pastCurrent, routeDistance } from './hiding';
 import { axolotlFindId } from './morphs';
 import {
   DEFAULT_TRIP_SEED,
@@ -14,13 +14,16 @@ import {
   type RarityCounts,
 } from './placement';
 import {
+  RISK,
+  TILAPIA,
   TRIP_TREASURES,
   TRIP_TREASURES_BY_AREA,
   treasuresPerTrip,
   tripTreasureTuning,
+  type RiskTuning,
   type TripTreasureTuning,
 } from './tuning';
-import { buildCanalZone, type HidingSpot, type ZoneLayout } from './zone';
+import { buildCanalZone, type HidingSpot, type TilapiaRoute, type ZoneLayout } from './zone';
 
 const ALL_SEEDS = [0xa70107, 1, 2, 3, 42, 1234, 0xdeadbeef, 0x12345678, 987654321];
 const TRIP_SEEDS = Array.from({ length: 25 }, (_, i) => i + 1);
@@ -411,6 +414,158 @@ describe('placeTreasures', () => {
     placeAll(zone, DEFAULT_TRIP_SEED);
     placeAll(zone, DEFAULT_TRIP_SEED, [], { mustPlace: [lostLegendary], extras: [specialId], mainPath: zone.mainPath });
     nextTripSeed(DEFAULT_TRIP_SEED);
+    expect(random).not.toHaveBeenCalled();
+  });
+});
+
+describe('placeTreasures risk weight (issue #70)', () => {
+  const zone = buildCanalZone();
+  const specialId = CANAL_AREA.specialTreasureId;
+  const withRoutes: PlacementOptions = { mainPath: zone.mainPath, tilapiaRoutes: zone.tilapiaRoutes, lungeRange: TILAPIA.lungeRange };
+  const withoutRoutes: PlacementOptions = { mainPath: zone.mainPath };
+  const ladder: readonly Rarity[] = ['legendary', 'epic', 'rare', 'common'];
+  const SHARE_TOLERANCE = 0.03;
+  const lineRoute: TilapiaRoute[] = [{ id: 'test/route', waypoints: [{ x: 0, y: 0 }] }];
+  const lineSpots: HidingSpot[] = [50, 100, 150].map((x) => ({
+    id: `test/spot-${x}`,
+    cover: 'reeds',
+    rarity: 'common',
+    container: false,
+    x,
+    y: 0,
+  }));
+
+  function meanRouteDistanceByRarity(seeds: readonly number[], options: PlacementOptions): RarityCounts {
+    const total = counts(0, 0, 0, 0);
+    const seen = counts(0, 0, 0, 0);
+    for (const seed of seeds) {
+      for (const placed of placeAll(zone, seed, [], options)) {
+        const rarity = rarityOf(placed.id);
+        total[rarity] += routeDistance(placed, zone.tilapiaRoutes);
+        seen[rarity] += 1;
+      }
+    }
+    return counts(total.common / seen.common, total.rare / seen.rare, total.epic / seen.epic, total.legendary / seen.legendary);
+  }
+
+  function routeSpread(rarity: Rarity): number {
+    const distances = zone.spots
+      .filter((spot) => spot.rarity === rarity)
+      .map((spot) => routeDistance(spot, zone.tilapiaRoutes));
+    return Math.max(...distances) - Math.min(...distances);
+  }
+
+  function lineShares(id: string, seeds: readonly number[], options: PlacementOptions): number[] {
+    const picks = new Map(lineSpots.map((spot) => [spot.id, 0]));
+    for (const seed of seeds) {
+      const placed = placeTreasures([{ id, pool: lineSpots.map((spot) => spot.id) }], lineSpots, [], seed, { extras: [id], ...options });
+      picks.set(placed[0].spotId, (picks.get(placed[0].spotId) ?? 0) + 1);
+    }
+    return lineSpots.map((spot) => (picks.get(spot.id) ?? 0) / seeds.length);
+  }
+
+  function expectShares(actual: readonly number[], expected: readonly number[]): void {
+    actual.forEach((share, i) => expect(Math.abs(share - expected[i])).toBeLessThanOrEqual(SHARE_TOLERANCE));
+  }
+
+  it('hides rarer treasures nearer the tilapia on average: Legendary, then Epic, then Rare, then Common', () => {
+    const means = meanRouteDistanceByRarity(SEEDS_1000, withRoutes);
+    for (let i = 0; i + 1 < ladder.length; i++) {
+      expect(means[ladder[i]]).toBeLessThan(means[ladder[i + 1]]);
+    }
+  });
+
+  it('moves Rare, Epic and Legendary nearer the tilapia and Common farther than without routes', () => {
+    const weighted = meanRouteDistanceByRarity(SEEDS_1000, withRoutes);
+    const even = meanRouteDistanceByRarity(SEEDS_1000, withoutRoutes);
+    for (const rarity of RARITIES) {
+      expect(routeSpread(rarity)).toBeGreaterThan(0);
+      if (RISK.favoured[rarity] === 'nearer') {
+        expect(weighted[rarity]).toBeLessThan(even[rarity]);
+      } else {
+        expect(weighted[rarity]).toBeGreaterThan(even[rarity]);
+      }
+    }
+  });
+
+  it('weights a pool linearly from 1 to 2 toward the rarity\'s favoured side, by route distance', () => {
+    const seeds = SEEDS_2000.concat(SEEDS_2000.map((seed) => seed + SEEDS_2000.length));
+    const legendary = idsOfRarity('legendary')[0];
+    const common = idsOfRarity('common')[0];
+    expectShares(lineShares(legendary, seeds, { tilapiaRoutes: lineRoute }), [4 / 9, 3 / 9, 2 / 9]);
+    expectShares(lineShares(common, seeds, { tilapiaRoutes: lineRoute }), [2 / 9, 3 / 9, 4 / 9]);
+    expectShares(lineShares(legendary, seeds, {}), [1 / 3, 1 / 3, 1 / 3]);
+  });
+
+  it('gives every spot a risk weight of 1 when every route distance in the pool is equal', () => {
+    const ringRoute: TilapiaRoute[] = [{ id: 'test/ring', waypoints: [{ x: 100, y: 100 }] }];
+    const legendary = idsOfRarity('legendary')[0];
+    const equalSpots: HidingSpot[] = [
+      { ...lineSpots[0], id: 'test/spot-up', x: 100, y: 0 },
+      { ...lineSpots[0], id: 'test/spot-down', x: 100, y: 200 },
+    ];
+    const equalFinds = [{ id: legendary, pool: equalSpots.map((spot) => spot.id) }];
+    for (const seed of SEEDS_300) {
+      expect(placeTreasures(equalFinds, equalSpots, [], seed, { extras: [legendary], tilapiaRoutes: ringRoute })).toEqual(
+        placeTreasures(equalFinds, equalSpots, [], seed, { extras: [legendary] }),
+      );
+    }
+  });
+
+  it('multiplies the hiddenness weight by the risk weight, and a flat risk tuning changes nothing', () => {
+    const flatRisk: RiskTuning = { ...RISK, unfavouredWeight: 1, favouredWeight: 1 };
+    const flatHidden: TripTreasureTuning = { ...TRIP_TREASURES, leastHiddenWeight: 1, bestHiddenWeight: 1 };
+    for (const seed of SEEDS_300) {
+      expect(placeAll(zone, seed, [], { ...withRoutes, risk: flatRisk })).toEqual(placeAll(zone, seed, [], withoutRoutes));
+      expect(placeAll(zone, seed, [], { ...withRoutes, tuning: flatHidden })).toEqual(
+        placeAll(zone, seed, [], { tilapiaRoutes: zone.tilapiaRoutes }),
+      );
+    }
+    const differs = SEEDS_300.some(
+      (seed) => JSON.stringify(placeAll(zone, seed, [], withRoutes)) !== JSON.stringify(placeAll(zone, seed, [], withoutRoutes)),
+    );
+    expect(differs).toBe(true);
+  });
+
+  it('picks every pool spot on some trip seed with routes', () => {
+    const seen = new Set(SEEDS_1000.flatMap((seed) => placeAll(zone, seed, [], withRoutes).map((placed) => placed.spotId)));
+    expect([...seen].sort()).toEqual([...new Set(zone.finds.flatMap((find) => find.pool))].sort());
+  });
+
+  it('gives an equal layout for the same trip seed with routes and varies across seeds', () => {
+    const options: PlacementOptions = { ...withRoutes, extras: [specialId] };
+    for (const seed of TRIP_SEEDS) {
+      expect(placeAll(zone, seed, [], options)).toEqual(placeAll(zone, seed, [], options));
+    }
+    const layouts = new Set(TRIP_SEEDS.map((seed) => JSON.stringify(placeAll(zone, seed, [], options))));
+    expect(layouts.size).toBeGreaterThanOrEqual(2);
+  });
+
+  it.each(ALL_SEEDS)('places each pick once in a spot that meets its rarity and the risk ladder for zone seed %i', (zoneSeed) => {
+    const seededZone = buildCanalZone(zoneSeed);
+    const options: PlacementOptions = {
+      mainPath: seededZone.mainPath,
+      tilapiaRoutes: seededZone.tilapiaRoutes,
+      lungeRange: TILAPIA.lungeRange,
+      extras: [specialId],
+    };
+    for (const tripSeed of SEEDS_300) {
+      expectValidLayout(seededZone, placeAll(seededZone, tripSeed, [], options));
+    }
+  });
+
+  it('gives the same placement as without routes when the routes are empty or absent', () => {
+    for (const seed of SEEDS_300) {
+      const today = placeAll(zone, seed, [], withoutRoutes);
+      expect(placeAll(zone, seed, [], { ...withoutRoutes, tilapiaRoutes: [] })).toEqual(today);
+      expect(placeAll(zone, seed, [], { ...withoutRoutes, tilapiaRoutes: [], lungeRange: TILAPIA.lungeRange })).toEqual(today);
+      expect(placeAll(zone, seed, [], { ...withoutRoutes, tilapiaRoutes: [{ id: 'test/empty', waypoints: [] }] })).toEqual(today);
+    }
+  });
+
+  it('never calls Math.random with routes', () => {
+    const random = vi.spyOn(Math, 'random');
+    placeAll(zone, DEFAULT_TRIP_SEED, [], { ...withRoutes, extras: [specialId] });
     expect(random).not.toHaveBeenCalled();
   });
 });

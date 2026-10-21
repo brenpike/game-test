@@ -31,10 +31,10 @@ import {
   type TripStepResult,
 } from './trip';
 import { axolotlFindId, type RealMorphId } from './morphs';
-import { DEFAULT_TRIP_SEED, nextTripSeed, type PlacedFind } from './placement';
+import { DEFAULT_TRIP_SEED, nextTripSeed, placeTreasures, type PlacedFind, type PlacementOptions } from './placement';
 import { RESCUE, pickStranding, type Stranding } from './rescue';
 import { TRIP_EVENTS, TRIP_REGISTRY_KEYS, type TripSnapshot } from './tripEvents';
-import { CARRY, FINDS, LEGS, SWIM, treasuresPerTrip, tripTreasureTuning } from './tuning';
+import { CARRY, FINDS, LEGS, SWIM, TILAPIA, treasuresPerTrip, tripTreasureTuning } from './tuning';
 import { buildCanalZone, swimBounds, type HidingSpot, type Point } from './zone';
 
 const DT = 1 / 60;
@@ -408,6 +408,52 @@ describe('per-trip placement', () => {
     expect(moved.found).toEqual([]);
     const resealed = newTrip(done, atPot);
     expect(resealed.placed).toEqual([{ id: BOAT, spotId: potC.id, x: potC.x, y: potC.y, container: true, sealed: true }]);
+  });
+});
+
+describe('risk-weighted placement (issue #70)', () => {
+  const SEEDS = Array.from({ length: 100 }, (_, i) => i + 1);
+
+  function zonePlacement(source: TripSource, seed: number, routes: PlacementOptions['tilapiaRoutes']): PlacedFind[] {
+    const special = CANAL_AREA.specialTreasureId;
+    return placeTreasures(source.finds, source.spots, [], seed, {
+      mustPlace: [],
+      extras: [special],
+      tuning: tripTreasureTuning(source.areaId),
+      mainPath: source.mainPath,
+      tilapiaRoutes: routes,
+      lungeRange: TILAPIA.lungeRange,
+    });
+  }
+
+  function endedFrom(start: TripState): TripState {
+    return { ...start, phase: 'ended', ending: { reason: 'carriedHome', returned: [], bankedThisTrip: [] } };
+  }
+
+  it("places treasures as placeTreasures does with the zone's routes and lunge range", () => {
+    for (const seed of SEEDS) {
+      expect(createTrip(zone, LEGS, [], seed).placed).toEqual(zonePlacement(zone, seed, zone.tilapiaRoutes));
+    }
+  });
+
+  it('differs from the placement without routes for some trip seed', () => {
+    const differs = SEEDS.some(
+      (seed) => JSON.stringify(createTrip(zone, LEGS, [], seed).placed) !== JSON.stringify(zonePlacement(zone, seed, [])),
+    );
+    expect(differs).toBe(true);
+  });
+
+  it("keeps the trip's routes when newTrip starts the next trip", () => {
+    const done = endedFrom(createTrip(farZone, LEGS, [], DEFAULT_TRIP_SEED));
+    for (const seed of SEEDS) {
+      const next = newTrip(done, seed);
+      expect(next.encounter.tilapiaRoutes).toEqual(farZone.tilapiaRoutes);
+      expect(next.placed).toEqual(zonePlacement(farZone, seed, farZone.tilapiaRoutes));
+    }
+    const differs = SEEDS.some(
+      (seed) => JSON.stringify(newTrip(done, seed).placed) !== JSON.stringify(zonePlacement(zone, seed, zone.tilapiaRoutes)),
+    );
+    expect(differs).toBe(true);
   });
 });
 

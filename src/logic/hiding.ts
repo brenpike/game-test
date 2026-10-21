@@ -1,9 +1,22 @@
 /**
  * Hiding rules (PRD B6): which cover a position is under and which rarity a spot may hold.
- * Every rule derives from geometry; declared spot labels are only checked against it.
+ * Every rule derives from geometry; declared spot labels are only checked against it. Rarer
+ * spots also sit nearer the tilapia routes (the risk ladder, issue #70).
  */
 import type { Rarity } from './catalogue';
-import { SURF, type CaveArea, type CurrentZone, type HidingCover, type HidingSpot, type PadSpec, type Point, type ReedPatch, type ZoneLayout } from './zone';
+import { RISK, TILAPIA, type RiskTuning } from './tuning';
+import {
+  SURF,
+  type CaveArea,
+  type CurrentZone,
+  type HidingCover,
+  type HidingSpot,
+  type PadSpec,
+  type Point,
+  type ReedPatch,
+  type TilapiaRoute,
+  type ZoneLayout,
+} from './zone';
 
 /** A Common spot is at most this far from the main swim path; a Rare spot is farther. */
 export const MAIN_PATH_REACH = 48;
@@ -13,7 +26,10 @@ export const PAD_COVER_DEPTH = 30;
 export const PAST_CURRENT_DEPTH = 140;
 
 /** The zone geometry the hiding rules read. */
-export type HidingGeometry = Pick<ZoneLayout, 'reedPatches' | 'pads' | 'cave' | 'currents' | 'homeSpot' | 'mainPath'>;
+export type HidingGeometry = Pick<
+  ZoneLayout,
+  'reedPatches' | 'pads' | 'cave' | 'currents' | 'homeSpot' | 'mainPath' | 'tilapiaRoutes'
+>;
 
 /** Whether a point is inside any reed patch rectangle (inclusive edges). */
 export function inReeds(pos: Point, patches: readonly ReedPatch[]): boolean {
@@ -92,11 +108,66 @@ export function isDeep(pos: Point, geo: HidingGeometry): boolean {
 }
 
 /**
+ * Shortest distance from a point to any tilapia route. Each route is a closed loop, so the
+ * segment from the last waypoint back to the first counts. A one-waypoint route gives the distance
+ * to that point; a route with no waypoints is ignored. No waypoints at all gives Infinity.
+ */
+export function routeDistance(pos: Point, routes: readonly TilapiaRoute[]): number {
+  let best = Infinity;
+  for (const route of routes) {
+    const points = route.waypoints;
+    for (let i = 0; i < points.length; i++) {
+      best = Math.min(best, distanceToSegment(pos, points[i], points[(i + 1) % points.length]));
+    }
+  }
+  return best;
+}
+
+/** Shortest distance from a point to any route waypoint, where a tilapia turns; Infinity with no waypoints. */
+export function turnDistance(pos: Point, routes: readonly TilapiaRoute[]): number {
+  let best = Infinity;
+  for (const route of routes) {
+    for (const point of route.waypoints) {
+      best = Math.min(best, Math.hypot(pos.x - point.x, pos.y - point.y));
+    }
+  }
+  return best;
+}
+
+/** Whether a point is within a lunge range of any tilapia route (inclusive). */
+export function withinLungeRange(pos: Point, routes: readonly TilapiaRoute[], lungeRange: number = TILAPIA.lungeRange): boolean {
+  return routeDistance(pos, routes) <= lungeRange;
+}
+
+/**
+ * The risk ladder (issue #70): whether a point sits in its rarity's band of distance to the nearest
+ * tilapia route and at least the turn clearance from every waypoint. Always true with no routes.
+ */
+export function meetsRiskRule(pos: Point, rarity: Rarity, routes: readonly TilapiaRoute[], risk: RiskTuning = RISK): boolean {
+  const distance = routeDistance(pos, routes);
+  if (distance === Infinity) {
+    return true;
+  }
+  const band = risk.band[rarity];
+  return distance > band.over && distance <= band.upTo && turnDistance(pos, routes) >= risk.turnClearance;
+}
+
+/**
  * Whether a spot's geometry suits a rarity; ignores any declared labels. Common: hidden, shallow,
  * no container, near the main path. Rare: the same but away from the path. Epic: deep, no
- * container. Legendary: deep, in a container. Containers are reserved for Legendary.
+ * container. Legendary: deep, in a container. Containers are reserved for Legendary. Every rarity
+ * must also meet the risk ladder for the geometry's tilapia routes.
  */
-export function meetsRarity(spot: Pick<HidingSpot, 'x' | 'y' | 'container'>, rarity: Rarity, geo: HidingGeometry): boolean {
+export function meetsRarity(
+  spot: Pick<HidingSpot, 'x' | 'y' | 'container'>,
+  rarity: Rarity,
+  geo: HidingGeometry,
+  risk: RiskTuning = RISK,
+): boolean {
+  return meetsHidingRule(spot, rarity, geo) && meetsRiskRule(spot, rarity, geo.tilapiaRoutes, risk);
+}
+
+function meetsHidingRule(spot: Pick<HidingSpot, 'x' | 'y' | 'container'>, rarity: Rarity, geo: HidingGeometry): boolean {
   const hidden = coversAt(spot, geo).length > 0;
   const deep = isDeep(spot, geo);
   switch (rarity) {
@@ -111,7 +182,7 @@ export function meetsRarity(spot: Pick<HidingSpot, 'x' | 'y' | 'container'>, rar
   }
 }
 
-/** Whether a spot's declared cover and rarity labels both hold for its geometry. */
-export function spotMatchesLabels(spot: Omit<HidingSpot, 'id'>, geo: HidingGeometry): boolean {
-  return coversAt(spot, geo).includes(spot.cover) && meetsRarity(spot, spot.rarity, geo);
+/** Whether a spot's declared cover and rarity labels both hold for its geometry, risk ladder included. */
+export function spotMatchesLabels(spot: Omit<HidingSpot, 'id'>, geo: HidingGeometry, risk: RiskTuning = RISK): boolean {
+  return coversAt(spot, geo).includes(spot.cover) && meetsRarity(spot, spot.rarity, geo, risk);
 }

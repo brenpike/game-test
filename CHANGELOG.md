@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-20
+
+### Changed
+
+- Rarer treasures now hide nearer the tilapia, so they are harder to get. Each rarity has its own distance from the tilapia, spots nearer the tilapia are picked more often for rarer treasures, and every treasure can still be grabbed without a hit (#70).
+- The canal is laid out again: new tilapia routes, reed beds with fixed hiding spots, moved hiding spots, and one stranded axolotl's place moved (#70).
+
 ## [0.18.0] - 2026-10-20
 
 ### Added

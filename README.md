@@ -6,7 +6,7 @@ It is mostly fun, with real axolotl facts along the way.
 
 ## What you can do now
 
-Version 0.18.0 is playable in one canal zone:
+Version 0.19.0 is playable in one canal zone:
 
 - Make your own axolotl the first time you play, one step at a time in 11 steps: colour (one of eight real morphs), boy or girl (with a boy or girl sign), eyes, mouth (eight to choose from), gills, spots, tail, body, age, size, and name. Every choice is a big picture button that shows it on your axolotl, and the preview changes as you pick. Surprise me picks everything at random, with a name that fits. The other seven colours are the ones you rescue.
 - Type a name, or pick a suggested one that fits a boy or a girl, so typing is optional. Names stay on your device.
@@ -15,7 +15,7 @@ Version 0.18.0 is playable in one canal zone:
 - Use Tail Dash, ride the current, and eat snacks.
 - Dodge three tilapia. A hit costs a leg, and legs regrow. If you lose all four, you are carried home, you lose the finds you had not banked, and the snacks start over.
 - Find hidden treasures: Decorations, Wearables, and Paint shells for Dream colours. Each has a rarity badge, and hint sparkles help you look.
-- Each trip hides only a few treasures, in hiding spots that shuffle each trip.
+- Each trip hides only a few treasures, in hiding spots that shuffle each trip. Rarer treasures hide nearer the tilapia, so they are harder to get.
 - The snack counter shows how many snacks are left. The last 3 snacks sparkle, and snacks drift slowly.
 - The exit opens when every snack is eaten. While it is closed, it shows a padlock sign and a message.
 - Swim into the open exit at the far end of the canal to beat Area 1 and bank the Trip Bag. A rescued axolotl following you moves into your Home Tank.
