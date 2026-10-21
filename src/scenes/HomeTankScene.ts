@@ -20,6 +20,7 @@ import { createAxolotlTexture, type AxolotlTexture, type TexInfo } from '../art/
 import { areaLabel } from '../logic/areaText';
 import { areaById, type AreaData } from '../logic/areas';
 import { ownedDreamColours } from '../logic/catalogue';
+import { dueFirstFindCards, tryItNowAxolotlId, type FirstFindKind } from '../logic/firstFind';
 import { GAME_EVENTS, REGISTRY_KEYS, type ReducedMotionPayload } from '../logic/gameEvents';
 import type { Rect, Size } from '../logic/hudLayout';
 import { motionProfile, type MotionProfile } from '../logic/motion';
@@ -31,6 +32,7 @@ import {
   bestStars,
   canRescueMore,
   chooseExplorer,
+  markFirstFindSeen,
   restyleAxolotl,
   setDreamColour,
   setOutfit,
@@ -40,6 +42,7 @@ import {
 } from '../logic/session';
 import { hubStarsBadgeRect } from '../logic/starsUi';
 import { restyleStart, type RestyleOptions, type StylerWearer } from '../logic/styler';
+import type { StylerStep } from '../logic/stylerSteps';
 import { TANK, tankFrame, tankToCss, type TankFrame, type TankLayout } from '../logic/tank';
 import {
   axolotlFocusIndex,
@@ -347,7 +350,7 @@ export class HomeTankScene extends Phaser.Scene {
       this.view,
       TANK_DEPTH.arrival,
       () => this.motion,
-      () => this.closeArrival(),
+      { onClose: (tryItNow) => this.closeArrival(tryItNow), onFirstFindSeen: (kind) => this.saveFirstFindSeen(kind) },
     );
     this.bindInput();
 
@@ -522,13 +525,38 @@ export class HomeTankScene extends Phaser.Scene {
       ending.reason === 'areaBeaten'
         ? { area: this.area, best: bestStars(this.session, this.area.id), rescueOpen: canRescueMore(this.session) }
         : undefined;
-    this.arrivalCard.show(ending, this.session.hub.banked.length, areaStars, this.session.canal.waitingStranded);
+    this.arrivalCard.show(
+      ending,
+      this.session.hub.banked.length,
+      areaStars,
+      this.session.canal.waitingStranded,
+      dueFirstFindCards(this.session.hub.banked, this.session.hub.firstFindsSeen),
+    );
     this.refreshHubFocus();
   }
 
-  /** The arrival card closed: back to the hub with Go exploring focused. */
-  private closeArrival(): void {
+  /**
+   * The arrival card and its first-find cards closed. After "Try it now!" opens restyle on the Dream
+   * colour step for the explorer (else the first owned axolotl); otherwise, or with no such swimmer,
+   * back to the hub with Go exploring focused.
+   */
+  private closeArrival(tryItNow = false): void {
+    if (tryItNow) {
+      const { explorerId, axolotls } = this.session.hub;
+      const id = tryItNowAxolotlId(explorerId, axolotls.map((axolotl) => axolotl.id));
+      const index = this.swimmers.findIndex((swimmer) => swimmer.id === id);
+      if (index !== -1) {
+        this.openRestyle(index, 'hub', 'dream');
+        return;
+      }
+    }
     this.showHub(GO_EXPLORING_INDEX);
+  }
+
+  /** A first-find card closed: remembers its kind as seen and saves it (PRD C15, D1). */
+  private saveFirstFindSeen(kind: FirstFindKind): void {
+    this.session = markFirstFindSeen(readSession(this.registry), kind);
+    writeSession(this.registry, this.session);
   }
 
   /** Gives the hub the input again, showing its buttons with the focus on `focusIndex`. */
@@ -686,15 +714,16 @@ export class HomeTankScene extends Phaser.Scene {
    * Opens the restyle screen (PRD F6) for the axolotl at `index`, starting from its name, look,
    * morph (shown read-only), Dream colour and outfit, offering the Dream colours the hub owns and,
    * on the Outfit tab, the banked Wearables with who else wears each (PRD C10). From the explorer
-   * card it opens on the Outfit tab. The hub hides and every key goes to the styler until Done or Cancel.
+   * card it opens on the Outfit tab, otherwise on `startStep` when given. The hub hides and every key
+   * goes to the styler until Done or Cancel.
    */
-  private openRestyle(index: number, from: RestyleFrom = 'hub'): void {
+  private openRestyle(index: number, from: RestyleFrom = 'hub', startStep?: StylerStep): void {
     const axolotl = this.swimmerAxolotl(index);
     const banked = this.session.hub.banked;
     const options: RestyleOptions = {
       banked,
       wearers: wearersBesides(this.session.hub.axolotls, axolotl.id),
-      ...(from === 'explorer' ? { startStep: 'outfit' as const } : {}),
+      startStep: startStep ?? (from === 'explorer' ? 'outfit' : undefined),
     };
     this.leaveHub('restyle');
     this.restyler = new AxolotlStyler(this, this.assets, this.view, TANK_DEPTH.restyle, {
@@ -825,9 +854,9 @@ export class HomeTankScene extends Phaser.Scene {
     }
   }
 
-  /** Confirm presses OK on the arrival card, ignoring key repeat. */
+  /** Every key goes to the arrival card, which passes it to a showing first-find card or presses OK. */
   private handleArrivalKey(action: TankKey, event: KeyboardEvent): void {
-    if (action === 'confirm' && !event.repeat) this.arrivalCard.press();
+    this.arrivalCard.handleKey(action, event.repeat);
   }
 
   /**

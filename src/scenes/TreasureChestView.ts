@@ -2,30 +2,47 @@ import * as Phaser from 'phaser';
 import { HOME_TANK_WALL, UI_PANEL } from '../art/palette';
 import type { BakedTextures, TexInfo } from '../art/textures';
 import type { TreasureTextures } from '../art/treasureTextures';
+import { treasureSlug, type Perk } from '../logic/catalogue';
 import type { Size } from '../logic/hudLayout';
 import { CLOSE_LABEL, NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL, TREASURE_CHEST_LABEL } from '../logic/tankText';
 import {
+  SECTION_LINE_GAP_PX,
   chestListing,
   chestPages,
   pageText,
   perkText,
+  sectionLine,
+  sectionLineLength,
   type ChestCategory,
   type ChestEntry,
   type ChestPage,
   type ChestSection,
+  type DreamColourEntry,
+  type SectionLineLength,
 } from '../logic/treasureChest';
-import { CHEST_BUTTON, UI, chestLayout, nextFocusIndex, rowsPerPage, type ChestLayout, type TankKey } from '../logic/tankUi';
+import {
+  CHEST_BUTTON,
+  UI,
+  chestLayout,
+  nextFocusIndex,
+  rowsPerPage,
+  type ChestLayout,
+  type ChestMeasure,
+  type TankKey,
+} from '../logic/tankUi';
 import { createButton, cssColor, drawPanel, uiTextStyle, type SceneView, type UiButton } from './BootScene';
-import { addTreasureIcon } from './FindPopup';
+import { addGlowingTreasureIcon, addRarityGlow } from './FindPopup';
 
 const TITLE_PX = 28;
 const HEADING_PX = 18;
 const PAGE_TEXT_PX = 18;
-const EMPTY_TEXT_PX = 18;
+const SECTION_LINE_PX = 18;
 const NAME_PX = 20;
 const RARITY_PX = 18;
 const DETAIL_PX = 18;
 const LEAD_PX = 32;
+/** Rarity glow under a found entry's 32 px icon or swatch. */
+const LEAD_GLOW_PX = 40;
 const LEAD_GAP = 8;
 const BADGE_PX = 24;
 const SLOT_PX = 18;
@@ -51,14 +68,15 @@ export interface TreasureChestTextures {
 }
 
 /**
- * The texts of one entry row, and its images (null in the measuring probe). A Wearable's slot and
- * perk are `slot`, `perkIcon` and `perk`; a Dream colour's label is `detail`. The unused ones stay empty.
+ * The texts of one entry row, and its images (null in the measuring probe). A found Wearable's slot
+ * and perk are `slot`, `perkIcon` and `perk`; a found Dream colour's label, or an unfound entry's hint
+ * and its slot or label, is `detail`. The unused ones stay empty.
  */
 interface RowParts {
-  lead: Phaser.GameObjects.Image | null;
+  lead: Phaser.GameObjects.Image | Phaser.GameObjects.Container | null;
   badge: Phaser.GameObjects.Image | null;
   perkIcon: Phaser.GameObjects.Image | null;
-  /** The slot name without the separator, e.g. 'Head'; empty for an entry that is not a Wearable. */
+  /** The slot name without the separator, e.g. 'Head'; empty for an entry that is not a found Wearable. */
   slotName: string;
   name: Phaser.GameObjects.Text;
   rarity: Phaser.GameObjects.Text;
@@ -81,14 +99,57 @@ function addCentredImage(scene: Phaser.Scene, info: TexInfo): Phaser.GameObjects
     .setScale(1 / info.scale);
 }
 
+/** The 32 px unfound silhouette of the treasure `id`, centre-anchored. Throws when no silhouette has the id's slug. */
+function addTreasureSilhouette(scene: Phaser.Scene, treasure: TreasureTextures, id: string): Phaser.GameObjects.Image {
+  const bySlug: Readonly<Record<string, TexInfo | undefined>> = treasure.silhouettes;
+  const info = bySlug[treasureSlug(id)];
+  if (info === undefined) throw new Error(`addTreasureSilhouette: no silhouette for treasure ${id}`);
+  return addCentredImage(scene, info);
+}
+
+/** A found Dream colour's swatch over its 40 px rarity glow, both centred on the container origin. */
+function addGlowingSwatch(scene: Phaser.Scene, treasure: TreasureTextures, entry: DreamColourEntry): Phaser.GameObjects.Container {
+  const glow = addRarityGlow(scene, treasure, LEAD_GLOW_PX, entry.badge);
+  const swatch = addCentredImage(scene, treasure.swatches[entry.id]);
+  return scene.add.container(0, 0, [glow, swatch]);
+}
+
+/**
+ * The lead image of an entry row: a found treasure's icon or Dream colour swatch over its rarity
+ * glow, or an unfound one's silhouette, which never glows.
+ */
+function addRowLead(
+  scene: Phaser.Scene,
+  treasure: TreasureTextures,
+  entry: ChestEntry,
+): Phaser.GameObjects.Image | Phaser.GameObjects.Container {
+  if ('label' in entry) {
+    return entry.found ? addGlowingSwatch(scene, treasure, entry) : addCentredImage(scene, treasure.swatchSilhouette);
+  }
+  return entry.found
+    ? addGlowingTreasureIcon(scene, treasure, LEAD_PX, entry.id)
+    : addTreasureSilhouette(scene, treasure, entry.id);
+}
+
 /** Heading text of a section, e.g. 'Dream colours: 2 of 12 found'. */
 function headingText(section: ChestSection): string {
   return `${section.heading}: ${section.countText}`;
 }
 
-/** Detail line of an entry: the Dream colour label, or none (a Wearable has the slot and perk line instead). */
+/** The perk of a found Wearable; null for any other entry. */
+function perkOf(entry: ChestEntry): Perk | null {
+  return 'perk' in entry ? entry.perk : null;
+}
+
+/**
+ * Detail text of an entry. Unfound: its hint, then a Wearable's slot name or a Dream colour's
+ * label, one per line. Found: the Dream colour label, or none (a found Wearable has the slot and perk
+ * line instead).
+ */
 function detailText(entry: ChestEntry): string {
-  return 'label' in entry ? entry.label : '';
+  if (entry.found) return 'label' in entry ? entry.label : '';
+  const second = 'detailText' in entry ? entry.detailText : 'label' in entry ? entry.label : '';
+  return [entry.hint, second].filter((line) => line !== '').join('\n');
 }
 
 /** Returns the current CSS size of `text`. */
@@ -102,14 +163,18 @@ function wrappedSize(text: Phaser.GameObjects.Text, wrapW: number): Size {
   return textSize(text);
 }
 
-/** Fills the row texts with the entry's name, rarity name, detail line, and a Wearable's slot and perk. */
+/**
+ * Fills the row texts with the entry's name ('???' when unfound), rarity name, detail text, and a
+ * found Wearable's slot and perk.
+ */
 function fillRowTexts(parts: RowParts, entry: ChestEntry): void {
+  const perk = perkOf(entry);
   parts.name.setText(entry.name);
   parts.rarity.setText(entry.rarityName);
   parts.detail.setText(detailText(entry));
-  parts.slotName = 'slotName' in entry ? entry.slotName : '';
+  parts.slotName = perk !== null && 'slotName' in entry ? entry.slotName : '';
   parts.slot.setText(parts.slotName);
-  parts.perk.setText('perk' in entry ? perkText(entry.perk) : '');
+  parts.perk.setText(perk !== null ? perkText(perk) : '');
 }
 
 /**
@@ -150,8 +215,8 @@ function perkLineHeight(parts: RowParts, availW: number): number {
 
 /**
  * Places the detail block at `top` and returns its bottom: beside the 32 px lead image (left edge
- * `textX`) or, when that ends higher, under it across the whole row. The block is the Dream colour
- * label or a Wearable's slot and perk line; an entry with neither adds nothing.
+ * `textX`) or, when that ends higher, under it across the whole row. The block is the detail text or
+ * a found Wearable's slot and perk line; an entry with neither adds nothing.
  */
 function placeDetail(parts: RowParts, top: number, textX: number, rowW: number): number {
   const { detail } = parts;
@@ -198,8 +263,9 @@ function arrangeRow(parts: RowParts, rowW: number): number {
 
 /**
  * Treasure Chest over the Home Tank: an opaque Home Tank wall backdrop that takes every press, a
- * white panel with the title, the section heading with its found count, one page of entry rows (or
- * the section's empty text), the page text, and the Close, Back and Next buttons. Pages come from
+ * white panel with the title, the section heading with its found count, the section line under it
+ * (the short lines when the full ones leave no room for a whole row), one page of entry rows for
+ * every treasure, found or not, the page text, and the Close, Back and Next buttons. Pages come from
  * chestPages() at as many rows as fit the list; paging wraps. Appears and leaves at once.
  * Keys: left and right page, next and previous move focus over Back, Close and Next, confirm
  * presses the focused button, cancel closes. Closing by button or key calls `onClose`.
@@ -213,7 +279,7 @@ export class TreasureChestView {
   private readonly title: Phaser.GameObjects.Text;
   private readonly heading: Phaser.GameObjects.Text;
   private readonly pageLabel: Phaser.GameObjects.Text;
-  private readonly emptyText: Phaser.GameObjects.Text;
+  private readonly sectionLineText: Phaser.GameObjects.Text;
   private readonly probe: RowParts;
   private readonly buttons: readonly UiButton[];
   private view: SceneView;
@@ -223,6 +289,9 @@ export class TreasureChestView {
   private pageIndex = 0;
   private perPage = 1;
   private rowH = LEAD_PX;
+  private lineLength: SectionLineLength = 'full';
+  /** Height of the tallest section heading at the content width; the section line sits under it. */
+  private headingH = 0;
   private chest: ChestLayout | null = null;
   private rows: ChestRow[] = [];
   private focusIndex = NEXT_INDEX;
@@ -247,7 +316,7 @@ export class TreasureChestView {
     this.title = scene.add.text(0, 0, TREASURE_CHEST_LABEL, uiTextStyle(TITLE_PX, this.dpr));
     this.heading = scene.add.text(0, 0, '', uiTextStyle(HEADING_PX, this.dpr));
     this.pageLabel = scene.add.text(0, 0, '', uiTextStyle(PAGE_TEXT_PX, this.dpr, false));
-    this.emptyText = scene.add.text(0, 0, '', uiTextStyle(EMPTY_TEXT_PX, this.dpr, false));
+    this.sectionLineText = scene.add.text(0, 0, '', uiTextStyle(SECTION_LINE_PX, this.dpr, false));
     this.probe = this.createRowParts(null, null, null);
     for (const text of this.probeTexts()) {
       text.setVisible(false);
@@ -264,7 +333,7 @@ export class TreasureChestView {
         this.title,
         this.heading,
         this.pageLabel,
-        this.emptyText,
+        this.sectionLineText,
         ...this.buttons.map((button) => button.container),
       ])
       .setDepth(depth)
@@ -294,9 +363,10 @@ export class TreasureChestView {
   }
 
   /**
-   * Lays the chest out for `view` with chestLayout(), measures the tallest entry row at the list
-   * width, and pages the listing at as many rows as fit, staying in the current section. Safe to call
-   * while closed; the next open() uses `view`.
+   * Lays the chest out for `view` with chestLayout() and the full section lines, measures the tallest
+   * entry row at the list width, lays it out again with the short lines when no whole row fits, and
+   * pages the listing at as many rows as fit, staying in the current section. Safe to call while
+   * closed; the next open() uses `view`.
    */
   layout(view: SceneView): void {
     this.view = view;
@@ -304,17 +374,11 @@ export class TreasureChestView {
     const category = this.currentCategory();
     const firstEntry = this.firstEntryIndex();
     this.pageLabel.setText(pageText(this.pageIndex + 1, Math.max(1, this.pages.length)));
-    const [back, close, next] = this.buttons.map((button): Size => ({ w: button.width, h: button.height }));
-    const chest = chestLayout(view, {
-      titleAt: (wrapW) => wrappedSize(this.title, wrapW),
-      headingAt: (wrapW) => this.measureHeadings(wrapW),
-      pageText: textSize(this.pageLabel),
-      close,
-      back,
-      next,
-    });
+    const full = chestLayout(view, this.chestMeasure('full'));
+    this.rowH = this.measureRowHeight(full.list.w);
+    this.lineLength = sectionLineLength(full.list.h, this.rowH);
+    const chest = this.lineLength === 'full' ? full : chestLayout(view, this.chestMeasure('short'));
     this.chest = chest;
-    this.rowH = this.measureRowHeight(chest.list.w);
     this.perPage = rowsPerPage(chest.list.h, this.rowH, UI.gap);
     this.pages = chestPages(this.sections, this.perPage);
     this.pageIndex = this.pageIndexFor(category, firstEntry);
@@ -336,7 +400,7 @@ export class TreasureChestView {
       row.parts.slot,
       row.parts.perk,
     ]);
-    for (const text of [this.title, this.heading, this.pageLabel, this.emptyText, ...this.probeTexts(), ...rowTexts]) {
+    for (const text of [this.title, this.heading, this.pageLabel, this.sectionLineText, ...this.probeTexts(), ...rowTexts]) {
       text.setResolution(dpr);
     }
     for (const button of this.buttons) {
@@ -390,7 +454,7 @@ export class TreasureChestView {
   }
 
   private createRowParts(
-    lead: Phaser.GameObjects.Image | null,
+    lead: Phaser.GameObjects.Image | Phaser.GameObjects.Container | null,
     badge: Phaser.GameObjects.Image | null,
     perkIcon: Phaser.GameObjects.Image | null,
   ): RowParts {
@@ -407,18 +471,40 @@ export class TreasureChestView {
     };
   }
 
-  /** Widest and tallest of every section heading wrapped at `wrapW`, so the list keeps one size on every page. */
-  private measureHeadings(wrapW: number): Size {
-    let size: Size = { w: 0, h: 0 };
-    for (const section of this.sections) {
-      this.heading.setText(headingText(section));
-      const measured = wrappedSize(this.heading, wrapW);
-      size = { w: Math.max(size.w, measured.w), h: Math.max(size.h, measured.h) };
-    }
-    return size;
+  /** Chest measurements with the `length` section lines under the headings. */
+  private chestMeasure(length: SectionLineLength): ChestMeasure {
+    const [back, close, next] = this.buttons.map((button): Size => ({ w: button.width, h: button.height }));
+    return {
+      titleAt: (wrapW) => wrappedSize(this.title, wrapW),
+      headingAt: (wrapW) => this.measureHeadings(wrapW, length),
+      pageText: textSize(this.pageLabel),
+      close,
+      back,
+      next,
+    };
   }
 
-  /** Height of the tallest entry row of every section at `rowW`; the lead image height when there are none. */
+  /**
+   * The heading block of every section wrapped at `wrapW`, so the list keeps one size on every page:
+   * as wide as the widest heading or `length` section line, and as tall as the tallest heading, the
+   * gap and the tallest section line. Remembers the tallest heading height for placing the line.
+   */
+  private measureHeadings(wrapW: number, length: SectionLineLength): Size {
+    let headingSize: Size = { w: 0, h: 0 };
+    let lineSize: Size = { w: 0, h: 0 };
+    for (const section of this.sections) {
+      this.heading.setText(headingText(section));
+      const heading = wrappedSize(this.heading, wrapW);
+      this.sectionLineText.setText(sectionLine(section.category, length));
+      const line = wrappedSize(this.sectionLineText, wrapW);
+      headingSize = { w: Math.max(headingSize.w, heading.w), h: Math.max(headingSize.h, heading.h) };
+      lineSize = { w: Math.max(lineSize.w, line.w), h: Math.max(lineSize.h, line.h) };
+    }
+    this.headingH = headingSize.h;
+    return { w: Math.max(headingSize.w, lineSize.w), h: headingSize.h + SECTION_LINE_GAP_PX + lineSize.h };
+  }
+
+  /** Height of the tallest entry row, found or unfound, of every section at `rowW`; the lead image height when there are none. */
   private measureRowHeight(rowW: number): number {
     let height = LEAD_PX;
     for (const section of this.sections) {
@@ -452,38 +538,35 @@ export class TreasureChestView {
     return first + Math.min(count - 1, Math.floor(entryIndex / this.perPage));
   }
 
-  /** Draws the current page: heading, page text, and its entry rows or the section's empty text. */
+  /**
+   * Draws the current page: heading, the section line in the same place on every page, page text,
+   * and its entry rows.
+   */
   private showPage(): void {
     const chest = this.chest;
     const page = this.pages[this.pageIndex];
     if (chest === null || page === undefined) throw new Error('TreasureChestView.showPage: not laid out');
     this.heading.setText(headingText(page.section));
+    this.sectionLineText.setText(sectionLine(page.section.category, this.lineLength));
+    wrappedSize(this.sectionLineText, chest.list.w);
+    this.sectionLineText.setPosition(chest.heading.x, chest.heading.y + this.headingH + SECTION_LINE_GAP_PX);
     this.pageLabel.setText(pageText(this.pageIndex + 1, this.pages.length));
     this.pageLabel.setPosition(chest.pageText.x + (chest.pageText.w - this.pageLabel.width) / 2, chest.pageText.y);
     this.clearRows();
-    const empty = page.entries.length === 0;
-    this.emptyText.setVisible(empty);
-    if (empty) {
-      this.emptyText.setText(page.section.emptyText);
-      wrappedSize(this.emptyText, chest.list.w);
-      this.emptyText.setPosition(chest.list.x, chest.list.y);
-    }
     page.entries.forEach((entry, index) => {
       this.rows.push(this.buildRow(entry, chest.list.x, chest.list.y + index * (this.rowH + UI.gap), chest.list.w));
     });
   }
 
   /**
-   * Adds one entry row at (`x`, `y`), `rowW` wide: its icon or swatch, name, badge, rarity name and
-   * detail; a Wearable's slot name, perk icon and perk text.
+   * Adds one entry row at (`x`, `y`), `rowW` wide: its glowing icon or swatch, or unfound silhouette,
+   * name, badge, rarity name and detail; a found Wearable's slot name, perk icon and perk text.
    */
   private buildRow(entry: ChestEntry, x: number, y: number, rowW: number): ChestRow {
-    const lead =
-      'label' in entry
-        ? addCentredImage(this.scene, this.treasure.swatches[entry.id])
-        : addTreasureIcon(this.scene, this.treasure, LEAD_PX, entry.id);
+    const lead = addRowLead(this.scene, this.treasure, entry);
     const badge = addCentredImage(this.scene, this.treasure.badges[BADGE_PX][entry.badge]);
-    const perkIcon = 'perk' in entry ? addCentredImage(this.scene, this.treasure.perks[PERK_ICON_PX][entry.perk.type]) : null;
+    const perk = perkOf(entry);
+    const perkIcon = perk !== null ? addCentredImage(this.scene, this.treasure.perks[PERK_ICON_PX][perk.type]) : null;
     const parts = this.createRowParts(lead, badge, perkIcon);
     fillRowTexts(parts, entry);
     arrangeRow(parts, rowW);
