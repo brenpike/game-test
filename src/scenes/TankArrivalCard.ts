@@ -6,11 +6,13 @@ import { areaLabel } from '../logic/areaText';
 import type { AreaData } from '../logic/areas';
 import { CARD, cardIconRowWidth, cardTextWidth, fitCard, homeTitleWrapWidth, iconRowsSize } from '../logic/cardFit';
 import { treasureById } from '../logic/catalogue';
+import type { DueFirstFind, FirstFindKind } from '../logic/firstFind';
 import type { MotionProfile } from '../logic/motion';
 import { morphById, rescueMorphsIn } from '../logic/morphs';
 import type { WaitingStranded } from '../logic/rescue';
 import { NO_STARS, type AreaStars } from '../logic/stars';
 import { STAR_ROW, starRowSize } from '../logic/starsUi';
+import type { TankKey } from '../logic/tankUi';
 import { foundInfos } from '../logic/trip';
 import type { TripEnding } from '../logic/tripEvents';
 import { ARRIVAL_OK_LABEL, arrivalText, type ArrivalStars, type WaitingAxolotl } from '../logic/tripText';
@@ -24,7 +26,8 @@ import {
   type SceneView,
   type UiButton,
 } from './BootScene';
-import { addTreasureIcon, placeIconRows } from './FindPopup';
+import { addGlowingTreasureIcon, placeIconRows } from './FindPopup';
+import { FirstFindCard, type FirstFindOutcome } from './FirstFindCard';
 import { addMotionTween } from './motionTweens';
 
 const TREASURE_ICON_PX = 32;
@@ -41,6 +44,17 @@ export interface ArrivalAreaStars {
   area: Readonly<AreaData>;
   best: AreaStars;
   rescueOpen: boolean;
+}
+
+/**
+ * What the arrival card reports to the Home Tank: `onClose` once the arrival card and every queued
+ * first-find card have closed (`tryItNow` when "Try it now!" closed the Paint shell card), and
+ * `onFirstFindSeen` as soon as each first-find card closes, so it is saved even if the next one is
+ * never seen.
+ */
+export interface TankArrivalCallbacks {
+  onClose(tryItNow: boolean): void;
+  onFirstFindSeen(kind: FirstFindKind): void;
 }
 
 /** The treasure ids the card body names: returned when carried home, otherwise banked this trip. */
@@ -99,14 +113,15 @@ function wrappedLineCount(text: Phaser.GameObjects.Text, content: string): numbe
  * arrivalText(); the body also names axolotls rescued into the Home Tank and, when carried home,
  * those waiting where they were found (PRD C4, C5). The icon row shows treasures only. The body has a
  * full and a short wording; layout() lets fitCard() pick whichever fits the canvas, drop icon rows,
- * or clip the body. OK hides the card and calls `onClose`.
+ * or clip the body. OK hides the card, then shows the first-find cards due one after another
+ * (PRD C15) before calling `onClose`.
  */
 export class TankArrivalCard {
   private readonly scene: Phaser.Scene;
   private readonly treasure: TreasureTextures;
   private readonly starTextures: AreaStarTextures;
   private readonly motion: () => MotionProfile;
-  private readonly onClose: () => void;
+  private readonly callbacks: TankArrivalCallbacks;
   private readonly container: Phaser.GameObjects.Container;
   private readonly panel: Phaser.GameObjects.Graphics;
   private readonly icon: Phaser.GameObjects.Image;
@@ -115,8 +130,10 @@ export class TankArrivalCard {
   private readonly title: Phaser.GameObjects.Text;
   private readonly body: Phaser.GameObjects.Text;
   private readonly button: UiButton;
+  private readonly firstFindCard: FirstFindCard;
   private view: SceneView;
-  private treasureIcons: Phaser.GameObjects.Image[] = [];
+  private treasureIcons: Phaser.GameObjects.Container[] = [];
+  private firstFinds: DueFirstFind[] = [];
   private bodyOptions: readonly string[] = [''];
   private showsStars = false;
   private shownAt = 0;
@@ -127,14 +144,14 @@ export class TankArrivalCard {
     view: SceneView,
     depth: number,
     motion: () => MotionProfile,
-    onClose: () => void,
+    callbacks: TankArrivalCallbacks,
   ) {
     this.scene = scene;
     this.view = view;
     this.treasure = assets.treasure;
     this.starTextures = assets.area.stars;
     this.motion = motion;
-    this.onClose = onClose;
+    this.callbacks = callbacks;
     const dpr = view.fit.dpr;
     const ink = cssColor(INK);
     const dim = scene.add
@@ -176,18 +193,22 @@ export class TankArrivalCard {
       ])
       .setDepth(depth)
       .setVisible(false);
+    this.firstFindCard = new FirstFindCard(scene, assets, view, depth, (kind, outcome) =>
+      this.closeFirstFind(kind, outcome),
+    );
     this.showStars(undefined);
   }
 
-  /** Whether the card is on screen. */
+  /** Whether the arrival card or one of its first-find cards is on screen. */
   isShowing(): boolean {
-    return this.container.visible;
+    return this.container.visible || this.firstFindCard.isShowing();
   }
 
   /**
    * Shows the card for a trip ending and the banked total, faded in unless motion is reduced. After
    * beating the area, `areaStars` gives the area and its best stars. `waiting` is the stranded
-   * axolotl left waiting after the trip, which gives the sex of a returned axolotl. Throws when the
+   * axolotl left waiting after the trip, which gives the sex of a returned axolotl. `firstFinds` are
+   * the first-find cards to show, in order, after OK. Throws when the
    * area was beaten without `areaStars` or the ending's stars, or a returned axolotl has no matching
    * waiting record.
    */
@@ -196,7 +217,9 @@ export class TankArrivalCard {
     bankedTotal: number,
     areaStars: ArrivalAreaStars | undefined,
     waiting: WaitingStranded | null,
+    firstFinds: readonly DueFirstFind[],
   ): void {
+    this.firstFinds = [...firstFinds];
     const stars = arrivalStars(ending, areaStars);
     const text = arrivalText({
       reason: ending.reason,
@@ -226,12 +249,27 @@ export class TankArrivalCard {
     this.container.setVisible(false).setAlpha(1);
   }
 
-  /** OK: once the card has shown for MIN_SHOW_MS, hides it and calls `onClose`. Ignored while hidden. */
+  /**
+   * OK: once the card has shown for MIN_SHOW_MS, hides it, then shows the first queued first-find
+   * card, or calls `onClose(false)` when none is queued. Ignored while hidden.
+   */
   press(): void {
     if (!this.container.visible) return;
     if (this.scene.time.now - this.shownAt < MIN_SHOW_MS) return;
     this.hide();
-    this.onClose();
+    this.showNextFirstFind();
+  }
+
+  /**
+   * Handles a key: a showing first-find card gets every key; otherwise confirm presses OK, ignoring
+   * key repeat. Other keys do nothing.
+   */
+  handleKey(key: TankKey, repeat: boolean): void {
+    if (this.firstFindCard.isShowing()) {
+      this.firstFindCard.handleKey(key, repeat);
+      return;
+    }
+    if (key === 'confirm' && !repeat) this.press();
   }
 
   setResolution(dpr: number): void {
@@ -239,6 +277,7 @@ export class TankArrivalCard {
       text.setResolution(dpr);
     }
     this.button.setResolution(dpr);
+    this.firstFindCard.setResolution(dpr);
   }
 
   /**
@@ -295,6 +334,31 @@ export class TankArrivalCard {
       placeIconRows(this.treasureIcons.slice(0, fit.iconCount), cssW / 2, panelY + iconsSlot.top, iconRowW);
     }
     this.button.container.setPosition((cssW - this.button.width) / 2, panelY + actionsSlot.top);
+    this.firstFindCard.layout(view);
+  }
+
+  /** Shows the next queued first-find card, or calls `onClose(false)` when the queue is empty. */
+  private showNextFirstFind(): void {
+    const next = this.firstFinds.shift();
+    if (next === undefined) {
+      this.callbacks.onClose(false);
+      return;
+    }
+    this.firstFindCard.show(next);
+  }
+
+  /**
+   * A first-find card closed: reports its kind as seen at once, then calls `onClose(true)` (dropping
+   * the rest of the queue) after "Try it now!", else shows the next card or calls `onClose(false)`.
+   */
+  private closeFirstFind(kind: FirstFindKind, outcome: FirstFindOutcome): void {
+    this.callbacks.onFirstFindSeen(kind);
+    if (outcome === 'tryItNow') {
+      this.firstFinds = [];
+      this.callbacks.onClose(true);
+      return;
+    }
+    this.showNextFirstFind();
   }
 
   /**
@@ -319,12 +383,12 @@ export class TankArrivalCard {
     );
   }
 
-  /** Replaces the treasure icon row with one 32 px icon per id. */
+  /** Replaces the treasure icon row with one 32 px icon over its rarity glow per id. */
   private buildTreasureRow(ids: readonly string[]): void {
     for (const icon of this.treasureIcons) {
       icon.destroy();
     }
-    this.treasureIcons = ids.map((id) => addTreasureIcon(this.scene, this.treasure, TREASURE_ICON_PX, id));
+    this.treasureIcons = ids.map((id) => addGlowingTreasureIcon(this.scene, this.treasure, TREASURE_ICON_PX, id));
     this.container.add(this.treasureIcons);
   }
 }

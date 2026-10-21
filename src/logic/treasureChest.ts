@@ -1,11 +1,11 @@
 /**
- * Treasure Chest listing (PRD C11, F10, F15): owned Decorations, Wearables and Dream colours,
- * with found counts, entry text and pages. Pure data; drawing lives in the scene and art layers.
+ * Treasure Chest listing (PRD C11, F10, F15): every Decoration, Wearable and Dream colour, found or
+ * not, with found counts, section lines, entry text and pages. Pure data; drawing lives in the scene
+ * and art layers.
  */
 import {
   CANAL_TREASURES,
   DREAM_COLOURS,
-  dreamColourById,
   ownedDreamColours,
   type Decoration,
   type DreamColour,
@@ -22,6 +22,20 @@ import { badgeShape, rarityName, type BadgeShape } from './hints';
 /** Label every Dream colour carries in the Treasure Chest (PRD C11, F15). */
 export const DREAM_COLOUR_LABEL = 'Dream colour — not found in nature';
 
+/** Name an unfound treasure shows in the Treasure Chest. */
+export const UNFOUND_NAME = '???';
+
+/**
+ * Where to look for an unfound treasure of each rarity (PRD B6). Paint shells, and so Dream colours,
+ * use their rarity's hint.
+ */
+export const UNFOUND_HINTS: Readonly<Record<Rarity, string>> = Object.freeze({
+  common: 'Look near the main swim path!',
+  rare: 'Look off the main path!',
+  epic: 'Look in the cave or past the current!',
+  legendary: 'Break a Dash pot with Tail Dash!',
+});
+
 /** Treasure Chest section kind, in display order. */
 export type ChestCategory = 'decoration' | 'wearable' | 'dreamColour';
 
@@ -32,33 +46,61 @@ export const CHEST_CATEGORIES: readonly ChestCategory[] = Object.freeze([
   'dreamColour',
 ]);
 
+/** What each section holds and how to use it, under the section heading. */
+export const SECTION_LINES: Readonly<Record<ChestCategory, string>> = Object.freeze({
+  decoration: "Things to put in your tank. Open the tank's decorate mode to place them.",
+  wearable: 'Clothes for your axolotls. Each one gives a perk on trips. Dress up in Restyle.',
+  dreamColour: 'Magic paints from Paint shells. Not found in nature! Put one on in Restyle.',
+});
+
+/** Short section lines, used when the full ones leave no room for a whole entry row. */
+export const SHORT_SECTION_LINES: Readonly<Record<ChestCategory, string>> = Object.freeze({
+  decoration: 'Place them in decorate mode.',
+  wearable: 'Wear them in Restyle for perks.',
+  dreamColour: 'Magic paints. Use in Restyle.',
+});
+
+/** Gap between a section heading and its section line, CSS px. */
+export const SECTION_LINE_GAP_PX = 4;
+
+/** Which section lines the chest shows: SECTION_LINES or SHORT_SECTION_LINES. */
+export type SectionLineLength = 'full' | 'short';
+
 /** Display name of a Wearable slot. */
 export type SlotName = 'Head' | 'Neck' | 'Face' | 'Shirt' | 'Back' | 'Tail' | 'Socks' | 'Feet';
 
-/** Fields every Treasure Chest entry has. */
+/**
+ * Fields every Treasure Chest entry has. An unfound entry is named UNFOUND_NAME and has its rarity's
+ * hint; a found entry has its own name and an empty hint. Rarity, rarity name and badge always show.
+ */
 export interface ChestEntryBase {
   readonly name: string;
   readonly rarity: Rarity;
   readonly rarityName: string;
   readonly badge: BadgeShape;
+  readonly found: boolean;
+  readonly hint: string;
 }
 
-/** One owned Decoration. `id` is its treasure id. */
+/** One catalogue Decoration. `id` is its treasure id. */
 export interface DecorationEntry extends ChestEntryBase {
   readonly id: string;
 }
 
-/** One owned Wearable, with its slot and perk (F10), e.g. detailText 'Head · Speed +4%'. */
+/**
+ * One catalogue Wearable, with its slot and perk (F10), e.g. detailText 'Head · Speed +4%'. An
+ * unfound Wearable shows its slot only: perk null, detailText the slot name, e.g. 'Head'.
+ */
 export interface WearableEntry extends ChestEntryBase {
   readonly id: string;
   readonly slot: WearableSlot;
   readonly slotName: SlotName;
-  readonly perk: Perk;
+  readonly perk: Perk | null;
   readonly detailText: string;
 }
 
 /**
- * One owned Dream colour. `id` is the Dream colour id, which is also the swatch id the art layer
+ * One catalogue Dream colour, found or not; it always carries its label. `id` is the Dream colour id, which is also the swatch id the art layer
  * draws. `patterned` is true for patterned and sheen colours; solid colours show their name.
  */
 export interface DreamColourEntry extends ChestEntryBase {
@@ -70,7 +112,10 @@ export interface DreamColourEntry extends ChestEntryBase {
 /** Any Treasure Chest entry. */
 export type ChestEntry = DecorationEntry | WearableEntry | DreamColourEntry;
 
-/** One Treasure Chest section of one kind, with its "X of Y found" count. */
+/**
+ * One Treasure Chest section of one kind, with its "X of Y found" count, its full and short section
+ * lines, and an entry for every catalogue treasure of the kind.
+ */
 export interface ChestSectionOf<C extends ChestCategory, E extends ChestEntry> {
   readonly category: C;
   readonly heading: string;
@@ -78,7 +123,8 @@ export interface ChestSectionOf<C extends ChestCategory, E extends ChestEntry> {
   readonly total: number;
   readonly countText: string;
   readonly entries: readonly E[];
-  readonly emptyText: string;
+  readonly line: string;
+  readonly shortLine: string;
 }
 
 /** The Decorations section. */
@@ -130,12 +176,6 @@ const HEADINGS: Readonly<Record<ChestCategory, string>> = Object.freeze({
   dreamColour: 'Dream colours',
 });
 
-const EMPTY_TEXTS: Readonly<Record<ChestCategory, string>> = Object.freeze({
-  decoration: 'No Decorations yet. Look for them in the canal!',
-  wearable: 'No Wearables yet. Look for them in the canal!',
-  dreamColour: 'No Dream colours yet. Look for Paint shells in the canal!',
-});
-
 const DECORATIONS: readonly Decoration[] = CANAL_TREASURES.filter(isDecoration);
 
 const WEARABLES: readonly Wearable[] = CANAL_TREASURES.filter(isWearable);
@@ -169,6 +209,24 @@ export function wearableDetailText(slot: WearableSlot, perk: Perk): string {
   return `${slotName(slot)} · ${perkText(perk)}`;
 }
 
+/** Where to look for an unfound treasure of `rarity` (PRD B6), e.g. 'Look off the main path!'. */
+export function unfoundHint(rarity: Rarity): string {
+  return UNFOUND_HINTS[rarity];
+}
+
+/**
+ * Section line length for the chest: 'full' when an entry row `rowH` tall fits the list height the
+ * full lines leave (`fullListH`), else 'short'. 'short' when either is not finite.
+ */
+export function sectionLineLength(fullListH: number, rowH: number): SectionLineLength {
+  return Number.isFinite(fullListH) && Number.isFinite(rowH) && rowH <= fullListH ? 'full' : 'short';
+}
+
+/** The `length` section line of `category`. */
+export function sectionLine(category: ChestCategory, length: SectionLineLength): string {
+  return length === 'full' ? SECTION_LINES[category] : SHORT_SECTION_LINES[category];
+}
+
 /** Found count of a section, e.g. '2 of 4 found'. */
 export function foundCountText(found: number, total: number): string {
   return `${found} of ${total} found`;
@@ -179,29 +237,36 @@ export function pageText(pageNumber: number, pageCount: number): string {
   return `Page ${pageNumber} of ${pageCount}`;
 }
 
-function createEntryBase(name: string, rarity: Rarity): ChestEntryBase {
-  return { name, rarity, rarityName: rarityName(rarity), badge: badgeShape(rarity) };
-}
-
-function createDecorationEntry(decoration: Decoration): DecorationEntry {
-  return { id: decoration.id, ...createEntryBase(decoration.name, decoration.rarity) };
-}
-
-function createWearableEntry(wearable: Wearable): WearableEntry {
+function createEntryBase(name: string, rarity: Rarity, found: boolean): ChestEntryBase {
   return {
-    id: wearable.id,
-    ...createEntryBase(wearable.name, wearable.rarity),
-    slot: wearable.slot,
-    slotName: slotName(wearable.slot),
-    perk: wearable.perk,
-    detailText: wearableDetailText(wearable.slot, wearable.perk),
+    name: found ? name : UNFOUND_NAME,
+    rarity,
+    rarityName: rarityName(rarity),
+    badge: badgeShape(rarity),
+    found,
+    hint: found ? '' : unfoundHint(rarity),
   };
 }
 
-function createDreamColourEntry(colour: DreamColour): DreamColourEntry {
+function createDecorationEntry(decoration: Decoration, found: boolean): DecorationEntry {
+  return { id: decoration.id, ...createEntryBase(decoration.name, decoration.rarity, found) };
+}
+
+function createWearableEntry(wearable: Wearable, found: boolean): WearableEntry {
+  return {
+    id: wearable.id,
+    ...createEntryBase(wearable.name, wearable.rarity, found),
+    slot: wearable.slot,
+    slotName: slotName(wearable.slot),
+    perk: found ? wearable.perk : null,
+    detailText: found ? wearableDetailText(wearable.slot, wearable.perk) : slotName(wearable.slot),
+  };
+}
+
+function createDreamColourEntry(colour: DreamColour, found: boolean): DreamColourEntry {
   return {
     id: colour.id,
-    ...createEntryBase(colour.name, colour.rarity),
+    ...createEntryBase(colour.name, colour.rarity, found),
     patterned: colour.kind !== 'solid',
     label: DREAM_COLOUR_LABEL,
   };
@@ -210,44 +275,44 @@ function createDreamColourEntry(colour: DreamColour): DreamColourEntry {
 function createSection<C extends ChestCategory, E extends ChestEntry>(
   category: C,
   entries: readonly E[],
-  total: number,
 ): ChestSectionOf<C, E> {
+  const found = entries.filter((entry) => entry.found).length;
   return {
     category,
     heading: HEADINGS[category],
-    found: entries.length,
-    total,
-    countText: foundCountText(entries.length, total),
+    found,
+    total: entries.length,
+    countText: foundCountText(found, entries.length),
     entries,
-    emptyText: EMPTY_TEXTS[category],
+    line: SECTION_LINES[category],
+    shortLine: SHORT_SECTION_LINES[category],
   };
-}
-
-function ownedColours(banked: readonly string[]): DreamColour[] {
-  const colours: DreamColour[] = [];
-  for (const id of ownedDreamColours(banked)) {
-    const colour = dreamColourById(id);
-    if (colour === undefined) throw new Error(`Owned Dream colour ${id} is not in the catalogue`);
-    colours.push(colour);
-  }
-  return colours;
 }
 
 /**
  * The Treasure Chest sections for these banked treasure ids, always Decorations, Wearables, then
- * Dream colours. Entries are in catalogue order and listed once each; unknown ids are ignored.
- * A banked Paint shell lists its Dream colour, not the shell.
+ * Dream colours. Every catalogue treasure of a section is listed once, in catalogue order
+ * (DREAM_COLOURS order for Dream colours), found when banked. A banked Paint shell marks its Dream
+ * colour found; the shell itself is not listed. Unknown and axolotl ids are ignored.
  */
 export function chestListing(
   banked: readonly string[],
 ): readonly [DecorationSection, WearableSection, DreamColourSection] {
   const owned = new Set(banked);
-  const decorations = DECORATIONS.filter((decoration) => owned.has(decoration.id));
-  const wearables = WEARABLES.filter((wearable) => owned.has(wearable.id));
+  const ownedColours = new Set<DreamColourId>(ownedDreamColours(banked));
   return [
-    createSection('decoration', decorations.map(createDecorationEntry), DECORATIONS.length),
-    createSection('wearable', wearables.map(createWearableEntry), WEARABLES.length),
-    createSection('dreamColour', ownedColours(banked).map(createDreamColourEntry), DREAM_COLOURS.length),
+    createSection(
+      'decoration',
+      DECORATIONS.map((decoration) => createDecorationEntry(decoration, owned.has(decoration.id))),
+    ),
+    createSection(
+      'wearable',
+      WEARABLES.map((wearable) => createWearableEntry(wearable, owned.has(wearable.id))),
+    ),
+    createSection(
+      'dreamColour',
+      DREAM_COLOURS.map((colour) => createDreamColourEntry(colour, ownedColours.has(colour.id))),
+    ),
   ];
 }
 

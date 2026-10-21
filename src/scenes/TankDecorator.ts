@@ -36,10 +36,11 @@ import {
 import { TRAY_PX, UI, decorateLayout, nextFocusIndex, type DecorateLayout, type TankKey } from '../logic/tankUi';
 import type { Point } from '../logic/zone';
 import { createButton, cssColor, drawPanel, uiTextStyle, type SceneView, type UiButton } from './BootScene';
-import { addTreasureIcon } from './FindPopup';
+import { addGlowingTreasureIcon } from './FindPopup';
 
 const CAPTION_PX = 18;
 const TRAY_ICON_PX = 48;
+const TRAY_GLOW_PX = 56;
 const PUT_AWAY_SIZE = 0.8;
 const DRAG_THRESHOLD_PX = 8;
 const GHOST_ALPHA = 0.5;
@@ -82,14 +83,16 @@ export interface TankDecoratorOptions {
 /** A keyboard focus target in decorate mode. */
 type FocusTarget = { kind: 'tray' | 'placed'; id: string } | { kind: 'putAway' | 'done' };
 
-/** One placed Decoration image and the texture it shows. */
+/** One placed Decoration image, its rarity glow just behind it, and the textures they show. */
 interface DecorationSprite {
   image: Phaser.GameObjects.Image;
   info: TexInfo;
+  glow: Phaser.GameObjects.Image;
+  glowInfo: TexInfo;
   sways: boolean;
 }
 
-/** One tray square: a white panel with the 48 px treasure icon and a hit zone. */
+/** One tray square: a white panel with the 48 px treasure icon over its 56 px rarity glow, and a hit zone. */
 interface TrayButton {
   id: string;
   container: Phaser.GameObjects.Container;
@@ -115,11 +118,16 @@ function isTankDecorationSlug(slug: string): slug is TankDecorationSlug {
   return (TANK_DECORATION_SLUGS as readonly string[]).includes(slug);
 }
 
-/** The Home Tank texture for the Decoration `id`. Throws when none is baked for its slug. */
-function decorationTexture(tank: TankTextures, id: string): TexInfo {
+/** The Home Tank slug of the Decoration `id`. Throws when no tank texture is baked for its slug. */
+function decorationSlug(id: string): TankDecorationSlug {
   const slug = treasureSlug(id);
   if (!isTankDecorationSlug(slug)) throw new Error(`TankDecorator: no tank texture for Decoration ${id}`);
-  return tank.decorations[slug];
+  return slug;
+}
+
+/** Adds an image showing `info` at its baked origin (the Decoration base point). */
+function addBaseImage(scene: Phaser.Scene, info: TexInfo): Phaser.GameObjects.Image {
+  return scene.add.image(0, 0, info.key).setOrigin(info.originNormX, info.originNormY);
 }
 
 /** Display name of the treasure `id`. Throws for an unknown id. */
@@ -127,6 +135,12 @@ function treasureName(id: string): string {
   const treasure = treasureById(id);
   if (treasure === undefined) throw new Error(`TankDecorator: unknown treasure ${id}`);
   return treasure.name;
+}
+
+/** Destroys a placed Decoration image and its glow. */
+function destroyDecorationSprite(sprite: DecorationSprite): void {
+  sprite.image.destroy();
+  sprite.glow.destroy();
 }
 
 /** Strokes a rounded rect `outset` px outside `rect` with the current line style. */
@@ -273,7 +287,9 @@ export class TankDecorator {
   update(timeS: number, motion: MotionProfile): void {
     const angle = motion.reedSway ? SWAY_RAD * Math.sin((2 * Math.PI * timeS) / SWAY_PERIOD_S) : 0;
     for (const sprite of this.sprites.values()) {
-      if (sprite.sways) sprite.image.setRotation(angle);
+      if (!sprite.sways) continue;
+      sprite.image.setRotation(angle);
+      sprite.glow.setRotation(angle);
     }
   }
 
@@ -328,7 +344,7 @@ export class TankDecorator {
     input.off(Phaser.Input.Events.POINTER_MOVE, this.handlePointerMove, this);
     input.off(Phaser.Input.Events.POINTER_UP, this.handlePointerUp, this);
     input.off(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.handlePointerUp, this);
-    for (const sprite of this.sprites.values()) sprite.image.destroy();
+    for (const sprite of this.sprites.values()) destroyDecorationSprite(sprite);
     this.sprites.clear();
     this.trayButtons = [];
     this.toolbar.destroy();
@@ -354,34 +370,41 @@ export class TankDecorator {
   private syncDecorations(): void {
     for (const [id, sprite] of this.sprites) {
       if (placementOf(this.tankLayout, id) !== undefined) continue;
-      sprite.image.destroy();
+      destroyDecorationSprite(sprite);
       this.sprites.delete(id);
     }
     drawOrder(this.tankLayout).forEach((placement, index) => {
       const sprite = this.sprites.get(placement.id) ?? this.addDecorationSprite(placement.id);
-      sprite.image.setDepth(this.options.depths.decorations + index * DEPTH_STEP);
-      this.positionImage(sprite, sprite.image, placement);
+      const depth = this.options.depths.decorations + index * DEPTH_STEP;
+      sprite.image.setDepth(depth);
+      sprite.glow.setDepth(depth - DEPTH_STEP / 2);
+      this.positionImage(sprite.info, sprite.image, placement);
+      this.positionImage(sprite.glowInfo, sprite.glow, placement);
     });
   }
 
   private addDecorationSprite(id: string): DecorationSprite {
-    const info = decorationTexture(this.options.textures.tank, id);
-    const image = this.scene.add.image(0, 0, info.key).setOrigin(info.originNormX, info.originNormY);
+    const slug = decorationSlug(id);
+    const { decorations, decorationGlows } = this.options.textures.tank;
+    const info = decorations[slug];
+    const glowInfo = decorationGlows[slug];
+    const glow = addBaseImage(this.scene, glowInfo);
+    const image = addBaseImage(this.scene, info);
     image.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, (pointer: Phaser.Input.Pointer) =>
       this.handleDecorationDown(id, pointer),
     );
     if (this.active) image.setInteractive({ useHandCursor: true });
-    const sprite: DecorationSprite = { image, info, sways: TANK_SWAYING_DECORATIONS.includes(id) };
+    const sprite: DecorationSprite = { image, info, glow, glowInfo, sways: TANK_SWAYING_DECORATIONS.includes(id) };
     this.sprites.set(id, sprite);
     return sprite;
   }
 
-  /** Puts a base-anchored image at the tank point `pos`, scaled to the tank frame. */
-  private positionImage(sprite: DecorationSprite, image: Phaser.GameObjects.Image, pos: Point): void {
+  /** Puts a base-anchored image showing `info` at the tank point `pos`, scaled to the tank frame. */
+  private positionImage(info: TexInfo, image: Phaser.GameObjects.Image, pos: Point): void {
     const frame = this.frame;
     if (frame === null) return;
     const css = tankToCss(frame, pos);
-    image.setPosition(css.x, css.y).setScale(frame.scale / sprite.info.scale);
+    image.setPosition(css.x, css.y).setScale(frame.scale / info.scale);
   }
 
   /** Owned Decorations not in the tank, in catalogue order. */
@@ -402,7 +425,8 @@ export class TankDecorator {
     const scene = this.scene;
     const panel = scene.add.graphics();
     drawPanel(panel, 0, 0, TRAY_PX, TRAY_PX, UI_PANEL);
-    const icon = addTreasureIcon(scene, this.options.textures.treasure, TRAY_ICON_PX, id).setPosition(
+    const treasure = this.options.textures.treasure;
+    const icon = addGlowingTreasureIcon(scene, treasure, TRAY_ICON_PX, id, TRAY_GLOW_PX).setPosition(
       TRAY_PX / 2,
       TRAY_PX / 2,
     );
@@ -668,7 +692,7 @@ export class TankDecorator {
     this.hideGhost();
     const { info } = sprite;
     this.ghostImage.setTexture(info.key).setOrigin(info.originNormX, info.originNormY).setVisible(true);
-    this.positionImage(sprite, this.ghostImage, pos);
+    this.positionImage(info, this.ghostImage, pos);
     const footprint = this.footprintCss(pos);
     const valid = isValidPlacement(pos);
     if (!valid) strokeDashedRect(this.ghostMarks, footprint);

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_LOOK, type AxolotlLook } from './axolotlLook';
 import { suggestedNamesFor } from './axolotlNames';
 import { CANAL_TREASURES, WEARABLE_SLOTS, ownedDreamColours, type Wearable } from './catalogue';
+import { dueFirstFindCards } from './firstFind';
 import { REGISTRY_KEYS } from './gameEvents';
 import { STARTER_MORPH, axolotlFindId } from './morphs';
 import { emptyOutfit, type Outfit } from './outfit';
@@ -27,6 +28,7 @@ import {
   addStarter,
   chooseExplorer,
   createSession,
+  markFirstFindSeen,
   recordTripEnd,
   restyleAxolotl,
   setDreamColour,
@@ -137,7 +139,15 @@ describe('save round trip', () => {
     const json = JSON.parse(raw);
     expect(Object.keys(json)).toEqual(['version', 'hub']);
     expect(json.version).toBe(SAVE_VERSION);
-    expect(Object.keys(json.hub).sort()).toEqual(['axolotls', 'banked', 'book', 'explorerId', 'stars', 'tank']);
+    expect(Object.keys(json.hub).sort()).toEqual([
+      'axolotls',
+      'banked',
+      'book',
+      'explorerId',
+      'firstFindsSeen',
+      'stars',
+      'tank',
+    ]);
     const tripOnlyKeys = [
       'eatenSnacks',
       'lastTripSeed',
@@ -682,5 +692,65 @@ describe('outfits and the explorer (#16, D2)', () => {
     const fresh = createSession().hub;
     expect(loadedHub(JSON.parse(encodeSave(fresh)))).toEqual(fresh);
     expect(fresh.explorerId).toBeNull();
+  });
+});
+
+describe('first-find cards seen (#83, D2)', () => {
+  it('round-trips the kinds seen', () => {
+    const session = markFirstFindSeen(markFirstFindSeen(playedSession(), 'paintShell'), 'decoration');
+    expect(session.hub.firstFindsSeen).toEqual(['decoration', 'paintShell']);
+    expect(decodeSave(encodeSave(session.hub))).toEqual({ kind: 'loaded', hub: session.hub });
+  });
+
+  it('loads a missing field as none seen', () => {
+    const json = savedJson();
+    const hub: Record<string, unknown> = { ...json.hub };
+    delete hub.firstFindsSeen;
+    expect(loadedHub({ ...json, hub }).firstFindsSeen).toEqual([]);
+  });
+
+  it.each([
+    ['a string', 'paintShell'],
+    ['an object', { paintShell: true }],
+    ['null', null],
+    ['a number', 3],
+  ])('loads a field that is %s as none seen', (_label, firstFindsSeen) => {
+    expect(hubWith('firstFindsSeen', firstFindsSeen).firstFindsSeen).toEqual([]);
+  });
+
+  it('drops unknown kinds', () => {
+    expect(hubWith('firstFindsSeen', ['wearable', 'axolotl', 7, null, 'Decoration']).firstFindsSeen).toEqual([
+      'wearable',
+    ]);
+  });
+
+  it('keeps each kind once', () => {
+    expect(hubWith('firstFindsSeen', ['wearable', 'wearable', 'decoration', 'wearable']).firstFindsSeen).toEqual([
+      'decoration',
+      'wearable',
+    ]);
+  });
+
+  it('loads the kinds in FIRST_FIND_KINDS order', () => {
+    expect(hubWith('firstFindsSeen', ['paintShell', 'decoration']).firstFindsSeen).toEqual(['decoration', 'paintShell']);
+  });
+
+  it('keeps SAVE_VERSION at 1', () => {
+    expect(SAVE_VERSION).toBe(1);
+    expect(SAVE_UPGRADES).toHaveLength(0);
+  });
+
+  it('loads a 0.18.0 save owning a Paint shell with every other field intact, none seen and the Paint shell card due', () => {
+    const json = savedJson();
+    const olderHub: Record<string, unknown> = { ...json.hub };
+    delete olderHub.firstFindsSeen;
+    const hub = loadedHub({ version: 1, hub: olderHub });
+    expect(hub).toEqual(playedSession().hub);
+    expect(hub.firstFindsSeen).toEqual([]);
+    expect(hub.banked).toContain(MINT_SHELL);
+    expect(dueFirstFindCards(hub.banked, hub.firstFindsSeen)).toContainEqual({
+      kind: 'paintShell',
+      pictureId: MINT_SHELL,
+    });
   });
 });

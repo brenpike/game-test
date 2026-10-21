@@ -16,12 +16,17 @@
  * trim band. Epic adds one gem (r 2.5). Legendary adds #ffc12e trim and one
  * static 4-point star (R 3).
  *
+ * Flat mode (the unfound-treasure silhouette): every outer silhouette fill and
+ * tube colour becomes TREASURE_SILHOUETTE_FILL, every detail inside the
+ * silhouette (inner bands, shine, gem, star, stripes, ridges, lens tint, the
+ * Paint shell cup and blob) is skipped, and the outer ink is unchanged.
+ *
  * Painters are still frames: no time, no randomness, no game state, so each is
  * also the reduced-motion version. Presentational only: no Phaser. Every value
  * is derived (provisional).
  */
 import { INK } from './palette';
-import { TAU, ell, frameFromBounds, inkMany, seg, shape, type TexSize } from './canvasKit';
+import { TAU, ell, frameFromBounds, inkMany, seg, shape, type Seg, type TexSize } from './canvasKit';
 import { roundedPolygon, type Pt } from './drawBadges';
 import {
   BOAT_CANOPY,
@@ -58,6 +63,7 @@ import {
   SOCK_FILL,
   TANK_TOP_FILL,
   TREASURE_SHINE,
+  TREASURE_SILHOUETTE_FILL,
   TREASURE_STAR,
   type DreamSwatchId,
 } from './treasurePalette';
@@ -215,6 +221,28 @@ interface Pen {
   readonly k: number;
   /** Multiplies the width of pattern marks (spiral bands). Default 1. Never applies to ink. */
   readonly markScale?: number;
+  /** Flat silhouette mode: outer fills in TREASURE_SILHOUETTE_FILL, no inner details. Default false. */
+  readonly flat?: boolean;
+}
+
+/** The fill of an outer silhouette part: `fill`, or TREASURE_SILHOUETTE_FILL in flat mode. */
+function outerFill(pen: Pen, fill: string): string {
+  return pen.flat ? TREASURE_SILHOUETTE_FILL : fill;
+}
+
+/** Paint a detail inside the silhouette (shine, gem, star, ridges, tint); skipped in flat mode. */
+function detail(pen: Pen, paint: () => void): void {
+  if (!pen.flat) paint();
+}
+
+/** An outer silhouette part as a `shape` (fill, then centred ink), filled through {@link outerFill}. */
+function outerShape(pen: Pen, body: Path2D, fill: string, lw: number): void {
+  shape(pen.ctx, body, outerFill(pen, fill), lw);
+}
+
+/** An outer tube of {@link inkMany}, its colour filled through {@link outerFill}. */
+function outerSeg(pen: Pen, p: Path2D, w: number, colour: string, ol: number): Seg {
+  return seg(p, w, outerFill(pen, colour), ol);
 }
 
 /** Copy of `p` placed at (x, y) design units, rotated by `rot`, scaled by `k * scale`. */
@@ -243,9 +271,9 @@ function pts(...xy: number[]): Pt[] {
  */
 function silhouette(pen: Pen, body: Path2D, fill: string, lw: number, inner?: () => void): void {
   const { ctx } = pen;
-  ctx.fillStyle = fill;
+  ctx.fillStyle = outerFill(pen, fill);
   ctx.fill(body);
-  if (inner) {
+  if (inner && !pen.flat) {
     ctx.save();
     ctx.clip(body);
     inner();
@@ -273,16 +301,20 @@ function trimBand(pen: Pen, y0: number, y1: number, colour: string): void {
 
 /** The one white shine, small, upper left of the object. */
 function shine(pen: Pen, x: number, y: number, rx: number, ry: number, rot = 0): void {
-  pen.ctx.fillStyle = TREASURE_SHINE;
-  pen.ctx.fill(ellipse(x * pen.k, y * pen.k, rx * pen.k, ry * pen.k, rot));
+  detail(pen, () => {
+    pen.ctx.fillStyle = TREASURE_SHINE;
+    pen.ctx.fill(ellipse(x * pen.k, y * pen.k, rx * pen.k, ry * pen.k, rot));
+  });
 }
 
 /** A round gem of radius 2.5 with a small glint. */
 function gem(pen: Pen, x: number, y: number, fill: string): void {
   const { ctx, k } = pen;
-  shape(ctx, ellipse(x * k, y * k, GEM_R * k, GEM_R * k), fill, DETAIL_LW);
-  ctx.fillStyle = GEM_GLINT;
-  ctx.fill(ellipse((x - 0.8) * k, (y - 0.9) * k, 0.8 * k, 0.5 * k, -0.7));
+  detail(pen, () => {
+    shape(ctx, ellipse(x * k, y * k, GEM_R * k, GEM_R * k), fill, DETAIL_LW);
+    ctx.fillStyle = GEM_GLINT;
+    ctx.fill(ellipse((x - 0.8) * k, (y - 0.9) * k, 0.8 * k, 0.5 * k, -0.7));
+  });
 }
 
 /**
@@ -304,7 +336,7 @@ function star4Path(cx: number, cy: number, r: number): Path2D {
 
 /** The Legendary static 4-point star: white fill, ink 1.6, R 3. */
 function legendStar(pen: Pen, x: number, y: number): void {
-  shape(pen.ctx, star4Path(x * pen.k, y * pen.k, LEGEND_STAR_R * pen.k), TREASURE_STAR, STAR_LW);
+  detail(pen, () => shape(pen.ctx, star4Path(x * pen.k, y * pen.k, LEGEND_STAR_R * pen.k), TREASURE_STAR, STAR_LW));
 }
 
 /** Heart outline of width `w` and height `h` centred on (cx, cy), tip down. */
@@ -386,24 +418,24 @@ function leafPath(bx: number, by: number, len: number, wid: number, lean: number
 
 /** Common: three rounded leaves fanning from a small root, one shine. */
 function paintPondPlant(pen: Pen): void {
-  const { ctx, k } = pen;
+  const { k } = pen;
   const root = place(ellipse(0, 10.4, 2.4, 1.9), k);
-  shape(ctx, root, PLANT_LEAF, ITEM_LW);
+  outerShape(pen, root, PLANT_LEAF, ITEM_LW);
   const baseY = 9.8;
   const leaves = [
     leafPath(0, baseY, 15.6, 8.4, 0.85),
     leafPath(0, baseY, 15.6, 8.4, -0.85),
     leafPath(0, baseY, 21, 8.8, 0),
   ];
-  for (const leaf of leaves) shape(ctx, place(leaf, k), PLANT_LEAF, ITEM_LW);
+  for (const leaf of leaves) outerShape(pen, place(leaf, k), PLANT_LEAF, ITEM_LW);
   shine(pen, -2.3, -4.8, 0.9, 3.0, 0.1);
 }
 
 /** Rare: a little trajinera boat, pink hull with one yellow trim band and a rounded white canopy. */
 function paintToyBoat(pen: Pen): void {
-  const { ctx, k } = pen;
+  const { k } = pen;
   const canopy = roundedPolygon(pts(-7.4, 0.4, -7.4, -10.2, 7.4, -10.2, 7.4, 0.4), [0, 6, 6, 0]);
-  shape(ctx, place(canopy, k), BOAT_CANOPY, ITEM_LW);
+  outerShape(pen, place(canopy, k), BOAT_CANOPY, ITEM_LW);
   const hullPath = new Path2D();
   hullPath.moveTo(-12.3, -2.4);
   hullPath.quadraticCurveTo(-11.2, 0.4, -7.8, 0.4);
@@ -428,7 +460,7 @@ function paintCastleTower(pen: Pen): void {
   const radii = [2.4, 0.9, 1, 1.4, 1.4, 0.9, 0.9, 1.4, 1.4, 0.9, 0.9, 1.4, 1.4, 1, 0.9, 2.4];
   const body = place(roundedPolygon(pt, radii), k);
   silhouette(pen, body, CASTLE_STONE, ITEM_LW, () => trimBand(pen, 0, 3.6, CASTLE_TRIM));
-  shape(ctx, place(ellipse(0, 8.6, 2.3, 2.3), k), CASTLE_WINDOW, DETAIL_LW);
+  detail(pen, () => shape(ctx, place(ellipse(0, 8.6, 2.3, 2.3), k), CASTLE_WINDOW, DETAIL_LW));
   gem(pen, 0, 1.8, CASTLE_GEM);
   shine(pen, -5.4, 7.2, 0.9, 2.3);
 }
@@ -449,15 +481,15 @@ function paintSunPyramid(pen: Pen): void {
 
 /** Common: wide-brim rounded sun hat, one shine. */
 function paintSunHat(pen: Pen): void {
-  const { ctx, k } = pen;
-  shape(ctx, place(ellipse(0, 5.6, 12.4, 4.6, 0), k), HAT_FILL, ITEM_LW);
+  const { k } = pen;
+  outerShape(pen, place(ellipse(0, 5.6, 12.4, 4.6, 0), k), HAT_FILL, ITEM_LW);
   const crown = new Path2D();
   crown.moveTo(-7.6, 4.8);
   crown.bezierCurveTo(-8.2, -2, -6.2, -9.6, 0, -9.6);
   crown.bezierCurveTo(6.2, -9.6, 8.2, -2, 7.6, 4.8);
   crown.quadraticCurveTo(0, 8.6, -7.6, 4.8);
   crown.closePath();
-  shape(ctx, place(crown, k), HAT_FILL, ITEM_LW);
+  outerShape(pen, place(crown, k), HAT_FILL, ITEM_LW);
   shine(pen, -3.4, -4.6, 1.0, 2.6, 0.3);
 }
 
@@ -469,7 +501,7 @@ function paintShellNecklace(pen: Pen): void {
   const ry = 7.4;
   const cord = new Path2D();
   cord.ellipse(0, cy, rx, ry, 0, Math.PI / 2 - 2.3, Math.PI / 2 + 2.3);
-  inkMany(ctx, [seg(place(cord, k), TUBE_W, NECKLACE_CORD, TUBE_OL)]);
+  inkMany(ctx, [outerSeg(pen, place(cord, k), TUBE_W, NECKLACE_CORD, TUBE_OL)]);
   const fan = scallopPath();
   const ridges = scallopRidges(3, 0.8);
   const scale = 0.44;
@@ -483,10 +515,12 @@ function paintShellNecklace(pen: Pen): void {
     const rot = Math.atan2(nx / len, -ny / len);
     const x = px + (nx / len) * 3.8;
     const y = py + (ny / len) * 3.8;
-    shape(ctx, place(fan, k, x, y, rot, scale), NECKLACE_SHELL, SMALL_SHELL_LW);
-    ctx.strokeStyle = PAINT_SHELL_RIDGE;
-    ctx.lineWidth = 1.2;
-    ctx.stroke(place(ridges, k, x, y, rot, scale));
+    outerShape(pen, place(fan, k, x, y, rot, scale), NECKLACE_SHELL, SMALL_SHELL_LW);
+    detail(pen, () => {
+      ctx.strokeStyle = PAINT_SHELL_RIDGE;
+      ctx.lineWidth = 1.2;
+      ctx.stroke(place(ridges, k, x, y, rot, scale));
+    });
   }
 }
 
@@ -495,10 +529,15 @@ function paintHeartGlasses(pen: Pen): void {
   const { ctx, k } = pen;
   const left = place(heartPath(-6.3, 0.3, 11.6, 12.4), k);
   const right = place(heartPath(6.3, 0.3, 11.6, 12.4), k);
-  ctx.fillStyle = GLASSES_LENS;
-  ctx.fill(left);
-  ctx.fill(right);
-  inkMany(ctx, [seg(left, GLASSES_W, GLASSES_FRAME, GLASSES_OL), seg(right, GLASSES_W, GLASSES_FRAME, GLASSES_OL)]);
+  detail(pen, () => {
+    ctx.fillStyle = GLASSES_LENS;
+    ctx.fill(left);
+    ctx.fill(right);
+  });
+  inkMany(ctx, [
+    outerSeg(pen, left, GLASSES_W, GLASSES_FRAME, GLASSES_OL),
+    outerSeg(pen, right, GLASSES_W, GLASSES_FRAME, GLASSES_OL),
+  ]);
   shine(pen, -9.2, -2.6, 0.8, 1.9, 0.4);
   gem(pen, 0, -1.6, GLASSES_GEM);
 }
@@ -536,9 +575,9 @@ function mergedSilhouette(pen: Pen, pieces: readonly Piece[], lw: number): void 
   ctx.lineWidth = 2 * lw;
   for (const piece of pieces) ctx.stroke(piece.path);
   for (const piece of pieces) {
-    ctx.fillStyle = piece.fill;
+    ctx.fillStyle = outerFill(pen, piece.fill);
     ctx.fill(piece.path);
-    if (piece.inner) {
+    if (piece.inner && !pen.flat) {
       ctx.save();
       ctx.clip(piece.path);
       piece.inner();
@@ -612,8 +651,7 @@ function paintTankTop(pen: Pen): void {
   body.lineTo(-holeCx, holeCy + holeR);
   body.arc(-holeCx, holeCy, holeR, Math.PI / 2, leftEdge, true);
   body.closePath();
-  const { ctx } = pen;
-  shape(ctx, place(body, k), TANK_TOP_FILL, ITEM_LW);
+  outerShape(pen, place(body, k), TANK_TOP_FILL, ITEM_LW);
   shine(pen, -5, 2.6, 0.9, 2.6, 0.1);
 }
 
@@ -790,6 +828,12 @@ function paintPaintShell(pen: Pen, id: DreamSwatchId): void {
     ctx.lineWidth = 1.6;
     ctx.stroke(place(scallopRidges(5, 0.9), k));
   });
+  detail(pen, () => paintDreamBlob(pen, id));
+}
+
+/** The Paint shell opening: a soft cup, the Dream blob with its pattern and ink, and the dark-body rim. */
+function paintDreamBlob(pen: Pen, id: DreamSwatchId): void {
+  const { ctx, k } = pen;
 
   // The opening: a soft cup in the ridge colour for the blob to sit in.
   ctx.fillStyle = PAINT_SHELL_RIDGE;
@@ -927,47 +971,137 @@ const PAINT_SHELL_PREFIX = 'paint-shell-';
  * is `size` logical px with the ink included. Ink widths do not change with size.
  */
 export function paintTreasureIcon(ctx: CanvasRenderingContext2D, slug: TreasureIconSlug, size: number): void {
+  paintIcon(ctx, slug, size, false);
+}
+
+/** Paint the icon for `slug` at `size`, in flat silhouette mode when `flat` (see {@link Pen}). */
+function paintIcon(ctx: CanvasRenderingContext2D, slug: TreasureIconSlug, size: number, flat: boolean): void {
   if (slug.startsWith(PAINT_SHELL_PREFIX)) {
     const id = slug.slice(PAINT_SHELL_PREFIX.length) as DreamSwatchId;
-    paintPaintShell({ ctx, k: fitScale(size, INK_OUT_SHELL) }, id);
+    paintPaintShell({ ctx, k: fitScale(size, INK_OUT_SHELL), flat }, id);
     return;
   }
   switch (slug as TreasureItemSlug) {
     case 'pond-plant':
-      paintPondPlant({ ctx, k: fitScale(size, INK_OUT_SHAPE) });
+      paintPondPlant({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
       break;
     case 'toy-boat':
-      paintToyBoat({ ctx, k: fitScale(size, INK_OUT_SHAPE) });
+      paintToyBoat({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
       break;
     case 'castle-tower':
-      paintCastleTower({ ctx, k: fitScale(size, INK_OUT_SHAPE) });
+      paintCastleTower({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
       break;
     case 'sun-pyramid':
-      paintSunPyramid({ ctx, k: fitScale(size, INK_OUT_SHAPE) });
+      paintSunPyramid({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
       break;
     case 'sun-hat':
-      paintSunHat({ ctx, k: fitScale(size, INK_OUT_SHAPE) });
+      paintSunHat({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
       break;
     case 'shell-necklace':
-      paintShellNecklace({ ctx, k: fitScale(size, INK_OUT_TUBE) });
+      paintShellNecklace({ ctx, k: fitScale(size, INK_OUT_TUBE), flat });
       break;
     case 'heart-glasses':
-      paintHeartGlasses({ ctx, k: fitScale(size, INK_OUT_GLASSES) });
+      paintHeartGlasses({ ctx, k: fitScale(size, INK_OUT_GLASSES), flat });
       break;
     case 'golden-bow':
-      paintGoldenBow({ ctx, k: fitScale(size, INK_OUT_BLOB) });
+      paintGoldenBow({ ctx, k: fitScale(size, INK_OUT_BLOB), flat });
       break;
     case 'tank-top':
-      paintTankTop({ ctx, k: fitScale(size, INK_OUT_SHAPE) });
+      paintTankTop({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
       break;
     case 'diving-tank':
-      paintDivingTank({ ctx, k: (size - 2 * INK_OUT_BLOB) / DIVING_TANK_FILL_H });
+      paintDivingTank({ ctx, k: (size - 2 * INK_OUT_BLOB) / DIVING_TANK_FILL_H, flat });
       break;
     case 'stripy-socks':
-      paintStripySocks({ ctx, k: fitScale(size, INK_OUT_SHAPE) });
+      paintStripySocks({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
       break;
     case 'flippers':
-      paintFlippers({ ctx, k: fitScale(size, INK_OUT_SHAPE) });
+      paintFlippers({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
       break;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Unfound silhouettes
+// ---------------------------------------------------------------------------
+
+/**
+ * Ink "?" proportions, authored 26 tall in the glyph's own units: a local copy
+ * of the unfound-morph "?" geometry in drawMorphs.ts (hook centre y -6, hook
+ * radius 6.5, stem end y 3.4, dot y 10.5, dot radius 0.55 of the tube width).
+ * Keep the two in step.
+ */
+const Q_HOOK_Y = -6;
+const Q_HOOK_R = 6.5;
+const Q_STEM_END_Y = 3.4;
+const Q_DOT_Y = 10.5;
+const Q_DOT_R_PER_LW = 0.55;
+/** Glyph geometry scale per logical px of the icon: size / 64. */
+const UNFOUND_Q_SCALE_PER_PX = 1 / 64;
+/** "?" tube width, constant at every size. */
+const UNFOUND_Q_LW = 2.4;
+
+/**
+ * Rounded ink "?" (round-capped tube and dot, no font) for an unfound icon of
+ * `size`, centred so the middle of its ink extent sits on (0, 0). The geometry
+ * scales with `size`; the tube width does not.
+ */
+function paintUnfoundMark(ctx: CanvasRenderingContext2D, size: number): void {
+  const s = size * UNFOUND_Q_SCALE_PER_PX;
+  const lw = UNFOUND_Q_LW;
+  const dr = lw * Q_DOT_R_PER_LW;
+  const top = (Q_HOOK_Y - Q_HOOK_R) * s - lw / 2;
+  const bottom = Q_DOT_Y * s + dr;
+  const cx = 0;
+  const cy = -(top + bottom) / 2;
+  const hookY = cy + Q_HOOK_Y * s;
+  const hookR = Q_HOOK_R * s;
+  const end = 0.5;
+  const ex = cx + hookR * Math.cos(end);
+  const ey = hookY + hookR * Math.sin(end);
+  const q = new Path2D();
+  q.arc(cx, hookY, hookR, Math.PI, TAU + end, false);
+  q.bezierCurveTo(
+    ex - Math.sin(end) * 2.5 * s,
+    ey + Math.cos(end) * 2.5 * s,
+    cx,
+    cy + 0.6 * s,
+    cx,
+    cy + Q_STEM_END_Y * s,
+  );
+  ctx.lineWidth = lw;
+  ctx.strokeStyle = INK;
+  ctx.stroke(q);
+
+  const dot = new Path2D();
+  ell(dot, cx, cy + Q_DOT_Y * s, dr, dr);
+  ctx.fillStyle = INK;
+  ctx.fill(dot);
+}
+
+/**
+ * Paint the unfound silhouette of `slug` centred at local (0, 0): the icon in
+ * flat mode (outer fills in TREASURE_SILHOUETTE_FILL, no inner details, the
+ * same outer ink), then an ink "?" at the icon centre. Same frame as the icon.
+ */
+export function paintTreasureSilhouette(ctx: CanvasRenderingContext2D, slug: TreasureIconSlug, size: number): void {
+  paintIcon(ctx, slug, size, true);
+  paintUnfoundMark(ctx, size);
+}
+
+/**
+ * Paint the unfound Dream swatch tile centred at local (0, 0): the swatch tile
+ * path at `size`, filled with TREASURE_SILHOUETTE_FILL, ink 2.6, no pattern or
+ * shine, then an ink "?" at the tile centre. Same frame as the swatch tile.
+ */
+export function paintDreamSwatchSilhouette(ctx: CanvasRenderingContext2D, size: number): void {
+  const s = size / SWATCH_BOX;
+  const half = size / 2 - SWATCH_LW / 2;
+  const tile = swatchTilePath(half, Math.max(1, SWATCH_RADIUS * s - SWATCH_LW / 2));
+  ctx.fillStyle = TREASURE_SILHOUETTE_FILL;
+  ctx.fill(tile);
+  ctx.lineWidth = SWATCH_LW;
+  ctx.strokeStyle = INK;
+  ctx.stroke(tile);
+  paintUnfoundMark(ctx, size);
 }

@@ -2,9 +2,9 @@ import * as Phaser from 'phaser';
 import { UI_PANEL } from '../art/palette';
 import type { MorphTextures } from '../art/morphTextures';
 import type { TexInfo } from '../art/textures';
-import type { TreasureIconSize, TreasureTextures } from '../art/treasureTextures';
+import type { RarityGlowSize, TreasureIconSize, TreasureTextures } from '../art/treasureTextures';
 import { ICON_ROW_BOX_PX, ICON_ROW_GAP_PX, iconsPerRow } from '../logic/cardFit';
-import { categoryName, treasureSlug } from '../logic/catalogue';
+import { categoryName, treasureById, treasureSlug } from '../logic/catalogue';
 import {
   createFindToastState,
   describeFindToastFrame,
@@ -13,7 +13,7 @@ import {
   type FindToastState,
   type ToastItem,
 } from '../logic/findToast';
-import { badgeShape, rarityName } from '../logic/hints';
+import { badgeShape, rarityName, type BadgeShape } from '../logic/hints';
 import { FIND_TOAST, findToastBox, type FindToastBox, type Rect, type Size } from '../logic/hudLayout';
 import { RESCUE_POPUP_DETAIL, morphById, type RealMorphId } from '../logic/morphs';
 import type { MotionProfile } from '../logic/motion';
@@ -41,12 +41,41 @@ export function addTreasureIcon(
   return addCentredImage(scene, info);
 }
 
+/** The `size` px rarity glow of `shape`, centre-anchored, not interactive. */
+export function addRarityGlow(
+  scene: Phaser.Scene,
+  treasure: TreasureTextures,
+  size: RarityGlowSize,
+  shape: BadgeShape,
+): Phaser.GameObjects.Image {
+  return addCentredImage(scene, treasure.glows[size][shape]);
+}
+
 /**
- * Places centre-anchored icons in 32 px boxes with gap 8, in rows no wider than `maxW` from `top`
- * down, each row centred on `centreX` (iconRowsSize() in logic/cardFit gives the block size).
+ * A container at (0, 0) holding the `glowSize` glow (default 40) under the `size` px icon of
+ * treasure `id`, both centred on the container origin. Throws for an unknown id or a missing icon.
+ */
+export function addGlowingTreasureIcon(
+  scene: Phaser.Scene,
+  treasure: TreasureTextures,
+  size: TreasureIconSize,
+  id: string,
+  glowSize: RarityGlowSize = 40,
+): Phaser.GameObjects.Container {
+  const entry = treasureById(id);
+  if (entry === undefined) throw new Error(`addGlowingTreasureIcon: unknown treasure ${id}`);
+  const icon = addTreasureIcon(scene, treasure, size, id);
+  const glow = addRarityGlow(scene, treasure, glowSize, badgeShape(entry.rarity));
+  return scene.add.container(0, 0, [glow, icon]);
+}
+
+/**
+ * Places centre-anchored icons (images, or containers centred on their origin) in 32 px boxes with
+ * gap 8, in rows no wider than `maxW` from `top` down, each row centred on `centreX` (iconRowsSize()
+ * in logic/cardFit gives the block size).
  */
 export function placeIconRows(
-  icons: readonly Phaser.GameObjects.Image[],
+  icons: readonly (Phaser.GameObjects.Image | Phaser.GameObjects.Container)[],
   centreX: number,
   top: number,
   maxW: number,
@@ -66,7 +95,7 @@ export function placeIconRows(
 
 /** The icon and badge of one toast item. */
 interface ToastImages {
-  icon: Phaser.GameObjects.Image;
+  icon: Phaser.GameObjects.Image | Phaser.GameObjects.Container;
   badge: Phaser.GameObjects.Image;
 }
 
@@ -96,7 +125,7 @@ export class FindPopup {
   private readonly detail: Phaser.GameObjects.Text;
   private readonly motion: () => MotionProfile;
   private readonly requestPlacement: () => void;
-  private icon: Phaser.GameObjects.Image | null = null;
+  private icon: Phaser.GameObjects.Image | Phaser.GameObjects.Container | null = null;
   private badge: Phaser.GameObjects.Image | null = null;
   private toast: FindToastState = createFindToastState();
   /** Boxes box() measured since the last place(). */
@@ -226,12 +255,12 @@ export class FindPopup {
     this.container.add([images.icon, images.badge]);
   }
 
-  /** Sets the treasure's name and "<Rarity> <Category>"; returns its icon and rarity badge. */
+  /** Sets the treasure's name and "<Rarity> <Category>"; returns its glowing icon and rarity badge. */
   private fillTreasure(found: FoundInfo): ToastImages {
     this.name.setText(found.name);
     this.detail.setText(`${rarityName(found.rarity)} ${categoryName(found.category)}`);
     return {
-      icon: addTreasureIcon(this.scene, this.treasure, FIND_TOAST.iconPx, found.id),
+      icon: addGlowingTreasureIcon(this.scene, this.treasure, FIND_TOAST.iconPx, found.id),
       badge: addCentredImage(this.scene, this.treasure.badges[FIND_TOAST.badgePx][badgeShape(found.rarity)]),
     };
   }

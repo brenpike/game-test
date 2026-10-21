@@ -3,9 +3,10 @@ import { DEPTH } from '../art/layers';
 import type { TexInfo } from '../art/textures';
 import { treasureById, treasureSlug, type Rarity } from '../logic/catalogue';
 import { PAST_CURRENT_DEPTH } from '../logic/hiding';
-import { hintSparkleRadius, hintVisible } from '../logic/hints';
+import { badgeShape, hintSparkleRadius, hintVisible } from '../logic/hints';
 import type { MotionProfile } from '../logic/motion';
 import type { PlacedFind } from '../logic/placement';
+import { canalGlowShows, canalTreasureLook, rarityGlowAlpha } from '../logic/rarityGlow';
 import type { TripEvent } from '../logic/trip';
 import { isHeld, type FindId, type Holdings } from '../logic/tripBag';
 import type { Vec2 } from '../logic/vec';
@@ -19,6 +20,8 @@ const TAU = Math.PI * 2;
  */
 const BED_SINK_PX = 6;
 const ICON_SIZE = 28;
+/** The rarity glow baked for the 28 px canal icon. */
+const GLOW_SIZE = 40;
 const ICON_BOB_PX = 2;
 const ICON_BOB_PERIOD = 3;
 const POP_LIFE_S = 0.4;
@@ -62,7 +65,8 @@ export interface TreasureFrame {
  * One catalogue find's sprites and effect state. Ages count up from 0 while their effect runs,
  * else null. `hintInRange` is the latest hint range result (the hysteresis input); `hintShownAge`
  * runs while the star is shown and `hintFadeAge` while it fades out; `hintScale` is the star scale
- * when it last showed, so a fade keeps it.
+ * when it last showed, so a fade keeps it. `glow` is the rarity glow behind a revealed or popping
+ * icon, at `glowBaseScale`.
  */
 interface FindSprites {
   id: FindId;
@@ -70,7 +74,9 @@ interface FindSprites {
   phase: number;
   iconBaseScale: number;
   starBaseScale: number;
+  glowBaseScale: number;
   icon: Phaser.GameObjects.Image;
+  glow: Phaser.GameObjects.Image;
   pot: Phaser.GameObjects.Image;
   star: Phaser.GameObjects.Image;
   bubble: Phaser.GameObjects.Image;
@@ -211,6 +217,7 @@ export class TreasureView {
       const find = placedById.get(sprites.id);
       if (!find) continue;
       sprites.icon.setPosition(find.x, find.y);
+      sprites.glow.setPosition(find.x, find.y);
       sprites.pot.setPosition(find.x, find.y).setRotation(0).setVisible(find.sealed);
       sprites.star.setPosition(find.x, find.y + HINT_OFFSET_Y);
       sprites.bubble.setPosition(find.x, find.y + BUBBLE_OFFSET_Y);
@@ -233,13 +240,19 @@ export class TreasureView {
     if (!starInfo) {
       throw new Error(`TreasureView: no hint star for rarity "${rarity}"`);
     }
+    const glowInfo: TexInfo | undefined = this.assets.treasure.glows[GLOW_SIZE][badgeShape(rarity)];
+    if (!glowInfo) {
+      throw new Error(`TreasureView: no ${GLOW_SIZE} px rarity glow for rarity "${rarity}"`);
+    }
     return {
       id,
       rarity,
       phase: index,
       iconBaseScale: 1 / iconInfo.scale,
       starBaseScale: 1 / starInfo.scale,
+      glowBaseScale: 1 / glowInfo.scale,
       icon: bakedImage(scene, iconInfo, 0, 0, DEPTH.hiddenTreasure).setVisible(false),
+      glow: bakedImage(scene, glowInfo, 0, 0, DEPTH.treasureGlow).setVisible(false),
       pot: bakedImage(scene, hiding.pot, 0, 0, DEPTH.treasure).setVisible(false),
       star: bakedImage(scene, starInfo, 0, 0, DEPTH.hint).setVisible(false),
       bubble: bakedImage(scene, hiding.dashBubble, 0, 0, DEPTH.fx).setVisible(false),
@@ -314,6 +327,7 @@ export class TreasureView {
     sprites.hintFadeAge = null;
     sprites.hintScale = 1;
     sprites.icon.setVisible(false);
+    sprites.glow.setVisible(false);
     sprites.pot.setVisible(false);
     sprites.star.setVisible(false);
     sprites.bubble.setVisible(false);
@@ -357,29 +371,38 @@ export class TreasureView {
   /**
    * Held: hidden, except while the pickup pop runs (full motion only, above the haze). Sealed:
    * hidden in its pot. Otherwise the icon bobs (full motion only) at the spot: above the haze once a
-   * crumble revealed it, else under cover.
+   * crumble revealed it, else under cover. The rarity glow follows the icon only while it is
+   * revealed or popping (`canalGlowShows`).
    */
   private renderIcon(sprites: FindSprites, find: PlacedFind, held: boolean, frame: TreasureFrame): void {
     const ambient = frame.motion.ambient;
     const icon = sprites.icon;
     const base = sprites.iconBaseScale;
     const bob = ambient ? ICON_BOB_PX * Math.sin((TAU * frame.time) / ICON_BOB_PERIOD + sprites.phase) : 0;
+    sprites.popAge = held ? nextAge(sprites.popAge, frame.dt, POP_LIFE_S) : null;
+    const look = canalTreasureLook({
+      sealed: find.sealed,
+      container: find.container,
+      held,
+      popping: sprites.popAge !== null,
+      ambient,
+    });
+    const life = sprites.popAge === null ? 0 : sprites.popAge / POP_LIFE_S;
+    const popScale = 1 + (POP_SCALE_TO - 1) * life;
+    this.renderGlow(sprites, canalGlowShows(look), find.x, find.y + bob, popScale, 1 - life, frame);
     if (held) {
-      sprites.popAge = nextAge(sprites.popAge, frame.dt, POP_LIFE_S);
       if (sprites.popAge === null || !ambient) {
         icon.setVisible(false);
         return;
       }
-      const life = sprites.popAge / POP_LIFE_S;
       icon
         .setVisible(true)
         .setDepth(DEPTH.treasure)
         .setPosition(find.x, find.y + bob)
-        .setScale(base * (1 + (POP_SCALE_TO - 1) * life))
+        .setScale(base * popScale)
         .setAlpha(1 - life);
       return;
     }
-    sprites.popAge = null;
     if (find.sealed) {
       icon.setVisible(false);
       return;
@@ -390,6 +413,31 @@ export class TreasureView {
       .setPosition(find.x, find.y + bob)
       .setScale(base)
       .setAlpha(1);
+  }
+
+  /**
+   * The rarity glow at the icon's spot (bob included), breathing under full motion; `scale` and
+   * `fade` carry the pickup pop's grow and fade (1 and 1 outside a pop). Hidden unless `shows`.
+   */
+  private renderGlow(
+    sprites: FindSprites,
+    shows: boolean,
+    x: number,
+    y: number,
+    scale: number,
+    fade: number,
+    frame: TreasureFrame,
+  ): void {
+    const glow = sprites.glow;
+    if (!shows) {
+      glow.setVisible(false);
+      return;
+    }
+    glow
+      .setVisible(true)
+      .setPosition(x, y)
+      .setScale(sprites.glowBaseScale * scale)
+      .setAlpha(rarityGlowAlpha(frame.time, frame.motion.ambient, sprites.phase) * fade);
   }
 
   /**

@@ -125,8 +125,12 @@ A fantasy colour, not found in nature, that can be put on any owned axolotl; sol
 _Avoid_: skin
 
 **Treasure Chest**:
-The list of owned Decorations, Wearables, and Dream colours.
+The list of every catalogue Decoration, Wearable, and Dream colour: owned ones in full, with their rarity glow, and unfound ones as silhouettes with "???" and a rarity hint, with a line per section saying what its items are for.
 _Avoid_: inventory
+
+**First-find card**:
+A once-per-save card in the Home Tank, after the tank arrival card's OK, that explains the first Decoration, Wearable, or Paint shell banked; the Paint shell card's "Try it now!" opens restyle on the Dream colour tab.
+_Avoid_: tutorial, popup
 
 ### Axolotls and outfits
 
@@ -240,7 +244,7 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - **Restyle** can change **Tail**, **Body**, **Age**, **Size**, face, gills, spots, and name, can put on or take off the applied **Dream colour**, and can change the **Outfit** on the Outfit tab, but never the **Real morph** or **Boy or girl**; none of these looks changes the hit area or speed, and only the **Perks** of the **Explorer**'s **Outfit** change play, on a **Trip**
 - The starter axolotl's **Real morph**, chosen in the **Character creator**, decides which seven **Real morphs** can be **Stranded axolotls**
 - Each **Trip** has at most one **Stranded axolotl**; a **Rescue** moves it into the **Home Tank** and unlocks its **Morph** in the **Collection Book**
-- The **Treasure Chest** lists owned **Decorations**, **Wearables**, and **Dream colours**; placed **Decorations** live in the **Home Tank**
+- The **Treasure Chest** lists every catalogue **Decoration**, **Wearable**, and **Dream colour**: owned ones in full with their **Rarity** glow, unfound ones as silhouettes with "???" and a **Rarity** hint, and a line per section saying what its items are for; placed **Decorations** live in the **Home Tank**
 - The **Collection Book** holds one entry per **Real morph**, each with a **Fun-fact card**, and lists **Dream colours** separately as not found in nature
 
 ## Example dialogue

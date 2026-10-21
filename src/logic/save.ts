@@ -19,12 +19,17 @@
  *
  * Outfits and the explorer (#16) came under the additive rule: a missing outfit loads empty, and a
  * missing or unknown explorer loads as the first owned axolotl.
+ *
+ * First-find cards (#83) came under the additive rule: a missing or non-array firstFindsSeen loads
+ * as none seen; unknown kinds are dropped; each kind is kept once, in FIRST_FIND_KINDS order. Start
+ * over erases the save, so the cards show again in the new game.
  */
 import { DEFAULT_LOOK, LOOK_FIELDS, LOOK_FIELD_OPTIONS, copyLook, type AxolotlLook, type LookField } from './axolotlLook';
 import { cleanName, isValidName, unusedSuggestedName } from './axolotlNames';
 import { areaById } from './areas';
 import { ownedDreamColours, treasureById, type DreamColourId } from './catalogue';
 import { wornDreamOrNone } from './dreamPaint';
+import { FIRST_FIND_KINDS, type FirstFindKind } from './firstFind';
 import { REAL_MORPHS, axolotlFindId, isAxolotlFindId, type RealMorphId } from './morphs';
 import { repairOutfits, type Outfit } from './outfit';
 import {
@@ -95,6 +100,7 @@ function savedHub(hub: HubState): HubState {
     book: savedBook(hub.book),
     stars: savedStars(hub.stars),
     explorerId: hub.explorerId,
+    firstFindsSeen: [...hub.firstFindsSeen],
   } satisfies { [Key in keyof HubState]-?: unknown };
 }
 
@@ -197,6 +203,7 @@ function repairedHub(saved: Record<string, unknown>): HubState {
     book: repairedBook(saved.book, axolotls),
     stars: repairedStars(saved.stars),
     explorerId: repairedExplorerId(saved.explorerId, axolotls),
+    firstFindsSeen: repairedFirstFindsSeen(saved.firstFindsSeen),
   };
 }
 
@@ -327,6 +334,12 @@ function repairedAreaStars(saved: Record<string, unknown>): AreaStars {
 function repairedExplorerId(saved: unknown, axolotls: readonly OwnedAxolotl[]): string | null {
   const chosen = axolotls.find((axolotl) => axolotl.id === saved) ?? axolotls[0];
   return chosen?.id ?? null;
+}
+
+/** The saved first-find kinds seen, each once, in FIRST_FIND_KINDS order; unknown dropped, a non-array is none. */
+function repairedFirstFindsSeen(saved: unknown): FirstFindKind[] {
+  if (!Array.isArray(saved)) return [];
+  return FIRST_FIND_KINDS.filter((kind) => saved.includes(kind));
 }
 
 /** The session a save read starts: the loaded hub with a fresh canal, else a new session. */

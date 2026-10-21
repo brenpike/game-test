@@ -7,6 +7,7 @@ import { collectNear, type Collectible } from './collectibles';
 import { createEncounterContext } from './encounter';
 import { REGISTRY_KEYS } from './gameEvents';
 import { REAL_MORPHS, STARTER_MORPH, axolotlFindId, isAxolotlFindId, type RealMorphId } from './morphs';
+import { dueFirstFindCards } from './firstFind';
 import { emptyOutfit, type Outfit } from './outfit';
 import { nextTripSeed, type PlacedFind } from './placement';
 import { pickStranding } from './rescue';
@@ -21,6 +22,7 @@ import {
   explorerAxolotl,
   explorerId,
   explorerMorph,
+  markFirstFindSeen,
   needsStarter,
   newOwnedAxolotl,
   recordTripEnd,
@@ -245,6 +247,7 @@ describe('createSession', () => {
         book: { foundMorphs: [], tilapiaCard: false },
         stars: {},
         explorerId: null,
+        firstFindsSeen: [],
       },
       canal: { eatenSnacks: [], lastTripSeed: null, waitingStranded: null, returnedFinds: [] },
     });
@@ -451,6 +454,12 @@ describe('recordTripEnd', () => {
     const next = recordTripEnd(decorated, record([HAT], 2));
     expect(next.hub.tank).toEqual(layout);
     expect(next.hub.axolotls).toEqual([starterOf()]);
+  });
+
+  it('keeps the first-find cards seen (C15)', () => {
+    const seen = markFirstFindSeen(markFirstFindSeen(withStarter(), 'wearable'), 'decoration');
+    const next = recordTripEnd(seen, record([MINT_SHELL], 1));
+    expect(next.hub.firstFindsSeen).toEqual(['decoration', 'wearable']);
   });
 });
 
@@ -1297,5 +1306,40 @@ describe('chooseExplorer (F7)', () => {
     expect(explorerAxolotl(session)).toBe(session.hub.axolotls[0]);
     expect(explorerId(session)).toBe(STARTER_AXOLOTL_ID);
     expect(explorerMorph(session)).toBe(STARTER_MORPH);
+  });
+});
+
+describe('markFirstFindSeen (C15, D2)', () => {
+  it('adds a kind once', () => {
+    const once = markFirstFindSeen(withStarter(), 'wearable');
+    expect(once.hub.firstFindsSeen).toEqual(['wearable']);
+    expect(markFirstFindSeen(once, 'wearable').hub.firstFindsSeen).toEqual(['wearable']);
+  });
+
+  it('keeps the kinds in FIRST_FIND_KINDS order, whatever order they are seen in', () => {
+    const paint = markFirstFindSeen(withStarter(), 'paintShell');
+    const both = markFirstFindSeen(paint, 'decoration');
+    expect(both.hub.firstFindsSeen).toEqual(['decoration', 'paintShell']);
+    expect(markFirstFindSeen(both, 'wearable').hub.firstFindsSeen).toEqual(['decoration', 'wearable', 'paintShell']);
+  });
+
+  it('keeps every other field and leaves the input session alone', () => {
+    const before = recordTripEnd(withStarter(), record([PLANT, MINT_SHELL], 3, ['snack-1']));
+    const copy = JSON.parse(JSON.stringify(before)) as Session;
+    const after = markFirstFindSeen(before, 'paintShell');
+    expect({ ...after.hub, firstFindsSeen: before.hub.firstFindsSeen }).toEqual(before.hub);
+    expect(after.hub.axolotls).toBe(before.hub.axolotls);
+    expect(after.canal).toBe(before.canal);
+    expect(before).toEqual(copy);
+  });
+
+  it('starts a fresh session, as after Start over, with none seen and no card due until a Paint shell is banked', () => {
+    const fresh = withStarter();
+    expect(fresh.hub.firstFindsSeen).toEqual([]);
+    expect(dueFirstFindCards(fresh.hub.banked, fresh.hub.firstFindsSeen)).toEqual([]);
+    const banked = recordTripEnd(fresh, record([MINT_SHELL], 1));
+    expect(dueFirstFindCards(banked.hub.banked, banked.hub.firstFindsSeen)).toEqual([
+      { kind: 'paintShell', pictureId: MINT_SHELL },
+    ]);
   });
 });

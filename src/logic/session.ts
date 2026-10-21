@@ -7,6 +7,7 @@ import { cleanName, isValidName, unusedSuggestedName } from './axolotlNames';
 import { ownedDreamColours, type DreamColourId, type WearableSlot } from './catalogue';
 import { createCollectibles, type Collectible } from './collectibles';
 import { canWearDream } from './dreamPaint';
+import { withFirstFindSeen, type FirstFindKind } from './firstFind';
 import { REAL_MORPHS, STARTER_MORPH, axolotlFindId, isAxolotlFindId, rescuableMorphs, rescueMorphsIn, type RealMorphId } from './morphs';
 import { applyOutfit, emptyOutfit, takeOff, wear, type Outfit } from './outfit';
 import { nextTripSeed } from './placement';
@@ -54,8 +55,9 @@ export interface CollectionBookState {
 
 /**
  * What the hub owns: banked treasure ids (never an axolotl find id), the owned axolotls, the Home
- * Tank layout, the Collection Book, the best stars per area (PRD H7, D2) and the id of the last
- * chosen explorer, null while no axolotl is owned (PRD F7).
+ * Tank layout, the Collection Book, the best stars per area (PRD H7, D2), the id of the last
+ * chosen explorer, null while no axolotl is owned (PRD F7), and the kinds whose first-find card was
+ * seen, in FIRST_FIND_KINDS order (PRD C15, D2).
  */
 export interface HubState {
   banked: string[];
@@ -64,6 +66,7 @@ export interface HubState {
   book: CollectionBookState;
   stars: AreaStarsRecord;
   explorerId: string | null;
+  firstFindsSeen: FirstFindKind[];
 }
 
 /**
@@ -130,7 +133,8 @@ export interface TripEndRecord {
 
 /**
  * A new session: nothing banked, no axolotl yet, no explorer, an empty tank, an empty Collection
- * Book, no stars, no snacks eaten, no trip yet, no axolotl waiting and no treasure lost. The
+ * Book, no stars, no first-find card seen, no snacks eaten, no trip yet, no axolotl waiting and no
+ * treasure lost. The
  * character creator adds the starter with `addStarter` (PRD F1), which finds its morph in the
  * Collection Book (PRD C1).
  */
@@ -143,6 +147,7 @@ export function createSession(): Session {
       book: { foundMorphs: [], tilapiaCard: false },
       stars: {},
       explorerId: null,
+      firstFindsSeen: [],
     },
     canal: { eatenSnacks: [], lastTripSeed: null, waitingStranded: null, returnedFinds: [] },
   };
@@ -300,7 +305,8 @@ export function tripEndRecord(
  * stranded axolotl are stored, so eaten snacks are kept after going home and cleared after being
  * carried home or beating the area, whose records have none (PRD A12, A19, open question 14, ADR
  * 0010). The lost treasures are stored, so the canal holds only the last trip's losses, none after
- * a trip that lost nothing (PRD A12, B9). The tank, every outfit and the explorer are untouched.
+ * a trip that lost nothing (PRD A12, B9). The tank, every outfit, the explorer and the first-find
+ * cards seen are untouched.
  */
 export function recordTripEnd(session: Session, record: TripEndRecord): Session {
   const { hub } = session;
@@ -436,6 +442,14 @@ export function chooseExplorer(session: Session, id: string): Session {
     throw new Error(`chooseExplorer: no owned axolotl has id ${id}`);
   }
   return { ...session, hub: { ...session.hub, explorerId: id } };
+}
+
+/**
+ * The session with the first-find card of `kind` seen (PRD C15, D2): each kind once, in
+ * FIRST_FIND_KINDS order. Nothing else changes.
+ */
+export function markFirstFindSeen(session: Session, kind: FirstFindKind): Session {
+  return { ...session, hub: { ...session.hub, firstFindsSeen: withFirstFindSeen(session.hub.firstFindsSeen, kind) } };
 }
 
 /**

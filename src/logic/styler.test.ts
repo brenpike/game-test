@@ -991,6 +991,12 @@ describe('Outfit step', () => {
     expect(isReadOnly(state)).toBe(false);
   });
 
+  it('restyle starts on the Dream colour step when asked, as the first-find card does (C15)', () => {
+    const state = restyleStart(OWNED, ['mint'], { startStep: 'dream' });
+    expect(state.step).toBe('dream');
+    expect(isReadOnly(state)).toBe(false);
+  });
+
   it('the slots view lists the eight slots in order, none of them chosen', () => {
     const state = outfitStart();
     expect(optionIds(state)).toEqual([...WEARABLE_SLOTS]);

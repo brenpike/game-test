@@ -30,12 +30,13 @@ import {
 export type BadgeShape = 'circle' | 'diamond' | 'shield' | 'star';
 
 /**
- * Rarity fill per badge shape (guide 3e). Ratios with ink: Common #e3ecef
- * 12.0:1, Rare #5ab8ff 6.67:1, Epic #b07cff 4.92:1, Legendary #ffc12e 8.86:1.
- * Badges are UI on a panel, not cue objects, so 4.5:1 is enough.
+ * Rarity fill per badge shape (guide 3e). Ratios with ink: Common #1fb98d
+ * 5.75:1 (relative luminance 0.369), Rare #5ab8ff 6.67:1, Epic #b07cff 4.92:1,
+ * Legendary #ffc12e 8.86:1. Badges are UI on a panel, not cue objects, so 4.5:1
+ * is enough.
  */
 export const BADGE_FILL: Readonly<Record<BadgeShape, string>> = {
-  circle: '#e3ecef',
+  circle: '#1fb98d',
   diamond: '#5ab8ff',
   shield: '#b07cff',
   star: '#ffc12e',
@@ -43,6 +44,16 @@ export const BADGE_FILL: Readonly<Record<BadgeShape, string>> = {
 
 /** The one white shine on every badge and treasure (the pebble shine, 3a). */
 export const TREASURE_SHINE = PEBBLE_SHINE;
+
+/**
+ * Peak alpha of the rarity glow behind a revealed treasure, as faint as the GFP
+ * halo (guide 3b). The glow colour is the BADGE_FILL of the rarity's shape, so
+ * one rarity has one colour.
+ */
+export const RARITY_GLOW_ALPHA = 0.35;
+
+/** Flat fill of an unfound-treasure silhouette: pebble A #d4cfe6, 9.50:1 with ink. */
+export const TREASURE_SILHOUETTE_FILL = PEBBLE_A;
 
 // ---- Silhouette fills (all at least 9:1 with ink) -------------------------
 

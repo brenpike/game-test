@@ -12,12 +12,14 @@
  * reeds, the cave front and pads cover them on purpose and the haze tints them.
  * `caveFront` (cave rocks) and `currentMarker` share the reeds' hazed scenery
  * band. `treasure` (Dash pots, and treasures revealed by a crumble) is a cue
- * object: above the haze, below collectibles. `hint` (hint stars) draws above
+ * object: above the haze, below collectibles. `treasureGlow` (the rarity glow
+ * behind a revealed treasure and its pickup pop) sits just under `treasure`,
+ * above `homeRing`; a hidden treasure never gets one. `hint` (hint stars) draws above
  * pads and reeds, below fx. The dash-needed bubble and crumble shards use fx.
  * `friend` (the stranded axolotl, waiting or following) sits between the halo
  * and the axolotl, so the hero always draws in front; its lost bubble uses fx.
  * Full order: bg < caveBack < hiddenTreasure < reeds < caveFront = currentMarker
- * < haze < homeSpot < homeRing < treasure < collectibles < tilapia < halo
+ * < haze < homeSpot < homeRing < treasureGlow < treasure < collectibles < tilapia < halo
  * < friend < axolotl < bubbles < surface < pads < hint < fx < ui.
  */
 export const DEPTH = {
@@ -36,6 +38,8 @@ export const DEPTH = {
   homeSpot: 24,
   /** Provisional. Home Spot safe-ring dots. */
   homeRing: 26,
+  /** Provisional. Rarity glow behind a revealed treasure and its pickup pop. Never used for a hidden treasure. */
+  treasureGlow: 27,
   /** Provisional. Dash pots and treasures revealed by a crumble: cue objects above the haze. */
   treasure: 28,
   collectibles: 30,
