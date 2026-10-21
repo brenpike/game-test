@@ -16,6 +16,17 @@ import {
   type TextFit,
 } from './cardFit';
 import { TILAPIA_FACT } from './factCards';
+import {
+  FIRST_FIND_KINDS,
+  FIRST_FIND_TEXT,
+  firstFindButtonWidth,
+  firstFindButtonsStacked,
+  firstFindCardVariants,
+  fitFirstFindCard,
+  type FirstFindFit,
+  type FirstFindKind,
+  type FirstFindVariantSize,
+} from './firstFind';
 import { REAL_MORPHS } from './morphs';
 import {
   BANKED_TITLE,
@@ -398,6 +409,66 @@ describe('tilapia fact card copy fit', () => {
     expect(fit.clipped).toBe(false);
     expect(fit.bodyVariant).toBe(0);
   });
+});
+
+/** First-find card wording sizes on a `cssW` wide canvas: a head with the 32 px icon beside the title, and the body. */
+function firstFindSizes(kind: FirstFindKind, cssW: number): FirstFindVariantSize[] {
+  const textW = cardTextWidth(cssW);
+  return firstFindCardVariants(kind).map((variant) => ({
+    headH: Math.max(CARD.headIconPx, titleHeight(variant.title, homeTitleWrapWidth(textW))),
+    body: bodyFit(variant.body, textW),
+  }));
+}
+
+/** First-find card actions height: the Paint shell card's two buttons stack when too wide, the others have one. */
+function firstFindActionsH(kind: FirstFindKind, cssW: number): number {
+  const { primary, secondary } = FIRST_FIND_TEXT[kind];
+  if (secondary === undefined) return BUTTON_H;
+  const stacked = firstFindButtonsStacked(cssW, firstFindButtonWidth(primary), firstFindButtonWidth(secondary));
+  return stacked ? BUTTON_H + CARD.buttonGap + BUTTON_H : BUTTON_H;
+}
+
+/** The first-find card for `kind` fitted on one canvas. */
+function fitFirstFindOn(kind: FirstFindKind, canvas: Canvas): FirstFindFit {
+  const availH = canvas.cssH - 2 * CARD.margin;
+  return fitFirstFindCard(availH, firstFindSizes(kind, canvas.cssW), firstFindActionsH(kind, canvas.cssW));
+}
+
+/** Problems with one fitted first-find card: clipped, or actions outside availH. */
+function firstFindProblems(kind: FirstFindKind, canvas: Canvas): string[] {
+  const label = `first find ${kind} ${canvas.cssW}x${canvas.cssH}`;
+  const { fit, variant } = fitFirstFindOn(kind, canvas);
+  return fitProblems(makeCombination(`${label} variant ${variant}`, canvas, 0, []), fit);
+}
+
+describe('first-find card copy fit (C15)', () => {
+  it('fits every kind on every supported canvas without clipping', () => {
+    const problems = supportedCanvases().flatMap((canvas) =>
+      FIRST_FIND_KINDS.flatMap((kind) => firstFindProblems(kind, canvas)),
+    );
+    expect(problems).toEqual([]);
+  });
+
+  it.each([
+    { cssW: 800, cssH: 600 },
+    { cssW: 1024, cssH: 768 },
+  ])('shows the full wording at $cssW x $cssH', (canvas) => {
+    for (const kind of FIRST_FIND_KINDS) {
+      const { fit, variant } = fitFirstFindOn(kind, canvas);
+      expect(fit.clipped, kind).toBe(false);
+      expect(variant, kind).toBe(0);
+    }
+  });
+
+  it.each([SMALLEST_CANVAS.landscape, SMALLEST_CANVAS.portrait])(
+    'fits the Paint shell card at $cssW x $cssH',
+    (canvas) => {
+      const { fit } = fitFirstFindOn('paintShell', canvas);
+      const actions = fit.slots[fit.slots.length - 1];
+      expect(fit.clipped).toBe(false);
+      expect(actions.top + actions.height).toBeLessThanOrEqual(canvas.cssH - 2 * CARD.margin);
+    },
+  );
 });
 
 describe('area beaten card copy fit (H5, H8)', () => {

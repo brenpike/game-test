@@ -1,6 +1,6 @@
 /**
- * Phaser glue for the Home Tank kit: bakes the tank layers, the "no" icon and
- * the Decoration sprites into CanvasTextures. Visual only. No game state, no
+ * Phaser glue for the Home Tank kit: bakes the tank layers, the "no" icon, the
+ * Decoration sprites and their rarity glows into CanvasTextures. Visual only. No game state, no
  * input, no physics.
  *
  * Same rules as textures.ts: every texture is drawn at its bake scale through
@@ -8,7 +8,9 @@
  * size with setScale(1 / info.scale).
  */
 import * as Phaser from 'phaser';
+import type { BadgeShape } from './drawBadges';
 import { NO_ICON_TEX, TANK_FRAME, paintNoIcon, paintTankBack, paintTankFront, paintTankGlass } from './drawHomeTank';
+import { paintRarityGlow, rarityGlowTextureSize } from './drawRarityGlow';
 import {
   decorationBaseOffset,
   paintTreasureIcon,
@@ -25,6 +27,21 @@ import { bake, type TexInfo } from './textures';
 export const TANK_DECORATION_SLUGS = ['pond-plant', 'toy-boat', 'castle-tower', 'sun-pyramid'] as const satisfies readonly TreasureIconSlug[];
 export type TankDecorationSlug = (typeof TANK_DECORATION_SLUGS)[number];
 
+/**
+ * Badge shape of each Decoration's rarity (catalogue: Pond plant Common, Toy boat
+ * Rare, Castle tower Epic, Sun pyramid Legendary). This file does not import the
+ * logic; keep it in step with the catalogue (treasureArt.test.ts checks).
+ */
+export const TANK_DECORATION_BADGES: Readonly<Record<TankDecorationSlug, BadgeShape>> = {
+  'pond-plant': 'circle',
+  'toy-boat': 'diamond',
+  'castle-tower': 'shield',
+  'sun-pyramid': 'star',
+};
+
+/** Rarity glow width as a multiple of the Decoration size (96 across at 80). */
+export const TANK_GLOW_SCALE = 1.2;
+
 /** Fixed texture keys for the tank layers and the "no" icon. */
 export const TANK_TEX = {
   back: 'tank-back',
@@ -34,6 +51,7 @@ export const TANK_TEX = {
 } as const;
 
 export const tankDecorationKey = (slug: TankDecorationSlug, px: number): string => `tank-deco-${slug}-${px}`;
+export const tankDecorationGlowKey = (slug: TankDecorationSlug, px: number): string => `tank-deco-glow-${slug}-${px}`;
 
 export interface TankBakeOptions {
   /** Decoration icon size baked, logical px on the longest side (guide 7f footprint is at most 120 x 140). */
@@ -62,9 +80,16 @@ export interface TankTextures {
    * the base point (x, base y) on the gravel.
    */
   readonly decorations: Readonly<Record<TankDecorationSlug, TexInfo>>;
+  /**
+   * One rarity glow per Decoration, round(TANK_GLOW_SCALE * decorationPx) across,
+   * centred on the icon centre. Anchor is the same base point as
+   * `decorations[slug]`, so give it the same position, scale and rotation as the
+   * Decoration sprite, at a lower depth.
+   */
+  readonly decorationGlows: Readonly<Record<TankDecorationSlug, TexInfo>>;
 }
 
-/** Bake the Home Tank layers, the "no" icon and the Decoration sprites into the scene's texture manager. */
+/** Bake the Home Tank layers, the "no" icon, the Decoration sprites and their rarity glows into the scene's texture manager. */
 export function bakeTankTextures(scene: Phaser.Scene, bakeScale: number, opts: TankBakeOptions): TankTextures {
   const info: Record<string, TexInfo> = {};
   const add = (t: TexInfo): TexInfo => {
@@ -93,5 +118,19 @@ export function bakeTankTextures(scene: Phaser.Scene, bakeScale: number, opts: T
     );
   }
 
-  return { info, back, glass, front, noIcon, decorations };
+  const glowPx = Math.round(TANK_GLOW_SCALE * decorationPx);
+  const glowFrame = rarityGlowTextureSize(glowPx);
+  const decorationGlows = {} as Record<TankDecorationSlug, TexInfo>;
+  for (const slug of TANK_DECORATION_SLUGS) {
+    const baseY = decorationBaseOffset(slug, decorationPx);
+    const frame = { ...glowFrame, originY: glowFrame.originY + baseY };
+    decorationGlows[slug] = add(
+      bake(scene, tankDecorationGlowKey(slug, decorationPx), frame, bakeScale, (ctx) => {
+        ctx.translate(0, -baseY);
+        paintRarityGlow(ctx, TANK_DECORATION_BADGES[slug], glowPx);
+      }),
+    );
+  }
+
+  return { info, back, glass, front, noIcon, decorations, decorationGlows };
 }
