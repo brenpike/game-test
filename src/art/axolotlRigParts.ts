@@ -45,6 +45,8 @@ import {
   type LegLook,
 } from './drawAxolotl';
 import {
+  CHEEK_HEART_ZONE,
+  FAR_EYE,
   FAR_LASH_REACH,
   GILL_FILAMENT_OL,
   GILL_FILAMENT_W,
@@ -54,6 +56,7 @@ import {
   HEAD_ELLIPSE,
   HEAD_FOOTPRINT,
   MOUTH_ZONE,
+  NEAR_EYE,
   NEAR_LASH_REACH,
   NECK_FOOTPRINT,
   TAIL_SEGMENTS,
@@ -63,6 +66,7 @@ import {
   feetEnvelope,
   gillGeometry,
   gillSpecs,
+  grumpyBrowInkBounds,
   legAngle,
   legRectBounds,
   legSlotFrames,
@@ -611,7 +615,8 @@ function tailMaxDy(look: AxolotlArtLook): number {
 
 /**
  * Ink box of the face part: the head (the blush sits on the cheeks inside it),
- * the mouth zone (every mouth) and the footprint of each worn Neck, Back, Head and Face item.
+ * a Girl's cheek heart zone, the mouth zone (every mouth) and the footprint of
+ * each worn Neck, Back, Head and Face item.
  */
 function facePartInk(look: AxolotlArtLook, outfit: ArtOutfit): Bounds {
   const head: Bounds = {
@@ -620,7 +625,7 @@ function facePartInk(look: AxolotlArtLook, outfit: ArtOutfit): Bounds {
     maxX: HEAD_ELLIPSE.cx + HEAD_ELLIPSE.rx,
     maxY: HEAD_ELLIPSE.cy + HEAD_ELLIPSE.ry,
   };
-  const boxes: Bounds[] = [head, MOUTH_ZONE];
+  const boxes: Bounds[] = [head, circleBounds(CHEEK_HEART_ZONE), MOUTH_ZONE];
   if (wornSlug(outfit, 'neck') !== undefined) boxes.push(NECK_FOOTPRINT);
   if (wornSlug(outfit, 'back') !== undefined) boxes.push(backFootprint(look).bounds);
   if (wornSlug(outfit, 'head') !== undefined) boxes.push(HEAD_FOOTPRINT);
@@ -671,7 +676,12 @@ export function rigParts(appearance: RigAppearance): RigPartSpec[] {
   }
   pushGills(GILL_NEAR_IDS, 3, 9);
   parts.push(makeSpec('face', [9.5, 11.5], { x: 0, y: 0 }, facePartInk(look, outfit)));
-  const eyes = unionBounds([circleBounds(FAR_LASH_REACH), circleBounds(NEAR_LASH_REACH)]);
+  const eyes = unionBounds([
+    circleBounds(FAR_LASH_REACH),
+    circleBounds(NEAR_LASH_REACH),
+    grumpyBrowInkBounds(FAR_EYE),
+    grumpyBrowInkBounds(NEAR_EYE),
+  ]);
   parts.push(makeSpec('eyes', [12, 12], { x: 0, y: 0 }, eyes, EYE_FRAME_BLINKS.length));
   return parts;
 }

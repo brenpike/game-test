@@ -13,6 +13,9 @@ import {
   AXO_SIZES,
   AXO_TAILS,
   BACK_FRAME_BOX,
+  CHEEK_HEART_INK,
+  CHEEK_HEART_LAYER,
+  CHEEK_HEART_UNDER,
   DEFAULT_ART_LOOK,
   EYELASH_INK,
   EYELASH_UNDER,
@@ -61,7 +64,7 @@ import {
   type ArtOutfit,
   type WearableArtSlug,
 } from './drawWearables';
-import { BLUSH, FRECKLE, INK, LEUCISTIC, LW, WHITE, type MorphPalette } from './palette';
+import { BLUSH, CHEEK_HEART, FRECKLE, INK, LEUCISTIC, LW, SILHOUETTE, WHITE, type MorphPalette } from './palette';
 import { bakeAxolotlStill } from './textures';
 import {
   BOW_GEM,
@@ -778,13 +781,16 @@ describe('no outfit (regression)', () => {
     { ...DEFAULT_ART_LOOK, sex: 'boy', body: 'slim', age: 'grownUp', tail: 'short' },
   ];
   const poses: AxolotlPose[] = [AXO_REST_POSE, { ...AXO_REST_POSE, swimPhase: 1.3, tailAmp: 1.6, sparkle: 0.7, legs }];
-  /** Recorded from the painter before Wearables existed (pose-major, then look). */
+  /**
+   * Recorded from the painter before Wearables existed (pose-major, then look). The Girl entries
+   * (the second of each pose) are re-recorded for the #87 cheek heart; the Boy entries are unchanged.
+   */
   const BEFORE_WEARABLES = [
     'bd38c5db2508a8d7:32084',
-    '4c9243ce24f164aa:34251',
+    'c94b66975903d47b:40886',
     'dc5a96b05f46a954:32963',
     '07de654681b19bda:41725',
-    '9ff458d18e3f786d:43879',
+    'a1d3f250c2030c44:50514',
     'e6dd6f9972bdf625:42638',
   ];
 
@@ -887,7 +893,7 @@ describe('layers (guide 6a)', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
     }
   });
 
-  it('puts the Shirt over the spots, the near gills under the Neck and Back items, the Head item over the blush and the Face item over the mouth', () => {
+  it('puts the Shirt over the spots, the near gills under the Neck and Back items, a Girl cheek heart after the blush and before the Head item, and the Face item over the mouth', () => {
     const look = { ...GIRL, spots: 'patches' as const };
     const worn = drawn(AXO_REST_POSE, look, FULL);
     const nearGill = (p: Paint): boolean =>
@@ -896,6 +902,10 @@ describe('layers (guide 6a)', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
     const firstOf = (holds: (p: Paint) => boolean): number => worn.findIndex(holds);
     const spots = lastOf((p) => p.kind === 'fill' && p.style === FRECKLE);
     const blush = lastOf((p) => p.kind === 'fill' && p.style === BLUSH);
+    const heartFill = lastOf((p) => p.kind === 'fill' && p.style === CHEEK_HEART);
+    const heart = { first: heartFill - 1, last: heartFill + 1 };
+    expect(worn[heart.first]).toMatchObject({ kind: 'stroke', style: WHITE, lineWidth: CHEEK_HEART_UNDER });
+    expect(worn[heart.last]).toMatchObject({ kind: 'stroke', style: INK, lineWidth: CHEEK_HEART_INK });
     const mouth = lastOf((p) => p.kind === 'stroke' && p.lineWidth === MOUTH_INK);
     const gills = { first: firstOf(nearGill), last: lastOf(nearGill) };
     const shirt = firstIndexOf(worn, itemSignatures('shirt', AXO_REST_POSE, look));
@@ -904,13 +914,27 @@ describe('layers (guide 6a)', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
     const back = firstIndexOf(worn, itemSignatures('back', AXO_REST_POSE, look));
     const head = firstIndexOf(worn, itemSignatures('head', AXO_REST_POSE, look));
     const face = firstIndexOf(worn, itemSignatures('face', AXO_REST_POSE, look));
-    for (const index of [spots, blush, mouth, gills.first, gills.last, shirt, tail, neck, back, head, face]) {
-      expect(index).toBeGreaterThan(0);
-    }
-    // 8 spots, 8.2 Shirt, 8.5 Tail item, 9 near gills, 9.5 Neck item, 9.7 Back item, 10 blush, 10.5 Head item,
-    // 11 mouth, 11.5 Face item.
-    const layers = [spots, shirt, tail, gills.first, gills.last, neck, back, blush, head, mouth, face];
+    const found = [spots, blush, heart.first, mouth, gills.first, gills.last, shirt, tail, neck, back, head, face];
+    for (const index of found) expect(index).toBeGreaterThan(0);
+    // 8 spots, 8.2 Shirt, 8.5 Tail item, 9 near gills, 9.5 Neck item, 9.7 Back item, 10 blush, 10.2 cheek heart,
+    // 10.5 Head item, 11 mouth, 11.5 Face item.
+    expect(CHEEK_HEART_LAYER).toBe(10.2);
+    const layers = [
+      ...[spots, shirt, tail, gills.first, gills.last, neck, back, blush],
+      ...[heart.first, heart.last, head, mouth, face],
+    ];
     expect(layers).toEqual([...layers].sort((x, y) => x - y));
+  });
+
+  it('paints the cheek heart for a Girl only, and not when the palette turns the blush off', () => {
+    const heartPaints = (look: AxolotlArtLook, palette: MorphPalette): number =>
+      record((ctx) => drawAxolotl(ctx, AXO_REST_POSE, palette, look)).paints.filter(
+        (p) => p.kind === 'fill' && p.style === CHEEK_HEART,
+      ).length;
+    for (const look of looks) {
+      expect(heartPaints(look, LEUCISTIC), look.sex).toBe(look.sex === 'girl' ? 1 : 0);
+      expect(heartPaints(look, SILHOUETTE), look.sex).toBe(0);
+    }
   });
 
   it('paints Socks and Feet with their leg behind the silhouette: far legs, then their wear, then near legs, then theirs', () => {

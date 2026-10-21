@@ -12,7 +12,7 @@
  * Presentational only: no game state, no randomness.
  */
 import { ell, inkMany, line, seg, shape, type Seg } from './canvasKit';
-import { INK, WHITE, type MorphEyeRing } from './palette';
+import { CHEEK_HEART, INK, WHITE, type MorphEyeRing } from './palette';
 
 // ---------------------------------------------------------------------------
 // Look
@@ -372,6 +372,8 @@ function straightLid(r: number, backY: number, snoutY: number): EyeLid {
  * Eye geometry for a variant at prototype bead radius r (guide 6l). Sleepy's
  * lid control sits at 0.3r so the curve's middle dips 0.15r below the centre.
  * Curious places its glints on the 1.1r bead; glint 1 radius is 0.45r.
+ * Grumpy's lid runs through the centre, sloping down toward the snout, so the
+ * lower half of the bead shows; its brow is grumpyBrow().
  */
 export function eyeMarks(variant: EyeVariant, r: number): EyeMarks {
   const glint1: EyeDot = { x: r * 0.3, y: -r * 0.35, r: r * 0.38 };
@@ -399,7 +401,7 @@ export function eyeMarks(variant: EyeVariant, r: number): EyeMarks {
       };
     }
     case 'grumpy':
-      return { beadR: r, glints: [glint2], lid: straightLid(r, -0.05, -0.4) };
+      return { beadR: r, glints: [glint2], lid: straightLid(r, -0.2, 0.2) };
   }
 }
 
@@ -518,6 +520,60 @@ function paintEyelashes(ctx: CanvasRenderingContext2D, lashes: readonly EyeLash[
   ctx.restore();
 }
 
+/** A Grumpy brow line relative to its eye centre, from its back end (x1, y1) to its snout end (x2, y2). */
+export type EyeBrow = EyeLash;
+
+/**
+ * Grumpy brows (guide 6l), relative to each eye centre: a short stroke over the
+ * snout-side half of the bead, sloping down toward the snout (near about 17.9
+ * degrees, far about 18.2). The near brow sits between the near eye's top lash
+ * and the far eye's lashes; the far brow sits low, between the far lashes and
+ * the head's top edge, just above the lid.
+ */
+const GRUMPY_BROWS: ReadonlyMap<EyeSpot, EyeBrow> = new Map([
+  [NEAR_EYE, { x1: 0, y1: -7.9, x2: 4.5, y2: -6.45 }],
+  [FAR_EYE, { x1: 0.4, y1: -3.8, x2: 4.8, y2: -2.35 }],
+]);
+
+/** The Grumpy brow of NEAR_EYE or FAR_EYE, relative to its centre. A RangeError for any other eye. */
+export function grumpyBrow(spot: EyeSpot): EyeBrow {
+  const brow = GRUMPY_BROWS.get(spot);
+  if (!brow) throw new RangeError(`no Grumpy brow for the eye at (${spot.x}, ${spot.y})`);
+  return brow;
+}
+
+/** Local box of a Grumpy brow's paint: the white under-stroke with its round caps. */
+export function grumpyBrowInkBounds(spot: EyeSpot): Bounds {
+  const brow = grumpyBrow(spot);
+  return boundsOfPoints(
+    [
+      [spot.x + brow.x1, spot.y + brow.y1],
+      [spot.x + brow.x2, spot.y + brow.y2],
+    ],
+    EYELASH_UNDER / 2,
+  );
+}
+
+/**
+ * Paint a Grumpy brow: lash ink 2.0 over the lash white 3.6, round caps (set
+ * for the brow only, then restored), in the eye's translate but never squashed.
+ */
+function paintBrow(ctx: CanvasRenderingContext2D, spot: EyeSpot, brow: EyeBrow): void {
+  const path = new Path2D();
+  path.moveTo(brow.x1, brow.y1);
+  path.lineTo(brow.x2, brow.y2);
+  ctx.save();
+  ctx.translate(spot.x, spot.y);
+  ctx.lineCap = 'round';
+  ctx.lineWidth = EYELASH_UNDER;
+  ctx.strokeStyle = WHITE;
+  ctx.stroke(path);
+  ctx.lineWidth = EYELASH_INK;
+  ctx.strokeStyle = INK;
+  ctx.stroke(path);
+  ctx.restore();
+}
+
 function lidPath(lid: EyeLid): Path2D {
   const p = new Path2D();
   p.moveTo(lid.x1, lid.y1);
@@ -539,7 +595,9 @@ function belowLidPath(lid: EyeLid, beadR: number): Path2D {
  * vertically about the eye centre. Lid lines are clipped to the bead. An
  * optional morph `ring` is stroked just inside the bead edge, under the glints.
  * `eyelashes` (the Girl cue) paints under the bead, inside the eye transform,
- * so a blink squashes them too.
+ * so a blink squashes them too. Grumpy's brow paints last, outside the blink
+ * squash: squashed at blink 0.12 it would drop onto the closed eye and thin
+ * to about 0.4 units.
  */
 export function paintEye(
   ctx: CanvasRenderingContext2D,
@@ -588,6 +646,78 @@ export function paintEye(
     ctx.restore();
   }
   ctx.restore();
+  if (variant === 'grumpy') paintBrow(ctx, spot, grumpyBrow(spot));
+}
+
+// ---------------------------------------------------------------------------
+// Cheek heart (Girl cue, guide 6u)
+// ---------------------------------------------------------------------------
+
+/**
+ * Centre of the Girl cue cheek heart's curve (the middle of its smallest
+ * enclosing circle): on the cheek below and behind the near eye, between the
+ * gill-root zone and the mouth zone, near the near blush.
+ */
+export const CHEEK_HEART_CENTRE: LocalPoint = { x: 18.2, y: 9.6 };
+/** Width of the heart curve (the outline's centre line). */
+export const CHEEK_HEART_WIDTH = 7;
+/** Outline ink, over a white under-stroke that shows 0.8 outside the ink. */
+export const CHEEK_HEART_INK = 1.6;
+export const CHEEK_HEART_UNDER = 3.2;
+/** The heart paints at layer 10.2: after the blush (10), before the Head item (10.5). */
+export const CHEEK_HEART_LAYER = 10.2;
+/** Points round the heart curve. */
+const CHEEK_HEART_STEPS = 48;
+/** Half-width of the unscaled heart curve (x = 16 sin^3 t). */
+const HEART_CURVE_HALF_WIDTH = 16;
+
+/**
+ * Points round the cheek heart in local units, from the top notch clockwise:
+ * the heart curve x = 16 sin^3 t, y = -(13 cos t - 5 cos 2t - 2 cos 3t - cos 4t)
+ * (y down), scaled to CHEEK_HEART_WIDTH across about CHEEK_HEART_CENTRE.
+ */
+export function cheekHeartPoints(): LocalPoint[] {
+  const scale = CHEEK_HEART_WIDTH / (2 * HEART_CURVE_HALF_WIDTH);
+  const points: LocalPoint[] = [];
+  for (let k = 0; k < CHEEK_HEART_STEPS; k++) {
+    const t = (k / CHEEK_HEART_STEPS) * Math.PI * 2;
+    const x = HEART_CURVE_HALF_WIDTH * Math.sin(t) ** 3;
+    const y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+    points.push({ x: CHEEK_HEART_CENTRE.x + x * scale, y: CHEEK_HEART_CENTRE.y + y * scale });
+  }
+  return points;
+}
+
+/**
+ * Keep-clear circle about CHEEK_HEART_CENTRE holding all of the heart's paint,
+ * white under-stroke included (round joins, as every axolotl line).
+ */
+export const CHEEK_HEART_ZONE: ZoneCircle = {
+  x: CHEEK_HEART_CENTRE.x,
+  y: CHEEK_HEART_CENTRE.y,
+  r:
+    Math.max(...cheekHeartPoints().map((p) => Math.hypot(p.x - CHEEK_HEART_CENTRE.x, p.y - CHEEK_HEART_CENTRE.y))) +
+    CHEEK_HEART_UNDER / 2,
+};
+
+/**
+ * Paint the cheek heart (layer 10.2, the Girl cue): the white under-stroke, then
+ * the CHEEK_HEART fill over its inner half, then the ink outline.
+ */
+export function paintCheekHeart(ctx: CanvasRenderingContext2D): void {
+  const [first, ...rest] = cheekHeartPoints();
+  const path = new Path2D();
+  path.moveTo(first.x, first.y);
+  for (const p of rest) path.lineTo(p.x, p.y);
+  path.closePath();
+  ctx.lineWidth = CHEEK_HEART_UNDER;
+  ctx.strokeStyle = WHITE;
+  ctx.stroke(path);
+  ctx.fillStyle = CHEEK_HEART;
+  ctx.fill(path);
+  ctx.lineWidth = CHEEK_HEART_INK;
+  ctx.strokeStyle = INK;
+  ctx.stroke(path);
 }
 
 // ---------------------------------------------------------------------------

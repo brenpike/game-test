@@ -23,6 +23,9 @@ import {
 } from './drawAxolotlParts';
 import { MORPH_LOOK_IDS } from './drawMorphs';
 import {
+  BLUSH,
+  CHEEK_HEART,
+  DREAM_SLOTS,
   INK,
   MORPH_PALETTES,
   T_STATIC,
@@ -285,6 +288,87 @@ describe('girl eyelashes on every morph (guide 6u, 10)', () => {
       const ink = contrastRatio(INK, body);
       expect(Math.max(white, ink), id).toBeGreaterThanOrEqual(CUE_RATIO);
       if (ink < CUE_RATIO) expect(white, id).toBeGreaterThanOrEqual(CUE_RATIO);
+    }
+  });
+});
+
+/** Every body the cheek heart sits on: the eight morphs, then the twelve Dream colours (guide 3b, 3f). */
+const HEART_BODIES: readonly (readonly [string, string])[] = [
+  ...MORPH_LOOK_IDS.map((id): [string, string] => [id, MORPH_PALETTES[id].body]),
+  ...Object.entries(DREAM_SLOTS).map(([id, slots]): [string, string] => [`dream ${id}`, slots.body]),
+];
+
+/**
+ * Guide 6u and 10 cheek heart rows: white edge vs body, ink vs body, fill vs body. Rainbow #ff6b6b is
+ * about as light as the fill (1.04:1) and the Hearts Dream pattern #ff5f8d (x 14 or less) matches it,
+ * so the outline carries the heart there.
+ */
+const CHEEK_HEART_CONTRAST: Readonly<Record<string, readonly [number, number, number]>> = {
+  leucistic: [1.62, 8.86, 1.78],
+  wild: [2.12, 6.8, 1.37],
+  'golden-albino': [1.42, 10.13, 2.04],
+  'white-albino': [1.08, 13.38, 2.69],
+  copper: [1.56, 9.24, 1.86],
+  piebald: [1.13, 12.75, 2.57],
+  axanthic: [4.53, 3.18, 1.56],
+  melanoid: [8.28, 1.74, 2.86],
+  'dream mint': [1.31, 10.99, 2.21],
+  'dream sky-blue': [1.53, 9.42, 1.9],
+  'dream lavender': [1.58, 9.11, 1.83],
+  'dream sunset-orange': [1.58, 9.1, 1.83],
+  'dream bubblegum': [1.58, 9.11, 1.83],
+  'dream midnight-blue': [9.89, 1.45, 3.42],
+  'dream hearts': [1.14, 12.59, 2.53],
+  'dream tie-dye': [1.2, 11.98, 2.41],
+  'dream iridescent': [1.5, 9.58, 1.93],
+  'dream rainbow': [2.78, 5.19, 1.04],
+  'dream galaxy': [11.73, 1.23, 4.05],
+  'dream tie-dye-galaxy': [11.24, 1.28, 3.88],
+};
+
+/** An rgba(r,g,b,a) colour laid over an opaque #rrggbb colour, as #rrggbb. */
+function laidOver(rgba: string, under: string): string {
+  const match = /^rgba\((\d+),(\d+),(\d+),([\d.]+)\)$/.exec(rgba);
+  expect(match, rgba).not.toBeNull();
+  const [r, g, b, a] = match!.slice(1).map(Number);
+  const channel = (top: number, offset: number): string =>
+    Math.round(a * top + (1 - a) * parseInt(under.slice(offset, offset + 2), 16))
+      .toString(16)
+      .padStart(2, '0');
+  return `#${channel(r, 1)}${channel(g, 3)}${channel(b, 5)}`;
+}
+
+describe('girl cheek heart on every body (guide 6u, 10)', () => {
+  it('lists the eight morphs and the twelve Dream colours', () => {
+    expect(HEART_BODIES).toHaveLength(20);
+    expect(Object.keys(CHEEK_HEART_CONTRAST)).toEqual(HEART_BODIES.map(([id]) => id));
+  });
+
+  it('fills #ff5c9a, 4.97:1 against its ink outline', () => {
+    expect(CHEEK_HEART).toBe('#ff5c9a');
+    expect(contrastRatio(CHEEK_HEART, INK)).toBeCloseTo(4.97, 2);
+    expect(contrastRatio(CHEEK_HEART, INK)).toBeGreaterThanOrEqual(CUE_RATIO);
+  });
+
+  it('match the guide numbers for every body', () => {
+    for (const [id, body] of HEART_BODIES) {
+      const [white, ink, fill] = CHEEK_HEART_CONTRAST[id];
+      expect(contrastRatio(WHITE, body), `${id} white vs body`).toBeCloseTo(white, 2);
+      expect(contrastRatio(INK, body), `${id} ink vs body`).toBeCloseTo(ink, 2);
+      expect(contrastRatio(CHEEK_HEART, body), `${id} fill vs body`).toBeCloseTo(fill, 2);
+    }
+  });
+
+  it('read on every body: the white edge or the ink gets 3:1 or more', () => {
+    for (const [id, body] of HEART_BODIES) {
+      expect(Math.max(contrastRatio(WHITE, body), contrastRatio(INK, body)), id).toBeGreaterThanOrEqual(CUE_RATIO);
+    }
+  });
+
+  it('read stronger than the blush on every body: opaque, and further from the body than the blush laid over it', () => {
+    expect(CHEEK_HEART).toMatch(/^#[0-9a-f]{6}$/i);
+    for (const [id, body] of HEART_BODIES) {
+      expect(contrastRatio(CHEEK_HEART, body), id).toBeGreaterThan(contrastRatio(laidOver(BLUSH, body), body));
     }
   });
 });

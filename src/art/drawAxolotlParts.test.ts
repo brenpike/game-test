@@ -8,7 +8,9 @@ import {
   axolotlLegRoots,
   drawAxolotl,
 } from './drawAxolotl';
-import { LEUCISTIC, LW, T_STATIC, WHITE } from './palette';
+import { CHEEK_HEART, INK, LEUCISTIC, LW, T_STATIC, WHITE } from './palette';
+import { rigParts } from './axolotlRigParts';
+import { NO_OUTFIT } from './drawWearables';
 import {
   AXO_AGES,
   AXO_BODIES,
@@ -18,8 +20,14 @@ import {
   AXO_TAILS,
   BACK_ANCHOR_X,
   BACK_FRAME_BOX,
+  CHEEK_HEART_CENTRE,
+  CHEEK_HEART_INK,
+  CHEEK_HEART_LAYER,
+  CHEEK_HEART_UNDER,
+  CHEEK_HEART_ZONE,
   DEFAULT_ART_LOOK,
   EYES_LAYER,
+  EYE_LID_INK,
   EYELASH_INK,
   EYELASH_UNDER,
   EYE_VARIANTS,
@@ -70,6 +78,7 @@ import {
   backFootprint,
   backFrame,
   boundsOfPoints,
+  cheekHeartPoints,
   eyeMarks,
   eyelashMarks,
   feetEnvelope,
@@ -78,6 +87,8 @@ import {
   gillInkBounds,
   gillSpecs,
   glassesNotches,
+  grumpyBrow,
+  grumpyBrowInkBounds,
   glassesOutlinePoints,
   legAngle,
   legRectBounds,
@@ -87,6 +98,7 @@ import {
   mouthInkBounds,
   MOUTH_INK,
   MOUTH_TICK_INK,
+  paintCheekHeart,
   paintEye,
   paintMouth,
   quadBounds,
@@ -107,6 +119,7 @@ import {
   type Bounds,
   type EyeLash,
   type EyeSpot,
+  type EyeVariant,
   type GillRoot,
   type LocalPoint,
   type MouthVariant,
@@ -821,11 +834,103 @@ describe('eye variants (guide 6l)', () => {
     expect(determined.y2).toBeGreaterThan(determined.y1);
 
     const grumpy = eyeMarks('grumpy', r);
-    expect(grumpy.glints).toHaveLength(1);
-    expect([grumpy.lid!.x1, grumpy.lid!.y1, grumpy.lid!.x2, grumpy.lid!.y2]).toEqual([-r, -0.05 * r, r, -0.4 * r]);
-    expect(grumpy.lid!.y1).toBeGreaterThan(grumpy.lid!.y2);
+    expect(grumpy.glints).toEqual([{ x: -r * 0.35, y: r * 0.35, r: r * 0.17 }]);
+    expect([grumpy.lid!.x1, grumpy.lid!.y1, grumpy.lid!.x2, grumpy.lid!.y2]).toEqual([-r, -0.2 * r, r, 0.2 * r]);
+  });
+
+  it('half-shuts Grumpy (#87): a straight lid through the middle, sloping down toward the snout, glint 2 only', () => {
+    for (const spot of [NEAR_EYE, FAR_EYE]) {
+      const r = spot.r;
+      const lid = eyeMarks('grumpy', r).lid!;
+      expect(lid.cx).toBe(0);
+      expect(lid.cy).toBeCloseTo((lid.y1 + lid.y2) / 2, 12);
+      expect(lid.y2).toBeGreaterThan(lid.y1);
+      expect(Math.abs((lid.y1 + lid.y2) / 2)).toBeLessThanOrEqual(0.1 * r);
+    }
+    const share = visibleBeadShare('grumpy');
+    expect(share).toBeGreaterThanOrEqual(0.45);
+    expect(share).toBeLessThanOrEqual(0.55);
+    expect(share).toBeCloseTo(0.5, 2);
+  });
+
+  it('keeps Determined as it was, and tells it from Grumpy by the bead shown, the glints and the brow', () => {
+    const r = NEAR_EYE.r;
+    const determined = eyeMarks('determined', r);
+    expect(determined.glints).toHaveLength(2);
+    expect(visibleBeadShare('determined')).toBeCloseTo(0.7585, 3);
+    expect(visibleBeadShare('determined')).toBeGreaterThanOrEqual(visibleBeadShare('grumpy') + 0.15);
+    expect(eyeMarks('grumpy', r).glints).not.toEqual(determined.glints);
+    const browed = EYE_VARIANTS.filter((variant) => browStrokes(variant, NEAR_EYE, 1).length > 0);
+    expect(browed).toEqual(['grumpy']);
   });
 });
+
+/** One stroke paintEye made: the state it was painted under, the scale y and its place in the call order. */
+interface EyeStroke {
+  readonly lineWidth: number;
+  readonly strokeStyle: string;
+  readonly lineCap: string;
+  readonly scaleY: number;
+  readonly order: number;
+}
+
+/** Every stroke and the index of the bead fill paintEye makes, with the eye `colour` #123456. */
+function recordEyeStrokes(variant: EyeVariant, spot: EyeSpot, blink: number, eyelashes = false) {
+  class StubPath2D {
+    moveTo(): void {}
+    lineTo(): void {}
+    quadraticCurveTo(): void {}
+    closePath(): void {}
+    ellipse(): void {}
+  }
+  vi.stubGlobal('Path2D', StubPath2D);
+  const state = { lineWidth: 0, strokeStyle: '', fillStyle: '', lineCap: 'round', scaleY: 1 };
+  const saved: (typeof state)[] = [];
+  const strokes: EyeStroke[] = [];
+  let order = 0;
+  let beadAt = -1;
+  const ctx = {
+    save: () => saved.push({ ...state }),
+    restore: () => Object.assign(state, saved.pop()!),
+    translate: () => {},
+    scale: (_x: number, y: number) => {
+      state.scaleY *= y;
+    },
+    clip: () => {},
+    fill: () => {
+      if (state.fillStyle === '#123456' && beadAt < 0) beadAt = order;
+      order++;
+    },
+    stroke: () => strokes.push({ ...state, order: order++ }),
+    set lineCap(v: string) {
+      state.lineCap = v;
+    },
+    set lineWidth(v: number) {
+      state.lineWidth = v;
+    },
+    set strokeStyle(v: string) {
+      state.strokeStyle = v;
+    },
+    set fillStyle(v: string) {
+      state.fillStyle = v;
+    },
+  } as unknown as CanvasRenderingContext2D;
+  try {
+    paintEye(ctx, variant, spot, blink, '#123456', undefined, eyelashes);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  return { strokes, beadAt, lineCapAfter: state.lineCap, unbalanced: saved.length };
+}
+
+/**
+ * The brow strokes paintEye makes, a Girl's lashes on: each round-capped lash-white-wide stroke and
+ * the stroke after it (lashes are butt-capped; the lid is ink only).
+ */
+function browStrokes(variant: EyeVariant, spot: EyeSpot, blink: number): EyeStroke[] {
+  const { strokes } = recordEyeStrokes(variant, spot, blink, true);
+  return strokes.flatMap((s, i) => (s.lineCap === 'round' && s.lineWidth === EYELASH_UNDER ? [s, strokes[i + 1]] : []));
+}
 
 describe('eye ring (guide 3b)', () => {
   const RING = { colour: '#cec9f0', width: 1.5 };
@@ -1392,6 +1497,17 @@ describe('eyelashes (Girl cue)', () => {
     }
   });
 
+  it('measure the Grumpy lashes on the #87 lid: lengths near 5.65 / 7.00 / 8.45, far 5.27 / 6.36 / 7.56, least ink past the bead 3.52', () => {
+    const lengths = (spot: EyeSpot): number[] =>
+      eyelashMarks('grumpy', spot.r).map((lash) => Math.hypot(lash.x2 - lash.x1, lash.y2 - lash.y1));
+    const guide = [5.65, 7.0, 8.45, 5.27, 6.36, 7.56];
+    [...lengths(NEAR_EYE), ...lengths(FAR_EYE)].forEach((len, i) => expect(len).toBeCloseTo(guide[i], 2));
+    const leastPastBead = Math.min(
+      ...eyes.flatMap((spot) => eyelashMarks('grumpy', spot.r).map((lash) => inkPastBead(lash, spot.r))),
+    );
+    expect(leastPastBead).toBeCloseTo(3.52, 2);
+  });
+
   it('root on the back half of the lid line inside the bead and rise above it on lidded eyes', () => {
     for (const variant of ['sleepy', 'determined', 'grumpy'] as const) {
       for (const spot of eyes) {
@@ -1493,6 +1609,296 @@ describe('eyelashes (Girl cue)', () => {
   });
 });
 
+/** Blinks the rig bakes the eyes at (EYE_FRAME_BLINKS): open, half shut and the 12% blink. */
+const RIG_BLINKS = [1, 0.56, 0.12] as const;
+
+function pointSegmentDistance(p: LocalPoint, a: LocalPoint, b: LocalPoint): number {
+  const vx = b.x - a.x;
+  const vy = b.y - a.y;
+  const u = Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / (vx * vx + vy * vy)));
+  return Math.hypot(p.x - a.x - u * vx, p.y - a.y - u * vy);
+}
+
+function cross(a: LocalPoint, b: LocalPoint, c: LocalPoint): number {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+/** Distance between segments ab and cd: 0 when they cross. */
+function segmentGap(a: LocalPoint, b: LocalPoint, c: LocalPoint, d: LocalPoint): number {
+  const crosses = cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0;
+  if (crosses) return 0;
+  return Math.min(
+    pointSegmentDistance(a, c, d),
+    pointSegmentDistance(b, c, d),
+    pointSegmentDistance(c, a, b),
+    pointSegmentDistance(d, a, b),
+  );
+}
+
+/** Whether p lies inside the convex polygon `poly` (either winding). */
+function isInConvex(poly: readonly LocalPoint[], p: LocalPoint): boolean {
+  const sides = poly.map((a, i) => Math.sign(cross(a, poly[(i + 1) % poly.length], p)));
+  return sides.every((s) => s >= 0) || sides.every((s) => s <= 0);
+}
+
+/** Distance from segment ab to the convex polygon `poly`: 0 when they meet. */
+function segmentPolygonGap(a: LocalPoint, b: LocalPoint, poly: readonly LocalPoint[]): number {
+  if (isInConvex(poly, a) || isInConvex(poly, b)) return 0;
+  return Math.min(...poly.map((c, i) => segmentGap(a, b, c, poly[(i + 1) % poly.length])));
+}
+
+/** A lash's ink stroke at a blink as a local polygon (corners in order round the butt-capped stroke). */
+function lashInkPolygon(spot: EyeSpot, lash: EyeLash, blink: number): LocalPoint[] {
+  const [a, b, c, d] = lashStrokeCorners(lash, EYELASH_INK, blink);
+  return [a, c, d, b].map((p) => ({ x: spot.x + p.x, y: spot.y + p.y }));
+}
+
+/** Ends of a Grumpy brow's centre line in local units, back end first. */
+function browEnds(spot: EyeSpot): [LocalPoint, LocalPoint] {
+  const brow = grumpyBrow(spot);
+  return [
+    { x: spot.x + brow.x1, y: spot.y + brow.y1 },
+    { x: spot.x + brow.x2, y: spot.y + brow.y2 },
+  ];
+}
+
+/** Every Grumpy lash ink stroke of both eyes at every rig blink, as local polygons. */
+const GRUMPY_LASH_INKS: readonly LocalPoint[][] = [NEAR_EYE, FAR_EYE].flatMap((spot) =>
+  eyelashMarks('grumpy', spot.r).flatMap((lash) => RIG_BLINKS.map((blink) => lashInkPolygon(spot, lash, blink))),
+);
+
+/** Least distance from the brow's centre line to any Grumpy lash ink, both eyes, every rig blink. */
+function browCentreToLashInk(spot: EyeSpot): number {
+  const [a, b] = browEnds(spot);
+  return Math.min(...GRUMPY_LASH_INKS.map((poly) => segmentPolygonGap(a, b, poly)));
+}
+
+const HEAD_EDGE_STEPS = 8000;
+const HEAD_EDGE: readonly LocalPoint[] = Array.from({ length: HEAD_EDGE_STEPS }, (_, k) => {
+  const a = (k / HEAD_EDGE_STEPS) * TAU;
+  return { x: HEAD_ELLIPSE.cx + HEAD_ELLIPSE.rx * Math.cos(a), y: HEAD_ELLIPSE.cy + HEAD_ELLIPSE.ry * Math.sin(a) };
+});
+
+/**
+ * How deep a local point sits inside the head ellipse: its distance to the head edge, negative
+ * outside. Depth is concave inside a convex shape, so a stroke is as deep as its shallowest end.
+ */
+function headDepth(p: LocalPoint): number {
+  const toEdge = Math.min(...HEAD_EDGE.map((e) => Math.hypot(e.x - p.x, e.y - p.y)));
+  return isInEllipse(p, HEAD_ELLIPSE) ? toEdge : -toEdge;
+}
+
+/** Degrees the brow turns down toward the snout (y down, +x is the snout). */
+function browDownAngle(brow: EyeLash): number {
+  return (Math.atan2(brow.y2 - brow.y1, brow.x2 - brow.x1) * 180) / Math.PI;
+}
+
+describe('Grumpy brows (#87, guide 6l)', () => {
+  const eyes = [NEAR_EYE, FAR_EYE] as const;
+
+  it('are short strokes over the snout-side half of each bead, at the guide ends', () => {
+    const ends = [...browEnds(NEAR_EYE), ...browEnds(FAR_EYE)].flatMap((p) => [p.x, p.y]);
+    const guide = [28, -13.9, 32.5, -12.45, 42.4, -10.8, 46.8, -9.35];
+    ends.forEach((value, i) => expect(value).toBeCloseTo(guide[i], 9));
+    for (const spot of eyes) {
+      const brow = grumpyBrow(spot);
+      expect(brow.x1).toBeGreaterThanOrEqual(0);
+      expect(brow.x2).toBeLessThanOrEqual(spot.r);
+      expect(brow.y1).toBeLessThan(0);
+      expect(brow.y2).toBeLessThan(0);
+    }
+    expect(() => grumpyBrow({ x: 0, y: 0, r: 6.4 })).toThrow(RangeError);
+  });
+
+  it('turn 12 to 20 degrees down toward the snout and run 4.6 or more on each eye', () => {
+    const near = grumpyBrow(NEAR_EYE);
+    const far = grumpyBrow(FAR_EYE);
+    expect(browDownAngle(near)).toBeCloseTo(17.86, 2);
+    expect(browDownAngle(far)).toBeCloseTo(18.24, 2);
+    expect(Math.hypot(near.x2 - near.x1, near.y2 - near.y1)).toBeCloseTo(4.73, 2);
+    expect(Math.hypot(far.x2 - far.x1, far.y2 - far.y1)).toBeCloseTo(4.63, 2);
+    for (const brow of [near, far]) {
+      expect(browDownAngle(brow)).toBeGreaterThanOrEqual(12);
+      expect(browDownAngle(brow)).toBeLessThanOrEqual(20);
+      expect(Math.hypot(brow.x2 - brow.x1, brow.y2 - brow.y1)).toBeGreaterThanOrEqual(4.6);
+    }
+  });
+
+  it('paint lash ink 2.0 over lash white 3.6 with round caps, after the bead, outside the blink squash', () => {
+    for (const spot of eyes) {
+      for (const blink of RIG_BLINKS) {
+        const { beadAt, lineCapAfter, unbalanced } = recordEyeStrokes('grumpy', spot, blink, true);
+        const brow = browStrokes('grumpy', spot, blink);
+        expect(brow.map((s) => [s.lineWidth, s.strokeStyle, s.lineCap, s.scaleY])).toEqual([
+          [EYELASH_UNDER, WHITE, 'round', 1],
+          [EYELASH_INK, INK, 'round', 1],
+        ]);
+        expect(brow[0].order).toBeGreaterThan(beadAt);
+        expect(lineCapAfter).toBe('round');
+        expect(unbalanced).toBe(0);
+      }
+    }
+  });
+
+  it('keep the brow ink 1.0 or more from every lash ink, and the white off it, at every rig blink', () => {
+    expect(browCentreToLashInk(NEAR_EYE) - EYELASH_INK / 2).toBeCloseTo(1.26, 2);
+    expect(browCentreToLashInk(FAR_EYE) - EYELASH_INK / 2).toBeCloseTo(1.13, 2);
+    for (const spot of eyes) {
+      expect(browCentreToLashInk(spot) - EYELASH_INK / 2).toBeGreaterThanOrEqual(1);
+      expect(browCentreToLashInk(spot) - EYELASH_UNDER / 2).toBeGreaterThan(0);
+    }
+  });
+
+  it('keep the white off the lid ink of the open eye', () => {
+    for (const spot of eyes) {
+      const lid = eyeMarks('grumpy', spot.r).lid!;
+      const [a, b] = browEnds(spot);
+      const lidA = { x: spot.x + lid.x1, y: spot.y + lid.y1 };
+      const lidB = { x: spot.x + lid.x2, y: spot.y + lid.y2 };
+      expect(segmentGap(a, b, lidA, lidB) - EYELASH_UNDER / 2 - EYE_LID_INK / 2).toBeGreaterThan(0.3);
+    }
+  });
+
+  it('stay inside the head inset LW / 2, below y -18.5 (1 under the Head slot), in the face crop and clear of the mouth zone', () => {
+    for (const spot of eyes) {
+      const box = grumpyBrowInkBounds(spot);
+      for (const end of browEnds(spot)) expect(headDepth(end)).toBeGreaterThanOrEqual(EYELASH_UNDER / 2 + LW / 2);
+      expect(box.minY).toBeGreaterThanOrEqual(-18.5);
+      expect(box.minY).toBeGreaterThanOrEqual(HEAD_FOOTPRINT.maxY + 1);
+      expectInside(box, AXO_PREVIEW_CROPS.face);
+      expect(box.maxY).toBeLessThan(CODE_MOUTH_ZONE.minY);
+    }
+    const near = grumpyBrowInkBounds(NEAR_EYE);
+    const far = grumpyBrowInkBounds(FAR_EYE);
+    const sides = [near.minX, near.minY, near.maxX, near.maxY, far.minX, far.minY, far.maxX, far.maxY];
+    const guide = [26.2, -15.7, 34.3, -10.65, 40.6, -12.6, 48.6, -7.55];
+    sides.forEach((value, i) => expect(value).toBeCloseTo(guide[i], 9));
+    expect(headDepth(browEnds(FAR_EYE)[1])).toBeCloseTo(3.63, 2);
+  });
+
+  it('sit inside the rig eyes part box', () => {
+    for (const look of [DEFAULT_ART_LOOK, { ...DEFAULT_ART_LOOK, eyes: 'grumpy' as const, sex: 'girl' as const }]) {
+      const eyesBox = rigParts({ look, palette: LEUCISTIC, outfit: NO_OUTFIT }).find((part) => part.id === 'eyes')!.box;
+      for (const spot of eyes) expectInside(grumpyBrowInkBounds(spot), eyesBox);
+    }
+  });
+});
+
+describe('cheek heart (#87, Girl cue, guide 6u)', () => {
+  const points = cheekHeartPoints();
+  const box = boundsOfPoints(
+    points.map((p): [number, number] => [p.x, p.y]),
+    0,
+  );
+  const zone = CHEEK_HEART_ZONE;
+  const zoneBox = boundsOfPoints([[zone.x, zone.y]], zone.r);
+
+  it('is 7 across, about 6.33 tall, centred at (18.2, 9.6), its curve box centre at about (18.2, 10.16)', () => {
+    expect(CHEEK_HEART_CENTRE).toEqual({ x: 18.2, y: 9.6 });
+    expect(box.maxX - box.minX).toBeCloseTo(7, 9);
+    expect(box.maxX - box.minX).toBeGreaterThanOrEqual(7 - 1e-9);
+    expect(box.maxY - box.minY).toBeCloseTo(6.33, 2);
+    expect((box.minX + box.maxX) / 2).toBeCloseTo(18.2, 9);
+    expect((box.minY + box.maxY) / 2).toBeCloseTo(10.16, 2);
+    expect([CHEEK_HEART_INK, CHEEK_HEART_UNDER, CHEEK_HEART_LAYER]).toEqual([1.6, 3.2, 10.2]);
+  });
+
+  it('holds all of its paint, white under-stroke included, in its zone: centre (18.2, 9.6), radius about 5.32 (the bottom tip, 3.72 out, plus the white 1.6)', () => {
+    expect(zone.x).toBe(18.2);
+    expect(zone.y).toBe(9.6);
+    expect(zone.r).toBeCloseTo(5.32, 2);
+    for (const p of points) {
+      expect(Math.hypot(p.x - zone.x, p.y - zone.y) + CHEEK_HEART_UNDER / 2).toBeLessThanOrEqual(zone.r + 1e-9);
+    }
+  });
+
+  it('sits below and behind the near eye, 13.0 or more from its centre', () => {
+    expect(box.maxX).toBeLessThan(NEAR_EYE.x);
+    expect(box.minY).toBeGreaterThan(NEAR_EYE.y);
+    const gap = Math.hypot(zone.x - NEAR_EYE.x, zone.y - NEAR_EYE.y) - zone.r;
+    expect(gap).toBeGreaterThanOrEqual(13);
+    expect(gap).toBeCloseTo(13.1, 2);
+  });
+
+  it('keeps its zone off both eye zones, both lash reach circles and every lash of every variant at every blink', () => {
+    for (const circle of [CODE_NEAR_EYE_ZONE, CODE_FAR_EYE_ZONE, NEAR_LASH_REACH, FAR_LASH_REACH]) {
+      expect(Math.hypot(zone.x - circle.x, zone.y - circle.y)).toBeGreaterThan(zone.r + circle.r);
+    }
+    for (const variant of EYE_VARIANTS) {
+      for (const spot of [NEAR_EYE, FAR_EYE]) {
+        for (const lash of eyelashMarks(variant, spot.r)) {
+          for (const blink of [...LASH_BLINKS, ...RIG_BLINKS]) {
+            const [a, b, c, d] = lashStrokeCorners(lash, EYELASH_UNDER, blink);
+            const poly = [a, c, d, b].map((p) => ({ x: spot.x + p.x, y: spot.y + p.y }));
+            expect(isInConvex(poly, zone)).toBe(false);
+            for (let i = 0; i < 4; i++) {
+              expect(pointSegmentDistance(zone, poly[i], poly[(i + 1) % 4])).toBeGreaterThan(zone.r);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('keeps its zone off the gill-root zone, the mouth zone, the Head slot and the glasses band', () => {
+    expect(boxCircleGap(CODE_GILL_ROOT_ZONE, zone)).toBeGreaterThan(0);
+    expect(boxCircleGap(CODE_MOUTH_ZONE, zone)).toBeGreaterThan(0);
+    expect(boxCircleGap(HEAD_FOOTPRINT, zone)).toBeGreaterThan(0);
+    for (const lens of GLASSES_LENSES) {
+      expect(Math.hypot(zone.x - lens.x, zone.y - lens.y)).toBeGreaterThan(zone.r + lens.r + GLASSES_BAND / 2);
+    }
+    expect(zoneBox.minX - CODE_GILL_ROOT_ZONE.maxX).toBeCloseTo(0.9, 1);
+    expect(CODE_MOUTH_ZONE.minX - zoneBox.maxX).toBeCloseTo(0.9, 1);
+  });
+
+  it('stays inside the head inset LW / 2 and the face, gills and whole crops', () => {
+    expect(headDepth(zone)).toBeGreaterThanOrEqual(zone.r + LW / 2);
+    for (const crop of [AXO_PREVIEW_CROPS.face, AXO_PREVIEW_CROPS.gills, AXO_PREVIEW_CROPS.whole]) {
+      expectInside(zoneBox, crop);
+    }
+  });
+
+  it('paints the white under-stroke, then the fill, then the ink outline, on one closed path', () => {
+    const calls: string[] = [];
+    class StubPath2D {
+      moveTo(): void {
+        calls.push('moveTo');
+      }
+      lineTo(): void {}
+      closePath(): void {
+        calls.push('closePath');
+      }
+    }
+    vi.stubGlobal('Path2D', StubPath2D);
+    const state = { lineWidth: 0, strokeStyle: '', fillStyle: '' };
+    const ctx = {
+      fill: () => calls.push(`fill:${state.fillStyle}`),
+      stroke: () => calls.push(`stroke:${state.strokeStyle}:${state.lineWidth}`),
+      set lineWidth(v: number) {
+        state.lineWidth = v;
+      },
+      set strokeStyle(v: string) {
+        state.strokeStyle = v;
+      },
+      set fillStyle(v: string) {
+        state.fillStyle = v;
+      },
+    } as unknown as CanvasRenderingContext2D;
+    try {
+      paintCheekHeart(ctx);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(calls).toEqual([
+      'moveTo',
+      'closePath',
+      `stroke:${WHITE}:${CHEEK_HEART_UNDER}`,
+      `fill:${CHEEK_HEART}`,
+      `stroke:${INK}:${CHEEK_HEART_INK}`,
+    ]);
+  });
+});
+
 describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)', () => {
   /** Ids of every look failing `holds`; expected empty. */
   function failingLooks(holds: (look: AxolotlArtLook) => boolean): string[] {
@@ -1519,7 +1925,7 @@ describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)',
     expect(failingLooks(fits)).toEqual([]);
   }, ENUMERATION_TIMEOUT_MS);
 
-  it('keeps eye marks inside the eye zones, and lashes inside the lash reach circle and the head, clear of the gill stems and Head slot', () => {
+  it('keeps eye marks inside the eye zones, lashes inside the lash reach circle and the head, clear of the gill stems and Head slot, and a Grumpy brow (no eye mark) to its own bound in the face crop', () => {
     const zones = [
       [NEAR_EYE, NEAR_EYE_ZONE],
       [FAR_EYE, FAR_EYE_ZONE],
@@ -1532,7 +1938,8 @@ describe('every look (eyes, mouth, gills, spots, Boy or girl, Tail, Body, Age)',
           const glintsIn = marks.glints.every((g) => Math.hypot(g.x, g.y) + g.r <= marks.beadR + 1e-9);
           const lashes = look.sex === 'girl' ? eyelashMarks(look.eyes, spot.r) : [];
           const lashesIn = lashes.every((lash) => lashPaintHolds(lash, spot));
-          return marks.beadR <= zone.r && glintsIn && lashesIn;
+          const browIn = look.eyes !== 'grumpy' || isInside(grumpyBrowInkBounds(spot), AXO_PREVIEW_CROPS.face);
+          return marks.beadR <= zone.r && glintsIn && lashesIn && browIn;
         }),
     );
     expect(failingLooks(eyesHold)).toEqual([]);
@@ -1646,13 +2053,17 @@ describe('AXO_TEX and preview crops', () => {
     }
   });
 
-  it('crops the face round both eye zones, every mouth and the snout', () => {
+  it('crops the face round both eye zones, every mouth, the snout, the cheek heart and the Grumpy brows', () => {
     const face = AXO_PREVIEW_CROPS.face;
     for (const zone of [NEAR_EYE_ZONE, FAR_EYE_ZONE]) {
       expectInside({ minX: zone.x - zone.r, minY: zone.y - zone.r, maxX: zone.x + zone.r, maxY: zone.y + zone.r }, face);
     }
     for (const variant of MOUTH_VARIANTS) expectInside(mouthInkBounds(variant), face);
     expect(face.maxX).toBeGreaterThanOrEqual(HEAD_ELLIPSE.cx + HEAD_ELLIPSE.rx + 3.5);
+    const heart = CHEEK_HEART_ZONE;
+    expectInside(boundsOfPoints([[heart.x, heart.y]], heart.r), face);
+    for (const spot of [NEAR_EYE, FAR_EYE]) expectInside(grumpyBrowInkBounds(spot), face);
+    expect(face).toEqual({ minX: 12, minY: -20, maxX: 58, maxY: 24 });
   });
 
   it('crops the gills round every style and Age at every flutter phase', () => {

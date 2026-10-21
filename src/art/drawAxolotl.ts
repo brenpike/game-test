@@ -34,6 +34,7 @@ import {
   gillInkBounds,
   legAngle,
   legSlotFrames,
+  paintCheekHeart,
   paintEye,
   paintGills,
   paintMouth,
@@ -68,14 +69,14 @@ export const AXO_TEX: TexSize = { w: 166, h: 142, originX: 102, originY: 79 };
 
 /**
  * Picture-button crops in local units: `face` for Eyes and Mouth (both eye
- * zones, every mouth, the snout), `gills` for Gills (every gill style at every
- * flutter phase and Age), `spots` for Spots (every spot mark of every Boy or
- * girl, Tail, Body and Age at every swim phase at tail amplitude 1, with 4
- * units of padding, plus the back of the head to x 7), `whole` (the AXO_TEX
- * frame) for every other option.
+ * zones, every mouth, the snout, a Girl's cheek heart and the Grumpy brows),
+ * `gills` for Gills (every gill style at every flutter phase and Age), `spots`
+ * for Spots (every spot mark of every Boy or girl, Tail, Body and Age at every
+ * swim phase at tail amplitude 1, with 4 units of padding, plus the back of the
+ * head to x 7), `whole` (the AXO_TEX frame) for every other option.
  */
 export const AXO_PREVIEW_CROPS: Readonly<Record<'face' | 'gills' | 'spots' | 'whole', Bounds>> = {
-  face: { minX: 14, minY: -20, maxX: 58, maxY: 24 },
+  face: { minX: 12, minY: -20, maxX: 58, maxY: 24 },
   gills: { minX: -63, minY: -77, maxX: 25, maxY: 22 },
   spots: { minX: -85, minY: -22, maxX: 7, maxY: 20 },
   whole: {
@@ -748,7 +749,8 @@ export function paintBodyLayers(
 
 /**
  * Paint layers 9.5 to 11.5 of drawAxolotl, which sit over the near gills: the
- * Neck and Back items, blush, the Head item, the mouth, then the Face item.
+ * Neck and Back items, blush, a Girl's cheek heart, the Head item, the mouth,
+ * then the Face item.
  */
 export function paintFaceLayers(
   ctx: CanvasRenderingContext2D,
@@ -772,6 +774,9 @@ export function paintFaceLayers(
     ctx.fillStyle = BLUSH;
     ctx.fill(p);
   }
+
+  // 10.2 cheek heart: the Girl cue, off with the blush (the Collection Book silhouette)
+  if (look.sex === 'girl' && extras?.blush !== false) paintCheekHeart(ctx);
 
   // 10.5 Head item
   paintBodyWearable(ctx, 'head', outfit, look, swim, pose.tailAmp);
@@ -860,7 +865,7 @@ export function drawAxolotl(
   // 9. near gills (in front of the body, sprouting from the cheek)
   paintGills(ctx, 'near', look.gills, tfl, palette.gillNearStem, palette.gillNearFilament, geo.gillLength);
 
-  // 9.5 to 11.5: Neck and Back items, blush, Head item, mouth, Face item
+  // 9.5 to 11.5: Neck and Back items, blush, cheek heart, Head item, mouth, Face item
   paintFaceLayers(ctx, pose, palette, look, outfit);
 
   // 12. eyes

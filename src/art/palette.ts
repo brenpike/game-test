@@ -87,6 +87,8 @@ export const FIN_RAY = 'rgba(236,120,160,0.65)';
 export const BODY_SHINE = 'rgba(255,255,255,0.75)';
 export const FRECKLE = 'rgba(236,120,160,0.55)';
 export const BLUSH = 'rgba(255,100,148,0.5)';
+/** Girl cue cheek heart fill (guide 6u): opaque, so it reads stronger than the see-through blush on every body. */
+export const CHEEK_HEART = '#ff5c9a';
 
 // ---- Bubbles -------------------------------------------------------------
 export const BUBBLE_FILL = 'rgba(255,255,255,0.38)';
