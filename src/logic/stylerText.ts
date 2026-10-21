@@ -3,7 +3,7 @@
  * character creator (PRD F1) and the restyle screen (PRD F6), with its Outfit tab (PRD C10, F8, F10).
  */
 import type { Perk, WearableSlot } from './catalogue';
-import { FIXED_AFTER_CREATION, type StylerStep } from './stylerSteps';
+import { FIXED_AFTER_CREATION, RESTYLE_ONLY_STEPS, type StylerStep } from './stylerSteps';
 import { perkText, slotName } from './treasureChest';
 import type { StylerMode } from './stylerUi';
 
@@ -19,7 +19,10 @@ export const BACK_LABEL = 'Back';
 /** Button that goes to the next step (PRD F1). */
 export const NEXT_LABEL = 'Next';
 
-/** Button that picks every option at random, including a suggested name (PRD F1). */
+/**
+ * Button that picks something new for the step the player is on (PRD F1): on the creator's Colour
+ * step a whole new axolotl, else only that step's choice (see surpriseShown and surpriseHelper).
+ */
 export const SURPRISE_ME_LABEL = 'Surprise me';
 
 /** Button that leaves the restyle screen without keeping the changes (PRD F6). */
@@ -141,16 +144,62 @@ function isFixedStep(step: StylerStep): boolean {
 }
 
 /**
- * The helper line of `step` in `mode` (PRD F1, F6, F17). `ownedDreamCount` only matters on the Dream
- * colour step: with none owned it points the player to Paint shells. On the Outfit step it is the
- * slots view helper; outfitHelper gives the choices view helper.
+ * The sentence that tells what Surprise me picks on each step, or null where it says nothing. It goes
+ * after the step's helper line (see stepHelper).
  */
-export function stepHelper(mode: StylerMode, step: StylerStep, ownedDreamCount = 0): string {
+const SURPRISE_HELPERS: { readonly [Step in StylerStep]: string | null } = Object.freeze({
+  colour: 'Surprise me picks a whole new axolotl.',
+  dream: null,
+  outfit: null,
+  sex: 'Surprise me picks boy or girl.',
+  eyes: 'Surprise me picks new eyes.',
+  mouth: 'Surprise me picks a new mouth.',
+  gills: 'Surprise me picks new gills.',
+  spots: 'Surprise me picks new spots.',
+  tail: 'Surprise me picks a new tail.',
+  body: 'Surprise me picks a new body.',
+  age: 'Surprise me picks a new age.',
+  size: 'Surprise me picks a new size.',
+  name: 'Surprise me picks a new name.',
+});
+
+/**
+ * True when Surprise me shows on `step` in `mode` (PRD F1, F6): on every creator step, and on every
+ * restyle step except the read-only Colour and Boy or girl steps and the restyle-only Dream colour and
+ * Outfit steps.
+ */
+export function surpriseShown(mode: StylerMode, step: StylerStep): boolean {
+  if (RESTYLE_ONLY_STEPS.includes(step)) return false;
+  return mode === 'creator' || !isFixedStep(step);
+}
+
+/**
+ * The sentence that tells what Surprise me picks on `step` in `mode`, such as "Surprise me picks new
+ * eyes.", or null where Surprise me does not show (see surpriseShown).
+ */
+export function surpriseHelper(mode: StylerMode, step: StylerStep): string | null {
+  return surpriseShown(mode, step) ? SURPRISE_HELPERS[step] : null;
+}
+
+/** The helper line of `step` in `mode` without the Surprise me sentence. */
+function baseHelper(mode: StylerMode, step: StylerStep, ownedDreamCount: number): string {
   if (step === 'dream') return ownedDreamCount > 0 ? DREAM_HELPER : NO_DREAMS_HELPER;
   if (step === 'outfit') return OUTFIT_SLOTS_HELPER;
   if (step === 'name') return NAME_HELPER;
   if (mode === 'restyle') return isFixedStep(step) ? READ_ONLY_HELPER : RESTYLE_HELPER;
   return isFixedStep(step) ? CREATOR_FIXED_HELPER : CREATOR_HELPER;
+}
+
+/**
+ * The helper line of `step` in `mode` (PRD F1, F6, F17), then the surpriseHelper sentence when there
+ * is one. `ownedDreamCount` only matters on the Dream colour step: with none owned it points the
+ * player to Paint shells. On the Outfit step it is the slots view helper; outfitHelper gives the
+ * choices view helper.
+ */
+export function stepHelper(mode: StylerMode, step: StylerStep, ownedDreamCount = 0): string {
+  const helper = baseHelper(mode, step, ownedDreamCount);
+  const sentence = surpriseHelper(mode, step);
+  return sentence === null ? helper : `${helper} ${sentence}`;
 }
 
 /**

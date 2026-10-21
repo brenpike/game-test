@@ -43,7 +43,7 @@ import {
   stepLookField,
   type StylerStep,
 } from './stylerSteps';
-import { NONE_LABEL, REAL_COLOUR_LABEL, wornOnLabel } from './stylerText';
+import { NONE_LABEL, REAL_COLOUR_LABEL, surpriseShown, wornOnLabel } from './stylerText';
 import type { OutfitView } from './stylerUi';
 import { nextFocusIndex, tankKeyFor } from './tankUi';
 import { slotName } from './treasureChest';
@@ -194,7 +194,7 @@ export interface StylerResult {
   effect?: StylerEffect;
 }
 
-/** Most "Surprise me" rolls before stepping the name to force a change. */
+/** Most "Surprise me" rolls on the creator's Colour step before stepping the name to force a change. */
 export const SURPRISE_ROLLS = 8;
 
 /** The id of the Outfit choices view option "None", which leaves the slot empty. */
@@ -210,6 +210,11 @@ const LAST_STEP_INDEX = STYLER_STEPS.length - 1;
 
 function randomIndex(rand: () => number, count: number): number {
   return Math.min(count - 1, Math.max(0, Math.floor(rand() * count)));
+}
+
+/** A uniform random pick among `candidates`, or `current` when there is none. */
+function pickOr<Item>(candidates: readonly Item[], current: Item, rand: () => number): Item {
+  return candidates.length === 0 ? current : candidates[randomIndex(rand, candidates.length)];
 }
 
 function lookFieldOf(step: StylerStep): LookField {
@@ -494,16 +499,17 @@ function creatorButtons(state: StylerState): readonly StylerButton[] {
 /**
  * The Tab order of the current screen, in visual order, one stop per kind. Creator: options, Back
  * (not on step 1), Surprise me, then Next or Done on the last step. Restyle: the tabs, options,
- * Surprise me, Cancel, Done. On the Name step the options are the name box, the name buttons and
- * More names (when there is more than one page). On the Dream colour step they are the colour
- * buttons and More colours (when there is more than one page). On the Outfit step they are the
+ * Surprise me (only where surpriseShown), Cancel, Done. On the Name step the options are the name
+ * box, the name buttons and More names (when there is more than one page). On the Dream colour step
+ * they are the colour buttons and More colours (when there is more than one page). On the Outfit step they are the
  * picture buttons, More slots or More wearables (when there is more than one page) and, in the
  * choices view, Back to slots; once the choices view has hidden the tab row there are no tabs and
  * Back to slots comes first (art guide 8).
  */
 export function focusOrder(state: StylerState): readonly StylerFocusKind[] {
   if (state.mode === 'restyle') {
-    const controls: readonly StylerFocusKind[] = [...stepControls(state), 'surprise', 'cancel', 'done'];
+    const surpriseStop: readonly StylerFocusKind[] = surpriseShown(state.mode, state.step) ? ['surprise'] : [];
+    const controls: readonly StylerFocusKind[] = [...stepControls(state), ...surpriseStop, 'cancel', 'done'];
     return tabRowHidden(state) ? controls : ['tab', ...controls];
   }
   return [...stepControls(state), ...creatorButtons(state)];
@@ -513,7 +519,10 @@ function isStylerButton(kind: StylerFocusKind): kind is StylerButton {
   return kind !== 'option' && kind !== 'tab';
 }
 
-/** The buttons the current screen shows, in visual order. Restyle also shows the tabs (one per step). */
+/**
+ * The buttons the current screen shows, in visual order; restyle shows Surprise me only where
+ * surpriseShown. Restyle also shows the tabs (one per step).
+ */
 export function visibleButtons(state: StylerState): readonly StylerButton[] {
   return focusOrder(state).filter(isStylerButton);
 }
@@ -749,29 +758,65 @@ function sameAxolotl(first: StylerAxolotl, second: StylerAxolotl): boolean {
   return first.name === second.name && first.morph === second.morph && sameLook(first.look, second.look);
 }
 
-function rollSurprise(state: StylerState, rand: () => number): StylerAxolotl {
-  if (state.mode === 'restyle') {
-    const look: AxolotlLook = { ...surpriseLook(rand), sex: state.look.sex };
-    return { name: randomSuggestedName(rand, look.sex), look, morph: state.morph };
-  }
+function rollSurprise(rand: () => number): StylerAxolotl {
   const look = surpriseLook(rand);
   const name = randomSuggestedName(rand, look.sex);
   return { name, look, morph: MORPH_IDS[randomIndex(rand, MORPH_IDS.length)] };
 }
 
 /**
- * "Surprise me" from `rand` (floats in [0, 1)). Creator: a random look with sex, a suggested name
- * fitting that sex, and a random real morph. Restyle: a random look keeping the sex, and a suggested
- * name fitting it; never the morph. Never the Dream colour (PRD F6). Rolled up to SURPRISE_ROLLS
- * times until it is not exactly the current name, look and morph; if every roll matches, the last
- * roll's name steps to the next fitting suggested name. Never the outfit. Step, Outfit view and
- * focus stay.
+ * The creator's Colour step surprise: a random look with sex, a suggested name fitting that sex, and a
+ * random real morph, rolled up to SURPRISE_ROLLS times until it is not exactly the current name, look
+ * and morph; if every roll matches, the last roll's name steps to the next fitting suggested name.
  */
-export function surprise(state: StylerState, rand: () => number): StylerState {
-  let rolled = rollSurprise(state, rand);
-  for (let roll = 1; roll < SURPRISE_ROLLS && sameAxolotl(rolled, state); roll++) rolled = rollSurprise(state, rand);
+function surpriseAxolotl(state: StylerState, rand: () => number): StylerState {
+  let rolled = rollSurprise(rand);
+  for (let roll = 1; roll < SURPRISE_ROLLS && sameAxolotl(rolled, state); roll++) rolled = rollSurprise(rand);
   if (sameAxolotl(rolled, state)) rolled = { ...rolled, name: stepSuggestedName(rolled.name, 1, rolled.look.sex) };
   return syncNamePage({ ...state, name: rolled.name, look: rolled.look, morph: rolled.morph });
+}
+
+/** `look` with `field` set to a uniform random pick among that field's other options. */
+function withOtherLookOption<Field extends LookField>(look: AxolotlLook, field: Field, rand: () => number): AxolotlLook {
+  const options: readonly LookOption<AxolotlLook[Field]>[] = LOOK_FIELD_OPTIONS[field];
+  const current = look[field];
+  const others = options.filter((option) => option.id !== current).map((option) => option.id);
+  return { ...look, [field]: pickOr(others, current, rand) };
+}
+
+/**
+ * A look step surprise: another option of the step's look field. On Boy or girl, a name that does not
+ * fit the new sex becomes a random suggested name that does; a name that fits (typed names always do)
+ * stays.
+ */
+function surpriseLookField(state: StylerState, rand: () => number): StylerState {
+  const look = withOtherLookOption(state.look, lookFieldOf(state.step), rand);
+  if (look.sex === state.look.sex) return { ...state, look };
+  const name = nameFits(state.name, look.sex) ? state.name : pickOr(suggestedNamesFor(look.sex), state.name, rand);
+  return syncNamePage({ ...state, name, look });
+}
+
+/** The Name step surprise: a random suggested name fitting the sex that differs from the name, ignoring case. */
+function surpriseName(state: StylerState, rand: () => number): StylerState {
+  const currentKey = nameKey(state.name);
+  const others = fittingNames(state).filter((name) => nameKey(name) !== currentKey);
+  return syncNamePage({ ...state, name: pickOr(others, state.name, rand) });
+}
+
+/**
+ * "Surprise me" from `rand` (floats in [0, 1)) on the current step only. The creator's Colour step
+ * picks a whole new axolotl (see surpriseAxolotl). A look step, in either mode, picks another option
+ * of its look field; the creator's Boy or girl step switches the sex and replaces a name that does not
+ * fit it. The Name step picks another suggested name fitting the sex. Where surpriseShown is false
+ * (restyle Colour, Boy or girl, Dream colour and Outfit) the state comes back unchanged and `rand` is
+ * not used. Never the Dream colour or the outfit (PRD F6), and never the morph or sex in restyle.
+ * Step, Outfit view and focus stay.
+ */
+export function surprise(state: StylerState, rand: () => number): StylerState {
+  if (!surpriseShown(state.mode, state.step)) return state;
+  if (state.step === 'colour') return surpriseAxolotl(state, rand);
+  if (state.step === 'name') return surpriseName(state, rand);
+  return surpriseLookField(state, rand);
 }
 
 function doneEffect(state: StylerState): StylerEffect {
@@ -904,8 +949,9 @@ function reduceKey(state: StylerState, action: StylerKeyAction, rand: () => numb
 
 /**
  * Applies one styler action. `rand` yields floats in [0, 1), such as mulberry32, and is used only by
- * "Surprise me". Pointer presses focus the pressed control. Back and Next do nothing in restyle;
- * tabs, Cancel and Escape do nothing in the creator, and Done works only on its last step.
+ * "Surprise me", which does nothing (not even take the focus) where surpriseShown is false. Pointer
+ * presses focus the pressed control. Back and Next do nothing in restyle; tabs, Cancel and Escape do
+ * nothing in the creator, and Done works only on its last step.
  * In restyle no action changes the morph or the sex, the Dream colour is only ever one owned or none,
  * and the outfit only ever holds banked Wearables in their own slots; only Outfit choice picks change it.
  */
@@ -922,6 +968,7 @@ export function reduceStyler(state: StylerState, action: StylerAction, rand: () 
     case 'tab':
       return { state: state.mode === 'restyle' ? jumpToTab(state, action.step) : state };
     case 'surprise':
+      if (!surpriseShown(state.mode, state.step)) return { state };
       return { state: surprise({ ...state, focus: { kind: 'surprise' } }, rand) };
     case 'done':
       return pressDone(state);

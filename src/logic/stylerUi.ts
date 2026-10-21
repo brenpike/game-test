@@ -26,6 +26,7 @@ import {
   NEXT_LABEL,
   SURPRISE_ME_LABEL,
   stepTabLabel,
+  surpriseShown,
 } from './stylerText';
 import { BUTTON_LABEL_PAD, LABEL_BOLD_EM, TILE_BUTTON, UI, WIDE_BUTTON, tileButtonWidth } from './tankUi';
 import type { Vec2 } from './vec';
@@ -332,12 +333,16 @@ export interface StylerOutfitLayout {
   labelsBeside: boolean;
 }
 
-/** The step buttons. Creator: Back (null on step 1), Next or Done, Surprise me. Restyle: Done, Surprise me, Cancel. */
+/**
+ * The step buttons. Creator: Back (null on step 1), Next or Done, Surprise me. Restyle: Done, Surprise
+ * me (null where surpriseShown is false: Colour, Boy or girl, Dream colour and Outfit; its place is
+ * kept, so Cancel and Done never move), Cancel.
+ */
 export interface StylerNav {
   back: Rect | null;
   next: Rect | null;
   done: Rect | null;
-  surprise: Rect;
+  surprise: Rect | null;
   cancel: Rect | null;
 }
 
@@ -607,10 +612,10 @@ function sameLevel(first: FitLevel, second: FitLevel): boolean {
  * under the slot buttons while either fits. Throws an Error when the Outfit slots view has no
  * `outfitSummaryAt` measure. The Outfit choices view takes two more steps, each only when no picture
  * count down to 1 fits before it, and each starting the fit steps again from the first: it hides the
- * tab row (`tabs` null) and Back to slots joins the body above the pictures, with Surprise me, Cancel
- * and Done still step buttons; then it sets each label beside its picture (`labelsBeside`). With the
- * tab row hidden, fit step 6 leaves no heading and no bold tab, so Back to slots is what shows where
- * the player is.
+ * tab row (`tabs` null) and Back to slots joins the body above the pictures, with Cancel and Done
+ * still step buttons (and the hidden Surprise me's place kept); then it sets each label beside its
+ * picture (`labelsBeside`). With the tab row hidden, fit step 6 leaves no heading and no bold tab,
+ * so Back to slots is what shows where the player is.
  */
 export function stylerLayout(view: HudView, screen: StylerScreen, measure: StylerMeasure): StylerLayout {
   checkScreen(screen);
@@ -842,7 +847,8 @@ function hasLeadButton(screen: StylerScreen, frame: StylerFrame): boolean {
 }
 
 /**
- * The step button sizes in visual order. Creator Back keeps its place on step 1 so nothing moves; the
+ * The step button sizes in visual order. Creator Back keeps its place on step 1 so nothing moves, and
+ * restyle Surprise me keeps its place where it is hidden (see namedNav) for the same reason; the
  * Outfit choices view puts Back to slots first, unless `frame` hides the tab row (Back to slots then
  * joins the body).
  */
@@ -857,7 +863,10 @@ function navButtonSizes(screen: StylerScreen, frame: StylerFrame): Size[] {
     : [...lead, SURPRISE_BUTTON, CANCEL_BUTTON, DONE_BUTTON];
 }
 
-/** The placed step buttons by name, from rects in navButtonSizes order (a `hasLead` Back to slots, first, is not among them). */
+/**
+ * The placed step buttons by name, from rects in navButtonSizes order (a `hasLead` Back to slots, first,
+ * is not among them). Restyle Surprise me is null where surpriseShown is false; its rect stays unused.
+ */
 function namedNav(screen: StylerScreen, rects: Rect[], stripCancel: Rect | null, hasLead: boolean): StylerNav {
   if (screen.mode === 'creator') {
     const index = STYLER_STEPS.indexOf(screen.step);
@@ -875,7 +884,7 @@ function namedNav(screen: StylerScreen, rects: Rect[], stripCancel: Rect | null,
     back: null,
     next: null,
     done: rects[rects.length - 1],
-    surprise: rects[lead],
+    surprise: surpriseShown(screen.mode, screen.step) ? rects[lead] : null,
     cancel: stripCancel ?? rects[lead + 1],
   };
 }
