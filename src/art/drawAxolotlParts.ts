@@ -1418,7 +1418,12 @@ export const NEAR_EYE_ZONE: ZoneCircle = { x: NEAR_EYE.x, y: NEAR_EYE.y, r: NEAR
 export const FAR_EYE_ZONE: ZoneCircle = { x: FAR_EYE.x, y: FAR_EYE.y, r: FAR_EYE.r + EYE_ZONE_MARGIN };
 /** Holds all six gill roots plus the stem ink. */
 export const GILL_ROOT_ZONE: Bounds = { minX: -5, minY: -22, maxX: 12, maxY: 13 };
-/** Ink of the first four mouths plus 1 unit; every mouth variant stays inside it. */
+/**
+ * Ink of the first four mouths plus 1 unit; every mouth variant stays inside it.
+ * It boxes the mouth for the rig face part and the crops. It is not a keep-clear
+ * zone for Wearables (#88): the mouth paints at 11, over the Neck (9.5) and Head
+ * (10.5) items, so a Neck item under it never hides it.
+ */
 export const MOUTH_ZONE: Bounds = { minX: 24.4, minY: 2.6, maxX: 52.4, maxY: 21.3 };
 /** A Girl's lash reach circle about an eye: the prototype bead radius plus LASH_REACH. */
 export function lashReachCircle(spot: EyeSpot): ZoneCircle {
@@ -1460,12 +1465,14 @@ export const HEAD_FOOTPRINT: Bounds = { minX: 16, minY: -44, maxX: 46, maxY: -19
 /** Neck item anchor: the throat. */
 export const NECK_SLOT_ANCHOR: LocalPoint = { x: 17, y: 16 };
 /**
- * Neck footprint (#88): wholly below CHEEK_HEART_ZONE (lowest y 14.92), left of
- * MOUTH_ZONE and below GILL_ROOT_ZONE, and LW / 2 or more inside the outer edge
- * of the silhouette's outline on every look, so the outline's outer half always
- * shows; nothing hangs below it, so the front legs stay visible.
+ * Neck footprint (#88): a collar box under the chin, below GILL_ROOT_ZONE (y 13)
+ * and over the mouth-zone box, its bottom LW / 2 under the head's lowest point
+ * (y 22.75). The Neck item's paint, not this box, keeps clear of CHEEK_HEART_ZONE
+ * and GILL_ROOT_ZONE and stays LW / 2 or more inside the outer edge of the
+ * silhouette's outline on every look, so the outline's outer half always shows
+ * and nothing hangs below it: the front legs stay visible.
  */
-export const NECK_FOOTPRINT: Bounds = { minX: 14, minY: 15, maxX: 24.2, maxY: 20.5 };
+export const NECK_FOOTPRINT: Bounds = { minX: 2, minY: 13.1, maxX: 42, maxY: 22.75 };
 
 /** Face item anchor: between the eyes. */
 export const FACE_SLOT_ANCHOR: LocalPoint = { x: 35, y: -6.5 };

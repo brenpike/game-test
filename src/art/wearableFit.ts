@@ -49,14 +49,42 @@ export interface TailSlotMinimum {
   readonly minAlong: number;
 }
 
+/** Head minimum: the item's ink across the head and how far it rises above it. */
+export interface HeadSlotMinimum {
+  /** Ink width along x is at least this share of the head width (2 rx of HEAD_ELLIPSE, 54). */
+  readonly headWidthShare: number;
+  /** Ink rises at least this many units above the outer edge of the head outline (LW outside the head ellipse). */
+  readonly rise: number;
+}
+
+/** Neck minimum: the item's ink along the throat. */
+export interface NeckSlotMinimum {
+  /** Ink width along x is at least this many units. */
+  readonly minWidth: number;
+}
+
+/** Face minimum: the item's ink across the eyes and round them. */
+export interface FaceSlotMinimum {
+  /** Ink spans at least this share of the eye span: the near eye zone's left edge to the far eye zone's right edge. */
+  readonly eyeSpanShare: number;
+  /** Share of each eye zone the item's outer outline encloses. */
+  readonly eyeZoneShare: number;
+}
+
 /** Per-slot minimum sizes: every look meets each value or more. */
 export interface WearableSlotMinimums {
+  readonly head: HeadSlotMinimum;
+  readonly neck: NeckSlotMinimum;
+  readonly face: FaceSlotMinimum;
   readonly shirt: ShirtSlotMinimum;
   readonly back: BackSlotMinimum;
   readonly tail: TailSlotMinimum;
 }
 
 export const WEARABLE_SLOT_MINIMUMS: WearableSlotMinimums = {
+  head: { headWidthShare: 0.5, rise: 8 },
+  neck: { minWidth: 27 },
+  face: { eyeSpanShare: 1, eyeZoneShare: 1 },
   shirt: { torsoSideShare: 0.75 },
   back: { minLength: 22, torsoLengthShare: 0.5, proud: 8, outsideShare: 0.4 },
   tail: { tailHeightShare: 0.4, minAlong: 16 },

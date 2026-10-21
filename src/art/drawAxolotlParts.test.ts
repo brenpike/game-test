@@ -2237,38 +2237,25 @@ describe('Head, Neck and Face slots (guide 6i): on the head, they never move', (
     expect(HEAD_FOOTPRINT.minX).toBeGreaterThan(15.5);
   });
 
-  it('keeps the Neck footprint at the throat (#88), x 14 to 24.2, y 15 to 20.5, clear of the eyes, gills, mouth zone and cheek heart', () => {
-    expect(NECK_FOOTPRINT).toEqual({ minX: 14, minY: 15, maxX: 24.2, maxY: 20.5 });
+  it('keeps the Neck footprint under the chin (#88), x 2 to 42, y 13.1 to 22.75: clear of the eyes, lashes and gill roots, over the mouth-zone box', () => {
+    expect(NECK_FOOTPRINT).toEqual({ minX: 2, minY: 13.1, maxX: 42, maxY: 22.75 });
     expect(clearOfEyesAndGills(NECK_FOOTPRINT)).toBe(true);
     expect(clearOfLashReach(NECK_FOOTPRINT)).toBe(true);
-    expect(boxesOverlap(NECK_FOOTPRINT, MOUTH_ZONE_BOX)).toBe(false);
-    expect(MOUTH_ZONE_BOX.minX - NECK_FOOTPRINT.maxX).toBeCloseTo(0.2, 9);
-    // Wholly below the cheek heart zone, and below the gill-root zone, so the Neck item may reach left of x 12.
-    expect(NECK_FOOTPRINT.minY - (CHEEK_HEART_ZONE.y + CHEEK_HEART_ZONE.r)).toBeCloseTo(0.08, 2);
+    // Below the gill-root zone, so the Neck item may reach behind x 12.
     expect(NECK_FOOTPRINT.minY).toBeGreaterThan(GILL_ROOT_ZONE.maxY);
+    // The mouth zone is not keep-clear for a Wearable (#88): the mouth paints over the Neck item.
+    expect(boxesOverlap(NECK_FOOTPRINT, MOUTH_ZONE_BOX)).toBe(true);
+    expect(WEARABLE_LAYERS.neck).toBeLessThan(11);
+    // The Neck item's paint keeps off the cheek heart zone (wearableArt.test.ts); the box only holds it.
+    expect(boxCircleGap(NECK_FOOTPRINT, CHEEK_HEART_ZONE)).toBeLessThan(0);
   });
 
-  it('keeps the Neck footprint LW / 2 or more inside the outer edge of the silhouette outline (head or torso) on every look', () => {
-    const edge: LocalPoint[] = [];
-    const b = NECK_FOOTPRINT;
-    for (let k = 0; k <= 100; k++) {
-      const t = k / 100;
-      const x = b.minX + (b.maxX - b.minX) * t;
-      const y = b.minY + (b.maxY - b.minY) * t;
-      edge.push({ x, y: b.minY }, { x, y: b.maxY }, { x: b.minX, y }, { x: b.maxX, y });
-    }
-    // The outline ink is LW outside each ellipse, so LW / 2 inside its outer edge is LW / 2 outside the ellipse.
-    const holds = (p: LocalPoint, e: BodyEllipse): boolean => isInEllipse(p, e) || distToEllipseEdge(p.x, p.y, e) <= LW / 2;
-    expect(
-      failingBodyLooks((look) => {
-        const torso = axolotlBodyGeometry(look).torso;
-        return edge.every((p) => holds(p, HEAD_ELLIPSE) || holds(p, torso));
-      }),
-    ).toEqual([]);
-    // The tightest point is the bottom back corner, on the head outline: 1.67 outside the head ellipse.
-    expect(distToEllipseEdge(b.minX, b.maxY, HEAD_ELLIPSE)).toBeCloseTo(1.67, 2);
-    // Nothing hangs below the silhouette: the Neck bottom is no lower than the head's lowest outline at its anchor.
-    expect(NECK_FOOTPRINT.maxY).toBeLessThanOrEqual(HEAD_ELLIPSE.cy + HEAD_ELLIPSE.ry + LW);
+  it('keeps the Neck footprint no lower than LW / 2 under the head\'s lowest point, so nothing hangs below the silhouette', () => {
+    // The outline ink is LW outside the head ellipse, so LW / 2 inside its outer edge is LW / 2 below the head's lowest point.
+    expect(NECK_FOOTPRINT.maxY).toBeCloseTo(HEAD_ELLIPSE.cy + HEAD_ELLIPSE.ry + LW / 2, 9);
+    // The Neck item's paint is held inside the silhouette on every look in wearableArt.test.ts.
+    expect(NECK_FOOTPRINT.minX).toBeGreaterThan(HEAD_ELLIPSE.cx - HEAD_ELLIPSE.rx);
+    expect(NECK_FOOTPRINT.maxX).toBeLessThan(HEAD_ELLIPSE.cx + HEAD_ELLIPSE.rx);
   });
 
   it('draws the glasses as one merged frame whose band keeps off both eye zones', () => {

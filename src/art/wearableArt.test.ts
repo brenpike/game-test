@@ -20,6 +20,7 @@ import {
   DEFAULT_ART_LOOK,
   EYELASH_INK,
   EYELASH_UNDER,
+  EYE_VARIANTS,
   FAR_EYE_ZONE,
   FAR_LASH_REACH,
   GILL_ROOT_ZONE,
@@ -27,6 +28,7 @@ import {
   HEAD_FOOTPRINT,
   HEAD_ELLIPSE,
   MOUTH_INK,
+  MOUTH_VARIANTS,
   MOUTH_ZONE,
   NECK_FOOTPRINT,
   NEAR_EYE_ZONE,
@@ -96,6 +98,7 @@ import {
   HAT_FILL,
   NECKLACE_CORD,
   NECKLACE_SHELL,
+  PAINT_SHELL_RIDGE,
   SOCK_FILL,
   SOCK_STRIPE_ALPHA,
   TANK_TOP_FILL,
@@ -1173,16 +1176,16 @@ describe('keep-clear zones (guide 6i, PRD F13)', { timeout: ENUMERATION_TIMEOUT_
 
   /**
    * Why `paint` is not clear, or null. `lens` paints are the clear lens tint: the one allowed exception
-   * to the eye zones. The cheek heart zone (#87, #88) is checked unless `heart` is false.
+   * to the eye zones. The cheek heart zone (#87, #88) is checked unless `heart` is false. The mouth zone
+   * is not a keep-clear zone (#88): the mouth paints at 11, over the Neck and Head items.
    */
-  function trouble(paint: Paint, opts: { lashes: boolean; gills: boolean; mouth: boolean; heart?: boolean }): string | null {
+  function trouble(paint: Paint, opts: { lashes: boolean; gills: boolean; heart?: boolean }): string | null {
     const region = regionOf(paint);
     if (opts.heart !== false && reachesCircle(region, CHEEK_HEART_ZONE)) return 'cheek heart zone';
     if (paint.kind === 'fill' && paint.style === GLASSES_LENS) return null;
     if (eyeZones.some((z) => reachesCircle(region, z))) return 'eye zone';
     if (opts.lashes && lashZones.some((z) => reachesCircle(region, z))) return 'lash reach';
     if (opts.gills && reachesBox(region, GILL_ROOT_ZONE)) return 'gill-root zone';
-    if (opts.mouth && reachesBox(region, MOUTH_ZONE)) return 'mouth zone';
     return null;
   }
 
@@ -1191,27 +1194,27 @@ describe('keep-clear zones (guide 6i, PRD F13)', { timeout: ENUMERATION_TIMEOUT_
     return EVERY_BODY_LOOK.flatMap((look) => check(look).map((why) => `${lookId(look)}: ${why}`));
   }
 
-  it('keeps the Head, Neck and Face items off the eyes, the gill roots, the mouth zone and the cheek heart zone', () => {
+  it('keeps the Head, Neck and Face items off the eyes, the gill roots and the cheek heart zone', () => {
     for (const slot of ['head', 'neck', 'face'] as const) {
       const paints = bodyPaints(slot, DEFAULT_ART_LOOK);
       expect(paints.length).toBeGreaterThan(0);
       // They are on the head, so every look paints them alike.
       for (const look of EVERY_BODY_LOOK) expect(bodyPaints(slot, look).map(signature)).toEqual(paints.map(signature));
       for (const paint of paints) {
-        // The glasses band reaches into the lash reach circles and the mouth zone box on purpose: the eyes
-        // paint above it, and its gap to the mouth ink is measured in drawAxolotlParts.test.ts.
-        const found = trouble(paint, { lashes: slot !== 'face', gills: true, mouth: slot !== 'face' });
+        // The glasses band reaches into the lash reach circles on purpose: the eyes paint above it. Its gap
+        // to the mouth ink is a design gap, measured in drawAxolotlParts.test.ts.
+        const found = trouble(paint, { lashes: slot !== 'face', gills: true });
         expect(found, `${slot} ${paint.kind} ${paint.style}`).toBeNull();
       }
     }
   });
 
-  it('keeps the Shirt, Back and Tail items off the eyes, lashes, gill roots, mouth zone and cheek heart zone on every look', () => {
+  it('keeps the Shirt, Back and Tail items off the eyes, lashes, gill roots and cheek heart zone on every look', () => {
     expect(
       failures((look) =>
         BODY_SLOTS.filter((slot) => slot === 'shirt' || slot === 'back').flatMap((slot) =>
           bodyPaints(slot, look).flatMap((p) => {
-            const why = trouble(p, { lashes: true, gills: true, mouth: true });
+            const why = trouble(p, { lashes: true, gills: true });
             return why ? [`${slot} ${why}`] : [];
           }),
         ),
@@ -1222,7 +1225,7 @@ describe('keep-clear zones (guide 6i, PRD F13)', { timeout: ENUMERATION_TIMEOUT_
         SWIMS.flatMap((swim) =>
           AMPS.flatMap((amp) =>
             bodyPaints('tail', look, swim, amp).flatMap((p) => {
-              const why = trouble(p, { lashes: true, gills: true, mouth: true });
+              const why = trouble(p, { lashes: true, gills: true });
               return why ? [`tail swim ${swim.toFixed(2)} amp ${amp} ${why}`] : [];
             }),
           ),
@@ -1239,8 +1242,8 @@ describe('keep-clear zones (guide 6i, PRD F13)', { timeout: ENUMERATION_TIMEOUT_
             legPaints({ socks: 'stripy-socks', feet: 'flippers' }, frame).flatMap((p) => {
               // The sleeve starts inside the torso, where the gill roots are; it is behind the silhouette (layer
               // 2.5 or 3.5, under 4), so only its eye and lash clearance is geometric. The pad and Shoe are clear of
-              // the gill-root zone too. The mouth zone and the cheek heart are the head's, which paints over every leg.
-              const why = trouble(p, { lashes: true, gills: !isSleevePaint(p), mouth: false, heart: false });
+              // the gill-root zone too. The cheek heart is the head's, which paints over every leg.
+              const why = trouble(p, { lashes: true, gills: !isSleevePaint(p), heart: false });
               return why ? [`leg ${frame.index} swim ${swim.toFixed(2)} ${why}`] : [];
             }),
           ),
@@ -1263,14 +1266,14 @@ describe('keep-clear zones (guide 6i, PRD F13)', { timeout: ENUMERATION_TIMEOUT_
         const inserted = insertedPaints(base, worn)!;
         expect(inserted.length).toBeGreaterThan(0);
         for (const { index, paint } of inserted) {
-          const why = trouble(paint, { lashes: false, gills: index > silhouette, mouth: false, heart: index > silhouette });
+          const why = trouble(paint, { lashes: false, gills: index > silhouette, heart: index > silhouette });
           expect(why, `${lookId(look)} paint ${index} ${paint.kind} ${paint.style}`).toBeNull();
         }
       }
     }
   });
 
-  it('measures each head item clear of the cheek heart zone: Sun hat 24.54, Shell necklace 0.51, Heart glasses band 1.40', () => {
+  it('measures each head item clear of the cheek heart zone: Sun hat 24.54, Shell necklace 0.39, Heart glasses band 1.40', () => {
     const gap = (paints: readonly Paint[]): number =>
       Math.min(
         ...paints.map((p) => {
@@ -1281,7 +1284,7 @@ describe('keep-clear zones (guide 6i, PRD F13)', { timeout: ENUMERATION_TIMEOUT_
         }),
       );
     expect(gap(bodyPaints('head', GIRL))).toBeCloseTo(24.54, 2);
-    expect(gap(bodyPaints('neck', GIRL))).toBeCloseTo(0.51, 2);
+    expect(gap(bodyPaints('neck', GIRL))).toBeCloseTo(0.39, 2);
     const glasses = bodyPaints('face', GIRL);
     expect(gap(glasses.filter((p) => p.kind === 'stroke' && p.lineWidth === 3.5))).toBeCloseTo(1.4, 2);
     for (const slot of ['head', 'neck', 'face'] as const) expect(gap(bodyPaints(slot, GIRL))).toBeGreaterThan(0);
@@ -1323,14 +1326,53 @@ describe('footprints (guide 6i), ink included, and the frame (guide 11)', { time
     expect(headTop - front.y).toBeGreaterThan(4);
   });
 
-  it('keeps the Shell necklace at the throat (#88): ink x 14 to 24.2, y 15 to 20.4, inside x 14 to 24.2, y 15 to 20.5', () => {
-    expect(NECK_FOOTPRINT).toEqual({ minX: 14, minY: 15, maxX: 24.2, maxY: 20.5 });
+  it('keeps the Shell necklace under the chin (#88): ink x 2 to 41.9, y 13.1 to 22.65, inside x 2 to 42, y 13.1 to 22.75', () => {
+    expect(NECK_FOOTPRINT).toEqual({ minX: 2, minY: 13.1, maxX: 42, maxY: 22.75 });
     const box = inkBounds(bodyPaints('neck', DEFAULT_ART_LOOK));
     expect(isInside(box, NECK_FOOTPRINT)).toBe(true);
-    expect(box.minX).toBeCloseTo(14, 6);
-    expect(box.maxX).toBeCloseTo(24.2, 6);
-    expect(box.minY).toBeCloseTo(15, 6);
-    expect(box.maxY).toBeCloseTo(20.4, 3);
+    expect(box.minX).toBeCloseTo(2, 6);
+    expect(box.maxX).toBeCloseTo(41.9, 6);
+    expect(box.minY).toBeCloseTo(13.1, 6);
+    expect(box.maxY).toBeCloseTo(22.65, 2);
+  });
+
+  it('keeps the Shell necklace paint off the gill-root zone (0.15) and the cheek heart zone, and over the mouth-zone box, under the mouth', () => {
+    const paints = bodyPaints('neck', DEFAULT_ART_LOOK);
+    const gillGap = Math.min(
+      ...inkPoints(paints).map(({ p, hw }) => {
+        const dx = Math.max(GILL_ROOT_ZONE.minX - p.x, 0, p.x - GILL_ROOT_ZONE.maxX);
+        const dy = Math.max(GILL_ROOT_ZONE.minY - p.y, 0, p.y - GILL_ROOT_ZONE.maxY);
+        return Math.hypot(dx, dy) - hw;
+      }),
+    );
+    expect(gillGap).toBeCloseTo(0.15, 6);
+    for (const paint of paints) {
+      expect(reachesBox(regionOf(paint), GILL_ROOT_ZONE), `${paint.kind} ${paint.style}`).toBe(false);
+      expect(reachesCircle(regionOf(paint), CHEEK_HEART_ZONE), `${paint.kind} ${paint.style}`).toBe(false);
+    }
+    // The mouth zone is no keep-clear zone: the necklace runs under the mouth, which paints over it at 11.
+    expect(paints.some((p) => reachesBox(regionOf(p), MOUTH_ZONE))).toBe(true);
+    expect(WEARABLE_LAYERS.neck).toBeLessThan(11);
+  });
+
+  it('keeps the Shell necklace paint 0.1 or more inside LW / 2 in from the outer edge of the silhouette outline on every look, so nothing hangs below it', () => {
+    // The outline ink is LW outside the head and torso ellipses; LW / 2 in from its outer edge is LW / 2 outside them.
+    const paints = bodyPaints('neck', DEFAULT_ART_LOOK);
+    const points = inkPoints(paints);
+    const margins = EVERY_BODY_LOOK.map((look) => {
+      const torso = axolotlBodyGeometry(look).torso;
+      const margin = Math.min(
+        ...points.map(({ p, hw }) =>
+          Math.max(
+            ...[HEAD_ELLIPSE, torso].map((e) => LW / 2 - hw - (inEllipse(e, p.x, p.y) ? -1 : 1) * ellipseGap(e, p.x, p.y)),
+          ),
+        ),
+      );
+      return { id: lookId(look), value: margin };
+    });
+    const least = leastOver(margins);
+    expect(least.value, least.id).toBeGreaterThanOrEqual(0);
+    expect(least.value).toBeCloseTo(0.1, 2);
   });
 
   it('paints the Heart glasses band 3.5 wide: colour 2.1 with 0.7 of ink each side, no more than 1.0 (#88)', () => {
@@ -1601,9 +1643,20 @@ describe('item ink (#88): every worn silhouette uses the 2.0 item ink', () => {
     expect(inkWidths(legPaints({ feet: 'flippers' }, nearLeg))).toEqual([1.2, 2]);
   });
 
-  it('keeps the band and detail inks: the glasses band 3.5 (0.7 each side) and gem 1.2, the cord 3.4 (0.6 each side) and shells 1.2', () => {
+  it('keeps the band and detail inks: the glasses band 3.5 (0.7 each side) and gem 1.2, the cord 5.8 or 5.2 (0.6 each side) and shells 0.6 outside', () => {
     expect(inkWidths(bodyPaints('face', GIRL))).toEqual([1.2, 3.5]);
-    expect(inkWidths(bodyPaints('neck', GIRL))).toEqual([1.2, 3.4]);
+    // The shells' 1.2 ink is stroked before every fill, so 0.6 of it shows outside each shell.
+    expect(inkWidths(bodyPaints('neck', GIRL))).toEqual([1.2, 5.2, 5.8]);
+    // The cord: colour 4.0 behind the chin and 4.6 under it, each with 0.6 of ink a side.
+    const necklace = bodyPaints('neck', GIRL);
+    const widths = (style: string): number[] =>
+      necklace.filter((p) => p.kind === 'stroke' && p.style === style && p.lineWidth > 2).map((p) => p.lineWidth);
+    expect(widths(NECKLACE_CORD)).toEqual([4, 4.6]);
+    expect(widths(INK)).toEqual([5.2, 5.8]);
+    // One silhouette: every ink stroke comes before the cord colour and the shells, so ink shows only round the outside.
+    const firstColour = necklace.findIndex((p) => p.style !== INK);
+    expect(firstColour).toBeGreaterThan(0);
+    expect(necklace.slice(firstColour).some((p) => p.style === INK)).toBe(false);
   });
 });
 
@@ -1622,16 +1675,6 @@ describe('item ink (#88): every worn silhouette uses the 2.0 item ink', () => {
 
 /** Sample grid step in local units; each sample stands for one step x step cell, on a grid fixed to the origin. */
 const SWIM_VIEW_GRID = 0.25;
-/**
- * Items that cannot reach WEARABLE_SWIM_VIEW_MIN_CSS_PX2 yet, each with its own floor: its least visible
- * fill rounded down to a whole CSS px² (#88).
- */
-const SWIM_VIEW_EXCEPTIONS: Readonly<Partial<Record<WearableArtSlug, number>>> = {
-  // NECK_FOOTPRINT is only 10.2 x 5.5: wholly below the cheek heart zone, LW / 2 inside the silhouette
-  // outline on the slimmest Baby, left of the mouth zone and below the gill-root zone.
-  'shell-necklace': 7,
-};
-const swimViewFloor = (slug: WearableArtSlug): number => SWIM_VIEW_EXCEPTIONS[slug] ?? WEARABLE_SWIM_VIEW_MIN_CSS_PX2;
 
 const toCssPx2 = (units2: number): number => units2 * SWIM_VIEW_CSS_PX_PER_UNIT ** 2;
 
@@ -1746,6 +1789,27 @@ const SWIM_VIEW_STILL_CASES: readonly SwimViewCase[] = EVERY_BODY_LOOK.map((look
   look: { ...look, gills: 'long' },
 }));
 
+/**
+ * For the items on the head (Head, Neck, Face), which the face paints over: Boy and Girl with every eye
+ * and every mouth on the default body (80), then the 54 body looks with Grumpy eyes (brows) and the
+ * mouths in turn. A Girl's lashes and cheek heart, the blush and the mouth all paint as in the game.
+ */
+const SWIM_VIEW_FACE_CASES: readonly SwimViewCase[] = [
+  ...AXO_SEXES.flatMap((sex) =>
+    EYE_VARIANTS.flatMap((eyes) =>
+      MOUTH_VARIANTS.map((mouth) => ({
+        id: `${sex} ${eyes} ${mouth}`,
+        pose: AXO_REST_POSE,
+        look: { ...DEFAULT_ART_LOOK, sex, eyes, mouth, gills: 'long' as const },
+      })),
+    ),
+  ),
+  ...SWIM_VIEW_STILL_CASES.map((c, i) => {
+    const mouth = MOUTH_VARIANTS[i % MOUTH_VARIANTS.length];
+    return { id: `${c.id} grumpy ${mouth}`, pose: c.pose, look: { ...c.look, eyes: 'grumpy' as const, mouth } };
+  }),
+];
+
 /** The same looks over a swim cycle at tail amplitudes 1 and 1.6, for an item that rides the tail. */
 const SWIM_VIEW_SWIM_CASES: readonly SwimViewCase[] = SWIM_VIEW_STILL_CASES.flatMap((c) =>
   SWIMS.flatMap((swim) =>
@@ -1801,54 +1865,43 @@ describe('swim view (#88): each worn item shows enough of its own fill', { timeo
     expect(least.units2, least.worst).toBeCloseTo(units2, 6);
     expect(least.cssPx2).toBeCloseTo(toCssPx2(units2), 9);
     expect(least.worst).toBe(worst);
-    expect(least.cssPx2).toBeGreaterThanOrEqual(swimViewFloor(slug));
+    expect(least.cssPx2).toBeGreaterThanOrEqual(WEARABLE_SWIM_VIEW_MIN_CSS_PX2);
     return least;
   }
 
-  it('shows the Sun hat at 263.6 units², 123.3 CSS px², or more on every look, over the 64 CSS px² floor', () => {
-    const least = expectSwimView('sun-hat', SWIM_VIEW_STILL_CASES, 263.5625, 'medium boy short slim baby');
+  it('shows the Sun hat at 263.6 units², 123.3 CSS px², or more with every sex, eye, mouth and body look, over the 64 CSS px² floor', () => {
+    const least = expectSwimView('sun-hat', SWIM_VIEW_FACE_CASES, 263.5625, 'boy happy smile');
     expect(least.cssPx2).toBeCloseTo(123.31, 2);
-    expect(swimViewFloor('sun-hat')).toBe(WEARABLE_SWIM_VIEW_MIN_CSS_PX2);
   });
 
-  it('shows the Heart glasses at 152.7 units², 71.4 CSS px², or more on every look (a Girl, whose lashes cover the band), over the floor', () => {
-    const least = expectSwimView('heart-glasses', SWIM_VIEW_STILL_CASES, 152.6875, 'medium girl short slim baby');
+  it('shows the Heart glasses at 152.7 units², 71.4 CSS px², or more with every sex, eye, mouth and body look (a Girl, whose lashes cover the band), over the floor', () => {
+    const least = expectSwimView('heart-glasses', SWIM_VIEW_FACE_CASES, 152.6875, 'girl happy smile');
     expect(least.cssPx2).toBeCloseTo(71.44, 2);
-    expect(swimViewFloor('heart-glasses')).toBe(WEARABLE_SWIM_VIEW_MIN_CSS_PX2);
   });
 
-  it('shows the Shell necklace at 16.3 units², 7.6 CSS px², or more: the named exception, floor 7 CSS px²', () => {
-    const least = expectSwimView('shell-necklace', SWIM_VIEW_STILL_CASES, 16.3125, 'medium boy short slim baby');
-    expect(least.cssPx2).toBeCloseTo(7.63, 2);
-    expect(swimViewFloor('shell-necklace')).toBe(Math.floor(least.cssPx2));
-    expect(least.cssPx2).toBeLessThan(WEARABLE_SWIM_VIEW_MIN_CSS_PX2);
+  it('shows the Shell necklace at 165.3 units², 77.3 CSS px², or more with every sex, eye, mouth and body look (the Tongue out covers its front), over the floor', () => {
+    const least = expectSwimView('shell-necklace', SWIM_VIEW_FACE_CASES, 165.3125, 'boy happy tongueOut');
+    expect(least.cssPx2).toBeCloseTo(77.34, 2);
   });
 
-  it('shows the Tank top at 163.9 units², 76.7 CSS px², or more on every look, over the floor with no exception', () => {
+  it('shows the Tank top at 163.9 units², 76.7 CSS px², or more on every look, over the floor', () => {
     const least = expectSwimView('tank-top', SWIM_VIEW_STILL_CASES, 163.875, 'medium boy short slim baby');
     expect(least.cssPx2).toBeCloseTo(76.67, 2);
-    expect(swimViewFloor('tank-top')).toBe(WEARABLE_SWIM_VIEW_MIN_CSS_PX2);
   });
 
-  it('shows the Diving tank at 166.3 units², 77.8 CSS px², or more on every look, over the floor with no exception', () => {
+  it('shows the Diving tank at 166.3 units², 77.8 CSS px², or more on every look, over the floor', () => {
     const least = expectSwimView('diving-tank', SWIM_VIEW_STILL_CASES, 166.3125, 'medium boy short slim young');
     expect(least.cssPx2).toBeCloseTo(77.81, 2);
-    expect(swimViewFloor('diving-tank')).toBe(WEARABLE_SWIM_VIEW_MIN_CSS_PX2);
   });
 
-  it('shows the Golden bow at 164.0 units², 76.7 CSS px², or more over a swim cycle at tail amplitude 1, over the floor with no exception', () => {
+  it('shows the Golden bow at 164.0 units², 76.7 CSS px², or more over a swim cycle at tail amplitude 1, over the floor', () => {
     const least = expectSwimView('golden-bow', SWIM_VIEW_SWIM_CASES.filter((c) => c.pose.tailAmp === 1), 164, 'medium boy medium chubby young swim 5.24 amp 1');
     expect(least.cssPx2).toBeCloseTo(76.73, 2);
-    expect(swimViewFloor('golden-bow')).toBe(WEARABLE_SWIM_VIEW_MIN_CSS_PX2);
   });
 
   it('shows the Golden bow at 163.9 units², 76.7 CSS px², or more over a swim cycle at tail amplitude 1.6', () => {
     const least = expectSwimView('golden-bow', SWIM_VIEW_SWIM_CASES.filter((c) => c.pose.tailAmp === 1.6), 163.9375, 'medium girl long slim young swim 1.05 amp 1.6');
     expect(least.cssPx2).toBeCloseTo(76.7, 2);
-  });
-
-  it('names no exception but the Shell necklace', () => {
-    expect(Object.keys(SWIM_VIEW_EXCEPTIONS)).toEqual(['shell-necklace']);
   });
 });
 
@@ -1909,14 +1962,58 @@ function leastOver(values: readonly { id: string; value: number }[]): { id: stri
 }
 
 describe('slot minimums (#88): each item is a share of its body part on every look', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
-  it('holds the owner minimums: Shirt 75% of the torso side, Back 22 or half the torso long, 8 proud and 40% out, Tail 40% of the tail height and 16 along', () => {
+  it('holds the owner minimums: Head half the head wide and 8 up, Neck 27 wide, Face the eye span round both eye zones, Shirt 75% of the torso side, Back 22 or half the torso long, 8 proud and 40% out, Tail 40% of the tail height and 16 along', () => {
     expect(WEARABLE_SLOT_MINIMUMS).toEqual({
+      head: { headWidthShare: 0.5, rise: 8 },
+      neck: { minWidth: 27 },
+      face: { eyeSpanShare: 1, eyeZoneShare: 1 },
       shirt: { torsoSideShare: 0.75 },
       back: { minLength: 22, torsoLengthShare: 0.5, proud: 8, outsideShare: 0.4 },
       tail: { tailHeightShare: 0.4, minAlong: 16 },
     });
     expect(backMinimumLength(31)).toBe(22);
     expect(backMinimumLength(41)).toBe(26);
+  });
+
+  it('spans 30 of the head with the Sun hat, 56% of its 54 width, and rises 15.32 above the outer edge of the head outline', () => {
+    // On the head, so every look paints it alike (the keep-clear tests): the default look stands for all.
+    const paints = bodyPaints('head', DEFAULT_ART_LOOK);
+    const box = inkBounds(paints);
+    const share = (box.maxX - box.minX) / (2 * HEAD_ELLIPSE.rx);
+    expect(share).toBeGreaterThanOrEqual(WEARABLE_SLOT_MINIMUMS.head.headWidthShare);
+    expect(share).toBeCloseTo(30 / 54, 2);
+    const { cx, cy, rx, ry } = HEAD_ELLIPSE;
+    const rise = Math.max(
+      ...inkPoints(paints)
+        .filter(({ p }) => Math.abs(p.x - cx) < rx)
+        .map(({ p, hw }) => cy - ry * Math.sqrt(1 - ((p.x - cx) / rx) ** 2) - LW - (p.y - hw)),
+    );
+    expect(rise).toBeGreaterThanOrEqual(WEARABLE_SLOT_MINIMUMS.head.rise);
+    expect(rise).toBeCloseTo(15.32, 2);
+  });
+
+  it('runs the Shell necklace 39.9 along the throat, over the 27 Neck minimum', () => {
+    const box = inkBounds(bodyPaints('neck', DEFAULT_ART_LOOK));
+    expect(box.maxX - box.minX).toBeGreaterThanOrEqual(WEARABLE_SLOT_MINIMUMS.neck.minWidth);
+    expect(box.maxX - box.minX).toBeCloseTo(39.9, 6);
+  });
+
+  it('spans the eye span with the Heart glasses and encloses both eye zones in their outer outline', () => {
+    const paints = bodyPaints('face', DEFAULT_ART_LOOK);
+    const box = inkBounds(paints);
+    const spanMin = NEAR_EYE_ZONE.x - NEAR_EYE_ZONE.r;
+    const spanMax = FAR_EYE_ZONE.x + FAR_EYE_ZONE.r;
+    const covered = (Math.min(box.maxX, spanMax) - Math.max(box.minX, spanMin)) / (spanMax - spanMin);
+    expect(covered).toBeGreaterThanOrEqual(WEARABLE_SLOT_MINIMUMS.face.eyeSpanShare);
+    expect(box.minX).toBeLessThan(spanMin);
+    expect(box.maxX).toBeGreaterThan(spanMax);
+    // The lens tint fills the frame's merged outline: every point of each eye zone is inside it.
+    const lens = paints.find((p) => p.kind === 'fill' && p.style === GLASSES_LENS)!;
+    for (const zone of [NEAR_EYE_ZONE, FAR_EYE_ZONE]) {
+      const inZone = gridPoints(boundsOfPoints([[zone.x, zone.y]], zone.r)).filter((q) => Math.hypot(q.x - zone.x, q.y - zone.y) <= zone.r);
+      const enclosed = inZone.filter((q) => winding(lens.subs, q.x, q.y) !== 0);
+      expect(enclosed.length / inZone.length).toBeGreaterThanOrEqual(WEARABLE_SLOT_MINIMUMS.face.eyeZoneShare);
+    }
   });
 
   it('covers 85% or more of the torso side with the Tank top (fill and its own ink), on every look', () => {
@@ -2080,8 +2177,10 @@ describe('rarity look ladder: worn looks keep their counted details', () => {
     const necklace = bodyPaints('neck', GIRL);
     expect(colours(necklace, 'stroke')).toContain(NECKLACE_CORD);
     expect(colours(necklace, 'fill')).toContain(NECKLACE_SHELL);
-    // Three scallop shells, three ridges each.
-    expect(count(colours(necklace, 'fill'), NECKLACE_SHELL)).toBe(3);
+    // Four scallop shells, each with a rim and five ridges in the shell ridge colour (a detail colour, not ink).
+    expect(count(colours(necklace, 'fill'), NECKLACE_SHELL)).toBe(4);
+    expect(count(colours(necklace, 'stroke'), PAINT_SHELL_RIDGE)).toBe(8);
+    expect(new Set(colours(necklace, 'fill'))).toEqual(new Set([NECKLACE_SHELL]));
     const tank = bodyPaints('back', GIRL);
     expect(count(colours(tank, 'fill'), DIVING_TANK_STRAP)).toBe(1);
     expect(colours(tank, 'fill')).toContain(DIVING_TANK_FILL);

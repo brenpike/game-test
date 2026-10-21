@@ -25,6 +25,7 @@ import { roundedPolygon, type Pt } from './drawBadges';
 import {
   GLASSES_BAND,
   GLASSES_LENSES,
+  HEAD_ELLIPSE,
   WEARABLE_SLOTS,
   axolotlBodyGeometry,
   backFootprint,
@@ -156,20 +157,19 @@ const ITEM_LW = 2;
 const DETAIL_LW = 1.6;
 /** Thin ink lines on each side of a trim band. */
 const BAND_LW = 1.2;
-/**
- * Necklace shell outline (2.0 before #88). In the 5.5 tall Neck footprint a 2.0
- * outline leaves at most 1.5 of colour across a shell, so the shells take the
- * band ink.
- */
-const SHELL_LW = BAND_LW;
 /** Gem radius and Legendary star radius (guide 6i). */
 const GEM_R = 2.5;
 const STAR_R = 3;
 /** Glasses band: colour 2.1 with 0.7 of ink each side, the 3.5 of GLASSES_BAND in all (guide 4b, 6i; #88). */
 const GLASSES_BAND_OL = 0.7;
 const GLASSES_BAND_W = GLASSES_BAND - 2 * GLASSES_BAND_OL;
-/** Necklace cord: colour 2.2 with 0.6 of ink each side, 3.4 in all (#88). */
-const CORD_W = 2.2;
+/**
+ * Necklace cord: colour 4.6 with 0.6 of ink each side, 5.8 in all, under the
+ * chin; behind the chin, where the silhouette is shallowest (a Slim body's
+ * torso meets the head), it narrows to colour 4.0, 5.2 in all (#88).
+ */
+const CORD_W = 4.6;
+const CORD_BACK_W = 4;
 const CORD_OL = 0.6;
 /** Sock sleeve: colour 10.4, `ol` 2.4 (guide 6i). */
 const SLEEVE_W = 10.4;
@@ -337,40 +337,148 @@ function paintSunHat(ctx: CanvasRenderingContext2D): void {
 // Neck: Shell necklace (Rare)
 // ---------------------------------------------------------------------------
 
-/** A fan-shaped shell with three ridges, hinge at (hx, hy), opening toward `dir` radians, `half` either side. */
-function paintFanShell(ctx: CanvasRenderingContext2D, hx: number, hy: number, dir: number, r: number, half: number): void {
+/**
+ * The cord's centre line runs this far inside the chin (the head outline, along
+ * its normal), so its ink ends LW / 2 or more inside the outline's outer edge.
+ */
+const CORD_CHIN_INSET = 1.25;
+/** Behind the chin the cord runs level at this y: its narrow ink keeps 0.25 below the gill-root zone. */
+const CORD_BACK_Y = 15.85;
+/**
+ * The cord's ends along x, where the narrow back part meets the full cord, and
+ * the ellipse angle step (radians) its centre line is sampled at.
+ */
+const CORD_X0 = 4.6;
+const CORD_JOIN_X = 12.5;
+const CORD_X1 = 39;
+const CORD_STEP = 0.02;
+/** Shell ink: the shells and the cord share one silhouette, with this much ink outside each shell's fill. */
+const SHELL_OL = 0.6;
+/** The shell rim just inside each shell's edge, in the ridge colour. */
+const SHELL_RIM_LW = 0.8;
+
+/** A scallop shell hanging from the cord: hinge at (hx, hy), opening downward `half` either side, radius r. */
+interface NecklaceShell {
+  readonly hx: number;
+  readonly hy: number;
+  readonly r: number;
+  readonly half: number;
+}
+
+/**
+ * The four shells, back to front: one behind the chin, one under the cheek
+ * heart, the largest under the mouth corner, and one under the mouth. Each
+ * spans most of the cord's height and stays clear of the gill-root and cheek
+ * heart zones.
+ */
+const NECKLACE_SHELLS: readonly NecklaceShell[] = [
+  { hx: 7, hy: 13.75, r: 4.7, half: 1 },
+  { hx: 16.8, hy: 15.75, r: 4.8, half: 0.9 },
+  { hx: 27, hy: 13.7, r: 8.3, half: 0.85 },
+  { hx: 37, hy: 14.8, r: 4.6, half: 1 },
+];
+
+/** The point CORD_CHIN_INSET inside the head outline at ellipse angle t, along the outline's normal. */
+function chinInsetPoint(t: number): Pt {
+  const { cx, cy, rx, ry } = HEAD_ELLIPSE;
+  const nx = Math.cos(t) / rx;
+  const ny = Math.sin(t) / ry;
+  const n = Math.hypot(nx, ny);
+  return { x: cx + rx * Math.cos(t) - (CORD_CHIN_INSET * nx) / n, y: cy + ry * Math.sin(t) - (CORD_CHIN_INSET * ny) / n };
+}
+
+/** The ellipse angle in (0, pi) of the chin inset point at `x`: x falls as t grows. */
+function chinInsetAngleAt(x: number): number {
+  let lo = 0;
+  let hi = Math.PI;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if (chinInsetPoint(mid).x > x) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/**
+ * The cord's centre line from x0 to x1: level at CORD_BACK_Y behind the chin,
+ * then CORD_CHIN_INSET inside the head's lower outline.
+ */
+function necklaceCordPath(x0: number, x1: number): Path2D {
+  const t0 = chinInsetAngleAt(x0);
+  const t1 = chinInsetAngleAt(x1);
+  const steps = Math.max(1, Math.ceil((t0 - t1) / CORD_STEP));
+  const cord = new Path2D();
+  for (let i = 0; i <= steps; i++) {
+    const p = chinInsetPoint(t0 + ((t1 - t0) * i) / steps);
+    if (i === 0) cord.moveTo(p.x, Math.max(CORD_BACK_Y, p.y));
+    else cord.lineTo(p.x, Math.max(CORD_BACK_Y, p.y));
+  }
+  return cord;
+}
+
+/** A shell's fan: hinge, then the arc of radius r across the bottom. */
+function necklaceShellPath(shell: NecklaceShell): Path2D {
   const fan = new Path2D();
-  fan.moveTo(hx, hy);
-  fan.arc(hx, hy, r, dir - half, dir + half);
+  fan.moveTo(shell.hx, shell.hy);
+  fan.arc(shell.hx, shell.hy, shell.r, Math.PI / 2 - shell.half, Math.PI / 2 + shell.half);
   fan.closePath();
-  shape(ctx, fan, NECKLACE_SHELL, SHELL_LW);
+  return fan;
+}
+
+/**
+ * A shell's rim and ridges, in the shell ridge colour (a detail colour, not
+ * ink): the rim, clipped inside the fan, marks it off the cord, and five ridges
+ * fan from the hinge.
+ */
+function paintShellRidges(ctx: CanvasRenderingContext2D, shell: NecklaceShell, fan: Path2D): void {
   const ridges = new Path2D();
-  for (const a of [dir - half * 0.5, dir, dir + half * 0.5]) {
-    ridges.moveTo(hx + Math.cos(a) * r * 0.3, hy + Math.sin(a) * r * 0.3);
-    ridges.lineTo(hx + Math.cos(a) * r * 0.78, hy + Math.sin(a) * r * 0.78);
+  for (const k of [-0.66, -0.33, 0, 0.33, 0.66]) {
+    const a = Math.PI / 2 + k * shell.half;
+    ridges.moveTo(shell.hx + Math.cos(a) * shell.r * 0.3, shell.hy + Math.sin(a) * shell.r * 0.3);
+    ridges.lineTo(shell.hx + Math.cos(a) * shell.r * 0.82, shell.hy + Math.sin(a) * shell.r * 0.82);
   }
   ctx.strokeStyle = PAINT_SHELL_RIDGE;
+  ctx.save();
+  ctx.clip(fan);
+  ctx.lineWidth = 2 * SHELL_RIM_LW;
+  ctx.stroke(fan);
+  ctx.restore();
   ctx.lineWidth = BAND_LW;
   ctx.stroke(ridges);
 }
 
 /**
- * Rare: a cord (the second colour, the Rare detail) slung across the throat
- * with a cluster of three scallop shells on it: the largest hangs down in
- * front, and one opens to each side from behind it. The 7e icon fitted to
- * NECK_FOOTPRINT (x 14 to 24.2, y 15 to 20.5), which sits below the cheek heart
- * zone and LW / 2 inside the outer edge of the silhouette outline (#88). The
- * guide's cord (tube 3.2, `ol` 2.4, ink 8.0 wide) cannot fit a footprint 5.5
- * tall, so the cord is a 3.4 wide band (2.2 with 0.6 of ink each side), and the
- * shells take the thin SHELL_LW.
+ * Rare: a thick cord (the second colour, the Rare detail) following the chin
+ * curve, with four big scallop shells on it, the largest in front. Cord and
+ * shells are one silhouette: every ink stroke first, then the cord colour and
+ * the shell fills, so the ink shows only round the outside and the necklace is
+ * one strong colour mass. All of it sits in NECK_FOOTPRINT, clear of the gill-
+ * root and cheek heart zones, and LW / 2 or more inside the outer edge of the
+ * silhouette outline on every look (#88). The mouth paints over its front.
  */
 function paintShellNecklace(ctx: CanvasRenderingContext2D): void {
-  const cord = new Path2D();
-  cord.moveTo(15.7, 16.7);
-  cord.quadraticCurveTo(19.1, 18.9, 22.5, 16.7);
-  inkMany(ctx, [seg(cord, CORD_W, NECKLACE_CORD, CORD_OL)]);
-  for (const sign of [-1, 1]) paintFanShell(ctx, 19.1 + sign * 1.1, 17.6, Math.PI / 2 - sign * (Math.PI / 2), 2.8, 0.75);
-  paintFanShell(ctx, 19.1, 16, Math.PI / 2, 3.8, 0.6);
+  const cords = [
+    seg(necklaceCordPath(CORD_X0, CORD_JOIN_X), CORD_BACK_W, NECKLACE_CORD, CORD_OL),
+    seg(necklaceCordPath(CORD_JOIN_X, CORD_X1), CORD_W, NECKLACE_CORD, CORD_OL),
+  ];
+  const shells = NECKLACE_SHELLS.map(necklaceShellPath);
+  ctx.strokeStyle = INK;
+  for (const cord of cords) {
+    ctx.lineWidth = cord.w + 2 * cord.ol;
+    ctx.stroke(cord.p);
+  }
+  ctx.lineWidth = 2 * SHELL_OL;
+  for (const shell of shells) ctx.stroke(shell);
+  ctx.strokeStyle = NECKLACE_CORD;
+  for (const cord of cords) {
+    ctx.lineWidth = cord.w;
+    ctx.stroke(cord.p);
+  }
+  NECKLACE_SHELLS.forEach((shell, i) => {
+    ctx.fillStyle = NECKLACE_SHELL;
+    ctx.fill(shells[i]);
+    paintShellRidges(ctx, shell, shells[i]);
+  });
 }
 
 // ---------------------------------------------------------------------------
