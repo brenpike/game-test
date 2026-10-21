@@ -1378,8 +1378,8 @@ export const WEARABLE_SLOTS: readonly WearableSlot[] = [
 export type BodyWearableSlot = Exclude<WearableSlot, 'socks' | 'feet'>;
 /** Layer of each body Wearable (guide 6a). */
 export const WEARABLE_LAYERS: Readonly<Record<BodyWearableSlot, number>> = {
-  shirt: 8.2,
-  tail: 8.5,
+  shirt: 9.3,
+  tail: 9.2,
   neck: 9.5,
   back: 9.7,
   head: 10.5,

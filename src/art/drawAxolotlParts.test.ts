@@ -1576,7 +1576,7 @@ describe('eyelashes (Girl cue)', () => {
     expect(saved).toEqual([]);
   });
 
-  it('paint on layer 12, after every layer 11 mouth stroke, so no Wearable (layers 8.5 to 11.5) can cover them', () => {
+  it('paint on layer 12, after every layer 11 mouth stroke, so no Wearable (layers 9.2 to 11.5) can cover them', () => {
     class StubPath2D {
       moveTo(): void {}
       lineTo(): void {}
@@ -2168,8 +2168,8 @@ describe('Wearable slots: layers and zones (guide 6a, 6i)', () => {
     expect(WEARABLE_SLOTS).toEqual(order);
   });
 
-  it('has the guide layer values, back to front: Shirt, Tail, Neck, Back, Head, Face, then the eyes', () => {
-    expect(WEARABLE_LAYERS).toEqual({ shirt: 8.2, tail: 8.5, neck: 9.5, back: 9.7, head: 10.5, face: 11.5 });
+  it('has the guide layer values, back to front: Tail, Shirt, Neck, Back, Head, Face, then the eyes', () => {
+    expect(WEARABLE_LAYERS).toEqual({ shirt: 9.3, tail: 9.2, neck: 9.5, back: 9.7, head: 10.5, face: 11.5 });
     expect(LEG_WEARABLE_LAYERS).toEqual({ far: 2.5, near: 3.5 });
     expect([0, 1, 2, 3].map(legSide)).toEqual(['far', 'far', 'near', 'near']);
     expect([0, 1, 2, 3].map(legWearableLayer)).toEqual([2.5, 2.5, 3.5, 3.5]);
@@ -2180,6 +2180,9 @@ describe('Wearable slots: layers and zones (guide 6a, 6i)', () => {
     expect(WEARABLE_LAYERS.back).toBeGreaterThan(WEARABLE_LAYERS.neck);
     expect(WEARABLE_LAYERS.neck).toBeGreaterThan(WEARABLE_LAYERS.shirt);
     expect(WEARABLE_LAYERS.back).toBeGreaterThan(WEARABLE_LAYERS.tail);
+    // The Tail and Shirt items are above the near gills (layer 9), so the gills never hide them.
+    expect(WEARABLE_LAYERS.shirt).toBeGreaterThan(WEARABLE_LAYERS.tail);
+    expect(WEARABLE_LAYERS.tail).toBeGreaterThan(9);
   });
 
   it('paints Socks and Feet behind the silhouette, so they can cover nothing on the body, head or gills', () => {

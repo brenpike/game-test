@@ -420,7 +420,7 @@ function paintsGap(a: readonly Paint[], b: readonly Paint[], fromX = -Infinity):
 // drawAxolotl, cut into its layer painters' runs
 // ---------------------------------------------------------------------------
 
-/** A drawAxolotl run: rig part ids for the runs one part bakes, 'body-layers' (4 to 8.2) and 'glints'. */
+/** A drawAxolotl run: rig part ids for the runs one part bakes, 'body-layers' (4 to 8) and 'glints'. */
 type DrawnRunId = RigPartId | 'body-layers' | 'glints';
 
 const GILL_PART_IDS: readonly RigPartId[] = [
@@ -457,11 +457,11 @@ function drawnPainters(pose: AxolotlPose, palette: MorphPalette, look: AxolotlAr
     if (i === 1) steps.push(wearLeg(0), wearLeg(1));
     if (i === 3) steps.push(wearLeg(2), wearLeg(3));
   }
-  steps.push(['body-layers', (ctx) => paintBodyLayers(ctx, pose, palette, look, outfit)]);
-  steps.push(['tail-item', (ctx) => paintBodyWearable(ctx, 'tail', outfit, look, pose.swimPhase, pose.tailAmp)]);
+  steps.push(['body-layers', (ctx) => paintBodyLayers(ctx, pose, palette, look)]);
   near.forEach((g, k) =>
     steps.push([GILL_PART_IDS[3 + k], (ctx) => paintGill(ctx, g, look.gills, pose.gillPhase, palette.gillNearStem, palette.gillNearFilament)]),
   );
+  steps.push(['tail-item', (ctx) => paintBodyWearable(ctx, 'tail', outfit, look, pose.swimPhase, pose.tailAmp)]);
   steps.push(['face', (ctx) => paintFaceLayers(ctx, pose, palette, look, outfit)]);
   steps.push(['eyes', (ctx) => paintEyes(ctx, look, pose.blink, palette)]);
   steps.push(['glints', (ctx) => paintAxolotlGlints(ctx, pose, look)]);
@@ -805,7 +805,7 @@ function composedSilhouette(composition: Composition): Envelope {
   return env;
 }
 
-/** Envelope of drawAxolotl's silhouette ink in `paints` (its whole recording or its layer 4 to 8.2 run). */
+/** Envelope of drawAxolotl's silhouette ink in `paints` (its whole recording or its layer 4 to 8 run). */
 function drawnSilhouette(paints: readonly Paint[]): Envelope {
   const env: Envelope = new Map();
   addEnvelope(env, silhouetteOf(paints, 'drawAxolotl').subs, -Infinity, Infinity);
@@ -1224,7 +1224,8 @@ describe('keep-clear on the composed rig with a full outfit', { timeout: TIMEOUT
       }
     }
     expect(failures).toEqual([]);
-    for (const id of [...WEAR_LEG_PART_IDS, 'tail-item', 'body', 'face'] as const) expect(perPart.get(id) ?? 0, id).toBeGreaterThan(0);
+    for (const id of [...WEAR_LEG_PART_IDS, 'tail-item', 'face'] as const) expect(perPart.get(id) ?? 0, id).toBeGreaterThan(0);
+    for (const id of TAIL_AND_BODY) expect(perPart.get(id) ?? 0, id).toBe(0);
   });
 
   it('paints nothing on a lost or regrowing leg\'s wear part', () => {
@@ -1491,7 +1492,7 @@ describe('Dream colours on the composed rig', { timeout: TIMEOUT_MS }, () => {
     }
     expect(leaks).toEqual([]);
     for (const dream of DREAM_IDS) {
-      const solid = patternPaints(recordPaints((ctx) => paintBodyLayers(ctx, RIG_STILL_POSE, axolotlPalette('leucistic', dream), DEFAULT_ART_LOOK, NO_OUTFIT))).length === 0;
+      const solid = patternPaints(recordPaints((ctx) => paintBodyLayers(ctx, RIG_STILL_POSE, axolotlPalette('leucistic', dream), DEFAULT_ART_LOOK))).length === 0;
       if (!solid) expect(shownByDream.get(dream) ?? 0, dream).toBeGreaterThan(0);
     }
     // Measured: marker centres 0.283 units off on the WebGL rope, 0 on the Canvas strip.
@@ -1659,13 +1660,13 @@ const SEAM_PALETTES: readonly MorphPalette[] = [
  * the straight tail (the body bake's pose) at x >= rootX + RIG_SEAM_OVERLAP,
  * where the body part shows. Points of each paint compared there; counts must match.
  */
-function seamGaps(look: AxolotlArtLook, palette: MorphPalette, outfit: ArtOutfit): string[] {
+function seamGaps(look: AxolotlArtLook, palette: MorphPalette): string[] {
   const from = axolotlBodyGeometry(look).tail.rootX + RIG_SEAM_OVERLAP;
-  const straight = recordPaints((ctx) => paintBodyLayers(ctx, pose({ tailAmp: 0 }), palette, look, outfit));
+  const straight = recordPaints((ctx) => paintBodyLayers(ctx, pose({ tailAmp: 0 }), palette, look));
   const failures: string[] = [];
   for (const swimPhase of SWIMS) {
     for (const tailAmp of AMPS) {
-      const posed = recordPaints((ctx) => paintBodyLayers(ctx, pose({ swimPhase, tailAmp }), palette, look, outfit));
+      const posed = recordPaints((ctx) => paintBodyLayers(ctx, pose({ swimPhase, tailAmp }), palette, look));
       const at = `${lookId(look)} ${look.spots} ${palette.dream?.id ?? 'plain'} swim ${swimPhase.toFixed(3)} amp ${tailAmp}`;
       if (posed.length !== straight.length) failures.push(`${at}: ${posed.length} paints, straight ${straight.length}`);
       else {
@@ -1705,7 +1706,7 @@ describe('the composed rig at the still pose', { timeout: TIMEOUT_MS }, () => {
     const failures = EVERY_BODY_LOOK.flatMap((look, l) =>
       SPOTS_OPTIONS.flatMap((spots, s) => {
         const palette = SEAM_PALETTES[(l * SPOTS_OPTIONS.length + s) % SEAM_PALETTES.length];
-        return seamGaps({ ...look, spots }, palette, NO_OUTFIT);
+        return seamGaps({ ...look, spots }, palette);
       }),
     );
     expect(failures).toEqual([]);

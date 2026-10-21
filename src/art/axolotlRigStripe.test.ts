@@ -22,7 +22,6 @@ import {
 } from './drawAxolotlParts';
 import { ell } from './canvasKit';
 import { paintDreamPattern } from './drawDreamOverlay';
-import { NO_OUTFIT, type ArtOutfit } from './drawWearables';
 import { DREAM_SLOTS, MORPH_PALETTES, axolotlPalette, type DreamLookId, type MorphLookId, type MorphPalette } from './palette';
 import { DREAM_SWATCH } from './treasurePalette';
 import { RIG_SEAM_OVERLAP, RIG_STILL_POSE, SHEEN_STEPS, sheenStepValue } from './axolotlRigParts';
@@ -605,7 +604,6 @@ function paintPattern(ctx: CanvasRenderingContext2D, pose: AxolotlPose, palette:
 
 const MORPH_IDS = Object.keys(MORPH_PALETTES) as MorphLookId[];
 const DREAM_IDS = Object.keys(DREAM_SLOTS) as DreamLookId[];
-const SHIRT: ArtOutfit = { shirt: 'tank-top' };
 const SPLIT_POSES: readonly AxolotlPose[] = [
   { ...RIG_STILL_POSE, sheen: 0.3 },
   { ...RIG_STILL_POSE, swimPhase: Math.PI / 2, tailAmp: AXO_MAX_TAIL_AMP },
@@ -619,14 +617,12 @@ const shownPaints = (paints: readonly Paint[]): string => JSON.stringify(paints.
 function splitFailures(morph: MorphLookId, dream: DreamLookId | null): string[] {
   const failures: string[] = [];
   const palette = axolotlPalette(morph, dream);
-  for (let n = 0; n < LOOKS.length; n++) {
-    const look = LOOKS[n];
-    const outfit = n % 2 === 0 ? NO_OUTFIT : SHIRT;
+  for (const look of LOOKS) {
     for (const pose of SPLIT_POSES) {
-      const all = recordPaints((ctx) => paintBodyLayers(ctx, pose, palette, look, outfit));
-      const under = recordPaints((ctx) => paintBodyLayers(ctx, pose, palette, look, outfit, 'under'));
+      const all = recordPaints((ctx) => paintBodyLayers(ctx, pose, palette, look));
+      const under = recordPaints((ctx) => paintBodyLayers(ctx, pose, palette, look, 'under'));
       const pattern = recordPaints((ctx) => paintPattern(ctx, pose, palette, look));
-      const over = recordPaints((ctx) => paintBodyLayers(ctx, pose, palette, look, outfit, 'over'));
+      const over = recordPaints((ctx) => paintBodyLayers(ctx, pose, palette, look, 'over'));
       const patterned = dream !== null && DREAM_SWATCH[dream].pattern !== 'plain';
       const split = shownPaints([...under, ...pattern, ...over]) === shownPaints(all);
       if (!split || under.length === 0 || over.length === 0 || (pattern.length > 0) !== patterned) {

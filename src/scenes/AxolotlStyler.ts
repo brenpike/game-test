@@ -2,28 +2,13 @@ import * as Phaser from 'phaser';
 import { createAxolotlRigBake, createAxolotlRigView, type AxolotlRigBake, type AxolotlRigView } from '../art/axolotlRig';
 import type { TexSize } from '../art/canvasKit';
 import { AXO_PREVIEW_CROPS, AXO_SCENE_SCALE, AXO_TEX, drawAxolotl, type AxolotlPose } from '../art/drawAxolotl';
-import {
-  AXO_SIZE_SCALE,
-  BACK_FRAME_BOX,
-  HEAD_FOOTPRINT,
-  NECK_FOOTPRINT,
-  TAIL_SLOT_REACH,
-  axolotlBodyGeometry,
-  backFrame,
-  feetEnvelope,
-  framePoint,
-  legSlotFrames,
-  shirtGeometry,
-  tailSlotFrame,
-  type Bounds,
-  type ShirtGeometry,
-  type WearFrame,
-} from '../art/drawAxolotlParts';
+import { AXO_SIZE_SCALE, type Bounds } from '../art/drawAxolotlParts';
 import { dreamSheenAt } from '../art/drawDreamOverlay';
 import { dreamSwatchTextureSize, paintDreamSwatch } from '../art/drawTreasures';
 import { BUTTON_PRESS_OFFSET, ICON_SIZE, NAME_FIELD, type IconKind } from '../art/drawUi';
 import { NO_OUTFIT, artOutfit, outfitKey, wornSlug, type ArtOutfit } from '../art/drawWearables';
 import type { MorphTextures } from '../art/morphTextures';
+import { OUTFIT_SLOT_CROPS, slotFootprintPaths } from '../art/outfitSlots';
 import { HOME_TANK_WALL, INK, LW, T_STATIC, UI_PANEL, WHITE, axolotlPalette, type MorphPalette } from '../art/palette';
 import {
   bake,
@@ -187,25 +172,8 @@ const PERK_DISC = Object.freeze({ r: 12, outline: 2.6, iconPx: 18 });
 const PLUS_BADGE = Object.freeze({ r: 10, outline: 2.6, halfLength: 4.5, ink: 2.25 });
 /** The empty-slot cue (art guide 8): the slot's footprint as an opaque dashed ink outline, in local units. */
 const EMPTY_SLOT_CUE = Object.freeze({ ink: 2, dash: 3, gap: 3 });
-/** The Face footprint (art guide 6i), in local units. */
-const FACE_FOOTPRINT: Bounds = Object.freeze({ minX: 14, minY: -18, maxX: 54, maxY: 6 });
-/** Socks and Feet share one crop holding all four feet (art guide 11, `slotLegs`). */
-const LEGS_SLOT_CROP: Bounds = Object.freeze({ minX: -66, minY: 6, maxX: 50, maxY: 63 });
-/** The Outfit slot crops in local units (art guide 11), each holding its slot's footprint over every look. */
-const OUTFIT_SLOT_CROPS: Readonly<Record<WearableSlot, Bounds>> = Object.freeze({
-  head: { minX: 8, minY: -50, maxX: 44, maxY: -14 },
-  neck: { minX: 4, minY: 4, maxX: 30, maxY: 30 },
-  face: { minX: 8, minY: -24, maxX: 60, maxY: 12 },
-  shirt: { minX: -42, minY: -24, maxX: -3, maxY: 32 },
-  back: { minX: -33, minY: -36, maxX: -2, maxY: 2 },
-  tail: { minX: -68, minY: -28, maxX: -13, maxY: 15 },
-  socks: LEGS_SLOT_CROP,
-  feet: LEGS_SLOT_CROP,
-});
 /** What the preview and the pictures wear in the creator: nothing. */
 const NO_PREVIEW_OUTFIT = Object.freeze({ art: NO_OUTFIT, key: outfitKey(NO_OUTFIT) });
-/** Steps along each half of the Shirt cue's ellipse edge. */
-const SHIRT_CUE_STEPS = 32;
 
 let stylerCount = 0;
 
@@ -486,87 +454,6 @@ function wearableOf(id: string): Wearable {
   const treasure = treasureById(id);
   if (treasure?.category !== 'wearable') throw new Error(`AxolotlStyler: not a Wearable: ${id}`);
   return treasure;
-}
-
-/** The closed box u0 to u1 along and v0 to v1 across `frame`. */
-function framePolygon(frame: WearFrame, u0: number, u1: number, v0: number, v1: number): Path2D {
-  const path = new Path2D();
-  const corners = [framePoint(frame, u0, v0), framePoint(frame, u1, v0), framePoint(frame, u1, v1), framePoint(frame, u0, v1)];
-  path.moveTo(corners[0].x, corners[0].y);
-  for (const corner of corners.slice(1)) path.lineTo(corner.x, corner.y);
-  path.closePath();
-  return path;
-}
-
-/** The local box `bounds`, `inset` inside its edges. */
-function insetBoxPath(bounds: Bounds, inset: number): Path2D {
-  const local: WearFrame = { x: 0, y: 0, angle: 0 };
-  return framePolygon(local, bounds.minX + inset, bounds.maxX - inset, bounds.minY + inset, bounds.maxY - inset);
-}
-
-/**
- * The Shirt footprint `inset` inside its edges: the inset torso ellipse from the front edge round the
- * rear (cut at the tail root) and back, then the neckline bowing back to its apex (as the Tank top).
- */
-function shirtCuePath(shirt: ShirtGeometry, inset: number): Path2D {
-  const ellipse = shirt.inset;
-  const rx = ellipse.rx - inset;
-  const ry = ellipse.ry - inset;
-  const front = shirt.frontX - inset;
-  const angleAt = (x: number): number => Math.acos(Math.min(1, Math.max(-1, (x - ellipse.cx) / rx)));
-  const frontAngle = angleAt(front);
-  const rearAngle = angleAt(shirt.rearX + inset);
-  const angles = Array.from(
-    { length: SHIRT_CUE_STEPS + 1 },
-    (_unused, index) => frontAngle + ((rearAngle - frontAngle) * index) / SHIRT_CUE_STEPS,
-  );
-  const path = new Path2D();
-  angles.forEach((angle, index) => {
-    const x = ellipse.cx + rx * Math.cos(angle);
-    const y = ellipse.cy - ry * Math.sin(angle);
-    if (index === 0) path.moveTo(x, y);
-    else path.lineTo(x, y);
-  });
-  for (const angle of [...angles].reverse()) path.lineTo(ellipse.cx + rx * Math.cos(angle), ellipse.cy + ry * Math.sin(angle));
-  const apex = shirt.neckline.apexX - inset;
-  path.quadraticCurveTo(2 * apex - front, ellipse.cy, front, ellipse.cy - ry * Math.sin(frontAngle));
-  path.closePath();
-  return path;
-}
-
-/**
- * The footprint outlines of `slot` on `look` at the still pose (art guide 6i), `inset` inside the
- * footprint (which includes its ink): a box for Head, Neck and Face, the Shirt shape, the Back box on
- * the torso edge, the Tail reach circle, and for Socks and Feet the Feet envelope of each of the four feet.
- */
-function slotFootprintPaths(slot: WearableSlot, look: AxolotlLook, inset: number): Path2D[] {
-  switch (slot) {
-    case 'head':
-      return [insetBoxPath(HEAD_FOOTPRINT, inset)];
-    case 'neck':
-      return [insetBoxPath(NECK_FOOTPRINT, inset)];
-    case 'face':
-      return [insetBoxPath(FACE_FOOTPRINT, inset)];
-    case 'shirt':
-      return [shirtCuePath(shirtGeometry(look), inset)];
-    case 'back': {
-      const { minU, maxU, minV, maxV } = BACK_FRAME_BOX;
-      const frame = backFrame(axolotlBodyGeometry(look).torso);
-      return [framePolygon(frame, minU + inset, maxU - inset, minV + inset, maxV - inset)];
-    }
-    case 'tail': {
-      const anchor = tailSlotFrame(axolotlBodyGeometry(look).tail, STILL_POSE.swimPhase, STILL_POSE.tailAmp);
-      const path = new Path2D();
-      path.arc(anchor.x, anchor.y, TAIL_SLOT_REACH - inset, 0, TAU);
-      return [path];
-    }
-    case 'socks':
-    case 'feet':
-      return legSlotFrames(look, STILL_POSE.swimPhase).map((frame) => {
-        const envelope = feetEnvelope(frame);
-        return framePolygon(frame, envelope.u0 + inset, envelope.u1 - inset, inset - envelope.vHalf, envelope.vHalf - inset);
-      });
-  }
 }
 
 /** Strokes the empty-slot cue of `slot` on `look`: its footprint as an opaque dashed ink outline (art guide 8). */

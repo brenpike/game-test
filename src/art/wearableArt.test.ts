@@ -884,13 +884,13 @@ describe('layers (guide 6a)', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
     expect(Math.max(...inserted.map((x) => x.index))).toBeLessThan(firstEyePaint(worn));
   });
 
-  it('orders the body items by layer: Shirt 8.2, Tail 8.5, Neck 9.5, Back 9.7, Head 10.5, Face 11.5', () => {
-    expect(WEARABLE_LAYERS.shirt).toBeLessThan(WEARABLE_LAYERS.tail);
+  it('orders the body items by layer: Tail 9.2, Shirt 9.3, Neck 9.5, Back 9.7, Head 10.5, Face 11.5', () => {
+    expect(WEARABLE_LAYERS.tail).toBeLessThan(WEARABLE_LAYERS.shirt);
     for (const look of looks) {
       const worn = drawn(AXO_REST_POSE, look, FULL);
       const at = (slot: WearableSlot): number => firstIndexOf(worn, itemSignatures(slot, AXO_REST_POSE, look));
       const end = (slot: WearableSlot): number => lastIndexOf(worn, itemSignatures(slot, AXO_REST_POSE, look));
-      const order: WearableSlot[] = ['shirt', 'tail', 'neck', 'back', 'head', 'face'];
+      const order: WearableSlot[] = ['tail', 'shirt', 'neck', 'back', 'head', 'face'];
       for (let i = 1; i < order.length; i++) {
         // Each item's first paint comes after the previous item's last paint.
         expect(at(order[i])).toBeGreaterThan(end(order[i - 1]));
@@ -901,7 +901,7 @@ describe('layers (guide 6a)', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
     }
   });
 
-  it('puts the Shirt over the spots, the near gills under the Neck and Back items, a Girl cheek heart after the blush and before the Head item, and the Face item over the mouth', () => {
+  it('puts the near gills over the spots and under the Tail, Shirt, Neck and Back items, a Girl cheek heart after the blush and before the Head item, and the Face item over the mouth', () => {
     const look = { ...GIRL, spots: 'patches' as const };
     const worn = drawn(AXO_REST_POSE, look, FULL);
     const nearGill = (p: Paint): boolean =>
@@ -924,11 +924,11 @@ describe('layers (guide 6a)', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
     const face = firstIndexOf(worn, itemSignatures('face', AXO_REST_POSE, look));
     const found = [spots, blush, heart.first, mouth, gills.first, gills.last, shirt, tail, neck, back, head, face];
     for (const index of found) expect(index).toBeGreaterThan(0);
-    // 8 spots, 8.2 Shirt, 8.5 Tail item, 9 near gills, 9.5 Neck item, 9.7 Back item, 10 blush, 10.2 cheek heart,
+    // 8 spots, 9 near gills, 9.2 Tail item, 9.3 Shirt, 9.5 Neck item, 9.7 Back item, 10 blush, 10.2 cheek heart,
     // 10.5 Head item, 11 mouth, 11.5 Face item.
     expect(CHEEK_HEART_LAYER).toBe(10.2);
     const layers = [
-      ...[spots, shirt, tail, gills.first, gills.last, neck, back, blush],
+      ...[spots, gills.first, gills.last, tail, shirt, neck, back, blush],
       ...[heart.first, heart.last, head, mouth, face],
     ];
     expect(layers).toEqual([...layers].sort((x, y) => x - y));
@@ -1617,9 +1617,9 @@ const SWIM_VIEW_EXCEPTIONS: Readonly<Partial<Record<WearableArtSlug, number>>> =
   // NECK_FOOTPRINT is only 10.2 x 5.5: wholly below the cheek heart zone, LW / 2 inside the silhouette
   // outline on the slimmest Baby, left of the mouth zone and below the gill-root zone.
   'shell-necklace': 7,
-  // The near gills (layer 9) paint over the Tail item (layer 8.5). Long gills cover the whole bow at the
-  // Tail slot (tail point 4) on the shorter looks at some swim phases; the anchor or the layer order must change to clear it.
-  'golden-bow': 0,
+  // The Tail item (layer 9.2) paints over the near gills (9), so nothing later covers the bow; its own
+  // ink hides about half its fill, leaving about 65.6 units² at the least.
+  'golden-bow': 30,
 };
 const swimViewFloor = (slug: WearableArtSlug): number => SWIM_VIEW_EXCEPTIONS[slug] ?? SWIM_VIEW_MIN_CSS_PX2;
 
@@ -1810,19 +1810,21 @@ describe('swim view (#88): each worn item shows enough of its own fill', { timeo
     expect(least.cssPx2).toBeLessThan(SWIM_VIEW_MIN_CSS_PX2);
   });
 
-  it('measures the Golden bow over a swim cycle at tail amplitude 1: the named exception, hidden by Long near gills', () => {
-    const least = expectSwimView('golden-bow', SWIM_VIEW_SWIM_CASES.filter((c) => c.pose.tailAmp === 1), 0, 'medium girl short slim baby swim 2.09 amp 1');
+  it('shows the Golden bow at 65.6 units², 30.7 CSS px², or more over a swim cycle at tail amplitude 1: the named exception, floor 30 CSS px²', () => {
+    const least = expectSwimView('golden-bow', SWIM_VIEW_SWIM_CASES.filter((c) => c.pose.tailAmp === 1), 65.5625, 'medium boy short slim young swim 0.00 amp 1');
+    expect(least.cssPx2).toBeCloseTo(30.67, 2);
     expect(swimViewFloor('golden-bow')).toBe(Math.floor(least.cssPx2));
+    expect(least.cssPx2).toBeLessThan(SWIM_VIEW_MIN_CSS_PX2);
   });
 
-  it('measures the Golden bow over a swim cycle at tail amplitude 1.6: 0.06 units² at the least', () => {
+  it('shows the Golden bow at 65.7 units², 30.7 CSS px², or more over a swim cycle at tail amplitude 1.6', () => {
     const least = expectSwimView(
       'golden-bow',
       SWIM_VIEW_SWIM_CASES.filter((c) => c.pose.tailAmp === 1.6),
-      0.0625,
-      'medium girl short regular baby swim 2.09 amp 1.6',
+      65.6875,
+      'medium girl short chubby baby swim 2.62 amp 1.6',
     );
-    expect(least.cssPx2).toBeCloseTo(0.03, 2);
+    expect(least.cssPx2).toBeCloseTo(30.73, 2);
   });
 });
 
