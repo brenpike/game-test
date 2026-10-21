@@ -1,0 +1,885 @@
+/**
+ * Axolotl rig glue (issue #46): bakes the parts of axolotlRigParts.ts into
+ * CanvasTextures once, and moves them live as children of one Container.
+ * Visual only. No game state, no input, no physics.
+ *
+ * A bake (createAxolotlRigBake) owns every part texture of one appearance at
+ * one scale, under `${key}:<part>` keys in the game texture manager. A view
+ * (createAxolotlRigView) is a Container of part children placed per pose with
+ * rigPlacement. Children are in bake texture pixels with local (0, 0) at the
+ * texture anchor, so a root scaled by bake.displayScale(viewScale) shows the
+ * axolotl exactly where today's sprite (origin at the anchor) shows it.
+ *
+ * Textures are painted and refreshed only while baking: setPose moves, turns,
+ * swaps frames and writes the tail rope, and never repaints. Legs are baked
+ * lazily, one texture per leg state. Destroy views before their bake.
+ */
+import * as Phaser from 'phaser';
+import type { SpriteFrame } from '../logic/spriteAnchor';
+import {
+  RIG_STILL_POSE,
+  SHEEN_STEPS,
+  TAIL_STRIP_AMPS,
+  TAIL_STRIP_PHASES,
+  TWINKLE_BOX,
+  TWINKLE_RADII,
+  createRigPlacement,
+  legStateKey,
+  paintRigPart,
+  paintTwinkleFrame,
+  rigAppearanceKey,
+  rigParts,
+  rigPlacement,
+  sheenStepValue,
+  tailColumnXs,
+  tailStripPose,
+  type RigAppearance,
+  type RigPartId,
+  type RigPartSpec,
+  type RigPartVariant,
+  type RigPlacement,
+  type RigRenderer,
+  type RigTwinkle,
+} from './axolotlRigParts';
+import { beginDraw, type TexSize } from './canvasKit';
+import { AXO_SCENE_SCALE, AXO_TEX, type AxolotlPose, type LegLook } from './drawAxolotl';
+import { AXO_SIZE_SCALE, DEFAULT_ART_LOOK, type AxolotlArtLook } from './drawAxolotlParts';
+import { NO_OUTFIT, type ArtOutfit } from './drawWearables';
+import { LEUCISTIC, type MorphPalette } from './palette';
+import { makeInfo, type TexInfo } from './textures';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Largest side of one part texture, in pixels (frames are laid out in a grid within it). */
+const MAX_TEXTURE_SIDE = 4096;
+/** Most twinkle sprites one view shows at once. */
+const TWINKLE_POOL = 17;
+/** Canvas tail strip frames: every swim phase at every amplitude. */
+const TAIL_STRIP_FRAMES = TAIL_STRIP_PHASES * TAIL_STRIP_AMPS.length;
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/** Every part texture of one axolotl appearance at one bake scale. */
+export interface AxolotlRigBake {
+  readonly key: string;
+  /** Base bake scale, before the size factor. */
+  readonly bakeScale: number;
+  /** Texture pixels per local unit: bakeScale x AXO_SIZE_SCALE[look.size]. */
+  readonly scale: number;
+  readonly look: AxolotlArtLook;
+  readonly palette: MorphPalette;
+  readonly outfit: ArtOutfit;
+  /** makeInfo(key, scale, AXO_TEX): the frame today's axolotl sprite has (anchorWorld, spriteFrameBounds). */
+  readonly info: TexInfo;
+  /** Goes up on every re-bake. */
+  readonly version: number;
+  readonly renderer: RigRenderer;
+  /** Merge into the appearance; re-bake every part when rigAppearanceKey changes. Returns whether it re-baked. */
+  setAppearance(appearance: Partial<RigAppearance>): boolean;
+  /** Change the base bake scale; re-bake when the scale changes. Returns whether it re-baked. */
+  setBakeScale(bakeScale: number): boolean;
+  /** Root scale that shows the axolotl at its size: AXO_SCENE_SCALE x size factor x viewScale / scale. */
+  displayScale(viewScale: number): number;
+  /** Remove every texture this bake owns (its views are destroyed first if still alive). */
+  destroy(): void;
+}
+
+/** One live axolotl built from a bake's parts. */
+export interface AxolotlRigView {
+  /** Place, scale (displayScale), face (faceSprite) and rotate this like today's sprite. */
+  readonly root: Phaser.GameObjects.Container;
+  readonly bake: AxolotlRigBake;
+  /** Show a pose. Skips the work when the pose and the bake are unchanged. */
+  setPose(pose: AxolotlPose): void;
+  /** The root's transform with the bake's AXO_TEX frame, for anchorWorld and spriteFrameBounds. */
+  spriteFrame(): SpriteFrame;
+  /** Destroy the Container and its children (the bake's textures stay). */
+  destroy(): void;
+}
+
+type RigPartKind = 'gill' | 'leg' | 'wear-leg' | 'tail' | 'body' | 'tail-item' | 'face' | 'eyes';
+
+/** One baked part: its spec, and the size and anchor of one of its frames. */
+interface RigSheet {
+  readonly spec: RigPartSpec;
+  readonly info: TexInfo;
+}
+
+/** One part child of a view. */
+interface RigViewPart {
+  readonly sheet: RigSheet;
+  readonly kind: RigPartKind;
+  /** Gill index 0..5 (far, then near) or leg index 0..3; 0 for other parts. */
+  readonly index: number;
+  readonly image: Phaser.GameObjects.Image;
+  frame: number;
+  textureKey: string;
+}
+
+/** The pose a view last showed, field by field. */
+interface PoseMemo {
+  shown: boolean;
+  swimPhase: number;
+  gillPhase: number;
+  blink: number;
+  tailAmp: number;
+  sparkle: number;
+  sheen: number | undefined;
+  legCount: number;
+  legStatus: string[];
+  legProgress: number[];
+}
+
+// ---------------------------------------------------------------------------
+// Dev frame stats
+// ---------------------------------------------------------------------------
+
+let rigFrameMs = 0;
+let rigBakeCount = 0;
+let rigTimingDepth = 0;
+
+/** Open a timed span; only the outermost open span is timed. Returns its start, or null when nested or in production. */
+function startRigTiming(): number | null {
+  if (!import.meta.env.DEV) return null;
+  rigTimingDepth += 1;
+  return rigTimingDepth === 1 ? performance.now() : null;
+}
+
+function stopRigTiming(started: number | null): void {
+  if (!import.meta.env.DEV) return;
+  rigTimingDepth -= 1;
+  if (started !== null) rigFrameMs += performance.now() - started;
+}
+
+function countRigBake(): void {
+  if (import.meta.env.DEV) rigBakeCount += 1;
+}
+
+/** Dev only: ms spent in setPose and in bakes since the last take. Always 0 in production. */
+export function takeRigFrameMs(): number {
+  if (!import.meta.env.DEV) return 0;
+  const ms = rigFrameMs;
+  rigFrameMs = 0;
+  return ms;
+}
+
+/** Dev only: part textures baked since the last take. Always 0 in production. */
+export function takeRigBakeCount(): number {
+  if (!import.meta.env.DEV) return 0;
+  const count = rigBakeCount;
+  rigBakeCount = 0;
+  return count;
+}
+
+// ---------------------------------------------------------------------------
+// Baking
+// ---------------------------------------------------------------------------
+
+/** 'canvas' on the Canvas renderer, else 'webgl'. */
+export function rigRendererOf(scene: Phaser.Scene): RigRenderer {
+  return scene.sys.game.renderer.type === Phaser.CANVAS ? 'canvas' : 'webgl';
+}
+
+function isIridescent(palette: MorphPalette): boolean {
+  return palette.dream?.id === 'iridescent';
+}
+
+function scaleFor(bakeScale: number, look: AxolotlArtLook): number {
+  return bakeScale * AXO_SIZE_SCALE[look.size];
+}
+
+/** Size of one frame of a part, its anchor at the pivot; `grow` local units added above and below (bent tail frames). */
+function partSize(spec: RigPartSpec, grow = 0): TexSize {
+  return {
+    w: spec.box.maxX - spec.box.minX,
+    h: spec.box.maxY - spec.box.minY + 2 * grow,
+    originX: spec.pivotOffset.x,
+    originY: spec.pivotOffset.y + grow,
+  };
+}
+
+/**
+ * Bake `frames` frames into one CanvasTexture under `key` (replacing any
+ * texture there), laid out in a grid, each frame `size` at `scale` and named
+ * 0..frames - 1. `local` is local (0, 0) from a frame's top-left, local units.
+ * Refreshes the texture once. Returns the info of one frame.
+ */
+function bakeSheet(
+  scene: Phaser.Scene,
+  key: string,
+  size: TexSize,
+  scale: number,
+  local: { readonly x: number; readonly y: number },
+  frames: number,
+  paintFrame: (ctx: CanvasRenderingContext2D, frame: number) => void,
+): TexInfo {
+  const started = startRigTiming();
+  try {
+    return paintSheet(scene, key, size, scale, local, frames, paintFrame);
+  } finally {
+    stopRigTiming(started);
+  }
+}
+
+function paintSheet(
+  scene: Phaser.Scene,
+  key: string,
+  size: TexSize,
+  scale: number,
+  local: { readonly x: number; readonly y: number },
+  frames: number,
+  paintFrame: (ctx: CanvasRenderingContext2D, frame: number) => void,
+): TexInfo {
+  const info = makeInfo(key, scale, size);
+  const columns = Math.min(frames, Math.max(1, Math.floor(MAX_TEXTURE_SIDE / info.pxW)));
+  const rows = Math.ceil(frames / columns);
+  if (info.pxW > MAX_TEXTURE_SIDE || rows * info.pxH > MAX_TEXTURE_SIDE) {
+    throw new RangeError(
+      `rig texture "${key}" needs ${frames} frames of ${info.pxW}x${info.pxH} px, over ${MAX_TEXTURE_SIDE} px`,
+    );
+  }
+  if (scene.textures.exists(key)) scene.textures.remove(key);
+  const tex = scene.textures.createCanvas(key, columns * info.pxW, rows * info.pxH);
+  if (!tex) throw new Error(`could not create canvas texture "${key}"`);
+  const ctx = tex.context;
+  for (let frame = 0; frame < frames; frame++) {
+    const cellX = (frame % columns) * info.pxW;
+    const cellY = Math.floor(frame / columns) * info.pxH;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.beginPath();
+    ctx.rect(cellX, cellY, info.pxW, info.pxH);
+    ctx.clip();
+    beginDraw(ctx, scale, cellX / scale + local.x, cellY / scale + local.y);
+    paintFrame(ctx, frame);
+    ctx.restore();
+    tex.add(frame, 0, cellX, cellY, info.pxW, info.pxH);
+  }
+  tex.refresh();
+  countRigBake();
+  return info;
+}
+
+/** The variant painted as frame `frame` of a part's main texture. */
+function partVariant(spec: RigPartSpec, frame: number, renderer: RigRenderer, iridescent: boolean): RigPartVariant {
+  if (spec.id === 'tail') {
+    if (renderer === 'canvas') {
+      return { tailPose: tailStripPose(frame % TAIL_STRIP_PHASES, Math.floor(frame / TAIL_STRIP_PHASES)) };
+    }
+    return frame === 0 ? {} : { sheen: sheenStepValue(frame - 1) };
+  }
+  if (spec.id === 'body') return iridescent && frame < SHEEN_STEPS ? { sheen: sheenStepValue(frame) } : {};
+  return { frame };
+}
+
+/** How many frames a part's main texture holds. */
+function partFrames(spec: RigPartSpec, renderer: RigRenderer, iridescent: boolean): number {
+  if (spec.id === 'tail') {
+    if (renderer === 'canvas') return TAIL_STRIP_FRAMES;
+    return iridescent ? 1 + SHEEN_STEPS : 1;
+  }
+  if (spec.id === 'body') return iridescent ? SHEEN_STEPS + 1 : 1;
+  return spec.frames;
+}
+
+function isLegPart(id: RigPartId): boolean {
+  return id.startsWith('leg-') || id.startsWith('wear-leg-');
+}
+
+/** The shared twinkle strip at `scale` (TWINKLE_RADII frames), baked on first use and kept for the session. */
+function twinkleSheet(scene: Phaser.Scene, scale: number): TexInfo {
+  const key = `axo-rig-twinkle-${scale}`;
+  const box = TWINKLE_BOX;
+  const size: TexSize = { w: box.maxX - box.minX, h: box.maxY - box.minY, originX: -box.minX, originY: -box.minY };
+  if (scene.textures.exists(key)) return makeInfo(key, scale, size);
+  return bakeSheet(scene, key, size, scale, { x: -box.minX, y: -box.minY }, TWINKLE_RADII.length, paintTwinkleFrame);
+}
+
+class RigBake implements AxolotlRigBake {
+  readonly key: string;
+  readonly renderer: RigRenderer;
+  private readonly scene: Phaser.Scene;
+  private appearance: RigAppearance;
+  private base: number;
+  private bakedKey = '';
+  private bakes = 0;
+  private frameInfo: TexInfo;
+  private sheetsById = new Map<RigPartId, RigSheet>();
+  private partOrder: RigPartSpec[] = [];
+  private stillTail: TexInfo | null = null;
+  private twinkles: TexInfo | null = null;
+  private iridescentPalette = false;
+  private readonly owned = new Set<string>();
+  private readonly views = new Set<RigView>();
+  private destroyed = false;
+
+  constructor(scene: Phaser.Scene, key: string, bakeScale: number, appearance: Partial<RigAppearance>) {
+    assertBakeScale(bakeScale);
+    this.scene = scene;
+    this.key = key;
+    this.base = bakeScale;
+    this.renderer = rigRendererOf(scene);
+    this.appearance = {
+      look: appearance.look ?? DEFAULT_ART_LOOK,
+      palette: appearance.palette ?? LEUCISTIC,
+      outfit: appearance.outfit ?? NO_OUTFIT,
+    };
+    this.frameInfo = makeInfo(key, this.scale, AXO_TEX);
+    this.rebake();
+  }
+
+  get bakeScale(): number {
+    return this.base;
+  }
+
+  get scale(): number {
+    return scaleFor(this.base, this.appearance.look);
+  }
+
+  get look(): AxolotlArtLook {
+    return this.appearance.look;
+  }
+
+  get palette(): MorphPalette {
+    return this.appearance.palette;
+  }
+
+  get outfit(): ArtOutfit {
+    return this.appearance.outfit;
+  }
+
+  get info(): TexInfo {
+    return this.frameInfo;
+  }
+
+  get version(): number {
+    return this.bakes;
+  }
+
+  /** The parts in draw order (rigParts) at the current bake. */
+  get parts(): readonly RigPartSpec[] {
+    return this.partOrder;
+  }
+
+  get iridescent(): boolean {
+    return this.iridescentPalette;
+  }
+
+  /** The exact still tail frame (WebGL only; Canvas shows strip frame 0, the same pose). */
+  get tailStill(): TexInfo | null {
+    return this.stillTail;
+  }
+
+  get twinkle(): TexInfo {
+    if (!this.twinkles) throw new Error(`rig bake "${this.key}" has no twinkle strip`);
+    return this.twinkles;
+  }
+
+  setAppearance(appearance: Partial<RigAppearance>): boolean {
+    this.assertAlive();
+    this.appearance = {
+      look: appearance.look ?? this.appearance.look,
+      palette: appearance.palette ?? this.appearance.palette,
+      outfit: appearance.outfit ?? this.appearance.outfit,
+    };
+    return this.rebakeIfChanged();
+  }
+
+  setBakeScale(bakeScale: number): boolean {
+    this.assertAlive();
+    assertBakeScale(bakeScale);
+    this.base = bakeScale;
+    return this.rebakeIfChanged();
+  }
+
+  displayScale(viewScale: number): number {
+    return (AXO_SCENE_SCALE * AXO_SIZE_SCALE[this.appearance.look.size] * viewScale) / this.scale;
+  }
+
+  destroy(): void {
+    if (this.destroyed) return;
+    for (const view of [...this.views]) view.destroy();
+    this.removeOwned();
+    this.destroyed = true;
+  }
+
+  sheet(id: RigPartId): RigSheet {
+    const sheet = this.sheetsById.get(id);
+    if (!sheet) throw new Error(`rig bake "${this.key}" has no part ${id}`);
+    return sheet;
+  }
+
+  /** Texture key of a leg or wear-leg part in a leg state, baking it on first use. */
+  legTexture(id: RigPartId, leg: LegLook | undefined): string {
+    this.assertAlive();
+    const texKey = `${this.key}:${id}:${legStateKey(leg)}`;
+    if (this.owned.has(texKey)) return texKey;
+    const { spec } = this.sheet(id);
+    const appearance = this.appearance;
+    const local = { x: -spec.box.minX, y: -spec.box.minY };
+    bakeSheet(this.scene, texKey, partSize(spec), this.scale, local, 1, (ctx) =>
+      paintRigPart(ctx, id, appearance, { leg }),
+    );
+    this.owned.add(texKey);
+    return texKey;
+  }
+
+  register(view: RigView): void {
+    this.assertAlive();
+    this.views.add(view);
+  }
+
+  unregister(view: RigView): void {
+    this.views.delete(view);
+  }
+
+  assertAlive(): void {
+    if (this.destroyed) throw new Error(`rig bake "${this.key}" was destroyed`);
+  }
+
+  private rebakeIfChanged(): boolean {
+    if (rigAppearanceKey(this.appearance, this.scale) === this.bakedKey) return false;
+    this.rebake();
+    return true;
+  }
+
+  private rebake(): void {
+    const started = startRigTiming();
+    try {
+      this.removeOwned();
+      const scale = this.scale;
+      this.partOrder = rigParts(this.appearance);
+      this.iridescentPalette = isIridescent(this.appearance.palette);
+      this.sheetsById = new Map();
+      this.stillTail = null;
+      for (const spec of this.partOrder) this.sheetsById.set(spec.id, { spec, info: this.bakePart(spec) });
+      this.twinkles = twinkleSheet(this.scene, scale);
+      this.frameInfo = makeInfo(this.key, scale, AXO_TEX);
+      this.bakedKey = rigAppearanceKey(this.appearance, scale);
+      this.bakes += 1;
+      for (const view of this.views) view.resync();
+    } finally {
+      stopRigTiming(started);
+    }
+  }
+
+  /** Bake a part's main texture (legs: only their frame info; their textures bake lazily). */
+  private bakePart(spec: RigPartSpec): TexInfo {
+    const texKey = `${this.key}:${spec.id}`;
+    const scale = this.scale;
+    const grow = spec.id === 'tail' && this.renderer === 'canvas' ? spec.maxDy : 0;
+    const size = partSize(spec, grow);
+    if (isLegPart(spec.id)) return makeInfo(texKey, scale, size);
+    if (spec.id === 'tail' && this.renderer === 'webgl') this.stillTail = this.bakeStillTail(spec);
+    const { renderer, appearance } = this;
+    const iridescent = this.iridescentPalette;
+    const local = { x: -spec.box.minX, y: -spec.box.minY + grow };
+    const info = bakeSheet(this.scene, texKey, size, scale, local, partFrames(spec, renderer, iridescent), (ctx, f) =>
+      paintRigPart(ctx, spec.id, appearance, partVariant(spec, f, renderer, iridescent)),
+    );
+    this.owned.add(texKey);
+    return info;
+  }
+
+  /** WebGL: the tail bent at the still pose, the frame the 'still' tail mode shows. */
+  private bakeStillTail(spec: RigPartSpec): TexInfo {
+    const texKey = `${this.key}:tail-still`;
+    const appearance = this.appearance;
+    const tailPose = { swimPhase: RIG_STILL_POSE.swimPhase, tailAmp: RIG_STILL_POSE.tailAmp };
+    const local = { x: -spec.box.minX, y: -spec.box.minY + spec.maxDy };
+    const info = bakeSheet(this.scene, texKey, partSize(spec, spec.maxDy), this.scale, local, 1, (ctx) =>
+      paintRigPart(ctx, 'tail', appearance, { tailPose }),
+    );
+    this.owned.add(texKey);
+    return info;
+  }
+
+  private removeOwned(): void {
+    for (const texKey of this.owned) {
+      if (this.scene.textures.exists(texKey)) this.scene.textures.remove(texKey);
+    }
+    this.owned.clear();
+  }
+}
+
+function assertBakeScale(bakeScale: number): void {
+  if (!Number.isFinite(bakeScale) || bakeScale <= 0) throw new RangeError(`bake scale must be positive, got ${bakeScale}`);
+}
+
+/**
+ * Bake every part of an appearance (defaults: DEFAULT_ART_LOOK, LEUCISTIC,
+ * NO_OUTFIT) at `bakeScale` x the look's size factor, under `${key}:<part>`.
+ */
+export function createAxolotlRigBake(
+  scene: Phaser.Scene,
+  key: string,
+  bakeScale: number,
+  appearance: Partial<RigAppearance> = {},
+): AxolotlRigBake {
+  return new RigBake(scene, key, bakeScale, appearance);
+}
+
+// ---------------------------------------------------------------------------
+// View
+// ---------------------------------------------------------------------------
+
+function createPoseMemo(): PoseMemo {
+  return {
+    shown: false,
+    swimPhase: 0,
+    gillPhase: 0,
+    blink: 0,
+    tailAmp: 0,
+    sparkle: 0,
+    sheen: undefined,
+    legCount: -1,
+    legStatus: [],
+    legProgress: [],
+  };
+}
+
+function samePose(memo: PoseMemo, pose: AxolotlPose): boolean {
+  if (!memo.shown) return false;
+  if (
+    memo.swimPhase !== pose.swimPhase ||
+    memo.gillPhase !== pose.gillPhase ||
+    memo.blink !== pose.blink ||
+    memo.tailAmp !== pose.tailAmp ||
+    memo.sparkle !== pose.sparkle ||
+    memo.sheen !== pose.sheen
+  ) {
+    return false;
+  }
+  const legs = pose.legs;
+  if ((legs?.length ?? -1) !== memo.legCount) return false;
+  if (!legs) return true;
+  for (let i = 0; i < legs.length; i++) {
+    if (legs[i].status !== memo.legStatus[i] || legs[i].progress !== memo.legProgress[i]) return false;
+  }
+  return true;
+}
+
+function rememberPose(memo: PoseMemo, pose: AxolotlPose): void {
+  memo.shown = true;
+  memo.swimPhase = pose.swimPhase;
+  memo.gillPhase = pose.gillPhase;
+  memo.blink = pose.blink;
+  memo.tailAmp = pose.tailAmp;
+  memo.sparkle = pose.sparkle;
+  memo.sheen = pose.sheen;
+  const legs = pose.legs;
+  memo.legCount = legs?.length ?? -1;
+  memo.legStatus.length = 0;
+  memo.legProgress.length = 0;
+  if (!legs) return;
+  for (const leg of legs) {
+    memo.legStatus.push(leg.status);
+    memo.legProgress.push(leg.progress);
+  }
+}
+
+/** A part's kind and its gill (0..5, far then near) or leg (0..3) index. */
+function partKindOf(id: RigPartId): { kind: RigPartKind; index: number } {
+  const last = Number(id.slice(-1));
+  if (id.startsWith('gill-far-')) return { kind: 'gill', index: last };
+  if (id.startsWith('gill-near-')) return { kind: 'gill', index: 3 + last };
+  if (id.startsWith('wear-leg-')) return { kind: 'wear-leg', index: last };
+  if (id.startsWith('leg-')) return { kind: 'leg', index: last };
+  return { kind: id as Exclude<RigPartId, `gill-${string}` | `leg-${string}` | `wear-leg-${string}`>, index: 0 };
+}
+
+/** An Image showing frame `frame` of `info`'s texture, its origin at the frame's anchor, placed at local `at` (texture px). */
+function makePartImage(
+  scene: Phaser.Scene,
+  textureKey: string,
+  info: TexInfo,
+  frame: number,
+  at: { readonly x: number; readonly y: number },
+): Phaser.GameObjects.Image {
+  return new Phaser.GameObjects.Image(scene, at.x, at.y, textureKey, frame).setOrigin(info.originNormX, info.originNormY);
+}
+
+class RigView implements AxolotlRigView {
+  readonly root: Phaser.GameObjects.Container;
+  private readonly scene: Phaser.Scene;
+  private readonly owner: RigBake;
+  private readonly placement: RigPlacement = createRigPlacement();
+  private readonly memo: PoseMemo = createPoseMemo();
+  private lastPose: AxolotlPose = RIG_STILL_POSE;
+  private syncedVersion = -1;
+  private parts: RigViewPart[] = [];
+  private rope: Phaser.GameObjects.Rope | null = null;
+  private ropeFrame = 0;
+  private tailImage: Phaser.GameObjects.Image | null = null;
+  private tailFrame = 0;
+  private twinkleImages: Phaser.GameObjects.Image[] = [];
+  private twinkleFrames: number[] = [];
+  private destroyed = false;
+
+  constructor(scene: Phaser.Scene, owner: RigBake) {
+    this.scene = scene;
+    this.owner = owner;
+    this.root = scene.add.container(0, 0);
+    this.root.once(Phaser.GameObjects.Events.DESTROY, () => this.detach());
+    owner.register(this);
+    this.resync();
+  }
+
+  get bake(): AxolotlRigBake {
+    return this.owner;
+  }
+
+  setPose(pose: AxolotlPose): void {
+    if (this.destroyed) throw new Error('rig view was destroyed');
+    this.owner.assertAlive();
+    const started = startRigTiming();
+    try {
+      this.lastPose = pose;
+      if (this.syncedVersion !== this.owner.version) this.resync();
+      else if (!samePose(this.memo, pose)) this.apply(pose);
+    } finally {
+      stopRigTiming(started);
+    }
+  }
+
+  spriteFrame(): SpriteFrame {
+    const { root } = this;
+    const info = this.owner.info;
+    return {
+      x: root.x,
+      y: root.y,
+      scaleX: root.scaleX,
+      scaleY: root.scaleY,
+      rotation: root.rotation,
+      width: info.pxW,
+      height: info.pxH,
+      displayOriginX: info.originNormX * info.pxW,
+      displayOriginY: info.originNormY * info.pxH,
+    };
+  }
+
+  destroy(): void {
+    if (this.destroyed) return;
+    this.root.destroy();
+    this.detach();
+  }
+
+  /** Rebuild every child from the bake's current textures and show the last pose. */
+  resync(): void {
+    this.root.removeAll(true);
+    this.parts = [];
+    this.rope = null;
+    this.tailImage = null;
+    this.twinkleImages = [];
+    this.twinkleFrames = [];
+    for (const spec of this.owner.parts) this.addPart(spec);
+    this.syncedVersion = this.owner.version;
+    this.memo.shown = false;
+    this.apply(this.lastPose);
+  }
+
+  private detach(): void {
+    this.destroyed = true;
+    this.owner.unregister(this);
+  }
+
+  private addPart(spec: RigPartSpec): void {
+    const sheet = this.owner.sheet(spec.id);
+    const { kind, index } = partKindOf(spec.id);
+    if (kind === 'tail') {
+      this.addTail(sheet);
+      return;
+    }
+    const scale = this.owner.scale;
+    const textureKey = this.partTextureKey(sheet, kind, index, this.lastPose);
+    const image = makePartImage(this.scene, textureKey, sheet.info, 0, {
+      x: spec.pivot.x * scale,
+      y: spec.pivot.y * scale,
+    });
+    this.root.add(image);
+    this.parts.push({ sheet, kind, index, image, frame: 0, textureKey });
+  }
+
+  private partTextureKey(sheet: RigSheet, kind: RigPartKind, index: number, pose: AxolotlPose): string {
+    if (kind === 'leg') return this.owner.legTexture(sheet.spec.id, pose.legs?.[index]);
+    if (kind === 'wear-leg') return this.owner.legTexture(sheet.spec.id, undefined);
+    return sheet.info.key;
+  }
+
+  /** The tail child: WebGL a Rope on the straight tail plus the still Image; Canvas the strip Image. */
+  private addTail(sheet: RigSheet): void {
+    const { spec, info } = sheet;
+    const scale = this.owner.scale;
+    const at = { x: spec.pivot.x * scale, y: spec.pivot.y * scale };
+    const still = this.owner.tailStill;
+    if (this.owner.renderer === 'canvas') {
+      this.tailImage = makePartImage(this.scene, info.key, info, 0, at);
+      this.tailFrame = 0;
+      this.root.add(this.tailImage);
+      return;
+    }
+    if (!still) throw new Error(`rig bake "${this.owner.key}" has no still tail frame`);
+    const points = tailColumnXs(this.owner.look).map((x) => ({ x: x * scale, y: 0 }));
+    const rope = new Phaser.GameObjects.Rope(this.scene, 0, 0, info.key, 0, points);
+    this.rope = rope;
+    this.ropeFrame = 0;
+    this.writeRopeUvs();
+    this.tailImage = makePartImage(this.scene, still.key, still, 0, at);
+    this.root.add([rope, this.tailImage]);
+  }
+
+  private apply(pose: AxolotlPose): void {
+    const owner = this.owner;
+    const placement = rigPlacement(owner.look, pose, owner.renderer, owner.iridescent, this.placement);
+    for (const part of this.parts) this.placePart(part, placement, pose);
+    this.placeTail(placement);
+    this.placeTwinkles(placement.twinkles);
+    rememberPose(this.memo, pose);
+  }
+
+  private placePart(part: RigViewPart, placement: RigPlacement, pose: AxolotlPose): void {
+    const { image, index } = part;
+    switch (part.kind) {
+      case 'gill':
+        showFrame(part, placement.gills[index].frame);
+        image.rotation = placement.gills[index].rotation;
+        return;
+      case 'leg':
+        this.showTexture(part, this.partTextureKey(part.sheet, 'leg', index, pose));
+        image.rotation = placement.legs[index].rotation;
+        return;
+      case 'wear-leg':
+        image.setVisible(placement.legs[index].wears);
+        image.rotation = placement.legs[index].rotation;
+        return;
+      case 'body':
+        showFrame(part, this.owner.iridescent ? (placement.sheenFrame ?? SHEEN_STEPS) : 0);
+        return;
+      case 'tail-item': {
+        const scale = this.owner.scale;
+        image.setPosition(placement.tailItem.x * scale, placement.tailItem.y * scale);
+        image.rotation = placement.tailItem.rotation;
+        return;
+      }
+      case 'eyes':
+        showFrame(part, placement.eyesFrame);
+        return;
+      case 'face':
+      case 'tail':
+        return;
+    }
+  }
+
+  private showTexture(part: RigViewPart, textureKey: string): void {
+    if (part.textureKey === textureKey) return;
+    part.image.setTexture(textureKey, 0);
+    part.textureKey = textureKey;
+    part.frame = 0;
+  }
+
+  private placeTail(placement: RigPlacement): void {
+    const { tail } = placement;
+    const image = this.tailImage;
+    if (!image) throw new Error('rig view has no tail');
+    const rope = this.rope;
+    if (!rope) {
+      const frame = tail.mode === 'still' ? 0 : tail.frame;
+      if (frame !== this.tailFrame) image.setFrame(frame);
+      this.tailFrame = frame;
+      return;
+    }
+    const roped = tail.mode !== 'still';
+    image.setVisible(!roped);
+    rope.setVisible(roped);
+    if (!roped) return;
+    const frame = placement.sheenFrame === null ? 0 : 1 + placement.sheenFrame;
+    if (frame !== this.ropeFrame) {
+      rope.setFrame(frame);
+      this.ropeFrame = frame;
+      this.writeRopeUvs();
+    }
+    this.writeRopeVertices(tail.dy);
+  }
+
+  /** Rope UVs: each column's x across the straight tail frame, top and bottom of the part box. */
+  private writeRopeUvs(): void {
+    const rope = this.rope;
+    if (!rope) return;
+    const { spec } = this.owner.sheet('tail');
+    const scale = this.owner.scale;
+    const columns = tailColumnXs(this.owner.look);
+    const { u0, v0, u1, v1, cutWidth, cutHeight } = rope.frame;
+    const vBottom = v0 + (v1 - v0) * Math.min(1, ((spec.box.maxY - spec.box.minY) * scale) / cutHeight);
+    const uv = rope.uv;
+    for (let i = 0; i < columns.length; i++) {
+      const across = Math.min(1, Math.max(0, ((columns[i] - spec.box.minX) * scale) / cutWidth));
+      const u = u0 + (u1 - u0) * across;
+      uv[i * 4] = u;
+      uv[i * 4 + 1] = v0;
+      uv[i * 4 + 2] = u;
+      uv[i * 4 + 3] = vBottom;
+    }
+    rope.dirty = false;
+  }
+
+  /** Rope vertices relative to the anchor: each column's top and bottom of the part box, shifted by its dy. */
+  private writeRopeVertices(dy: readonly number[]): void {
+    const rope = this.rope;
+    if (!rope) return;
+    const { spec } = this.owner.sheet('tail');
+    const scale = this.owner.scale;
+    const columns = tailColumnXs(this.owner.look);
+    if (dy.length !== columns.length) {
+      throw new Error(`tail shear has ${dy.length} columns, the rope ${columns.length}`);
+    }
+    const vertices = rope.vertices;
+    for (let i = 0; i < columns.length; i++) {
+      const x = columns[i] * scale;
+      vertices[i * 4] = x;
+      vertices[i * 4 + 1] = (spec.box.minY + dy[i]) * scale;
+      vertices[i * 4 + 2] = x;
+      vertices[i * 4 + 3] = (spec.box.maxY + dy[i]) * scale;
+    }
+    rope.dirty = false;
+  }
+
+  private placeTwinkles(twinkles: readonly RigTwinkle[]): void {
+    if (twinkles.length > TWINKLE_POOL) {
+      throw new RangeError(`rig shows at most ${TWINKLE_POOL} twinkles, placement has ${twinkles.length}`);
+    }
+    const scale = this.owner.scale;
+    for (let k = 0; k < twinkles.length; k++) {
+      const twinkle = twinkles[k];
+      const image = this.twinkleImages[k] ?? this.addTwinkle();
+      image.setVisible(true).setPosition(twinkle.x * scale, twinkle.y * scale);
+      if (this.twinkleFrames[k] !== twinkle.frame) image.setFrame(twinkle.frame);
+      this.twinkleFrames[k] = twinkle.frame;
+    }
+    for (let k = twinkles.length; k < this.twinkleImages.length; k++) this.twinkleImages[k].setVisible(false);
+  }
+
+  private addTwinkle(): Phaser.GameObjects.Image {
+    const info = this.owner.twinkle;
+    const image = makePartImage(this.scene, info.key, info, 0, { x: 0, y: 0 });
+    this.root.add(image);
+    this.twinkleImages.push(image);
+    this.twinkleFrames.push(0);
+    return image;
+  }
+}
+
+function showFrame(part: RigViewPart, frame: number): void {
+  if (part.frame === frame) return;
+  part.image.setFrame(frame);
+  part.frame = frame;
+}
+
+/** A live axolotl showing `bake`'s parts, added to `scene` at (0, 0) in the still pose. */
+export function createAxolotlRigView(scene: Phaser.Scene, bake: AxolotlRigBake): AxolotlRigView {
+  if (!(bake instanceof RigBake)) throw new TypeError('createAxolotlRigView needs a bake from createAxolotlRigBake');
+  return new RigView(scene, bake);
+}
