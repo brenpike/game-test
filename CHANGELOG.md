@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.2] - 2026-10-21
+
+### Fixed
+
+- Surprise me in the character creator now changes only the step you are on, so earlier choices are never lost. On the first step (Colour) it still picks a whole new axolotl. On the restyle screen it changes only the current tab and is hidden on the Colour, Boy or girl, Dream colour and Outfit tabs. The helper line says what Surprise me changes (#86).
+
 ## [0.20.1] - 2026-10-21
 
 ### Changed

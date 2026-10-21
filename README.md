@@ -6,9 +6,9 @@ It is mostly fun, with real axolotl facts along the way.
 
 ## What you can do now
 
-Version 0.20.1 is playable in one canal zone:
+Version 0.20.2 is playable in one canal zone:
 
-- Make your own axolotl the first time you play, one step at a time in 11 steps: colour (one of eight real morphs), boy or girl (with a boy or girl sign), eyes, mouth (eight to choose from), gills, spots, tail, body, age, size, and name. Every choice is a big picture button that shows it on your axolotl, and the preview changes as you pick. Surprise me picks everything at random, with a name that fits. The other seven colours are the ones you rescue.
+- Make your own axolotl the first time you play, one step at a time in 11 steps: colour (one of eight real morphs), boy or girl (with a boy or girl sign), eyes, mouth (eight to choose from), gills, spots, tail, body, age, size, and name. Every choice is a big picture button that shows it on your axolotl, and the preview changes as you pick. On the first step, Surprise me picks a whole new axolotl at random, with a name that fits. On the other steps, it picks something new for that step only. The other seven colours are the ones you rescue.
 - Type a name, or pick a suggested one that fits a boy or a girl, so typing is optional. Names stay on your device.
 - On trips you swim as the axolotl you pick, in its own look and outfit. Size (Small, Medium, or Large), boy or girl, tail, body, and age are for looks only: every axolotl swims the same and has the same hit area.
 - Swim with the on-screen swim pad, or the arrow keys or WASD.
@@ -89,7 +89,7 @@ On a phone they need the dev server, which is harder to reach on WSL2 (see [Test
 |---|---|---|
 | Start (opens the character creator the first time, then the Home Tank) | Tap | Enter or Space |
 | Start over (title screen, once you have an axolotl) | Tap Start over, then Start over and Yes, erase on the two cards, or Keep playing and No, keep them to keep everything | Tab/Shift+Tab to choose Start or Start over, Enter or Space to press; on the cards, Tab/Shift+Tab to choose, Enter or Space to press, Esc to keep everything |
-| Make your axolotl (first time) | Tap a picture button to pick it, Back and Next buttons to change step, Surprise me button, Done button on the last step | Arrow keys to move between picture buttons, Enter or Space to pick, Tab/Shift+Tab to reach Back, Next, Surprise me, and Done, Enter or Space to press |
+| Make your axolotl (first time) | Tap a picture button to pick it, Back and Next buttons to change step, Surprise me button (changes the current step only; on the first step, everything), Done button on the last step | Arrow keys to move between picture buttons, Enter or Space to pick, Tab/Shift+Tab to reach Back, Next, Surprise me, and Done, Enter or Space to press |
 | Type a name | On the Name step, tap the name, type, then press Enter or tap elsewhere to keep it | On the Name step, focus the name and press Enter or Space, type, Enter to keep it, Esc to undo the typing |
 | Swim | Drag the swim pad in the bottom-left corner | Arrow keys or WASD |
 | Tail Dash | Dash button (bottom-right) | Space or Shift |
@@ -100,7 +100,7 @@ On a phone they need the dev server, which is harder to reach on WSL2 (see [Test
 | Go exploring (from the Home Tank) | Go exploring button, then on the card tap an axolotl to pick it, More axolotls to see more, and Go!, Change outfit, or Back | Tab/Shift+Tab or arrow keys to choose a hub button, Enter or Space to press; on the card, arrow keys to move between axolotls, Enter or Space to pick one or press a button, Tab/Shift+Tab to reach the axolotls, More axolotls, Go!, Change outfit, and Back, Esc for Back |
 | Beat Area 1 | Swim into the open exit at the far end of the canal | Swim into the open exit at the far end of the canal |
 | Pick an axolotl (Home Tank) | Tap the axolotl | Tab/Shift+Tab or arrow keys past the hub buttons to focus it and show its name, Enter or Space to restyle it |
-| Rename and restyle | Tap a tab to jump to a step (arrow buttons page the tabs when they do not all fit), tap a picture button to pick it, More colours button on the Dream colour tab to see more, Surprise me, Done, and Cancel buttons. On the Outfit tab, tap a slot, then tap a Wearable or None; Back to slots goes back, and More slots or More wearables shows more | Same as making your axolotl, with Tab/Shift+Tab also reaching the tabs, More colours, More slots, More wearables, Back to slots, and Cancel, plus Esc to cancel (on an Outfit slot's Wearables, Esc goes back to the slots) |
+| Rename and restyle | Tap a tab to jump to a step (arrow buttons page the tabs when they do not all fit), tap a picture button to pick it, More colours button on the Dream colour tab to see more, Surprise me, Done, and Cancel buttons. Surprise me changes the current step only, and is not on the Colour, Boy or girl, Dream colour, and Outfit tabs. On the Outfit tab, tap a slot, then tap a Wearable or None; Back to slots goes back, and More slots or More wearables shows more | Same as making your axolotl, with Tab/Shift+Tab also reaching the tabs (but not Surprise me on the Colour, Boy or girl, Dream colour, and Outfit tabs), More colours, More slots, More wearables, Back to slots, and Cancel, plus Esc to cancel (on an Outfit slot's Wearables, Esc goes back to the slots) |
 | Close the trip-end message (also the "Area beaten" message) | OK button | Enter or Space |
 | Close the tilapia fact card | OK button | Enter, Space, P, or Esc |
 | First-find card (after the trip-end message) | Try it now! or Maybe later button on the Paint shell card, OK button on the others | Tab/Shift+Tab or Left/Right to choose, Enter or Space to press, Esc to close |
