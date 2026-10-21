@@ -35,7 +35,7 @@ import {
   type Holdings,
 } from './tripBag';
 import type { FoundInfo, LegsSnapshot, RescueSnapshot, TripEnding, TripPhase, TripSnapshot } from './tripEvents';
-import { CARRY, FINDS, LEGS, SWIM, tripTreasureTuning, type CarryTuning, type FindTuning, type LegTuning } from './tuning';
+import { CARRY, FINDS, LEGS, SWIM, TILAPIA, tripTreasureTuning, type CarryTuning, type FindTuning, type LegTuning } from './tuning';
 import type { Vec2 } from './vec';
 import {
   inHomeSpot as isInHomeSpot,
@@ -209,6 +209,8 @@ export function createTrip(
     extras: special ? [special] : [],
     tuning: tripTreasureTuning(source.areaId),
     mainPath: source.mainPath,
+    tilapiaRoutes: source.tilapiaRoutes,
+    lungeRange: TILAPIA.lungeRange,
   });
   return {
     phase: 'swimming',
