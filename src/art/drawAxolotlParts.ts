@@ -1022,7 +1022,8 @@ export function gillInkBounds(style: GillStyleId, tfl: number, lengthFactor = 1)
   return unionBounds(boxes);
 }
 
-function paintGill(
+/** Paint one gill: its stem, then its filaments, in one ink pass at flutter phase `tfl`. */
+export function paintGill(
   ctx: CanvasRenderingContext2D,
   g: GillSpec,
   style: GillStyleId,
