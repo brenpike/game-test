@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import { bakeAreaMapTextures, type AreaMapTextures } from '../art/areaMapTextures';
 import { bakeAreaTextures, type AreaTextures } from '../art/areaTextures';
 import { createAxolotlRigBake, type AxolotlRigBake } from '../art/axolotlRig';
 import type { ReedLook } from '../art/drawScenery';
@@ -35,6 +36,7 @@ export const SCENE_KEYS = Object.freeze({
   boot: 'Boot',
   title: 'Title',
   homeTank: 'HomeTank',
+  areaMap: 'AreaMap',
   swim: 'Swim',
   hud: 'Hud',
   creator: 'Creator',
@@ -64,6 +66,7 @@ export interface GameAssets {
   tank: TankTextures;
   morph: MorphTextures;
   area: AreaTextures;
+  areaMap: AreaMapTextures;
 }
 
 /** What the swim scene and its HUD start from: the game assets and the id of the area to swim in. */
@@ -400,6 +403,7 @@ export class BootScene extends Phaser.Scene {
       rand: mulberry32(TANK_ART_SEED),
     });
     const area = bakeAreaTextures(this, bakeScale);
+    const areaMap = bakeAreaMapTextures(this, bakeScale);
     const assets: GameAssets = {
       areas,
       zones,
@@ -412,6 +416,7 @@ export class BootScene extends Phaser.Scene {
       tank,
       morph,
       area,
+      areaMap,
     };
     this.scene.start(SCENE_KEYS.title, assets);
   }

@@ -5,6 +5,7 @@ import { GAME_EVENTS, REGISTRY_KEYS, type ReducedMotionPayload } from './logic/g
 import { VIEW } from './logic/tuning';
 import { fitView, type ViewFit } from './logic/viewport';
 import { WORLD_H } from './logic/zone';
+import { AreaMapScene } from './scenes/AreaMapScene';
 import { BootScene, DEV_AREA_REGISTRY_KEY } from './scenes/BootScene';
 import { CreatorScene } from './scenes/CreatorScene';
 import { HomeTankScene } from './scenes/HomeTankScene';
@@ -106,6 +107,7 @@ const GAME_SCENES: Phaser.Types.Scenes.SceneType[] = [
   BootScene,
   TitleScene,
   HomeTankScene,
+  AreaMapScene,
   SwimScene,
   HudScene,
   CreatorScene,

@@ -65,8 +65,8 @@ import { BACK_LABEL } from './stylerText';
 import { UI, WIDE_BUTTON, nextFocusIndex, wideButtonWidth, type TankKey } from './tankUi';
 import type { Vec2 } from './vec';
 
-/** The screen title (art guide 8): bold ink 28 px on a white panel. */
-export const AREA_MAP_TITLE = 'Where to?';
+/** The screen title (art guide 8): bold ink 28 px on a white panel. Defined once, in areaText.ts. */
+export { AREA_MAP_TITLE } from './areaText';
 
 /** Side of a square area marker, the map's primary target, in CSS px (art guide 10: primary at least 64). */
 export const AREA_MARKER_PX = 64;
