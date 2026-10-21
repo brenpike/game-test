@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-20
+
+### Added
+
+- Treasures glow softly in their rarity's colour wherever you own or reveal them, never while hidden, and stay still under reduced motion (#68).
+- The Treasure Chest shows every treasure, with unfound ones as silhouettes showing "???", their rarity and a hint (#69).
+- Each Treasure Chest section says what its items are for (#83).
+- One-time cards explain your first Decoration, Wearable and Paint shell, and the Paint shell card's "Try it now!" opens the Dream colour tab (#83).
+
+### Changed
+
+- Common is now green on its badge and glow, so each rarity has one colour (#68).
+
 ## [0.19.0] - 2026-10-20
 
 ### Changed
