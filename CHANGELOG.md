@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-10-21
+
+### Changed
+
+- Axolotls are now drawn from ready-made parts instead of being repainted every frame, so the game runs more smoothly on slower phones. They look the same (#46).
+
 ## [0.20.0] - 2026-10-20
 
 ### Added

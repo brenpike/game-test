@@ -45,6 +45,7 @@ import {
   type AxolotlArtLook,
   type BodyEllipse,
   type Bounds,
+  type TailGeometry,
   type TailSample,
 } from './drawAxolotlParts';
 import { dreamMarkerCentres, paintDreamMarker, paintDreamPattern } from './drawDreamOverlay';
@@ -170,12 +171,12 @@ const TOE_SPLAY = 0.6;
  * Leg angles in leg draw order (far-front, far-rear, near-front, near-rear); diagonal pairs swing
  * opposite. The same legAngle() the Socks and Feet frames turn with, so a Sock follows its paddle.
  */
-function legAngles(swim: number): number[] {
+export function legAngles(swim: number): number[] {
   return [0, 1, 2, 3].map((index) => legAngle(index, swim));
 }
 
 /** Leg end point and its three toe tips. */
-function legPoints(bx: number, by: number, ang: number, len: number, toeLen: number): [number, number][] {
+export function legPoints(bx: number, by: number, ang: number, len: number, toeLen: number): [number, number][] {
   const ex = bx + Math.cos(ang) * len;
   const ey = by + Math.sin(ang) * len;
   const points: [number, number][] = [[ex, ey]];
@@ -216,14 +217,16 @@ const GHOST_UNDER = 3.6;
 const GHOST_ALPHA_LOST = 0.55;
 const GHOST_ALPHA_REGROW = 0.75;
 /** Leg-regrowth glints: arm radius at full strength. */
-const LEG_GLINT_R = 3.8;
+export const LEG_GLINT_R = 3.8;
 /** Below this progress no fill is drawn yet, only the outline and glints. */
 const LEG_FILL_MIN = 0.04;
 /** Twinkle arms: colour width and outline. */
-const GLINT_ARM_W = 3;
-const GLINT_ARM_OL = 1.6;
+export const GLINT_ARM_W = 3;
+export const GLINT_ARM_OL = 1.6;
 /** Regeneration glints along the tail: arm radius at full strength. */
-const REGEN_GLINT_R = 4.2;
+export const REGEN_GLINT_R = 4.2;
+/** A glint whose arm radius is below this is not painted. */
+export const GLINT_MIN_R = 0.4;
 
 function capsule(p: Path2D, x1: number, y1: number, x2: number, y2: number, r: number): void {
   const a = Math.atan2(y2 - y1, x2 - x1);
@@ -273,7 +276,7 @@ function legProgress(look: LegLook): number {
 const REGEN_GLINT_S: readonly number[] = [0.28, 0.42, 0.56, 0.7, 0.84];
 
 /** Regeneration glint centres beside the tail, in REGEN_GLINT_S order. */
-function regenGlintSpots(tail: readonly TailSample[]): [number, number][] {
+export function regenGlintSpots(tail: readonly TailSample[]): [number, number][] {
   return REGEN_GLINT_S.map((s, k): [number, number] => {
     const tp = tail[Math.round(s * TAIL_SEGMENTS)];
     const side = k % 2 === 0 ? -1 : 1;
@@ -281,7 +284,28 @@ function regenGlintSpots(tail: readonly TailSample[]): [number, number][] {
   });
 }
 
-function paintTwinkle(ctx: CanvasRenderingContext2D, gx: number, gy: number, r: number): void {
+/**
+ * Arm radius of tail regeneration glint `k` (REGEN_GLINT_S order) at this
+ * sparkle (clamped to 0..1) and swim phase. Below GLINT_MIN_R it is not painted.
+ */
+export function regenGlintRadius(sparkle: number, swimPhase: number, k: number): number {
+  const amount = Math.min(1, Math.max(0, sparkle));
+  // Twinkle at the 1.2 s swim cycle, far below 3 flashes per second.
+  return REGEN_GLINT_R * amount * (0.6 + 0.4 * Math.sin(swimPhase + k * 1.3));
+}
+
+/**
+ * Arm radius of glint `k` (legGlintSpots order) beside regrowing leg
+ * `legIndex` (leg draw order) at regrowth `progress` (0..1, clamped as
+ * legProgress does) and swim phase. Below GLINT_MIN_R it is not painted.
+ */
+export function legGlintRadius(progress: number, swimPhase: number, legIndex: number, k: number): number {
+  const strength = 0.6 + 0.4 * progress;
+  return LEG_GLINT_R * strength * (0.6 + 0.4 * Math.sin(swimPhase + k * 1.3 + legIndex * 0.9));
+}
+
+/** Paint one rounded plus-shaped twinkle of arm radius `r` centred on (gx, gy). */
+export function paintTwinkle(ctx: CanvasRenderingContext2D, gx: number, gy: number, r: number): void {
   inkMany(ctx, [
     seg(line(gx - r, gy, gx + r, gy), GLINT_ARM_W, SUN, GLINT_ARM_OL),
     seg(line(gx, gy - r, gx, gy + r), GLINT_ARM_W, SUN, GLINT_ARM_OL),
@@ -292,20 +316,23 @@ function paintTwinkle(ctx: CanvasRenderingContext2D, gx: number, gy: number, r: 
   ctx.fill(core);
 }
 
-/** Regeneration glints: rounded plus-shaped twinkles along the tail. Never gory. */
-function paintRegenGlints(ctx: CanvasRenderingContext2D, tail: readonly TailSample[], pose: AxolotlPose): void {
+/**
+ * Regeneration glints: rounded plus-shaped twinkles along the tail. Never gory.
+ * The tail is sampled only when the glints show.
+ */
+function paintRegenGlints(ctx: CanvasRenderingContext2D, tailGeo: TailGeometry, pose: AxolotlPose): void {
   const amount = Math.min(1, Math.max(0, pose.sparkle));
   if (amount <= 0.01) return;
+  const tail = tailSamples(tailGeo, pose.swimPhase, pose.tailAmp);
   regenGlintSpots(tail).forEach(([gx, gy], k) => {
-    // Twinkle at the 1.2 s swim cycle, far below 3 flashes per second.
-    const r = REGEN_GLINT_R * amount * (0.6 + 0.4 * Math.sin(pose.swimPhase + k * 1.3));
-    if (r < 0.4) return;
+    const r = regenGlintRadius(pose.sparkle, pose.swimPhase, k);
+    if (r < GLINT_MIN_R) return;
     paintTwinkle(ctx, gx, gy, r);
   });
 }
 
 /** Glint centres for one regrowing leg: beside the toes on both sides, and just past the toes. */
-function legGlintSpots(root: LegRoot, ang: number, len: number): [number, number][] {
+export function legGlintSpots(root: LegRoot, ang: number, len: number): [number, number][] {
   const ex = root.x + Math.cos(ang) * len;
   const ey = root.y + Math.sin(ang) * len;
   const dx = Math.cos(ang);
@@ -334,10 +361,10 @@ function paintLegGlints(
   for (let i = 0; i < 4; i++) {
     const look = legs[i];
     if (!look || look.status !== 'regrowing') continue;
-    const strength = 0.6 + 0.4 * legProgress(look);
+    const progress = legProgress(look);
     legGlintSpots(legRoots[i], legAng[i], legLen[i]).forEach(([gx, gy], k) => {
-      const r = LEG_GLINT_R * strength * (0.6 + 0.4 * Math.sin(pose.swimPhase + k * 1.3 + i * 0.9));
-      if (r < 0.4) return;
+      const r = legGlintRadius(progress, pose.swimPhase, i, k);
+      if (r < GLINT_MIN_R) return;
       paintTwinkle(ctx, gx, gy, r);
     });
   }
@@ -348,7 +375,7 @@ function ellipseBounds(e: BodyEllipse, pad: number): Bounds {
 }
 
 /** Box of one leg in its widest look (the lost-leg ghost or the inked leg) plus its regrowth glints. */
-function legInkBounds(root: LegRoot, ang: number, len: number, toeLen: number): Bounds {
+export function legInkBounds(root: LegRoot, ang: number, len: number, toeLen: number): Bounds {
   const [end, ...toes] = legPoints(root.x, root.y, ang, len, toeLen);
   const ghostLeg = GHOST_R_LEG + GHOST_UNDER / 2;
   const ghostToe = GHOST_R_TOE + GHOST_UNDER / 2;
@@ -552,65 +579,61 @@ function bodyShineColour(extras: MorphExtras | undefined): string {
 const BODY_SHINE_ELL = { x: -16, y: -9, rx: 12, ry: 3, rot: -0.08 } as const;
 
 /**
- * Paint the axolotl in local units, facing right, origin at local (0, 0).
- * The caller sets the transform (see AXO_TEX for the frame). `look` picks the
- * creator parts (guide 6l to 6n) and the body proportions (Boy or girl, Tail,
- * Body, Age). Size is not painted here: the caller bakes and scales by
- * AXO_SIZE_SCALE (guide 6o).
- *
- * `outfit` is what the axolotl wears (guide 6a, 6i), none by default, and then
- * the painter makes exactly the calls it made before Wearables. Wearables paint
- * at their layers: Socks and Feet with their leg behind the silhouette (the Sock
- * first, then the Feet item), then the Shirt (8.2), Tail (8.5), Neck (9.5), Back
- * (9.7), Head (10.5) and Face (11.5) items. Eyes (layer 12) still paint last.
- * A leg wears its Socks and Feet only while its status is 'present', so a lost
- * or regrowing leg is the bare ghost; a Shirt never reads the leg state.
+ * Paint leg `index` (leg draw order, see AXO_LEG_ROOTS) of `look` at `angle`
+ * (legAngles), layers 2 and 3: the inked leg when `legLook` is undefined or
+ * present, the faint ghost when lost, and the ghost plus the growing leg while
+ * regrowing. The far pair (0, 1) takes the far-side colour. No Socks or Feet.
  */
-export function drawAxolotl(
+export function paintAxolotlLeg(
+  ctx: CanvasRenderingContext2D,
+  look: AxolotlArtLook,
+  index: number,
+  angle: number,
+  legLook: LegLook | undefined,
+  palette: MorphPalette,
+): void {
+  const geo = axolotlBodyGeometry(look);
+  const { x, y } = geo.legRoots[index];
+  const len = geo.legLengths[index];
+  const toeLen = geo.toeLength;
+  const colour = index < 2 ? palette.farSide : palette.body;
+  if (!legLook || legLook.status === 'present') {
+    leg(ctx, x, y, angle, len, toeLen, colour);
+  } else if (legLook.status === 'lost') {
+    legGhost(ctx, x, y, angle, len, toeLen, GHOST_ALPHA_LOST);
+  } else {
+    const pr = legProgress(legLook);
+    legGhost(ctx, x, y, angle, len, toeLen, GHOST_ALPHA_REGROW);
+    if (pr >= LEG_FILL_MIN) leg(ctx, x, y, angle, len, toeLen, colour, pr);
+  }
+}
+
+/**
+ * Which of layers 4 to 8.2 paintBodyLayers paints: 'all' of them; 'under',
+ * layers 4 to 6.2 (silhouette, fin bands and rays, belly, morph rim and
+ * speckles), stopping before the 6.5 Dream block; 'over', only what follows
+ * the Dream pattern (the Dream rim and marker, shines, flecks and shimmer,
+ * spots, the Shirt item). 'under', the pattern, then 'over' paint as 'all'.
+ */
+export type BodyLayers = 'all' | 'under' | 'over';
+
+/**
+ * Paint layers 4 to 8.2 of drawAxolotl: the merged silhouette, fin bands and
+ * rays, belly, morph rim and speckles, the Dream overlay, shines, flecks and
+ * shimmer, spots, then the Shirt item. Not the Tail item (8.5). `layers`
+ * (default 'all') paints only the 'under' or 'over' part (BodyLayers).
+ */
+export function paintBodyLayers(
   ctx: CanvasRenderingContext2D,
   pose: AxolotlPose,
-  palette: MorphPalette = LEUCISTIC,
-  look: AxolotlArtLook = DEFAULT_ART_LOOK,
-  outfit: ArtOutfit = NO_OUTFIT,
+  palette: MorphPalette,
+  look: AxolotlArtLook,
+  outfit: ArtOutfit,
+  layers: BodyLayers = 'all',
 ): void {
   const swim = pose.swimPhase;
-  const tfl = pose.gillPhase;
   const extras = palette.extras;
   const geo = axolotlBodyGeometry(look);
-
-  // 1. far gills (behind everything)
-  paintGills(ctx, 'far', look.gills, tfl, palette.gillFarStem, palette.gillFarFilament, geo.gillLength);
-
-  // 2-3. legs behind the body: far pair darker, then near pair
-  // Order matches AXO_LEG_ROOTS: far-front, far-rear, near-front, near-rear.
-  const legAng = legAngles(swim);
-  const legLen = geo.legLengths;
-  const toeLen = geo.toeLength;
-  const legColour = [palette.farSide, palette.farSide, palette.body, palette.body];
-  // Socks and Feet (layers 2.5 far, 3.5 near): only on a present leg, after both legs of their side are painted.
-  const legFrames = wearsOnLegs(outfit) ? legSlotFrames(look, swim) : null;
-  const wearLegs = (first: number, last: number): void => {
-    if (!legFrames) return;
-    for (let i = first; i <= last; i++) {
-      const status = pose.legs?.[i]?.status ?? 'present';
-      if (status === 'present') paintLegWearables(ctx, outfit, legFrames[i]);
-    }
-  };
-  for (let i = 0; i < 4; i++) {
-    const { x, y } = geo.legRoots[i];
-    const legLook = pose.legs?.[i];
-    if (!legLook || legLook.status === 'present') {
-      leg(ctx, x, y, legAng[i], legLen[i], toeLen, legColour[i]);
-    } else if (legLook.status === 'lost') {
-      legGhost(ctx, x, y, legAng[i], legLen[i], toeLen, GHOST_ALPHA_LOST);
-    } else {
-      const pr = legProgress(legLook);
-      legGhost(ctx, x, y, legAng[i], legLen[i], toeLen, GHOST_ALPHA_REGROW);
-      if (pr >= LEG_FILL_MIN) leg(ctx, x, y, legAng[i], legLen[i], toeLen, legColour[i], pr);
-    }
-    if (i === 1) wearLegs(0, 1);
-    if (i === 3) wearLegs(2, 3);
-  }
 
   // tail geometry
   const tail = tailSamples(geo.tail, swim, pose.tailAmp);
@@ -635,62 +658,66 @@ export function drawAxolotl(
   sil.closePath();
   ell(sil, torso.cx, torso.cy, torso.rx, torso.ry);
   ell(sil, HEAD_ELLIPSE.cx, HEAD_ELLIPSE.cy, HEAD_ELLIPSE.rx, HEAD_ELLIPSE.ry);
-  blob(ctx, sil, palette.body, LW);
-
-  // 5. fin bands, fin rays, core edge (from the look's fin start: nearer the body on a Boy)
   const i0 = geo.tail.finStart;
-  const bandT = new Path2D();
-  const bandB = new Path2D();
-  bandT.moveTo(topC[i0][0], topC[i0][1]);
-  bandB.moveTo(botC[i0][0], botC[i0][1]);
-  for (let i = i0 + 1; i <= N; i++) {
-    bandT.lineTo(topC[i][0], topC[i][1]);
-    bandB.lineTo(botC[i][0], botC[i][1]);
-  }
-  for (let i = N; i >= i0; i--) {
-    bandT.lineTo(topF[i][0], topF[i][1]);
-    bandB.lineTo(botF[i][0], botF[i][1]);
-  }
-  bandT.closePath();
-  bandB.closePath();
-  ctx.fillStyle = palette.fin;
-  ctx.fill(bandT);
-  ctx.fill(bandB);
+  let p: Path2D;
+  if (layers !== 'over') {
+    blob(ctx, sil, palette.body, LW);
 
-  const rays = new Path2D();
-  for (const ri of [5, 8, 11]) {
-    rays.moveTo(topC[ri][0], topC[ri][1]);
-    rays.lineTo(topF[ri][0], topF[ri][1]);
-    rays.moveTo(botC[ri][0], botC[ri][1]);
-    rays.lineTo(botF[ri][0], botF[ri][1]);
-  }
-  for (let i = i0; i <= N; i++) {
-    if (i === i0) rays.moveTo(topC[i][0], topC[i][1]);
-    else rays.lineTo(topC[i][0], topC[i][1]);
-  }
-  for (let i = i0; i <= N; i++) {
-    if (i === i0) rays.moveTo(botC[i][0], botC[i][1]);
-    else rays.lineTo(botC[i][0], botC[i][1]);
-  }
-  if (extras?.finRays !== null) {
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = extras?.finRays ?? FIN_RAY;
-    ctx.stroke(rays);
-  }
+    // 5. fin bands, fin rays, core edge (from the look's fin start: nearer the body on a Boy)
+    const bandT = new Path2D();
+    const bandB = new Path2D();
+    bandT.moveTo(topC[i0][0], topC[i0][1]);
+    bandB.moveTo(botC[i0][0], botC[i0][1]);
+    for (let i = i0 + 1; i <= N; i++) {
+      bandT.lineTo(topC[i][0], topC[i][1]);
+      bandB.lineTo(botC[i][0], botC[i][1]);
+    }
+    for (let i = N; i >= i0; i--) {
+      bandT.lineTo(topF[i][0], topF[i][1]);
+      bandB.lineTo(botF[i][0], botF[i][1]);
+    }
+    bandT.closePath();
+    bandB.closePath();
+    ctx.fillStyle = palette.fin;
+    ctx.fill(bandT);
+    ctx.fill(bandB);
 
-  // 6. belly
-  let p = new Path2D();
-  ell(p, belly.cx, belly.cy, belly.rx, belly.ry, 0.03);
-  ctx.fillStyle = palette.belly;
-  ctx.fill(p);
+    const rays = new Path2D();
+    for (const ri of [5, 8, 11]) {
+      rays.moveTo(topC[ri][0], topC[ri][1]);
+      rays.lineTo(topF[ri][0], topF[ri][1]);
+      rays.moveTo(botC[ri][0], botC[ri][1]);
+      rays.lineTo(botF[ri][0], botF[ri][1]);
+    }
+    for (let i = i0; i <= N; i++) {
+      if (i === i0) rays.moveTo(topC[i][0], topC[i][1]);
+      else rays.lineTo(topC[i][0], topC[i][1]);
+    }
+    for (let i = i0; i <= N; i++) {
+      if (i === i0) rays.moveTo(botC[i][0], botC[i][1]);
+      else rays.lineTo(botC[i][0], botC[i][1]);
+    }
+    if (extras?.finRays !== null) {
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = extras?.finRays ?? FIN_RAY;
+      ctx.stroke(rays);
+    }
 
-  // 6.2 morph rim light and speckles (clipped to the silhouette, under the shines); a Dream rim paints at 6.5
-  if (extras?.rim && !palette.dream) paintMorphRim(ctx, sil, topF, extras.rim.fin ? N : i0, torso, extras.rim);
-  if (extras?.speckles) paintMorphDots(ctx, sil, tail, torso, extras.speckles);
+    // 6. belly
+    p = new Path2D();
+    ell(p, belly.cx, belly.cy, belly.rx, belly.ry, 0.03);
+    ctx.fillStyle = palette.belly;
+    ctx.fill(p);
+
+    // 6.2 morph rim light and speckles (clipped to the silhouette, under the shines); a Dream rim paints at 6.5
+    if (extras?.rim && !palette.dream) paintMorphRim(ctx, sil, topF, extras.rim.fin ? N : i0, torso, extras.rim);
+    if (extras?.speckles) paintMorphDots(ctx, sil, tail, torso, extras.speckles);
+  }
+  if (layers === 'under') return;
 
   // 6.5 Dream overlay (guide 6p): pattern, then the rim light (top fin edge included), then the Dream marker
   if (palette.dream) {
-    paintDreamPattern(ctx, sil, { id: palette.dream.id, torso, tail, sheen: pose.sheen });
+    if (layers === 'all') paintDreamPattern(ctx, sil, { id: palette.dream.id, torso, tail, sheen: pose.sheen });
     if (extras?.rim) paintMorphRim(ctx, sil, topF, extras.rim.fin ? N : i0, torso, extras.rim);
     paintDreamMarker(ctx, dreamMarkerCentres(tail));
   }
@@ -715,12 +742,23 @@ export function drawAxolotl(
   const spot = extras?.spot === undefined ? FRECKLE : extras.spot;
   if (spot !== null) paintSpots(ctx, look.spots, swim, pose.tailAmp, spot, geo.tail, torso);
 
-  // 8.2 Shirt item, 8.5 Tail item (guide 6i)
+  // 8.2 Shirt item (guide 6i)
   paintBodyWearable(ctx, 'shirt', outfit, look, swim, pose.tailAmp);
-  paintBodyWearable(ctx, 'tail', outfit, look, swim, pose.tailAmp);
+}
 
-  // 9. near gills (in front of the body, sprouting from the cheek)
-  paintGills(ctx, 'near', look.gills, tfl, palette.gillNearStem, palette.gillNearFilament, geo.gillLength);
+/**
+ * Paint layers 9.5 to 11.5 of drawAxolotl, which sit over the near gills: the
+ * Neck and Back items, blush, the Head item, the mouth, then the Face item.
+ */
+export function paintFaceLayers(
+  ctx: CanvasRenderingContext2D,
+  pose: AxolotlPose,
+  palette: MorphPalette,
+  look: AxolotlArtLook,
+  outfit: ArtOutfit,
+): void {
+  const swim = pose.swimPhase;
+  const extras = palette.extras;
 
   // 9.5 Neck item, 9.7 Back item: from the body out, over the Shirt and the near gills
   paintBodyWearable(ctx, 'neck', outfit, look, swim, pose.tailAmp);
@@ -728,7 +766,7 @@ export function drawAxolotl(
 
   // 10. blush
   if (extras?.blush !== false) {
-    p = new Path2D();
+    const p = new Path2D();
     ell(p, 27, 9, 5, 3.3);
     ell(p, 44, 8, 4, 2.7);
     ctx.fillStyle = BLUSH;
@@ -743,13 +781,91 @@ export function drawAxolotl(
 
   // 11.5 Face item (below the eyes on purpose: no Face item can cover them)
   paintBodyWearable(ctx, 'face', outfit, look, swim, pose.tailAmp);
+}
 
+/** Paint layer 12 of drawAxolotl: both eyes at eye height `blink`, far then near. */
+export function paintEyes(
+  ctx: CanvasRenderingContext2D,
+  look: AxolotlArtLook,
+  blink: number,
+  palette: MorphPalette,
+): void {
   // 12. eyes, far then near, so the near bead covers any far lash that reaches it (the Girl cue adds lashes)
+  const extras = palette.extras;
   const eyelashes = look.sex === 'girl';
-  paintEye(ctx, look.eyes, FAR_EYE, pose.blink, palette.eye, extras?.eyeRing, eyelashes);
-  paintEye(ctx, look.eyes, NEAR_EYE, pose.blink, palette.eye, extras?.eyeRing, eyelashes);
+  paintEye(ctx, look.eyes, FAR_EYE, blink, palette.eye, extras?.eyeRing, eyelashes);
+  paintEye(ctx, look.eyes, NEAR_EYE, blink, palette.eye, extras?.eyeRing, eyelashes);
+}
+
+/** Paint the top layer of drawAxolotl: the tail regeneration glints, then the leg-regrowth glints. */
+export function paintAxolotlGlints(ctx: CanvasRenderingContext2D, pose: AxolotlPose, look: AxolotlArtLook): void {
+  const geo = axolotlBodyGeometry(look);
+  paintRegenGlints(ctx, geo.tail, pose);
+  if (pose.legs) paintLegGlints(ctx, pose, geo.legRoots, legAngles(pose.swimPhase), geo.legLengths);
+}
+
+/**
+ * Paint the axolotl in local units, facing right, origin at local (0, 0).
+ * The caller sets the transform (see AXO_TEX for the frame). `look` picks the
+ * creator parts (guide 6l to 6n) and the body proportions (Boy or girl, Tail,
+ * Body, Age). Size is not painted here: the caller bakes and scales by
+ * AXO_SIZE_SCALE (guide 6o).
+ *
+ * `outfit` is what the axolotl wears (guide 6a, 6i), none by default, and then
+ * the painter makes exactly the calls it made before Wearables. Wearables paint
+ * at their layers: Socks and Feet with their leg behind the silhouette (the Sock
+ * first, then the Feet item), then the Shirt (8.2), Tail (8.5), Neck (9.5), Back
+ * (9.7), Head (10.5) and Face (11.5) items. Eyes (layer 12) still paint last.
+ * A leg wears its Socks and Feet only while its status is 'present', so a lost
+ * or regrowing leg is the bare ghost; a Shirt never reads the leg state.
+ */
+export function drawAxolotl(
+  ctx: CanvasRenderingContext2D,
+  pose: AxolotlPose,
+  palette: MorphPalette = LEUCISTIC,
+  look: AxolotlArtLook = DEFAULT_ART_LOOK,
+  outfit: ArtOutfit = NO_OUTFIT,
+): void {
+  const swim = pose.swimPhase;
+  const tfl = pose.gillPhase;
+  const geo = axolotlBodyGeometry(look);
+
+  // 1. far gills (behind everything)
+  paintGills(ctx, 'far', look.gills, tfl, palette.gillFarStem, palette.gillFarFilament, geo.gillLength);
+
+  // 2-3. legs behind the body: far pair darker, then near pair
+  // Order matches AXO_LEG_ROOTS: far-front, far-rear, near-front, near-rear.
+  const legAng = legAngles(swim);
+  // Socks and Feet (layers 2.5 far, 3.5 near): only on a present leg, after both legs of their side are painted.
+  const legFrames = wearsOnLegs(outfit) ? legSlotFrames(look, swim) : null;
+  const wearLegs = (first: number, last: number): void => {
+    if (!legFrames) return;
+    for (let i = first; i <= last; i++) {
+      const status = pose.legs?.[i]?.status ?? 'present';
+      if (status === 'present') paintLegWearables(ctx, outfit, legFrames[i]);
+    }
+  };
+  for (let i = 0; i < 4; i++) {
+    paintAxolotlLeg(ctx, look, i, legAng[i], pose.legs?.[i], palette);
+    if (i === 1) wearLegs(0, 1);
+    if (i === 3) wearLegs(2, 3);
+  }
+
+  // 4 to 8.2: silhouette, fins, belly, morph and Dream layers, shines, spots, Shirt item
+  paintBodyLayers(ctx, pose, palette, look, outfit);
+
+  // 8.5 Tail item (guide 6i)
+  paintBodyWearable(ctx, 'tail', outfit, look, swim, pose.tailAmp);
+
+  // 9. near gills (in front of the body, sprouting from the cheek)
+  paintGills(ctx, 'near', look.gills, tfl, palette.gillNearStem, palette.gillNearFilament, geo.gillLength);
+
+  // 9.5 to 11.5: Neck and Back items, blush, Head item, mouth, Face item
+  paintFaceLayers(ctx, pose, palette, look, outfit);
+
+  // 12. eyes
+  paintEyes(ctx, look, pose.blink, palette);
 
   // regeneration glints sit on top of everything
-  paintRegenGlints(ctx, tail, pose);
-  if (pose.legs) paintLegGlints(ctx, pose, geo.legRoots, legAng, legLen);
+  paintAxolotlGlints(ctx, pose, look);
 }

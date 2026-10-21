@@ -67,22 +67,55 @@ function watchReducedMotion(game: Phaser.Game): void {
   });
 }
 
+/** Creates the game in `parent` with `scenes`, on renderer `type` (Phaser.AUTO or Phaser.CANVAS). */
+function startGame(parent: HTMLElement, type: number, scenes: Phaser.Types.Scenes.SceneType[]): Phaser.Game {
+  const initialView = measureView(parent);
+  const game = new Phaser.Game({
+    type,
+    parent: PARENT_ID,
+    backgroundColor: LETTERBOX,
+    scale: {
+      mode: Phaser.Scale.NONE,
+      width: initialView.canvasW,
+      height: initialView.canvasH,
+      zoom: 1 / initialView.dpr,
+    },
+    input: { activePointers: 3 },
+    scene: scenes,
+  });
+  watchReducedMotion(game);
+  game.events.once(Phaser.Core.Events.READY, () => watchViewport(game, parent));
+  return game;
+}
+
+const GAME_SCENES: Phaser.Types.Scenes.SceneType[] = [
+  BootScene,
+  TitleScene,
+  HomeTankScene,
+  SwimScene,
+  HudScene,
+  CreatorScene,
+];
+
+/**
+ * Dev builds only: starts the game with the dev tools the query flags ask for. `?compare` runs only
+ * the rig compare scene, `?perf` adds the frame-time overlay, `?renderer=canvas` forces Canvas.
+ */
+async function startDevGame(parent: HTMLElement): Promise<void> {
+  if (import.meta.env.DEV) {
+    const { readDevFlags } = await import('./platform/devFlags');
+    const flags = readDevFlags();
+    const type = flags.renderer === 'canvas' ? Phaser.CANVAS : Phaser.AUTO;
+    const scenes = flags.compare ? [(await import('./scenes/RigCompareScene')).RigCompareScene] : GAME_SCENES;
+    const game = startGame(parent, type, scenes);
+    if (flags.perf) (await import('./scenes/PerfOverlay')).installPerfOverlay(game);
+  }
+}
+
 const parent = findParent();
-const initialView = measureView(parent);
 
-const game = new Phaser.Game({
-  type: Phaser.AUTO,
-  parent: PARENT_ID,
-  backgroundColor: LETTERBOX,
-  scale: {
-    mode: Phaser.Scale.NONE,
-    width: initialView.canvasW,
-    height: initialView.canvasH,
-    zoom: 1 / initialView.dpr,
-  },
-  input: { activePointers: 3 },
-  scene: [BootScene, TitleScene, HomeTankScene, SwimScene, HudScene, CreatorScene],
-});
-
-watchReducedMotion(game);
-game.events.once(Phaser.Core.Events.READY, () => watchViewport(game, parent));
+if (import.meta.env.DEV) {
+  void startDevGame(parent);
+} else {
+  startGame(parent, Phaser.AUTO, GAME_SCENES);
+}

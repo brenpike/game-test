@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import { createAxolotlRigBake, createAxolotlRigView, type AxolotlRigBake, type AxolotlRigView } from '../art/axolotlRig';
 import type { TexSize } from '../art/canvasKit';
 import { AXO_PREVIEW_CROPS, AXO_SCENE_SCALE, AXO_TEX, drawAxolotl, type AxolotlPose } from '../art/drawAxolotl';
 import {
@@ -29,9 +30,7 @@ import {
   bakeAxolotlStill,
   bakeSizedButton,
   buttonKey,
-  createAxolotlTexture,
   iconKey,
-  type AxolotlTexture,
   type BakedTextures,
   type ButtonFill,
   type ButtonShape,
@@ -132,7 +131,6 @@ import {
   createButton,
   cssColor,
   drawPanel,
-  samePose,
   uiTextStyle,
   type GameAssets,
   type SceneView,
@@ -142,9 +140,6 @@ import {
 const TAU = Math.PI * 2;
 const BACKDROP_COVER = 8192;
 const MAX_STEP_S = 0.05;
-/** Repaint budget (art guide 9): while the frame rate is under LOW_FPS, the preview repaints at most 30 a second. */
-const LOW_FPS = 45;
-const LOW_FPS_REDRAW_S = 1 / 30;
 const SWIM_PERIOD_S = 1.2;
 const GILL_PERIOD_S = 0.8;
 const BOX_RADIUS = 18;
@@ -821,7 +816,6 @@ export class AxolotlStyler {
   private readonly motion: () => MotionProfile;
   private readonly onDone: (axolotl: StyledAxolotl) => void;
   private readonly onCancel: (() => void) | undefined;
-  private readonly previewKey: string;
   /** The start of every picture texture key: one texture per picture step and option id. */
   private readonly pictureKeyStart: string;
   /** What each baked picture texture shows, by key. Each key is baked again in place, never added twice. */
@@ -832,7 +826,6 @@ export class AxolotlStyler {
   private readonly panel: Phaser.GameObjects.Graphics;
   private readonly boxes: Phaser.GameObjects.Graphics;
   private readonly marks: Phaser.GameObjects.Graphics;
-  private readonly previewImage: Phaser.GameObjects.Image;
   private readonly heading: Phaser.GameObjects.Text;
   private readonly helper: Phaser.GameObjects.Text;
   private readonly caption: Phaser.GameObjects.Text;
@@ -861,14 +854,12 @@ export class AxolotlStyler {
   private readonly moreColoursZone: Phaser.GameObjects.Zone;
   private readonly buttons: Partial<Record<NavControl, UiButton>>;
   private readonly texts: Phaser.GameObjects.Text[];
-  private preview: AxolotlTexture;
+  /** The live preview's part textures, re-baked only when its look, palette, outfit or bake scale changes. */
+  private readonly previewBake: AxolotlRigBake;
+  private readonly previewView: AxolotlRigView;
   private shownLook: AxolotlLook;
   /** The logic outfit the preview's art outfit was last made from, and that art outfit. */
   private shownOutfit: { source: Outfit | null; art: ArtOutfit; key: string } = { source: null, ...NO_PREVIEW_OUTFIT };
-  private lastPose: AxolotlPose | null = null;
-  /** The morph, Dream colour and outfit (outfitKey) the preview was last painted in, or null before the first paint. */
-  private paintedPalette: string | null = null;
-  private redrawAcc = 0;
   private state: StylerState;
   private view: SceneView;
   private dpr: number;
@@ -899,10 +890,13 @@ export class AxolotlStyler {
     this.state = startStateOf(options);
     this.baseBakeScale = assets.axolotl.bakeScale;
     const id = stylerCount++;
-    this.previewKey = `styler-preview-${id}`;
     this.pictureKeyStart = `styler-picture-${id}`;
     this.shownLook = this.state.look;
-    this.preview = createAxolotlTexture(scene, this.previewKey, this.baseBakeScale, this.shownLook);
+    this.previewBake = createAxolotlRigBake(scene, `styler-preview-${id}`, this.baseBakeScale, {
+      look: this.shownLook,
+      palette: axolotlPalette(this.state.morph, this.state.dreamColour),
+      outfit: this.previewOutfit().art,
+    });
     this.morphBadges = assets.morph.badges[MORPH_BADGE_PX];
     this.perkIcons = assets.treasure.perks;
 
@@ -913,7 +907,7 @@ export class AxolotlStyler {
     this.panel = scene.add.graphics();
     this.boxes = scene.add.graphics();
     this.marks = scene.add.graphics();
-    this.previewImage = scene.add.image(0, 0, this.previewKey);
+    this.previewView = createAxolotlRigView(scene, this.previewBake);
     this.heading = this.addText(HEADING_TEXT_PX, true);
     this.helper = this.addText(HELPER_TEXT_PX, false);
     this.caption = this.addText(CAPTION_TEXT_PX, true);
@@ -969,7 +963,7 @@ export class AxolotlStyler {
         backdrop,
         this.panel,
         this.boxes,
-        this.previewImage,
+        this.previewView.root,
         ...this.slots.map((slot) => slot.picture),
         this.marks,
         ...this.slots.flatMap((slot) => [slot.tick, slot.badge, slot.symbol, slot.perkIcon]),
@@ -1013,7 +1007,7 @@ export class AxolotlStyler {
     const dt = Math.min(realDt, MAX_STEP_S);
     this.clock += dt;
     this.cursorClock += realDt;
-    if (this.placed?.preview) this.renderPreview(dt);
+    if (this.placed?.preview) this.renderPreview();
     this.restyleEntryCaret();
     this.blinkNameCursor();
   }
@@ -1052,7 +1046,7 @@ export class AxolotlStyler {
     this.finished = true;
     this.closeEntry();
     this.container.destroy();
-    if (this.scene.textures.exists(this.previewKey)) this.scene.textures.remove(this.previewKey);
+    this.previewBake.destroy();
     for (const key of [...this.pictureSigs.keys(), ...this.swatches.keys()]) {
       if (this.scene.textures.exists(key)) this.scene.textures.remove(key);
     }
@@ -1966,51 +1960,43 @@ export class AxolotlStyler {
   }
 
   /**
-   * Re-creates the preview texture at the preview scale x DPR texture px per local unit when that is
-   * above the boot bake scale and differs from the current bake, so the preview is never upscaled.
+   * Re-bakes the preview at the preview scale x DPR texture px per local unit when that is above the
+   * boot bake scale and differs from the current bake, so the preview is never upscaled.
    */
   private ensurePreviewBake(preview: StylerPreview | null): void {
     if (preview === null) return;
-    const wanted = Math.max(this.baseBakeScale, preview.scale * this.dpr);
-    if (Math.abs(wanted - this.preview.bakeScale) < 1e-6) return;
-    this.preview = createAxolotlTexture(this.scene, this.previewKey, wanted, this.shownLook);
-    this.lastPose = null;
+    this.previewBake.setBakeScale(Math.max(this.baseBakeScale, preview.scale * this.dpr));
   }
 
   /** Shows the look on the preview and places it, or hides it when the layout has no preview. */
   private refreshPreview(preview: StylerPreview | null): void {
     if (this.state.look !== this.shownLook) {
       this.shownLook = this.state.look;
-      this.preview.setLook(this.shownLook);
+      this.previewBake.setAppearance({ look: this.shownLook });
     }
-    this.previewImage.setVisible(preview !== null);
+    this.previewView.root.setVisible(preview !== null);
     if (preview === null) return;
     this.placePreview(preview);
     this.renderPreview();
   }
 
   /**
-   * Shows the preview texture with local (0,0) at the anchor, at the preview scale CSS px per local
-   * unit times the size scale (displayScale works in AXO_SCENE_SCALE units). A size change re-bakes
-   * the texture, so the texture, origin and scale are applied every time.
+   * Places the preview root (local (0,0) at the texture anchor) at the anchor, at the preview scale
+   * CSS px per local unit times the size scale (displayScale works in AXO_SCENE_SCALE units). A size
+   * change re-bakes at a new scale, so the scale is applied every time.
    */
   private placePreview(preview: StylerPreview): void {
-    const { info } = this.preview;
-    this.previewImage
-      .setTexture(this.preview.key)
-      .setOrigin(info.originNormX, info.originNormY)
+    this.previewView.root
       .setPosition(preview.anchor.x, preview.anchor.y)
-      .setScale(this.preview.displayScale(preview.scale / AXO_SCENE_SCALE));
+      .setScale(this.previewBake.displayScale(preview.scale / AXO_SCENE_SCALE));
   }
 
   /**
-   * Paints the preview in the chosen morph and Dream colour's palette when the pose, the morph or the
-   * Dream colour changed: the idle (with the Iridescent sheen gliding), or under reduced motion the
-   * still frame (t = 1.0 s, eyes open, no sheen). Per-frame idle repaints (`dt` given) keep the
-   * repaint budget, at most 30 a second while the frame rate is under 45; a first paint, a new morph
-   * or Dream colour, the still pose and any call without `dt` paint at once.
+   * Shows the preview in the chosen morph and Dream colour's palette and the draft outfit (both cached,
+   * so setAppearance runs and re-bakes only when one changes), posed every call: the idle (with the Iridescent sheen gliding),
+   * or under reduced motion the still frame (t = 1.0 s, eyes open, no sheen).
    */
-  private renderPreview(dt?: number): void {
+  private renderPreview(): void {
     const motion = this.motion();
     const t = motion.ambient ? this.clock : T_STATIC;
     const pose: AxolotlPose = {
@@ -2021,20 +2007,12 @@ export class AxolotlStyler {
       sparkle: 0,
       sheen: motion.ambient ? dreamSheenAt(this.clock) : undefined,
     };
-    const { morph, dreamColour } = this.state;
-    const outfit = this.previewOutfit();
-    const paletteKey = `${morph}|${dreamColour ?? ''}|${outfit.key}`;
-    if (this.lastPose !== null && this.paintedPalette === paletteKey) {
-      if (samePose(pose, this.lastPose) && pose.sheen === this.lastPose.sheen) return;
-      if (dt !== undefined && motion.ambient) {
-        this.redrawAcc += dt;
-        if (this.scene.game.loop.actualFps < LOW_FPS && this.redrawAcc < LOW_FPS_REDRAW_S) return;
-      }
+    const palette = axolotlPalette(this.state.morph, this.state.dreamColour);
+    const outfit = this.previewOutfit().art;
+    if (palette !== this.previewBake.palette || outfit !== this.previewBake.outfit) {
+      this.previewBake.setAppearance({ palette, outfit });
     }
-    this.redrawAcc = 0;
-    this.preview.redraw(pose, axolotlPalette(morph, dreamColour), outfit.art);
-    this.lastPose = pose;
-    this.paintedPalette = paletteKey;
+    this.previewView.setPose(pose);
   }
 
   /**

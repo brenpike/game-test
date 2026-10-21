@@ -62,7 +62,7 @@ import {
   type WearableArtSlug,
 } from './drawWearables';
 import { BLUSH, FRECKLE, INK, LEUCISTIC, LW, WHITE, type MorphPalette } from './palette';
-import { bakeAxolotlStill, createAxolotlTexture } from './textures';
+import { bakeAxolotlStill } from './textures';
 import {
   BOW_GEM,
   DIVING_TANK_FILL,
@@ -584,9 +584,6 @@ function drawn(pose: AxolotlPose, look: AxolotlArtLook, outfit?: ArtOutfit): Pai
   expect(rec.alpha).toBe(1);
   return rec.paints;
 }
-
-/** A paint without its points: what a bake keeps once the context scale and origin have moved them. */
-const styleSignature = (p: Paint): string => [p.kind, p.style, p.lineWidth, p.alpha, p.lineCap, p.clips.length, p.subs.length].join('|');
 
 const signature = (p: Paint): string =>
   [
@@ -1537,14 +1534,13 @@ describe('rarity look ladder: worn looks keep their counted details', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Textures: the outfit rides the redraw
+// Textures: the outfit rides the still bake
 // ---------------------------------------------------------------------------
 
-describe('AxolotlTexture and bakeAxolotlStill carry the outfit', () => {
+describe('bakeAxolotlStill carries the outfit', () => {
   interface FakeCanvas {
     key: string;
     rec: Recorder;
-    refreshes: number;
   }
 
   function fakeScene(): { scene: never; canvases: FakeCanvas[] } {
@@ -1553,13 +1549,11 @@ describe('AxolotlTexture and bakeAxolotlStill carry the outfit', () => {
       exists: (key: string): boolean => canvases.some((c) => c.key === key),
       remove: (): void => undefined,
       createCanvas: (key: string) => {
-        const entry: FakeCanvas = { key, rec: new Recorder(), refreshes: 0 };
+        const entry: FakeCanvas = { key, rec: new Recorder() };
         canvases.push(entry);
         return {
           context: entry.rec.context(),
-          refresh: () => {
-            entry.refreshes++;
-          },
+          refresh: (): void => undefined,
         };
       },
     };
@@ -1577,61 +1571,6 @@ describe('AxolotlTexture and bakeAxolotlStill carry the outfit', () => {
   }
 
   const POSE = POSES.swimming;
-
-  it('draws no Wearable by default: a redraw with no outfit paints what drawAxolotl paints with none', () => {
-    const { scene, canvases } = fakeScene();
-    const tex = withPaths(() => createAxolotlTexture(scene, 'axo', 2, GIRL));
-    const rec = canvases[0].rec;
-    expect(tex.outfit).toEqual({});
-    const before = rec.paints.length;
-    withPaths(() => tex.redraw(POSE));
-    const painted = rec.paints.slice(before);
-    const expected = drawn(POSE, GIRL, NO_OUTFIT);
-    expect(painted.length).toBe(expected.length);
-    // The bake moves the points (scale and origin), so compare what was painted, not where.
-    expect(painted.map(styleSignature)).toEqual(
-      withPaths(() => {
-        const direct = new Recorder();
-        drawAxolotl(direct.context(), POSE, LEUCISTIC, GIRL);
-        return direct.paints.map(styleSignature);
-      }),
-    );
-  });
-
-  it('takes the outfit on each redraw and forgets it on the next call that does not pass one', () => {
-    const { scene, canvases } = fakeScene();
-    const tex = withPaths(() => createAxolotlTexture(scene, 'axo', 2, GIRL));
-    const rec = canvases[0].rec;
-    const redrawCount = (outfit?: ArtOutfit): number => {
-      const before = rec.paints.length;
-      withPaths(() => (outfit === undefined ? tex.redraw(POSE) : tex.redraw(POSE, LEUCISTIC, outfit)));
-      return rec.paints.length - before;
-    };
-    const plain = redrawCount();
-    const worn = redrawCount(FULL);
-    expect(worn).toBeGreaterThan(plain);
-    expect(tex.outfit).toEqual(FULL);
-    expect(outfitKey(tex.outfit)).toBe(outfitKey(FULL));
-    expect(redrawCount(FULL)).toBe(worn);
-    expect(redrawCount()).toBe(plain);
-    expect(tex.outfit).toEqual({});
-    expect(canvases[0].refreshes).toBeGreaterThanOrEqual(4);
-  });
-
-  it('repaints a swapped look with the last outfit, at the new size', () => {
-    const { scene, canvases } = fakeScene();
-    const tex = withPaths(() => createAxolotlTexture(scene, 'axo', 2, GIRL));
-    withPaths(() => tex.redraw(POSE, LEUCISTIC, { head: 'sun-hat' }));
-    const plain = drawn(POSE, GIRL, NO_OUTFIT).length;
-    const hatted = drawn(POSE, GIRL, { head: 'sun-hat' }).length;
-    expect(hatted).toBeGreaterThan(plain);
-    withPaths(() => tex.setLook({ ...GIRL, size: 'small' }));
-    // A size change re-bakes under the same key in a new canvas, painted with the last pose, morph and outfit.
-    const rebaked = canvases[canvases.length - 1];
-    expect(rebaked).not.toBe(canvases[0]);
-    expect(rebaked.rec.paints.length).toBe(hatted);
-    expect(tex.outfit).toEqual({ head: 'sun-hat' });
-  });
 
   it('bakes a still with the outfit when it has one, and with none otherwise', () => {
     const crop = { minX: -102, minY: -79, maxX: 64, maxY: 63 };

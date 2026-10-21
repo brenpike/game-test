@@ -6,7 +6,7 @@ It is mostly fun, with real axolotl facts along the way.
 
 ## What you can do now
 
-Version 0.20.0 is playable in one canal zone:
+Version 0.20.1 is playable in one canal zone:
 
 - Make your own axolotl the first time you play, one step at a time in 11 steps: colour (one of eight real morphs), boy or girl (with a boy or girl sign), eyes, mouth (eight to choose from), gills, spots, tail, body, age, size, and name. Every choice is a big picture button that shows it on your axolotl, and the preview changes as you pick. Surprise me picks everything at random, with a name that fits. The other seven colours are the ones you rescue.
 - Type a name, or pick a suggested one that fits a boy or a girl, so typing is optional. Names stay on your device.
@@ -69,6 +69,19 @@ npm install
 | `npm run test:watch` | Run the unit tests in watch mode. |
 | `npm run lint` | Lint the project (ESLint). |
 | `npm run typecheck` | Type-check only. |
+
+### Dev-only flags
+
+Add these to the address that `npm run dev` prints, for example `http://localhost:5173/?perf&renderer=canvas`.
+They work only on the dev server, never in the build (`npm run build`, `npm run preview`, or the live site). Flags combine.
+
+| Flag | What it does |
+|---|---|
+| `?perf` | Shows a frame-time overlay (live p50 and p95 frame time, p95 axolotl drawing time, and texture bakes) and logs a p50/p95 summary to the console every 30 s of frames. Stores and sends nothing. |
+| `?compare` | Runs only the rig compare view: the reference `drawAxolotl` on the left, the axolotl rig on the right, in the same pose. Keys: `x` `t` `b` `a` `z` `g` `e` `u` `s` cycle the look, `m` the morph, `d` the Dream colour, `o` the full outfit, `l` the leg state; `h` Tail Dash, `p` pause, `n` step, `r` still pose, `v` overlay the rig on the reference at 50%. Shift steps back. The on-screen legend lists them all; see [`src/scenes/RigCompareScene.ts`](src/scenes/RigCompareScene.ts). |
+| `?renderer=canvas` | Forces Phaser's Canvas renderer instead of WebGL. |
+
+On a phone they need the dev server, which is harder to reach on WSL2 (see [Testing on a phone](#testing-on-a-phone)).
 
 ## Controls
 

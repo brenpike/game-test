@@ -1,8 +1,9 @@
 import * as Phaser from 'phaser';
+import { createAxolotlRigView, type AxolotlRigView } from '../art/axolotlRig';
 import { AXO_MAX_TAIL_AMP, AXO_SCENE_SCALE, type AxolotlPose } from '../art/drawAxolotl';
 import { AXO_SIZE_SCALE } from '../art/drawAxolotlParts';
 import { dreamSheenAt } from '../art/drawDreamOverlay';
-import { NO_OUTFIT, artOutfit, type ArtOutfit } from '../art/drawWearables';
+import { artOutfit } from '../art/drawWearables';
 import { DEPTH } from '../art/layers';
 import {
   axolotlPalette,
@@ -11,7 +12,6 @@ import {
   SURFACE_LINE_WIDTH,
   T_STATIC,
   WATER_SHALLOW,
-  type MorphPalette,
 } from '../art/palette';
 import { BUBBLE_RADII, type TexInfo } from '../art/textures';
 import { areaById, atExit, exitContact, exitOpen, type AreaData } from '../logic/areas';
@@ -78,7 +78,6 @@ import {
   cssColor,
   fitWorldCamera,
   readSceneView,
-  samePose,
   type GameAssets,
   type SceneView,
 } from './BootScene';
@@ -131,8 +130,6 @@ const STREAKS_PER_CURRENT = 6;
 const STREAK_EDGE_FADE = 40;
 const SURFACE_STEP = 8;
 const SURFACE_BAND_BOTTOM = SURF + 3;
-const LOW_FPS = 45;
-const LOW_FPS_REDRAW_S = 1 / 30;
 /** The tally of no snacks, held until setItems first runs. */
 const EMPTY_SNACK_TALLY: SnackTally = Object.freeze({ left: 0, collected: 0, sparklingIds: Object.freeze([]) });
 
@@ -212,15 +209,12 @@ export class SwimScene extends Phaser.Scene {
   private dashingThisFrame = false;
 
   private followPoint = new Phaser.Math.Vector2();
-  private axolotl!: Phaser.GameObjects.Image;
+  private axolotlView!: AxolotlRigView;
+  private axolotl!: Phaser.GameObjects.Container;
   private predatorView!: PredatorView;
   private homeSpotView!: HomeSpotView;
   private treasureView!: TreasureView;
   private strandedView!: StrandedView;
-  /** The explorer's morph colours, fixed for the trip. */
-  private explorerPalette!: MorphPalette;
-  /** The explorer's worn Wearables as art, fixed for the trip. */
-  private explorerOutfit: ArtOutfit = NO_OUTFIT;
   /** Trip overrides from the explorer's outfit only (PRD F12), fixed for the trip. */
   private perks!: PerkTuning;
   private exitView!: ExitView;
@@ -250,8 +244,6 @@ export class SwimScene extends Phaser.Scene {
   private body!: DrawnAxolotl;
   /** Where the snacks are drawn this frame, captured with `body`. */
   private snackView!: SnackFrame;
-  private lastPose: AxolotlPose | null = null;
-  private redrawAcc = 0;
 
   constructor() {
     super(SCENE_KEYS.swim);
@@ -277,8 +269,6 @@ export class SwimScene extends Phaser.Scene {
     this.sparkleCursor = 0;
     this.sparkleAcc = 0;
     this.sparkleLevel = 0;
-    this.redrawAcc = 0;
-    this.lastPose = null;
     this.turn = { squash: 1 };
     this.swimPhase = (TAU * T_STATIC) / 1.2;
     this.gillPhase = (TAU * T_STATIC) / 0.8;
@@ -304,13 +294,15 @@ export class SwimScene extends Phaser.Scene {
     const session = readSession(this.registry);
     const start = tripStart(session, Math.floor(Math.random() * 0x100000000) >>> 0);
     const explorer = explorerAxolotl(session);
-    this.explorerPalette = axolotlPalette(explorer.morph, explorer.dreamColour);
-    this.explorerOutfit = artOutfit(explorer.outfit);
     // INVARIANT: perks are worked out once, with every leg present. The feet rule (Socks and Feet
     // count only with a leg present) never changes them in play: the hit that takes the last leg
     // starts the carry home in that step, and only swimming reads them.
     this.perks = perkTuning(outfitPerks(explorer.outfit));
-    this.assets.axolotl.setLook(explorer.look);
+    this.assets.axolotl.setAppearance({
+      look: explorer.look,
+      palette: axolotlPalette(explorer.morph, explorer.dreamColour),
+      outfit: artOutfit(explorer.outfit),
+    });
     this.setItems(restoreSnacks(zone.collectibles, start.eatenSnacks));
     this.allDone = this.snackTally.left === 0;
     const stranding = pickStranding(start.ownedMorphs, start.waitingStranded, zone.strandingPlaces, start.tripSeed);
@@ -455,11 +447,8 @@ export class SwimScene extends Phaser.Scene {
       placeBaked(this.add.image(0, 0, starInfo.key), starInfo).setVisible(false).setDepth(DEPTH.hint),
     );
 
-    const axoInfo = this.assets.axolotl.info;
-    this.axolotl = this.add
-      .image(this.swim.x, this.swim.y, this.assets.axolotl.key)
-      .setOrigin(axoInfo.originNormX, axoInfo.originNormY)
-      .setDepth(DEPTH.axolotl);
+    this.axolotlView = createAxolotlRigView(this, this.assets.axolotl);
+    this.axolotl = this.axolotlView.root.setPosition(this.swim.x, this.swim.y).setDepth(DEPTH.axolotl);
     this.strandedView = new StrandedView(this, this.assets);
     this.predatorView = new PredatorView(this, this.assets, this.trip.encounter.tilapias.length);
 
@@ -841,6 +830,7 @@ export class SwimScene extends Phaser.Scene {
     this.game.events.off(HUD_EVENTS.FACT_CARD_SEEN, this.handleFactCardSeen, this);
     this.events.off(Phaser.Scenes.Events.RESUME, this.handleResume, this);
     this.strandedView.destroy();
+    this.axolotlView.destroy();
   }
 
   // ---- rendering -----------------------------------------------------------
@@ -899,7 +889,7 @@ export class SwimScene extends Phaser.Scene {
       legs: this.snapshot.legs.slots,
       sheen: this.motion.ambient ? dreamSheenAt(this.clock) : undefined,
     };
-    this.redrawAxolotl(pose, dt);
+    this.axolotlView.setPose(pose);
 
     const baseScale = this.assets.axolotl.displayScale(1);
     const body = this.body;
@@ -960,17 +950,6 @@ export class SwimScene extends Phaser.Scene {
     this.tweens.killTweensOf(this.turn);
     this.turn.squash = TURN_SQUASH;
     addMotionTween(this, { targets: this.turn, props: { squash: 1 }, duration: TURN_MS, ease: 'Sine.easeOut' });
-  }
-
-  private redrawAxolotl(pose: AxolotlPose, dt: number): void {
-    if (this.lastPose !== null && samePose(pose, this.lastPose)) return;
-    this.redrawAcc += dt;
-    if (this.lastPose !== null && this.game.loop.actualFps < LOW_FPS && this.redrawAcc < LOW_FPS_REDRAW_S) {
-      return;
-    }
-    this.redrawAcc = 0;
-    this.assets.axolotl.redraw(pose, this.explorerPalette, this.explorerOutfit);
-    this.lastPose = pose;
   }
 
   private renderReeds(dt: number, t: number): void {

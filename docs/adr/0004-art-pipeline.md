@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-18
+- Updated: 2026-10-20. Live axolotl poses are now a rig of baked parts, per [ADR 0013](0013-axolotl-rig-and-frame-budget.md): each part is baked once with the Canvas 2D drawing code, and a pose only moves, turns and swaps those baked parts (only the Iridescent tail stripe is drawn live, as a vector overlay). Vector-sourced atlases are still later. The original text below is unchanged.
 
 ## Context
 

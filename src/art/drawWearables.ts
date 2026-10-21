@@ -98,7 +98,7 @@ export const WEARABLE_ART_SLUGS: readonly WearableArtSlug[] = WEARABLE_SLOTS.map
  */
 export type ArtOutfit = Readonly<Partial<Record<WearableSlot, WearableArtSlug | null>>>;
 
-/** Nothing worn. The default for drawAxolotl, bakeAxolotlStill and AxolotlTexture.redraw. */
+/** Nothing worn. The default for drawAxolotl, bakeAxolotlStill and the rig. */
 export const NO_OUTFIT: ArtOutfit = Object.freeze({});
 
 /** The slug worn in `slot`, or undefined when the slot is empty or holds a slug that belongs to another slot. */

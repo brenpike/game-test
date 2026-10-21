@@ -8,9 +8,9 @@
  * scene scale). Never upscale a small bake: bake at the scale you need.
  */
 import * as Phaser from 'phaser';
-import { beginDraw, clearAll, type TexSize } from './canvasKit';
-import { AXO_REST_POSE, AXO_SCENE_SCALE, AXO_TEX, drawAxolotl, type AxolotlPose } from './drawAxolotl';
-import { AXO_SIZE_SCALE, DEFAULT_ART_LOOK, type AxolotlArtLook, type Bounds } from './drawAxolotlParts';
+import { beginDraw, type TexSize } from './canvasKit';
+import { drawAxolotl, type AxolotlPose } from './drawAxolotl';
+import type { AxolotlArtLook, Bounds } from './drawAxolotlParts';
 import { NO_OUTFIT, type ArtOutfit } from './drawWearables';
 import {
   CAVE_TEX,
@@ -66,7 +66,7 @@ import {
   stickTextureSize,
   type IconKind,
 } from './drawUi';
-import { LEUCISTIC, UI_ACCENT, UI_PRIMARY, UI_SECONDARY, UI_SUCCESS, type MorphPalette } from './palette';
+import { UI_ACCENT, UI_PRIMARY, UI_SECONDARY, UI_SUCCESS, type MorphPalette } from './palette';
 
 // ---------------------------------------------------------------------------
 // Keys
@@ -430,7 +430,8 @@ export interface AxolotlStill {
  * Bake (or re-bake under the same key) one still axolotl picture, cropped to
  * `still.crop`. The logical size is the crop; the anchor is local (0, 0).
  * Painted once: callers re-bake only when the look, morph, crop or scale
- * changes, so it never takes from the live repaint budget.
+ * changes, so it never repaints per frame. Live axolotls use the rig
+ * (src/art/axolotlRig.ts).
  */
 export function bakeAxolotlStill(scene: Phaser.Scene, key: string, still: AxolotlStill): TexInfo {
   const { crop } = still;
@@ -448,115 +449,4 @@ export function bakeAxolotlStill(scene: Phaser.Scene, key: string, still: Axolot
     ctx.translate(-centreX, -centreY);
     drawAxolotl(ctx, still.pose, still.palette, still.look, still.outfit ?? NO_OUTFIT);
   });
-}
-
-// ---------------------------------------------------------------------------
-// Axolotl: one live texture, redrawn per pose
-// ---------------------------------------------------------------------------
-
-export interface AxolotlTexture {
-  readonly key: string;
-  /** Base bake scale passed at creation, before the size factor. */
-  readonly bakeScale: number;
-  /**
-   * Current bake scale: texture pixels per local unit, bakeScale x the size
-   * factor (AXO_SIZE_SCALE). Equals bakeScale at Large (x1).
-   */
-  readonly scale: number;
-  /** Size and anchor. Use originNormX/Y for sprite.setOrigin(). Local x = 0 is the anchor. */
-  readonly info: TexInfo;
-  /** Creator look currently painted. */
-  readonly look: AxolotlArtLook;
-  /** What is currently painted on the axolotl (none until a redraw passes an outfit). */
-  readonly outfit: ArtOutfit;
-  /**
-   * Clear, repaint in the given pose (and morph) and refresh the texture. `outfit` is what the
-   * axolotl wears, painted at its layers (guide 6a, 6i); each call states it, and the default is
-   * none, so a caller that never passes one draws no Wearable. Key any "repaint only when it
-   * changes" check on outfitKey(outfit) (drawWearables.ts), and keep paying the secondary repaint
-   * budget (src/logic/repaintBudget.ts) as before: an outfit change is a repaint, not an extra one.
-   */
-  redraw(pose: AxolotlPose, palette?: MorphPalette, outfit?: ArtOutfit): void;
-  /**
-   * Swap the creator look and repaint with the last pose, morph and outfit. A size
-   * change re-bakes the texture under the same key at the new scale, so `scale`
-   * and `info` change: callers must then re-apply the texture
-   * (setTexture(key)), the origin (info.originNormX/Y) and the scale
-   * (displayScale) on every sprite showing it.
-   */
-  setLook(look: AxolotlArtLook): void;
-  /**
-   * Sprite scale that shows the axolotl at its size: AXO_SCENE_SCALE x size
-   * factor x viewScale / scale. `viewScale` is any extra scene zoom (1 for none).
-   */
-  displayScale(viewScale: number): number;
-}
-
-/**
- * Create the axolotl texture and paint it once in AXO_REST_POSE. Local units
- * are drawn at `bakeScale` x the size factor of `look`, so a large axolotl is
- * baked big rather than upscaled. Size the sprite with displayScale().
- */
-export function createAxolotlTexture(
-  scene: Phaser.Scene,
-  key: string,
-  bakeScale: number,
-  look: AxolotlArtLook = DEFAULT_ART_LOOK,
-): AxolotlTexture {
-  let currentLook = look;
-  let scale = bakeScale * AXO_SIZE_SCALE[look.size];
-  let info = makeInfo(key, scale, AXO_TEX);
-  let tex = createCanvas(scene, info);
-  let lastPose: AxolotlPose = AXO_REST_POSE;
-  let lastPalette: MorphPalette = LEUCISTIC;
-  let lastOutfit: ArtOutfit = NO_OUTFIT;
-
-  const paint = (): void => {
-    const ctx = tex.context;
-    clearAll(ctx);
-    beginDraw(ctx, scale, AXO_TEX.originX, AXO_TEX.originY);
-    drawAxolotl(ctx, lastPose, lastPalette, currentLook, lastOutfit);
-    tex.refresh();
-  };
-
-  const redraw = (pose: AxolotlPose, palette: MorphPalette = LEUCISTIC, outfit: ArtOutfit = NO_OUTFIT): void => {
-    lastPose = pose;
-    lastPalette = palette;
-    lastOutfit = outfit;
-    paint();
-  };
-
-  const setLook = (next: AxolotlArtLook): void => {
-    const nextScale = bakeScale * AXO_SIZE_SCALE[next.size];
-    currentLook = next;
-    if (nextScale !== scale) {
-      scale = nextScale;
-      info = makeInfo(key, scale, AXO_TEX);
-      tex = createCanvas(scene, info);
-    }
-    paint();
-  };
-
-  paint();
-
-  return {
-    key,
-    bakeScale,
-    get scale() {
-      return scale;
-    },
-    get info() {
-      return info;
-    },
-    get look() {
-      return currentLook;
-    },
-    get outfit() {
-      return lastOutfit;
-    },
-    redraw,
-    setLook,
-    displayScale: (viewScale: number): number =>
-      (AXO_SCENE_SCALE * AXO_SIZE_SCALE[currentLook.size] * viewScale) / scale,
-  };
 }

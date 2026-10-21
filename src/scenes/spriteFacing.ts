@@ -1,8 +1,9 @@
 import type * as Phaser from 'phaser';
 
 /**
- * Faces `image` right (`facing` 1) or left (`facing` -1) by setting a signed x scale, so the art
- * mirrors about the sprite's origin. Returns `image` for chaining.
+ * Faces `target` (a sprite, or any transformed object such as a rig Container) right (`facing`
+ * 1) or left (`facing` -1) by setting a signed x scale, so the art mirrors about the sprite's
+ * origin. Returns `target` for chaining.
  *
  * Do not use Phaser's flip (`setFlipX`, `flipX`). It mirrors the art inside the texture frame
  * about the frame's centre, not about the origin: with frame width `w` and display origin
@@ -15,11 +16,11 @@ import type * as Phaser from 'phaser';
  * Phaser's `getBounds()` ignores the sign of `scaleX`, so it returns the un-mirrored box for a
  * sprite facing left. Use `spriteFrameBounds` from `src/logic/spriteAnchor.ts` instead.
  */
-export function faceSprite(
-  image: Phaser.GameObjects.Image,
+export function faceSprite<T extends Phaser.GameObjects.Components.Transform>(
+  target: T,
   facing: 1 | -1,
   scaleX: number,
   scaleY: number = scaleX,
-): Phaser.GameObjects.Image {
-  return image.setScale(facing * scaleX, scaleY);
+): T {
+  return target.setScale(facing * scaleX, scaleY);
 }
