@@ -49,7 +49,14 @@ import {
   type PlasticWormColour,
 } from './drawPond';
 import { paintWorm } from './drawProps';
-import { STREAM_BAND, paintBackgroundChunk, type ChunkOptions } from './drawScenery';
+import {
+  STREAM_BAND,
+  STREAM_STONE_OVERFLOW,
+  STREAM_TAPER,
+  paintBackgroundChunk,
+  streamColumnFor,
+  type ChunkOptions,
+} from './drawScenery';
 import {
   AREA_LOOK_IDS,
   DUSK_AIR_WASH,
@@ -102,7 +109,9 @@ import {
   LW,
   MELANOID,
   MUD,
+  PEBBLE_B,
   PEBBLE_COLOURS,
+  PEBBLE_D,
   PEBBLE_E,
   PEBBLE_SHINE,
   PIEBALD,
@@ -128,6 +137,8 @@ import {
 } from './palette';
 import { POND_TEX, bakePondTextures } from './pondTextures';
 import { areaBgKey, areaDeepBgKey, bakeAreaScenery, type AreaSceneryOptions } from './textures';
+import { POND_2_LAYOUT } from '../logic/pond2Layout';
+import { POND_LAYOUT } from '../logic/pondLayout';
 
 vi.mock('phaser', () => ({}));
 
@@ -1126,6 +1137,177 @@ describe('bakeAreaScenery look and stream', () => {
     expect(reedBaseXs(bottomFirst)).toHaveLength(6);
     expect(middle.ops[0].fillStyle).toBe(POND_WATER_DEEP);
     expect([...made.keys()].filter((k) => k.startsWith('pond-bg-')).length).toBe(3 + 3 + 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stream mouth placement (issue #98)
+// ---------------------------------------------------------------------------
+
+/** The stream band gradient of a recording: the one running along x only. */
+const streamGradients = (rec: Recording): Gradient[] =>
+  rec.gradients.filter((g) => g.coords.length === 4 && g.coords[1] === 0 && g.coords[3] === 0 && g.coords[0] === g.coords[2] - STREAM_BAND.reach);
+/** The flow line strokes of a recording: drawn at the stream line width. */
+const flowStrokes = (rec: Recording): Op[] => rec.ops.filter((o) => o.op === 'stroke' && o.lineWidth === 2.4);
+/** The mouth stone fills of a recording: 17 x 12 ellipses in the stone colours. */
+const stoneFills = (rec: Recording): Op[] =>
+  rec.ops.filter(
+    (o) =>
+      o.op === 'fill' &&
+      (o.fillStyle === PEBBLE_D || o.fillStyle === PEBBLE_B) &&
+      Array.isArray(o.args[0]) &&
+      ellipsesOf(o).some((e) => e[2] === 17 && e[3] === 12),
+  );
+
+describe('stream mouth placement (issue #98)', () => {
+  const bakeArea = (extra: Partial<AreaSceneryOptions>): Map<string, MadeCanvas> =>
+    withFakeScene((scene, made) => {
+      bakeAreaScenery(scene, { ...AREA, rand: seeded(11), ...extra });
+      return made;
+    });
+  /** One hash over every chunk of a bake, colours included. */
+  const bakeHash = (made: Map<string, MadeCanvas>): string =>
+    hashString(JSON.stringify([...made.entries()].map(([key, canvas]) => [key, styledFingerprint(canvas.rec)])));
+  const mouthOf = (column: number): number => (column + 1) * VIEW_W;
+
+  it('pond-1: the mouth is the column holding the current end, the world right edge, as before', () => {
+    const current = POND_LAYOUT.currents[0];
+    const column = streamColumnFor(current.x1, POND_LAYOUT.screensWide);
+    expect(column).toBe(4);
+    expect(column).toBe(POND_LAYOUT.screensWide - 1);
+    expect(mouthOf(column)).toBe(2400);
+    expect(mouthOf(column)).toBe(POND_LAYOUT.screensWide * VIEW_W);
+  });
+
+  it('pond-2: the mouth is x 2400, just left of the root arch, inside the 2880 wide world', () => {
+    const current = POND_2_LAYOUT.currents[0];
+    const column = streamColumnFor(current.x1, POND_2_LAYOUT.screensWide);
+    expect(column).toBe(4);
+    expect(mouthOf(column)).toBe(2400);
+    expect(mouthOf(column)).toBeLessThan(POND_2_LAYOUT.screensWide * VIEW_W);
+    expect(mouthOf(column)).toBeGreaterThanOrEqual(current.x1);
+    expect(mouthOf(column)).toBeLessThanOrEqual(POND_2_LAYOUT.cave.x0);
+  });
+
+  it('maps a current ending on a column edge to the column on its left, and throws outside the area', () => {
+    expect(streamColumnFor(VIEW_W, 6)).toBe(0);
+    expect(streamColumnFor(1, 6)).toBe(0);
+    expect(streamColumnFor(2400, 6)).toBe(4);
+    expect(streamColumnFor(2401, 6)).toBe(5);
+    expect(streamColumnFor(2880, 6)).toBe(5);
+    expect(() => streamColumnFor(0, 6)).toThrow(RangeError);
+    expect(() => streamColumnFor(2881, 6)).toThrow(RangeError);
+    expect(() => streamColumnFor(Number.NaN, 6)).toThrow(RangeError);
+  });
+
+  it('bakeAreaScenery throws on a stream column outside the area', () => {
+    for (const streamColumn of [-1, 5, 1.5]) {
+      expect(() => bakeArea({ look: 'pond', stream: true, streamColumn })).toThrow(RangeError);
+    }
+  });
+
+  it('pond-1 bakes exactly what it did before the mouth was placed, in the pond and the dusk look', () => {
+    const column = streamColumnFor(POND_LAYOUT.currents[0].x1, POND_LAYOUT.screensWide);
+    /** Whole-bake hashes of a 5 x 1 area with the stream, painted by the code before streamColumn existed. */
+    const before = { pond: '08c3af535436b3', 'pond-dusk': '0ec712b65edbfa' } as const;
+    for (const look of ['pond', 'pond-dusk'] as const) {
+      const placed = bakeArea({ look, stream: true, bankChunks: [1, 2], streamColumn: column });
+      const plainBake = bakeArea({ look, stream: true, bankChunks: [1, 2] });
+      expect(bakeHash(placed), look).toBe(before[look]);
+      expect(bakeHash(plainBake), look).toBe(before[look]);
+      const last = placed.get(areaBgKey('pond-', 0, 4))!.rec;
+      expect(streamGradients(last)[0].stops).toHaveLength(2);
+      expect(flowStrokes(last).every((o) => o.strokeStyle === 'rgba(255,255,255,0.6)')).toBe(true);
+    }
+  });
+
+  it('tapers the band and the flow lines only when the mouth is before the world right edge', () => {
+    const atEdge = bakeArea({ look: 'pond', stream: true, screensWide: 6, streamColumn: 5 });
+    const closed = bakeArea({ look: 'pond', stream: true, screensWide: 6, streamColumn: 4 });
+    const chunkOf = (made: Map<string, MadeCanvas>, c: number): Recording => made.get(areaBgKey('pond-', 0, c))!.rec;
+
+    const open = streamGradients(chunkOf(atEdge, 5));
+    expect(open).toHaveLength(1);
+    expect(open[0].stops.map(([t]) => t)).toEqual([0, 1]);
+    expect(flowStrokes(chunkOf(atEdge, 5)).every((o) => o.strokeStyle === 'rgba(255,255,255,0.6)')).toBe(true);
+    for (const c of [0, 1, 2, 3, 4]) expect(streamGradients(chunkOf(atEdge, c)), `column ${c}`).toHaveLength(0);
+
+    const band = streamGradients(chunkOf(closed, 4));
+    expect(band).toHaveLength(1);
+    expect(band[0].coords[2]).toBe(VIEW_W);
+    expect(band[0].stops.map(([t]) => t)).toEqual([0, 1 - STREAM_TAPER / STREAM_BAND.reach, 1]);
+    expect(band[0].stops.map(([, c]) => parseRgba(c).alpha)).toEqual([0, 0.3, 0]);
+    const flow = flowStrokes(chunkOf(closed, 4));
+    expect(flow).toHaveLength(10);
+    for (const o of flow) {
+      const style = o.strokeStyle as { gradient: number[]; stops: [number, string][] };
+      expect(style.gradient).toEqual([VIEW_W - STREAM_TAPER, 0, VIEW_W, 0]);
+      expect(style.stops.map(([, c]) => parseRgba(c).alpha)).toEqual([0.6, 0]);
+    }
+    expect(STREAM_TAPER).toBeGreaterThanOrEqual(40);
+    expect(STREAM_TAPER).toBeLessThanOrEqual(60);
+    for (const c of [0, 1, 2, 3, 5]) expect(streamGradients(chunkOf(closed, c)), `column ${c}`).toHaveLength(0);
+  });
+
+  it('paints the mouth stones that overflow a closed mouth into the next column, and nowhere else', () => {
+    const closed = bakeArea({ look: 'pond', stream: true, screensWide: 6, streamColumn: 4 });
+    const chunkOf = (c: number): Recording => closed.get(areaBgKey('pond-', 0, c))!.rec;
+    const mouth = stoneFills(chunkOf(4));
+    expect(mouth).toHaveLength(2);
+    for (const o of mouth) {
+      const [cx, , rx] = ellipsesOf(o)[0];
+      expect(cx + rx - VIEW_W).toBe(STREAM_STONE_OVERFLOW);
+    }
+    const spill = chunkOf(5);
+    expect(stoneFills(spill).map((o) => o.args)).toEqual(mouth.map((o) => o.args));
+    expect(spill.calls.some(([name, args]) => name === 'translate' && args[0] === -VIEW_W && args[1] === 0)).toBe(true);
+    for (const c of [0, 1, 2, 3]) expect(stoneFills(chunkOf(c)), `column ${c}`).toHaveLength(0);
+    // At the world edge there is no next column, so nothing spills.
+    const atEdge = bakeArea({ look: 'pond', stream: true, screensWide: 6, streamColumn: 5 });
+    for (const c of [0, 1, 2, 3, 4]) expect(stoneFills(atEdge.get(areaBgKey('pond-', 0, c))!.rec), `column ${c}`).toHaveLength(0);
+  });
+
+  it('a spill draws no randomness and paints nothing on a row with no water', () => {
+    const top: Omit<ChunkOptions, 'rand'> = { row: 'top', index: 5, hasSun: false, hasBank: false, look: 'pond' };
+    const plainRand = countingRand(3);
+    const spillRand = countingRand(3);
+    record((ctx) => paintBackgroundChunk(ctx, { ...top, rand: plainRand.rand }));
+    record((ctx) => paintBackgroundChunk(ctx, { ...top, streamSpill: true, rand: spillRand.rand }));
+    expect(spillRand.count()).toBe(plainRand.count());
+    const bottom: Omit<ChunkOptions, 'rand'> = { row: 'bottom', index: 5, hasSun: false, hasBank: false, look: 'pond' };
+    expect(fingerprint(chunk({ ...bottom, streamSpill: true }))).toBe(fingerprint(chunk(bottom)));
+  });
+
+  it('the stream colours keep the dusk contrast rule on every dusk water colour, tapered or not', () => {
+    const rec = chunk({ row: 'top', index: 4, hasSun: false, hasBank: false, look: 'pond-dusk', stream: true, streamClosed: true });
+    const light = streamGradients(rec)[0].stops[1][1];
+    const line = (flowStrokes(rec)[0].strokeStyle as { stops: [number, string][] }).stops[0][1];
+    const lightRgba = parseRgba(light);
+    const lineRgba = parseRgba(line);
+    const dusk = habitatLook('pond-dusk');
+    const water = sampleGradient(
+      [
+        [0, dusk.water.shallow],
+        [dusk.water.stopMid, dusk.water.mid],
+        [1, dusk.water.deep],
+      ],
+      GRADIENT_SAMPLES,
+    );
+    const steps = [0, 0.25, 0.5, 0.75, 1];
+    for (const hex of water) {
+      for (const bandT of steps) {
+        const banded = mix(hex, lightRgba.rgb, lightRgba.alpha * bandT);
+        for (const lineT of steps) {
+          const lined = mix(banded, lineRgba.rgb, lineRgba.alpha * lineT);
+          expect(relativeLuminance(lined), `${hex} band ${bandT} line ${lineT}`).toBeGreaterThanOrEqual(LUMINANCE_FLOOR);
+          expect(contrastRatio(INK, lined), `${hex} band ${bandT} line ${lineT}`).toBeGreaterThanOrEqual(PAIR_FLOOR);
+        }
+      }
+    }
+    for (const stone of [PEBBLE_D, PEBBLE_B]) {
+      expect(relativeLuminance(stone), stone).toBeGreaterThanOrEqual(LUMINANCE_FLOOR);
+      expect(contrastRatio(INK, stone), stone).toBeGreaterThanOrEqual(PAIR_FLOOR);
+    }
   });
 });
 

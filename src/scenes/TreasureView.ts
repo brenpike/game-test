@@ -1,6 +1,8 @@
 import * as Phaser from 'phaser';
-import type { HabitatLook } from '../art/habitatLook';
+import { ROOT_ARCH_ANCHOR_Y } from '../art/drawPond';
+import type { CaveKind, HabitatLook } from '../art/habitatLook';
 import { DEPTH } from '../art/layers';
+import type { PondTextures } from '../art/pondTextures';
 import type { TexInfo } from '../art/textures';
 import { treasureById, treasureSlug, type Rarity } from '../logic/catalogue';
 import { PAST_CURRENT_DEPTH } from '../logic/hiding';
@@ -130,13 +132,43 @@ function pastCurrentMarkerX(current: CurrentZone, home: Point): number {
   throw new Error(`TreasureView: current "${current.id}" spans the Home Spot, so it has no far side`);
 }
 
-/** The back and front of the cave for `look`: the hollow log in the pond, else the canal's small cave. */
-function caveTextures(assets: GameAssets, look: HabitatLook): { back: TexInfo; front: TexInfo } {
-  if (look.id !== 'pond') return { back: assets.baked.hiding.caveBack, front: assets.baked.hiding.caveFront };
+/** The baked pond props for a cave of kind `kind`. Throws when they were not baked. */
+function pondTexturesFor(assets: GameAssets, kind: CaveKind): PondTextures {
   if (assets.pond === null) {
-    throw new Error('TreasureView: the pond look needs the baked pond textures for the hollow log');
+    throw new Error(`TreasureView: a "${kind}" cave needs the baked pond textures`);
   }
-  return { back: assets.pond.logBack, front: assets.pond.logFront };
+  return assets.pond;
+}
+
+/**
+ * The back and front of the cave for `look`'s cave kind: the canal's small cave of rocks, the
+ * pond's hollow log, or the dusk pond's root arch.
+ */
+function caveTextures(assets: GameAssets, look: HabitatLook): { back: TexInfo; front: TexInfo } {
+  const kind = look.cave.kind;
+  switch (kind) {
+    case 'rocks':
+      return { back: assets.baked.hiding.caveBack, front: assets.baked.hiding.caveFront };
+    case 'log': {
+      const pond = pondTexturesFor(assets, kind);
+      return { back: pond.logBack, front: pond.logFront };
+    }
+    case 'rootArch': {
+      const rootArch = pondTexturesFor(assets, kind).rootArch;
+      if (rootArch === null) {
+        throw new Error('TreasureView: a "rootArch" cave needs the baked root arch');
+      }
+      return rootArch;
+    }
+  }
+}
+
+/**
+ * The y of the cave's anchor for `look`'s cave anchor: on the bed (base centre, sunk like the
+ * Home Spot burrow), or at the waterline under the bank (top centre, ROOT_ARCH_ANCHOR_Y).
+ */
+function caveAnchorY(look: HabitatLook, zone: ZoneLayout): number {
+  return look.cave.anchor === 'bank' ? ROOT_ARCH_ANCHOR_Y : zone.bedTop + BED_SINK_PX;
 }
 
 function rarityOf(id: FindId): Rarity {
@@ -148,8 +180,9 @@ function rarityOf(id: FindId): Rarity {
 }
 
 /**
- * Draws the hidden treasures and their hiding places: the cave (the canal's small cave of rocks, or
- * the pond's hollow log, interior and front), the
+ * Draws the hidden treasures and their hiding places: the cave (the canal's small cave of rocks or
+ * the pond's hollow log on the bed, or the dusk pond's root arch under the bank; interior and
+ * front), the
  * past-the-current marker, one treasure icon per catalogue find (hidden under cover, or revealed by
  * a crumble), the Dash pots, the hint stars, the dash-needed bubble and pot wobble, the crumble and
  * the pickup pop. Visual only: every timer here is driven by the frame `dt` and the scene clock, so
@@ -182,9 +215,10 @@ export class TreasureView {
     const hiding = assets.baked.hiding;
     const baseY = zone.bedTop + BED_SINK_PX;
     const caveX = (zone.cave.x0 + zone.cave.x1) / 2;
+    const caveY = caveAnchorY(look, zone);
     const cave = caveTextures(assets, look);
-    bakedImage(scene, cave.back, caveX, baseY, DEPTH.caveBack);
-    bakedImage(scene, cave.front, caveX, baseY, DEPTH.caveFront);
+    bakedImage(scene, cave.back, caveX, caveY, DEPTH.caveBack);
+    bakedImage(scene, cave.front, caveX, caveY, DEPTH.caveFront);
     const current = zone.currents[0];
     if (!current) {
       throw new Error('TreasureView: the zone has no current for the past-the-current marker');

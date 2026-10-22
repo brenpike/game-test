@@ -3,7 +3,7 @@ import { bakeAreaMapTextures, type AreaMapTextures } from '../art/areaMapTexture
 import { bakeAreaTextures, type AreaTextures } from '../art/areaTextures';
 import { createAxolotlRigBake, type AxolotlRigBake } from '../art/axolotlRig';
 import { CAVE_H, CAVE_W } from '../art/drawFinds';
-import type { ReedLook } from '../art/drawScenery';
+import { streamColumnFor, type ReedLook } from '../art/drawScenery';
 import { habitatLook, type HabitatLook } from '../art/habitatLook';
 import { bakeMorphTextures, type MorphTextures } from '../art/morphTextures';
 import { INK, LW, UI_FONT } from '../art/palette';
@@ -29,6 +29,7 @@ import {
 import { BUTTON_PRESS_OFFSET, BUTTON_SQUARE, BUTTON_WIDE, ICON_SIZE, type IconKind } from '../art/drawUi';
 import { AREAS, habitatById, type AreaData } from '../logic/areas';
 import type { Decoration } from '../logic/catalogue';
+import { createPlasticWorms } from '../logic/plasticWorms';
 import { mulberry32 } from '../logic/rng';
 import { TANK } from '../logic/tank';
 import { VIEW } from '../logic/tuning';
@@ -80,8 +81,8 @@ export interface BakedDecorationPack {
  * plus the dev area when one was asked for; `zones` and `scenery` hold each of those areas' layout
  * and baked scenery by area id. `devAreaId` is the dev area's id, or null. `devDecor` is the dev
  * Decoration pack baked at the tank Decoration size, or null when none was asked for. `pond` holds
- * the pond props (hollow log, plastic worms, queasy cheek tint), baked only when some area has the
- * pond look, else null.
+ * the pond props (hollow log, plastic worms, queasy cheek tint), with the root arch and the firefly
+ * when some area's look needs them, baked only when some area needs any of them, else null.
  */
 export interface GameAssets {
   areas: readonly Readonly<AreaData>[];
@@ -127,11 +128,14 @@ export function sceneryFor(assets: GameAssets, areaId: string): SceneryTextures 
   return scenery;
 }
 
-/** The habitat look of area `area` (its habitat's `look`). Throws when the habitat or the look is unknown. */
+/**
+ * The look of area `area`: the variant its `look` names when set, else its habitat's `look`.
+ * Throws when the habitat or the look is unknown.
+ */
 export function areaLook(area: Readonly<AreaData>): HabitatLook {
   const habitat = habitatById(area.habitatId);
   if (habitat === undefined) throw new Error(`areaLook: no habitat ${area.habitatId} for area ${area.id}`);
-  return habitatLook(habitat.look);
+  return habitatLook(area.look ?? habitat.look);
 }
 
 /** CSS viewport size plus the fitted view derived from the Scale Manager. */
@@ -410,8 +414,9 @@ function toReedLook(reed: ReedSpec): ReedLook {
 
 /**
  * Every area's scenery by area id: the canal's from its `bakeTextures` result, every other area
- * baked with its id as the key prefix, in its habitat look. The pond look adds the stream flowing
- * in at the far right, where the pond's current is.
+ * baked with its id as the key prefix, in its area look (areaLook). A look with a stream adds the
+ * stream, its mouth at the right edge of the column that holds the area's first current
+ * (streamColumnOf).
  */
 function bakeScenery(
   scene: Phaser.Scene,
@@ -425,7 +430,7 @@ function bakeScenery(
     const id = area.id;
     const zone = zones[id];
     if (zone === undefined) throw new Error(`bakeScenery: no zone for area ${id}`);
-    const look = areaLook(area).id;
+    const look = areaLook(area);
     scenery[id] =
       id === CANAL_AREA_ID
         ? sceneryFromBaked(baked)
@@ -440,17 +445,42 @@ function bakeScenery(
             rand: mulberry32(ART_SEED),
             reeds: zone.reeds.map(toReedLook),
             pads: zone.pads,
-            look,
-            stream: look === 'pond',
+            look: look.id,
+            stream: look.stream,
+            streamColumn: look.stream ? streamColumnOf(zone, id) : undefined,
           });
   }
   return scenery;
 }
 
-/** The pond props at the cave's size, so the hollow log takes the cave's place; null when no area has the pond look. */
+/**
+ * The column whose right edge is area `id`'s stream mouth: the column that holds the right end of
+ * its first current (streamColumnFor). Throws when the area has no current.
+ */
+function streamColumnOf(zone: ZoneLayout, id: string): number {
+  const current = zone.currents[0];
+  if (current === undefined) throw new Error(`bakeScenery: area ${id} has a stream but no current`);
+  return streamColumnFor(current.x1, zone.chunks);
+}
+
+/** Whether area `area` has plastic worms, which need the pond props (worms and queasy cheeks) in any look. */
+function hasPlasticWorms(area: Readonly<AreaData>): boolean {
+  return createPlasticWorms(area.layout.hazards).worms.length > 0;
+}
+
+/**
+ * The pond props at the cave's size, so the hollow log takes the cave's place, baked once for every
+ * area: when some area's look needs them or some area has plastic worms. The root arch is added
+ * when some look's cave is the root arch, and the firefly when some look has fireflies. Null when no
+ * area needs any of them.
+ */
 function bakePondProps(scene: Phaser.Scene, areas: readonly Readonly<AreaData>[], bakeScale: number): PondTextures | null {
-  if (!areas.some((area) => areaLook(area).id === 'pond')) return null;
-  return bakePondTextures(scene, bakeScale, { caveW: CAVE_W, caveH: CAVE_H });
+  const looks = areas.map(areaLook);
+  const rootArch = looks.some((look) => look.cave.kind === 'rootArch');
+  const firefly = looks.some((look) => look.firefliesPerScreen > 0);
+  const props = looks.some((look) => look.pondProps) || areas.some(hasPlasticWorms);
+  if (!props && !rootArch && !firefly) return null;
+  return bakePondTextures(scene, bakeScale, { caveW: CAVE_W, caveH: CAVE_H }, { rootArch, firefly });
 }
 
 /** Builds every area's zone, bakes every texture at the fitted scale, then starts the title. */

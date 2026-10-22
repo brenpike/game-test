@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_LOOK, type AxolotlLook } from './axolotlLook';
 import { suggestedNamesFor } from './axolotlNames';
-import { POND_AREA } from './areas';
-import { ALL_TREASURES, CANAL_TREASURES, WEARABLE_SLOTS, isDecoration, ownedDreamColours, type Wearable } from './catalogue';
+import { POND_2_AREA, POND_AREA } from './areas';
+import {
+  ALL_TREASURES,
+  CANAL_TREASURES,
+  WEARABLE_SLOTS,
+  isDecoration,
+  ownedDreamColours,
+  placementKind,
+  treasureById,
+  type Wearable,
+} from './catalogue';
 import { DEV_TEST_AREA } from './devAreas';
 import { dueFirstFindCards } from './firstFind';
 import { REGISTRY_KEYS } from './gameEvents';
@@ -58,6 +67,13 @@ const LOTUS_LANTERN = 'pond/lotus-lantern';
 const CATTAILS = 'pond/cattail-clump';
 const LILY_SHELL = 'pond/paint-shell-lily-green';
 const RAINCOAT = 'pond/raincoat';
+const POND_2_ID = POND_2_AREA.id;
+const DUCK_DECOY = 'pond/wooden-duck-decoy';
+const STRING_LIGHTS = 'pond/firefly-string-lights';
+const FIREFLY_JAR = 'pond/firefly-jar';
+const LOTUS_THRONE = 'pond/golden-lotus-throne';
+const FIREFLY_SHELL = 'pond/paint-shell-firefly-gold';
+const FIREFLY_CAPE = 'pond/firefly-cape';
 
 /** A look with every field off the default, a girl. */
 const STYLED: AxolotlLook = {
@@ -970,5 +986,106 @@ describe('pond progress in the save (#75, D2)', () => {
     expect(hub.stars).toEqual(session.hub.stars);
     const chosen = { ...session.hub, lastAreaId: POND_ID };
     expect(loadedHub(JSON.parse(encodeSave(chosen))).lastAreaId).toBe(POND_ID);
+  });
+});
+
+/**
+ * `pondSession` after a beaten Area 3 trip: Area 3 treasures banked (a Floating Wooden duck decoy, a
+ * Hanging Firefly string lights and Firefly jar, a Floor Golden lotus throne, the Firefly gold Paint
+ * shell and a Firefly cape), the heron met, Area 3 stars, the wild axolotl wearing Firefly gold and
+ * the Floating and Hanging Decorations placed in the tank.
+ */
+function pond2Session(): Session {
+  const afterPond2 = recordTripEnd(pondSession(), {
+    areaId: POND_2_ID,
+    banked: [DUCK_DECOY, STRING_LIGHTS, FIREFLY_JAR, LOTUS_THRONE, FIREFLY_SHELL, FIREFLY_CAPE],
+    rescued: [],
+    eatenSnacks: [],
+    tripSeed: 93,
+    waitingStranded: null,
+    met: ['heron'],
+    returnedFinds: [],
+    stars: { areaId: POND_2_ID, earned: { exit: true, special: true, legsOrRescue: true } },
+  });
+  const painted = setDreamColour(afterPond2, WILD, 'firefly-gold');
+  let layout = painted.hub.tank;
+  for (const id of [DUCK_DECOY, STRING_LIGHTS, FIREFLY_JAR]) {
+    const spot = suggestSpot(layout, id, ALL_DECORATIONS);
+    const placed = placeDecoration(layout, painted.hub.banked, id, spot, ALL_DECORATIONS);
+    expect(placed.result, id).toBe('placed');
+    layout = placed.layout;
+  }
+  return setTankLayout(painted, layout, { catalogue: ALL_DECORATIONS });
+}
+
+/** The hub `pond2Session` saves and loads. */
+function pond2RoundTrip(): { session: Session; hub: HubState } {
+  const session = pond2Session();
+  return { session, hub: loadedHub(JSON.parse(encodeSave(session.hub))) };
+}
+
+/** Placement kind of a catalogue Decoration. Throws when `id` is not one. */
+function decorationPlacement(id: string): string {
+  const treasure = treasureById(id);
+  if (treasure === undefined || !isDecoration(treasure)) throw new Error(`no catalogue Decoration ${id}`);
+  return placementKind(treasure);
+}
+
+describe('Area 3 progress in the save (#98, D2)', () => {
+  it('names real Area 3 treasures: Floating, Hanging and Floor Decorations, a Paint shell and a Wearable', () => {
+    expect([DUCK_DECOY, STRING_LIGHTS, FIREFLY_JAR, LOTUS_THRONE].map(decorationPlacement)).toEqual([
+      'floating',
+      'hanging',
+      'hanging',
+      'floor',
+    ]);
+    expect(treasureById(FIREFLY_SHELL)?.category).toBe('paintShell');
+    expect(treasureById(FIREFLY_CAPE)?.category).toBe('wearable');
+  });
+
+  it('keeps every banked Area 3 treasure id, in banked order', () => {
+    const { session, hub } = pond2RoundTrip();
+    expect(session.hub.banked.slice(-6)).toEqual([DUCK_DECOY, STRING_LIGHTS, FIREFLY_JAR, LOTUS_THRONE, FIREFLY_SHELL, FIREFLY_CAPE]);
+    expect(hub.banked).toEqual(session.hub.banked);
+  });
+
+  it('keeps Firefly gold owned and worn', () => {
+    const { hub } = pond2RoundTrip();
+    expect(ownedDreamColours(hub.banked)).toContain('firefly-gold');
+    expect(hub.axolotls.find((axolotl) => axolotl.id === WILD)?.dreamColour).toBe('firefly-gold');
+  });
+
+  it('keeps the Area 3 Floating and Hanging Decoration placements', () => {
+    const { session, hub } = pond2RoundTrip();
+    const placedIds = session.hub.tank.placed.map((placement) => placement.id);
+    expect(placedIds).toEqual([PLANT, LILY_PAD, LOTUS_LANTERN, CATTAILS, DUCK_DECOY, STRING_LIGHTS, FIREFLY_JAR]);
+    expect(hub.tank).toEqual(session.hub.tank);
+  });
+
+  it('keeps the heron met, after the tilapia and the plastic worm', () => {
+    const { hub } = pond2RoundTrip();
+    expect(hub.metHazards).toEqual(['tilapia', 'plastic-worm', 'heron']);
+    const reordered = hubWithFields({ metHazards: ['heron', 'moon', 'tilapia', 'heron'] });
+    expect(reordered.metHazards).toEqual(['tilapia', 'heron']);
+  });
+
+  it('keeps the Area 3 stars and Area 3 as the last chosen area', () => {
+    const { session, hub } = pond2RoundTrip();
+    expect(hub.stars[POND_2_ID]).toEqual({ exit: true, special: true, legsOrRescue: true });
+    expect(hub.stars).toEqual(session.hub.stars);
+    const chosen = { ...session.hub, lastAreaId: POND_2_ID };
+    expect(loadedHub(JSON.parse(encodeSave(chosen))).lastAreaId).toBe(POND_2_ID);
+  });
+
+  it('loads Area 3 stars and the heron met into a version 1 save additively, with no version bump', () => {
+    expect(SAVE_VERSION).toBe(1);
+    const json = savedJson();
+    expect(json.version).toBe(1);
+    const stars = { ...(json.hub.stars as Record<string, unknown>), [POND_2_ID]: { exit: true, special: false, legsOrRescue: true } };
+    const hub = loadedHub({ ...json, hub: { ...json.hub, stars, metHazards: ['tilapia', 'heron'] } });
+    expect(hub.stars[POND_2_ID]).toEqual({ exit: true, special: false, legsOrRescue: true });
+    expect(hub.stars[CANAL_AREA_ID]).toEqual(playedSession().hub.stars[CANAL_AREA_ID]);
+    expect(hub.metHazards).toEqual(['tilapia', 'heron']);
+    expect(hubWithFields({}).stars[POND_2_ID]).toBeUndefined();
   });
 });

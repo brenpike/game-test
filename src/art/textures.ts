@@ -426,8 +426,16 @@ export interface AreaSceneryOptions {
    * same pond in the dusk palette.
    */
   readonly look?: AreaLookId;
-  /** Bake the stream flowing in at the far right (last column, top row). Default false. Pass the look's `stream`. */
+  /** Bake the stream flowing in at `streamColumn`'s right edge, top row. Default false. Pass the look's `stream`. */
   readonly stream?: boolean;
+  /**
+   * Column whose right edge is the stream's mouth, top row (streamColumnFor). Default
+   * the last column, the area's right edge, which bakes exactly what it did before.
+   * An earlier column closes the stream in open water: its band and flow marks taper
+   * out before the mouth, and its mouth stones spill into the next column. Only counts
+   * with `stream`. Throws a RangeError when it is not a column of the area.
+   */
+  readonly streamColumn?: number;
 }
 
 export const areaBgKey = (prefix: string, row: number, column: number): string => `${prefix}bg-${row}-${column}`;
@@ -445,10 +453,18 @@ export const areaPadKey = (prefix: string, i: number): string => `${prefix}pad-$
  * texture (key from {@link areaDeepBgKey}), so a tall area bakes fewer chunks
  * than it shows. Random draws go row by row, then column by column. `look` and
  * `stream` pick the habitat (the pond, issue #75); the default is the canal, unchanged.
+ * `streamColumn` places the stream's mouth (issue #98); the default, the last column,
+ * is unchanged.
  */
 export function bakeAreaScenery(scene: Phaser.Scene, opts: AreaSceneryOptions): SceneryTextures {
   const { keyPrefix, bakeScale, bgScale, rand, screensWide, screensTall, look } = opts;
   const bankSet = new Set(opts.bankChunks);
+  const streamColumn = opts.streamColumn ?? screensWide - 1;
+  if (!Number.isInteger(streamColumn) || streamColumn < 0 || streamColumn >= screensWide) {
+    throw new RangeError(`bakeAreaScenery: stream column ${streamColumn} is not one of ${screensWide} columns`);
+  }
+  const hasStream = opts.stream === true;
+  const streamClosed = streamColumn < screensWide - 1;
   const bgSize: TexSize = { w: BG_CHUNK.w, h: BG_CHUNK.h, originX: 0, originY: 0 };
 
   let deep: TexInfo | undefined;
@@ -476,7 +492,9 @@ export function bakeAreaScenery(scene: Phaser.Scene, opts: AreaSceneryOptions): 
             bankCapLeft: hasBank && !bankSet.has(c - 1),
             bankCapRight: hasBank && !bankSet.has(c + 1),
             look,
-            stream: onTop && opts.stream === true && c === screensWide - 1,
+            stream: onTop && hasStream && c === streamColumn,
+            streamClosed,
+            streamSpill: onTop && hasStream && streamClosed && c === streamColumn + 1,
             edgeLeft: c === 0,
             edgeRight: c === screensWide - 1,
             rand,
