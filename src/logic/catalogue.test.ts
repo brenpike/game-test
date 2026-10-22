@@ -9,9 +9,12 @@ import {
   categoryName,
   dreamColourById,
   dreamKindAllowed,
+  isDecoration,
   ownedDreamColours,
+  placementKind,
   treasureById,
   treasureSlug,
+  type Decoration,
   type DreamKind,
   type PaintShell,
   type Rarity,
@@ -200,6 +203,37 @@ describe('lookups', () => {
   it('dreamColourById finds a known id and returns undefined for an unknown one', () => {
     expect(dreamColourById('galaxy')).toEqual({ id: 'galaxy', name: 'Galaxy', rarity: 'legendary', kind: 'patterned' });
     expect(dreamColourById('plaid')).toBeUndefined();
+  });
+});
+
+describe('Decoration placement kinds', () => {
+  it('makes every canal Decoration a Floor item with the standard width (issue #95)', () => {
+    expect(DECORATIONS.map((decoration) => decoration.name)).toEqual([
+      'Pond plant',
+      'Toy boat',
+      'Castle tower',
+      'Sun pyramid',
+    ]);
+    for (const decoration of CANAL_TREASURES.filter(isDecoration)) {
+      expect(decoration.placement).toBeUndefined();
+      expect(decoration.width).toBeUndefined();
+      expect(placementKind(decoration)).toBe('floor');
+    }
+  });
+
+  it('placementKind returns the given kind and reads an absent one as floor', () => {
+    const base: Decoration = { id: 'test/item', name: 'Item', rarity: 'common', category: 'decoration' };
+    expect(placementKind(base)).toBe('floor');
+    expect(placementKind({ ...base, placement: 'floor' })).toBe('floor');
+    expect(placementKind({ ...base, placement: 'floating' })).toBe('floating');
+    const wide: Decoration = { ...base, placement: 'hanging', width: 144 };
+    expect(placementKind(wide)).toBe('hanging');
+  });
+
+  it('isDecoration picks only Decorations', () => {
+    expect(CANAL_TREASURES.filter(isDecoration)).toEqual(DECORATIONS);
+    expect(WEARABLES.some(isDecoration)).toBe(false);
+    expect(PAINT_SHELLS.some(isDecoration)).toBe(false);
   });
 });
 
