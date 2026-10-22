@@ -27,9 +27,19 @@ import {
   type HidingGeometry,
   type Threat,
 } from './hiding';
-import { TILAPIA_SPECIES, type PredatorRoute, type PredatorSpecies } from './predators';
-import { RISK, TILAPIA } from './tuning';
-import { SURF, type CurrentZone, type HidingSpot, type TilapiaRoute } from './zone';
+import {
+  HERON_SPECIES,
+  TILAPIA_SPECIES,
+  createPredator,
+  predatorCycleTiming,
+  routeLoopDistance,
+  stepPredator,
+  type PredatorContext,
+  type PredatorRoute,
+  type PredatorSpecies,
+} from './predators';
+import { HERON, RISK, TILAPIA } from './tuning';
+import { BED_TOP, SURF, inSafeArea, type CurrentZone, type HidingSpot, type Point, type TilapiaRoute } from './zone';
 
 const CURRENT: CurrentZone = { id: 'current-0', x0: 400, x1: 600, y0: 120, y1: 280, force: { x: -70, y: 0 } };
 
@@ -615,5 +625,108 @@ describe('meetsRarity with every threat', () => {
     expect(spotMatchesLabels(spotAt(130, 200), nearEel)).toBe(false);
     expect(meetsRarity({ x: 130, y: 200, container: false }, 'common', nearSpike)).toBe(true);
     expect(spotMatchesLabels(spotAt(130, 160), nearSpike)).toBe(false);
+  });
+});
+
+describe('heron reach and strike zone', () => {
+  const stretchY = SURF + PAD_COVER_DEPTH;
+  const heronRoute: PredatorRoute = {
+    id: 'heron-stretch',
+    waypoints: [
+      { x: 700, y: stretchY },
+      { x: 1400, y: stretchY },
+    ],
+    species: HERON_SPECIES,
+  };
+  const heronCtx: PredatorContext = {
+    safeArea: { x0: 40, x1: 660, y0: SURF, y1: BED_TOP },
+    bounds: { minX: 0, maxX: 2000, minY: SURF, maxY: BED_TOP },
+    tuning: HERON_SPECIES.tuning,
+  };
+  const heronGeo: HidingGeometry = {
+    ...GEO,
+    pads: [{ x: 1000, rx: 40, flower: false }],
+    cave: { id: 'test/root-arch', x0: 1150, x1: 1250, y0: 120, y1: 220 },
+    predatorRoutes: [heronRoute],
+  };
+  const threats = zoneThreats(heronGeo);
+  const strike = threats[0].strike;
+
+  function warnMark(): number {
+    const timing = predatorCycleTiming(HERON_SPECIES.tuning);
+    if (!timing) throw new Error('the heron has no warning cycle');
+    return timing.warnAt;
+  }
+
+  /** Whether a heron at its warn mark starts a warning at the target: the real predators.ts reach rule. */
+  function heronWarnsAt(target: Point): boolean {
+    const atMark = { ...createPredator(heronRoute, HERON_SPECIES.id), cycleTime: warnMark() };
+    return stepPredator(atMark, target, 0.01, heronCtx).events.some((event) => event.type === 'telegraphStart');
+  }
+
+  function inStrikeZone(pos: Point): boolean {
+    return !inSafeArea(pos, heronCtx.safeArea) && riskDistance(pos, threats) <= strike;
+  }
+
+  function samplePoints(): Point[] {
+    const points: Point[] = [];
+    for (let x = 0; x <= 1600; x += 20) {
+      for (let y = SURF; y <= BED_TOP; y += 10) points.push({ x, y });
+    }
+    return points;
+  }
+
+  it('gives the heron route its species lunge range as the strike range S', () => {
+    expect(threats).toEqual([{ kind: 'route', route: heronRoute, strike: HERON.lungeRange, tilapia: false }]);
+    expect(strike).toBe(60);
+  });
+
+  it('warns at a sampled point exactly when it is in the strike zone (riskDistance <= S outside the safe area)', () => {
+    const points = samplePoints();
+    const mismatches = points.filter((pos) => heronWarnsAt(pos) !== inStrikeZone(pos));
+    const reachRule = points.filter(
+      (pos) => (routeLoopDistance(pos, heronRoute.waypoints) <= HERON.lungeRange && !inSafeArea(pos, heronCtx.safeArea)) !== inStrikeZone(pos),
+    );
+    expect(mismatches).toEqual([]);
+    expect(reachRule).toEqual([]);
+    expect(points.some(inStrikeZone)).toBe(true);
+    expect(points.some((pos) => !inStrikeZone(pos))).toBe(true);
+  });
+
+  it('counts the zone edge, exactly S from the route, as in reach', () => {
+    const edge = { x: 1000, y: stretchY + strike };
+    expect(riskDistance(edge, threats)).toBe(strike);
+    expect(heronWarnsAt(edge)).toBe(true);
+    expect(heronWarnsAt({ x: 1000, y: stretchY + strike + 1 })).toBe(false);
+  });
+
+  it('never reaches deep water below the band', () => {
+    for (const pos of [{ x: 1000, y: stretchY + strike + 10 }, { x: 1000, y: BED_TOP }, { x: 1200, y: 215 }]) {
+      expect(riskDistance(pos, threats)).toBeGreaterThan(strike);
+      expect(heronWarnsAt(pos)).toBe(false);
+    }
+  });
+
+  it('never reaches the safe area, even within S of the route', () => {
+    const sheltered = { x: 650, y: stretchY };
+    expect(riskDistance(sheltered, threats)).toBeLessThanOrEqual(strike);
+    expect(heronWarnsAt(sheltered)).toBe(false);
+  });
+
+  it('gives no protection under a pad or in a cave or root arch: only depth and the safe area protect', () => {
+    const underThePad = { x: 1000, y: stretchY - 10 };
+    const archMouth = { x: 1200, y: 130 };
+    const archMiddle = { x: 1200, y: 160 };
+    expect(coversAt(underThePad, heronGeo)).toContain('pad');
+    expect(coversAt(archMouth, heronGeo)).toContain('cave');
+    expect(coversAt(archMiddle, heronGeo)).toContain('cave');
+    for (const pos of [underThePad, archMouth, archMiddle]) {
+      expect(heronWarnsAt(pos)).toBe(true);
+      expect(inStrikeZone(pos)).toBe(true);
+    }
+    expect(meetsThreatRiskRule(underThePad, 'legendary', threats)).toBe(true);
+    expect(meetsThreatRiskRule(archMouth, 'legendary', threats)).toBe(true);
+    expect(meetsThreatRiskRule(archMiddle, 'epic', threats)).toBe(true);
+    expect(meetsThreatRiskRule(archMiddle, 'common', threats)).toBe(false);
   });
 });

@@ -5,7 +5,7 @@
  */
 import type { Rarity } from './catalogue';
 import { shapeDistance, type HazardShape, type HazardSpawn } from './hazards';
-import type { PredatorRoute } from './predators';
+import { routeLoopDistance, type PredatorRoute } from './predators';
 import { RISK, TILAPIA, type RiskTuning } from './tuning';
 import {
   SURF,
@@ -135,16 +135,7 @@ export function isDeep(pos: Point, geo: HidingGeometry): boolean {
 export function routeDistance(pos: Point, routes: readonly TilapiaRoute[]): number {
   let best = Infinity;
   for (const route of routes) {
-    best = Math.min(best, loopDistance(pos, route.waypoints));
-  }
-  return best;
-}
-
-/** Shortest distance from a point to a closed loop of waypoints, the wrap segment included; Infinity with none. */
-function loopDistance(pos: Point, points: readonly Point[]): number {
-  let best = Infinity;
-  for (let i = 0; i < points.length; i++) {
-    best = Math.min(best, distanceToSegment(pos, points[i], points[(i + 1) % points.length]));
+    best = Math.min(best, routeLoopDistance(pos, route.waypoints));
   }
   return best;
 }
@@ -208,9 +199,14 @@ export function riskBands(strike: number): RiskTuning['band'] {
   };
 }
 
-/** Distance from a point to one threat: to its closed patrol loop, or to its shape edge (0 inside). */
+/**
+ * Distance from a point to one threat: to its closed patrol loop, or to its shape edge (0 inside).
+ * A route is measured with routeLoopDistance, the measure a timer species warns by, so a heron's
+ * warning reach outside the safe area and its strike zone (riskDistance within its strike) are one
+ * rule. No cover (reeds, pad, cave) shortens or blocks it.
+ */
 function threatDistance(pos: Point, threat: Threat): number {
-  return threat.kind === 'route' ? loopDistance(pos, threat.route.waypoints) : shapeDistance(pos, threat.shape);
+  return threat.kind === 'route' ? routeLoopDistance(pos, threat.route.waypoints) : shapeDistance(pos, threat.shape);
 }
 
 /** Shortest distance from a point to any threat; Infinity with no threats or no measurable threat. */

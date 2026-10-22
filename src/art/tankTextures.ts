@@ -21,7 +21,8 @@ import { bake, type TexInfo } from './textures';
 
 /**
  * The Decorations that can stand in the Home Tank: the treasure icon slugs of the four canal
- * Decorations, then the four pond ones (the text after `canal/` or `pond/` in src/logic/catalogue.ts).
+ * Decorations, the four pond ones, then the six pond Area 3 ones (the text after `canal/` or `pond/` in
+ * src/logic/catalogue.ts), in catalogue order.
  * This file does not import the logic; keep it in step with the catalogue (treasureArt.test.ts checks).
  */
 export const TANK_DECORATION_SLUGS = [
@@ -33,13 +34,20 @@ export const TANK_DECORATION_SLUGS = [
   'cattail-clump',
   'frog-statue',
   'lotus-lantern',
+  'reed-bundle',
+  'drifting-feather',
+  'wooden-duck-decoy',
+  'firefly-string-lights',
+  'firefly-jar',
+  'golden-lotus-throne',
 ] as const satisfies readonly TreasureIconSlug[];
 export type TankDecorationSlug = (typeof TANK_DECORATION_SLUGS)[number];
 
 /**
  * Badge shape of each Decoration's rarity (catalogue: Pond plant Common, Toy boat Rare, Castle tower
  * Epic, Sun pyramid Legendary; Lily pad Common, Cattail clump Common, Frog statue Rare, Lotus lantern
- * Epic). This file does not import the logic; keep it in step with the catalogue (treasureArt.test.ts
+ * Epic; Reed bundle Common, Drifting feather Common, Wooden duck decoy Rare, Firefly string lights Rare,
+ * Firefly jar Epic, Golden lotus throne Legendary). This file does not import the logic; keep it in step with the catalogue (treasureArt.test.ts
  * checks).
  */
 export const TANK_DECORATION_BADGES: Readonly<Record<TankDecorationSlug, BadgeShape>> = {
@@ -51,6 +59,12 @@ export const TANK_DECORATION_BADGES: Readonly<Record<TankDecorationSlug, BadgeSh
   'cattail-clump': 'circle',
   'frog-statue': 'diamond',
   'lotus-lantern': 'shield',
+  'reed-bundle': 'circle',
+  'drifting-feather': 'circle',
+  'wooden-duck-decoy': 'diamond',
+  'firefly-string-lights': 'diamond',
+  'firefly-jar': 'shield',
+  'golden-lotus-throne': 'star',
 };
 
 /** Rarity glow width as a multiple of the Decoration size (96 across at 80). */

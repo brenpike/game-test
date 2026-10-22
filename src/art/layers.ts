@@ -22,9 +22,15 @@
  * the axolotl so it tints the cheeks and is never hidden by the hero, and under
  * bubbles. It is a soft see-through fill, not a cue object, so it never covers an
  * outline the pair rule relies on.
+ * The heron (issue #98): `heronShadow` (its see-through shadow on the water) sits just
+ * above the haze and below `homeSpot`, so every cue object (snacks, plastic worms,
+ * treasures, the tilapia, the axolotl) draws over it. `heronBeak` (the beak dip) sits
+ * between the tilapia and the halo, behind the axolotl. `fireflies` (the pond's dusk
+ * fireflies above the water band) sit above pads, below hint.
  * Full order: bg < caveBack < hiddenTreasure < reeds < caveFront = currentMarker
- * < haze < homeSpot < homeRing < treasureGlow < treasure < collectibles < tilapia < halo
- * < friend < axolotl < queasyTint < bubbles < surface < pads < hint < fx < ui.
+ * < haze < heronShadow < homeSpot < homeRing < treasureGlow < treasure < collectibles
+ * < tilapia < heronBeak < halo < friend < axolotl < queasyTint < bubbles < surface < pads
+ * < fireflies < hint < fx < ui.
  */
 export const DEPTH = {
   bg: 0,
@@ -38,6 +44,8 @@ export const DEPTH = {
   /** Provisional. Past-the-current carved stone marker (hazed scenery). */
   currentMarker: 12,
   haze: 20,
+  /** Provisional. Heron shadow: above the haze, below every cue object. */
+  heronShadow: 22,
   /** Provisional. Home Spot burrow and marker flag. */
   homeSpot: 24,
   /** Provisional. Home Spot safe-ring dots. */
@@ -49,6 +57,8 @@ export const DEPTH = {
   collectibles: 30,
   /** Provisional. Predator: behind the axolotl, in front of collectibles. */
   tilapia: 35,
+  /** Provisional. Heron beak dip: behind the axolotl, in front of the tilapia. */
+  heronBeak: 36,
   /** Provisional. Protected halo: behind the axolotl, in front of the tilapia. */
   halo: 38,
   /** Provisional. Stranded axolotl: behind the axolotl, in front of the halo. */
@@ -59,6 +69,8 @@ export const DEPTH = {
   bubbles: 50,
   surface: 60,
   pads: 70,
+  /** Provisional. Pond fireflies above the water band: above pads, below hint. */
+  fireflies: 72,
   /** Provisional. Hint stars: above pads and reeds, below fx. */
   hint: 75,
   fx: 80,
