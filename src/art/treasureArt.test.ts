@@ -28,8 +28,10 @@ import {
   paintDreamSwatchSilhouette,
   paintTreasureIcon,
   paintTreasureSilhouette,
+  paintWideDecoration,
   treasureIconTextureSize,
   decorationBaseOffset,
+  wideDecorationTextureSize,
   type TreasureIconSlug,
 } from './drawTreasures';
 import {
@@ -50,10 +52,12 @@ import { INK, LILY_PAD } from './palette';
 import {
   EXTRA_DECORATION_ICON_SIZES,
   TANK_DECORATION_BADGES,
+  TANK_DECORATION_SHAPES,
   TANK_DECORATION_SLUGS,
   TANK_GLOW_SCALE,
   bakeTankTextures,
   tankDecorationGlowKey,
+  tankDecorationKey,
   type TankDecorationSlug,
 } from './tankTextures';
 import { TAU, type TexSize } from './canvasKit';
@@ -620,7 +624,17 @@ describe('Home Tank Decoration glows', () => {
     expect(new Set(bakes.map((b) => b.key)).size).toBe(bakes.length);
   });
 
-  it('bakes one glow per Decoration, 1.2 times its size, anchored at the Decoration base point', () => {
+  it('mirrors the catalogue placement kind and width of every Decoration', () => {
+    const decorations = ALL_TREASURES.filter(isDecoration);
+    expect(Object.keys(TANK_DECORATION_SHAPES)).toEqual(decorations.map((d) => treasureSlug(d.id)));
+    for (const decoration of decorations) {
+      const slug = treasureSlug(decoration.id) as TankDecorationSlug;
+      expect(TANK_DECORATION_SHAPES[slug].placement, decoration.id).toBe(placementKind(decoration));
+      expect(TANK_DECORATION_SHAPES[slug].width, decoration.id).toBe(decoration.width);
+    }
+  });
+
+  it('bakes one glow per Floor and Floating Decoration, 1.2 times its size, anchored at the Decoration base point', () => {
     bakes.length = 0;
     const decorationPx = 80;
     const tex = bakeTankTextures({} as never, 2, { decorationPx, rand: () => 0.5 });
@@ -628,7 +642,7 @@ describe('Home Tank Decoration glows', () => {
     expect(glowPx).toBe(96);
     const glowFrame = rarityGlowTextureSize(glowPx);
     const iconFrame = treasureIconTextureSize(decorationPx);
-    for (const slug of TANK_DECORATION_SLUGS) {
+    for (const slug of TANK_DECORATION_SLUGS.filter((s) => TANK_DECORATION_SHAPES[s].placement !== 'hanging')) {
       const info = tex.decorationGlows[slug];
       expect(info.key).toBe(tankDecorationGlowKey(slug, decorationPx));
       expect(tex.info[info.key]).toBe(info);
@@ -644,7 +658,143 @@ describe('Home Tank Decoration glows', () => {
       expect(rec.gradients[0].args[5]).toBe(glowPx / 2);
       const glowRgb = parseRgba(rec.gradients[0].stops[0][1]).rgb;
       expect(glowRgb).toEqual(channelsOf(BADGE_FILL[TANK_DECORATION_BADGES[slug]]));
+      expect(rec.calls.some(([name]) => name === 'scale'), slug).toBe(false);
     }
+  });
+
+  it('bakes each Floor and Floating sprite as before: the icon at 80, its anchor moved down to the base point', () => {
+    bakes.length = 0;
+    const decorationPx = 80;
+    bakeTankTextures({} as never, 2, { decorationPx, rand: () => 0.5 });
+    const iconFrame = treasureIconTextureSize(decorationPx);
+    for (const slug of TANK_DECORATION_SLUGS.filter((s) => TANK_DECORATION_SHAPES[s].placement !== 'hanging')) {
+      const baseY = decorationBaseOffset(slug, decorationPx);
+      const sprite = bakes.find((b) => b.key === tankDecorationKey(slug, decorationPx)) as BakeCall;
+      expect(sprite.size, slug).toEqual({ ...iconFrame, originY: iconFrame.originY + baseY });
+      const before = (ctx: CanvasRenderingContext2D): void => {
+        ctx.translate(0, -baseY);
+        paintTreasureIcon(ctx, slug, decorationPx);
+      };
+      expect(callLogDigest(sprite.paint), slug).toBe(callLogDigest(before));
+    }
+  });
+});
+
+describe('Home Tank Hanging and wide Decorations', () => {
+  const PX = 80;
+  const bakeShipped = (): ReturnType<typeof bakeTankTextures> => {
+    bakes.length = 0;
+    return bakeTankTextures({} as never, 2, { decorationPx: PX, rand: () => 0.5 });
+  };
+  const bakeOf = (key: string): BakeCall => bakes.find((b) => b.key === key) as BakeCall;
+  const HANGING_SLUGS = TANK_DECORATION_SLUGS.filter((slug) => TANK_DECORATION_SHAPES[slug].placement === 'hanging');
+
+  it('has the Firefly string lights, 144 wide, and the Firefly jar as its Hanging Decorations', () => {
+    expect(HANGING_SLUGS).toEqual(['firefly-string-lights', 'firefly-jar']);
+    expect(TANK_DECORATION_SHAPES['firefly-string-lights'].width).toBe(144);
+    expect(TANK_DECORATION_SHAPES['firefly-jar'].width).toBeUndefined();
+  });
+
+  it('anchors the Firefly jar sprite at its hook: the top-centre of the 80 icon box', () => {
+    const tex = bakeShipped();
+    const iconFrame = treasureIconTextureSize(PX);
+    const sprite = bakeOf(tex.decorations['firefly-jar'].key);
+    expect(sprite.size).toEqual({ ...iconFrame, originY: iconFrame.originY - PX / 2 });
+    const box = frameBox(sprite.size);
+    expect(box.minY).toBe(-1);
+    expect(box.maxY).toBe(PX + 1);
+    expect(box.minX + box.maxX).toBe(0);
+    const before = (ctx: CanvasRenderingContext2D): void => {
+      ctx.translate(0, PX / 2);
+      paintTreasureIcon(ctx, 'firefly-jar', PX);
+    };
+    expect(callLogDigest(sprite.paint)).toBe(callLogDigest(before));
+    // The hook ring's ink touches the hook point, and the jar base reaches the base point one footprint below
+    // (inkReach does not follow the context transform, so the icon is measured from its centre).
+    const { box: reach } = inkReach((ctx) => paintTreasureIcon(ctx, 'firefly-jar', PX));
+    expect(reach.minY + PX / 2).toBeGreaterThanOrEqual(-0.05);
+    expect(reach.minY + PX / 2).toBeLessThan(1);
+    expect(reach.maxY + PX / 2).toBeCloseTo(PX, 1);
+  });
+
+  it('bakes the Firefly string lights on a 144 x 80 box hanging from its top-centre hook', () => {
+    const tex = bakeShipped();
+    const sprite = bakeOf(tex.decorations['firefly-string-lights'].key);
+    expect(sprite.size).toEqual({ w: 146, h: 82, originX: 73, originY: 1 });
+    const centred = wideDecorationTextureSize(144, PX);
+    expect(sprite.size).toEqual({ ...centred, originY: centred.originY - PX / 2 });
+    const before = (ctx: CanvasRenderingContext2D): void => {
+      ctx.translate(0, PX / 2);
+      paintWideDecoration(ctx, 'firefly-string-lights', 144, PX);
+    };
+    expect(callLogDigest(sprite.paint)).toBe(callLogDigest(before));
+    // Inside the 144 x 80 box below the hook, ink included; the hook rings on the top edge, the middle bulbs
+    // on the bottom edge (inkReach does not follow the context transform, so measured from the box centre).
+    const { box: reach } = inkReach((ctx) => paintWideDecoration(ctx, 'firefly-string-lights', 144, PX));
+    expect(reach.minX).toBeGreaterThanOrEqual(-72);
+    expect(reach.maxX).toBeLessThanOrEqual(72);
+    expect(reach.minY + PX / 2).toBeCloseTo(0, 6);
+    expect(reach.maxY + PX / 2).toBeCloseTo(PX, 6);
+    expect(reach.maxX - reach.minX).toBeGreaterThan(130);
+  });
+
+  it.each(HANGING_SLUGS.map((slug) => [slug] as const))(
+    'centres the %s glow on its box, 1.2 x its width by 96, with the sprite anchor at the hook',
+    (slug) => {
+      const tex = bakeShipped();
+      const widthPx = TANK_DECORATION_SHAPES[slug].width ?? PX;
+      const glowW = Math.round(TANK_GLOW_SCALE * widthPx);
+      expect(glowW).toBe(slug === 'firefly-string-lights' ? 173 : 96);
+      const glow = bakeOf(tex.decorationGlows[slug].key);
+      const across = rarityGlowTextureSize(glowW);
+      const tall = rarityGlowTextureSize(96);
+      expect(glow.size).toEqual({ w: across.w, originX: across.originX, h: tall.h, originY: tall.originY - PX / 2 });
+      const box = frameBox(glow.size);
+      expect((box.minX + box.maxX) / 2).toBe(0);
+      expect((box.minY + box.maxY) / 2).toBe(PX / 2);
+
+      const rec = record(glow.paint);
+      expect(rec.calls[0]).toEqual(['translate', [0, PX / 2]]);
+      const scaleCall = rec.calls.find(([name]) => name === 'scale');
+      if (glowW === 96) expect(scaleCall).toBeUndefined();
+      else expect(scaleCall?.[1]).toEqual([glowW / 96, 1]);
+      expect(rec.gradients).toHaveLength(1);
+      expect(rec.gradients[0].args[5]).toBe(48);
+      expect(parseRgba(rec.gradients[0].stops[0][1]).rgb).toEqual(channelsOf(BADGE_FILL[TANK_DECORATION_BADGES[slug]]));
+    },
+  );
+
+  it('draws the wide string lights as the icon parts: a wire, three hook rings, six sockets and six round bulbs, one shine', () => {
+    const ops = record((ctx) => paintWideDecoration(ctx, 'firefly-string-lights', 144, PX)).ops;
+    const fills = (fill: string): Op[] => ops.filter((op) => op.op === 'fill' && op.fillStyle === fill);
+    expect(fills(FIREFLY_HOOK)).toHaveLength(3);
+    expect(fills(FIREFLY_SOCKET)).toHaveLength(6);
+    expect(fills(FIREFLY_BULB)).toHaveLength(6);
+    expect(fills('rgba(255,255,255,0.8)')).toHaveLength(1);
+    const outer = new Set(
+      ops.filter((op) => op.op === 'fill' && typeof op.fillStyle === 'string' && op.fillStyle.startsWith('#')).map((op) => op.fillStyle),
+    );
+    expect([...outer].sort()).toEqual([FIREFLY_BULB, FIREFLY_HOOK, FIREFLY_SOCKET].sort());
+    const ink = ops.filter((op) => op.op === 'stroke');
+    for (const op of ink) expect(op.strokeStyle).toBe(INK);
+    expect([...new Set(ink.map((op) => op.lineWidth))].sort()).toEqual([1.6, 2.8]);
+  });
+
+  it('keeps the string lights ink constant at another size', () => {
+    const widthsAt = (px: number): number[] => {
+      const ops = record((ctx) => paintWideDecoration(ctx, 'firefly-string-lights', 144, px)).ops;
+      return ops.filter((op) => op.op === 'stroke').map((op) => op.lineWidth);
+    };
+    expect(widthsAt(120)).toEqual(widthsAt(PX));
+    expect(record((ctx) => paintWideDecoration(ctx, 'firefly-string-lights', 144, 120)).calls.some(([name]) => name === 'scale')).toBe(false);
+    const frame = wideDecorationTextureSize(144, 120);
+    expect(frame).toEqual({ w: 218, h: 122, originX: 109, originY: 61 });
+  });
+
+  it('throws for a Decoration or width with no wide tank sprite', () => {
+    const ctx = recordingContext().ctx;
+    expect(() => paintWideDecoration(ctx, 'firefly-string-lights', 160, PX)).toThrow('no 160 wide tank sprite for "firefly-string-lights"');
+    expect(() => paintWideDecoration(ctx, 'firefly-jar', 144, PX)).toThrow('no 144 wide tank sprite for "firefly-jar"');
   });
 });
 
@@ -1633,16 +1783,29 @@ describe('Pond Area 3 treasure art (issue #98)', () => {
       expect(y).toBeLessThan(-40 + 20 + 12);
     });
 
-    it('bakes a tank sprite and glow for each, anchored at the icon box edge', () => {
+    it('bakes a tank sprite and glow for each Floor and Floating one, anchored at the icon box edge', () => {
       bakes.length = 0;
       const tex = bakeTankTextures({} as never, 2, { decorationPx: 80, rand: () => 0.5 });
       const iconFrame = treasureIconTextureSize(80);
-      for (const slug of DECORATION_SLUGS) {
+      for (const slug of [...FLOORS, ...FLOATS]) {
         expect(tex.decorations[slug].key).toBe(`tank-deco-${slug}-80`);
         expect(tex.decorationGlows[slug].key).toBe(`tank-deco-glow-${slug}-80`);
         const sprite = bakes.find((b) => b.key === tex.decorations[slug].key) as BakeCall;
         expect(sprite.size.originY - iconFrame.originY, slug).toBeCloseTo(40, 0);
         expect(sprite.size.originY - iconFrame.originY, slug).toBeCloseTo(decorationBaseOffset(slug, 80), 9);
+      }
+    });
+
+    it('bakes a tank sprite and glow for each Hanging one, anchored at the top-centre hook', () => {
+      bakes.length = 0;
+      const tex = bakeTankTextures({} as never, 2, { decorationPx: 80, rand: () => 0.5 });
+      for (const slug of HANGS) {
+        expect(tex.decorations[slug].key).toBe(`tank-deco-${slug}-80`);
+        expect(tex.decorationGlows[slug].key).toBe(`tank-deco-glow-${slug}-80`);
+        const sprite = bakes.find((b) => b.key === tex.decorations[slug].key) as BakeCall;
+        expect(sprite.size.originY, slug).toBe(1);
+        expect(sprite.size.h, slug).toBe(82);
+        expect(sprite.size.originX * 2, slug).toBe(sprite.size.w);
       }
     });
   });

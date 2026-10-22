@@ -53,8 +53,15 @@ const POND_LILY = 'pond/lily-pad';
 const CATTAIL = 'pond/cattail-clump';
 const FROG = 'pond/frog-statue';
 const LOTUS = 'pond/lotus-lantern';
+const REEDS = 'pond/reed-bundle';
+const FEATHER = 'pond/drifting-feather';
+const DUCK = 'pond/wooden-duck-decoy';
+const STRING_LIGHTS = 'pond/firefly-string-lights';
+const JAR = 'pond/firefly-jar';
+const THRONE = 'pond/golden-lotus-throne';
 const SHIPPED_FLOOR = SHIPPED_DECORATIONS.filter((decoration) => placementKind(decoration) === 'floor');
 const SHIPPED_FLOATING = SHIPPED_DECORATIONS.filter((decoration) => placementKind(decoration) === 'floating');
+const SHIPPED_HANGING = SHIPPED_DECORATIONS.filter((decoration) => placementKind(decoration) === 'hanging');
 const BANKED = [HAT, PYRAMID, PLANT, SHELL, BOAT, CASTLE, PLANT];
 const MIDDLE: Point = { x: 240, y: 318 };
 const X_RANGE = placementXRange();
@@ -381,7 +388,7 @@ describe('tankFrame', () => {
 });
 
 describe('placement kinds geometry (issue #95)', () => {
-  it('ships the canal then pond Decorations, in catalogue order, at the standard width', () => {
+  it('ships the canal, pond and Area 3 Decorations, in catalogue order, at the standard width but the wide string lights', () => {
     expect(SHIPPED_DECORATIONS).toEqual(ALL_TREASURES.filter(isDecoration));
     expect(Object.isFrozen(SHIPPED_DECORATIONS)).toBe(true);
     expect(SHIPPED_DECORATIONS.map((decoration) => [decoration.id, placementKind(decoration)])).toEqual([
@@ -393,8 +400,16 @@ describe('placement kinds geometry (issue #95)', () => {
       [CATTAIL, 'floor'],
       [FROG, 'floor'],
       [LOTUS, 'floating'],
+      [REEDS, 'floor'],
+      [FEATHER, 'floating'],
+      [DUCK, 'floating'],
+      [STRING_LIGHTS, 'hanging'],
+      [JAR, 'hanging'],
+      [THRONE, 'floor'],
     ]);
-    for (const decoration of SHIPPED_DECORATIONS) expect(decorationWidth(decoration)).toBe(TANK.decorationPx);
+    for (const decoration of SHIPPED_DECORATIONS) {
+      expect(decorationWidth(decoration)).toBe(decoration.id === STRING_LIGHTS ? 144 : TANK.decorationPx);
+    }
     expect(decorationById(LILY)).toBeUndefined();
     expect(decorationById(LILY, TEST_CATALOGUE)).toBe(LILY_PAD);
     expect(decorationById(HAT)).toBeUndefined();
@@ -423,6 +438,8 @@ describe('placement kinds geometry (issue #95)', () => {
     expect(placementXRangeFor(LILY_PAD)).toEqual({ x0: 64, x1: 416 });
     expect(placementXRangeFor(WIDE_BANNER)).toEqual({ x0: 96, x1: 384 });
     expect(decorationWidth(WIDE_BANNER)).toBe(144);
+    expect(placementXRangeFor(shipped(STRING_LIGHTS))).toEqual({ x0: 96, x1: 384 });
+    expect(placementXRangeFor(shipped(JAR))).toEqual(X_RANGE);
   });
 
   it('sizes the footprint by the item width, 80 high', () => {
@@ -440,15 +457,25 @@ describe('placement kinds geometry (issue #95)', () => {
 describe('isValidPlacementFor', () => {
   it('matches isValidPlacement for every shipped Floor Decoration', () => {
     const points: Point[] = [MIDDLE, { x: 10, y: 318 }, { x: 240, y: 200 }, TOP_MIDDLE, { x: 64, y: 304 }];
-    expect(SHIPPED_FLOOR.map((decoration) => decoration.id)).toEqual([PLANT, BOAT, CASTLE, PYRAMID, CATTAIL, FROG]);
+    expect(SHIPPED_FLOOR.map((decoration) => decoration.id)).toEqual([
+      PLANT,
+      BOAT,
+      CASTLE,
+      PYRAMID,
+      CATTAIL,
+      FROG,
+      REEDS,
+      THRONE,
+    ]);
     for (const decoration of SHIPPED_FLOOR) {
       for (const pos of points) expect(isValidPlacementFor(decoration, pos)).toBe(isValidPlacement(pos));
     }
   });
 
   it('accepts Floating and Hanging only at the fixed base y within the x range', () => {
-    expect(SHIPPED_FLOATING.map((decoration) => decoration.id)).toEqual([POND_LILY, LOTUS]);
-    for (const decoration of [...SHIPPED_FLOATING, LILY_PAD, PAPER_LANTERN, WIDE_BANNER]) {
+    expect(SHIPPED_FLOATING.map((decoration) => decoration.id)).toEqual([POND_LILY, LOTUS, FEATHER, DUCK]);
+    expect(SHIPPED_HANGING.map((decoration) => decoration.id)).toEqual([STRING_LIGHTS, JAR]);
+    for (const decoration of [...SHIPPED_FLOATING, ...SHIPPED_HANGING, LILY_PAD, PAPER_LANTERN, WIDE_BANNER]) {
       const range = placementXRangeFor(decoration);
       expect(isValidPlacementFor(decoration, { x: range.x0, y: TOP_BASE_Y })).toBe(true);
       expect(isValidPlacementFor(decoration, { x: range.x1, y: TOP_BASE_Y })).toBe(true);
@@ -465,10 +492,12 @@ describe('isValidPlacementFor', () => {
   });
 
   it('keeps a wide item between x 96 and 384', () => {
-    expect(isValidPlacementFor(WIDE_BANNER, { x: 96, y: TOP_BASE_Y })).toBe(true);
-    expect(isValidPlacementFor(WIDE_BANNER, { x: 384, y: TOP_BASE_Y })).toBe(true);
-    expect(isValidPlacementFor(WIDE_BANNER, { x: 80, y: TOP_BASE_Y })).toBe(false);
-    expect(isValidPlacementFor(WIDE_BANNER, { x: 400, y: TOP_BASE_Y })).toBe(false);
+    for (const wide of [WIDE_BANNER, shipped(STRING_LIGHTS)]) {
+      expect(isValidPlacementFor(wide, { x: 96, y: TOP_BASE_Y })).toBe(true);
+      expect(isValidPlacementFor(wide, { x: 384, y: TOP_BASE_Y })).toBe(true);
+      expect(isValidPlacementFor(wide, { x: 80, y: TOP_BASE_Y })).toBe(false);
+      expect(isValidPlacementFor(wide, { x: 400, y: TOP_BASE_Y })).toBe(false);
+    }
   });
 });
 
@@ -486,6 +515,18 @@ describe('decorationsOverlap', () => {
 
   it('never overlaps a top item with a Floor item', () => {
     expect(decorationsOverlap(WIDE_BANNER, TOP_MIDDLE, shipped(CASTLE), { x: 240, y: TANK.floorBand.y0 })).toBe(false);
+    expect(decorationsOverlap(shipped(STRING_LIGHTS), TOP_MIDDLE, shipped(THRONE), { x: 240, y: TANK.floorBand.y0 })).toBe(
+      false,
+    );
+  });
+
+  it('uses the full width of the shipped Firefly string lights against the other top items', () => {
+    const at = (x: number): Point => ({ x, y: TOP_BASE_Y });
+    const lights = shipped(STRING_LIGHTS);
+    expect(decorationsOverlap(lights, at(240), shipped(JAR), at(352))).toBe(false);
+    expect(decorationsOverlap(lights, at(240), shipped(JAR), at(351.5))).toBe(true);
+    expect(decorationsOverlap(shipped(FEATHER), at(128), lights, at(240))).toBe(false);
+    expect(decorationsOverlap(shipped(DUCK), at(128.5), lights, at(240))).toBe(true);
   });
 });
 
@@ -616,6 +657,19 @@ describe('tank changes with an injected catalogue', () => {
     expect(suggestSpot(testLayoutWith([LILY]), LANTERN, TEST_CATALOGUE)).toEqual({ x: 144, y: TOP_BASE_Y });
     expect(suggestSpot(testLayoutWith([LILY, LANTERN]), BANNER, TEST_CATALOGUE)).toEqual({ x: 384, y: TOP_BASE_Y });
     expect(suggestSpot(testLayoutWith([LILY]), BANNER, TEST_CATALOGUE)).toEqual({ x: 96, y: TOP_BASE_Y });
+  });
+
+  it('suggests shipped top spots past the wide Firefly string lights', () => {
+    const lightsAtMiddle: TankLayout = { placed: [{ id: STRING_LIGHTS, ...TOP_MIDDLE }] };
+    const jarAtMiddle: TankLayout = { placed: [{ id: JAR, ...TOP_MIDDLE }] };
+    expect(suggestSpot(createTankLayout(), STRING_LIGHTS)).toEqual(TOP_MIDDLE);
+    expect(suggestSpot(lightsAtMiddle, JAR)).toEqual({ x: 96, y: TOP_BASE_Y });
+    expect(suggestSpot(lightsAtMiddle, FEATHER)).toEqual({ x: 96, y: TOP_BASE_Y });
+    expect(suggestSpot(jarAtMiddle, STRING_LIGHTS)).toEqual({ x: 96, y: TOP_BASE_Y });
+    expect(suggestSpot(lightsAtMiddle, REEDS)).toEqual(MIDDLE);
+    for (const id of [JAR, FEATHER, DUCK]) {
+      expect(isValidPlacementFor(shipped(id), suggestSpot(lightsAtMiddle, id))).toBe(true);
+    }
   });
 
   it('keeps Floor and top suggestions apart', () => {

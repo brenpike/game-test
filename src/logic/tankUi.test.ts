@@ -61,7 +61,7 @@ const CHEST_ROW_H = 3 * LINE_HEIGHT_EM * BODY_PX;
 const HUB_TITLE = 'Home Tank';
 const DECORATE_CAPTION = 'Pick a Decoration to place it. Drag it or use the arrow keys to move it.';
 const CHEST_TITLE = 'Treasure Chest';
-const CHEST_HEADING = 'Dream colours: 13 of 13 found';
+const CHEST_HEADING = 'Dream colours: 14 of 14 found';
 const CHEST_PAGE = 'Page 9 of 9';
 
 const CANVAS_WIDTHS: readonly number[] = [
@@ -654,7 +654,7 @@ describe('decorateLayout', () => {
   });
 
   it('fits every tray up to the shipped Decorations on every supported canvas, more than 4 by the tray rule', () => {
-    expect(SHIPPED_DECORATIONS).toHaveLength(8);
+    expect(SHIPPED_DECORATIONS).toHaveLength(14);
     const maxCounts = Array.from({ length: SHIPPED_DECORATIONS.length + 1 }, (_, count) => count);
     const problems = supportedCanvases().flatMap((view) =>
       maxCounts.flatMap((maxTrayCount) =>
@@ -703,7 +703,7 @@ describe('decorateLayout', () => {
     expect(layout.done).toEqual({ x: 778, y: 228, w: 200, h: 64 });
   });
 
-  it('lays out the 8 shipped Decorations compact in two rows over the floor band at 460 x 320', () => {
+  it('lays out a tray of 8 Decorations compact in two rows over the floor band at 460 x 320', () => {
     const view = { cssW: 460, cssH: 320 };
     const frame = tankFrame(view.cssW, view.cssH);
     const layout = decorateLayout(view, frame, 8, decorateSizes(view), 8);
@@ -719,7 +719,7 @@ describe('decorateLayout', () => {
     expect(layout.caption).toEqual({ x: 16, y: 244, w: 428, h: 45 });
   });
 
-  it('lays out the 8 shipped Decorations compact in three rows on the wall, the caption in the water, at 320 x 440', () => {
+  it('lays out a tray of 8 Decorations compact in three rows on the wall, the caption in the water, at 320 x 440', () => {
     const view = { cssW: 320, cssH: 440 };
     const frame = tankFrame(view.cssW, view.cssH);
     const layout = decorateLayout(view, frame, 8, decorateSizes(view), 8);
@@ -733,6 +733,43 @@ describe('decorateLayout', () => {
     expect(bottomOf(layout.done)).toBeLessThanOrEqual(topKeepClearCss(frame).y0 - UI.gap);
     expect(layout.caption).toEqual({ x: 16, y: topKeepClearCss(frame).y1 + UI.gap, w: 288, h: 67.5 });
     expect(layout.caption?.y).toBe(284);
+  });
+
+  it('lays out the 14 shipped Decorations compact in three rows over the floor band, no room for the caption, at 460 x 320', () => {
+    const view = { cssW: 460, cssH: 320 };
+    const frame = tankFrame(view.cssW, view.cssH);
+    const layout = decorateLayout(view, frame, SHIPPED_DECORATIONS.length, decorateSizes(view), SHIPPED_DECORATIONS.length);
+    const rowXs = [26, 86, 146, 206, 266, 326, 386];
+    expect(layout.compact).toBe(true);
+    expect(layout.tray).toEqual([
+      ...rowXs.map((x) => ({ x, y: 108, w: 48, h: 48 })),
+      ...rowXs.map((x) => ({ x, y: 168, w: 48, h: 48 })),
+    ]);
+    expect(layout.putAway).toEqual({ x: 145, y: 236, w: 48, h: 48 });
+    expect(layout.done).toEqual({ x: 205, y: 228, w: 110, h: 64 });
+    expect(layout.tray[0].y).toBe(topKeepClearCss(frame).y1 + UI.gap);
+    expect(bottomOf(layout.done)).toBeGreaterThan(decorationBandTop(frame));
+    expect(bottomOf(layout.done) + UI.gap + textSize(DECORATE_CAPTION, BODY_PX, view.cssW - 2 * UI.margin, REGULAR_EM).h).toBeGreaterThan(view.cssH - UI.margin);
+    expect(layout.caption).toBeNull();
+  });
+
+  it('lays out the 14 shipped Decorations compact in three rows on the wall, Done in the water and no room for the caption, at 320 x 440', () => {
+    const view = { cssW: 320, cssH: 440 };
+    const frame = tankFrame(view.cssW, view.cssH);
+    const layout = decorateLayout(view, frame, SHIPPED_DECORATIONS.length, decorateSizes(view), SHIPPED_DECORATIONS.length);
+    const rowXs = [16, 76, 136, 196, 256];
+    expect(layout.compact).toBe(true);
+    expect(layout.tray).toEqual([
+      ...rowXs.map((x) => ({ x, y: 16, w: 48, h: 48 })),
+      ...rowXs.map((x) => ({ x, y: 76, w: 48, h: 48 })),
+      ...rowXs.slice(0, 4).map((x) => ({ x, y: 136, w: 48, h: 48 })),
+    ]);
+    expect(layout.putAway).toEqual({ x: 256, y: 136, w: 48, h: 48 });
+    expect(bottomOf(layout.putAway)).toBeLessThanOrEqual(topKeepClearCss(frame).y0 - UI.gap);
+    expect(layout.done).toEqual({ x: 105, y: topKeepClearCss(frame).y1 + UI.gap, w: 110, h: 64 });
+    expect(layout.done.y).toBe(284);
+    expect(bottomOf(layout.done) + UI.gap + textSize(DECORATE_CAPTION, BODY_PX, view.cssW - 2 * UI.margin, REGULAR_EM).h).toBeGreaterThan(view.cssH - UI.margin);
+    expect(layout.caption).toBeNull();
   });
 
   it('puts Done in the open water under the top band when the wall holds only the tray at 340 x 440', () => {

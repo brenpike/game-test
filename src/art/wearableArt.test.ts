@@ -88,7 +88,7 @@ import {
   type WearableSlotMinimums,
 } from './wearableFit';
 import { DREAM_MARKER_INK, DREAM_MARKER_R, DREAM_MARKER_S, dreamMarkerCentres } from './drawDreamOverlay';
-import { ALL_TREASURES, treasureSlug, type Wearable } from '../logic/catalogue';
+import { ALL_TREASURES, POND_2_TREASURES, POND_TREASURES, treasureSlug, type Wearable } from '../logic/catalogue';
 import { VIEW } from '../logic/tuning';
 import { fitView } from '../logic/viewport';
 import { WORLD_H } from '../logic/zone';
@@ -99,6 +99,10 @@ import {
   DIVING_TANK_STRAP,
   DRAGONFLY_FRAME,
   DRAGONFLY_WING,
+  FEATHER_CAP_FILL,
+  FEATHER_FILL,
+  FIREFLY_CAPE_FILL,
+  FIREFLY_GLOW,
   FLIPPER_CUFF,
   FLIPPER_FILL,
   FLIPPER_RIDGE,
@@ -111,15 +115,20 @@ import {
   LADYBUG_SHELL,
   LILY_CROWN_FLOWER,
   LILY_CROWN_LEAF,
+  LILY_PAD_SOCK_FILL,
   NECKLACE_CORD,
   NECKLACE_SHELL,
   PAINT_SHELL_RIDGE,
+  PEARL_CHARM_CORD,
+  PEARL_FILL,
   POND_WEED_SCARF,
   RAINCOAT_FILL,
   SOCK_FILL,
   SOCK_STRIPE_ALPHA,
   TANK_TOP_FILL,
   TREASURE_SHINE,
+  WATER_LILY_BLOSSOM,
+  WATER_LILY_SHIRT_FILL,
   WORN_FAR_INK_MIX,
 } from './treasurePalette';
 
@@ -2184,7 +2193,7 @@ describe('Dream marker (#88)', () => {
 // ---------------------------------------------------------------------------
 //
 // Coverage comes from the catalogue, not from a list here: every `wearable` entry of ALL_TREASURES
-// (the canal's and the pond's) gets its own tests, so a new item is held to the rule as soon as it is in
+// (the canal's, the pond's and the pond Area 3's) gets its own tests, so a new item is held to the rule as soon as it is in
 // the catalogue. Each item
 // must have art in its slot, clear the swim-view floor on every case of its slot, meet its slot's
 // minimums, and be in WEARABLE_RECORD with its measured numbers. A Tail item keeps a Dream marker star
@@ -2497,8 +2506,8 @@ interface WearableRecord {
 }
 
 /**
- * The measured numbers of every catalogue Wearable of every area (the canal's eight, the pond's seven),
- * keyed by catalogue id. A new Wearable needs its row: the suite fails until its numbers are recorded,
+ * The measured numbers of every catalogue Wearable of every area (the canal's eight, the pond's seven, the
+ * pond Area 3's five), keyed by catalogue id. A new Wearable needs its row: the suite fails until its numbers are recorded,
  * and fails when a number moves.
  */
 const WEARABLE_RECORD: Readonly<Record<string, WearableRecord>> = {
@@ -2537,6 +2546,23 @@ const WEARABLE_RECORD: Readonly<Record<string, WearableRecord>> = {
     slot: { minLength: 22, torsoLengthShare: 0.5, proud: 10.6959, outsideShare: 0.672 },
   },
   'pond/froggy-boots': { cssPx2: 107.69, worst: 'medium boy short slim baby swim 2.09 amp 1', slot: { toeShare: 1, padShare: 1 } },
+  'pond/feather-cap': { cssPx2: 129.65, worst: 'boy happy smile', slot: { headWidthShare: 0.546, rise: 20.8777 } },
+  'pond/lily-pad-socks': {
+    cssPx2: 95.44,
+    worst: 'medium boy short slim baby swim 2.09 amp 1',
+    slot: { legLengthShare: 1, tubeProud: 1.1, toeTipShare: 1 },
+  },
+  'pond/water-lily-shirt': { cssPx2: 65.7, worst: 'medium boy short slim baby swim 0.00 amp 1', slot: { torsoSideShare: 0.8538 } },
+  'pond/pearl-tail-charm': {
+    cssPx2: 68.75,
+    worst: 'medium girl medium chubby young swim 4.19 amp 1',
+    slot: { tailHeightShare: 0.5012, minAlong: 20.5919 },
+  },
+  'pond/firefly-cape': {
+    cssPx2: 82.99,
+    worst: 'medium girl short slim young swim 0.00 amp 1',
+    slot: { minLength: 22, torsoLengthShare: 0.5, proud: 10.6885, outsideShare: 0.6499 },
+  },
 };
 
 /** The recorded row of a catalogue Wearable, failing the test with what to add when it has none. */
@@ -2739,7 +2765,10 @@ describe('every catalogue Wearable (#88): the durable size rule', { timeout: ENU
 // rest of guide 6i: the keep-clear zones, their slot's footprint, the layer order, and the details the
 // rarity ladder counts. The pond items reuse the canal painters' footprints, never new ones.
 
-const POND_WEARABLES = CATALOGUE_WEARABLES.filter((w) => w.id.startsWith('pond/'));
+/** The pond's Area 2 Wearables (issue #75) and the pond Area 3's (issue #98), told apart by their catalogue list, not by the id prefix both share. */
+const inList = (list: readonly { readonly id: string }[]) => (w: Wearable): boolean => list.some((t) => t.id === w.id);
+const POND_WEARABLES = CATALOGUE_WEARABLES.filter(inList(POND_TREASURES));
+const POND_2_WEARABLES = CATALOGUE_WEARABLES.filter(inList(POND_2_TREASURES));
 const POND_SLUG = {
   crown: 'lily-flower-crown',
   scarf: 'pond-weed-scarf',
@@ -3175,6 +3204,508 @@ describe('pond Wearables (issue #75): the rarity look ladder', () => {
     expect(widths(bodyPaints('back', GIRL, 0, 1, POND_SLUG.ladybug))).toEqual([4]);
     expect(widths(bodyPaints('back', GIRL, 0, 1, POND_SLUG.wings))).toEqual([1.2, 4]);
     expect(widths(legPaints({ feet: POND_SLUG.boots }, nearLeg))).toEqual([1.2, 2]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The pond Area 3 Wearables (issue #98): zones, footprints, layers and counted details
+// ---------------------------------------------------------------------------
+//
+// The same checks as the Area 2 block above, for the Feather cap, Lily-pad socks, Water-lily shirt, Pearl
+// tail charm and Firefly cape. The catalogue-driven suite holds each to the size rule; these hold them to
+// the rest of guide 6i. The Area 2 checks are unchanged.
+
+const AREA3_SLUG = {
+  cap: 'feather-cap',
+  socks: 'lily-pad-socks',
+  shirt: 'water-lily-shirt',
+  charm: 'pearl-tail-charm',
+  cape: 'firefly-cape',
+} as const satisfies Record<string, WearableArtSlug>;
+/** A full Area 3 outfit, and the same with the Pond-weed scarf, Dragonfly glasses and Froggy boots of Area 2 mixed in. */
+const AREA3_OUTFIT: ArtOutfit = {
+  head: AREA3_SLUG.cap,
+  shirt: AREA3_SLUG.shirt,
+  back: AREA3_SLUG.cape,
+  tail: AREA3_SLUG.charm,
+  socks: AREA3_SLUG.socks,
+};
+const AREA3_MIXED_OUTFIT: ArtOutfit = { ...AREA3_OUTFIT, neck: POND_SLUG.scarf, face: POND_SLUG.glasses, feet: POND_SLUG.boots };
+
+describe('pond Area 3 Wearables (issue #98): zones, footprints and layers', { timeout: ENUMERATION_TIMEOUT_MS }, () => {
+  it('splits the pond Wearables by catalogue list: seven of Area 2, five of Area 3, none in both', () => {
+    expect(POND_WEARABLES).toHaveLength(7);
+    expect(POND_2_WEARABLES.map((w) => `${w.slot}:${treasureSlug(w.id)}`)).toEqual([
+      'head:feather-cap',
+      'socks:lily-pad-socks',
+      'shirt:water-lily-shirt',
+      'tail:pearl-tail-charm',
+      'back:firefly-cape',
+    ]);
+    expect(POND_WEARABLES.some((w) => POND_2_WEARABLES.includes(w))).toBe(false);
+    expect(Object.values(AREA3_SLUG).map((slug) => WEARABLE_ART_SLOT[slug])).toEqual(['head', 'socks', 'shirt', 'tail', 'back']);
+  });
+
+  it('maps Area 3 catalogue ids to art slugs by slot, and leaves out an Area 3 id worn in the wrong slot', () => {
+    expect(
+      artOutfit({
+        head: 'pond/feather-cap',
+        socks: 'pond/lily-pad-socks',
+        shirt: 'pond/water-lily-shirt',
+        tail: 'pond/pearl-tail-charm',
+        back: 'pond/firefly-cape',
+      }),
+    ).toEqual({ head: AREA3_SLUG.cap, socks: AREA3_SLUG.socks, shirt: AREA3_SLUG.shirt, tail: AREA3_SLUG.charm, back: AREA3_SLUG.cape });
+    expect(artOutfit({ head: 'pond/firefly-cape', back: 'pond/feather-cap', tail: 'pond/water-lily-shirt', shirt: 'pond/pearl-tail-charm' })).toEqual({});
+    expect(outfitKey(AREA3_OUTFIT)).toBe('head=feather-cap,shirt=water-lily-shirt,back=firefly-cape,tail=pearl-tail-charm,socks=lily-pad-socks');
+  });
+
+  it('paints the Feather cap off the eyes, the lash reach, the gill roots and the cheek heart zone, alike on every look', () => {
+    const paints = bodyPaints('head', DEFAULT_ART_LOOK, 0, 1, AREA3_SLUG.cap);
+    expect(paints.length).toBeGreaterThan(0);
+    for (const look of EVERY_BODY_LOOK) expect(bodyPaints('head', look, 0, 1, AREA3_SLUG.cap).map(signature)).toEqual(paints.map(signature));
+    for (const paint of paints) expect(trouble(paint, { lashes: true, gills: true }), `${paint.kind} ${paint.style}`).toBeNull();
+  });
+
+  it('keeps the Water-lily shirt, the Firefly cape and the Pearl tail charm off the eyes, lashes, gill roots and cheek heart zone on every look, swim phase and tail amplitude', () => {
+    const bad: string[] = [];
+    for (const look of EVERY_BODY_LOOK) {
+      for (const [slot, slug] of [
+        ['shirt', AREA3_SLUG.shirt],
+        ['back', AREA3_SLUG.cape],
+      ] as const) {
+        for (const p of bodyPaints(slot, look, 0, 1, slug)) {
+          const why = trouble(p, { lashes: true, gills: true });
+          if (why) bad.push(`${lookId(look)} ${slug} ${why}`);
+        }
+      }
+      for (const swim of SWIMS) {
+        for (const amp of AMPS) {
+          for (const p of bodyPaints('tail', look, swim, amp, AREA3_SLUG.charm)) {
+            const why = trouble(p, { lashes: true, gills: true });
+            if (why) bad.push(`${lookId(look)} swim ${swim.toFixed(2)} amp ${amp} charm ${why}`);
+          }
+        }
+      }
+    }
+    expect([...new Set(bad)]).toEqual([]);
+  });
+
+  it('keeps the Lily-pad socks off the eyes and lashes on every look and swim phase, behind the silhouette', () => {
+    const bad: string[] = [];
+    for (const look of EVERY_BODY_LOOK) {
+      for (const swim of SWIMS.filter((_, i) => i % 2 === 0)) {
+        for (const frame of legSlotFrames(look, swim)) {
+          for (const p of legPaints({ socks: AREA3_SLUG.socks }, frame)) {
+            const why = trouble(p, { lashes: true, gills: !isSleevePaint(p), heart: false });
+            if (why) bad.push(`${lookId(look)} swim ${swim.toFixed(2)} leg ${frame.index} ${why}`);
+          }
+        }
+      }
+    }
+    expect([...new Set(bad)]).toEqual([]);
+  });
+
+  it('keeps every Area 3 Wearable of a full drawAxolotl run off the eyes and, past the silhouette, the gill roots and cheek heart zone, at every size', () => {
+    const looks = AXO_SIZES.flatMap((size): AxolotlArtLook[] => [
+      { ...DEFAULT_ART_LOOK, size },
+      { ...GIRL, size, body: 'chubby', age: 'baby', tail: 'short' },
+      { ...GIRL, size, body: 'slim', age: 'grownUp', tail: 'long' },
+    ]);
+    for (const outfit of [AREA3_OUTFIT, AREA3_MIXED_OUTFIT]) {
+      const bodyOnly: ArtOutfit = { ...outfit, socks: null, feet: null };
+      for (const pose of Object.values(POSES)) {
+        for (const look of looks) {
+          const base = drawn(pose, look, { socks: null, feet: null });
+          const worn = drawn(pose, look, bodyOnly);
+          const silhouette = worn.findIndex((p) => p.kind === 'stroke' && p.lineWidth === 2 * LW && p.style === INK);
+          const inserted = insertedPaints(base, worn)!;
+          expect(inserted.length).toBeGreaterThan(0);
+          for (const { index, paint } of inserted) {
+            const why = trouble(paint, { lashes: false, gills: index > silhouette, heart: index > silhouette });
+            expect(why, `${lookId(look)} paint ${index} ${paint.kind} ${paint.style}`).toBeNull();
+          }
+        }
+      }
+    }
+  });
+
+  it('paints every Area 3 Wearable before the eyes, a Girl lashes included, and changes none of the axolotl\'s own paints', () => {
+    for (const outfit of [AREA3_OUTFIT, AREA3_MIXED_OUTFIT]) {
+      for (const look of [DEFAULT_ART_LOOK, GIRL, { ...GIRL, body: 'chubby' as const, age: 'baby' as const, tail: 'short' as const }]) {
+        for (const pose of Object.values(POSES)) {
+          const base = drawn(pose, look);
+          const worn = drawn(pose, look, outfit);
+          const inserted = insertedPaints(base, worn);
+          expect(inserted).not.toBeNull();
+          expect(inserted!.length).toBeGreaterThan(0);
+          const eyes = firstEyePaint(worn);
+          expect(eyes).toBeGreaterThan(0);
+          for (const x of inserted!) expect(x.index).toBeLessThan(eyes);
+          expect(worn.length - eyes).toBe(base.length - firstEyePaint(base));
+        }
+      }
+    }
+  });
+
+  it('keeps the Feather cap in the Head footprint, resting on the head top, its plume rising 8 or more above the head outline', () => {
+    const paints = bodyPaints('head', DEFAULT_ART_LOOK, 0, 1, AREA3_SLUG.cap);
+    const box = inkBounds(paints);
+    expect(isInside(box, HEAD_FOOTPRINT)).toBe(true);
+    expect(box.maxY).toBeLessThanOrEqual(HEAD_FOOTPRINT.maxY + TOL);
+    expect(box.maxY).toBeCloseTo(-19.6, 2);
+    expect(box.minX).toBeCloseTo(16.2, 2);
+    expect(headRise(inkPoints(paints))).toBeGreaterThanOrEqual(WEARABLE_SLOT_MINIMUMS.head.rise);
+    // Its cuff rests on the head: the lowest fill point is inside the head outline's ink, the ring LW outside the head ellipse.
+    const fills = paints.filter((p) => p.kind === 'fill' && p.style === FEATHER_CAP_FILL);
+    const lowest = fills.flatMap((p) => p.subs[0].pts).reduce((a, b) => (b.y > a.y ? b : a));
+    expect(((lowest.x - HEAD_ELLIPSE.cx) / (HEAD_ELLIPSE.rx + LW)) ** 2 + ((lowest.y - HEAD_ELLIPSE.cy) / (HEAD_ELLIPSE.ry + LW)) ** 2).toBeLessThan(1);
+    // The glasses keep 1.5 or more under it, as under every Head item.
+    expect(FACE_FOOTPRINT.minY - HEAD_FOOTPRINT.maxY).toBeCloseTo(1.5, 6);
+  });
+
+  it('keeps the Water-lily shirt inside the torso edge band, behind the front line, cut at the tail root, on every look', () => {
+    const bad: string[] = [];
+    for (const look of EVERY_BODY_LOOK) {
+      const shirt = shirtGeometry(look);
+      const e: BodyEllipse = shirt.inset;
+      const boundary = Array.from({ length: 720 }, (_, k) => ({
+        x: e.cx + Math.cos((k / 720) * TAU) * e.rx,
+        y: e.cy + Math.sin((k / 720) * TAU) * e.ry,
+      }));
+      const paints = bodyPaints('shirt', look, 0, 1, AREA3_SLUG.shirt);
+      expect(paints.length).toBeGreaterThan(0);
+      for (const { p, hw } of inkPoints(paints)) {
+        const inside = ((p.x - e.cx) / e.rx) ** 2 + ((p.y - e.cy) / e.ry) ** 2 <= 1 + 1e-9;
+        const gap = Math.min(...boundary.map((q) => Math.hypot(p.x - q.x, p.y - q.y)));
+        if (!inside || gap < hw - TOL) bad.push(`${lookId(look)} edge band`);
+        if (p.x + hw > SHIRT_FRONT_X + TOL) bad.push(`${lookId(look)} front`);
+        if (p.x + hw > SHIRT_BACK_FRONT_LINE_X + TOL) bad.push(`${lookId(look)} front line`);
+        if (p.x - hw < shirt.rearX - TOL) bad.push(`${lookId(look)} rear`);
+      }
+    }
+    expect([...new Set(bad)]).toEqual([]);
+  });
+
+  it('paints the Water-lily shirt on the Tank top\'s whole silhouette: one inked shape, ink 2.0, the neckline to x -7', () => {
+    for (const look of EVERY_BODY_LOOK) {
+      const shirt = shirtGeometry(look);
+      const paints = bodyPaints('shirt', look, 0, 1, AREA3_SLUG.shirt);
+      const body = paints.filter((p) => p.kind === 'fill' && p.style === WATER_LILY_SHIRT_FILL);
+      expect(body).toHaveLength(1);
+      expect(paints.filter((p) => p.kind === 'stroke' && p.lineWidth === 2 && p.style === INK)).toHaveLength(1);
+      const tank = bodyPaints('shirt', look).find((p) => p.kind === 'fill' && p.style === TANK_TOP_FILL)!;
+      expect(body[0].subs.map((sub) => sub.pts.map((q) => `${q.x.toFixed(6)},${q.y.toFixed(6)}`))).toEqual(
+        tank.subs.map((sub) => sub.pts.map((q) => `${q.x.toFixed(6)},${q.y.toFixed(6)}`)),
+      );
+      expect(Math.min(...body[0].subs[0].pts.slice(-24).map((p) => p.x))).toBeCloseTo(shirt.neckline.apexX - 1, 6);
+    }
+  });
+
+  it('keeps the Water-lily shirt\'s blossom and hem band clear of each other and inside its silhouette, on every look', () => {
+    const bad: string[] = [];
+    for (const look of EVERY_BODY_LOOK) {
+      const paints = bodyPaints('shirt', look, 0, 1, AREA3_SLUG.shirt);
+      const petals = paints.filter((p) => p.kind === 'fill' && p.style === WATER_LILY_BLOSSOM);
+      const band = paints.filter((p) => p.kind === 'fill' && p.style === BOAT_TRIM);
+      expect(petals).toHaveLength(5);
+      expect(band).toHaveLength(1);
+      // A clipped paint's region is its clip, so the boxes are of the painted paths themselves.
+      const rawBox = (paints: readonly Paint[]): Bounds =>
+        boundsOfPoints(paints.flatMap((p) => p.subs.flatMap((sub) => sub.pts.map((q): [number, number] => [q.x, q.y]))), 0);
+      const blossom = rawBox(petals);
+      const bandBox = rawBox(band);
+      // The blossom (ink 0.6 included) ends above the band's first ink line.
+      if (blossom.maxY + 0.6 > bandBox.minY) bad.push(`${lookId(look)} blossom over band ${(bandBox.minY - blossom.maxY).toFixed(2)}`);
+      // The whole blossom, its ink included, lies inside the silhouette's inner edge (the inset ellipse less 2 for the ink),
+      // so none of it is cut off by the clip; it also stays behind the neckline's ink (2.0 wide, its front at x -7 at the apex).
+      const e = shirtGeometry(look).inset;
+      for (const p of petals) {
+        for (const sub of p.subs) {
+          for (const q of sub.pts) {
+            if (((q.x - e.cx) / (e.rx - 2 - 0.6)) ** 2 + ((q.y - e.cy) / (e.ry - 2 - 0.6)) ** 2 > 1) bad.push(`${lookId(look)} blossom cut by the edge`);
+            if (q.x + 0.6 > shirtGeometry(look).neckline.apexX - 2) bad.push(`${lookId(look)} blossom past the neckline`);
+          }
+        }
+      }
+      // Each petal and the band is clipped to the silhouette, so none is a stray paint.
+      for (const p of [...petals, ...band]) if (p.clips.length === 0) bad.push(`${lookId(look)} unclipped ${p.style}`);
+    }
+    expect([...new Set(bad)]).toEqual([]);
+  });
+
+  it('keeps the Firefly cape in its look\'s back box, filling it end to end, with its forward corner at x -5.5 or less', () => {
+    const bad: string[] = [];
+    for (const look of EVERY_BODY_LOOK) {
+      const { frame, box } = backFootprint(look);
+      const paints = bodyPaints('back', look, 0, 1, AREA3_SLUG.cape);
+      expect(paints.length).toBeGreaterThan(0);
+      const along = inkPoints(paints).map(({ p, hw }) => ({ q: toFrame(frame, p), hw }));
+      for (const { q, hw } of along) {
+        if (q.x - hw < box.minU - TOL || q.x + hw > box.maxU + TOL) bad.push(`${lookId(look)} u`);
+        if (q.y - hw < box.minV - TOL || q.y + hw > box.maxV + TOL) bad.push(`${lookId(look)} v`);
+      }
+      for (const { p, hw } of inkPoints(paints)) if (p.x + hw > SHIRT_BACK_FRONT_LINE_X + TOL) bad.push(`${lookId(look)} front line`);
+      if (Math.abs(Math.min(...along.map(({ q, hw }) => q.x - hw)) - box.minU) > TOL) bad.push(`${lookId(look)} rear end`);
+      if (Math.abs(Math.max(...along.map(({ q, hw }) => q.x + hw)) - box.maxU) > TOL) bad.push(`${lookId(look)} front end`);
+      if (Math.abs(Math.min(...along.map(({ q, hw }) => q.y - hw)) - box.minV) > TOL) bad.push(`${lookId(look)} top`);
+      if (Math.abs(Math.max(...along.map(({ q, hw }) => q.y + hw)) - box.maxV) > TOL) bad.push(`${lookId(look)} bottom`);
+    }
+    expect([...new Set(bad)]).toEqual([]);
+  });
+
+  it('never lets the Firefly cape\'s fill meet a Shirt\'s fill (Tank top, Raincoat or Water-lily shirt), on every look', () => {
+    const bad: string[] = [];
+    for (const look of EVERY_BODY_LOOK) {
+      const fillsOf = (slot: 'shirt' | 'back', slug: WearableArtSlug): SampledPaint[] =>
+        sampledPaints(bodyPaints(slot, look, 0, 1, slug).filter((x) => x.kind === 'fill' && isItemFill(x)));
+      const cape = fillsOf('back', AREA3_SLUG.cape);
+      for (const shirtSlug of ['tank-top', POND_SLUG.raincoat, AREA3_SLUG.shirt] as const) {
+        const shirt = fillsOf('shirt', shirtSlug);
+        const both = gridPoints(unionBounds(cape.map((f) => f.box))).filter(
+          (q) => cape.some((f) => paintCovers(f, q.x, q.y)) && shirt.some((f) => paintCovers(f, q.x, q.y)),
+        );
+        if (both.length > 0) bad.push(`${lookId(look)} cape over ${shirtSlug}`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it('keeps the Pearl tail charm within 17.5 units of its anchor, ink included, at every look, swim phase and tail amplitude', () => {
+    let reach = 0;
+    for (const look of EVERY_BODY_LOOK) {
+      const tail = axolotlBodyGeometry(look).tail;
+      for (const swim of SWIMS) {
+        for (const amp of AMPS) {
+          const frame = tailSlotFrame(tail, swim, amp);
+          for (const { p, hw } of inkPoints(bodyPaints('tail', look, swim, amp, AREA3_SLUG.charm))) {
+            reach = Math.max(reach, Math.hypot(p.x - frame.x, p.y - frame.y) + hw);
+          }
+        }
+      }
+    }
+    expect(reach).toBeLessThanOrEqual(TAIL_SLOT_REACH + TOL);
+  });
+
+  it('turns the Pearl tail charm with the local tail direction: its pearl and gem sit on the anchor\'s y\' axis, the pearl on the tail edge', () => {
+    const tail = axolotlBodyGeometry(DEFAULT_ART_LOOK).tail;
+    for (const swim of SWIMS) {
+      const frame = tailSlotFrame(tail, swim, 1.6);
+      const paints = bodyPaints('tail', DEFAULT_ART_LOOK, swim, 1.6, AREA3_SLUG.charm);
+      const centreOf = (paint: Paint): Pt => {
+        const box = inkBounds([paint]);
+        return toFrame(frame, { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 });
+      };
+      const pearl = centreOf(paints.find((p) => p.kind === 'fill' && p.style === PEARL_FILL)!);
+      const gem = centreOf(paints.find((p) => p.kind === 'fill' && p.style === GLASSES_GEM)!);
+      expect(pearl.x).toBeCloseTo(0, 6);
+      expect(pearl.y).toBeGreaterThan(0);
+      expect(pearl.y).toBeLessThan(3);
+      expect(gem.x).toBeCloseTo(0, 6);
+      // The gem stands above the tail's top edge, on the chain.
+      expect(gem.y).toBeLessThan(-8);
+    }
+  });
+
+  it('keeps the Lily-pad socks\' sleeve and pad in leg space: the Stripy socks\' sleeve and the same foot pad, on every look and swim phase', () => {
+    const bad: string[] = [];
+    for (const look of EVERY_BODY_LOOK) {
+      for (const swim of SWIMS.filter((_, i) => i % 3 === 0)) {
+        for (const frame of legSlotFrames(look, swim)) {
+          const lily = legPaints({ socks: AREA3_SLUG.socks }, frame);
+          const stripy = legPaints({ socks: 'stripy-socks' }, frame);
+          const sleeve = (paints: Paint[]): string[] => paints.filter((p) => p.kind === 'stroke' && isSleevePaint(p)).map((p) => signature({ ...p, style: INK }));
+          if (sleeve(lily).join() !== sleeve(stripy).join()) bad.push(`${lookId(look)} leg ${frame.index} sleeve`);
+          const pad = sockFootPad(frame);
+          for (const p of lily) {
+            for (const { p: pt, hw } of inkPoints([p])) {
+              const q = toFrame(frame, pt);
+              if (!isSleevePaint(p) && (q.x - hw < pad.u0 - TOL || q.x + hw > pad.u1 + TOL || Math.abs(q.y) + hw > pad.vHalf + TOL)) {
+                bad.push(`${lookId(look)} leg ${frame.index} pad`);
+              }
+            }
+          }
+        }
+      }
+    }
+    expect([...new Set(bad)]).toEqual([]);
+  });
+
+  it('wears the Lily-pad socks under the Froggy boots, so the Sock sleeve shows above them, as the Stripy socks do', () => {
+    for (const frame of legSlotFrames(GIRL, 0.9)) {
+      const both = legPaints({ socks: AREA3_SLUG.socks, feet: POND_SLUG.boots }, frame);
+      const socks = legPaints({ socks: AREA3_SLUG.socks }, frame);
+      const boots = legPaints({ feet: POND_SLUG.boots }, frame);
+      expect(both.length).toBe(socks.length + boots.length);
+      expect(both.slice(0, socks.length).map(signature)).toEqual(socks.map(signature));
+    }
+  });
+
+  it('keeps every Area 3 Wearable, ink included, in the texture frame with 4 or more units of padding', () => {
+    const inner = frameInner(FRAME_PAD);
+    const bad: string[] = [];
+    for (const look of EVERY_BODY_LOOK) {
+      const check = (what: string, paints: Paint[]): void => {
+        if (!isInside(inkBounds(paints), inner, 1e-6)) bad.push(`${lookId(look)} ${what}`);
+      };
+      check('cap', bodyPaints('head', look, 0, 1, AREA3_SLUG.cap));
+      check('shirt', bodyPaints('shirt', look, 0, 1, AREA3_SLUG.shirt));
+      check('cape', bodyPaints('back', look, 0, 1, AREA3_SLUG.cape));
+      for (const swim of SWIMS) {
+        for (const amp of AMPS) check('charm', bodyPaints('tail', look, swim, amp, AREA3_SLUG.charm));
+        for (const frame of legSlotFrames(look, swim)) check('socks', legPaints({ socks: AREA3_SLUG.socks }, frame));
+      }
+    }
+    expect([...new Set(bad)]).toEqual([]);
+    expect([AXO_TEX.w, AXO_TEX.h]).toEqual([166, 142]);
+  });
+
+  it('mixes the far Lily-pad socks 12% toward ink and leaves the near socks as authored; the marks and shine stay as they are', () => {
+    // #bff0a0 12% toward #2b2350 is #add796.
+    const frames = legSlotFrames(GIRL, 0.7);
+    const fills = (frame: LegSlotFrame): string[] =>
+      legPaints({ socks: AREA3_SLUG.socks }, frame)
+        .filter((p) => p.alpha === 1 && p.style !== INK)
+        .map((p) => p.style);
+    for (const i of [0, 1]) {
+      const far = fills(frames[i]);
+      expect(far).toContain('#add796');
+      expect(far).not.toContain(LILY_PAD_SOCK_FILL);
+      expect(far).toContain(TREASURE_SHINE);
+    }
+    for (const i of [2, 3]) {
+      const near = fills(frames[i]);
+      expect(near).toContain(LILY_PAD_SOCK_FILL);
+      expect(near).not.toContain('#add796');
+      expect(near).toContain(TREASURE_SHINE);
+    }
+    const marks = (frame: LegSlotFrame): string[] =>
+      legPaints({ socks: AREA3_SLUG.socks }, frame)
+        .filter((p) => p.alpha === SOCK_STRIPE_ALPHA)
+        .map(signature);
+    expect(marks(frames[0]).length).toBe(2);
+    expect(marks(frames[2]).length).toBe(2);
+  });
+
+  it('paints a still look: no Area 3 painter reads a swim phase or tail amplitude except the Pearl tail charm\'s frame, and a repaint is identical', () => {
+    for (const [slot, slug] of [
+      ['head', AREA3_SLUG.cap],
+      ['shirt', AREA3_SLUG.shirt],
+      ['back', AREA3_SLUG.cape],
+    ] as const) {
+      const first = bodyPaints(slot, GIRL, 0, 1, slug).map(signature);
+      expect(bodyPaints(slot, GIRL, 0, 1, slug).map(signature)).toEqual(first);
+      for (const swim of SWIMS) for (const amp of AMPS) expect(bodyPaints(slot, GIRL, swim, amp, slug).map(signature), `${slug} swim ${swim} amp ${amp}`).toEqual(first);
+    }
+    // The charm's paints are the same in its own frame at every phase: it moves only with the tail's frame.
+    const tail = axolotlBodyGeometry(GIRL).tail;
+    const inFrameOf = (swim: number, amp: number): string[] => {
+      const frame = tailSlotFrame(tail, swim, amp);
+      return bodyPaints('tail', GIRL, swim, amp, AREA3_SLUG.charm).map((p) =>
+        JSON.stringify({ k: p.kind, s: p.style, w: p.lineWidth, pts: p.subs.map((sub) => sub.pts.map((q) => {
+          const f = toFrame(frame, q);
+          return `${f.x.toFixed(4)},${f.y.toFixed(4)}`;
+        })) }),
+      );
+    };
+    const first = inFrameOf(0, 1);
+    for (const swim of SWIMS) for (const amp of AMPS) expect(inFrameOf(swim, amp)).toEqual(first);
+  });
+});
+
+describe('pond Area 3 Wearables (issue #98): the rarity look ladder', () => {
+  const colours = (paints: readonly Paint[], kind: 'fill' | 'stroke'): string[] =>
+    paints.filter((p) => p.kind === kind && p.alpha === 1).map((p) => p.style);
+  const count = (list: readonly string[], value: string): number => list.filter((v) => v === value).length;
+  const nearLeg = legSlotFrames(GIRL, 0)[2];
+  const stars = (paints: readonly Paint[]): Paint[] =>
+    paints.filter((p) => p.kind === 'fill' && p.style === WHITE && p.subs.length === 1 && p.subs[0].pts.length === 8);
+  const inkWidths = (paints: readonly Paint[]): number[] =>
+    [...new Set(paints.filter((p) => p.kind === 'stroke' && p.style === INK).map((p) => Math.round(p.lineWidth * 1e9) / 1e9))].sort((a, b) => a - b);
+
+  it('paints Common as flat colour plus one shine, no trim: Feather cap (crown, cuff and plume), Lily-pad socks', () => {
+    const cap = bodyPaints('head', GIRL, 0, 1, AREA3_SLUG.cap);
+    expect(new Set(colours(cap, 'fill'))).toEqual(new Set([FEATHER_CAP_FILL, FEATHER_FILL, TREASURE_SHINE]));
+    // The crown and the cuff share the cap colour; the plume is the one other outer fill.
+    expect(count(colours(cap, 'fill'), FEATHER_CAP_FILL)).toBe(2);
+    expect(count(colours(cap, 'fill'), FEATHER_FILL)).toBe(1);
+    expect(count(colours(cap, 'fill'), TREASURE_SHINE)).toBe(1);
+    expect(cap.some((p) => p.style === GOLD_TRIM || p.style === BOAT_TRIM || p.style === GLASSES_GEM)).toBe(false);
+    expect(stars(cap)).toHaveLength(0);
+    const socks = legPaints({ socks: AREA3_SLUG.socks }, nearLeg);
+    // The two lily-pad marks are ink at alpha 0.30: the same colour darkened, not a second colour.
+    const marks = socks.filter((p) => p.kind === 'fill' && p.alpha === SOCK_STRIPE_ALPHA);
+    expect(marks).toHaveLength(2);
+    expect(marks.every((p) => p.style === INK)).toBe(true);
+    expect(new Set(colours(socks, 'fill'))).toEqual(new Set([LILY_PAD_SOCK_FILL, TREASURE_SHINE]));
+    expect(new Set(colours(socks, 'stroke'))).toEqual(new Set([INK, LILY_PAD_SOCK_FILL]));
+    expect(count(colours(socks, 'fill'), TREASURE_SHINE)).toBe(1);
+    expect(stars(socks)).toHaveLength(0);
+  });
+
+  it('adds one trim band in a second colour for Rare: Water-lily shirt hem band, with a five-petal blossom', () => {
+    const shirt = bodyPaints('shirt', GIRL, 0, 1, AREA3_SLUG.shirt);
+    expect(count(colours(shirt, 'fill'), BOAT_TRIM)).toBe(1);
+    expect(count(colours(shirt, 'fill'), WATER_LILY_SHIRT_FILL)).toBe(1);
+    expect(count(colours(shirt, 'fill'), WATER_LILY_BLOSSOM)).toBe(5);
+    expect(count(colours(shirt, 'fill'), TREASURE_SHINE)).toBe(1);
+    expect(shirt.some((p) => p.style === GOLD_TRIM || p.style === GLASSES_GEM)).toBe(false);
+    expect(stars(shirt)).toHaveLength(0);
+    // The blossom centre is ink at alpha 0.30, not a second colour.
+    expect(shirt.filter((p) => p.kind === 'fill' && p.alpha === SOCK_STRIPE_ALPHA && p.style === INK)).toHaveLength(1);
+  });
+
+  it('adds one rounded gem for Epic: Pearl tail charm, a gem of radius 2.5 on the chain, no trim or star', () => {
+    const charm = bodyPaints('tail', GIRL, 0, 1, AREA3_SLUG.charm);
+    const gems = charm.filter((p) => p.kind === 'fill' && p.style === GLASSES_GEM);
+    expect(gems).toHaveLength(1);
+    const box = inkBounds([gems[0]]);
+    expect((box.maxX - box.minX) / 2).toBeCloseTo(2.5, 1);
+    expect(count(colours(charm, 'fill'), PEARL_FILL)).toBe(1);
+    // The chain and the two ribbon tails share the one soft pink.
+    expect(count(colours(charm, 'fill'), PEARL_CHARM_CORD)).toBe(3);
+    expect(count(colours(charm, 'fill'), TREASURE_SHINE)).toBe(1);
+    expect(charm.some((p) => p.style === GOLD_TRIM || p.style === BOAT_TRIM)).toBe(false);
+    expect(stars(charm)).toHaveLength(0);
+  });
+
+  it('adds gold trim and one static 4-point star for Legendary: Firefly cape, with four still fireflies', () => {
+    const cape = bodyPaints('back', GIRL, 0, 1, AREA3_SLUG.cape);
+    expect(colours(cape, 'fill')).toContain(GOLD_TRIM);
+    expect(count(colours(cape, 'fill'), GOLD_TRIM)).toBe(1);
+    expect(count(colours(cape, 'fill'), FIREFLY_CAPE_FILL)).toBe(1);
+    expect(count(colours(cape, 'fill'), TREASURE_SHINE)).toBe(1);
+    expect(stars(cape)).toHaveLength(1);
+    const pts = stars(cape)[0].subs[0].pts;
+    const cx = pts.reduce((n, p) => n + p.x, 0) / 8;
+    const cy = pts.reduce((n, p) => n + p.y, 0) / 8;
+    const radii = pts.map((p) => Math.hypot(p.x - cx, p.y - cy));
+    expect(Math.max(...radii)).toBeCloseTo(3, 6);
+    expect(Math.min(...radii)).toBeCloseTo(3 * 0.38, 6);
+    // Four fireflies: a yellow glow disc (a flat rgba fill, never animated) round a small ink body.
+    expect(FIREFLY_GLOW).toBe('rgba(255,225,74,0.75)');
+    const glows = cape.filter((p) => p.kind === 'fill' && p.style === FIREFLY_GLOW);
+    expect(glows).toHaveLength(4);
+    expect(glows.every((p) => p.alpha === 1 && p.clips.length === 0)).toBe(true);
+    const bodies = cape.filter((p) => p.kind === 'fill' && p.style === INK && p.alpha === 1);
+    expect(bodies).toHaveLength(4);
+    // Each body sits inside its glow disc.
+    glows.forEach((glow, k) => {
+      const g = inkBounds([glow]);
+      const b = inkBounds([bodies[k]]);
+      expect(b.minX).toBeGreaterThan(g.minX);
+      expect(b.maxX).toBeLessThan(g.maxX);
+      expect(b.minY).toBeGreaterThan(g.minY);
+      expect(b.maxY).toBeLessThan(g.maxY);
+    });
+  });
+
+  it('strokes an Area 3 silhouette at the item ink: 2 x 2.0 for a blob, 2.0 for a shape', () => {
+    expect(inkWidths(bodyPaints('head', GIRL, 0, 1, AREA3_SLUG.cap))).toEqual([1.2, 4]);
+    expect(inkWidths(bodyPaints('shirt', GIRL, 0, 1, AREA3_SLUG.shirt))).toEqual([0.6, 1.2, 2]);
+    expect(inkWidths(bodyPaints('tail', GIRL, 0, 1, AREA3_SLUG.charm))).toEqual([1.2, 4]);
+    expect(inkWidths(bodyPaints('back', GIRL, 0, 1, AREA3_SLUG.cape))).toEqual([0.6, 1.2, 4]);
+    expect(inkWidths(legPaints({ socks: AREA3_SLUG.socks }, nearLeg))).toEqual([2, SLEEVE_INK_W]);
   });
 });
 

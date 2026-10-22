@@ -4,7 +4,9 @@
  * Area 3 ones (issue #98), and one Paint shell per Dream colour.
  *
  * Each icon is authored in a 28-unit box centred on (0, 0) and scaled
- * uniformly, so the longest side is `size` with the ink included. The ink never
+ * uniformly, so the longest side is `size` with the ink included. A Decoration
+ * wider than 80 tank units also has a Home Tank sprite authored on its own
+ * width x 80 box (see paintWideDecoration). The ink never
  * scales: item silhouettes 2.8 (`shape`), tubes 3.2 with `ol` 2.4, glasses band
  * 3.5 (colour 1.5 plus 1.0 each side), Paint shell 2.6, small inner details
  * 1.6 to 2.4. Round joins and caps everywhere.
@@ -1787,6 +1789,106 @@ export function paintDreamSwatch(ctx: CanvasRenderingContext2D, id: DreamSwatchI
     ctx.strokeStyle = DREAM_RIM;
     ctx.stroke(rim);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Wide Decoration tank sprites
+// ---------------------------------------------------------------------------
+// A Decoration wider than the 80 box (catalogue `width`) has its Home Tank sprite authored in tank
+// units on its width x 80 box, centred on (0, 0), and scaled uniformly by decorationPx / 80. The ink
+// never scales. Its tray and Chest icons stay the 28-box icon above.
+
+/** Hook ring line of the wide Firefly string lights, tank units: the rings' ink touches the box top. */
+const WIDE_LIGHTS_HOOK_Y = -FLOAT_BOX_PX / 2 + DETAIL_LW / 2 + 3.2;
+/** Wire ends and the centre hook, x in tank units: two swags, each from an end ring to the centre ring. */
+const WIDE_LIGHTS_END_X = 66;
+const WIDE_LIGHTS_SOCKET_W = 3.2;
+const WIDE_LIGHTS_SOCKET_H = 6;
+/** Bulb radius at the middle of each swag (the biggest) and at its sides, tank units. */
+const WIDE_LIGHTS_MID_R = 8.4;
+const WIDE_LIGHTS_SIDE_R = 7;
+/** Bulbs per swag, left to right: [t along the swag, bulb radius]. */
+const WIDE_LIGHTS_BULBS = [
+  [0.2, WIDE_LIGHTS_SIDE_R],
+  [0.5, WIDE_LIGHTS_MID_R],
+  [0.8, WIDE_LIGHTS_SIDE_R],
+] as const;
+/** Wire y at the middle of each swag: its socket and middle bulb hang from it, their ink ending on the box bottom. */
+const WIDE_LIGHTS_MID_Y = FLOAT_BOX_PX / 2 - ITEM_LW / 2 - 2 * WIDE_LIGHTS_MID_R - WIDE_LIGHTS_SOCKET_H;
+/** Cubic control y of each swag that puts its middle at WIDE_LIGHTS_MID_Y (the middle is 1/4 end and 3/4 control). */
+const WIDE_LIGHTS_SAG_Y = (WIDE_LIGHTS_MID_Y - WIDE_LIGHTS_HOOK_Y / 4) / (3 / 4);
+
+/** A point at `t` on a swag from (x0, y) to (x1, y) whose cubic controls sit a third of the way in at `sagY`. */
+function swagPointAt(t: number, x0: number, x1: number, y: number, sagY: number): { x: number; y: number } {
+  const spread = 3 * (1 - t) * t;
+  return { x: x0 + (x1 - x0) * t, y: (1 - spread) * y + spread * sagY };
+}
+
+/** A swag path from (x0, y) to (x1, y) with its cubic controls a third of the way in at `sagY`. */
+function swagPath(x0: number, x1: number, y: number, sagY: number): Path2D {
+  const p = new Path2D();
+  p.moveTo(x0, y);
+  p.bezierCurveTo(x0 + (x1 - x0) / 3, sagY, x1 - (x1 - x0) / 3, sagY, x1, y);
+  return p;
+}
+
+/**
+ * Rare, Hanging, 144 wide: the icon's parts on a wider swag. A thin ink wire in two swags strung from three
+ * hook rings on the box top (the ends and the centre hook), three round glowing bulbs on pink sockets
+ * hanging from each swag, the middle one of each the biggest. The pink sockets are the one trim; one shine,
+ * on the left middle bulb. The two middle bulbs are the lowest fill edge, on the box bottom with their ink.
+ */
+function paintWideFireflyStringLights(pen: Pen): void {
+  const { ctx, k } = pen;
+  const hookY = WIDE_LIGHTS_HOOK_Y;
+  const swags = [
+    [-WIDE_LIGHTS_END_X, 0],
+    [0, WIDE_LIGHTS_END_X],
+  ] as const;
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = DETAIL_LW;
+  for (const [x0, x1] of swags) ctx.stroke(place(swagPath(x0, x1, hookY, WIDE_LIGHTS_SAG_Y), k));
+  for (const x of [-WIDE_LIGHTS_END_X, 0, WIDE_LIGHTS_END_X]) {
+    shape(ctx, place(ellipse(x, hookY, 3.2, 3.2), k), outerFill(pen, FIREFLY_HOOK), DETAIL_LW);
+  }
+  const socketW = WIDE_LIGHTS_SOCKET_W;
+  const socketH = WIDE_LIGHTS_SOCKET_H;
+  for (const [x0, x1] of swags) {
+    for (const [t, r] of WIDE_LIGHTS_BULBS) {
+      const { x, y } = swagPointAt(t, x0, x1, hookY, WIDE_LIGHTS_SAG_Y);
+      const socket = roundedPolygon(pts(x - socketW, y, x + socketW, y, x + socketW, y + socketH, x - socketW, y + socketH), 1.2);
+      shape(ctx, place(socket, k), outerFill(pen, FIREFLY_SOCKET), DETAIL_LW);
+      outerShape(pen, place(ellipse(x, y + socketH + r, r, r), k), FIREFLY_BULB, ITEM_LW);
+    }
+  }
+  const mid = swagPointAt(0.5, -WIDE_LIGHTS_END_X, 0, hookY, WIDE_LIGHTS_SAG_Y);
+  shine(pen, mid.x - 3.4, mid.y + socketH + WIDE_LIGHTS_MID_R - 2.8, 1.8, 3.4, 0.2);
+}
+
+/** The wide tank sprites by slug: the catalogue width in tank units each is authored at, and its painter. */
+const WIDE_DECORATIONS: Readonly<Partial<Record<TreasureIconSlug, { readonly width: number; readonly paint: (pen: Pen) => void }>>> = {
+  'firefly-string-lights': { width: 144, paint: paintWideFireflyStringLights },
+};
+
+/**
+ * Texture frame for the tank sprite of a Decoration `width` tank units wide, at `decorationPx` high: its
+ * width x 80 box scaled to `decorationPx`, plus 1 px each side. Anchor is the box centre.
+ */
+export function wideDecorationTextureSize(width: number, decorationPx: number): TexSize {
+  const halfW = (width * decorationPx) / FLOAT_BOX_PX / 2;
+  const halfH = decorationPx / 2;
+  return frameFromBounds(-halfW, -halfH, halfW, halfH, FRAME_PAD);
+}
+
+/**
+ * Paint the tank sprite of the wide Decoration `slug` centred at local (0, 0), on its `width` x 80 box
+ * (tank units) scaled to `decorationPx` high. Ink widths do not change with size. Throws when `slug` has
+ * no tank sprite authored at `width`.
+ */
+export function paintWideDecoration(ctx: CanvasRenderingContext2D, slug: TreasureIconSlug, width: number, decorationPx: number): void {
+  const art = WIDE_DECORATIONS[slug];
+  if (art === undefined || art.width !== width) throw new Error(`no ${width} wide tank sprite for "${slug}"`);
+  art.paint({ ctx, k: decorationPx / FLOAT_BOX_PX });
 }
 
 // ---------------------------------------------------------------------------

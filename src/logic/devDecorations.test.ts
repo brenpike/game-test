@@ -54,6 +54,8 @@ describe('DEV_DECORATIONS', () => {
     expect(slugs.filter((slug) => shippedSlugs.has(slug))).toEqual([]);
     const decorationSlugs = new Set(SHIPPED_DECORATIONS.map((decoration) => treasureSlug(decoration.id)));
     expect(decorationSlugs).toContain('lily-pad');
+    expect(decorationSlugs).toContain('firefly-jar');
+    expect(decorationSlugs).toContain('firefly-string-lights');
     expect(slugs.filter((slug) => decorationSlugs.has(slug))).toEqual([]);
   });
 
