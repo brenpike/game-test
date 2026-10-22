@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { areaLabel } from './areaText';
-import { AREAS, CANAL_AREA, areaFactCards, type AreaData } from './areas';
+import { AREAS, CANAL_AREA, HABITATS, areaFactCards, type AreaData } from './areas';
+import { NAME_MAX } from './axolotlNames';
 import { ALL_TREASURES, treasureById } from './catalogue';
 import {
   CARD,
@@ -17,7 +18,7 @@ import {
   type CardSection,
   type TextFit,
 } from './cardFit';
-import type { FactCard } from './factCards';
+import { REFUGE_FACT_CARDS, type FactCard } from './factCards';
 import {
   FIRST_FIND_KINDS,
   FIRST_FIND_TEXT,
@@ -30,6 +31,8 @@ import {
   type FirstFindVariantSize,
 } from './firstFind';
 import { REAL_MORPHS } from './morphs';
+import { KEEP_EXPLORING_LABEL, REFUGE_MILESTONE_TITLE, milestoneBody } from './refuge';
+import { REFUGE_PICTURE, fitMilestoneCard, milestoneCardSections, type MilestoneCardSize, type MilestoneFit } from './refugeUi';
 import {
   BANKED_TITLE,
   bankedBody,
@@ -502,6 +505,115 @@ describe('area fact card copy fit', () => {
       const fit = fitCard(combination.availH, combination.sections);
       expect(fit.clipped, card.id).toBe(false);
       expect(fit.bodyVariant, card.id).toBe(0);
+    }
+  });
+});
+
+describe('refuge fact card copy fit (C14)', () => {
+  it('checks both refuge fact cards: the axolotl refuges and the canal clean-ups', () => {
+    expect(REFUGE_FACT_CARDS.map((card) => card.id)).toEqual(['axolotl-refuges', 'canal-clean-ups']);
+  });
+
+  it('fits both refuge fact cards on every supported canvas without clipping', () => {
+    const problems = supportedCanvases().flatMap((canvas) =>
+      REFUGE_FACT_CARDS.flatMap((card) => {
+        const combination = factCardCombination(card, canvas);
+        return fitProblems(combination, fitCard(combination.availH, combination.sections));
+      }),
+    );
+    expect(problems).toEqual([]);
+  });
+
+  it.each([
+    { cssW: 800, cssH: 600 },
+    { cssW: 1024, cssH: 768 },
+  ])('shows both refuge fact card bodies in full at the body width at $cssW x $cssH', (canvas) => {
+    for (const card of REFUGE_FACT_CARDS) {
+      const combination = factCardCombination(card, canvas);
+      const fit = fitCard(combination.availH, combination.sections);
+      expect(fit.clipped, card.id).toBe(false);
+      expect(fit.bodyVariant, card.id).toBe(0);
+    }
+  });
+});
+
+/** The longest axolotl name: NAME_MAX wide letters, as the name tests use. */
+const LONGEST_AXOLOTL_NAME = 'W'.repeat(NAME_MAX);
+
+/** The longest habitat name in HABITATS. */
+const LONGEST_HABITAT_NAME = [...HABITATS].sort((left, right) => right.name.length - left.name.length)[0].name;
+
+/** A long habitat name not in HABITATS yet; a forward check that a later habitat's name still fits. */
+const FORWARD_HABITAT_NAME = 'Chinampa gardens';
+
+/** Habitat names the milestone card is checked with: the longest today, then the forward check. */
+const MILESTONE_HABITAT_NAMES: readonly string[] = [LONGEST_HABITAT_NAME, FORWARD_HABITAT_NAME];
+
+/**
+ * Milestone card size on a `cssW` wide canvas for `habitatName`, named for the longest axolotl name:
+ * the bold title at the tight width, the body at each of factCardBodyWrapWidths, one Keep exploring
+ * button.
+ */
+function milestoneSize(habitatName: string, cssW: number): MilestoneCardSize {
+  const body = milestoneBody(LONGEST_AXOLOTL_NAME, habitatName);
+  return {
+    titleH: titleHeight(REFUGE_MILESTONE_TITLE, cardTightTextWidth(cssW)),
+    bodyVariants: factCardBodyWrapWidths(cssW).map((wrapW) => bodyFit(body, wrapW)),
+    actionsH: BUTTON_H,
+  };
+}
+
+/** The milestone card for `habitatName` fitted on one canvas. */
+function fitMilestoneOn(habitatName: string, canvas: Canvas): MilestoneFit {
+  return fitMilestoneCard(canvas.cssH - 2 * CARD.margin, milestoneSize(habitatName, canvas.cssW));
+}
+
+/** Problems with one fitted milestone card: clipped, body lines dropped, or actions outside availH. */
+function milestoneProblems(habitatName: string, canvas: Canvas): string[] {
+  const label = `milestone ${habitatName} ${canvas.cssW}x${canvas.cssH}`;
+  const { fit } = fitMilestoneOn(habitatName, canvas);
+  const variant = milestoneSize(habitatName, canvas.cssW).bodyVariants[fit.bodyVariant];
+  const problems = fitProblems(makeCombination(label, canvas, 0, []), fit);
+  if (fit.bodyLines !== variant.lines) problems.push(`${label}: ${fit.bodyLines} of ${variant.lines} body lines`);
+  return problems;
+}
+
+describe('refuge milestone card copy fit (N2)', () => {
+  it('checks the longest habitat name, Lily pad pond, of all the habitats', () => {
+    expect(LONGEST_HABITAT_NAME).toBe('Lily pad pond');
+    expect(FORWARD_HABITAT_NAME.length).toBeGreaterThan(LONGEST_HABITAT_NAME.length);
+  });
+
+  it('names a Keep exploring button and the refuge picture on the card', () => {
+    expect(KEEP_EXPLORING_LABEL).toBe('Keep exploring');
+    const sections = milestoneCardSections(1, milestoneSize(LONGEST_HABITAT_NAME, 800));
+    expect(sections[1]).toEqual({ kind: 'fixed', height: REFUGE_PICTURE.h });
+  });
+
+  it('keeps the title one line at the tight and the body width on every supported canvas', () => {
+    const twoLineTitles = supportedCanvases().filter(
+      (canvas) =>
+        estimateLines(REFUGE_MILESTONE_TITLE, CARD.titlePx, cardTightTextWidth(canvas.cssW), BOLD_EM) !== 1 ||
+        estimateLines(REFUGE_MILESTONE_TITLE, CARD.titlePx, cardTextWidth(canvas.cssW), BOLD_EM) !== 1,
+    );
+    expect(twoLineTitles).toEqual([]);
+  });
+
+  it('fits on every supported canvas without clipping or dropping a body line', () => {
+    const problems = supportedCanvases().flatMap((canvas) =>
+      MILESTONE_HABITAT_NAMES.flatMap((habitatName) => milestoneProblems(habitatName, canvas)),
+    );
+    expect(problems).toEqual([]);
+  });
+
+  it.each([
+    { cssW: 800, cssH: 600 },
+    { cssW: 1024, cssH: 768 },
+  ])('shows the title and the full body at the body width at $cssW x $cssH', (canvas) => {
+    for (const habitatName of MILESTONE_HABITAT_NAMES) {
+      const { fit, showsTitle } = fitMilestoneOn(habitatName, canvas);
+      expect(showsTitle, habitatName).toBe(true);
+      expect(fit.bodyVariant, habitatName).toBe(0);
     }
   });
 });

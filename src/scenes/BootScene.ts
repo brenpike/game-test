@@ -9,6 +9,7 @@ import { bakeMorphTextures, type MorphTextures } from '../art/morphTextures';
 import { INK, LW, UI_FONT } from '../art/palette';
 import { bakePondTextures, type PondTextures } from '../art/pondTextures';
 import { bakePredatorTextures, type PredatorTextures } from '../art/predatorTextures';
+import { bakeRefugeTextures, type RefugeTextures } from '../art/refugeTextures';
 import { bakeTankTextures, type ExtraDecorationTextures, type TankTextures } from '../art/tankTextures';
 import { bakeTreasureTextures, type TreasureTextures } from '../art/treasureTextures';
 import {
@@ -42,6 +43,7 @@ export const SCENE_KEYS = Object.freeze({
   title: 'Title',
   homeTank: 'HomeTank',
   areaMap: 'AreaMap',
+  refuge: 'Refuge',
   swim: 'Swim',
   hud: 'Hud',
   creator: 'Creator',
@@ -83,6 +85,7 @@ export interface BakedDecorationPack {
  * Decoration pack baked at the tank Decoration size, or null when none was asked for. `pond` holds
  * the pond props (hollow log, plastic worms, queasy cheek tint), with the root arch and the firefly
  * when some area's look needs them, baked only when some area needs any of them, else null.
+ * `refuge` holds the Xochimilco refuge art.
  */
 export interface GameAssets {
   areas: readonly Readonly<AreaData>[];
@@ -99,6 +102,7 @@ export interface GameAssets {
   areaMap: AreaMapTextures;
   devDecor: BakedDecorationPack | null;
   pond: PondTextures | null;
+  refuge: RefugeTextures;
 }
 
 /** What the swim scene and its HUD start from: the game assets and the id of the area to swim in. */
@@ -520,6 +524,7 @@ export class BootScene extends Phaser.Scene {
     });
     const area = bakeAreaTextures(this, bakeScale);
     const areaMap = bakeAreaMapTextures(this, bakeScale);
+    const refuge = bakeRefugeTextures(this, bakeScale);
     const devDecor: BakedDecorationPack | null =
       devDecorPack === undefined
         ? null
@@ -540,6 +545,7 @@ export class BootScene extends Phaser.Scene {
       areaMap,
       devDecor,
       pond,
+      refuge,
     };
     this.scene.start(SCENE_KEYS.title, assets);
   }
