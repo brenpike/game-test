@@ -12,10 +12,12 @@ export interface DevFlags {
   readonly renderer: DevRenderer;
   /** Id of a dev-and-test area to load (for example `dev-test-area`), or null. The caller ignores unknown ids. */
   readonly area: string | null;
+  /** True to add the dev-and-test Decorations (Floating and Hanging items) to the Home Tank. */
+  readonly decor: boolean;
 }
 
 /** Every flag off, the renderer left to Phaser, and no area requested. */
-export const NO_DEV_FLAGS: DevFlags = Object.freeze({ perf: false, compare: false, renderer: 'auto', area: null });
+export const NO_DEV_FLAGS: DevFlags = Object.freeze({ perf: false, compare: false, renderer: 'auto', area: null, decor: false });
 
 /** Marker that tags dev-flag output. */
 export const DEV_FLAGS_MARK = 'glam-gills-dev-flags';
@@ -31,7 +33,7 @@ function isFlagOn(params: URLSearchParams, name: string): boolean {
 
 /**
  * Reads dev flags from `query` (a `location.search` string, with or without the leading '?').
- * Returns NO_DEV_FLAGS when `dev` is false. `perf` and `compare` are on when present, unless set to
+ * Returns NO_DEV_FLAGS when `dev` is false. `perf`, `compare` and `decor` are on when present, unless set to
  * '0' or 'false'. `renderer` is 'canvas' only for `renderer=canvas` (any case), otherwise 'auto'.
  * `area` is the trimmed value of `area=<id>` (for example `area=dev-test-area`), or null when absent
  * or blank; the caller ignores ids it does not know.
@@ -42,5 +44,11 @@ export function parseDevFlags(query: string, dev: boolean): DevFlags {
   const params = new URLSearchParams(query);
   const renderer: DevRenderer = params.get('renderer')?.toLowerCase() === 'canvas' ? 'canvas' : 'auto';
   const area = params.get('area')?.trim() || null;
-  return { perf: isFlagOn(params, 'perf'), compare: isFlagOn(params, 'compare'), renderer, area };
+  return {
+    perf: isFlagOn(params, 'perf'),
+    compare: isFlagOn(params, 'compare'),
+    renderer,
+    area,
+    decor: isFlagOn(params, 'decor'),
+  };
 }

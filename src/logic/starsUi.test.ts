@@ -3,14 +3,26 @@ import { areaLabel } from './areaText';
 import { isSupportedCanvas } from './cardFit';
 import type { HudView, Rect, Size } from './hudLayout';
 import { HUB_STARS_BADGE, STAR_ROW, hubStarsBadgeRect, starRowSize } from './starsUi';
-import { decorationBandTop, tankFrame } from './tank';
-import { HUB_BUTTONS, UI, hubButtonLook, hubLayout, type HubAction, type HubLayout } from './tankUi';
+import { tankFrame, topKeepClearCss } from './tank';
+import { COLLECTION_BOOK_LABEL } from './tankText';
+import {
+  HUB_BUTTONS,
+  UI,
+  hubButtonCompactLook,
+  hubButtonLook,
+  hubCaptionRect,
+  hubLayout,
+  tankRooms,
+  type HubAction,
+  type HubLayout,
+} from './tankUi';
 
 /** Text size estimate that errs wide, the cardCopyFit.test constants. */
 const BOLD_EM = 0.6;
 const LINE_HEIGHT_EM = 1.25;
 
 const TITLE_PX = 34;
+const BODY_PX = 18;
 const HUB_TITLE = 'Home Tank';
 
 /** The tankUi.test canvas grid. */
@@ -21,10 +33,11 @@ const CANVAS_HEIGHTS: readonly number[] = [
   320, 340, 360, 375, 414, 440, 480, 568, 600, 667, 740, 768, 844, 932,
 ];
 
-/** A hub button as the scene builds it: the body of hubButtonLook() for its label. */
+/** A hub button as the scene builds it: the bodies of hubButtonLook() and hubButtonCompactLook() for its label. */
 function hubAction(id: string, label: string, primary: boolean): HubAction {
   const { w, h } = hubButtonLook({ label, primary });
-  return { id, w, h };
+  const compact = hubButtonCompactLook({ label, primary });
+  return { id, w, h, compact: { w: compact.w, h: compact.h } };
 }
 
 const HUB_ACTIONS: readonly HubAction[] = HUB_BUTTONS.map(({ id, label, primary }) => hubAction(id, label, primary));
@@ -34,11 +47,14 @@ function lineSize(text: string, px: number): Size {
   return { w: text.length * BOLD_EM * px, h: LINE_HEIGHT_EM * px };
 }
 
-/** The hub title measured at the margin width, one line (as tankUi.test, which wraps it the same here). */
+/** The hub title panel as the scene measures it: one line at the margin width less the pad, plus the pad each side. */
 function titleSize(view: HudView): Size {
   const line = lineSize(HUB_TITLE, TITLE_PX);
-  return { w: Math.min(view.cssW - 2 * UI.margin, line.w), h: line.h };
+  return { w: Math.min(view.cssW - 2 * UI.margin - 2 * UI.pad, line.w) + 2 * UI.pad, h: line.h + 2 * UI.pad };
 }
+
+/** The longest hub focus caption: one line of the longest hub label at the body size. */
+const HUB_CAPTION: Size = lineSize(COLLECTION_BOOK_LABEL, BODY_PX);
 
 /** The 3 badge stars in a row. */
 function badgeStarsSize(): Size {
@@ -94,6 +110,12 @@ function insideMargins(view: HudView, rect: Rect): boolean {
   );
 }
 
+/** True when `rect` is at least a gap clear of the band kept clear for Floating and Hanging items. */
+function clearOfTopBand(view: HudView, rect: Rect): boolean {
+  const band = topKeepClearCss(tankFrame(view.cssW, view.cssH));
+  return rect.y + rect.h <= band.y0 - UI.gap + 1e-9 || rect.y >= band.y1 + UI.gap - 1e-9;
+}
+
 /** The hub title and action rects. */
 function hubRects(hub: HubLayout): [string, Rect][] {
   const rects = hub.actions.map(({ id, rect }): [string, Rect] => [id, rect]);
@@ -109,6 +131,7 @@ function badgeProblems(view: HudView, actions: readonly HubAction[], badgeName: 
   const problems: string[] = [];
   if (!insideMargins(view, rect)) problems.push(`${label}: outside the margins`);
   if (rect.w !== badge.w || rect.h !== badge.h) problems.push(`${label}: resized`);
+  if (!clearOfTopBand(view, rect)) problems.push(`${label}: near the top band`);
   for (const [name, other] of hubRects(hub)) {
     if (clearance(rect, other) < UI.gap - 1e-9) problems.push(`${label}: closer than ${UI.gap} to ${name}`);
   }
@@ -135,7 +158,7 @@ describe('hubStarsBadgeRect', () => {
     expect(problems).toEqual([]);
   });
 
-  it('centres the badge a gap under the hub when it ends a gap above the Decorations', () => {
+  it('centres the badge a gap under the hub when it fits in the room of the hub', () => {
     const view = { cssW: 1024, cssH: 768 };
     const frame = tankFrame(view.cssW, view.cssH);
     const hub = hubLayout(view, frame, HUB_ACTIONS, titleSize(view));
@@ -143,13 +166,29 @@ describe('hubStarsBadgeRect', () => {
     const lowest = Math.max(...hubRects(hub).map(([, rect]) => rect.y + rect.h));
     const rect = hubStarsBadgeRect(view, frame, hub, badge);
     expect(rect).toEqual({ x: (view.cssW - badge.w) / 2, y: lowest + UI.gap, w: badge.w, h: badge.h });
-    expect(rect.y + rect.h).toBeLessThanOrEqual(decorationBandTop(frame) - UI.gap);
+    expect(rect.y + rect.h).toBeLessThanOrEqual(hub.room.bottom);
+  });
+
+  it('puts the badge under the full-size row at 1280 x 720', () => {
+    const view = { cssW: 1280, cssH: 720 };
+    const frame = tankFrame(view.cssW, view.cssH);
+    const hub = hubLayout(view, frame, HUB_ACTIONS, titleSize(view));
+    const badge = besideBadge();
+    expect(hub.compact).toBe(false);
+    expect(hub.actions[0].rect.y).toBe(306.5);
+    expect(hubStarsBadgeRect(view, frame, hub, badge)).toEqual({
+      x: (view.cssW - badge.w) / 2,
+      y: 306.5 + 64 + UI.gap,
+      w: badge.w,
+      h: badge.h,
+    });
   });
 
   it('falls back to the bottom-right corner when there is no room under the hub', () => {
     const view = { cssW: 460, cssH: 320 };
     const frame = tankFrame(view.cssW, view.cssH);
     const hub = hubLayout(view, frame, HUB_ACTIONS, null);
+    expect(hub.compact).toBe(true);
     const badge = stackedBadge();
     const rect = hubStarsBadgeRect(view, frame, hub, badge);
     expect(rect).toEqual({
@@ -160,10 +199,37 @@ describe('hubStarsBadgeRect', () => {
     });
   });
 
-  it('sits at the top margin when the hub is empty', () => {
-    const view = { cssW: 800, cssH: 600 };
+  it.each([
+    { cssW: 800, cssH: 600 },
+    { cssW: 320, cssH: 440 },
+  ])('sits at the top of the first room when the hub is empty at $cssW x $cssH', (view) => {
     const frame = tankFrame(view.cssW, view.cssH);
     const badge = besideBadge();
-    expect(hubStarsBadgeRect(view, frame, { title: null, actions: [] }, badge).y).toBe(UI.margin);
+    const hub = hubLayout(view, frame, [], null);
+    expect(hubStarsBadgeRect(view, frame, hub, badge).y).toBe(tankRooms(view, frame)[0].top);
+  });
+
+  it('leaves a place for the hub focus caption clear of the badge wherever the hub is compact', () => {
+    const problems: string[] = [];
+    for (const view of supportedCanvases()) {
+      const frame = tankFrame(view.cssW, view.cssH);
+      const hub = hubLayout(view, frame, HUB_ACTIONS, titleSize(view));
+      if (!hub.compact) continue;
+      for (const [badgeName, badge] of BADGES) {
+        const label = `caption ${view.cssW}x${view.cssH} badge ${badgeName}`;
+        const badgeRect = hubStarsBadgeRect(view, frame, hub, badge);
+        const caption = hubCaptionRect(view, frame, hub, HUB_CAPTION, [badgeRect]);
+        if (caption === null) {
+          problems.push(`${label}: no place`);
+          continue;
+        }
+        if (!insideMargins(view, caption)) problems.push(`${label}: outside the margins`);
+        if (!clearOfTopBand(view, caption)) problems.push(`${label}: near the top band`);
+        for (const [name, other] of [...hubRects(hub), ['badge', badgeRect] as [string, Rect]]) {
+          if (clearance(caption, other) < UI.gap - 1e-9) problems.push(`${label}: closer than ${UI.gap} to ${name}`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
   });
 });

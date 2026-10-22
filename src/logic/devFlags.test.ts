@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { DEV_FLAGS_MARK, NO_DEV_FLAGS, parseDevFlags } from './devFlags';
 
 describe('NO_DEV_FLAGS', () => {
-  it('has every flag off, the renderer on auto, and no area', () => {
-    expect(NO_DEV_FLAGS).toEqual({ perf: false, compare: false, renderer: 'auto', area: null });
+  it('has every flag off, the renderer on auto, no area, and no decor', () => {
+    expect(NO_DEV_FLAGS).toEqual({ perf: false, compare: false, renderer: 'auto', area: null, decor: false });
   });
 
   it('is frozen', () => {
@@ -22,8 +22,8 @@ describe('parseDevFlags in a dev build', () => {
   });
 
   it('reads the query with or without the leading "?"', () => {
-    expect(parseDevFlags('?perf', true)).toEqual({ perf: true, compare: false, renderer: 'auto', area: null });
-    expect(parseDevFlags('perf', true)).toEqual({ perf: true, compare: false, renderer: 'auto', area: null });
+    expect(parseDevFlags('?perf', true)).toEqual({ perf: true, compare: false, renderer: 'auto', area: null, decor: false });
+    expect(parseDevFlags('perf', true)).toEqual({ perf: true, compare: false, renderer: 'auto', area: null, decor: false });
   });
 
   it.each([
@@ -69,6 +69,31 @@ describe('parseDevFlags in a dev build', () => {
       compare: true,
       renderer: 'canvas',
       area: null,
+      decor: false,
+    });
+  });
+
+  it.each([
+    ['decor', true],
+    ['decor=', true],
+    ['decor=1', true],
+    ['decor=true', true],
+    ['decor=0', false],
+    ['decor=false', false],
+    ['decor=FALSE', false],
+    ['perf=1', false],
+    ['', false],
+  ])('decor for "%s" is %s', (query, expected) => {
+    expect(parseDevFlags(query, true).decor).toBe(expected);
+  });
+
+  it('reads decor together with the other flags', () => {
+    expect(parseDevFlags('?perf&decor&area=dev-test-area', true)).toEqual({
+      perf: true,
+      compare: false,
+      renderer: 'auto',
+      area: 'dev-test-area',
+      decor: true,
     });
   });
 
@@ -99,12 +124,13 @@ describe('parseDevFlags in a dev build', () => {
       compare: false,
       renderer: 'auto',
       area: 'dev-test-area',
+      decor: false,
     });
   });
 });
 
 describe('parseDevFlags outside a dev build', () => {
-  it.each(['', '?perf', '?compare=1', '?renderer=canvas', '?perf&compare&renderer=canvas', '?area=x', '?area=dev-test-area&perf'])(
+  it.each(['', '?perf', '?compare=1', '?renderer=canvas', '?perf&compare&renderer=canvas', '?area=x', '?area=dev-test-area&perf', '?decor', '?decor=1'])(
     'is always NO_DEV_FLAGS for "%s"',
     (query) => {
       expect(parseDevFlags(query, false)).toBe(NO_DEV_FLAGS);

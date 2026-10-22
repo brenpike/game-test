@@ -4,7 +4,7 @@
  */
 import type { HudView, Rect, Size } from './hudLayout';
 import { STARS_PER_AREA } from './stars';
-import { decorationBandTop, type TankFrame } from './tank';
+import type { TankFrame } from './tank';
 import { UI, type HubLayout } from './tankUi';
 
 /** One star on the "Area beaten" card and the gap between stars, in CSS px. */
@@ -21,28 +21,24 @@ export function starRowSize(): Size {
   };
 }
 
-/** Lowest bottom edge a hub control may reach: a gap above the Decorations and the edge margin. */
-function hubControlsLimit(view: HudView, frame: TankFrame): number {
-  return Math.min(decorationBandTop(frame) - UI.gap, view.cssH - UI.margin);
-}
-
-/** Top of the first free row under the hub title and actions, or the top margin when there are none. */
+/** Top of the first free row under the hub title and actions, or the top of their room when there are none. */
 function belowHub(hub: HubLayout): number {
   const rects = hub.actions.map((action) => action.rect);
   if (hub.title) rects.push(hub.title);
-  if (rects.length === 0) return UI.margin;
+  if (rects.length === 0) return hub.room.top;
   return Math.max(...rects.map((rect) => rect.y + rect.h)) + UI.gap;
 }
 
 /**
  * Where the hub best-stars badge of size `badge` goes: centred a gap under the hub title and actions
- * when it fits across and ends a gap above the Decorations, else in the bottom-right corner inside
- * the edge margins.
+ * (at the top of the hub's room when there are none) when it fits across and inside the room of the
+ * hub's last row, else in the bottom-right corner inside the edge margins. `frame` is unused and
+ * kept for callers.
  */
-export function hubStarsBadgeRect(view: HudView, frame: TankFrame, hub: HubLayout, badge: Size): Rect {
+export function hubStarsBadgeRect(view: HudView, _frame: TankFrame, hub: HubLayout, badge: Size): Rect {
   const top = belowHub(hub);
   const fitsAcross = badge.w <= view.cssW - 2 * UI.margin;
-  if (fitsAcross && top + badge.h <= hubControlsLimit(view, frame)) {
+  if (fitsAcross && top + badge.h <= hub.room.bottom) {
     return { x: (view.cssW - badge.w) / 2, y: top, w: badge.w, h: badge.h };
   }
   return { x: view.cssW - UI.margin - badge.w, y: view.cssH - UI.margin - badge.h, w: badge.w, h: badge.h };

@@ -1,14 +1,16 @@
 /**
  * Home Tank UI rules: the keyboard map, focus stepping, and the CSS px layouts of the hub, decorate
  * and Treasure Chest screens (PRD C7, C9, C11, X5); the Collection Book reuses the chest layout (C12). Sizes come in measured; nothing here shrinks a
- * control or its text.
+ * control or its text. The hub and decorate controls keep clear of the Floating and Hanging band
+ * (issue #95) by choosing between their full and compact sizes, both at least PRD X5.
  */
 import type { HudView, Rect, Size } from './hudLayout';
-import { decorationBandTop, type TankFrame } from './tank';
+import { decorationBandTop, lidTopCss, topKeepClearCss, type TankFrame } from './tank';
 import {
   CLOSE_LABEL,
   COLLECTION_BOOK_LABEL,
   DECORATE_LABEL,
+  DONE_LABEL,
   GO_EXPLORING_LABEL,
   NEXT_PAGE_LABEL,
   PREVIOUS_PAGE_LABEL,
@@ -23,6 +25,12 @@ export const UI = Object.freeze({ margin: 16, gap: 12, pad: 12 });
 
 /** Side of one decorate tray square, in CSS px. */
 export const TRAY_PX = 64;
+
+/** Side of one compact decorate tray square, in CSS px (PRD X5: at least 48). */
+export const COMPACT_TRAY_PX = 48;
+
+/** A compact icon-only tile button in CSS px: a 48 x 48 body (PRD X5) round a 32 px icon, no label. */
+export const ICON_TILE = Object.freeze({ w: 48, h: 48, iconPx: 32 });
 
 /**
  * A wide button at size 1, in CSS px, as createButton (src/scenes/BootScene.ts) builds it: the
@@ -50,14 +58,24 @@ function wholePxUp(px: number): number {
 }
 
 /**
+ * Body width of a label-sized size-1 wide button labelled `label`: just enough for the icon, the gap
+ * and the label (estimated wide) with BUTTON_LABEL_PAD each side, in whole CSS px. No minimum body.
+ */
+export function labelButtonWidth(label: string): number {
+  const labelW = label.length * LABEL_BOLD_EM * WIDE_BUTTON.labelPx;
+  return wholePxUp(WIDE_BUTTON.iconPx + WIDE_BUTTON.iconGap + labelW + 2 * BUTTON_LABEL_PAD);
+}
+
+/**
  * Body width of a size-1 wide button labelled `label`: at least WIDE_BUTTON.w, and enough for the
  * icon, the gap and the label (estimated wide) with BUTTON_LABEL_PAD each side, in whole CSS px.
  */
 export function wideButtonWidth(label: string): number {
-  const labelW = label.length * LABEL_BOLD_EM * WIDE_BUTTON.labelPx;
-  const contentW = WIDE_BUTTON.iconPx + WIDE_BUTTON.iconGap + labelW + 2 * BUTTON_LABEL_PAD;
-  return wholePxUp(Math.max(WIDE_BUTTON.w, contentW));
+  return Math.max(WIDE_BUTTON.w, labelButtonWidth(label));
 }
+
+/** The compact Done button: a label-sized wide button, 64 px tall (PRD X5 primary). */
+export const COMPACT_DONE: Size = Object.freeze({ w: labelButtonWidth(DONE_LABEL), h: WIDE_BUTTON.h });
 
 /**
  * Body width of a size-1 square tile labelled `label`: at least TILE_BUTTON.w, and enough for the
@@ -102,17 +120,40 @@ export function hubButtonLook(spec: Pick<HubButtonSpec, 'label' | 'primary'>): H
   return { shape: 'square', w: tileButtonWidth(spec.label), h: TILE_BUTTON.h };
 }
 
+/** How a hub button is drawn when the hub is compact: its shape and its body in CSS px. */
+export interface HubCompactLook {
+  shape: 'wide' | 'icon';
+  w: number;
+  h: number;
+}
+
+/**
+ * The compact look of a hub button: the primary keeps its wide labelled body (PRD X5: 64 px tall);
+ * the others become ICON_TILE icon-only tiles, named by the hub focus caption.
+ */
+export function hubButtonCompactLook(spec: Pick<HubButtonSpec, 'label' | 'primary'>): HubCompactLook {
+  if (spec.primary) return { shape: 'wide', w: wideButtonWidth(spec.label), h: WIDE_BUTTON.h };
+  return { shape: 'icon', w: ICON_TILE.w, h: ICON_TILE.h };
+}
+
 /** Size of every Treasure Chest button: square tiles wide enough for the widest of Back, Close and Next. */
 export const CHEST_BUTTON: Size = Object.freeze({
   w: Math.max(...[PREVIOUS_PAGE_LABEL, CLOSE_LABEL, NEXT_PAGE_LABEL].map(tileButtonWidth)),
   h: TILE_BUTTON.h,
 });
 
-/** One hub action button to place: its id and measured size. */
+/** One hub action button to place: its id, its measured full size and its measured compact size (the full size when absent). */
 export interface HubAction {
   id: string;
   w: number;
   h: number;
+  compact?: Size;
+}
+
+/** A band of canvas y the hub and decorate controls may use, in CSS px. */
+export interface TankRoom {
+  top: number;
+  bottom: number;
 }
 
 /** Where a hub action goes. */
@@ -121,25 +162,45 @@ export interface HubActionPlacement {
   rect: Rect;
 }
 
-/** The hub layout: the title (null when it does not fit) and the action buttons in input order. */
+/**
+ * The hub layout: the title (null when it does not fit), the action buttons in input order, whether
+ * they use their compact sizes, and the room of the last row (the first room when there are none).
+ */
 export interface HubLayout {
   title: Rect | null;
   actions: HubActionPlacement[];
+  compact: boolean;
+  room: TankRoom;
 }
 
-/** Measured sizes of the decorate controls; `caption` is null when there is no caption. */
+/** Measured compact sizes of Put away and Done. */
+export interface DecorateCompactSizes {
+  putAway: Size;
+  done: Size;
+}
+
+/**
+ * Measured sizes of the decorate controls; `caption` is null when there is no caption. `compact`
+ * defaults to an ICON_TILE Put away and COMPACT_DONE.
+ */
 export interface DecorateSizes {
   putAway: Size;
   done: Size;
   caption: Size | null;
+  compact?: DecorateCompactSizes;
 }
 
-/** The decorate layout: one square per tray item, the Put away slot, Done, and the caption (null when hidden). */
+/**
+ * The decorate layout: one square per tray item, the Put away slot, Done, the caption (null when
+ * hidden), whether the controls use their compact sizes, and the room of their last row.
+ */
 export interface DecorateLayout {
   tray: Rect[];
   putAway: Rect;
   done: Rect;
   caption: Rect | null;
+  compact: boolean;
+  room: TankRoom;
 }
 
 /** Treasure Chest measurements: wrapped text blocks at a wrap width, and fixed sizes. */
@@ -204,13 +265,17 @@ export function rowsPerPage(listH: number, rowH: number, gap: number): number {
   return Math.max(1, Math.floor((listH + spacing) / (rowH + spacing)));
 }
 
-/**
- * Lays `sizes` out in rows from `top`: each row takes items in order while they fit `maxW` with
- * `UI.gap` between, is centred on `centreX`, and centres its items vertically. Rows are `UI.gap` apart.
- */
-function flowRows(sizes: readonly Size[], centreX: number, maxW: number, top: number): Rect[] {
-  const rects: Rect[] = [];
-  let rowTop = top;
+/** One flow row: the items from `start` up to `end` (exclusive), their width with gaps between, and the tallest height. */
+interface FlowRow {
+  start: number;
+  end: number;
+  w: number;
+  h: number;
+}
+
+/** Splits `sizes` into rows that each take items in order while they fit `maxW` with `UI.gap` between. */
+function splitRows(sizes: readonly Size[], maxW: number): FlowRow[] {
+  const rows: FlowRow[] = [];
   let start = 0;
   while (start < sizes.length) {
     let end = start + 1;
@@ -219,17 +284,43 @@ function flowRows(sizes: readonly Size[], centreX: number, maxW: number, top: nu
       rowW += UI.gap + sizes[end].w;
       end++;
     }
-    const row = sizes.slice(start, end);
-    const rowH = Math.max(...row.map((size) => size.h));
-    let x = centreX - rowW / 2;
-    for (const size of row) {
-      rects.push({ x, y: rowTop + (rowH - size.h) / 2, w: size.w, h: size.h });
-      x += size.w + UI.gap;
-    }
-    rowTop += rowH + UI.gap;
+    rows.push({ start, end, w: rowW, h: Math.max(...sizes.slice(start, end).map((size) => size.h)) });
     start = end;
   }
+  return rows;
+}
+
+/** Rects for `rows` of `sizes`: each row centred on `centreX` at its top in `tops`, its items centred vertically. */
+function placeRows(sizes: readonly Size[], rows: readonly FlowRow[], centreX: number, tops: readonly number[]): Rect[] {
+  const rects: Rect[] = [];
+  rows.forEach((row, index) => {
+    let x = centreX - row.w / 2;
+    for (const size of sizes.slice(row.start, row.end)) {
+      rects.push({ x, y: tops[index] + (row.h - size.h) / 2, w: size.w, h: size.h });
+      x += size.w + UI.gap;
+    }
+  });
   return rects;
+}
+
+/** Row tops stacking `rows` from `top`, `UI.gap` apart. */
+function stackTops(rows: readonly FlowRow[], top: number): number[] {
+  const tops: number[] = [];
+  let rowTop = top;
+  for (const row of rows) {
+    tops.push(rowTop);
+    rowTop += row.h + UI.gap;
+  }
+  return tops;
+}
+
+/**
+ * Lays `sizes` out in rows from `top`: each row takes items in order while they fit `maxW` with
+ * `UI.gap` between, is centred on `centreX`, and centres its items vertically. Rows are `UI.gap` apart.
+ */
+function flowRows(sizes: readonly Size[], centreX: number, maxW: number, top: number): Rect[] {
+  const rows = splitRows(sizes, maxW);
+  return placeRows(sizes, rows, centreX, stackTops(rows, top));
 }
 
 /** Bottom edge of the lowest rect, or `fallback` when there are none. */
@@ -242,26 +333,166 @@ function controlsLimit(view: HudView, frame: TankFrame): number {
   return Math.min(decorationBandTop(frame) - UI.gap, view.cssH - UI.margin);
 }
 
+/** Top of the open water: a gap under the band kept clear for Floating and Hanging items. */
+function openWaterTop(frame: TankFrame): number {
+  return topKeepClearCss(frame).y1 + UI.gap;
+}
+
+/** The wall above the tank lid and the open water, before short rooms are dropped. */
+function roomCandidates(view: HudView, frame: TankFrame): [TankRoom, TankRoom] {
+  return [
+    { top: UI.margin, bottom: lidTopCss(frame) - UI.gap },
+    { top: openWaterTop(frame), bottom: controlsLimit(view, frame) },
+  ];
+}
+
+/**
+ * The rooms the hub and decorate controls may use, top first: the wall (from the top margin to a gap
+ * above the tank lid) and the open water (from a gap under the Floating and Hanging keep-clear band to
+ * a gap above the floor Decorations, inside the bottom margin). Rooms under ICON_TILE.h tall are dropped.
+ */
+export function tankRooms(view: HudView, frame: TankFrame): TankRoom[] {
+  return roomCandidates(view, frame).filter((room) => room.bottom - room.top >= ICON_TILE.h);
+}
+
+/** The tallest of `rooms` (the first on a tie), or the open water when there are none. */
+function tallestRoom(view: HudView, frame: TankFrame, rooms: readonly TankRoom[]): TankRoom {
+  const candidates = rooms.length > 0 ? rooms : [roomCandidates(view, frame)[1]];
+  return candidates.reduce((best, room) => (room.bottom - room.top > best.bottom - best.top ? room : best));
+}
+
+/** Row tops down the rooms and the room of the last row. */
+interface RoomFill {
+  tops: number[];
+  room: TankRoom;
+}
+
+/** `rows` placed down `rooms` in order, each row whole inside one room; null when they do not all fit. */
+function fillRooms(rows: readonly FlowRow[], rooms: readonly TankRoom[]): RoomFill | null {
+  if (rooms.length === 0) return null;
+  const tops: number[] = [];
+  let index = 0;
+  let rowTop = rooms[0].top;
+  for (const row of rows) {
+    while (rowTop + row.h > rooms[index].bottom) {
+      index++;
+      if (index >= rooms.length) return null;
+      rowTop = rooms[index].top;
+    }
+    tops.push(rowTop);
+    rowTop += row.h + UI.gap;
+  }
+  return { tops, room: rooms[index] };
+}
+
+/** Which look (index into the looks tried) the controls use and the rooms their rows fill in order. */
+interface RowPlan {
+  look: number;
+  rooms: readonly TankRoom[];
+}
+
+/**
+ * Where control rows go, tried in order: each look (full first) in one room, the wall then the water;
+ * then the last (compact) look split across the rooms in order; else the last look from the top of
+ * the tallest room.
+ */
+function planRows(view: HudView, frame: TankFrame, looks: readonly (readonly Size[])[]): RowPlan {
+  const rooms = tankRooms(view, frame);
+  const maxW = view.cssW - 2 * UI.margin;
+  for (let look = 0; look < looks.length; look++) {
+    const rows = splitRows(looks[look], maxW);
+    const room = rooms.find((candidate) => fillRooms(rows, [candidate]) !== null);
+    if (room !== undefined) return { look, rooms: [room] };
+  }
+  const last = looks.length - 1;
+  if (fillRooms(splitRows(looks[last], maxW), rooms) !== null) return { look: last, rooms };
+  return { look: last, rooms: [tallestRoom(view, frame, rooms)] };
+}
+
+/** `rows` down the plan's rooms, or stacked from the top of its first room when they do not fit. */
+function fillPlan(rows: readonly FlowRow[], plan: RowPlan): RoomFill {
+  return fillRooms(rows, plan.rooms) ?? { tops: stackTops(rows, plan.rooms[0].top), room: plan.rooms[0] };
+}
+
 /** A rect of `size` centred across the view at `top`. */
 function centredAt(view: HudView, size: Size, top: number): Rect {
   return { x: (view.cssW - size.w) / 2, y: top, w: size.w, h: size.h };
 }
 
+/** True when `a` and `b` are at least `UI.gap` apart across or down. */
+function isApart(a: Rect, b: Rect): boolean {
+  const dx = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w));
+  const dy = Math.max(b.y - (a.y + a.h), a.y - (b.y + b.h));
+  return Math.max(dx, dy) >= UI.gap - 1e-9;
+}
+
+/** A rect of `size` centred across the view at `top`, dropped a gap below each obstacle it comes within a gap of. */
+function centredClearOf(view: HudView, size: Size, top: number, obstacles: readonly Rect[]): Rect {
+  let rect = centredAt(view, size, top);
+  let hit = obstacles.find((obstacle) => !isApart(rect, obstacle));
+  while (hit !== undefined) {
+    rect = centredAt(view, size, hit.y + hit.h + UI.gap);
+    hit = obstacles.find((obstacle) => !isApart(rect, obstacle));
+  }
+  return rect;
+}
+
 /**
- * The hub layout: the actions flow in centred rows from the top margin. The title (measured at
- * `cssW - 2 * UI.margin`) sits above them only when it fits across and the actions still end a gap
- * above the Decorations.
+ * Where a caption of `size` goes: centred a gap under the controls (lowest edge `controlsBottom`)
+ * inside their `room`; else in the open water from the lower of that and the water top, possibly over
+ * the floor Decorations, inside the bottom margin. Never in the Floating and Hanging keep-clear band,
+ * and a gap from every obstacle (dropping below one it would touch). Null when it fits neither place.
+ */
+function captionRect(
+  view: HudView,
+  frame: TankFrame,
+  controlsBottom: number,
+  room: TankRoom,
+  size: Size,
+  obstacles: readonly Rect[],
+): Rect | null {
+  if (size.w > view.cssW - 2 * UI.margin) return null;
+  const top = controlsBottom + UI.gap;
+  const inRoom = centredClearOf(view, size, top, obstacles);
+  if (inRoom.y + inRoom.h <= room.bottom) return inRoom;
+  const inWater = centredClearOf(view, size, Math.max(top, openWaterTop(frame)), obstacles);
+  return inWater.y + inWater.h <= view.cssH - UI.margin ? inWater : null;
+}
+
+/** The measured full size of a hub action. */
+function fullSize(action: HubAction): Size {
+  return { w: action.w, h: action.h };
+}
+
+/**
+ * The hub layout. The actions take the first of: their full sizes in one room (the wall, then the
+ * water); their compact sizes in one room; compact rows split across the rooms in order; compact rows
+ * from the top of the tallest room. The title (measured at `cssW - 2 * UI.margin`) sits at the top
+ * of a single room, above the actions, only when it fits across and the actions still fit that room.
  */
 export function hubLayout(view: HudView, frame: TankFrame, actions: readonly HubAction[], title: Size | null): HubLayout {
-  const maxW = view.cssW - 2 * UI.margin;
-  const centreX = view.cssW / 2;
-  if (title !== null && title.w <= maxW) {
-    const rects = flowRows(actions, centreX, maxW, UI.margin + title.h + UI.gap);
-    if (bottomOfAll(rects, UI.margin + title.h) <= controlsLimit(view, frame)) {
-      return { title: centredAt(view, title, UI.margin), actions: placeActions(actions, rects) };
-    }
-  }
-  return { title: null, actions: placeActions(actions, flowRows(actions, centreX, maxW, UI.margin)) };
+  const full = actions.map(fullSize);
+  const compact = actions.map((action) => action.compact ?? fullSize(action));
+  const plan = planRows(view, frame, [full, compact]);
+  const sizes = plan.look === 0 ? full : compact;
+  const rows = splitRows(sizes, view.cssW - 2 * UI.margin);
+  const isCompact = plan.look === 1;
+  const titled = plan.rooms.length === 1 ? titledFill(view, rows, plan.rooms[0], title) : null;
+  const fill = titled ?? fillPlan(rows, plan);
+  const rects = placeRows(sizes, rows, view.cssW / 2, fill.tops);
+  return {
+    title: titled !== null && title !== null ? centredAt(view, title, plan.rooms[0].top) : null,
+    actions: placeActions(actions, rects),
+    compact: isCompact,
+    room: fill.room,
+  };
+}
+
+/** `rows` under `title` at the top of `room`; null without a title or when it and the rows do not fit across and down. */
+function titledFill(view: HudView, rows: readonly FlowRow[], room: TankRoom, title: Size | null): RoomFill | null {
+  if (title === null || title.w > view.cssW - 2 * UI.margin || room.top + title.h > room.bottom) return null;
+  const fill = fillRooms(rows, [{ top: room.top + title.h + UI.gap, bottom: room.bottom }]);
+  return fill === null ? null : { tops: fill.tops, room };
 }
 
 /** Pairs each action id with its rect. */
@@ -270,25 +501,78 @@ function placeActions(actions: readonly HubAction[], rects: readonly Rect[]): Hu
 }
 
 /**
- * The decorate layout: `trayCount` tray squares, the Put away slot (always reserved) and Done flow in
- * centred rows from the top margin. The caption (measured at `cssW - 2 * UI.margin`) goes below
- * only when it fits across and ends a gap above the Decorations.
+ * Where the hub focus caption (the focused button's label, which names the compact icon-only tiles)
+ * of size `caption` goes, a gap from every obstacle such as the best-stars badge: centred a gap under
+ * the hub inside the room of its last row; else in the open water from the lower of that and the
+ * water top, possibly over the floor Decorations, inside the bottom margin; never in the Floating and
+ * Hanging keep-clear band. Null when there is no place.
  */
-export function decorateLayout(view: HudView, frame: TankFrame, trayCount: number, sizes: DecorateSizes): DecorateLayout {
-  const maxW = view.cssW - 2 * UI.margin;
-  const count = Math.max(0, Math.floor(trayCount));
-  const square: Size = { w: TRAY_PX, h: TRAY_PX };
-  const flow: Size[] = [...Array.from({ length: count }, () => square), sizes.putAway, sizes.done];
-  const rects = flowRows(flow, view.cssW / 2, maxW, UI.margin);
-  const captionTop = bottomOfAll(rects, UI.margin) + UI.gap;
+export function hubCaptionRect(
+  view: HudView,
+  frame: TankFrame,
+  hub: HubLayout,
+  caption: Size,
+  obstacles: readonly Rect[],
+): Rect | null {
+  const rects = hub.actions.map((action) => action.rect);
+  if (hub.title !== null) rects.push(hub.title);
+  return captionRect(view, frame, bottomOfAll(rects, hub.room.top - UI.gap), hub.room, caption, obstacles);
+}
+
+/** A tray count as a whole number of squares; 0 for negative or non-finite counts. */
+function wholeTrayCount(count: number): number {
+  return Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+}
+
+/** One decorate look: whether it is compact, the tray square side, and the Put away and Done sizes. */
+interface DecorateLook {
+  compact: boolean;
+  trayPx: number;
+  putAway: Size;
+  done: Size;
+}
+
+/** The decorate controls in flow order for `count` tray squares: the squares, Put away, then Done. */
+function decorateFlow(look: DecorateLook, count: number): Size[] {
+  const square: Size = { w: look.trayPx, h: look.trayPx };
+  return [...Array.from({ length: count }, () => square), look.putAway, look.done];
+}
+
+/**
+ * The decorate layout: tray squares, the Put away slot (always reserved) and Done in centred rows.
+ * The look (full: TRAY_PX squares and the measured sizes; compact: COMPACT_TRAY_PX squares and the
+ * compact sizes) and the rooms come from `maxTrayCount` squares (at least `trayCount`) by the hub's
+ * order of tries, so they hold still as the tray empties; then `trayCount` squares are laid out
+ * there. The caption (measured at `cssW - 2 * UI.margin`) goes by the hub focus caption rule.
+ */
+export function decorateLayout(
+  view: HudView,
+  frame: TankFrame,
+  trayCount: number,
+  sizes: DecorateSizes,
+  maxTrayCount: number = trayCount,
+): DecorateLayout {
+  const count = wholeTrayCount(trayCount);
+  const maxCount = Math.max(count, wholeTrayCount(maxTrayCount));
+  const compactSizes = sizes.compact ?? { putAway: { w: ICON_TILE.w, h: ICON_TILE.h }, done: COMPACT_DONE };
+  const looks: DecorateLook[] = [
+    { compact: false, trayPx: TRAY_PX, putAway: sizes.putAway, done: sizes.done },
+    { compact: true, trayPx: COMPACT_TRAY_PX, putAway: compactSizes.putAway, done: compactSizes.done },
+  ];
+  const plan = planRows(view, frame, looks.map((candidate) => decorateFlow(candidate, maxCount)));
+  const look = looks[plan.look];
+  const flow = decorateFlow(look, count);
+  const rows = splitRows(flow, view.cssW - 2 * UI.margin);
+  const fill = fillPlan(rows, plan);
+  const rects = placeRows(flow, rows, view.cssW / 2, fill.tops);
   const caption = sizes.caption;
-  const showCaption =
-    caption !== null && caption.w <= maxW && captionTop + caption.h <= controlsLimit(view, frame);
   return {
     tray: rects.slice(0, count),
     putAway: rects[count],
     done: rects[count + 1],
-    caption: showCaption ? centredAt(view, caption, captionTop) : null,
+    caption: caption === null ? null : captionRect(view, frame, bottomOfAll(rects, fill.room.top), fill.room, caption, []),
+    compact: look.compact,
+    room: fill.room,
   };
 }
 

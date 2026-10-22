@@ -53,7 +53,7 @@ import {
   type Session,
 } from './session';
 import type { AreaStars, AreaStarsRecord } from './stars';
-import { createTankLayout, sanitizeLayout, type TankLayout, type TankPlacement } from './tank';
+import { SHIPPED_DECORATIONS, createTankLayout, sanitizeLayout, type TankLayout, type TankPlacement } from './tank';
 
 /** One save upgrade: the hub of save version n made into the hub of version n + 1. May throw. */
 export type SaveUpgrade = (hub: Record<string, unknown>) => Record<string, unknown>;
@@ -117,7 +117,7 @@ function savedHub(hub: HubState): SavedHub {
   return {
     banked: [...hub.banked],
     axolotls: hub.axolotls.map(savedAxolotl),
-    tank: { placed: hub.tank.placed.map(savedPlacement) },
+    tank: { placed: hub.tank.placed.filter(isShippedPlacement).map(savedPlacement) },
     book: savedBook(hub.book, hub.metHazards),
     stars: savedStars(hub.stars),
     explorerId: hub.explorerId,
@@ -151,6 +151,11 @@ function savedOutfit(outfit: Outfit): Outfit {
     socks: outfit.socks,
     feet: outfit.feet,
   } satisfies { [Key in keyof Outfit]-?: unknown };
+}
+
+/** True when the placement is of a shipped Decoration; dev decorations are never saved. */
+function isShippedPlacement(placement: TankPlacement): boolean {
+  return SHIPPED_DECORATIONS.some((decoration) => decoration.id === placement.id);
 }
 
 function savedPlacement(placement: TankPlacement): TankPlacement {
