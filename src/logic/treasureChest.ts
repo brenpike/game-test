@@ -3,6 +3,8 @@
  * not, with found counts, section lines, entry text and pages. Pure data; drawing lives in the scene
  * and art layers.
  */
+import { AREAS, habitatById, type AreaData } from './areas';
+import { areaLabel } from './areaText';
 import {
   ALL_TREASURES,
   DREAM_COLOURS,
@@ -70,8 +72,9 @@ export type SectionLineLength = 'full' | 'short';
 export type SlotName = 'Head' | 'Neck' | 'Face' | 'Shirt' | 'Back' | 'Tail' | 'Socks' | 'Feet';
 
 /**
- * Fields every Treasure Chest entry has. An unfound entry is named UNFOUND_NAME and has its rarity's
- * hint; a found entry has its own name and an empty hint. Rarity, rarity name and badge always show.
+ * Fields every Treasure Chest entry has. An unfound entry is named UNFOUND_NAME and has its area's
+ * hint (areaHint), or its rarity's plain hint when no area holds it; a found entry has its own name
+ * and an empty hint. Rarity, rarity name and badge always show.
  */
 export interface ChestEntryBase {
   readonly name: string;
@@ -215,6 +218,48 @@ export function unfoundHint(rarity: Rarity): string {
 }
 
 /**
+ * The first of `areas` whose layout holds the treasure with this id, or undefined when none does.
+ * Found by layout, never by id prefix: Area 2 and Area 3 both use 'pond/' ids.
+ */
+export function treasureAreaOf(
+  treasureId: string,
+  areas: readonly Readonly<AreaData>[] = AREAS,
+): Readonly<AreaData> | undefined {
+  return areas.find((area) => area.layout.treasures.some((treasure) => treasure.id === treasureId));
+}
+
+/** The first of `areas` whose layout holds the Paint shell of this Dream colour, or undefined when none does. */
+export function dreamColourAreaOf(
+  colourId: string,
+  areas: readonly Readonly<AreaData>[] = AREAS,
+): Readonly<AreaData> | undefined {
+  return areas.find((area) =>
+    area.layout.treasures.some((treasure) => treasure.category === 'paintShell' && treasure.dreamColour === colourId),
+  );
+}
+
+/** `text` with its first letter lower-cased, e.g. 'look near'. */
+function lowerFirstLetter(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
+/**
+ * Where to look for an unfound treasure of `rarity` in `area` (PRD C11, B6): the area and habitat,
+ * then the rarity hint, e.g. 'Area 1, Canal: look near the main swim path!'. The plain unfoundHint
+ * when the area's habitat is unknown.
+ */
+export function areaHint(area: Readonly<AreaData>, rarity: Rarity): string {
+  const habitat = habitatById(area.habitatId);
+  if (habitat === undefined) return unfoundHint(rarity);
+  return `${areaLabel(area.number)}, ${habitat.name}: ${lowerFirstLetter(UNFOUND_HINTS[rarity])}`;
+}
+
+/** Hint of an unfound entry: its area's hint, or the plain unfoundHint when no area holds it. */
+function unfoundEntryHint(area: Readonly<AreaData> | undefined, rarity: Rarity): string {
+  return area === undefined ? unfoundHint(rarity) : areaHint(area, rarity);
+}
+
+/**
  * Section line length for the chest: 'full' when an entry row `rowH` tall fits the list height the
  * full lines leave (`fullListH`), else 'short'. 'short' when either is not finite.
  */
@@ -237,25 +282,36 @@ export function pageText(pageNumber: number, pageCount: number): string {
   return `Page ${pageNumber} of ${pageCount}`;
 }
 
-function createEntryBase(name: string, rarity: Rarity, found: boolean): ChestEntryBase {
+function createEntryBase(
+  name: string,
+  rarity: Rarity,
+  found: boolean,
+  area: Readonly<AreaData> | undefined,
+): ChestEntryBase {
   return {
     name: found ? name : UNFOUND_NAME,
     rarity,
     rarityName: rarityName(rarity),
     badge: badgeShape(rarity),
     found,
-    hint: found ? '' : unfoundHint(rarity),
+    hint: found ? '' : unfoundEntryHint(area, rarity),
   };
 }
 
-function createDecorationEntry(decoration: Decoration, found: boolean): DecorationEntry {
-  return { id: decoration.id, ...createEntryBase(decoration.name, decoration.rarity, found) };
+function createDecorationEntry(
+  decoration: Decoration,
+  found: boolean,
+  areas: readonly Readonly<AreaData>[],
+): DecorationEntry {
+  const area = treasureAreaOf(decoration.id, areas);
+  return { id: decoration.id, ...createEntryBase(decoration.name, decoration.rarity, found, area) };
 }
 
-function createWearableEntry(wearable: Wearable, found: boolean): WearableEntry {
+function createWearableEntry(wearable: Wearable, found: boolean, areas: readonly Readonly<AreaData>[]): WearableEntry {
+  const area = treasureAreaOf(wearable.id, areas);
   return {
     id: wearable.id,
-    ...createEntryBase(wearable.name, wearable.rarity, found),
+    ...createEntryBase(wearable.name, wearable.rarity, found, area),
     slot: wearable.slot,
     slotName: slotName(wearable.slot),
     perk: found ? wearable.perk : null,
@@ -263,10 +319,15 @@ function createWearableEntry(wearable: Wearable, found: boolean): WearableEntry 
   };
 }
 
-function createDreamColourEntry(colour: DreamColour, found: boolean): DreamColourEntry {
+function createDreamColourEntry(
+  colour: DreamColour,
+  found: boolean,
+  areas: readonly Readonly<AreaData>[],
+): DreamColourEntry {
+  const area = dreamColourAreaOf(colour.id, areas);
   return {
     id: colour.id,
-    ...createEntryBase(colour.name, colour.rarity, found),
+    ...createEntryBase(colour.name, colour.rarity, found, area),
     patterned: colour.kind !== 'solid',
     label: DREAM_COLOUR_LABEL,
   };
@@ -293,25 +354,28 @@ function createSection<C extends ChestCategory, E extends ChestEntry>(
  * The Treasure Chest sections for these banked treasure ids, always Decorations, Wearables, then
  * Dream colours. Every catalogue treasure of a section is listed once, in catalogue order
  * (DREAM_COLOURS order for Dream colours), found when banked. A banked Paint shell marks its Dream
- * colour found; the shell itself is not listed. Unknown and axolotl ids are ignored.
+ * colour found; the shell itself is not listed. Unknown and axolotl ids are ignored. Every unfound
+ * entry hints at the first of `areas` that holds it (a Dream colour, its Paint shell), locked or
+ * not, else its plain rarity hint.
  */
 export function chestListing(
   banked: readonly string[],
+  areas: readonly Readonly<AreaData>[] = AREAS,
 ): readonly [DecorationSection, WearableSection, DreamColourSection] {
   const owned = new Set(banked);
   const ownedColours = new Set<DreamColourId>(ownedDreamColours(banked));
   return [
     createSection(
       'decoration',
-      DECORATIONS.map((decoration) => createDecorationEntry(decoration, owned.has(decoration.id))),
+      DECORATIONS.map((decoration) => createDecorationEntry(decoration, owned.has(decoration.id), areas)),
     ),
     createSection(
       'wearable',
-      WEARABLES.map((wearable) => createWearableEntry(wearable, owned.has(wearable.id))),
+      WEARABLES.map((wearable) => createWearableEntry(wearable, owned.has(wearable.id), areas)),
     ),
     createSection(
       'dreamColour',
-      DREAM_COLOURS.map((colour) => createDreamColourEntry(colour, ownedColours.has(colour.id))),
+      DREAM_COLOURS.map((colour) => createDreamColourEntry(colour, ownedColours.has(colour.id), areas)),
     ),
   ];
 }
