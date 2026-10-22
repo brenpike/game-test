@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AXOLOTL_REFUGES_FACT,
   BOY_OR_GIRL_FACT,
+  CANAL_CLEAN_UPS_FACT,
   FACT_CARD_OK_LABEL,
   FACT_CARD_UNFOUND_HINT,
   HERON_FACT,
   HERON_MEET_RANGE,
   PLASTIC_WORM_FACT,
+  REFUGE_FACT_CARDS,
   TILAPIA_FACT,
   TILAPIA_MEET_RANGE,
   meetsTilapia,
   metThreatIds,
+  refugeFactCardsDue,
   unfoundFactCardHint,
   type ThreatSighting,
 } from './factCards';
@@ -126,6 +130,62 @@ describe('heron fact card copy', () => {
 
   it('uses a meet range larger than the heron reach band', () => {
     expect(HERON_MEET_RANGE).toBeGreaterThan(HERON.lungeRange);
+  });
+});
+
+describe('refuge fact card copy', () => {
+  it('has the axolotl-refuges id, name, title, body and hint', () => {
+    expect(AXOLOTL_REFUGES_FACT).toEqual({
+      id: 'axolotl-refuges',
+      name: 'Axolotl refuges',
+      title: 'Axolotl refuges',
+      body: 'In Xochimilco, people make safe canals for axolotls next to chinampa gardens. Filters of volcanic rock let water in but keep big fish like tilapia out.',
+      unfoundHint: 'Visit the refuge to find this card.',
+    });
+  });
+
+  it('has the canal-clean-ups id, name, title, body and hint', () => {
+    expect(CANAL_CLEAN_UPS_FACT).toEqual({
+      id: 'canal-clean-ups',
+      name: 'Canal clean-ups',
+      title: 'Canal clean-ups',
+      body: 'People in Xochimilco pull rubbish, like plastic bottles, out of the canals. Keeping the water clean helps keep axolotls safe.',
+      unfoundHint: 'Beat an area, then visit the refuge to find this card.',
+    });
+  });
+
+  it('lists the axolotl refuges card, then the canal clean-ups card', () => {
+    expect(REFUGE_FACT_CARDS).toEqual([AXOLOTL_REFUGES_FACT, CANAL_CLEAN_UPS_FACT]);
+  });
+
+  it('has ids apart from every other card', () => {
+    const others = [TILAPIA_FACT.id, BOY_OR_GIRL_FACT.id, PLASTIC_WORM_FACT.id, HERON_FACT.id];
+    for (const card of REFUGE_FACT_CARDS) expect(others).not.toContain(card.id);
+    expect(AXOLOTL_REFUGES_FACT.id).not.toBe(CANAL_CLEAN_UPS_FACT.id);
+  });
+
+  it.each(REFUGE_FACT_CARDS.flatMap((card) => [card.name, card.title, card.body, card.unfoundHint ?? '']))(
+    '"%s" avoids banned words',
+    (text) => {
+      expect(findBannedWords(text)).toEqual([]);
+    },
+  );
+});
+
+describe('refugeFactCardsDue', () => {
+  it('gives the axolotl refuges card alone before the trash shows cleared', () => {
+    expect(refugeFactCardsDue([], false)).toEqual([AXOLOTL_REFUGES_FACT]);
+  });
+
+  it('gives both refuge cards, refuges first, once the trash shows cleared', () => {
+    expect(refugeFactCardsDue([], true)).toEqual([AXOLOTL_REFUGES_FACT, CANAL_CLEAN_UPS_FACT]);
+  });
+
+  it('leaves out cards already found', () => {
+    expect(refugeFactCardsDue(['axolotl-refuges'], true)).toEqual([CANAL_CLEAN_UPS_FACT]);
+    expect(refugeFactCardsDue(['axolotl-refuges'], false)).toEqual([]);
+    expect(refugeFactCardsDue(['canal-clean-ups', 'tilapia'], true)).toEqual([AXOLOTL_REFUGES_FACT]);
+    expect(refugeFactCardsDue(['axolotl-refuges', 'canal-clean-ups'], true)).toEqual([]);
   });
 });
 

@@ -17,7 +17,9 @@ import {
   type BookFeatureMeasure,
 } from './collectionBook';
 import {
+  AXOLOTL_REFUGES_FACT,
   BOY_OR_GIRL_FACT,
+  CANAL_CLEAN_UPS_FACT,
   FACT_CARD_UNFOUND_HINT,
   HERON_FACT,
   PLASTIC_WORM_FACT,
@@ -58,7 +60,10 @@ const CANVAS_HEIGHTS: readonly number[] = [
 const ALL_MORPHS: readonly RealMorphId[] = REAL_MORPHS.map((morph) => morph.id);
 
 /** Every hazard met that has an area fact card: the canal's tilapia, the pond's plastic worm and Area 3's heron. */
-const ALL_MET: readonly string[] = ['tilapia', 'plastic-worm', 'heron'];
+const ALL_AREA_MET: readonly string[] = ['tilapia', 'plastic-worm', 'heron'];
+
+/** Every fact card found by playing: the area cards, then the two refuge cards. */
+const ALL_MET: readonly string[] = [...ALL_AREA_MET, 'axolotl-refuges', 'canal-clean-ups'];
 
 const exportedStrings = Object.entries(collectionBook as Record<string, unknown>).filter(
   (entry): entry is [string, string] => typeof entry[1] === 'string',
@@ -244,15 +249,17 @@ describe('bookListing', () => {
     expect(sections.map((section) => section.heading)).toEqual([
       'Morphs: 0 of 8 found',
       'Dream colours',
-      'Fact cards: 1 of 4 found',
+      'Fact cards: 1 of 6 found',
     ]);
   });
 
   it('counts found morphs and fact cards in the headings', () => {
     const [morphs, , factCards] = bookListing(['wild', 'melanoid', 'wild'], ['tilapia']);
     expect(morphs.heading).toBe('Morphs: 2 of 8 found');
-    expect(factCards.heading).toBe('Fact cards: 2 of 4 found');
-    expect(bookListing([], ALL_MET)[2].heading).toBe('Fact cards: 4 of 4 found');
+    expect(factCards.heading).toBe('Fact cards: 2 of 6 found');
+    expect(bookListing([], ALL_AREA_MET)[2].heading).toBe('Fact cards: 4 of 6 found');
+    expect(bookListing([], ['axolotl-refuges'])[2].heading).toBe('Fact cards: 2 of 6 found');
+    expect(bookListing([], ALL_MET)[2].heading).toBe('Fact cards: 6 of 6 found');
     expect(bookListing(ALL_MORPHS, ['tilapia'])[0].heading).toBe('Morphs: 8 of 8 found');
   });
 
@@ -392,8 +399,33 @@ describe('bookListing', () => {
       ['tilapia', 'Explore the canal to find this card.'],
       ['plastic-worm', 'Explore the lily pad pond to find this card.'],
       ['heron', 'Explore the lily pad pond to find this card.'],
+      ['axolotl-refuges', 'Visit the refuge to find this card.'],
+      ['canal-clean-ups', 'Beat an area, then visit the refuge to find this card.'],
     ]);
     expect(FACT_CARD_UNFOUND_HINT).toBe('Explore the canal to find this card.');
+  });
+
+  it('holds the refuge cards after the area cards, found once found, with their own hint and never a picture (C14)', () => {
+    const [, , found] = bookListing([], ALL_MET);
+    expect(found.entries.slice(3, 5)).toEqual([
+      { id: 'axolotl-refuges', found: true, name: 'Axolotl refuges', text: AXOLOTL_REFUGES_FACT.body, hasPicture: false },
+      { id: 'canal-clean-ups', found: true, name: 'Canal clean-ups', text: CANAL_CLEAN_UPS_FACT.body, hasPicture: false },
+    ]);
+    const [, , refugeOnly] = bookListing([], ['axolotl-refuges']);
+    expect(refugeOnly.entries[3].found).toBe(true);
+    expect(refugeOnly.entries[4]).toEqual({
+      id: 'canal-clean-ups',
+      found: false,
+      name: '???',
+      text: 'Beat an area, then visit the refuge to find this card.',
+      hasPicture: false,
+    });
+  });
+
+  it('uses a card\'s own unfound hint before the habitat rule', () => {
+    const tilapiaWithHint: FactCard = { ...TILAPIA_FACT, unfoundHint: 'Look under the lily pads.' };
+    const [, , factCards] = bookListing([], [], [tilapiaWithHint]);
+    expect(factCards.entries[0].text).toBe('Look under the lily pads.');
   });
 
   it('shows a picture only for the found tilapia card', () => {
@@ -406,8 +438,15 @@ describe('bookListing', () => {
   it('always holds the boy or girl card last, after every area card, found and with no picture (C14)', () => {
     const boyOrGirl = { id: 'boyOrGirl', found: true, name: 'Boy or girl?', text: BOY_OR_GIRL_FACT.body, hasPicture: false };
     for (const [, , factCards] of everyListing()) {
-      expect(factCards.entries.map((entry) => entry.id)).toEqual(['tilapia', 'plastic-worm', 'heron', 'boyOrGirl']);
-      expect(factCards.entries[3]).toEqual(boyOrGirl);
+      expect(factCards.entries.map((entry) => entry.id)).toEqual([
+        'tilapia',
+        'plastic-worm',
+        'heron',
+        'axolotl-refuges',
+        'canal-clean-ups',
+        'boyOrGirl',
+      ]);
+      expect(factCards.entries[5]).toEqual(boyOrGirl);
     }
   });
 
@@ -437,6 +476,8 @@ describe('bookPages', () => {
       ['factCard', 1],
       ['factCard', 1],
       ['factCard', 1],
+      ['factCard', 1],
+      ['factCard', 1],
     ]);
     const pageEntries: readonly BookEntry[] = pages.flatMap((page): readonly BookEntry[] => page.entries);
     const sectionEntries: readonly BookEntry[] = sections.flatMap((section): readonly BookEntry[] => section.entries);
@@ -445,7 +486,7 @@ describe('bookPages', () => {
 
   it('puts every Dream colour on its own page at one row per page', () => {
     expect(DREAM_COLOURS).toHaveLength(14);
-    expect(bookPages(bookListing([], []), 1)).toHaveLength(REAL_MORPHS.length + 14 + 4);
+    expect(bookPages(bookListing([], []), 1)).toHaveLength(REAL_MORPHS.length + 14 + 6);
   });
 
   it('gives an empty section one page', () => {
@@ -675,6 +716,20 @@ describe('collection book fit', () => {
       ];
       for (const entry of entries) {
         expect(featurePageOf(view, entry).page.showsTitle, `${entry.id} found=${entry.found}`).toBe(true);
+      }
+    },
+  );
+
+  it.each([SMALLEST_CANVAS.landscape, SMALLEST_CANVAS.portrait])(
+    'keeps the title and the whole text for the refuge cards, found and unfound, at $cssW x $cssH',
+    (view) => {
+      for (const id of ['axolotl-refuges', 'canal-clean-ups']) {
+        for (const found of [true, false]) {
+          const entry = featuredEntry(id, found);
+          const { page } = featurePageOf(view, entry);
+          expect(page.showsTitle, `${id} found=${found}`).toBe(true);
+          expect(featureProblems(id, page.list, page.feature, featureMeasure(entry))).toEqual([]);
+        }
       }
     },
   );

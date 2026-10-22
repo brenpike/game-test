@@ -72,7 +72,8 @@ export type IconKind =
   | 'pencil'
   | 'shirt'
   | 'lock'
-  | 'paintDrop';
+  | 'paintDrop'
+  | 'refuge';
 
 /**
  * House icon (guide 7d), shared by the Home Spot flag and every "go home" UI.
@@ -553,6 +554,30 @@ export function paintIcon(ctx: CanvasRenderingContext2D, kind: IconKind, size: n
       splash.moveTo(7, 29);
       splash.lineTo(20, 29);
       ctx.stroke(splash);
+      break;
+    }
+    case 'refuge': {
+      // Xochimilco refuge (guide 8, Refuge icon): a lily pad with a wedge notch over a wave. Ink only, 3.0,
+      // no fill. Pad: radius 7.5 about (16, 11), the wedge opening to the lower right (centre angle PI / 4,
+      // half angle 0.42), the same notched pad as the Area map pond marker. Wave: one swell from (5.5, 26)
+      // to (26.5, 26), crest 1.75 above and trough 1.75 below the line.
+      ctx.lineWidth = 3;
+      const cx = 16;
+      const cy = 11;
+      const r = 7.5;
+      const open = Math.PI / 4;
+      const half = 0.42;
+      const pad = new Path2D();
+      pad.moveTo(cx, cy);
+      pad.lineTo(cx + r * Math.cos(open + half), cy + r * Math.sin(open + half));
+      pad.arc(cx, cy, r, open + half, open - half + TAU);
+      pad.closePath();
+      ctx.stroke(pad);
+      const wave = new Path2D();
+      wave.moveTo(5.5, 26);
+      wave.quadraticCurveTo(10.75, 22.5, 16, 26);
+      wave.quadraticCurveTo(21.25, 29.5, 26.5, 26);
+      ctx.stroke(wave);
       break;
     }
   }

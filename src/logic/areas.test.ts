@@ -10,6 +10,7 @@ import {
   areaById,
   areaFactCards,
   atExit,
+  bookFactCards,
   exitContact,
   exitOpen,
   habitatById,
@@ -28,7 +29,14 @@ import {
 import { CANAL_TREASURES, POND_2_TREASURES, POND_TREASURES, treasureById } from './catalogue';
 import { createCollectibles, snackDriftMaxSpeed, snackX, snackY } from './collectibles';
 import { DEV_AREAS, DEV_TEST_AREA } from './devAreas';
-import { HERON_FACT, PLASTIC_WORM_FACT, TILAPIA_FACT, type FactCard } from './factCards';
+import {
+  AXOLOTL_REFUGES_FACT,
+  CANAL_CLEAN_UPS_FACT,
+  HERON_FACT,
+  PLASTIC_WORM_FACT,
+  TILAPIA_FACT,
+  type FactCard,
+} from './factCards';
 import type { ElementType, HazardType } from './hazards';
 import { SNACK_MAGNET_PULL_SPEED } from './perks';
 import { HERON_SHADOW_CYCLE, TILAPIA_SPECIES, type PredatorSpecies } from './predators';
@@ -289,6 +297,18 @@ describe('threats', () => {
       areaWith('two', 2, layoutWith({ tilapiaRoutes: [], predatorRoutes: [pikeRoute('pike-0')], hazards: [glassAt('glass-0')] })),
     ];
     expect(areaFactCards(areas)).toEqual([TILAPIA_FACT, TEST_GLASS.fact, TEST_PIKE.fact]);
+  });
+});
+
+describe('bookFactCards', () => {
+  it('gives the shipped area cards, then the axolotl refuges and canal clean-ups cards', () => {
+    expect(bookFactCards()).toEqual([TILAPIA_FACT, PLASTIC_WORM_FACT, HERON_FACT, AXOLOTL_REFUGES_FACT, CANAL_CLEAN_UPS_FACT]);
+  });
+
+  it('puts the refuge cards after the given areas cards', () => {
+    const areas = [areaWith('one', 1, layoutWith({ hazards: [glassAt('glass-0')] }))];
+    expect(bookFactCards(areas)).toEqual([TILAPIA_FACT, TEST_GLASS.fact, AXOLOTL_REFUGES_FACT, CANAL_CLEAN_UPS_FACT]);
+    expect(bookFactCards([])).toEqual([AXOLOTL_REFUGES_FACT, CANAL_CLEAN_UPS_FACT]);
   });
 });
 

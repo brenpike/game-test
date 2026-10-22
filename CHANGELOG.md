@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-10-22
+
+### Added
+
+- The Xochimilco refuge is open from a new Refuge tile in the Home Tank. It has one section for each habitat, and each area you beat clears its batch of trash (#74).
+- When you open the refuge after beating an area, its trash floats away, the water clears and plants grow back (#74).
+- A "refuge grew" badge on the Refuge tile shows when there is a clean-up to see (#74).
+- Habitat milestones: when every area of a habitat is beaten, an "All clean!" card names your axolotl. "See it again" in the refuge shows it again (#74).
+- Two new fact cards: "Axolotl refuges" and "Canal clean-ups" (#74).
+
+### Changed
+
+- The Collection Book now has 6 fact cards (#74).
+- On some screens the Home Tank buttons use their small icon tiles to make room for the Refuge tile. On the smallest screens the Refuge tile sits in a second row and the best-stars badge stacks in the corner (#74).
+
 ## [0.27.0] - 2026-10-22
 
 ### Added

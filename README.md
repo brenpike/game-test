@@ -6,7 +6,7 @@ It is mostly fun, with real axolotl facts along the way.
 
 ## What you can do now
 
-Version 0.27.0 is playable in three areas in two habitats, the canal and the Lily pad pond:
+Version 0.28.0 is playable in three areas in two habitats, the canal and the Lily pad pond:
 
 - Make your own axolotl the first time you play, one step at a time in 11 steps: colour (one of eight real morphs), boy or girl (with a boy or girl sign), eyes, mouth (eight to choose from), gills, spots, tail, body, age, size, and name. Every choice is a big picture button that shows it on your axolotl, and the preview changes as you pick. On the first step, Surprise me picks a whole new axolotl at random, with a name that fits. On the other steps, it picks something new for that step only. The other seven colours are the ones you rescue.
 - Type a name, or pick a suggested one that fits a boy or a girl, so typing is optional. Names stay on your device.
@@ -39,7 +39,10 @@ Version 0.27.0 is playable in three areas in two habitats, the canal and the Lil
 - Decorate your Home Tank with the Decorations you banked, by touch or keyboard. A Decoration stands on the gravel, floats on the water surface, or hangs from the glass top; the ones that float or hang move only left and right. In the canal, all Decorations stand on the gravel. In the pond, the Lily pad and the Lotus lantern float on the surface, and the Cattail clump and the Frog statue stand on the gravel. On small screens some Home Tank buttons become icon tiles, and a caption names the one you are on.
 - Open the Treasure Chest to see every Decoration, Wearable, and Dream colour. The ones you banked show in full; the ones you have not found yet show as silhouettes with their rarity and a hint for where to look. Each section has a line saying what its items are for. Each Wearable you banked shows its slot and its perk, with the perk's icon.
 - The first Decoration, Wearable, and Paint shell you bank each get a one-time card after the trip. The Paint shell card's "Try it now!" opens the Dream colour tab.
-- Open the Collection Book to see the morphs you rescued, with a fun fact for each, the Dream colours, and the fact cards: the tilapia card, the "Boy or girl?" card, the "Plastic is not food" card, and the heron card.
+- Visit the Xochimilco refuge from the Home Tank's Refuge button: a safe home for axolotls, based on real conservation work in Xochimilco, with one section for each habitat. Each area you beat clears its trash from the refuge. The next time you open the refuge, the trash floats away with a sparkle, and once every area of a habitat is beaten, its section turns clean, with plants growing back and axolotls resting. A badge on the Refuge button shows when there is a clean-up to see. A section you have not reached yet shows "???" and the area that opens it, and "More to come" waits at the end.
+- Celebrate each habitat you clean up: back in the Home Tank, an "All clean!" card names your explorer and the habitat. Press See it again under a clean section in the refuge to see its card again.
+- Find two fact cards in the refuge: "Axolotl refuges", the first time you visit, and "Canal clean-ups", once you have cleared some trash.
+- Open the Collection Book to see the morphs you rescued, with a fun fact for each, the Dream colours, and the fact cards: the tilapia card, the "Plastic is not food" card, the heron card, the "Axolotl refuges" card, the "Canal clean-ups" card, and the "Boy or girl?" card.
 - Your progress saves on your device by itself: your axolotls, treasures, Home Tank and stars. There is no save button.
 - Start over from the title screen to erase everything and make a new axolotl. It asks twice before it erases anything.
   Grown-ups: progress is saved only in this browser on this device. Clearing browser data erases it.
@@ -49,7 +52,7 @@ Version 0.27.0 is playable in three areas in two habitats, the canal and the Lil
 The Axolotl MVP is in progress ([epic #6](https://github.com/brenpike/glam-gills/issues/6)).
 The [PRD](docs/prds/axolotl-mvp.md) is the source of truth.
 
-After the MVP: the Tank Top Model fashion show, more real freshwater areas, and building a safe refuge for axolotls.
+After the MVP: the Tank Top Model fashion show, more real freshwater areas, and growing the axolotl refuge with every new habitat.
 
 Play it: <https://brenpike.github.io/glam-gills/>
 
@@ -114,6 +117,8 @@ On a phone they need the dev server, which is harder to reach on WSL2 (see [Test
 | First-find card (after the trip-end message) | Try it now! or Maybe later button on the Paint shell card, OK button on the others | Tab/Shift+Tab or Left/Right to choose, Enter or Space to press, Esc to close |
 | Treasure Chest | Back, Next, and Close buttons | Left/Right to turn pages, Tab/Shift+Tab to move focus, Enter or Space to press, Esc to close |
 | Collection Book | Back, Next, and Close buttons | Left/Right to turn pages, Tab/Shift+Tab to move focus, Enter or Space to press, Esc to close |
+| Xochimilco refuge (from the Home Tank) | Tap Refuge in the Home Tank. Drag, use the mouse wheel, or tap the arrow buttons to look along the refuge; tap See it again under a clean section to see its "All clean!" card again; Back button to go back | Left/Right to look along the refuge, Tab/Shift+Tab to choose See it again, the arrow buttons, or Back, Enter or Space to press, Esc to go back |
+| Close the "All clean!" card | Keep exploring button | Enter, Space, or Esc |
 | Decorate | Tap a Decoration in the tray to place it, drag it to move it (one that floats or hangs stays on its line), Put away button, Done button | Tab/Shift+Tab to pick, Enter or Space to place or select, arrow keys to move (Up and Down do nothing for one that floats or hangs), Delete or Backspace to put it away, Esc for Done |
 
 The game respects your device's reduced-motion setting.

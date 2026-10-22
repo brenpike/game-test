@@ -6,6 +6,7 @@ import {
   GO_EXPLORING_LABEL,
   HOME_TANK_NAME,
   NO_DECORATIONS_TO_PLACE,
+  REFUGE_LABEL,
 } from './tankText';
 
 const BANNED = [
@@ -47,6 +48,7 @@ describe('tank text', () => {
       'NO_DECORATIONS_TO_PLACE',
       'PREVIOUS_PAGE_LABEL',
       'PUT_AWAY_LABEL',
+      'REFUGE_LABEL',
       'TREASURE_CHEST_LABEL',
     ]);
   });
@@ -65,6 +67,10 @@ describe('tank text', () => {
   it('names the hub "Home Tank" and the explore button "Go exploring"', () => {
     expect(HOME_TANK_NAME).toBe('Home Tank');
     expect(GO_EXPLORING_LABEL).toBe('Go exploring');
+  });
+
+  it('names the refuge button "Refuge"', () => {
+    expect(REFUGE_LABEL).toBe('Refuge');
   });
 
   it('teaches decorating by touch and by keyboard', () => {

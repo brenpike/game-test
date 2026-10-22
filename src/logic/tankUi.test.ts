@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { isSupportedCanvas } from './cardFit';
 import type { HudView, Rect, Size } from './hudLayout';
 import { SHIPPED_DECORATIONS, decorationBandTop, lidTopCss, tankFrame, topKeepClearCss } from './tank';
-import { CLOSE_LABEL, COLLECTION_BOOK_LABEL, DONE_LABEL, NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL } from './tankText';
+import { CLOSE_LABEL, COLLECTION_BOOK_LABEL, DONE_LABEL, NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL, REFUGE_LABEL } from './tankText';
 import {
   BUTTON_LABEL_PAD,
   CHEST_BUTTON,
@@ -78,7 +78,7 @@ function hubAction(id: string, label: string, primary: boolean): HubAction {
   return { id, w, h, compact: { w: compact.w, h: compact.h } };
 }
 
-/** The hub actions the scene shows: Go exploring (primary), Decorate, Treasure Chest and Collection Book. */
+/** The hub actions the scene shows: Go exploring (primary), Decorate, Treasure Chest, Collection Book and Refuge. */
 const HUB_ACTIONS: readonly HubAction[] = HUB_BUTTONS.map(({ id, label, primary }) => hubAction(id, label, primary));
 
 /** Wide label width estimate of a size-1 tile labelled `label`. */
@@ -180,9 +180,26 @@ function keepClearProblems(label: string, view: HudView, rects: readonly [string
   return rects.filter(([, rect]) => !isClear(rect)).map(([name]) => `${label}: ${name} near the top band`);
 }
 
-/** Problems with rects not inside one of the rooms (so not between a gap above the lid and a gap above the floor Decorations). */
-function roomProblems(label: string, view: HudView, rects: readonly [string, Rect][]): string[] {
-  const rooms = tankRooms(view, tankFrame(view.cssW, view.cssH));
+/**
+ * The reach rooms (art guide 7f), recomputed: the wall from the top margin to a gap above the top
+ * keep-clear band, and the open water from a gap under that band to the bottom margin, each at least
+ * 48 px tall.
+ */
+function reachRooms(view: HudView): TankRoom[] {
+  const band = topKeepClearCss(tankFrame(view.cssW, view.cssH));
+  const rooms: TankRoom[] = [
+    { top: UI.margin, bottom: band.y0 - UI.gap },
+    { top: band.y1 + UI.gap, bottom: view.cssH - UI.margin },
+  ];
+  return rooms.filter((room) => room.bottom - room.top >= MIN_TARGET_PX);
+}
+
+/**
+ * Problems with rects not inside one of the rooms (so not between a gap above the lid and a gap above
+ * the floor Decorations), or of the reach rooms when `reach`.
+ */
+function roomProblems(label: string, view: HudView, rects: readonly [string, Rect][], reach = false): string[] {
+  const rooms = reach ? reachRooms(view) : tankRooms(view, tankFrame(view.cssW, view.cssH));
   const isInRoom = (rect: Rect): boolean =>
     rooms.some((room) => rect.y >= room.top - 1e-9 && bottomOf(rect) <= room.bottom + 1e-9);
   return rects.filter(([, rect]) => !isInRoom(rect)).map(([name]) => `${label}: ${name} outside the rooms`);
@@ -199,10 +216,10 @@ function sceneHub(view: HudView): HubLayout {
   return hubLayout(view, tankFrame(view.cssW, view.cssH), HUB_ACTIONS, hubTitle(view));
 }
 
-/** The longest hub focus caption: one line of the longest hub label at the body size. */
+/** The longest hub focus caption at its drawn size: one line of the longest hub label at the body size, plus the pad each side. */
 const HUB_CAPTION: Size = {
-  w: COLLECTION_BOOK_LABEL.length * BOLD_EM * BODY_PX,
-  h: LINE_HEIGHT_EM * BODY_PX,
+  w: COLLECTION_BOOK_LABEL.length * BOLD_EM * BODY_PX + 2 * UI.pad,
+  h: LINE_HEIGHT_EM * BODY_PX + 2 * UI.pad,
 };
 
 /** Every hub problem on one canvas with one action set. */
@@ -215,8 +232,9 @@ function hubProblems(view: HudView, actions: readonly HubAction[]): string[] {
     ...spacingProblems(label, marginBounds(view), all),
     ...targetProblems(label, targets),
     ...keepClearProblems(label, view, all),
-    ...roomProblems(label, view, all),
+    ...roomProblems(label, view, all, layout.reach),
   ];
+  if (layout.reach && layout.title !== null) problems.push(`${label}: title while reaching`);
   const go = layout.actions.find((placement) => placement.id === 'goExploring');
   if (!go || go.rect.h < PRIMARY_H) problems.push(`${label}: Go exploring under ${PRIMARY_H} px`);
   for (const { id, rect } of layout.actions) {
@@ -404,6 +422,7 @@ describe('wideButtonWidth and tileButtonWidth', () => {
     expect(tileButtonWidth('Decorate')).toBe(118);
     expect(tileButtonWidth('Treasure Chest')).toBe(197);
     expect(tileButtonWidth('Collection Book')).toBe(210);
+    expect(tileButtonWidth('Refuge')).toBe(92);
     expect(tileButtonWidth('Close')).toBe(78);
   });
 
@@ -415,7 +434,7 @@ describe('wideButtonWidth and tileButtonWidth', () => {
       expect(w).toBeGreaterThanOrEqual(WIDE_BUTTON.w);
       expect(w).toBeGreaterThanOrEqual(rowW + 2 * BUTTON_LABEL_PAD);
     }
-    for (const label of ['Go', 'Decorate', 'Treasure Chest', 'Collection Book', 'Close', 'Back', 'Next']) {
+    for (const label of ['Go', 'Decorate', 'Treasure Chest', 'Collection Book', 'Refuge', 'Close', 'Back', 'Next']) {
       const w = tileButtonWidth(label);
       expect(Number.isInteger(w)).toBe(true);
       expect(w).toBeGreaterThanOrEqual(TILE_BUTTON.w);
@@ -430,6 +449,14 @@ describe('hubButtonLook', () => {
     expect(hubButtonLook({ label: 'Decorate', primary: false })).toEqual({ shape: 'square', w: 118, h: 64 });
     expect(hubButtonLook({ label: 'Treasure Chest', primary: false })).toEqual({ shape: 'square', w: 197, h: 64 });
     expect(hubButtonLook({ label: 'Collection Book', primary: false })).toEqual({ shape: 'square', w: 210, h: 64 });
+    expect(hubButtonLook({ label: 'Refuge', primary: false })).toEqual({ shape: 'square', w: 92, h: 64 });
+  });
+
+  it('makes the Refuge hub entry a 92 x 64 secondary tile, and a 48 x 48 icon tile when compact', () => {
+    const refuge = HUB_BUTTONS.find((spec) => spec.id === 'refuge');
+    expect(refuge).toEqual({ id: 'refuge', label: REFUGE_LABEL, primary: false });
+    expect(hubButtonLook(refuge ?? { label: '', primary: true })).toEqual({ shape: 'square', w: 92, h: 64 });
+    expect(hubButtonCompactLook(refuge ?? { label: '', primary: true })).toEqual({ shape: 'icon', w: 48, h: 48 });
   });
 
   it('makes the Collection Book hub entry a 210 x 64 secondary tile', () => {
@@ -446,8 +473,8 @@ describe('hubButtonLook', () => {
     }
   });
 
-  it('puts Go exploring first and makes it the only primary', () => {
-    expect(HUB_BUTTONS.map((spec) => spec.id)).toEqual(['goExploring', 'decorate', 'treasureChest', 'collectionBook']);
+  it('puts Go exploring first and Refuge last, and makes Go exploring the only primary', () => {
+    expect(HUB_BUTTONS.map((spec) => spec.id)).toEqual(['goExploring', 'decorate', 'treasureChest', 'collectionBook', 'refuge']);
     expect(HUB_BUTTONS.filter((spec) => spec.primary).map((spec) => spec.id)).toEqual(['goExploring']);
   });
 });
@@ -507,9 +534,26 @@ describe('tankRooms', () => {
 
 describe('hubLayout', () => {
   it('fits every hub action on every supported canvas', () => {
-    expect(HUB_ACTIONS).toHaveLength(4);
+    expect(HUB_ACTIONS).toHaveLength(5);
     const problems = supportedCanvases().flatMap((view) => hubProblems(view, HUB_ACTIONS));
     expect(problems).toEqual([]);
+  });
+
+  it('reaches over the floor Decorations, untitled, only at 460 and 480 x 320, 340, 360, 375 and 414', () => {
+    const reaching = supportedCanvases().filter((view) => sceneHub(view).reach);
+    expect(reaching.map((view) => `${view.cssW}x${view.cssH}`)).toEqual(
+      [460, 480].flatMap((cssW) => [320, 340, 360, 375, 414].map((cssH) => `${cssW}x${cssH}`)),
+    );
+    for (const view of reaching) {
+      expect(sceneHub(view).title).toBeNull();
+      expect(hubLayout(view, tankFrame(view.cssW, view.cssH), HUB_ACTIONS, null).reach).toBe(true);
+    }
+  });
+
+  it('never reaches with the 4 actions before Refuge', () => {
+    const four = HUB_ACTIONS.filter((action) => action.id !== 'refuge');
+    const reaching = supportedCanvases().filter((view) => hubLayout(view, tankFrame(view.cssW, view.cssH), four, hubTitle(view)).reach);
+    expect(reaching).toEqual([]);
   });
 
   it('shows the title only when it fits above the actions in their room', () => {
@@ -536,17 +580,22 @@ describe('hubLayout', () => {
     expect(layout.actions.map((placement) => placement.rect.w)).toEqual(actions.map((action) => action.w));
   });
 
-  it('puts a compact single row 405 wide in the open water at 460 x 320', () => {
-    const layout = sceneHub({ cssW: 460, cssH: 320 });
+  it('puts two compact rows in the open water, Refuge reaching over the floor Decorations, at 460 x 320', () => {
+    const view = { cssW: 460, cssH: 320 };
+    const frame = tankFrame(view.cssW, view.cssH);
+    const layout = sceneHub(view);
     expect(layout.compact).toBe(true);
+    expect(layout.reach).toBe(true);
     expect(layout.title).toBeNull();
     expect(layout.actions.map((placement) => placement.rect)).toEqual([
       { x: 27.5, y: 108, w: 225, h: 64 },
       { x: 264.5, y: 116, w: 48, h: 48 },
       { x: 324.5, y: 116, w: 48, h: 48 },
       { x: 384.5, y: 116, w: 48, h: 48 },
+      { x: 206, y: 184, w: 48, h: 48 },
     ]);
-    expect(layout.room.top).toBeCloseTo(108, 6);
+    expect(layout.room).toEqual({ top: 108, bottom: 304 });
+    expect(bottomOf(layout.actions[4].rect)).toBeGreaterThan(decorationBandTop(frame));
   });
 
   it('puts two compact rows on the wall above the lid at 320 x 440', () => {
@@ -556,9 +605,11 @@ describe('hubLayout', () => {
     expect(layout.actions.map((placement) => placement.rect)).toEqual([
       { x: 17.5, y: 16, w: 225, h: 64 },
       { x: 254.5, y: 24, w: 48, h: 48 },
-      { x: 106, y: 92, w: 48, h: 48 },
-      { x: 166, y: 92, w: 48, h: 48 },
+      { x: 76, y: 92, w: 48, h: 48 },
+      { x: 136, y: 92, w: 48, h: 48 },
+      { x: 196, y: 92, w: 48, h: 48 },
     ]);
+    expect(layout.reach).toBe(false);
     expect(layout.room).toEqual({ top: UI.margin, bottom: lidTopCss(tankFrame(320, 440)) - UI.gap });
   });
 
@@ -567,14 +618,27 @@ describe('hubLayout', () => {
     const layout = sceneHub(view);
     const title = hubTitle(view);
     expect(layout.compact).toBe(false);
+    expect(layout.reach).toBe(false);
     expect(layout.title).toEqual({ x: (view.cssW - title.w) / 2, y: 228, w: title.w, h: 66.5 });
     expect(layout.actions.map((placement) => placement.rect)).toEqual([
-      { x: 247, y: 306.5, w: 225, h: 64 },
-      { x: 484, y: 306.5, w: 118, h: 64 },
-      { x: 614, y: 306.5, w: 197, h: 64 },
-      { x: 823, y: 306.5, w: 210, h: 64 },
+      { x: 195, y: 306.5, w: 225, h: 64 },
+      { x: 432, y: 306.5, w: 118, h: 64 },
+      { x: 562, y: 306.5, w: 197, h: 64 },
+      { x: 771, y: 306.5, w: 210, h: 64 },
+      { x: 993, y: 306.5, w: 92, h: 64 },
     ]);
+    expect(993 + 92 - 195).toBe(890);
     expect(layout.room).toEqual({ top: 228, bottom: 436 });
+  });
+
+  it('goes compact in one row in the open water at 844 x 320, the full row of 5 being too wide', () => {
+    const view = { cssW: 844, cssH: 320 };
+    const layout = sceneHub(view);
+    expect(layout.compact).toBe(true);
+    expect(layout.reach).toBe(false);
+    expect(layout.actions.map((placement) => placement.rect.y)).toEqual([108, 116, 116, 116, 116]);
+    expect(layout.room).toEqual(tankRooms(view, tankFrame(view.cssW, view.cssH))[0]);
+    expect(HUB_ACTIONS.reduce((rowW, action) => rowW + action.w, 0) + 4 * UI.gap).toBeGreaterThan(view.cssW - 2 * UI.margin);
   });
 
   it.each([
@@ -586,11 +650,14 @@ describe('hubLayout', () => {
     const layout = sceneHub(view);
     expect(layout.compact).toBe(true);
     expect(layout.title).toBeNull();
-    const [go, decorate, chest, book] = layout.actions.map((placement) => placement.rect);
+    expect(layout.reach).toBe(false);
+    const [go, decorate, chest, book, refuge] = layout.actions.map((placement) => placement.rect);
     expect(go.y).toBe(wall.top);
     expect(decorate.y).toBe(chest.y);
     expect(bottomOf(chest)).toBeLessThanOrEqual(wall.bottom);
     expect(book.y).toBeCloseTo(water.top, 9);
+    expect(refuge.y).toBeCloseTo(water.top, 9);
+    expect(bottomOf(refuge)).toBeLessThanOrEqual(water.bottom);
     expect(layout.room).toEqual(water);
   });
 });
@@ -622,12 +689,22 @@ describe('hubCaptionRect', () => {
   });
 
   it('goes into the open water, over the floor Decorations, when the room under the hub is full', () => {
-    const view = { cssW: 460, cssH: 320 };
+    const view = { cssW: 844, cssH: 320 };
     const frame = tankFrame(view.cssW, view.cssH);
     const hub = sceneHub(view);
+    expect(hub.reach).toBe(false);
     const caption = hubCaptionRect(view, frame, hub, HUB_CAPTION, []);
     expect(caption).toEqual({ x: (view.cssW - HUB_CAPTION.w) / 2, y: 184, ...HUB_CAPTION });
     expect(184 + HUB_CAPTION.h).toBeGreaterThan(hub.room.bottom);
+  });
+
+  it('centres the caption a gap under reaching rows inside their reach room at 460 x 320', () => {
+    const view = { cssW: 460, cssH: 320 };
+    const hub = sceneHub(view);
+    expect(hub.reach).toBe(true);
+    const caption = hubCaptionRect(view, tankFrame(view.cssW, view.cssH), hub, HUB_CAPTION, []);
+    expect(caption).toEqual({ x: 137, y: 244, w: 186, h: 46.5 });
+    expect(bottomOf(caption ?? { x: 0, y: 0, w: 0, h: Infinity })).toBeLessThanOrEqual(hub.room.bottom);
   });
 
   it('drops below an obstacle and is null when nothing fits', () => {

@@ -3,6 +3,13 @@ import { areaById } from '../logic/areas';
 import type { Collectible } from '../logic/collectibles';
 import type { RealMorphId } from '../logic/morphs';
 import {
+  EMPTY_REFUGE_PENDING,
+  REFUGE_REGISTRY_KEY,
+  refugePendingFrom,
+  withTripResult,
+  type RefugePending,
+} from '../logic/refuge';
+import {
   SAVE_GATE_REGISTRY_KEY,
   bankedMidTrip,
   encodeSave,
@@ -32,13 +39,19 @@ import { SCENE_KEYS, type GameAssets, type SwimStart } from './BootScene';
  * What the Home Tank scene starts from: the game assets, how the last trip ended (null from the
  * title) and the id of the area the arrival card is about, always an area in AREAS. `openExplorer`
  * true (Back on the area map) opens the explorer card at once, with the saved explorer chosen and
- * Go! focused.
+ * Go! focused. `focus` 'refuge' (Back in the refuge) puts the focus on the Refuge tile.
  */
 export interface HomeTankStart {
   assets: GameAssets;
   arrival: TripEnding | null;
   areaId: string;
   openExplorer?: boolean;
+  focus?: 'refuge';
+}
+
+/** What the refuge scene starts from: the game assets. */
+export interface RefugeStart {
+  assets: GameAssets;
 }
 
 /** What the area map scene starts from: the game assets. */
@@ -105,9 +118,23 @@ export function writeSession(registry: Phaser.Data.DataManager, session: Session
 }
 
 /**
+ * The refuge's pending clean-ups and milestones in the game registry, repaired by
+ * refugePendingFrom(); nothing pending when none is stored.
+ */
+export function readRefugePending(registry: Phaser.Data.DataManager): RefugePending {
+  return refugePendingFrom(registry.get(REFUGE_REGISTRY_KEY));
+}
+
+/** Stores `pending` as the refuge's pending clean-ups and milestones in the game registry. */
+export function writeRefugePending(registry: Phaser.Data.DataManager, pending: Readonly<RefugePending>): void {
+  registry.set(REFUGE_REGISTRY_KEY, pending);
+}
+
+/**
  * Start over (#15): erases the save on the device, then starts a new session in memory and opens
  * the character creator. The save gate opens once the save was erased; when erasing fails (storage
- * off) it stays as it was. The new session is not saved until the creator is done.
+ * off) it stays as it was. The refuge's pending clean-ups and milestones are cleared too. The new
+ * session is not saved until the creator is done.
  */
 export function startOver(scene: Phaser.Scene, assets: GameAssets): void {
   const registry = scene.registry;
@@ -115,6 +142,7 @@ export function startOver(scene: Phaser.Scene, assets: GameAssets): void {
   const erased = eraseStoredSave();
   registry.set(SAVE_GATE_REGISTRY_KEY, gateAfterErase(registry.get(SAVE_GATE_REGISTRY_KEY) as SaveGate, erased));
   registry.set(SESSION_REGISTRY_KEY, createSession());
+  writeRefugePending(registry, EMPTY_REFUGE_PENDING);
   openCreator(scene, assets);
 }
 
@@ -209,6 +237,23 @@ export function backToExplorerCard(scene: Phaser.Scene, assets: GameAssets): voi
   scene.scene.start(SCENE_KEYS.homeTank, start);
 }
 
+/** Opens the Xochimilco refuge from the Home Tank (PRD N2). */
+export function openRefuge(scene: Phaser.Scene, assets: GameAssets): void {
+  const start: RefugeStart = { assets };
+  scene.scene.start(SCENE_KEYS.refuge, start);
+}
+
+/** Back in the refuge: opens the Home Tank with no arrival card and the focus on the Refuge tile. */
+export function backFromRefuge(scene: Phaser.Scene, assets: GameAssets): void {
+  const start: HomeTankStart = {
+    assets,
+    arrival: null,
+    areaId: readSession(scene.registry).hub.lastAreaId,
+    focus: 'refuge',
+  };
+  scene.scene.start(SCENE_KEYS.homeTank, start);
+}
+
 /**
  * The record of a trip in a dev area, which is never in AREAS: kept in that area's own memory, but
  * with no stars, so the hub's stars only ever hold real areas.
@@ -239,7 +284,9 @@ function devAreaArrival(ending: TripEnding): TripEnding {
  * card for the trip's ending, its stars included. A trip in a dev area (not in AREAS) earns no stars
  * and the Home Tank shows the last chosen area instead, with a plain return for its arrival card
  * (devAreaArrival), so it never shows that area as beaten; the last chosen area is never changed
- * here. Throws when the trip has not ended, or beat the area with no stars.
+ * here. A trip in a real area adds the areas it newly beat and the habitats it newly cleaned up to
+ * the refuge's pending clean-ups and milestones (withTripResult); a dev area trip adds nothing.
+ * Throws when the trip has not ended, or beat the area with no stars.
  */
 export function returnToHomeTank(
   scene: Phaser.Scene,
@@ -252,8 +299,13 @@ export function returnToHomeTank(
   const record = realArea ? fullRecord : withoutStars(fullRecord);
   const ending = trip.ending;
   if (ending === null) throw new Error('returnToHomeTank: the ended trip has no ending');
-  const session = recordTripEnd(readSession(scene.registry), record);
+  const before = readSession(scene.registry);
+  const session = recordTripEnd(before, record);
   writeSession(scene.registry, session);
+  if (realArea) {
+    const pending = withTripResult(readRefugePending(scene.registry), before.hub.stars, session.hub.stars);
+    writeRefugePending(scene.registry, pending);
+  }
   const arrival: TripEnding = realArea
     ? {
         reason: ending.reason,
