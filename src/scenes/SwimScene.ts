@@ -46,7 +46,7 @@ import { legSwimTuning } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { outfitPerks, perkTripContext, perkTuning, type PerkTuning } from '../logic/perks';
 import { mulberry32 } from '../logic/rng';
-import { pickStranding } from '../logic/rescue';
+import { tripStranding } from '../logic/rescue';
 import { explorerAxolotl, restoreSnacks, tripStart } from '../logic/session';
 import { steerFromKeys, type KeyState } from '../logic/steering';
 import { startDashVelocity, stepSwim, swimIntensity, type SwimBounds, type SwimState } from '../logic/swimPhysics';
@@ -313,7 +313,7 @@ export class SwimScene extends Phaser.Scene {
     });
     this.setItems(restoreSnacks(zone.collectibles, start.eatenSnacks));
     this.allDone = this.snackTally.left === 0;
-    const stranding = pickStranding(start.ownedMorphs, start.waitingStranded, zone.strandingPlaces, start.tripSeed);
+    const stranding = tripStranding(start.ownedMorphs, start.waitingStranded, zone.strandingPlaces, start.tripSeed);
     this.trip = createTrip(zone, LEGS, start.banked, start.tripSeed, {
       stranding,
       factCardsSeen: start.factCardsSeen,

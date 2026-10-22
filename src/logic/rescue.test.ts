@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AxolotlSex } from './axolotlLook';
 import { REAL_MORPHS, STARTER_MORPH, axolotlFindId, isAxolotlFindId, type RealMorphId } from './morphs';
 import { placeTreasures } from './placement';
 import {
   RESCUE,
+  STRANDING_CHANCE,
   createRescue,
   pickStranding,
   reachesRescue,
@@ -11,6 +12,8 @@ import {
   sendRescueBack,
   stepFollower,
   stepToRest,
+  strandingRoll,
+  tripStranding,
   waitingAfterTrip,
   type RescueState,
   type Stranding,
@@ -246,6 +249,99 @@ describe('pickStranding', () => {
       expect(stranding).toEqual(pickStranding(owned, null, STRANDING_PLACES, seed));
       expect(stranding?.met).toBe(false);
     }
+  });
+});
+
+describe('tripStranding and strandingRoll', () => {
+  const owned: RealMorphId[] = [STARTER_MORPH];
+  const SEEDS_10000 = Array.from({ length: 10000 }, (_, i) => i);
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('strands an axolotl on about 30% of trips with nobody waiting, over seeds 0..9999', () => {
+    expect(STRANDING_CHANCE).toBe(0.3);
+    const stranded = SEEDS_10000.filter((seed) => tripStranding(owned, null, STRANDING_PLACES, seed) !== null).length;
+    expect(Math.abs(stranded / SEEDS_10000.length - STRANDING_CHANCE)).toBeLessThanOrEqual(0.02);
+  });
+
+  it('is deterministic for a trip seed, and the roll is a number from 0 to 1', () => {
+    for (let seed = 0; seed < 200; seed++) {
+      expect(tripStranding(owned, null, STRANDING_PLACES, seed)).toEqual(tripStranding(owned, null, STRANDING_PLACES, seed));
+      const roll = strandingRoll(seed);
+      expect(strandingRoll(seed)).toBe(roll);
+      expect(roll).toBeGreaterThanOrEqual(0);
+      expect(roll).toBeLessThan(1);
+    }
+  });
+
+  it('strands the axolotl pickStranding picks for that seed, the roll drawing from its own stream', () => {
+    let strandedSeeds = 0;
+    for (let seed = 0; seed < 1000; seed++) {
+      const stranding = tripStranding(owned, null, STRANDING_PLACES, seed);
+      expect(stranding !== null).toBe(strandingRoll(seed) < STRANDING_CHANCE);
+      if (stranding === null) continue;
+      strandedSeeds += 1;
+      expect(stranding).toEqual(pickStranding(owned, null, STRANDING_PLACES, seed));
+    }
+    expect(strandedSeeds).toBeGreaterThan(0);
+  });
+
+  it('returns null once all seven non-starter morphs are owned, for each possible starter', () => {
+    for (const starter of REAL_MORPHS.map((morph) => morph.id)) {
+      const others = REAL_MORPHS.map((morph) => morph.id).filter((id) => id !== starter);
+      for (let seed = 0; seed < 200; seed++) {
+        expect(tripStranding([starter, ...others], null, STRANDING_PLACES, seed)).toBeNull();
+      }
+    }
+  });
+
+  it('always brings back a valid waiting record met, with no roll, on every seed including roll misses', () => {
+    const waiting = { morph: 'melanoid' as const, sex: 'boy' as const, placeId: STRANDING_PLACES[1].id };
+    const seeds = Array.from({ length: 200 }, (_, i) => i);
+    expect(seeds.some((seed) => strandingRoll(seed) >= STRANDING_CHANCE)).toBe(true);
+    for (const seed of seeds) {
+      const stranding = tripStranding(owned, waiting, STRANDING_PLACES, seed);
+      expect(stranding).toEqual(pickStranding(owned, waiting, STRANDING_PLACES, seed));
+      expect(stranding).toMatchObject({ morph: 'melanoid', sex: 'boy', placeId: waiting.placeId, met: true });
+      expect(tripStranding(owned, waiting, STRANDING_PLACES, seed, 0)).toEqual(stranding);
+    }
+  });
+
+  it.each([
+    ['whose morph is now owned', { morph: 'wild' as const, sex: 'girl' as const, placeId: STRANDING_PLACES[0].id }],
+    ['whose place is unknown', { morph: 'melanoid' as const, sex: 'girl' as const, placeId: 'canal/strand-gone' }],
+  ])('rolls for a waiting record %s, like nobody waiting', (_label, waiting) => {
+    const ownedWithWild: RealMorphId[] = [STARTER_MORPH, 'wild'];
+    for (let seed = 0; seed < 500; seed++) {
+      expect(tripStranding(ownedWithWild, waiting, STRANDING_PLACES, seed)).toEqual(
+        tripStranding(ownedWithWild, null, STRANDING_PLACES, seed),
+      );
+    }
+  });
+
+  it('never strands with chance 0 and always strands with chance 1', () => {
+    for (let seed = 0; seed < 500; seed++) {
+      expect(tripStranding(owned, null, STRANDING_PLACES, seed, 0)).toBeNull();
+      expect(tripStranding(owned, null, STRANDING_PLACES, seed, 1)).toEqual(pickStranding(owned, null, STRANDING_PLACES, seed));
+    }
+  });
+
+  it.each([-0.01, 1.01, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    'throws for chance %f, outside 0 to 1, with or without a waiting record',
+    (chance) => {
+      const waiting = { morph: 'melanoid' as const, sex: 'boy' as const, placeId: STRANDING_PLACES[1].id };
+      expect(() => tripStranding(owned, null, STRANDING_PLACES, 1, chance)).toThrow(RangeError);
+      expect(() => tripStranding(owned, waiting, STRANDING_PLACES, 1, chance)).toThrow(RangeError);
+    },
+  );
+
+  it('never calls Math.random', () => {
+    const random = vi.spyOn(Math, 'random');
+    tripStranding(owned, null, STRANDING_PLACES, 1);
+    strandingRoll(1);
+    expect(random).not.toHaveBeenCalled();
   });
 });
 

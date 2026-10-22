@@ -56,7 +56,7 @@ The way out of an area, which stays closed until every snack in the area is eate
 One of up to 3 rewards for beating an area, kept forever once earned.
 
 **Special treasure**:
-The one treasure per area that earns a star when the area is beaten with it owned.
+The one treasure per area that earns a star when the area is beaten with it owned; always Common or Rare, and the canal's is the Toy boat.
 
 **Snack**:
 A worm or bug the axolotl eats by touching it with its head; not a trip find, it speeds up regrowth while a leg is missing, and every snack must be eaten to open the exit.
@@ -69,6 +69,10 @@ The axolotl's first power, a short burst of speed that works with any number of 
 
 **Hiding spot**:
 A place in an area where a treasure can hide, picked fresh each trip for each treasure picked for that trip, from that treasure's pool. Each rarity's spots sit in their own risk band, nearer a threat (a predator's patrol route or a leg-costing hazard) the rarer the treasure (B10).
+
+**Treasure slot**:
+One of an area's set number of places for a treasure on each trip (6 in the canal), with its rarity picked by chance from the trip seed; lost treasures and the **Special treasure** are extras on top of the slots (B4).
+_Avoid_: Slot alone (that means a Wearable **Slot**)
 
 **Dash pot**:
 A pot only Tail Dash can break, where Legendary treasures hide.
@@ -180,7 +184,7 @@ The look option for how grown-up an axolotl looks: Baby, Young, or Grown-up; it 
 How big an axolotl is drawn: Small, Medium, or Large; looks only, with the same hit area and speed at every size.
 
 **Stranded axolotl**:
-A lost axolotl in the canal waiting to be rescued.
+A lost axolotl in the canal waiting to be rescued, on about 3 trips in 10; one left waiting always comes back on the next trip in that area.
 
 **Rescue**:
 Leading a stranded axolotl home and banking it.
@@ -245,7 +249,7 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - Each **Area** adds at most one new **Hazard** or **Predator** and at most one new timing or puzzle element that no earlier **Area** has
 - Area 1 is always unlocked, and beating Area N (earning its exit **Star**) unlocks Area N+1; there are no star gates, and any unlocked **Area** can be replayed from the **Area map**
 - The **Exit** opens only when every **Snack** in its **Area** is eaten
-- Each **Trip** picks a few unbanked **Treasures** and one **Hiding spot** per **Treasure** picked for that **Trip**, from that **Treasure**'s pool; no two **Treasures** share a spot in one **Trip**
+- Each **Trip** fills its **Area**'s **Treasure slots** with unbanked **Treasures**, each slot's **Rarity** picked by chance, plus any lost **Treasures** and the unbanked **Special treasure** on top, and one **Hiding spot** per **Treasure** picked for that **Trip**, from that **Treasure**'s pool; no two **Treasures** share a spot in one **Trip**
 - A Legendary **Treasure** always hides in a **Dash pot**, which only **Tail Dash** can break
 - A **Hint sparkle** marks a hidden **Treasure** when the axolotl is near, and each of the last 3 **Snacks**
 - A **Predator** is a **Hazard**, and a **Tilapia** is a **Predator**; a **Predator**'s **Telegraph** always comes before its **Lunge**, and only one **Predator** in an **Area** warns or lunges at a time
@@ -263,7 +267,7 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - Each axolotl has exactly one **Boy or girl**, fixed after creation; text about one axolotl says he or she, never they or it
 - **Restyle** can change **Tail**, **Body**, **Age**, **Size**, face, gills, spots, and name, can put on or take off the applied **Dream colour**, and can change the **Outfit** on the Outfit tab, but never the **Real morph** or **Boy or girl**; none of these looks changes the hit area or speed, and only the **Perks** of the **Explorer**'s **Outfit** change play, on a **Trip**
 - The starter axolotl's **Real morph**, chosen in the **Character creator**, decides which seven **Real morphs** can be **Stranded axolotls**
-- Each **Trip** has at most one **Stranded axolotl**; a **Rescue** moves it into the **Home Tank** and unlocks its **Morph** in the **Collection Book**
+- Each **Trip** has at most one **Stranded axolotl**, on about 3 trips in 10, or always when one is left waiting from the last **Trip** in that **Area**; a **Rescue** moves it into the **Home Tank** and unlocks its **Morph** in the **Collection Book**
 - The **Treasure Chest** lists every catalogue **Decoration**, **Wearable**, and **Dream colour**: owned ones in full with their **Rarity** glow, unfound ones as silhouettes with "???" and a **Rarity** hint, and a line per section saying what its items are for; placed **Decorations** live in the **Home Tank**
 - The **Collection Book** holds one entry per **Real morph**, each with a **Fun-fact card**, and lists **Dream colours** separately as not found in nature
 
@@ -279,7 +283,7 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - "zone" (the README, the PRD problem statement and A1, and `src/logic/zone.ts` with `ZoneLayout` and `ZONE_W`) and **Area** both name the canal: resolved: **Area** is the domain term; "zone" is the swim-test name that survives in code.
 - "collectible" means **Snacks** in code (`src/logic/collectibles.ts`, `CollectibleKind = 'worm' | 'bug'`) but the PRD defines a **Treasure** as "a hidden collectible": resolved: say **Snack** for worms and bugs and **Treasure** for hidden finds; avoid "collectible" for either in new work.
 - "hint star" (art style guide 7e) and "hint sparkle" (PRD B7 and H3) name the same cue: resolved: **Hint sparkle**, matching the PRD; the PRD lists an art style guide follow-up (issue #31). Art style guide 7e now covers the snack sparkle (#31); the guide-wide "hint star" to "hint sparkle" rename is a follow-up.
-- "slot" means a Wearable **Slot** in the PRD, but code also has `LegSlot` (one leg in the legs display) and `CardSlot`: resolved: **Slot** alone always means a Wearable slot; say "leg" for legs.
+- "slot" means a Wearable **Slot** in the PRD, but code also has `LegSlot` (one leg in the legs display) and `CardSlot`: resolved: **Slot** alone always means a Wearable slot; say "leg" for legs. A **Treasure slot** is not a Wearable **Slot**: always say "treasure slot" in full.
 - "Go home" and **Carried home** both end a trip and both send the axolotl home: resolved: distinct concepts; **Go home** is the player's choice and banks first (`wentHome` in code), **Carried home** follows the fourth **Leg loss** and loses unbanked finds (`carriedHome` in code).
 - "sex" in code (`AxolotlSex`, the `sex` look field, the `sex` styler step) means **Boy or girl** in the UI: resolved: say **Boy or girl** in UI text and docs; "sex" survives in code only.
 - "Tail" names three things: the **Tail** look option (tail length), the Tail Wearable **Slot**, and **Tail Dash**: resolved: **Tail** alone means the look option; say "Tail slot" for the Wearable slot and **Tail Dash** for the power.

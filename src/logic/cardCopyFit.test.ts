@@ -473,7 +473,7 @@ describe('first-find card copy fit (C15)', () => {
 
 describe('area beaten card copy fit (H5, H8)', () => {
   it('names the canal special treasure and keeps the short body one line at 460x320', () => {
-    expect(WORST_STARS.specialName).toBe('Castle tower');
+    expect(WORST_STARS.specialName).toBe('Toy boat');
     const canvas = { cssW: 460, cssH: 320 };
     const text = arrivalText({
       reason: 'areaBeaten',

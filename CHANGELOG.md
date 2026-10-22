@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-10-22
+
+### Changed
+
+- Trip treasures: each trip in Area 1 now has 6 treasure slots. Each slot picks its rarity by chance: Common 65%, Rare 27%, Epic 6%, Legendary 2%. No trip has a guaranteed Epic or Legendary. When a rarity has nothing left, the slot takes the next more common rarity, then the next rarer one. Lost treasures and the special treasure come on top of the slots (#94).
+- Area 1's special treasure is now the Toy boat (Rare) instead of the Castle tower (Epic). Star 2 in Area 1 now needs the Toy boat. Stars already earned are kept, so a player who earned Star 2 with the Castle tower keeps it (#93).
+- A stranded axolotl now appears on about 3 trips in 10 (30%) in every area. One you met but did not bring home still waits for your next trip (#94).
+
 ## [0.24.0] - 2026-10-22
 
 ### Added

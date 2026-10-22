@@ -209,9 +209,9 @@ function tripArea(areaId: string, area: Readonly<AreaData> | undefined): Readonl
  * given `banked` find ids (de-duplicated). `tripSeed` picks a few unbanked treasures for this trip
  * with the area's trip treasure tuning, and places each in a spot from its pool, with every Dash
  * pot sealed (PRD B4). `options.returnedFinds`, the treasures lost on the last trip, are always
- * placed; the area's special treasure is always placed while unbanked, outside the mix (B9, H6).
- * The area is `options.area` when given, else the AREAS entry for the source's area id. Spots on
- * the rarity's risky side of the area's threats are picked more often (issue #70).
+ * placed; the area's special treasure is always placed while unbanked, on top of the treasure
+ * slots (B9, H6). The area is `options.area` when given, else the AREAS entry for the source's
+ * area id. Spots on the rarity's risky side of the area's threats are picked more often (issue #70).
  * `options.stranding` sets this trip's stranded axolotl, waiting at its place; it never changes the
  * placement. Throws when a pool cannot be placed or `options.area` is not the source's area.
  */
@@ -265,9 +265,9 @@ export function createTrip(
  * swim path, leg count and banked finds, an empty Trip Bag and nothing found. `tripSeed` (default:
  * the seed after this trip's) picks this trip's treasures afresh, and every Dash pot is sealed
  * again. The treasures returned when carried home (`ending.returned`) come back this trip, always
- * placed, and the area's special treasure is always placed while unbanked, outside the mix. It
- * passes no other trip options, so the new trip has no stranded axolotl and every fact card counts
- * as unseen. Any other phase returns the input state unchanged.
+ * placed, and the area's special treasure is always placed while unbanked, on top of the treasure
+ * slots. It passes no other trip options, so the new trip has no stranded axolotl and every fact
+ * card counts as unseen. Any other phase returns the input state unchanged.
  */
 export function newTrip(state: TripState, tripSeed: number = nextTripSeed(state.tripSeed)): TripState {
   if (state.phase !== 'ended') return state;

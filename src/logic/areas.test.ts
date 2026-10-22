@@ -22,9 +22,9 @@ import {
   type AreaData,
   type NewThings,
 } from './areas';
-import { CANAL_TREASURES } from './catalogue';
+import { CANAL_TREASURES, treasureById } from './catalogue';
 import { createCollectibles, snackDriftMaxSpeed, snackX, snackY } from './collectibles';
-import { DEV_TEST_AREA } from './devAreas';
+import { DEV_AREAS, DEV_TEST_AREA } from './devAreas';
 import { TILAPIA_FACT, type FactCard } from './factCards';
 import type { ElementType, HazardType } from './hazards';
 import { TILAPIA_SPECIES, type PredatorSpecies } from './predators';
@@ -102,7 +102,18 @@ describe('CANAL_AREA', () => {
 
   it('names a special treasure from the canal catalogue', () => {
     expect(CANAL_TREASURES.map((treasure) => treasure.id)).toContain(CANAL_AREA.specialTreasureId);
+    expect(CANAL_AREA.specialTreasureId).toBe('canal/toy-boat');
   });
+
+  it.each([...AREAS, ...DEV_AREAS].map((area) => [area.id, area] as const))(
+    'gives %s a Common or Rare special treasure that the area hides',
+    (_id, area) => {
+      const special = treasureById(area.specialTreasureId);
+      expect(special).toBeDefined();
+      expect(area.layout.treasures).toContain(special);
+      expect(['common', 'rare']).toContain(special?.rarity);
+    },
+  );
 
   it.each(ALL_SEEDS)('names a special treasure the zone hides for seed %i', (seed) => {
     const finds = buildCanalZone(seed).finds;
