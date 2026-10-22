@@ -3,7 +3,14 @@ import type { DrawnBody } from './collectibles';
 import { createEncounter, createEncounterContext } from './encounter';
 import { meetsTilapia, type FactCard } from './factCards';
 import type { HazardSpawn, HazardType } from './hazards';
-import { TILAPIA_SPECIES, type PredatorSpecies } from './predators';
+import {
+  HERON_SPECIES,
+  TILAPIA_SPECIES,
+  predatorVisible,
+  type PredatorRoute,
+  type PredatorSpecies,
+  type PredatorState,
+} from './predators';
 import { GAME_EVENTS, REGISTRY_KEYS } from './gameEvents';
 import { createLegs, isProtected, presentCount, tryHit, type LegsState } from './legs';
 import { CANAL_AREA } from './areas';
@@ -41,7 +48,7 @@ import { PLASTIC_WORM, isQueasy, spitLanding, type SpitAvoid } from './plasticWo
 import { RESCUE, pickStranding, type Stranding } from './rescue';
 import { TRIP_EVENTS, TRIP_REGISTRY_KEYS, type TripSnapshot } from './tripEvents';
 import { withStars } from './stars';
-import { CARRY, FINDS, LEGS, PLASTIC_WORMS, SNACK_REACH, SWIM, TILAPIA, tripTreasureTuning } from './tuning';
+import { CARRY, FINDS, HERON, LEGS, PLASTIC_WORMS, SNACK_REACH, SWIM, TILAPIA, tripTreasureTuning } from './tuning';
 import { buildCanalZone, swimBounds, type HidingSpot, type Point } from './zone';
 
 const DT = 1 / 60;
@@ -1540,6 +1547,89 @@ describe('meeting hazards and predators', () => {
     }
     expect(ruleStep).toBeGreaterThanOrEqual(0);
     expect(dueStep).toBe(ruleStep);
+  });
+});
+
+describe('meeting the heron (#98)', () => {
+  const heronRoute: PredatorRoute = {
+    id: 'heron-stretch',
+    waypoints: [
+      { x: 600, y: 100 },
+      { x: 1400, y: 100 },
+    ],
+    species: HERON_SPECIES,
+  };
+  const heronZone: TripSource = { ...zone, finds: [], spots: [], tilapiaRoutes: [], predatorRoutes: [heronRoute] };
+  const deep: Point = { x: 1000, y: 290 };
+  const underStart: Point = { x: 600, y: 130 };
+
+  function heronOf(state: TripState): PredatorState {
+    return state.encounter.predators[state.encounter.predators.length - 1];
+  }
+
+  function heronShown(state: TripState): boolean {
+    return predatorVisible(heronOf(state), HERON);
+  }
+
+  function heronGap(pos: Point): number {
+    const heron = heronOf(createTrip(heronZone)).pos;
+    return Math.hypot(heron.x - pos.x, heron.y - pos.y);
+  }
+
+  it('is never met while away, even beside its shadow spot, then met once it is shown in range', () => {
+    expect(heronGap(underStart)).toBeLessThanOrEqual(HERON_SPECIES.meetRange);
+    let state = createTrip(heronZone);
+    for (let i = 0; i < 20 * 60 && heronShown(state); i++) state = stepAt(state, deep).state;
+    expect(heronShown(state)).toBe(false);
+    expect(state.met).toEqual([]);
+    state = stepAt(state, deep).state;
+    expect(heronOf(state).pos).toEqual(heronRoute.waypoints[0]);
+
+    let awaySteps = 0;
+    while (!heronShown(state) && awaySteps < 20 * 60) {
+      expect(state.met).toEqual([]);
+      expect(tripSnapshot(state).factCardDue).toBeNull();
+      state = stepAt(state, underStart).state;
+      awaySteps += 1;
+    }
+    expect(awaySteps).toBeGreaterThan(1);
+    expect(heronShown(state)).toBe(true);
+    expect(state.met).toEqual(['heron']);
+    expect(tripSnapshot(state).factCardDue).toBe('heron');
+  });
+
+  it('is not met while shown but out of its meet range', () => {
+    let state = createTrip(heronZone);
+    let shownSteps = 0;
+    for (let i = 0; i < 8 * 60; i++) {
+      state = stepAt(state, deep).state;
+      if (heronShown(state)) shownSteps += 1;
+    }
+    expect(shownSteps).toBeGreaterThan(0);
+    expect(state.met).toEqual([]);
+  });
+
+  it('freezes the heron cycle while paused and on the banking card', () => {
+    const findHeron: TripSource = { ...findZone, predatorRoutes: [heronRoute] };
+    const swimming = walk(createTrip(findHeron), [spotA, spotB, outside]).state;
+    const swimCycle = heronOf(swimming).cycleTime;
+    expect(swimCycle).toBeGreaterThan(0);
+    for (const dt of PAUSE_DTS) {
+      const paused = stepTrip(swimming, { axolotlPos: outside, reduced: false, dashing: false }, dt, ctx);
+      expect(paused.state).toBe(swimming);
+      expect(heronOf(paused.state).cycleTime).toBe(swimCycle);
+    }
+
+    const bankedTrip = stepAt(swimming, home).state;
+    expect(bankedTrip.phase).toBe('banked');
+    const heldCycle = heronOf(bankedTrip).cycleTime ?? 0;
+    for (const dt of [DT, 1, ...PAUSE_DTS]) {
+      const held = stepTrip(bankedTrip, { axolotlPos: home, reduced: false, dashing: false }, dt, ctx);
+      expect(held.state).toBe(bankedTrip);
+      expect(heronOf(held.state).cycleTime).toBe(heldCycle);
+    }
+    const resumed = stepAt(keepExploring(bankedTrip), home).state;
+    expect(heronOf(resumed).cycleTime).toBeCloseTo(heldCycle + DT, 9);
   });
 });
 

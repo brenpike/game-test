@@ -8,6 +8,7 @@ import {
   cardIconRowWidth,
   cardTextWidth,
   cardTightTextWidth,
+  factCardBodyWrapWidths,
   fitCard,
   homeTitleWrapWidth,
   iconRowsSize,
@@ -171,6 +172,15 @@ describe('card text widths', () => {
   it('never gives a title less room than the body text', () => {
     for (const cssW of [0, 100, 320, 340, 460, 483, 484, 500, 800, 1280]) {
       expect(cardTightTextWidth(cssW)).toBeGreaterThanOrEqual(cardTextWidth(cssW));
+    }
+  });
+
+  it('gives a fact card body the body width, then the tight width', () => {
+    expect(factCardBodyWrapWidths(320)).toEqual([240, 264]);
+    expect(factCardBodyWrapWidths(460)).toEqual([380, 404]);
+    expect(factCardBodyWrapWidths(568)).toEqual([420, 420]);
+    for (const cssW of [0, 100, 320, 340, 460, 483, 484, 500, 800, 1280]) {
+      expect(factCardBodyWrapWidths(cssW)).toEqual([cardTextWidth(cssW), cardTightTextWidth(cssW)]);
     }
   });
 

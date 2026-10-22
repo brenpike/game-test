@@ -1,6 +1,7 @@
 /**
  * Phaser glue for the pond props (issue #75): bakes the hollow log, the plastic
- * worms and the queasy cheek tint into CanvasTextures.
+ * worms and the queasy cheek tint into CanvasTextures, and on request the dusk
+ * pond's root arch and firefly (issue #98).
  * Visual only. No game state, no input, no physics.
  *
  * Same rules as textures.ts: every texture is drawn at `bakeScale` through the
@@ -9,13 +10,18 @@
  */
 import * as Phaser from 'phaser';
 import {
+  FIREFLY_TEX,
   PLASTIC_WORM_TEX,
   QUEASY_CHEEKS_TEX,
+  ROOT_ARCH_TEX,
   logTextureSize,
+  paintFirefly,
   paintLogBack,
   paintLogFront,
   paintPlasticWorm,
   paintQueasyCheeks,
+  paintRootArchBack,
+  paintRootArchFront,
   type PlasticWormColour,
 } from './drawPond';
 import { bake, type TexInfo } from './textures';
@@ -27,12 +33,31 @@ export const POND_TEX = {
   plasticWormPink: 'pond-plastic-worm-pink',
   plasticWormBlue: 'pond-plastic-worm-blue',
   queasyCheeks: 'pond-queasy-cheeks',
+  rootArchBack: 'pond-root-arch-back',
+  rootArchFront: 'pond-root-arch-front',
+  firefly: 'pond-firefly',
 } as const;
 
 /** Size of the hollow log, logical px, to the ink edge. Pass the cave's CAVE_W and CAVE_H to place it where the cave goes. */
 export interface PondLogSize {
   readonly caveW: number;
   readonly caveH: number;
+}
+
+/** Optional extras for {@link bakePondTextures}. Each is off when left out. */
+export interface PondBakeOptions {
+  /** Bake the root arch (a look whose cave kind is 'rootArch'). */
+  readonly rootArch?: boolean;
+  /** Bake the firefly (a look with fireflies). */
+  readonly firefly?: boolean;
+}
+
+/** The root arch back and front: the same frame, ROOT_ARCH_TEX (184 x 140 logical, 180 x 136 to the ink edge). */
+export interface RootArchTextures {
+  /** Hollow (depth DEPTH.caveBack). Anchor is the top centre: place it at ROOT_ARCH_ANCHOR_Y under a bank chunk. */
+  readonly back: TexInfo;
+  /** Roots and soil mat (depth DEPTH.caveFront). Same frame and anchor as `back`. */
+  readonly front: TexInfo;
 }
 
 export interface PondTextures {
@@ -52,13 +77,35 @@ export interface PondTextures {
    * 1 / info.scale times the axolotl's own scale.
    */
   readonly queasyCheeks: TexInfo;
+  /** The dusk pond's root arch, or null when not asked for. */
+  readonly rootArch: RootArchTextures | null;
+  /**
+   * The firefly (FIREFLY_TEX, 24 x 24 logical), or null when not asked for. Anchor is
+   * the glowing tail's centre; place fireflies in FIREFLY_BAND above the water.
+   */
+  readonly firefly: TexInfo | null;
+}
+
+/** Bake the root arch back and front at `bakeScale`. */
+function bakeRootArch(scene: Phaser.Scene, bakeScale: number): RootArchTextures {
+  return {
+    back: bake(scene, POND_TEX.rootArchBack, ROOT_ARCH_TEX, bakeScale, paintRootArchBack),
+    front: bake(scene, POND_TEX.rootArchFront, ROOT_ARCH_TEX, bakeScale, paintRootArchFront),
+  };
 }
 
 /**
  * Bake the pond props at `bakeScale` texture pixels per logical unit. The log is
  * `caveW` x `caveH` logical px (the cave's size), so it takes the cave's place.
+ * `extras` adds the root arch and the firefly; with none, it bakes exactly the five
+ * pond props.
  */
-export function bakePondTextures(scene: Phaser.Scene, bakeScale: number, log: PondLogSize): PondTextures {
+export function bakePondTextures(
+  scene: Phaser.Scene,
+  bakeScale: number,
+  log: PondLogSize,
+  extras: PondBakeOptions = {},
+): PondTextures {
   const logFrame = logTextureSize(log.caveW, log.caveH);
   return {
     logBack: bake(scene, POND_TEX.logBack, logFrame, bakeScale, (ctx) => paintLogBack(ctx, log.caveW, log.caveH)),
@@ -72,5 +119,7 @@ export function bakePondTextures(scene: Phaser.Scene, bakeScale: number, log: Po
       ),
     },
     queasyCheeks: bake(scene, POND_TEX.queasyCheeks, QUEASY_CHEEKS_TEX, bakeScale, paintQueasyCheeks),
+    rootArch: extras.rootArch === true ? bakeRootArch(scene, bakeScale) : null,
+    firefly: extras.firefly === true ? bake(scene, POND_TEX.firefly, FIREFLY_TEX, bakeScale, paintFirefly) : null,
   };
 }

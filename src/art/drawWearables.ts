@@ -1,10 +1,11 @@
 /**
- * Worn looks of the fifteen Wearables (guide 6a, 6i, 6q; PRD C10, F9, F13): the
+ * Worn looks of the twenty Wearables (guide 6a, 6i, 6q; PRD C10, F9, F13): the
  * canal's Sun hat, Shell necklace, Heart glasses, Golden bow, Tank top, Diving
- * tank, Stripy socks and Flippers, and the pond's Lily flower crown, Pond-weed
+ * tank, Stripy socks and Flippers, the pond's Lily flower crown, Pond-weed
  * scarf, Dragonfly glasses, Raincoat, Ladybug backpack, Rainbow dragonfly wings
- * and Froggy boots, painted on the anchors and footprints of
- * drawAxolotlParts.ts. Each is the 7e catalogue icon's design re-fitted to its
+ * and Froggy boots, and the pond Area 3's Feather cap, Lily-pad socks,
+ * Water-lily shirt, Pearl tail charm and Firefly cape, painted on the anchors
+ * and footprints of drawAxolotlParts.ts. Each is the 7e catalogue icon's design re-fitted to its
  * footprint, with ink widths never scaled (guide 4b). Every worn silhouette
  * (`shape`, inkedShape and `blob`) uses the item ink ITEM_LW 2.0 (#88): thinner
  * than the guide's 2.8, so more of each small item shows as colour in the swim
@@ -24,7 +25,12 @@
  *
  * The pond looks (issue #75) keep the canal painters draw-identical and add
  * only internal detail colours of their own (the rainbow veins of the wings);
- * every outer fill is a treasurePalette.ts colour shared with the icons.
+ * every outer fill is a treasurePalette.ts colour shared with the icons. The
+ * Area 3 looks (issue #98) follow the same rules: the footprints and painters'
+ * shapes are the pond's, the outer fills are treasurePalette.ts colours, and
+ * the only colours of their own are internal details (ink at the stripe alpha,
+ * the firefly glow). None of them moves on its own: a worn look is still, and
+ * only the rig (the swim, the legs, the tail wave) moves it.
  */
 import { ell, inkMany, line, seg, shape } from './canvasKit';
 import { roundedPolygon, type Pt } from './drawBadges';
@@ -64,6 +70,10 @@ import {
   DRAGONFLY_WING,
   FLIPPER_CUFF,
   FLIPPER_FILL,
+  FEATHER_CAP_FILL,
+  FEATHER_FILL,
+  FIREFLY_CAPE_FILL,
+  FIREFLY_GLOW,
   FLIPPER_RIDGE,
   FROGGY_BOOT,
   GEM_GLINT,
@@ -75,9 +85,12 @@ import {
   LADYBUG_SHELL,
   LILY_CROWN_FLOWER,
   LILY_CROWN_LEAF,
+  LILY_PAD_SOCK_FILL,
   NECKLACE_CORD,
   NECKLACE_SHELL,
   PAINT_SHELL_RIDGE,
+  PEARL_CHARM_CORD,
+  PEARL_FILL,
   POND_WEED_SCARF,
   RAINCOAT_FILL,
   SOCK_FILL,
@@ -85,6 +98,8 @@ import {
   TANK_TOP_FILL,
   TREASURE_SHINE,
   TREASURE_STAR,
+  WATER_LILY_BLOSSOM,
+  WATER_LILY_SHIRT_FILL,
   WORN_FAR_INK_MIX,
 } from './treasurePalette';
 
@@ -108,11 +123,17 @@ export type WearableArtSlug =
   | 'raincoat'
   | 'ladybug-backpack'
   | 'rainbow-dragonfly-wings'
-  | 'froggy-boots';
+  | 'froggy-boots'
+  | 'feather-cap'
+  | 'lily-pad-socks'
+  | 'water-lily-shirt'
+  | 'pearl-tail-charm'
+  | 'firefly-cape';
 
 /**
- * The slot each art slug is worn in (guide 6i). The canal's eight come first and
- * the pond's seven after them, so WEARABLE_ART_SLUGS finds each slot's canal slug first.
+ * The slot each art slug is worn in (guide 6i). The canal's eight come first, the
+ * pond's seven after them and the pond Area 3's five last, so WEARABLE_ART_SLUGS
+ * finds each slot's canal slug first.
  */
 export const WEARABLE_ART_SLOT: Readonly<Record<WearableArtSlug, WearableSlot>> = {
   'sun-hat': 'head',
@@ -130,6 +151,11 @@ export const WEARABLE_ART_SLOT: Readonly<Record<WearableArtSlug, WearableSlot>> 
   'ladybug-backpack': 'back',
   'rainbow-dragonfly-wings': 'back',
   'froggy-boots': 'feet',
+  'feather-cap': 'head',
+  'lily-pad-socks': 'socks',
+  'water-lily-shirt': 'shirt',
+  'pearl-tail-charm': 'tail',
+  'firefly-cape': 'back',
 };
 
 /** The canal's art slug of each slot, in slot order (PRD order): one per slot, though a slot can hold more than one slug. */
@@ -189,6 +215,8 @@ export function wearsOnLegs(outfit: ArtOutfit): boolean {
 // ---------------------------------------------------------------------------
 // Ink and drawing helpers
 // ---------------------------------------------------------------------------
+
+const TAU = Math.PI * 2;
 
 /** Wearable silhouette ink (guide 4b, `shape`; guide 6i line rules), thinned from 2.8 for #88. */
 const ITEM_LW = 2;
@@ -473,6 +501,61 @@ function paintLilyCrown(ctx: CanvasRenderingContext2D): void {
   for (const bloom of CROWN_BLOOMS) ctx.fill(ellipsePath(bloom.x, bloom.y, BLOOM_CENTRE_R, BLOOM_CENTRE_R));
   ctx.restore();
   shine(ctx, CROWN_LEAF_X0 + 0.2, CROWN_LINE_Y + CROWN_LINE_SLOPE * (CROWN_LEAF_X0 - 31) - 0.3, 1.6, 0.6, -0.2);
+}
+
+// ---------------------------------------------------------------------------
+// Head: Feather cap (Common)
+// ---------------------------------------------------------------------------
+
+/** The cap's cuff, fill: x and y edges and corner radius. Ink included it reaches x 16.2 and the head-top limit y -19.6. */
+const CAP_CUFF = { x0: 18.2, x1: 40.2, y0: -27.2, y1: -21.6, r: 2.4 } as const;
+/** The plume: its base on the cuff's front, its tip up and forward, and half its width. */
+const PLUME_BASE: Pt = { x: 36, y: -26.4 };
+const PLUME_TIP: Pt = { x: 43.4, y: -40.2 };
+const PLUME_WIDE = 3.1;
+/** How far along the plume's axis, from the base, the quill runs. */
+const QUILL_REACH = 0.88;
+
+/**
+ * Common (issue #98): a #c4e6ff beanie, a domed crown over a rolled cuff, with a
+ * pale #dde8ff feather plume tucked into the front of the cuff and sweeping up and
+ * forward past the dome. Crown, cuff and plume are one `blob` silhouette (ink 2.0
+ * all outside, no ink across a joint); the plume is painted last, over the crown,
+ * so it reads as tucked in front: a thin ink line (1.2) marks the cuff's top edge
+ * and the plume's edge where it lies over the cap, and a quill line runs down the
+ * plume. One shine on the crown; no trim. Ink included it fills HEAD_FOOTPRINT: x
+ * 16.2 to about 45.5, lowest ink y -19.6, the plume tip about y -42.2. The cuff
+ * rests on the head top, far from the gill stems (x 16 or more), the lash reach
+ * circles and the cheek heart.
+ */
+function paintFeatherCap(ctx: CanvasRenderingContext2D): void {
+  const dome = new Path2D();
+  dome.moveTo(19.6, -24.6);
+  dome.bezierCurveTo(19.2, -33, 23.4, -37.4, 29.2, -37.4);
+  dome.bezierCurveTo(35, -37.4, 38.8, -33, 38.4, -24.6);
+  dome.closePath();
+  const cuff = roundRectPath(CAP_CUFF.x0, CAP_CUFF.y0, CAP_CUFF.x1, CAP_CUFF.y1, CAP_CUFF.r);
+  const dx = PLUME_TIP.x - PLUME_BASE.x;
+  const dy = PLUME_TIP.y - PLUME_BASE.y;
+  const plume = leafPath(PLUME_BASE.x + dx / 2, PLUME_BASE.y + dy / 2, Math.hypot(dx, dy) / 2, PLUME_WIDE, Math.atan2(dy, dx));
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 2 * ITEM_LW;
+  for (const path of [dome, cuff, plume]) ctx.stroke(path);
+  ctx.fillStyle = FEATHER_CAP_FILL;
+  ctx.fill(dome);
+  ctx.fill(cuff);
+  ctx.lineWidth = BAND_LW;
+  ctx.stroke(line(CAP_CUFF.x0 + 1.2, CAP_CUFF.y0, CAP_CUFF.x1 - 1.2, CAP_CUFF.y0));
+  ctx.fillStyle = FEATHER_FILL;
+  ctx.fill(plume);
+  for (const under of [dome, cuff]) {
+    ctx.save();
+    ctx.clip(under);
+    ctx.stroke(plume);
+    ctx.restore();
+  }
+  ctx.stroke(line(PLUME_BASE.x, PLUME_BASE.y, PLUME_BASE.x + dx * QUILL_REACH, PLUME_BASE.y + dy * QUILL_REACH));
+  shine(ctx, 24.2, -31.6, 1, 2.6, 0.3);
 }
 
 // ---------------------------------------------------------------------------
@@ -895,6 +978,57 @@ function paintGoldenBow(ctx: CanvasRenderingContext2D): void {
 }
 
 // ---------------------------------------------------------------------------
+// Tail: Pearl tail charm (Epic)
+// ---------------------------------------------------------------------------
+
+/** The pearl: centre and radius in the Tail frame (y' + into the core), the centre a little into the core as the bow's knot is. */
+const PEARL_CENTRE: Pt = { x: 0, y: 1.8 };
+const PEARL_R = 6.4;
+/** The chain from the pearl up to the gem: half width, and its top and bottom y'. */
+const CHAIN_HALF = 1.2;
+const CHAIN_TOP = -10.4;
+const CHAIN_BOTTOM = -3.4;
+/** The gem sits on the chain's top. */
+const CHARM_GEM_Y = -11.4;
+/** The two ribbon tails hang from the pearl: tip-side (toward the tail tip, x' negative) shorter, head-side longer. */
+const CHARM_RIBBON_TIP: readonly number[] = [-1.6, 2.6, -7.6, 5.4, -5.8, 9.6, -0.6, 5.4];
+const CHARM_RIBBON_HEAD: readonly number[] = [1.6, 2.6, 10.2, 5.4, 8.4, 10.2, 0.6, 5.4];
+
+/**
+ * Epic (issue #98): a big #fbe6f2 pearl on a short soft pink chain under one aqua
+ * gem (radius 2.5, the Epic detail), with two soft pink ribbon tails hanging from
+ * the pearl, one merged `blob` silhouette (ink 2.0 all outside the fill). A thin ink
+ * ring (1.2) round the pearl sets it off the ribbons, one shine sits on the pearl;
+ * no trim. Painted in the Tail frame (x' along the local tail direction toward
+ * the head, y' down): the gem and chain stand above the tail's top edge, the pearl
+ * rests on it and the ribbons hang over the core. The tip-side ribbon is short, as
+ * the Golden bow's, so a Dream marker star past it stays clear at every swim phase.
+ * Everything, ink included, stays within TAIL_SLOT_REACH of the anchor.
+ */
+function paintPearlTailCharm(ctx: CanvasRenderingContext2D): void {
+  const toPts = (xy: readonly number[]): Pt[] => {
+    const out: Pt[] = [];
+    for (let i = 0; i < xy.length; i += 2) out.push({ x: xy[i], y: xy[i + 1] });
+    return out;
+  };
+  const pearl = ellipsePath(PEARL_CENTRE.x, PEARL_CENTRE.y, PEARL_R, PEARL_R);
+  silhouette(ctx, [
+    { path: roundedPolygon(toPts(CHARM_RIBBON_TIP), [0.8, 2, 2, 0.8]), fill: PEARL_CHARM_CORD },
+    { path: roundedPolygon(toPts(CHARM_RIBBON_HEAD), [0.8, 2, 2, 0.8]), fill: PEARL_CHARM_CORD },
+    {
+      path: roundedPolygon(toPts([-CHAIN_HALF, CHAIN_TOP, CHAIN_HALF, CHAIN_TOP, CHAIN_HALF, CHAIN_BOTTOM, -CHAIN_HALF, CHAIN_BOTTOM]), 0.6),
+      fill: PEARL_CHARM_CORD,
+    },
+    { path: pearl, fill: PEARL_FILL },
+  ]);
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = BAND_LW;
+  ctx.stroke(pearl);
+  shine(ctx, PEARL_CENTRE.x - 2.4, PEARL_CENTRE.y - 2.4, 1, 2, 0.5);
+  gem(ctx, 0, CHARM_GEM_Y, GLASSES_GEM, BAND_LW);
+}
+
+// ---------------------------------------------------------------------------
 // Shirt: Tank top (Common)
 // ---------------------------------------------------------------------------
 
@@ -997,6 +1131,75 @@ function paintRaincoat(ctx: CanvasRenderingContext2D, look: AxolotlArtLook): voi
   inkedShape(ctx, outline.body, RAINCOAT_FILL, () => {
     const y0 = e.cy + e.ry * RAINCOAT_STRIPE_AT;
     trimBand(ctx, { x0: outline.xr - 1, x1: outline.xf + 1, y0, y1: y0 + RAINCOAT_STRIPE_H }, BOAT_TRIM, true, RAINCOAT_STRIPE_LW);
+  });
+  shirtShine(ctx, outline);
+}
+
+// ---------------------------------------------------------------------------
+// Shirt: Water-lily shirt (Rare)
+// ---------------------------------------------------------------------------
+
+/** The hem band's place: how far down the torso half it starts (share of the inset ry below the centre line), and its height. */
+const LILY_SHIRT_BAND_AT = 0.56;
+const LILY_SHIRT_BAND_H = 3;
+/** Thin ink lines on each side of the hem band, as the Raincoat's. */
+const LILY_SHIRT_BAND_LW = 0.6;
+/** The chest blossom: its centre a share of the way along the Shirt and above the torso centre line (share of the inset ry). */
+const LILY_SHIRT_BLOSSOM_AT = 0.5;
+const LILY_SHIRT_BLOSSOM_RISE = 0.2;
+/** The blossom's petals: five, each centred this far out, with these radii, and the ink round the blossom. */
+const LILY_SHIRT_PETAL_OUT = 2.6;
+const LILY_SHIRT_PETAL_RX = 2.25;
+const LILY_SHIRT_PETAL_RY = 1.7;
+/** The dark centre's radius. */
+const LILY_SHIRT_CENTRE_R = 0.9;
+const LILY_SHIRT_BLOSSOM_OL = 0.6;
+/** The gap kept between the blossom's ink and the neckline's ink (2.0 wide, its front at the apex x). */
+const LILY_SHIRT_BLOSSOM_GAP = 0.2;
+
+/**
+ * Rare (issue #98): the Tank top's silhouette (the whole Shirt footprint, `shape`
+ * 2.0, the neckline arc) in #d0ecff, with a #ffe0ee five-petal water-lily blossom
+ * on the chest (a small `blob` of merged petals, ink 0.6 outside, a dark centre of
+ * ink at alpha 0.30) and one hem band in the boat yellow (the one trim band,
+ * between two 0.6 ink lines, clipped inside the silhouette), one shine placed as
+ * on the Tank top. The blossom and band sit inside the silhouette, so they never
+ * reach the torso edge band, the front line, the tail root or a leg, and the
+ * blossom is clear of the band and of the shine. No sleeves.
+ */
+function paintWaterLilyShirt(ctx: CanvasRenderingContext2D, look: AxolotlArtLook): void {
+  const outline = shirtOutline(look);
+  const e = shirtGeometry(look).inset;
+  inkedShape(ctx, outline.body, WATER_LILY_SHIRT_FILL, () => {
+    const y0 = e.cy + e.ry * LILY_SHIRT_BAND_AT;
+    trimBand(ctx, { x0: outline.xr - 1, x1: outline.xf + 1, y0, y1: y0 + LILY_SHIRT_BAND_H }, BOAT_TRIM, true, LILY_SHIRT_BAND_LW);
+    // Half way along the Shirt, or further back where the neckline would cut the blossom: its front stays behind the neckline apex.
+    const reach = LILY_SHIRT_PETAL_OUT + LILY_SHIRT_PETAL_RX + LILY_SHIRT_BLOSSOM_OL;
+    const cx = Math.min(
+      outline.xr + (outline.xf - outline.xr) * LILY_SHIRT_BLOSSOM_AT,
+      shirtGeometry(look).neckline.apexX - 2 * outline.half - reach - LILY_SHIRT_BLOSSOM_GAP,
+    );
+    const cy = e.cy - e.ry * LILY_SHIRT_BLOSSOM_RISE;
+    const petals = Array.from({ length: 5 }, (_, k) => {
+      const a = -Math.PI / 2 + (k * 2 * Math.PI) / 5;
+      return ellipsePath(
+        cx + Math.cos(a) * LILY_SHIRT_PETAL_OUT,
+        cy + Math.sin(a) * LILY_SHIRT_PETAL_OUT,
+        LILY_SHIRT_PETAL_RX,
+        LILY_SHIRT_PETAL_RY,
+        a,
+      );
+    });
+    silhouette(
+      ctx,
+      petals.map((path) => ({ path, fill: WATER_LILY_BLOSSOM })),
+      LILY_SHIRT_BLOSSOM_OL,
+    );
+    ctx.save();
+    ctx.globalAlpha = SOCK_STRIPE_ALPHA;
+    ctx.fillStyle = INK;
+    ctx.fill(ellipsePath(cx, cy, LILY_SHIRT_CENTRE_R, LILY_SHIRT_CENTRE_R));
+    ctx.restore();
   });
   shirtShine(ctx, outline);
 }
@@ -1195,6 +1398,84 @@ function paintRainbowWings(ctx: CanvasRenderingContext2D, box: BackFrameBox): vo
 }
 
 // ---------------------------------------------------------------------------
+// Back: Firefly cape (Legendary)
+// ---------------------------------------------------------------------------
+
+/** Where the cape's upper edge starts to fall toward the rear (share of the length from the rear), and how far down its rear end starts. */
+const CAPE_FALL_AT = 0.45;
+const CAPE_REAR_DROP = 3.4;
+/** The cape's collar corner radius, and the scallops of its rear hem: how many, and how far the points sit in from the rear end. */
+const CAPE_COLLAR_R = 3;
+const CAPE_SCALLOPS = 3;
+const CAPE_SCALLOP_IN = 1;
+/** The gold clasp band at the front: from this far behind the front end to this far, and the star's place behind the front. */
+const CAPE_BAND_FROM = 4.4;
+const CAPE_BAND_TO = 2;
+/** Thin ink lines on each side of the clasp band, as the Golden bow's. */
+const CAPE_BAND_LW = 0.6;
+const CAPE_STAR_BACK = 9;
+const CAPE_STAR_V = -7;
+/** A firefly: glow radius and body radii. */
+const FIREFLY_GLOW_R = 2;
+const FIREFLY_BODY_RX = 0.9;
+const FIREFLY_BODY_RY = 0.8;
+/** The four fireflies: three in a low row at these shares of the length from the rear, one high at the rear; (share, v). */
+const CAPE_FIREFLIES: readonly { readonly share: number; readonly lead: number; readonly v: number }[] = [
+  { share: 0.19, lead: 0, v: -1 },
+  { share: 0.42, lead: 0, v: -1 },
+  { share: 0.62, lead: 0, v: -1 },
+  { share: 0, lead: 3, v: -5.4 },
+];
+
+/**
+ * Legendary (issue #98): a #d4d9ff cape lying along the back, tall and rounded at
+ * the front where it is clasped, its upper edge flat and then falling toward the
+ * rear, and a scalloped hem of three scallops at the rear end. It is one `blob`
+ * silhouette (ink 2.0 all outside the fill) in the Back box of the look, ink
+ * included: the fills are ITEM_LW inside the box, so the cape runs the box's length
+ * and stands 13 proud of the back. The Legendary trim is one #ffc12e clasp band
+ * across the front (between two 0.6 ink lines, clipped inside the cape) and one
+ * static 4-point star (R 3, outline 1.2) behind it. Four fireflies sit still on the
+ * cape: a yellow glow disc round a small ink body, no motion and no glow animation;
+ * the glow is a flat fill inside the silhouette, so it is free. One shine. Painted
+ * in the Back frame (x' along the torso edge toward the snout, y' + into the
+ * body), so its lower edge, y' +1, keeps off the Shirt.
+ */
+function paintFireflyCape(ctx: CanvasRenderingContext2D, box: BackFrameBox): void {
+  const top = box.minV + ITEM_LW;
+  const bottom = box.maxV - ITEM_LW;
+  const rear = box.minU + ITEM_LW;
+  const front = box.maxU - ITEM_LW;
+  const length = front - rear;
+  const cape = new Path2D();
+  cape.moveTo(front, bottom);
+  cape.lineTo(front, top + CAPE_COLLAR_R);
+  cape.quadraticCurveTo(front, top, front - CAPE_COLLAR_R, top);
+  cape.lineTo(rear + length * CAPE_FALL_AT, top);
+  cape.bezierCurveTo(rear + length * 0.3, top, rear + length * 0.12, top + 1, rear + CAPE_SCALLOP_IN, top + CAPE_REAR_DROP);
+  const step = (bottom - (top + CAPE_REAR_DROP)) / CAPE_SCALLOPS;
+  for (let i = 0; i < CAPE_SCALLOPS; i++) {
+    const y0 = top + CAPE_REAR_DROP + step * i;
+    cape.quadraticCurveTo(rear - CAPE_SCALLOP_IN, y0 + step / 2, rear + CAPE_SCALLOP_IN, y0 + step);
+  }
+  cape.closePath();
+  silhouette(ctx, [{ path: cape, fill: FIREFLY_CAPE_FILL }]);
+  ctx.save();
+  ctx.clip(cape);
+  trimBand(ctx, { x0: front - CAPE_BAND_FROM, x1: front - CAPE_BAND_TO, y0: top - 1, y1: bottom + 1 }, GOLD_TRIM, false, CAPE_BAND_LW);
+  ctx.restore();
+  for (const fly of CAPE_FIREFLIES) {
+    const u = rear + length * fly.share + fly.lead + FIREFLY_GLOW_R + CAPE_SCALLOP_IN;
+    ctx.fillStyle = FIREFLY_GLOW;
+    ctx.fill(ellipsePath(u, fly.v, FIREFLY_GLOW_R, FIREFLY_GLOW_R));
+    ctx.fillStyle = INK;
+    ctx.fill(ellipsePath(u, fly.v, FIREFLY_BODY_RX, FIREFLY_BODY_RY));
+  }
+  shine(ctx, rear + 3.4, top + 3, 1.1, 0.8, -0.1);
+  legendStar(ctx, front - CAPE_STAR_BACK, CAPE_STAR_V, BAND_LW);
+}
+
+// ---------------------------------------------------------------------------
 // Socks: Stripy socks (Common), in leg space
 // ---------------------------------------------------------------------------
 
@@ -1223,6 +1504,46 @@ function paintStripySocks(ctx: CanvasRenderingContext2D, frame: LegSlotFrame, to
   for (const u of [l - 3, l - 5.4, l - 7.8]) ctx.fill(rectPath(u - 0.8, -SOCK_SLEEVE_W / 2, u + 0.8, SOCK_SLEEVE_W / 2));
   ctx.restore();
   shape(ctx, footPadPath(frame), tone(SOCK_FILL), ITEM_LW);
+  shine(ctx, l + 5, -4.5, 2.2, 0.9);
+}
+
+// ---------------------------------------------------------------------------
+// Socks: Lily-pad socks (Common), in leg space
+// ---------------------------------------------------------------------------
+
+/** A lily-pad mark: a pad of radius `r` at (cx, cy), turned by `rot`, with a wedge notch cut to its centre, as one path. */
+function padMarkPath(cx: number, cy: number, r: number, rot: number): Path2D {
+  const notch = 0.75;
+  const start = 0.2;
+  const p = new Path2D();
+  p.moveTo(cx, cy);
+  p.ellipse(cx, cy, r, r * 0.78, rot, start, start + TAU - notch);
+  p.closePath();
+  return p;
+}
+
+/**
+ * Common (issue #98): a #bff0a0 sleeve (colour 11.6, `ol` 2.4) from the leg root to
+ * the leg end, a foot pad over the toes (the Stripy socks' pad), two notched lily-pad
+ * marks (ink at alpha 0.30, the same colour darkened, not a second colour: one
+ * across the sleeve, one on the pad, clipped to it) and one shine on the pad. In
+ * leg space: u along the leg from the root, v across it. Far legs use the fill
+ * mixed toward ink; the marks, ink and shine are as on the near legs.
+ */
+function paintLilyPadSocks(ctx: CanvasRenderingContext2D, frame: LegSlotFrame, tone: Tone): void {
+  const l = frame.length;
+  const t = frame.toeLength;
+  inkMany(ctx, [seg(line(0, 0, l, 0), SOCK_SLEEVE_W, tone(LILY_PAD_SOCK_FILL), SOCK_SLEEVE_OL)]);
+  ctx.save();
+  ctx.globalAlpha = SOCK_STRIPE_ALPHA;
+  ctx.fillStyle = INK;
+  ctx.fill(padMarkPath(l - 5.4, 0, 3, 2.4));
+  ctx.restore();
+  inkedShape(ctx, footPadPath(frame), tone(LILY_PAD_SOCK_FILL), () => {
+    ctx.globalAlpha = SOCK_STRIPE_ALPHA;
+    ctx.fillStyle = INK;
+    ctx.fill(padMarkPath(l + (t + 6) / 2 + 1.2, 2.6, 3.2, 0.6));
+  });
   shine(ctx, l + 5, -4.5, 2.2, 0.9);
 }
 
@@ -1394,6 +1715,20 @@ export function paintBodyWearable(
       inFrame(ctx, back.frame, () => paintRainbowWings(ctx, back.box));
       break;
     }
+    case 'feather-cap':
+      paintFeatherCap(ctx);
+      break;
+    case 'water-lily-shirt':
+      paintWaterLilyShirt(ctx, look);
+      break;
+    case 'pearl-tail-charm':
+      inFrame(ctx, tailSlotFrame(axolotlBodyGeometry(look).tail, swim, tailAmp), () => paintPearlTailCharm(ctx));
+      break;
+    case 'firefly-cape': {
+      const back = backFootprint(look);
+      inFrame(ctx, back.frame, () => paintFireflyCape(ctx, back.box));
+      break;
+    }
     default:
       break;
   }
@@ -1415,6 +1750,7 @@ export function paintLegWearables(ctx: CanvasRenderingContext2D, outfit: ArtOutf
   ctx.save();
   inFrame(ctx, frame, () => {
     if (socks === 'stripy-socks') paintStripySocks(ctx, frame, tone);
+    if (socks === 'lily-pad-socks') paintLilyPadSocks(ctx, frame, tone);
     if (feet === 'flippers') paintFlippers(ctx, frame, tone);
     if (feet === 'froggy-boots') paintFroggyBoots(ctx, frame, tone);
   });

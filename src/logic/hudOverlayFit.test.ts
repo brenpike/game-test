@@ -430,6 +430,19 @@ describe('HUD overlay fit', () => {
     for (const text of SNACK_BANNER_TEXTS) expect(BANNER_TEXTS.snackBanner.length).toBeGreaterThanOrEqual(text.length);
   });
 
+  it.each(['Firefly gold Paint shell', 'Firefly string lights', 'Golden lotus throne'])(
+    'places the Area 3 "%s" find toast alone on every supported canvas without Go home',
+    (name) => {
+      const toast = TREASURE_TOASTS.find((candidate) => candidate.name === name);
+      if (toast === undefined) throw new Error(`no find toast ${name}`);
+      const problems = allHudCases()
+        .filter((hud) => !hud.goHomeVisible)
+        .flatMap((hud) => unplacedProblems(runCase(hud, { ids: ['findToast'], toast }), 'findToast'));
+      expect(problems).toEqual([]);
+    },
+    FIT_TIMEOUT_MS,
+  );
+
   it(
     'keeps every placed overlay clear of the controls, the other overlays and the middle, at its text size, on every supported canvas',
     () => {

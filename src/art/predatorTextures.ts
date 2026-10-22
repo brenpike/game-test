@@ -1,6 +1,6 @@
 /**
- * Phaser glue for the tilapia predator and leg loss (issue #7): bakes the
- * tilapia, effect and leg icon painters into CanvasTextures.
+ * Phaser glue for the predators and leg loss (issues #7 and #98): bakes the
+ * tilapia, heron, effect and leg icon painters into CanvasTextures.
  * Visual only. No game state, no input, no physics.
  *
  * Same rules as textures.ts: every texture is drawn at `bakeScale`, so a
@@ -16,6 +16,13 @@ import {
   paintPoof,
   paintProtectedHalo,
 } from './drawEffects';
+import {
+  HERON_BEAK_TEX,
+  HERON_SHADOW_TEX,
+  paintHeronBeakDip,
+  paintHeronShadow,
+  type HeronShadowTone,
+} from './drawHeron';
 import {
   LEG_ICON_SIZE,
   REGROW_MARK_SIZE,
@@ -46,9 +53,19 @@ export const PREDATOR_TEX = {
   halo: 'fx-halo',
   carryBubble: 'fx-carry-bubble',
   regrowMark: 'leg-regrow-mark',
+  heronShadow: 'heron-shadow',
+  heronShadowWarning: 'heron-shadow-warning',
+  heronBeakDip: 'heron-beak-dip',
 } as const;
 
+/** Fixed key of each heron shadow tone. */
+const HERON_SHADOW_KEYS: Readonly<Record<HeronShadowTone, string>> = {
+  glide: PREDATOR_TEX.heronShadow,
+  warning: PREDATOR_TEX.heronShadowWarning,
+};
+
 const TILAPIA_POSES: readonly TilapiaPose[] = ['swim', 'windup', 'lunge', 'rest'];
+const HERON_SHADOW_TONES: readonly HeronShadowTone[] = ['glide', 'warning'];
 const LEG_ICON_KINDS: readonly LegIconKind[] = ['present', 'outline'];
 
 export const tilapiaKey = (pose: TilapiaPose): string => `tilapia-${pose}`;
@@ -77,9 +94,16 @@ export interface PredatorTextures {
   readonly legIcons: Readonly<Record<LegIconKind, TexInfo>>;
   /** Regrow sparkle. Anchor is the top-left of the REGROW_MARK_SIZE box. */
   readonly regrowMark: TexInfo;
+  /**
+   * Heron shadow, one still frame per tone (HERON_SHADOW_TEX), facing right. The
+   * warning tone is the same shape, darker. Anchor is the body centre.
+   */
+  readonly heronShadow: Readonly<Record<HeronShadowTone, TexInfo>>;
+  /** Heron beak dip (HERON_BEAK_TEX). Anchor is the beak tip; the neck runs off the top edge. */
+  readonly heronBeakDip: TexInfo;
 }
 
-/** Bake the tilapia, effect and leg icon textures into the scene's texture manager. */
+/** Bake the tilapia, heron, effect and leg icon textures into the scene's texture manager. */
 export function bakePredatorTextures(scene: Phaser.Scene, bakeScale: number): PredatorTextures {
   const info: Record<string, TexInfo> = {};
   const add = (t: TexInfo): TexInfo => {
@@ -107,5 +131,13 @@ export function bakePredatorTextures(scene: Phaser.Scene, bakeScale: number): Pr
   const regrowSize: TexSize = { w: REGROW_MARK_SIZE, h: REGROW_MARK_SIZE, originX: 0, originY: 0 };
   const regrowMark = add(bake(scene, PREDATOR_TEX.regrowMark, regrowSize, bakeScale, paintRegrowMark));
 
-  return { info, tilapia, alert, glint, poof, halo, carryBubble, legIcons, regrowMark };
+  const heronShadow = {} as Record<HeronShadowTone, TexInfo>;
+  for (const tone of HERON_SHADOW_TONES) {
+    heronShadow[tone] = add(
+      bake(scene, HERON_SHADOW_KEYS[tone], HERON_SHADOW_TEX, bakeScale, (ctx) => paintHeronShadow(ctx, tone)),
+    );
+  }
+  const heronBeakDip = add(bake(scene, PREDATOR_TEX.heronBeakDip, HERON_BEAK_TEX, bakeScale, paintHeronBeakDip));
+
+  return { info, tilapia, alert, glint, poof, halo, carryBubble, legIcons, regrowMark, heronShadow, heronBeakDip };
 }

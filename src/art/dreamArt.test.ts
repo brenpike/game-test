@@ -53,6 +53,7 @@ const SOLID_IDS: readonly DreamLookId[] = [
   'bubblegum',
   'midnight-blue',
   'lily-green',
+  'firefly-gold',
 ];
 const DARK_IDS: readonly DreamLookId[] = ['midnight-blue', 'galaxy', 'tie-dye-galaxy'];
 const RIM_IDS: readonly DreamLookId[] = ['midnight-blue', 'rainbow', 'galaxy', 'tie-dye-galaxy'];
@@ -93,6 +94,34 @@ function mixChannels(from: string, to: string, t: number): number[] {
   return a.map((v, i) => v + (b[i] - v) * t);
 }
 
+/** Linear-light sRGB channel (IEC 61966-2-1), as OKLab takes it. */
+function linearChannel(value: number): number {
+  const c = value / 255;
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+}
+
+/** OKLab coordinates of a #rrggbb colour (Ottosson 2020, https://bottosson.github.io/posts/oklab/). */
+function oklabOf(hex: string): [number, number, number] {
+  const [r, g, b] = rgbOf(hex).map(linearChannel);
+  const [l, m, s] = [
+    0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b,
+    0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b,
+    0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b,
+  ].map(Math.cbrt);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+}
+
+/** Euclidean OKLab difference of two #rrggbb colours. */
+function oklabDifference(a: string, b: string): number {
+  const pa = oklabOf(a);
+  const pb = oklabOf(b);
+  return Math.hypot(pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]);
+}
+
 function expectNear(hex: string, expected: number[], label: string): void {
   rgbOf(hex).forEach((v, i) => expect(Math.abs(v - expected[i]), `${label} channel ${i}`).toBeLessThanOrEqual(1));
 }
@@ -104,9 +133,9 @@ function everyPair(): [string, DreamLookId, MorphPalette][] {
 }
 
 describe('Dream colour slots (guide 3f)', () => {
-  it('has the thirteen Dream colours with the swatch body colours', () => {
-    expect(DREAM_IDS).toHaveLength(13);
-    expect(DREAM_IDS.at(-1)).toBe('lily-green');
+  it('has the fourteen Dream colours with the swatch body colours', () => {
+    expect(DREAM_IDS).toHaveLength(14);
+    expect(DREAM_IDS.slice(-2)).toEqual(['lily-green', 'firefly-gold']);
     expect(DREAM_IDS).toEqual(Object.keys(DREAM_SWATCH));
     for (const id of DREAM_IDS) expect(DREAM_SLOTS[id].body, id).toBe(DREAM_SWATCH[id].body);
   });
@@ -135,6 +164,55 @@ describe('Dream colour slots (guide 3f)', () => {
     expect(contrastRatio(s.body, INK)).toBeGreaterThanOrEqual(9);
     expect(DREAM_SWATCH['lily-green']).toEqual({ body: '#ddf274', pattern: 'plain', marks: [], dark: false });
     expect(dreamPalette(MORPH_PALETTES.leucistic, 'lily-green').extras).toEqual({ spot: 'rgba(43,35,80,0.30)' });
+  });
+
+  it('gives Firefly gold the 3f mixes of its two picks, a 9:1 body and a plain light swatch (issue #98)', () => {
+    const s = DREAM_SLOTS['firefly-gold'];
+    expect([s.body, s.gillNearStem]).toEqual(['#ffd52a', '#e08214']);
+    expectNear(s.farSide, mixChannels(s.body, INK, 0.12), 'far side');
+    expectNear(s.fin, mixChannels(s.body, WHITE, 0.4), 'fin');
+    expectNear(s.belly, mixChannels(s.body, WHITE, 0.55), 'belly');
+    expectNear(s.gillNearFilament, mixChannels(s.gillNearStem, WHITE, 0.22), 'near filament');
+    expectNear(s.gillFarStem, mixChannels(s.gillNearStem, INK, 0.1), 'far stem');
+    expectNear(s.gillFarFilament, mixChannels(s.gillNearFilament, INK, 0.08), 'far filament');
+    expect(contrastRatio(s.body, INK)).toBeCloseTo(10.15, 2);
+    expect(Math.sqrt(contrastRatio(s.body, INK))).toBeCloseTo(3.19, 2);
+    expect(contrastRatio(s.body, MORPH_PALETTES.leucistic.eye)).toBeCloseTo(12.28, 2);
+    expect(relativeLuminance(s.body)).toBeCloseTo(0.69, 2);
+    expect(DREAM_SWATCH['firefly-gold']).toEqual({ body: '#ffd52a', pattern: 'plain', marks: [], dark: false });
+    expect(dreamPalette(MORPH_PALETTES.leucistic, 'firefly-gold').extras).toEqual({ spot: 'rgba(43,35,80,0.30)' });
+  });
+
+  it('keeps Firefly gold apart from every other Dream colour in greyscale and in colour (PRD F15)', () => {
+    const body = DREAM_SLOTS['firefly-gold'].body;
+    const separation = Object.fromEntries(
+      DREAM_IDS.filter((id) => id !== 'firefly-gold').map((id) => [
+        id,
+        [
+          Number(contrastRatio(body, DREAM_SLOTS[id].body).toFixed(2)),
+          Number(oklabDifference(body, DREAM_SLOTS[id].body).toFixed(3)),
+        ],
+      ]),
+    );
+    expect(separation).toEqual({
+      mint: [1.08, 0.166],
+      'sky-blue': [1.08, 0.244],
+      lavender: [1.11, 0.25],
+      'sunset-orange': [1.12, 0.109],
+      bubblegum: [1.11, 0.225],
+      'midnight-blue': [6.97, 0.582],
+      hearts: [1.24, 0.116],
+      'tie-dye': [1.18, 0.102],
+      iridescent: [1.06, 0.24],
+      rainbow: [1.96, 0.268],
+      galaxy: [8.27, 0.611],
+      'tie-dye-galaxy': [7.93, 0.598],
+      'lily-green': [1.15, 0.079],
+    });
+    for (const [id, [grey, colour]] of Object.entries(separation)) {
+      expect(grey, `${id} greyscale`).toBeGreaterThanOrEqual(1.05);
+      expect(colour, `${id} OKLab`).toBeGreaterThanOrEqual(0.075);
+    }
   });
 });
 
@@ -490,7 +568,7 @@ describe('Dream marker (guide 4e, 6p)', () => {
 });
 
 describe('Dream greyscale cues (PRD F15, guide 6p)', () => {
-  it('leaves exactly the seven solids plain', () => {
+  it('leaves exactly the eight solids plain', () => {
     const plain = DREAM_IDS.filter((id) => DREAM_SWATCH[id].pattern === 'plain');
     expect(plain).toEqual(SOLID_IDS);
   });

@@ -38,6 +38,20 @@ export const PLASTIC_WORM_FACT: Readonly<FactCard> = Object.freeze({
   body: 'Bits of plastic in the water can look like food. Animals sometimes eat them by mistake, and it makes them feel sick. Keeping rubbish out of the water helps.',
 });
 
+/**
+ * The heron fact card, shown the first time the axolotl meets a heron (PRD C13).
+ * Source (owner to verify): National Audubon Society, Guide to North American Birds, Great Egret,
+ * https://www.audubon.org/field-guide/bird/great-egret ("Forages mostly by standing or walking in
+ * shallow water ... waiting for fish to come near"). Herons around Xochimilco's canals: owner to
+ * verify against a Xochimilco bird list (for example CONABIO or the Parque Ecologico de Xochimilco).
+ */
+export const HERON_FACT: Readonly<FactCard> = Object.freeze({
+  id: 'heron',
+  name: 'Heron',
+  title: 'Meet the heron',
+  body: "Herons are tall birds that live around Xochimilco's canals. They stand very still and watch the water for food. Axolotls are safer down deep, away from the surface.",
+});
+
 /** Label of the button that closes a fact card. */
 export const FACT_CARD_OK_LABEL = 'OK';
 
@@ -54,6 +68,13 @@ export const FACT_CARD_UNFOUND_HINT = unfoundFactCardHint('the canal');
  * Larger than the tilapia lunge range so the card can show before the first lunge.
  */
 export const TILAPIA_MEET_RANGE = 180;
+
+/**
+ * Centre distance in px from the heron's shadow within which the axolotl meets a heron, while the
+ * heron is shown. Provisional; tune in play. The same as the tilapia's, and larger than the heron's
+ * 60 px reach band so the card can show before the first dip.
+ */
+export const HERON_MEET_RANGE = 180;
 
 /**
  * Whether the axolotl at `pos` meets a tilapia: `pos` is outside the safe area (edges count as

@@ -9,6 +9,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { CAVE_H, CAVE_TEX, CAVE_W } from './drawFinds';
 import { CHEEK_HEART_ZONE, FAR_EYE_ZONE, NEAR_EYE_ZONE } from './drawAxolotlParts';
 import {
+  FIREFLY_BAND,
+  FIREFLY_BODY,
+  FIREFLY_GLOW,
+  FIREFLY_HALO_INNER,
+  FIREFLY_HALO_OUTER,
+  FIREFLY_TEX,
+  FIREFLY_WING,
   LOG_BARK,
   LOG_CUT,
   LOG_INTERIOR,
@@ -20,17 +27,53 @@ import {
   QUEASY_CHEEK_INNER,
   QUEASY_CHEEK_LOCAL,
   QUEASY_CHEEK_OUTER,
+  ROOT_ARCH_ANCHOR_Y,
+  ROOT_ARCH_H,
+  ROOT_ARCH_INTERIOR,
+  ROOT_ARCH_OPENING,
+  ROOT_ARCH_TEX,
+  ROOT_ARCH_W,
+  ROOT_BARK,
+  ROOT_MAT,
+  ROOT_ROOTLET,
+  ROOT_SHINE,
   logGeometry,
   logTextureSize,
+  paintFirefly,
   paintLogBack,
   paintLogFront,
   paintPlasticWorm,
   paintQueasyCheeks,
+  paintRootArchBack,
+  paintRootArchFront,
   type PlasticWormColour,
 } from './drawPond';
 import { paintWorm } from './drawProps';
-import { STREAM_BAND, paintBackgroundChunk, type ChunkOptions } from './drawScenery';
 import {
+  STREAM_BAND,
+  STREAM_STONE_OVERFLOW,
+  STREAM_TAPER,
+  paintBackgroundChunk,
+  streamColumnFor,
+  type ChunkOptions,
+} from './drawScenery';
+import {
+  AREA_LOOK_IDS,
+  DUSK_AIR_WASH,
+  DUSK_BED_BOTTOM,
+  DUSK_BED_LIP,
+  DUSK_BED_TOP,
+  DUSK_HAZE,
+  DUSK_MUD,
+  DUSK_REED_LEAF,
+  DUSK_REED_STALK,
+  DUSK_REED_STALK_LIGHT,
+  DUSK_SKY_HORIZON,
+  DUSK_SKY_TOP,
+  DUSK_SURFACE_LINE,
+  DUSK_WATER_DEEP,
+  DUSK_WATER_MID,
+  DUSK_WATER_SHALLOW,
   POND_BED_BOTTOM,
   POND_BED_LIP,
   POND_BED_TOP,
@@ -46,11 +89,14 @@ import {
   POND_WATER_SHALLOW,
   HABITAT_LOOK_IDS,
   habitatLook,
+  isAreaLookId,
   isHabitatLookId,
+  type AreaLookId,
 } from './habitatLook';
 import { DEPTH } from './layers';
 import {
   AXANTHIC,
+  BANK_SOIL,
   BED_BOTTOM,
   BED_LIP,
   BED_TOP,
@@ -63,11 +109,17 @@ import {
   LW,
   MELANOID,
   MUD,
+  PEBBLE_B,
   PEBBLE_COLOURS,
+  PEBBLE_D,
   PEBBLE_E,
   PEBBLE_SHINE,
   PIEBALD,
+  SKY_HORIZON,
+  SKY_TOP,
+  SOIL_DETAIL,
   SUN,
+  SURF,
   SURFACE_LINE,
   SURFACE_LINE_WIDTH,
   TILAPIA_BELLY,
@@ -85,6 +137,8 @@ import {
 } from './palette';
 import { POND_TEX, bakePondTextures } from './pondTextures';
 import { areaBgKey, areaDeepBgKey, bakeAreaScenery, type AreaSceneryOptions } from './textures';
+import { POND_2_LAYOUT } from '../logic/pond2Layout';
+import { POND_LAYOUT } from '../logic/pondLayout';
 
 vi.mock('phaser', () => ({}));
 
@@ -319,6 +373,11 @@ function fingerprint(rec: Recording): string {
   return hashString(JSON.stringify(rec.calls));
 }
 
+/** {@link fingerprint} plus the fill, stroke, width and alpha every draw was painted under, so a colour change shows too. */
+function styledFingerprint(rec: Recording): string {
+  return hashString(JSON.stringify([rec.calls, rec.ops]));
+}
+
 /** The path commands of a recorded op. */
 const cmdsOf = (op: Op): unknown[][] => op.args[0] as unknown[][];
 const hasCmd = (op: Op, name: string): boolean => Array.isArray(op.args[0]) && cmdsOf(op).some((c) => c[0] === name);
@@ -433,10 +492,39 @@ describe('the canal chunk is unchanged', () => {
     expect(fingerprint(chunk(opts, seed))).toBe(expected);
   });
 
+  /** Styled fingerprints (colours included) of the same canal chunks, painted by the code before the dusk look existed (issue #98). */
+  const CANAL_STYLED: readonly string[] = ['18d47ad439a3db', '11055af293477e', '19571c25f534e8', '03839d6e81f3c4', '14f9012eaade3e'];
+
+  it.each(CANAL_FINGERPRINTS.map(([name, opts, seed], i) => [name, opts, seed, CANAL_STYLED[i]] as const))(
+    '%s paints the same colours as it did',
+    (_name, opts, seed, expected) => {
+      expect(styledFingerprint(chunk(opts, seed))).toBe(expected);
+    },
+  );
+
   it('ignores the edge flags and an explicit canal look', () => {
     const opts = { index: 2, hasSun: false, hasBank: false } as const;
     const base = fingerprint(chunk(opts, 2));
     expect(fingerprint(chunk({ ...opts, look: 'canal', edgeLeft: true, edgeRight: true }, 2))).toBe(base);
+  });
+});
+
+describe('the pond chunk is unchanged', () => {
+  /** Fingerprints of the pond chunk painted by the code before the dusk look existed (issue #98). */
+  const POND_FINGERPRINTS: readonly (readonly [string, Omit<ChunkOptions, 'rand'>, number, string])[] = [
+    [
+      'single, sun, bank capped left, stream, both edges',
+      { index: 0, hasSun: true, hasBank: true, bankCapLeft: true, bankCapRight: false, look: 'pond', stream: true, edgeLeft: true, edgeRight: true },
+      1,
+      '00a54b1c245175',
+    ],
+    ['top, bank capped right, stream', { row: 'top', index: 1, hasSun: false, hasBank: true, bankCapRight: true, look: 'pond', stream: true }, 3, '06b622c482b30c'],
+    ['middle', { row: 'middle', index: 1, hasSun: false, hasBank: false, look: 'pond' }, 4, '0812d89af1afdf'],
+    ['bottom, both edges', { row: 'bottom', index: 3, hasSun: false, hasBank: false, look: 'pond', edgeLeft: true, edgeRight: true }, 5, '07130c1d7fd900'],
+  ];
+
+  it.each(POND_FINGERPRINTS)('%s paints exactly what it did', (_name, opts, seed, expected) => {
+    expect(styledFingerprint(chunk(opts, seed))).toBe(expected);
   });
 });
 
@@ -447,9 +535,9 @@ describe('the canal chunk is unchanged', () => {
 const GRADIENT_SAMPLES = 40;
 const PAIR_FLOOR = 3;
 
-/** Every colour a cue object can sit on in the pond, sampled: water, bed, haze over both, mud dots, edge reeds. */
-function pondBackgrounds(): { name: string; hex: string }[] {
-  const pond = habitatLook('pond');
+/** Every colour a cue object can sit on in a pond look, sampled: water, bed, haze over both, mud dots, edge reeds. */
+function pondBackgrounds(id: AreaLookId = 'pond'): { name: string; hex: string }[] {
+  const pond = habitatLook(id);
   const water = sampleGradient(
     [
       [0, pond.water.shallow],
@@ -688,6 +776,256 @@ describe('pond background chunk', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Area looks and the dusk pond (issue #98)
+// ---------------------------------------------------------------------------
+
+/** WCAG luminance floor of the pond contrast rule: ink #2b2350 is 3:1 or better on any colour at or above it. */
+const LUMINANCE_FLOOR = 0.1687;
+
+describe('area looks (issue #98)', () => {
+  it('lists the habitat looks, then the dusk variant; only the habitat looks key the area map', () => {
+    expect(AREA_LOOK_IDS).toEqual(['canal', 'pond', 'pond-dusk']);
+    expect(HABITAT_LOOK_IDS).toEqual(['canal', 'pond']);
+    for (const id of AREA_LOOK_IDS) expect(habitatLook(id).id).toBe(id);
+    expect(isAreaLookId('pond-dusk')).toBe(true);
+    expect(isHabitatLookId('pond-dusk')).toBe(false);
+    expect(isAreaLookId('moon')).toBe(false);
+    expect(() => habitatLook('pond-night')).toThrow(RangeError);
+  });
+
+  it('every look says what its area needs, so no caller compares look ids', () => {
+    const table = AREA_LOOK_IDS.map((id) => {
+      const look = habitatLook(id);
+      return [id, look.stream, look.cave, look.pondProps, look.firefliesPerScreen];
+    });
+    expect(table).toEqual([
+      ['canal', false, { kind: 'rocks', anchor: 'bed' }, false, 0],
+      ['pond', true, { kind: 'log', anchor: 'bed' }, true, 0],
+      ['pond-dusk', true, { kind: 'rootArch', anchor: 'bank' }, true, 2],
+    ]);
+  });
+
+  it('the daytime looks keep the prototype sky, no wash and full rays', () => {
+    for (const id of ['canal', 'pond'] as const) {
+      const look = habitatLook(id);
+      expect(look.sky).toEqual({ top: SKY_TOP, horizon: SKY_HORIZON });
+      expect(look.airWash).toBeNull();
+      expect(look.rayAlphaScale).toBe(1);
+    }
+  });
+
+  it('the dusk look is the documented derived values', () => {
+    const dusk = habitatLook('pond-dusk');
+    expect(dusk.sky).toEqual({ top: '#c9a6e0', horizon: '#ffcf9e' });
+    expect([DUSK_SKY_TOP, DUSK_SKY_HORIZON]).toEqual(['#c9a6e0', '#ffcf9e']);
+    expect(dusk.airWash).toBe('rgba(150,80,100,0.14)');
+    expect(dusk.rayAlphaScale).toBe(0.6);
+    expect(dusk.water).toEqual({
+      shallow: '#b4d872',
+      mid: '#6fae5c',
+      deep: '#428a4e',
+      stopMid: WATER_STOP_MID,
+      gradientEndY: WATER_GRADIENT_END_Y,
+    });
+    expect(dusk.haze).toBe('rgba(225,170,95,0.12)');
+    expect(dusk.surfaceFill).toBe(DUSK_WATER_SHALLOW);
+    expect(dusk.surfaceLine).toBe('rgba(255,236,204,0.95)');
+    expect(DUSK_SURFACE_LINE).toBe(dusk.surfaceLine);
+    expect(dusk.surfaceLineWidth).toBe(SURFACE_LINE_WIDTH);
+    expect(dusk.bed).toEqual({
+      top: '#b09060',
+      bottom: '#9a7c4c',
+      lip: '#d4b884',
+      mud: 'rgba(120,96,47,0.40)',
+      mudCount: 22,
+      pebbles: PEBBLE_COLOURS,
+      pebbleShine: PEBBLE_SHINE,
+      pebbleCount: 5,
+    });
+    expect(dusk.edgeReeds).toEqual({ stalk: '#4a8848', stalkLight: '#5a9646', leaf: '#68a644', cattail: POND_CATTAIL });
+  });
+
+  it('dusk is the pond slightly warmer and dimmer, stop by stop, and still a green pond', () => {
+    const pond = habitatLook('pond');
+    const dusk = habitatLook('pond-dusk');
+    for (const stop of ['shallow', 'mid', 'deep'] as const) {
+      const h = hueOf(dusk.water[stop]);
+      expect(h).toBeLessThan(hueOf(pond.water[stop]));
+      expect(h).toBeGreaterThan(60);
+      const l = relativeLuminance(dusk.water[stop]);
+      expect(l).toBeLessThan(relativeLuminance(pond.water[stop]));
+      // Slightly: every stop keeps more than 0.8 of the pond's luminance.
+      expect(l).toBeGreaterThan(0.8 * relativeLuminance(pond.water[stop]));
+    }
+    for (const stop of ['top', 'bottom', 'lip'] as const) {
+      expect(relativeLuminance(dusk.bed[stop])).toBeLessThan(relativeLuminance(pond.bed[stop]));
+      expect(hueOf(dusk.bed[stop])).toBeLessThan(hueOf(pond.bed[stop]));
+    }
+    expect(hueOf(dusk.edgeReeds!.stalk)).toBeLessThan(hueOf(pond.edgeReeds!.stalk));
+    expect(hueOf(dusk.edgeReeds!.leaf)).toBeLessThan(hueOf(pond.edgeReeds!.leaf));
+    // The sky through the wash is dimmer than the day sky.
+    expect(relativeLuminance(overlay(DUSK_SKY_TOP, DUSK_AIR_WASH))).toBeLessThan(relativeLuminance(SKY_TOP));
+    expect(relativeLuminance(overlay(DUSK_SKY_HORIZON, DUSK_AIR_WASH))).toBeLessThan(relativeLuminance(SKY_HORIZON));
+    expect(dusk.rayAlphaScale).toBeLessThan(pond.rayAlphaScale);
+  });
+});
+
+describe('dusk contrast (guide 10, the pond contrast rule)', () => {
+  const backgrounds = pondBackgrounds('pond-dusk');
+
+  it('samples more than the stops', () => {
+    expect(backgrounds.length).toBeGreaterThan(200);
+  });
+
+  it('every dusk background has luminance 0.1687 or more, so ink is 3:1 or better on it', () => {
+    for (const { name, hex } of backgrounds) {
+      expect(relativeLuminance(hex), name).toBeGreaterThanOrEqual(LUMINANCE_FLOOR);
+      expect(contrastRatio(INK, hex), name).toBeGreaterThanOrEqual(PAIR_FLOOR);
+    }
+  });
+
+  it.each(CUE_FILLS)('%s keeps 3:1 or more by the pair method on every dusk background', (_name, fill) => {
+    for (const { name, hex } of backgrounds) {
+      const best = Math.max(contrastRatio(INK, hex), contrastRatio(fill, hex));
+      expect(best, name).toBeGreaterThanOrEqual(PAIR_FLOOR);
+    }
+  });
+
+  it('the sky seen through the wash keeps the rule; the bank soil is the recorded exception', () => {
+    const sky = sampleGradient(
+      [
+        [0, DUSK_SKY_TOP],
+        [1, DUSK_SKY_HORIZON],
+      ],
+      GRADIENT_SAMPLES,
+    );
+    for (const hex of sky) expect(relativeLuminance(overlay(hex, DUSK_AIR_WASH)), hex).toBeGreaterThanOrEqual(LUMINANCE_FLOOR);
+    expect(overlay(DUSK_SKY_TOP, DUSK_AIR_WASH)).toBe('#c29acf');
+    expect(overlay(DUSK_SKY_HORIZON, DUSK_AIR_WASH)).toBe('#f0bd96');
+    expect(relativeLuminance(overlay(DUSK_SKY_TOP, DUSK_AIR_WASH))).toBeCloseTo(0.3909, 4);
+    expect(relativeLuminance(overlay(DUSK_SKY_HORIZON, DUSK_AIR_WASH))).toBeCloseTo(0.5712, 4);
+    // Recorded beside DUSK_AIR_WASH: the bank soil is under the floor in every look, and a little more under the wash.
+    expect(relativeLuminance(BANK_SOIL)).toBeLessThan(LUMINANCE_FLOOR);
+    expect(relativeLuminance(overlay(BANK_SOIL, DUSK_AIR_WASH))).toBeCloseTo(0.1603, 4);
+    expect(relativeLuminance(overlay(SOIL_DETAIL, DUSK_AIR_WASH))).toBeCloseTo(0.1001, 4);
+  });
+
+  it('documents the dusk luminances and ratios the comments print', () => {
+    const rows: readonly (readonly [string, string, number, number])[] = [
+      ['water shallow', DUSK_WATER_SHALLOW, 0.6003, 8.91],
+      ['water mid', DUSK_WATER_MID, 0.3442, 5.4],
+      ['water deep', DUSK_WATER_DEEP, 0.1989, 3.41],
+      ['bed top', DUSK_BED_TOP, 0.3002, 4.8],
+      ['bed bottom', DUSK_BED_BOTTOM, 0.2181, 3.67],
+      ['bed lip', DUSK_BED_LIP, 0.4994, 7.53],
+      ['reed stalk', DUSK_REED_STALK, 0.1953, 3.36],
+      ['reed stalk light', DUSK_REED_STALK_LIGHT, 0.2443, 4.03],
+      ['reed leaf', DUSK_REED_LEAF, 0.3063, 4.88],
+    ];
+    for (const [name, hex, luminance, ratio] of rows) {
+      expect(relativeLuminance(hex).toFixed(4), name).toBe(luminance.toFixed(4));
+      expect(contrastRatio(hex, INK).toFixed(2), name).toBe(ratio.toFixed(2));
+    }
+    const mudOnBottom = overlay(DUSK_BED_BOTTOM, DUSK_MUD);
+    expect(mudOnBottom).toBe('#8c7140');
+    expect(relativeLuminance(mudOnBottom).toFixed(4)).toBe('0.1776');
+    expect(contrastRatio(mudOnBottom, INK).toFixed(2)).toBe('3.12');
+    expect(relativeLuminance(overlay(DUSK_WATER_DEEP, DUSK_HAZE)).toFixed(4)).toBe('0.2186');
+  });
+});
+
+/** Count the draws `rand` gives a paint. */
+function countingRand(seed: number): { rand: () => number; count: () => number } {
+  const inner = seeded(seed);
+  let n = 0;
+  return {
+    rand: () => {
+      n++;
+      return inner();
+    },
+    count: () => n,
+  };
+}
+
+/** A recording's calls with the `n`th fillRect of `args` left out. */
+function withoutFillRect(rec: Recording, args: readonly number[], n: number): [string, unknown[]][] {
+  let seen = 0;
+  return rec.calls.filter(([name, callArgs]) => {
+    if (name !== 'fillRect' || JSON.stringify(callArgs) !== JSON.stringify(args)) return true;
+    seen++;
+    return seen !== n;
+  });
+}
+
+const SKY_RECT = [0, 0, VIEW_W, SURF + 6] as const;
+
+describe('dusk background chunk', () => {
+  const DUSK_CASES: readonly (readonly [string, Omit<ChunkOptions, 'rand' | 'look'>, number])[] = [
+    ['single, sun, bank, stream, both edges', { index: 0, hasSun: true, hasBank: true, bankCapLeft: true, stream: true, edgeLeft: true, edgeRight: true }, 1],
+    ['top, bank capped right, stream', { row: 'top', index: 1, hasSun: false, hasBank: true, bankCapRight: true, stream: true }, 3],
+    ['middle', { row: 'middle', index: 1, hasSun: false, hasBank: false }, 4],
+    ['bottom, both edges', { row: 'bottom', index: 3, hasSun: false, hasBank: false, edgeLeft: true, edgeRight: true }, 5],
+  ];
+
+  it.each(DUSK_CASES)('%s: the same random draws and shapes as the pond, plus the wash on a sky row', (_name, opts, seed) => {
+    const pondRand = countingRand(seed);
+    const duskRand = countingRand(seed);
+    const pond = record((ctx) => paintBackgroundChunk(ctx, { ...opts, look: 'pond', rand: pondRand.rand }));
+    const dusk = record((ctx) => paintBackgroundChunk(ctx, { ...opts, look: 'pond-dusk', rand: duskRand.rand }));
+    expect(duskRand.count()).toBe(pondRand.count());
+    expect(duskRand.count() > 0).toBe(opts.row !== 'middle');
+    const hasSky = opts.row === undefined || opts.row === 'top';
+    // The wash is the second fill of the sky rectangle (the first is the sky itself).
+    expect(hashString(JSON.stringify(hasSky ? withoutFillRect(dusk, SKY_RECT, 2) : dusk.calls))).toBe(fingerprint(pond));
+    expect(dusk.ops.filter((o) => o.fillStyle === DUSK_AIR_WASH)).toHaveLength(hasSky ? 1 : 0);
+  });
+
+  it('paints the dusk sky and water, and lays the wash after the bank and before the water', () => {
+    const rec = chunk({ index: 0, hasSun: true, hasBank: true, bankCapLeft: true, look: 'pond-dusk' });
+    expect(gradientStops(rec, 0)).toEqual([DUSK_SKY_TOP, DUSK_SKY_HORIZON]);
+    expect(gradientStops(rec, 1)).toEqual([DUSK_WATER_SHALLOW, DUSK_WATER_MID, DUSK_WATER_DEEP]);
+    expect(gradientStops(rec, rec.gradients.length - 1)).toEqual([DUSK_BED_TOP, DUSK_BED_BOTTOM]);
+    const wash = rec.ops.findIndex((o) => o.fillStyle === DUSK_AIR_WASH);
+    expect(rec.ops[wash]).toMatchObject({ op: 'fillRect', args: [...SKY_RECT], globalAlpha: 1 });
+    const lastBankSoil = rec.ops.map((o) => o.fillStyle).lastIndexOf(BANK_SOIL);
+    expect(lastBankSoil).toBeGreaterThan(-1);
+    expect(lastBankSoil).toBeLessThan(wash);
+    const water = rec.ops.findIndex(
+      (o) => o.op === 'fillRect' && JSON.stringify(o.fillStyle).includes(DUSK_WATER_SHALLOW),
+    );
+    expect(water).toBeGreaterThan(wash);
+    // Nothing of the pond's or canal's own colours is left.
+    const colours = JSON.stringify(rec.ops);
+    for (const other of [POND_WATER_SHALLOW, POND_WATER_DEEP, POND_BED_TOP, POND_BED_BOTTOM, SKY_TOP, SKY_HORIZON]) {
+      expect(colours).not.toContain(other);
+    }
+  });
+
+  it('dims the light rays to 0.6 of the pond rays', () => {
+    const opts: Omit<ChunkOptions, 'rand'> = { row: 'top', index: 2, hasSun: false, hasBank: false };
+    const rayAlphas = (rec: Recording): number[] =>
+      rec.gradients.filter((g) => g.stops.length === 2 && g.stops[1][1] === 'rgba(255,255,255,0)').map((g) => parseRgba(g.stops[0][1]).alpha);
+    const pond = rayAlphas(chunk({ ...opts, look: 'pond' }));
+    const dusk = rayAlphas(chunk({ ...opts, look: 'pond-dusk' }));
+    expect(pond).toHaveLength(3);
+    expect(dusk).toHaveLength(3);
+    dusk.forEach((a, i) => expect(a).toBeCloseTo(pond[i] * 0.6, 2));
+  });
+
+  it('a tall dusk row is flat dusk deep water, and the bed and edge reeds take the dusk colours', () => {
+    const middle = chunk({ row: 'middle', index: 1, hasSun: false, hasBank: false, look: 'pond-dusk' });
+    expect(middle.ops).toHaveLength(1);
+    expect(middle.ops[0].fillStyle).toBe(DUSK_WATER_DEEP);
+    const bottom = chunk({ row: 'bottom', index: 0, hasSun: false, hasBank: false, look: 'pond-dusk', edgeLeft: true });
+    expect(bottom.ops.filter((o) => o.op === 'fill' && o.fillStyle === DUSK_MUD)).toHaveLength(22);
+    const reedColours = new Set(bottom.ops.filter((o) => o.op === 'stroke').map((o) => o.strokeStyle));
+    for (const c of [DUSK_REED_STALK, DUSK_REED_STALK_LIGHT, DUSK_REED_LEAF]) expect(reedColours.has(c)).toBe(true);
+    expect(reedColours.has(POND_REED_STALK)).toBe(false);
+    expect(bottom.ops.some((o) => o.strokeStyle === DUSK_BED_LIP)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Fake scene for the bakes
 // ---------------------------------------------------------------------------
 
@@ -770,6 +1108,25 @@ describe('bakeAreaScenery look and stream', () => {
     expect(last.gradients.some((g) => g.coords[2] === VIEW_W && g.coords[1] === 0)).toBe(false);
   });
 
+  it('bakes a dusk pond from its look: dusk water, the stream on the last chunk, edge reeds and the bank under the wash', () => {
+    const dusk = habitatLook('pond-dusk');
+    const made = bakeArea({ look: dusk.id, stream: dusk.stream, bankChunks: [2] });
+    const chunkRec = (c: number): Recording => made.get(areaBgKey('pond-', 0, c))!.rec;
+    for (const c of [0, 1, 2, 3, 4]) {
+      expect(gradientStops(chunkRec(c), 0)).toEqual([DUSK_SKY_TOP, DUSK_SKY_HORIZON]);
+      expect(gradientStops(chunkRec(c), 1)).toEqual([DUSK_WATER_SHALLOW, DUSK_WATER_MID, DUSK_WATER_DEEP]);
+      expect(chunkRec(c).ops.filter((o) => o.fillStyle === DUSK_AIR_WASH)).toHaveLength(1);
+    }
+    const streams = (rec: Recording): number =>
+      rec.gradients.filter((g) => g.coords.length === 4 && g.coords[1] === 0 && g.coords[3] === 0).length;
+    expect(streams(chunkRec(4))).toBe(1);
+    expect(reedBaseXs(chunkRec(0))).toHaveLength(6);
+    expect(reedBaseXs(chunkRec(4))).toHaveLength(6);
+    const bank = chunkRec(2).ops;
+    expect(bank.map((o) => o.fillStyle).lastIndexOf(BANK_SOIL)).toBeLessThan(bank.findIndex((o) => o.fillStyle === DUSK_AIR_WASH));
+    expect(chunkRec(1).ops.some((o) => o.fillStyle === BANK_SOIL)).toBe(false);
+  });
+
   it('a tall pond puts the stream on the top row and the edge reeds on the bottom row, with a shared flat middle', () => {
     const made = bakeArea({ look: 'pond', stream: true, screensWide: 3, screensTall: 3 });
     const top = made.get(areaBgKey('pond-', 0, 2))!.rec;
@@ -780,6 +1137,177 @@ describe('bakeAreaScenery look and stream', () => {
     expect(reedBaseXs(bottomFirst)).toHaveLength(6);
     expect(middle.ops[0].fillStyle).toBe(POND_WATER_DEEP);
     expect([...made.keys()].filter((k) => k.startsWith('pond-bg-')).length).toBe(3 + 3 + 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stream mouth placement (issue #98)
+// ---------------------------------------------------------------------------
+
+/** The stream band gradient of a recording: the one running along x only. */
+const streamGradients = (rec: Recording): Gradient[] =>
+  rec.gradients.filter((g) => g.coords.length === 4 && g.coords[1] === 0 && g.coords[3] === 0 && g.coords[0] === g.coords[2] - STREAM_BAND.reach);
+/** The flow line strokes of a recording: drawn at the stream line width. */
+const flowStrokes = (rec: Recording): Op[] => rec.ops.filter((o) => o.op === 'stroke' && o.lineWidth === 2.4);
+/** The mouth stone fills of a recording: 17 x 12 ellipses in the stone colours. */
+const stoneFills = (rec: Recording): Op[] =>
+  rec.ops.filter(
+    (o) =>
+      o.op === 'fill' &&
+      (o.fillStyle === PEBBLE_D || o.fillStyle === PEBBLE_B) &&
+      Array.isArray(o.args[0]) &&
+      ellipsesOf(o).some((e) => e[2] === 17 && e[3] === 12),
+  );
+
+describe('stream mouth placement (issue #98)', () => {
+  const bakeArea = (extra: Partial<AreaSceneryOptions>): Map<string, MadeCanvas> =>
+    withFakeScene((scene, made) => {
+      bakeAreaScenery(scene, { ...AREA, rand: seeded(11), ...extra });
+      return made;
+    });
+  /** One hash over every chunk of a bake, colours included. */
+  const bakeHash = (made: Map<string, MadeCanvas>): string =>
+    hashString(JSON.stringify([...made.entries()].map(([key, canvas]) => [key, styledFingerprint(canvas.rec)])));
+  const mouthOf = (column: number): number => (column + 1) * VIEW_W;
+
+  it('pond-1: the mouth is the column holding the current end, the world right edge, as before', () => {
+    const current = POND_LAYOUT.currents[0];
+    const column = streamColumnFor(current.x1, POND_LAYOUT.screensWide);
+    expect(column).toBe(4);
+    expect(column).toBe(POND_LAYOUT.screensWide - 1);
+    expect(mouthOf(column)).toBe(2400);
+    expect(mouthOf(column)).toBe(POND_LAYOUT.screensWide * VIEW_W);
+  });
+
+  it('pond-2: the mouth is x 2400, just left of the root arch, inside the 2880 wide world', () => {
+    const current = POND_2_LAYOUT.currents[0];
+    const column = streamColumnFor(current.x1, POND_2_LAYOUT.screensWide);
+    expect(column).toBe(4);
+    expect(mouthOf(column)).toBe(2400);
+    expect(mouthOf(column)).toBeLessThan(POND_2_LAYOUT.screensWide * VIEW_W);
+    expect(mouthOf(column)).toBeGreaterThanOrEqual(current.x1);
+    expect(mouthOf(column)).toBeLessThanOrEqual(POND_2_LAYOUT.cave.x0);
+  });
+
+  it('maps a current ending on a column edge to the column on its left, and throws outside the area', () => {
+    expect(streamColumnFor(VIEW_W, 6)).toBe(0);
+    expect(streamColumnFor(1, 6)).toBe(0);
+    expect(streamColumnFor(2400, 6)).toBe(4);
+    expect(streamColumnFor(2401, 6)).toBe(5);
+    expect(streamColumnFor(2880, 6)).toBe(5);
+    expect(() => streamColumnFor(0, 6)).toThrow(RangeError);
+    expect(() => streamColumnFor(2881, 6)).toThrow(RangeError);
+    expect(() => streamColumnFor(Number.NaN, 6)).toThrow(RangeError);
+  });
+
+  it('bakeAreaScenery throws on a stream column outside the area', () => {
+    for (const streamColumn of [-1, 5, 1.5]) {
+      expect(() => bakeArea({ look: 'pond', stream: true, streamColumn })).toThrow(RangeError);
+    }
+  });
+
+  it('pond-1 bakes exactly what it did before the mouth was placed, in the pond and the dusk look', () => {
+    const column = streamColumnFor(POND_LAYOUT.currents[0].x1, POND_LAYOUT.screensWide);
+    /** Whole-bake hashes of a 5 x 1 area with the stream, painted by the code before streamColumn existed. */
+    const before = { pond: '08c3af535436b3', 'pond-dusk': '0ec712b65edbfa' } as const;
+    for (const look of ['pond', 'pond-dusk'] as const) {
+      const placed = bakeArea({ look, stream: true, bankChunks: [1, 2], streamColumn: column });
+      const plainBake = bakeArea({ look, stream: true, bankChunks: [1, 2] });
+      expect(bakeHash(placed), look).toBe(before[look]);
+      expect(bakeHash(plainBake), look).toBe(before[look]);
+      const last = placed.get(areaBgKey('pond-', 0, 4))!.rec;
+      expect(streamGradients(last)[0].stops).toHaveLength(2);
+      expect(flowStrokes(last).every((o) => o.strokeStyle === 'rgba(255,255,255,0.6)')).toBe(true);
+    }
+  });
+
+  it('tapers the band and the flow lines only when the mouth is before the world right edge', () => {
+    const atEdge = bakeArea({ look: 'pond', stream: true, screensWide: 6, streamColumn: 5 });
+    const closed = bakeArea({ look: 'pond', stream: true, screensWide: 6, streamColumn: 4 });
+    const chunkOf = (made: Map<string, MadeCanvas>, c: number): Recording => made.get(areaBgKey('pond-', 0, c))!.rec;
+
+    const open = streamGradients(chunkOf(atEdge, 5));
+    expect(open).toHaveLength(1);
+    expect(open[0].stops.map(([t]) => t)).toEqual([0, 1]);
+    expect(flowStrokes(chunkOf(atEdge, 5)).every((o) => o.strokeStyle === 'rgba(255,255,255,0.6)')).toBe(true);
+    for (const c of [0, 1, 2, 3, 4]) expect(streamGradients(chunkOf(atEdge, c)), `column ${c}`).toHaveLength(0);
+
+    const band = streamGradients(chunkOf(closed, 4));
+    expect(band).toHaveLength(1);
+    expect(band[0].coords[2]).toBe(VIEW_W);
+    expect(band[0].stops.map(([t]) => t)).toEqual([0, 1 - STREAM_TAPER / STREAM_BAND.reach, 1]);
+    expect(band[0].stops.map(([, c]) => parseRgba(c).alpha)).toEqual([0, 0.3, 0]);
+    const flow = flowStrokes(chunkOf(closed, 4));
+    expect(flow).toHaveLength(10);
+    for (const o of flow) {
+      const style = o.strokeStyle as { gradient: number[]; stops: [number, string][] };
+      expect(style.gradient).toEqual([VIEW_W - STREAM_TAPER, 0, VIEW_W, 0]);
+      expect(style.stops.map(([, c]) => parseRgba(c).alpha)).toEqual([0.6, 0]);
+    }
+    expect(STREAM_TAPER).toBeGreaterThanOrEqual(40);
+    expect(STREAM_TAPER).toBeLessThanOrEqual(60);
+    for (const c of [0, 1, 2, 3, 5]) expect(streamGradients(chunkOf(closed, c)), `column ${c}`).toHaveLength(0);
+  });
+
+  it('paints the mouth stones that overflow a closed mouth into the next column, and nowhere else', () => {
+    const closed = bakeArea({ look: 'pond', stream: true, screensWide: 6, streamColumn: 4 });
+    const chunkOf = (c: number): Recording => closed.get(areaBgKey('pond-', 0, c))!.rec;
+    const mouth = stoneFills(chunkOf(4));
+    expect(mouth).toHaveLength(2);
+    for (const o of mouth) {
+      const [cx, , rx] = ellipsesOf(o)[0];
+      expect(cx + rx - VIEW_W).toBe(STREAM_STONE_OVERFLOW);
+    }
+    const spill = chunkOf(5);
+    expect(stoneFills(spill).map((o) => o.args)).toEqual(mouth.map((o) => o.args));
+    expect(spill.calls.some(([name, args]) => name === 'translate' && args[0] === -VIEW_W && args[1] === 0)).toBe(true);
+    for (const c of [0, 1, 2, 3]) expect(stoneFills(chunkOf(c)), `column ${c}`).toHaveLength(0);
+    // At the world edge there is no next column, so nothing spills.
+    const atEdge = bakeArea({ look: 'pond', stream: true, screensWide: 6, streamColumn: 5 });
+    for (const c of [0, 1, 2, 3, 4]) expect(stoneFills(atEdge.get(areaBgKey('pond-', 0, c))!.rec), `column ${c}`).toHaveLength(0);
+  });
+
+  it('a spill draws no randomness and paints nothing on a row with no water', () => {
+    const top: Omit<ChunkOptions, 'rand'> = { row: 'top', index: 5, hasSun: false, hasBank: false, look: 'pond' };
+    const plainRand = countingRand(3);
+    const spillRand = countingRand(3);
+    record((ctx) => paintBackgroundChunk(ctx, { ...top, rand: plainRand.rand }));
+    record((ctx) => paintBackgroundChunk(ctx, { ...top, streamSpill: true, rand: spillRand.rand }));
+    expect(spillRand.count()).toBe(plainRand.count());
+    const bottom: Omit<ChunkOptions, 'rand'> = { row: 'bottom', index: 5, hasSun: false, hasBank: false, look: 'pond' };
+    expect(fingerprint(chunk({ ...bottom, streamSpill: true }))).toBe(fingerprint(chunk(bottom)));
+  });
+
+  it('the stream colours keep the dusk contrast rule on every dusk water colour, tapered or not', () => {
+    const rec = chunk({ row: 'top', index: 4, hasSun: false, hasBank: false, look: 'pond-dusk', stream: true, streamClosed: true });
+    const light = streamGradients(rec)[0].stops[1][1];
+    const line = (flowStrokes(rec)[0].strokeStyle as { stops: [number, string][] }).stops[0][1];
+    const lightRgba = parseRgba(light);
+    const lineRgba = parseRgba(line);
+    const dusk = habitatLook('pond-dusk');
+    const water = sampleGradient(
+      [
+        [0, dusk.water.shallow],
+        [dusk.water.stopMid, dusk.water.mid],
+        [1, dusk.water.deep],
+      ],
+      GRADIENT_SAMPLES,
+    );
+    const steps = [0, 0.25, 0.5, 0.75, 1];
+    for (const hex of water) {
+      for (const bandT of steps) {
+        const banded = mix(hex, lightRgba.rgb, lightRgba.alpha * bandT);
+        for (const lineT of steps) {
+          const lined = mix(banded, lineRgba.rgb, lineRgba.alpha * lineT);
+          expect(relativeLuminance(lined), `${hex} band ${bandT} line ${lineT}`).toBeGreaterThanOrEqual(LUMINANCE_FLOOR);
+          expect(contrastRatio(INK, lined), `${hex} band ${bandT} line ${lineT}`).toBeGreaterThanOrEqual(PAIR_FLOOR);
+        }
+      }
+    }
+    for (const stone of [PEBBLE_D, PEBBLE_B]) {
+      expect(relativeLuminance(stone), stone).toBeGreaterThanOrEqual(LUMINANCE_FLOOR);
+      expect(contrastRatio(INK, stone), stone).toBeGreaterThanOrEqual(PAIR_FLOOR);
+    }
   });
 });
 
@@ -1002,6 +1530,238 @@ describe('queasy cheek tint (guide 6j, ADR 0007)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Root arch and firefly (issue #98)
+// ---------------------------------------------------------------------------
+
+type Point = readonly [number, number];
+
+/** Points along a recorded path (moveTo, lineTo, quadratic and cubic curves; a closePath adds none), `steps` per segment. */
+function samplePath(cmds: unknown[][], steps = 32): Point[] {
+  const points: Point[] = [];
+  let at: Point = [0, 0];
+  for (const cmd of cmds) {
+    const [name, ...a] = cmd as [string, ...number[]];
+    if (name === 'closePath') continue;
+    if (name === 'moveTo') {
+      at = [a[0], a[1]];
+      points.push(at);
+      continue;
+    }
+    for (let i = 1; i <= steps; i++) points.push(curvePoint(name, at, a, i / steps));
+    at = [a[a.length - 2], a[a.length - 1]];
+  }
+  return points;
+}
+
+/** The point at `t` of one path segment starting at `from`. */
+function curvePoint(name: string, from: Point, a: readonly number[], t: number): Point {
+  const m = 1 - t;
+  if (name === 'lineTo') return [from[0] * m + a[0] * t, from[1] * m + a[1] * t];
+  if (name === 'quadraticCurveTo') {
+    return [m * m * from[0] + 2 * m * t * a[0] + t * t * a[2], m * m * from[1] + 2 * m * t * a[1] + t * t * a[3]];
+  }
+  if (name === 'bezierCurveTo') {
+    const [b0, b1, b2, b3] = [m * m * m, 3 * m * m * t, 3 * m * t * t, t * t * t];
+    return [b0 * from[0] + b1 * a[0] + b2 * a[2] + b3 * a[4], b0 * from[1] + b1 * a[1] + b2 * a[3] + b3 * a[5]];
+  }
+  throw new Error(`samplePath: no sampler for ${name}`);
+}
+
+/** Every point a recorded path is built from (curve control points included, ellipses as their box corners, arcs sampled). */
+function hullPoints(cmds: unknown[][]): Point[] {
+  return cmds.flatMap((cmd) => {
+    const [name, ...a] = cmd as [string, ...number[]];
+    if (name === 'ellipse') {
+      const r = Math.max(a[2], a[3]);
+      return [
+        [a[0] - r, a[1] - r],
+        [a[0] + r, a[1] + r],
+      ] as Point[];
+    }
+    if (name === 'arc') return arcPoints(a);
+    if (name === 'closePath') return [];
+    const pairs: Point[] = [];
+    for (let i = 0; i + 1 < a.length; i += 2) pairs.push([a[i], a[i + 1]]);
+    return pairs;
+  });
+}
+
+/** Points along a recorded arc(cx, cy, r, start, end, anticlockwise). */
+function arcPoints([cx, cy, r, start, end, anticlockwise]: readonly number[]): Point[] {
+  const turn = Math.PI * 2;
+  let sweep = end - start;
+  if (anticlockwise) while (sweep > 0) sweep -= turn;
+  else while (sweep < 0) sweep += turn;
+  return Array.from({ length: 33 }, (_, i) => {
+    const angle = start + (sweep * i) / 32;
+    return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)] as Point;
+  });
+}
+
+/** Even-odd point in polygon. */
+function inside(polygon: readonly Point[], [x, y]: Point): boolean {
+  let hit = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [xi, yi] = polygon[i];
+    const [xj, yj] = polygon[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
+  }
+  return hit;
+}
+
+/** Every op's reach, ink included: each hull point grown by half its stroke width, inside [x0, x1] x [y0, y1]. */
+function expectOpsWithin(ops: readonly Op[], x0: number, y0: number, x1: number, y1: number): void {
+  for (const o of ops) {
+    const grow = o.op === 'stroke' ? o.lineWidth / 2 : 0;
+    for (const [x, y] of hullPoints(cmdsOf(o))) {
+      expect(x - grow, `${o.op} ${String(o.strokeStyle)}`).toBeGreaterThanOrEqual(x0 - 1e-9);
+      expect(x + grow).toBeLessThanOrEqual(x1 + 1e-9);
+      expect(y - grow).toBeGreaterThanOrEqual(y0 - 1e-9);
+      expect(y + grow).toBeLessThanOrEqual(y1 + 1e-9);
+    }
+  }
+}
+
+describe('root arch (the dusk pond cave, issue #98)', () => {
+  const back = record(paintRootArchBack);
+  const front = record(paintRootArchFront);
+  /** The ink of each root tube (wider than the mat's outline), with half its width. */
+  const tubes = front.ops
+    .filter((o) => o.op === 'stroke' && o.strokeStyle === INK && o.lineWidth > LW)
+    .map((o) => ({ points: samplePath(cmdsOf(o)), half: o.lineWidth / 2 }));
+  const mat = front.ops.find((o) => o.op === 'fill' && o.fillStyle === ROOT_MAT)!;
+  const matPolygon = samplePath(cmdsOf(mat));
+  const covered = (p: Point): boolean =>
+    inside(matPolygon, p) || tubes.some((t) => t.points.some(([x, y]) => Math.hypot(x - p[0], y - p[1]) <= t.half - 0.5));
+
+  it('has the cave frame size, anchored at the top centre under the bank', () => {
+    expect(ROOT_ARCH_W).toBe(CAVE_W);
+    expect(ROOT_ARCH_H).toBe(CAVE_H);
+    expect(ROOT_ARCH_TEX.w).toBe(CAVE_TEX.w);
+    expect(ROOT_ARCH_TEX.h).toBe(CAVE_TEX.h);
+    expect(ROOT_ARCH_TEX).toEqual({ w: 184, h: 140, originX: 92, originY: 2 });
+    expect(ROOT_ARCH_ANCHOR_Y).toBe(SURF + 3);
+    const { top, w, h } = ROOT_ARCH_OPENING;
+    expect(w).toBeLessThan(ROOT_ARCH_W);
+    expect(top + h).toBeLessThan(ROOT_ARCH_H);
+  });
+
+  it('keeps every part, ink included, inside 180 x 136 below the anchor', () => {
+    expectOpsWithin(front.ops, -ROOT_ARCH_W / 2, 0, ROOT_ARCH_W / 2, ROOT_ARCH_H);
+    expectOpsWithin(back.ops, -ROOT_ARCH_W / 2, 0, ROOT_ARCH_W / 2, ROOT_ARCH_H);
+    // The mat's top ink edge sits on the anchor line and its sides on the frame edge.
+    const ys = hullPoints(cmdsOf(mat)).map(([, y]) => y);
+    expect(Math.min(...ys) - LW / 2).toBeCloseTo(0, 5);
+  });
+
+  it('back: one flat dark U the size of the opening, with no ink', () => {
+    expect(back.ops).toHaveLength(1);
+    expect(back.ops[0]).toMatchObject({ op: 'fill', fillStyle: ROOT_ARCH_INTERIOR });
+    expect(ROOT_ARCH_INTERIOR).toBe(LOG_INTERIOR);
+    const arc = cmdsOf(back.ops[0]).find((c) => c[0] === 'arc')!;
+    const { top, w, h } = ROOT_ARCH_OPENING;
+    expect(arc.slice(1, 4)).toEqual([0, top + h - w / 2, w / 2]);
+    // Round bottom: the arc runs from the left side, under, to the right side.
+    expect(arc.slice(4)).toEqual([Math.PI, 0, true]);
+  });
+
+  it('front covers the hollow edge all round, so the dark never shows an uninked edge', () => {
+    const { top, w, h } = ROOT_ARCH_OPENING;
+    const r = w / 2;
+    const cy = top + h - r;
+    const edge: Point[] = [];
+    for (let i = 0; i <= 40; i++) edge.push([-r + (w * i) / 40, top]);
+    for (let i = 0; i <= 20; i++) edge.push([-r, top + ((cy - top) * i) / 20], [r, top + ((cy - top) * i) / 20]);
+    for (let i = 0; i <= 60; i++) {
+      const a = (Math.PI * i) / 60;
+      edge.push([r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+    for (const p of edge) expect(covered(p), `edge (${p[0].toFixed(1)}, ${p[1].toFixed(1)})`).toBe(true);
+  });
+
+  it('leaves an 80 x 48 clear hollow inside, so the axolotl hides in the dark, not behind roots', () => {
+    for (let x = -40; x <= 40; x += 4) {
+      for (let y = 44; y <= 92; y += 4) expect(covered([x, y]), `(${x}, ${y})`).toBe(false);
+    }
+  });
+
+  it('roots are one merged inked group, then the soil mat with ink 3.5, then one shine; no glow', () => {
+    const inkFirst = front.ops.findIndex((o) => o.op === 'stroke' && o.strokeStyle !== INK);
+    const inkTubes = front.ops.slice(0, inkFirst);
+    expect(inkTubes.length).toBe(tubes.length);
+    expect(inkTubes.every((o) => o.strokeStyle === INK)).toBe(true);
+    // Rim roots 12 wide, outer roots 7, rootlets 4, each with 2.6 of ink a side.
+    expect([...new Set(inkTubes.map((o) => o.lineWidth))].sort((a, b) => a - b)).toEqual([4 + 5.2, 7 + 5.2, 12 + 5.2]);
+    const colours = new Set(front.ops.filter((o) => o.op === 'stroke' && o.lineWidth < LW * 4).map((o) => o.strokeStyle));
+    expect(colours.has(ROOT_BARK)).toBe(true);
+    expect(colours.has(ROOT_ROOTLET)).toBe(true);
+    const matIndex = front.ops.indexOf(mat);
+    expect(matIndex).toBeGreaterThan(inkFirst);
+    expect(front.ops[matIndex + 1]).toMatchObject({ op: 'stroke', strokeStyle: INK, lineWidth: LW });
+    expect(ROOT_MAT).toBe(BANK_SOIL);
+    const shines = front.ops.filter((o) => o.strokeStyle === ROOT_SHINE);
+    expect(shines).toHaveLength(1);
+    expect(shines[0].lineWidth).toBeLessThan(LW);
+    expect(front.gradients).toHaveLength(0);
+    expect(back.gradients).toHaveLength(0);
+  });
+});
+
+describe('firefly (the dusk pond, issue #98)', () => {
+  const firefly = record(paintFirefly);
+
+  it('fits its frame with its ink, anchored at the glowing tail', () => {
+    expect(FIREFLY_TEX).toEqual({ w: 24, h: 24, originX: 12, originY: 12 });
+    expectOpsWithin(firefly.ops, -FIREFLY_TEX.originX, -FIREFLY_TEX.originY, FIREFLY_TEX.w - FIREFLY_TEX.originX, FIREFLY_TEX.h - FIREFLY_TEX.originY);
+    const tail = firefly.ops.find((o) => o.op === 'fill' && o.fillStyle === FIREFLY_GLOW)!;
+    const [cx, cy] = ellipsesOf(tail)[0];
+    expect(Math.hypot(cx, cy)).toBeLessThan(1.5);
+  });
+
+  it('is a soft halo with no ink, then a head, a glowing tail and a wing, each inked', () => {
+    expect(firefly.ops.slice(0, 2).map((o) => [o.op, o.fillStyle])).toEqual([
+      ['fill', FIREFLY_HALO_OUTER],
+      ['fill', FIREFLY_HALO_INNER],
+    ]);
+    const rest = firefly.ops.slice(2);
+    expect(rest.map((o) => (o.op === 'fill' ? o.fillStyle : o.strokeStyle))).toEqual([
+      FIREFLY_BODY,
+      INK,
+      FIREFLY_GLOW,
+      INK,
+      FIREFLY_WING,
+      INK,
+    ]);
+    for (const o of firefly.ops) expect(o.globalAlpha).toBe(1);
+    expect(firefly.gradients).toHaveLength(0);
+  });
+
+  it('reads in greyscale: a bright tail ringed in ink beside a dark head, brighter than the dusk sky, with a halo that lightens it', () => {
+    expect(contrastRatio(FIREFLY_GLOW, INK)).toBeGreaterThanOrEqual(PAIR_FLOOR);
+    expect(contrastRatio(FIREFLY_GLOW, FIREFLY_BODY)).toBeGreaterThanOrEqual(PAIR_FLOOR);
+    expect(contrastRatio(FIREFLY_GLOW, FIREFLY_BODY).toFixed(2)).toBe('9.43');
+    const sky = sampleGradient(
+      [
+        [0, DUSK_SKY_TOP],
+        [1, DUSK_SKY_HORIZON],
+      ],
+      GRADIENT_SAMPLES,
+    ).map((hex) => overlay(hex, DUSK_AIR_WASH));
+    for (const hex of sky) {
+      expect(relativeLuminance(FIREFLY_GLOW)).toBeGreaterThan(relativeLuminance(hex));
+      expect(relativeLuminance(overlay(overlay(hex, FIREFLY_HALO_OUTER), FIREFLY_HALO_INNER))).toBeGreaterThan(relativeLuminance(hex));
+    }
+  });
+
+  it('hovers above the water: the whole halo stays over the wave crest', () => {
+    const haloR = ellipsesOf(firefly.ops[0])[0][2];
+    expect(FIREFLY_BAND.y0).toBeLessThan(FIREFLY_BAND.y1);
+    expect(FIREFLY_BAND.y0 - haloR).toBeGreaterThan(0);
+    expect(FIREFLY_BAND.y1 + haloR).toBeLessThan(SURF - 2.4);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Pond bake
 // ---------------------------------------------------------------------------
 
@@ -1031,8 +1791,32 @@ describe('bakePondTextures', () => {
     expect(baked.plasticWorms.blue.originY).toBe(PLASTIC_WORM_TEX.originY);
     expect(baked.queasyCheeks.originX).toBe(QUEASY_CHEEKS_TEX.originX);
     expect(baked.queasyCheeks.originY).toBe(QUEASY_CHEEKS_TEX.originY);
-    // Every texture was painted.
+    // Every texture was painted, and with no extras there is no root arch and no firefly.
     for (const [, canvas] of made) expect(canvas.rec.ops.length).toBeGreaterThan(0);
+    expect(baked.rootArch).toBeNull();
+    expect(baked.firefly).toBeNull();
+  });
+
+  it('bakes the root arch and the firefly when asked, in their own frames and anchors', () => {
+    const { baked, made } = withFakeScene((scene, made) => ({
+      baked: bakePondTextures(scene, 2, { caveW: CAVE_W, caveH: CAVE_H }, { rootArch: true, firefly: true }),
+      made,
+    }));
+    expect(made.size).toBe(8);
+    const arch = baked.rootArch!;
+    expect(arch.back.key).toBe(POND_TEX.rootArchBack);
+    expect(arch.front.key).toBe(POND_TEX.rootArchFront);
+    for (const info of [arch.back, arch.front]) {
+      expect(info).toMatchObject({ scale: 2, w: ROOT_ARCH_TEX.w, h: ROOT_ARCH_TEX.h, originX: ROOT_ARCH_TEX.originX, originY: ROOT_ARCH_TEX.originY });
+      expect(info.originNormX).toBeCloseTo(0.5, 5);
+      expect(made.get(info.key)!.pxW).toBe(ROOT_ARCH_TEX.w * 2);
+    }
+    expect(baked.firefly).toMatchObject({ key: POND_TEX.firefly, w: FIREFLY_TEX.w, h: FIREFLY_TEX.h, originX: FIREFLY_TEX.originX });
+    expect(baked.firefly!.originNormY).toBeCloseTo(0.5, 5);
+    for (const [, canvas] of made) expect(canvas.rec.ops.length).toBeGreaterThan(0);
+    const one = withFakeScene((scene) => bakePondTextures(scene, 1, { caveW: CAVE_W, caveH: CAVE_H }, { firefly: true }));
+    expect(one.rootArch).toBeNull();
+    expect(one.firefly).not.toBeNull();
   });
 
   it('sizes the log by the cave size it is given', () => {

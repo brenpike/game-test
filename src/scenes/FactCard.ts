@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 import { INK, UI_PANEL } from '../art/palette';
-import { CARD, cardTextWidth, cardTightTextWidth, fitCard } from '../logic/cardFit';
+import { CARD, cardTightTextWidth, factCardBodyWrapWidths, fitCard } from '../logic/cardFit';
 import { FACT_CARD_OK_LABEL, type FactCard as FactCardData } from '../logic/factCards';
 import {
   createButton,
@@ -99,27 +99,28 @@ export class FactCard {
   /**
    * Centres the panel on a canvas that has room for it. fitCard() sizes it from the current title, the
    * current body (clipped to whole lines only when nothing fits) and the button: it tightens the padding on a
-   * short screen and keeps the button inside the canvas. The title wraps at cardTightTextWidth() and the body
-   * at cardTextWidth(), so a long title such as "Plastic is not food" stays on one line on a small canvas; the
-   * panel width rule is unchanged, so the title keeps at least 12 px of room at each side. The title always
-   * shows. Safe to call before show() and after hide().
+   * short screen and keeps the button inside the canvas. The title wraps at cardTightTextWidth(), so a long
+   * title such as "Plastic is not food" stays on one line on a small canvas. The body wraps at the first of
+   * factCardBodyWrapWidths() that fits: cardTextWidth(), else cardTightTextWidth(), so a long body such as the
+   * heron's shows in full at 320 x 440. The panel width rule is unchanged, so the title and the body keep at
+   * least 12 px of room at each side. The title always shows. Safe to call before show() and after hide().
    */
   layout(view: SceneView): void {
     this.view = view;
     const { cssW, cssH } = view;
-    const textW = cardTextWidth(cssW);
     this.title.setWordWrapWidth(cardTightTextWidth(cssW), true);
-    this.body.setWordWrapWidth(textW, true);
     this.body.setMaxLines(0);
     const lineH = this.body.getTextMetrics().fontSize;
-    const bodyLines = this.body.getWrappedText(this.body.text).length;
+    const wrapWidths = factCardBodyWrapWidths(cssW);
+    const variants = wrapWidths.map((wrapW) => ({ lines: this.bodyLinesAt(wrapW), lineH }));
     const availH = cssH - 2 * CARD.margin;
     const fit = fitCard(availH, [
       { kind: 'fixed', height: this.title.height },
-      { kind: 'body', variants: [{ lines: bodyLines, lineH }] },
+      { kind: 'body', variants },
       { kind: 'actions', height: this.button.height },
     ]);
     const [titleSlot, bodySlot, actionsSlot] = fit.slots;
+    this.body.setWordWrapWidth(wrapWidths[fit.bodyVariant], true);
     this.body.setVisible(fit.bodyLines > 0);
     this.body.setMaxLines(fit.clipped ? fit.bodyLines : 0);
     const bodyW = fit.bodyLines > 0 ? this.body.width : 0;
@@ -132,5 +133,11 @@ export class FactCard {
     this.title.setPosition((cssW - this.title.width) / 2, panelY + titleSlot.top);
     this.body.setPosition((cssW - this.body.width) / 2, panelY + bodySlot.top);
     this.button.container.setPosition((cssW - this.button.width) / 2, panelY + actionsSlot.top);
+  }
+
+  /** Lines the current body wraps to at `wrapW`; leaves the body wrapping at `wrapW`. */
+  private bodyLinesAt(wrapW: number): number {
+    this.body.setWordWrapWidth(wrapW, true);
+    return this.body.getWrappedText(this.body.text).length;
   }
 }

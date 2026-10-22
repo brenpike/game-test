@@ -888,7 +888,7 @@ describe('Dream colour step', () => {
     expect(reduceStyler(state, { type: 'moreColours', perPage: MAX_STEP_OPTIONS }, noRandom).state.dreamPage).toBe(0);
   });
 
-  it('pages 14 options as 8 then 6 with More colours, wrapping, Real colour first on page 1', () => {
+  it('pages 15 options as 8 then 7 with More colours, wrapping, Real colour first on page 1', () => {
     let state = dreamOn(ALL_DREAMS);
     expect(dreamPageCount(state)).toBe(2);
     expect(optionIds(state)).toHaveLength(8);
@@ -1123,6 +1123,7 @@ describe('Outfit step', () => {
       { id: NO_WEARABLE_OPTION_ID, label: NONE_LABEL },
       { id: 'canal/sun-hat', label: 'Sun hat', wornOnMark: 'On Milo' },
       { id: 'pond/lily-flower-crown', label: 'Lily flower crown' },
+      { id: 'pond/feather-cap', label: 'Feather cap' },
     ]);
     expect(chosenIndex(head)).toBe(0);
     expect(head.focus).toEqual({ kind: 'option', index: 0 });

@@ -4,8 +4,10 @@ import {
   CANAL_DREAM_COLOURS,
   CANAL_TREASURES,
   DREAM_COLOURS,
+  FIREFLY_GOLD,
   LILY_GREEN,
   PERK_VALUES,
+  POND_2_TREASURES,
   POND_TREASURES,
   RARITIES,
   TREASURE_CATEGORIES,
@@ -25,6 +27,7 @@ import {
   type Treasure,
   type Wearable,
 } from './catalogue';
+import { DEV_DECORATIONS } from './devDecorations';
 
 function isWearable(treasure: Treasure): treasure is Wearable {
   return treasure.category === 'wearable';
@@ -280,11 +283,136 @@ describe('POND_TREASURES', () => {
   });
 });
 
+describe('POND_2_TREASURES', () => {
+  it('holds exactly the pond Area 3 treasures, in order (issue #98)', () => {
+    expect(POND_2_TREASURES).toEqual([
+      { id: 'pond/reed-bundle', name: 'Reed bundle', rarity: 'common', category: 'decoration' },
+      {
+        id: 'pond/drifting-feather',
+        name: 'Drifting feather',
+        rarity: 'common',
+        category: 'decoration',
+        placement: 'floating',
+      },
+      {
+        id: 'pond/wooden-duck-decoy',
+        name: 'Wooden duck decoy',
+        rarity: 'rare',
+        category: 'decoration',
+        placement: 'floating',
+      },
+      {
+        id: 'pond/firefly-string-lights',
+        name: 'Firefly string lights',
+        rarity: 'rare',
+        category: 'decoration',
+        placement: 'hanging',
+        width: 144,
+      },
+      { id: 'pond/firefly-jar', name: 'Firefly jar', rarity: 'epic', category: 'decoration', placement: 'hanging' },
+      { id: 'pond/golden-lotus-throne', name: 'Golden lotus throne', rarity: 'legendary', category: 'decoration' },
+      {
+        id: 'pond/feather-cap',
+        name: 'Feather cap',
+        rarity: 'common',
+        category: 'wearable',
+        slot: 'head',
+        perk: { type: 'speed', value: 4 },
+      },
+      {
+        id: 'pond/lily-pad-socks',
+        name: 'Lily-pad socks',
+        rarity: 'common',
+        category: 'wearable',
+        slot: 'socks',
+        perk: { type: 'snackMagnet', value: 30 },
+      },
+      {
+        id: 'pond/water-lily-shirt',
+        name: 'Water-lily shirt',
+        rarity: 'rare',
+        category: 'wearable',
+        slot: 'shirt',
+        perk: { type: 'regrowth', value: 15 },
+      },
+      {
+        id: 'pond/pearl-tail-charm',
+        name: 'Pearl tail charm',
+        rarity: 'epic',
+        category: 'wearable',
+        slot: 'tail',
+        perk: { type: 'shell', value: 1 },
+      },
+      {
+        id: 'pond/firefly-cape',
+        name: 'Firefly cape',
+        rarity: 'legendary',
+        category: 'wearable',
+        slot: 'back',
+        perk: { type: 'treasureSense', value: 50 },
+      },
+      {
+        id: 'pond/paint-shell-firefly-gold',
+        name: 'Firefly gold Paint shell',
+        rarity: 'rare',
+        category: 'paintShell',
+        dreamColour: 'firefly-gold',
+      },
+    ]);
+    expect(Object.isFrozen(POND_2_TREASURES)).toBe(true);
+  });
+
+  it('gives every pond Area 3 Wearable its PERK_VALUES value and no set', () => {
+    for (const wearable of POND_2_TREASURES.filter(isWearable)) {
+      expect(wearable.perk.value, wearable.id).toBe(PERK_VALUES[wearable.perk.type][wearable.rarity]);
+      expect(wearable.setId, wearable.id).toBeUndefined();
+    }
+  });
+
+  it('has 6 Decorations, 5 Wearables and the Firefly gold Paint shell', () => {
+    expect(POND_2_TREASURES.filter(isDecoration)).toHaveLength(6);
+    expect(POND_2_TREASURES.filter(isWearable)).toHaveLength(5);
+    expect(POND_2_TREASURES.filter(isPaintShell).map((shell) => shell.id)).toEqual(['pond/paint-shell-firefly-gold']);
+  });
+
+  it('keeps the canal and pond lists unchanged ahead of it', () => {
+    expect(CANAL_TREASURES).toHaveLength(24);
+    expect(POND_TREASURES).toHaveLength(12);
+    expect(POND_TREASURES.at(-1)?.id).toBe('pond/paint-shell-lily-green');
+  });
+});
+
 describe('ALL_TREASURES', () => {
-  it('is the canal treasures, then the pond treasures', () => {
-    expect(ALL_TREASURES).toEqual([...CANAL_TREASURES, ...POND_TREASURES]);
+  it('is the canal treasures, then the pond treasures, then the pond Area 3 treasures', () => {
+    expect(ALL_TREASURES).toEqual([...CANAL_TREASURES, ...POND_TREASURES, ...POND_2_TREASURES]);
     expect(Object.isFrozen(ALL_TREASURES)).toBe(true);
     expect(Object.isFrozen(POND_TREASURES)).toBe(true);
+  });
+
+  it('has 48 treasures: 14 Decorations, 20 Wearables and 14 Paint shells', () => {
+    expect(ALL_TREASURES).toHaveLength(48);
+    expect(ALL_DECORATIONS).toHaveLength(14);
+    expect(ALL_WEARABLES).toHaveLength(20);
+    expect(ALL_TREASURES.filter(isPaintShell)).toHaveLength(14);
+  });
+
+  it('puts Shell perks only on Epic or Legendary Wearables', () => {
+    const shellWearables = ALL_WEARABLES.filter((wearable) => wearable.perk.type === 'shell');
+    expect(shellWearables.map((wearable) => wearable.id)).toEqual([
+      'canal/golden-bow',
+      'pond/ladybug-backpack',
+      'pond/pearl-tail-charm',
+    ]);
+    for (const wearable of shellWearables) {
+      expect(['epic', 'legendary'], wearable.id).toContain(wearable.rarity);
+    }
+  });
+
+  it('keeps every treasure slug apart from the dev Decoration slugs', () => {
+    const slugs = new Set(ALL_TREASURES.map((treasure) => treasureSlug(treasure.id)));
+    for (const decoration of DEV_DECORATIONS) {
+      expect(slugs.has(treasureSlug(decoration.id)), decoration.id).toBe(false);
+    }
   });
 
   it('has unique ids of the form <area>/<slug>, unique names and unique slugs', () => {
@@ -328,10 +456,34 @@ describe('ALL_TREASURES', () => {
 });
 
 describe('Dream colours', () => {
-  it('lists the 12 canal colours, then Lily green', () => {
+  it('lists the 12 canal colours, then Lily green, then Firefly gold', () => {
     expect(CANAL_DREAM_COLOURS).toHaveLength(12);
-    expect(DREAM_COLOURS).toEqual([...CANAL_DREAM_COLOURS, LILY_GREEN]);
+    expect(DREAM_COLOURS).toEqual([...CANAL_DREAM_COLOURS, LILY_GREEN, FIREFLY_GOLD]);
+    expect(DREAM_COLOURS).toHaveLength(14);
     expect(Object.isFrozen(DREAM_COLOURS)).toBe(true);
+  });
+
+  it('makes Firefly gold a rare solid', () => {
+    expect(FIREFLY_GOLD).toEqual({ id: 'firefly-gold', name: 'Firefly gold', rarity: 'rare', kind: 'solid' });
+    expect(Object.isFrozen(FIREFLY_GOLD)).toBe(true);
+    expect(dreamColourById('firefly-gold')).toBe(FIREFLY_GOLD);
+  });
+
+  it('keeps every solid Dream colour Common or Rare', () => {
+    const solids = DREAM_COLOURS.filter((colour) => colour.kind === 'solid');
+    expect(solids.map((colour) => colour.id)).toEqual([
+      'mint',
+      'sky-blue',
+      'lavender',
+      'sunset-orange',
+      'bubblegum',
+      'midnight-blue',
+      'lily-green',
+      'firefly-gold',
+    ]);
+    for (const colour of solids) {
+      expect(['common', 'rare'], colour.id).toContain(colour.rarity);
+    }
   });
 
   it('makes Lily green a rare solid', () => {
@@ -376,6 +528,14 @@ describe('lookups', () => {
     expect(treasureById('pond/sun-hat')).toBeUndefined();
   });
 
+  it('treasureById finds pond Area 3 ids', () => {
+    expect(treasureById('pond/firefly-cape')).toMatchObject({ name: 'Firefly cape', category: 'wearable', slot: 'back' });
+    expect(treasureById('pond/paint-shell-firefly-gold')).toMatchObject({
+      dreamColour: 'firefly-gold',
+      rarity: 'rare',
+    });
+  });
+
   it('treasureSlug returns the text after the first slash', () => {
     expect(treasureSlug('canal/sun-hat')).toBe('sun-hat');
     expect(treasureSlug('canal/paint-shell-tie-dye')).toBe('paint-shell-tie-dye');
@@ -406,6 +566,22 @@ describe('Decoration placement kinds', () => {
     for (const decoration of POND_TREASURES.filter(isDecoration)) {
       expect(decoration.width, decoration.id).toBeUndefined();
     }
+  });
+
+  it('places the pond Area 3 Decorations and gives only the string lights a wide footprint (issue #98)', () => {
+    const kinds = POND_2_TREASURES.filter(isDecoration).map((decoration) => [
+      decoration.id,
+      placementKind(decoration),
+      decoration.width,
+    ]);
+    expect(kinds).toEqual([
+      ['pond/reed-bundle', 'floor', undefined],
+      ['pond/drifting-feather', 'floating', undefined],
+      ['pond/wooden-duck-decoy', 'floating', undefined],
+      ['pond/firefly-string-lights', 'hanging', 144],
+      ['pond/firefly-jar', 'hanging', undefined],
+      ['pond/golden-lotus-throne', 'floor', undefined],
+    ]);
   });
 
   it('makes every canal Decoration a Floor item with the standard width (issue #95)', () => {
@@ -460,5 +636,10 @@ describe('ownedDreamColours', () => {
   it('owns Lily green from the pond Paint shell, after the canal colours', () => {
     const banked = ['pond/paint-shell-lily-green', 'pond/raincoat', 'canal/paint-shell-mint', 'canal/paint-shell-lily-green'];
     expect(ownedDreamColours(banked)).toEqual(['mint', 'lily-green']);
+  });
+
+  it('owns Firefly gold from the pond Area 3 Paint shell, after Lily green', () => {
+    const banked = ['pond/paint-shell-firefly-gold', 'pond/paint-shell-lily-green', 'pond/firefly-cape'];
+    expect(ownedDreamColours(banked)).toEqual(['lily-green', 'firefly-gold']);
   });
 });

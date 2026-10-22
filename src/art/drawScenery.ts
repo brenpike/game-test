@@ -28,8 +28,6 @@ import {
   REED_DARK,
   REED_LEAF,
   REED_LIGHT,
-  SKY_HORIZON,
-  SKY_TOP,
   SOIL_DETAIL,
   SUN,
   SUN_RAY,
@@ -44,7 +42,7 @@ import {
   WILLOW_STRAND,
   WILLOW_TRUNK,
 } from './palette';
-import { habitatLook, type EdgeReedLook, type HabitatLook, type HabitatLookId } from './habitatLook';
+import { habitatLook, type AreaLookId, type EdgeReedLook, type HabitatLook } from './habitatLook';
 
 /** Background chunk size in logical units (the 480 x 360 reference viewport). */
 export const BG_CHUNK = { w: VIEW_W, h: VIEW_H } as const;
@@ -85,17 +83,33 @@ export interface ChunkOptions {
   /** Round off the bank at its right end (neighbour chunk has no bank). Default false. */
   readonly bankCapRight?: boolean;
   /**
-   * Habitat look (habitatLook.ts). Default 'canal', which paints exactly the canal
+   * Area look (habitatLook.ts). Default 'canal', which paints exactly the canal
    * chunk. 'pond' swaps the water, haze and bed colours and adds edge reeds and a
-   * stream. Random draws are the same for the canal as before; pond-only draws come
-   * after the canal's draws of the same step.
+   * stream. 'pond-dusk' is the pond with the dusk palette: its own sky, a wash over
+   * the sky, sun, clouds, bank and willows, dimmer rays, and dusk water, bed and
+   * reeds. Random draws are the same for the canal as before; pond-only draws come
+   * after the canal's draws of the same step, and the dusk pond draws exactly what
+   * the pond draws.
    */
-  readonly look?: HabitatLookId;
+  readonly look?: AreaLookId;
   /**
    * Paint the stream flowing in from the right edge of this chunk (guide 7a, pond).
    * Only counts on 'single' and 'top' chunks, where the water is. Default false.
    */
   readonly stream?: boolean;
+  /**
+   * The stream's mouth (this chunk's right edge) is in open water, not at the
+   * area's right edge: the band and the flow marks taper to nothing over the
+   * last STREAM_TAPER px before the mouth, so no hard edge shows. Only counts
+   * with `stream`. Default false.
+   */
+  readonly streamClosed?: boolean;
+  /**
+   * The left neighbour of this chunk holds a closed stream: paint the mouth
+   * stones that overflow its right edge at this chunk's left edge, so nothing
+   * is clipped. Only counts on 'single' and 'top' chunks. Default false.
+   */
+  readonly streamSpill?: boolean;
   /** This chunk is the first of its row. Looks with edge reeds paint them on the left. Default false. */
   readonly edgeLeft?: boolean;
   /** This chunk is the last of its row. Looks with edge reeds paint them on the right. Default false. */
@@ -106,12 +120,21 @@ export interface ChunkOptions {
 
 const SURF_WATER_TOP = SURF + 3;
 
-function paintSky(ctx: CanvasRenderingContext2D): void {
+/** Bottom of the sky band: the sky fill and the air wash cover y 0 to here; the water covers the rest from SURF + 3. */
+const SKY_BAND_BOTTOM = SURF + 6;
+
+function paintSky(ctx: CanvasRenderingContext2D, look: HabitatLook): void {
   const g = ctx.createLinearGradient(0, 0, 0, SURF + 4);
-  g.addColorStop(0, SKY_TOP);
-  g.addColorStop(1, SKY_HORIZON);
+  g.addColorStop(0, look.sky.top);
+  g.addColorStop(1, look.sky.horizon);
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, VIEW_W, SURF + 6);
+  ctx.fillRect(0, 0, VIEW_W, SKY_BAND_BOTTOM);
+}
+
+/** Lay the look's air wash over everything painted so far in the sky band (sky, sun, clouds, bank, willows). */
+function paintAirWash(ctx: CanvasRenderingContext2D, wash: string): void {
+  ctx.fillStyle = wash;
+  ctx.fillRect(0, 0, VIEW_W, SKY_BAND_BOTTOM);
 }
 
 function paintSun(ctx: CanvasRenderingContext2D): void {
@@ -331,7 +354,7 @@ function paintWater(ctx: CanvasRenderingContext2D, look: HabitatLook): void {
   ctx.fillRect(0, SURF_WATER_TOP, VIEW_W, VIEW_H - SURF_WATER_TOP);
 }
 
-function paintRays(ctx: CanvasRenderingContext2D, rand: () => number): void {
+function paintRays(ctx: CanvasRenderingContext2D, rand: () => number, alphaScale: number): void {
   const specs: readonly (readonly [number, number, number])[] = [
     [120, 30, 0.4],
     [250, 38, 2.0],
@@ -340,7 +363,7 @@ function paintRays(ctx: CanvasRenderingContext2D, rand: () => number): void {
   for (const [bx, w, ph] of specs) {
     const x = bx + (rand() - 0.5) * 28;
     const dx = 6 * Math.sin((TAU * T_STATIC) / 8 + ph);
-    const a = RAY_ALPHA + RAY_ALPHA_SWING * Math.sin((TAU * T_STATIC) / 6 + ph);
+    const a = (RAY_ALPHA + RAY_ALPHA_SWING * Math.sin((TAU * T_STATIC) / 6 + ph)) * alphaScale;
     const g = ctx.createLinearGradient(0, SURF, 0, RAY_END_Y);
     g.addColorStop(0, `rgba(255,255,255,${a.toFixed(3)})`);
     g.addColorStop(1, 'rgba(255,255,255,0)');
@@ -445,17 +468,41 @@ const STREAM_CHEVRON_W = 11;
 const STREAM_CHEVRON_H = 6;
 const STREAM_TRAIL_LEN = 36;
 const STREAM_LIGHT = 'rgba(240,255,228,0.3)';
+const STREAM_LIGHT_CLEAR = 'rgba(240,255,228,0)';
 const STREAM_LINE = 'rgba(255,255,255,0.6)';
+const STREAM_LINE_CLEAR = 'rgba(255,255,255,0)';
 const STREAM_LINE_WIDTH = 2.4;
+/**
+ * A closed stream (mouth in open water, not at the area's right edge) fades its
+ * band and flow marks to nothing over this many px before the mouth (guide 7a).
+ */
+export const STREAM_TAPER = 40;
+/** How far the mouth stones reach past the mouth: stone centre 6 px inside, radius 17. */
+export const STREAM_STONE_OVERFLOW = 11;
+
+/**
+ * The column whose right edge is the stream's mouth: the column that holds
+ * `currentX1`, the right end of the area's current, so the stream art sits just
+ * upstream of the current. A current ending exactly on a column edge maps to
+ * the column on its left, whose right edge it ends on. Throws a RangeError when
+ * `currentX1` is not inside the `screensWide` columns.
+ */
+export function streamColumnFor(currentX1: number, screensWide: number): number {
+  if (!(currentX1 > 0 && currentX1 <= screensWide * VIEW_W)) {
+    throw new RangeError(`streamColumnFor: current end ${currentX1} is outside ${screensWide} columns`);
+  }
+  return Math.ceil(currentX1 / VIEW_W) - 1;
+}
 
 /**
  * Paint the stream: a lighter band of water that widens toward the right edge,
  * five white flow lines each ending in a left-pointing chevron, and a cool stone
  * at each side of the mouth. Static, no randomness. The chevrons are the shape
  * cue that the water runs left, so it reads without colour. The scene's current
- * streaks (motion) sit over it.
+ * streaks (motion) sit over it. `closed` tapers the band and the flow lines to
+ * nothing over the last STREAM_TAPER px, for a mouth in open water.
  */
-function paintStream(ctx: CanvasRenderingContext2D): void {
+function paintStream(ctx: CanvasRenderingContext2D, closed: boolean): void {
   const { y0, y1, reach } = STREAM_BAND;
   const mid = (y0 + y1) / 2;
   const tipX = VIEW_W - reach;
@@ -465,13 +512,18 @@ function paintStream(ctx: CanvasRenderingContext2D): void {
   band.quadraticCurveTo(VIEW_W - reach * 0.45, y1 - 4, VIEW_W + 10, y1);
   band.closePath();
   const g = ctx.createLinearGradient(tipX, 0, VIEW_W, 0);
-  g.addColorStop(0, 'rgba(240,255,228,0)');
-  g.addColorStop(1, STREAM_LIGHT);
+  g.addColorStop(0, STREAM_LIGHT_CLEAR);
+  if (closed) {
+    g.addColorStop(1 - STREAM_TAPER / reach, STREAM_LIGHT);
+    g.addColorStop(1, STREAM_LIGHT_CLEAR);
+  } else {
+    g.addColorStop(1, STREAM_LIGHT);
+  }
   ctx.fillStyle = g;
   ctx.fill(band);
 
   ctx.lineWidth = STREAM_LINE_WIDTH;
-  ctx.strokeStyle = STREAM_LINE;
+  ctx.strokeStyle = closed ? streamLineTaper(ctx) : STREAM_LINE;
   for (const [fromRight, y] of STREAM_CHEVRONS) {
     const tip = VIEW_W - fromRight;
     const trail = new Path2D();
@@ -485,6 +537,20 @@ function paintStream(ctx: CanvasRenderingContext2D): void {
     ctx.stroke(head);
   }
 
+  paintStreamStones(ctx);
+}
+
+/** The flow line colour of a closed stream: full until STREAM_TAPER px before the mouth, then fading to nothing at it. */
+function streamLineTaper(ctx: CanvasRenderingContext2D): CanvasGradient {
+  const g = ctx.createLinearGradient(VIEW_W - STREAM_TAPER, 0, VIEW_W, 0);
+  g.addColorStop(0, STREAM_LINE);
+  g.addColorStop(1, STREAM_LINE_CLEAR);
+  return g;
+}
+
+/** The cool stone at each side of the stream mouth, centred 6 px inside the chunk's right edge. */
+function paintStreamStones(ctx: CanvasRenderingContext2D): void {
+  const { y0, y1 } = STREAM_BAND;
   for (const [sy, fill] of [
     [y0 - 8, PEBBLE_D],
     [y1 + 8, PEBBLE_B],
@@ -497,6 +563,19 @@ function paintStream(ctx: CanvasRenderingContext2D): void {
     ctx.fillStyle = PEBBLE_SHINE;
     ctx.fill(shine);
   }
+}
+
+/**
+ * Paint the left neighbour's mouth stones, shifted one chunk left, so the part
+ * that overflows its right edge (STREAM_STONE_OVERFLOW px) shows at this chunk's
+ * left edge. The band and flow lines of a closed stream are clear past the
+ * mouth, so only the stones spill.
+ */
+function paintStreamSpill(ctx: CanvasRenderingContext2D): void {
+  ctx.save();
+  ctx.translate(-VIEW_W, 0);
+  paintStreamStones(ctx);
+  ctx.restore();
 }
 
 /** Edge reed cluster geometry: reeds per side, the x span from the chunk edge, and the height ranges (guide 7a, pond). */
@@ -553,9 +632,12 @@ function paintEdgeReeds(
  * size). Reeds, haze, surface line and pads are separate layers. The caller
  * sets the transform so one logical unit is one unit here.
  *
- * `look` picks the habitat (default 'canal', unchanged). A look with edge reeds
- * paints them at the row's first and last chunk, after the bed; `stream` adds
- * the stream after the rays.
+ * `look` picks the area look (default 'canal', unchanged). A look with an air
+ * wash lays it over the sky band after the bank, before the water. A look with
+ * edge reeds paints them at the row's first and last chunk, after the bed;
+ * `stream` adds the stream after the rays (`streamClosed` tapers it out before
+ * the mouth), and `streamSpill` adds the left neighbour's overflowing mouth
+ * stones at the same step.
  */
 export function paintBackgroundChunk(ctx: CanvasRenderingContext2D, opts: ChunkOptions): void {
   const { rand } = opts;
@@ -564,13 +646,15 @@ export function paintBackgroundChunk(ctx: CanvasRenderingContext2D, opts: ChunkO
   const hasSky = row === 'single' || row === 'top';
   const hasBed = row === 'single' || row === 'bottom';
   if (hasSky) {
-    paintSky(ctx);
+    paintSky(ctx, look);
     if (opts.hasSun) paintSun(ctx);
     paintClouds(ctx, rand, opts.hasSun ? 16 : 120);
     if (opts.hasBank) paintBank(ctx, opts);
+    if (look.airWash !== null) paintAirWash(ctx, look.airWash);
     paintWater(ctx, look);
-    paintRays(ctx, rand);
-    if (opts.stream === true) paintStream(ctx);
+    paintRays(ctx, rand, look.rayAlphaScale);
+    if (opts.stream === true) paintStream(ctx, opts.streamClosed === true);
+    if (opts.streamSpill === true) paintStreamSpill(ctx);
   } else {
     paintDeepWater(ctx, look);
   }

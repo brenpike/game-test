@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { CANAL_AREA } from './areas';
-import { ALL_TREASURES, PERK_VALUES, WEARABLE_SLOTS, type PerkType, type Wearable, type WearableSlot } from './catalogue';
+import {
+  ALL_TREASURES,
+  PERK_VALUES,
+  POND_2_TREASURES,
+  WEARABLE_SLOTS,
+  type PerkType,
+  type Wearable,
+  type WearableSlot,
+} from './catalogue';
 import { snackDriftMaxSpeed } from './collectibles';
 import {
   createEncounter,
@@ -73,6 +81,9 @@ function countOf(events: readonly EncounterEvent[], type: EncounterEvent['type']
 
 /** Every catalogue Wearable, every area, in catalogue order. */
 const CATALOGUE_WEARABLES = ALL_TREASURES.filter((treasure): treasure is Wearable => treasure.category === 'wearable');
+const AREA_3_WEARABLE_IDS: readonly string[] = POND_2_TREASURES.filter((treasure) => treasure.category === 'wearable').map(
+  (treasure) => treasure.id,
+);
 
 describe('outfitPerks', () => {
   it('gives nothing for an empty outfit', () => {
@@ -118,6 +129,24 @@ describe('catalogue Wearable perks (F9)', () => {
     for (const wearable of CATALOGUE_WEARABLES) {
       expect(Object.keys(wearable.perk).sort(), wearable.id).toEqual(['type', 'value']);
       expect(PERK_ORDER, wearable.id).toContain(wearable.perk.type);
+      expect(wearable.perk.value, wearable.id).toBe(PERK_VALUES[wearable.perk.type][wearable.rarity]);
+    }
+  });
+
+  it('gives the Area 3 Wearables existing perks at the canal values for their rarity', () => {
+    const area3 = CATALOGUE_WEARABLES.filter((wearable) => AREA_3_WEARABLE_IDS.includes(wearable.id));
+    expect(area3.map((wearable) => [wearable.id, wearable.rarity, wearable.slot, wearable.perk])).toEqual([
+      ['pond/feather-cap', 'common', 'head', { type: 'speed', value: 4 }],
+      ['pond/lily-pad-socks', 'common', 'socks', { type: 'snackMagnet', value: 30 }],
+      ['pond/water-lily-shirt', 'rare', 'shirt', { type: 'regrowth', value: 15 }],
+      ['pond/pearl-tail-charm', 'epic', 'tail', { type: 'shell', value: 1 }],
+      ['pond/firefly-cape', 'legendary', 'back', { type: 'treasureSense', value: 50 }],
+    ]);
+    const canalPerkTypes = new Set(
+      CATALOGUE_WEARABLES.filter((wearable) => wearable.id.startsWith('canal/')).map((wearable) => wearable.perk.type),
+    );
+    for (const wearable of area3) {
+      expect(canalPerkTypes.has(wearable.perk.type), wearable.id).toBe(true);
       expect(wearable.perk.value, wearable.id).toBe(PERK_VALUES[wearable.perk.type][wearable.rarity]);
     }
   });

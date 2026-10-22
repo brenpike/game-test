@@ -8,6 +8,7 @@ import {
   cardIconRowWidth,
   cardTextWidth,
   cardTightTextWidth,
+  factCardBodyWrapWidths,
   fitCard,
   homeTitleWrapWidth,
   isSupportedCanvas,
@@ -108,6 +109,12 @@ function arrivalAreas(reason: ArrivalReason): readonly Readonly<AreaData>[] {
   return reason === 'areaBeaten' ? AREAS : [CANAL_AREA];
 }
 
+/**
+ * Most treasures one tank arrival or banking card can name: a trip finds only its own area's
+ * treasures, so one trip brings home at most the largest area catalogue (PRD A12, B9).
+ */
+const MAX_TRIP_FINDS = Math.max(...AREAS.map((area) => area.layout.treasures.length));
+
 /** Every area's hazard and predator fact card, in area-table order. */
 const AREA_FACT_CARDS: readonly Readonly<FactCard>[] = areaFactCards();
 
@@ -187,15 +194,14 @@ function titleHeight(title: string, wrapW: number): number {
   return estimateLines(title, CARD.titlePx, wrapW, BOLD_EM) * LINE_HEIGHT_EM * CARD.titlePx;
 }
 
+/** Supported canvases `cssW` wide from the height grid. */
+function supportedCanvasesOfWidth(cssW: number): Canvas[] {
+  return CANVAS_HEIGHTS.filter((cssH) => isSupportedCanvas(cssW, cssH)).map((cssH) => ({ cssW, cssH }));
+}
+
 /** Supported canvases from the width and height grid. */
 function supportedCanvases(): Canvas[] {
-  const canvases: Canvas[] = [];
-  for (const cssW of CANVAS_WIDTHS) {
-    for (const cssH of CANVAS_HEIGHTS) {
-      if (isSupportedCanvas(cssW, cssH)) canvases.push({ cssW, cssH });
-    }
-  }
-  return canvases;
+  return CANVAS_WIDTHS.flatMap(supportedCanvasesOfWidth);
 }
 
 /**
@@ -254,12 +260,14 @@ function bankingSections(
   ];
 }
 
-/** Fact card sections: bold title (wrapped at the tight width), body, one OK button. */
+/**
+ * Fact card sections: bold title (wrapped at the tight width), body (the full body at each of
+ * factCardBodyWrapWidths, body width first), one OK button.
+ */
 function factCardSections(card: Readonly<FactCard>, cssW: number): CardSection[] {
-  const textW = cardTextWidth(cssW);
   return [
     { kind: 'fixed', height: titleHeight(card.title, cardTightTextWidth(cssW)) },
-    { kind: 'body', variants: [bodyFit(card.body, textW)] },
+    { kind: 'body', variants: factCardBodyWrapWidths(cssW).map((wrapW) => bodyFit(card.body, wrapW)) },
     { kind: 'actions', height: BUTTON_H },
   ];
 }
@@ -308,10 +316,13 @@ function bankingCombinations(canvas: Canvas, names: readonly string[], total: nu
   );
 }
 
-/** Every tank arrival card and banking card combination on one canvas. */
-function canvasCombinations(canvas: Canvas): Combination[] {
+/**
+ * Every tank arrival card and banking card combination on one canvas, naming 0 to `maxCount` of the
+ * longest catalogue names (the whole catalogue by default).
+ */
+function canvasCombinations(canvas: Canvas, maxCount: number = SORTED_NAMES.length): Combination[] {
   const combinations: Combination[] = [];
-  for (let count = 0; count <= SORTED_NAMES.length; count++) {
+  for (let count = 0; count <= maxCount; count++) {
     const names = SORTED_NAMES.slice(0, count);
     for (const total of BANKED_TOTALS) {
       combinations.push(...arrivalCombinations(canvas, names, total));
@@ -326,11 +337,6 @@ function canvasCombinations(canvas: Canvas): Combination[] {
 function factCardCombination(card: Readonly<FactCard>, canvas: Canvas): Combination {
   const label = `${card.id} fact ${canvas.cssW}x${canvas.cssH}`;
   return makeCombination(label, canvas, 0, factCardSections(card, canvas.cssW));
-}
-
-/** Every combination on every supported canvas. */
-function allCombinations(): Combination[] {
-  return supportedCanvases().flatMap(canvasCombinations);
 }
 
 /** Problems with one fitted combination: clipped, or actions outside [0, availH]. */
@@ -372,10 +378,15 @@ describe('card copy fit', () => {
     expect(SORTED_AXOLOTL_NAMES[0]).toBe('Golden albino axolotl');
   });
 
-  it(
-    'fits every wording combination on every supported canvas without clipping',
-    () => {
-      const combinations = allCombinations();
+  it('brings home at most the 24 canal treasures on one trip, of the 48 in the catalogue', () => {
+    expect(MAX_TRIP_FINDS).toBe(24);
+    expect(SORTED_NAMES).toHaveLength(48);
+  });
+
+  it.each(CANVAS_WIDTHS)(
+    'fits every wording combination, naming up to the whole catalogue, on every supported canvas %i wide without clipping',
+    (cssW) => {
+      const combinations = supportedCanvasesOfWidth(cssW).flatMap((canvas) => canvasCombinations(canvas));
       expect(combinations.length).toBeGreaterThan(0);
       const problems = combinations.flatMap((combination) =>
         fitProblems(combination, fitCard(combination.availH, combination.sections)),
@@ -389,9 +400,9 @@ describe('card copy fit', () => {
     { cssW: 800, cssH: 600 },
     { cssW: 1024, cssH: 768 },
   ])(
-    'shows the full body and every icon at $cssW x $cssH',
+    'shows the full body and every icon of one trip at $cssW x $cssH',
     (canvas) => {
-      const problems = canvasCombinations(canvas).flatMap((combination) =>
+      const problems = canvasCombinations(canvas, MAX_TRIP_FINDS).flatMap((combination) =>
         downgradeProblems(combination, fitCard(combination.availH, combination.sections)),
       );
       expect(problems).toEqual([]);
@@ -418,8 +429,8 @@ describe('card copy fit', () => {
 });
 
 describe('area fact card copy fit', () => {
-  it('checks every area fact card: the tilapia and the plastic worm', () => {
-    expect(AREA_FACT_CARDS.map((card) => card.id)).toEqual(['tilapia', 'plastic-worm']);
+  it('checks every area fact card: the tilapia, the plastic worm and the heron', () => {
+    expect(AREA_FACT_CARDS.map((card) => card.id)).toEqual(['tilapia', 'plastic-worm', 'heron']);
   });
 
   it('keeps the plastic worm title one line at 460 wide, which the body width would wrap', () => {
@@ -448,11 +459,39 @@ describe('area fact card copy fit', () => {
       for (const card of AREA_FACT_CARDS) {
         const combination = factCardCombination(card, canvas);
         const fit = fitCard(combination.availH, combination.sections);
+        const wrapW = factCardBodyWrapWidths(canvas.cssW)[fit.bodyVariant];
         expect(fit.clipped, card.id).toBe(false);
-        expect(fit.bodyVariant, card.id).toBe(0);
+        expect(fit.bodyLines, card.id).toBe(bodyFit(card.body, wrapW).lines);
       }
     },
   );
+
+  it('wraps every fact card body at the body width, except the heron at 320 x 440, which uses the tight width', () => {
+    const tightBodies = supportedCanvases().flatMap((canvas) =>
+      AREA_FACT_CARDS.flatMap((card) => {
+        const combination = factCardCombination(card, canvas);
+        return fitCard(combination.availH, combination.sections).bodyVariant === 0 ? [] : [combination.label];
+      }),
+    );
+    expect(tightBodies).toEqual(['heron fact 320x440']);
+  });
+
+  it('fits the heron body at 320 x 440 only at the tight width', () => {
+    const card = AREA_FACT_CARDS.find((candidate) => candidate.id === 'heron');
+    if (card === undefined) throw new Error('no heron fact card');
+    const canvas = SMALLEST_CANVAS.portrait;
+    const availH = canvas.cssH - 2 * CARD.margin;
+    const [bodyW, tightW] = factCardBodyWrapWidths(canvas.cssW);
+    const titleH = titleHeight(card.title, cardTightTextWidth(canvas.cssW));
+    const fitAt = (wrapW: number): CardFit =>
+      fitCard(availH, [
+        { kind: 'fixed', height: titleH },
+        { kind: 'body', variants: [bodyFit(card.body, wrapW)] },
+        { kind: 'actions', height: BUTTON_H },
+      ]);
+    expect(fitAt(bodyW).clipped).toBe(true);
+    expect(fitAt(tightW).clipped).toBe(false);
+  });
 
   it.each([
     { cssW: 800, cssH: 600 },
@@ -529,7 +568,7 @@ describe('first-find card copy fit (C15)', () => {
 
 describe('area beaten card copy fit (H5, H8)', () => {
   it('names each area special treasure from the catalogue', () => {
-    expect(AREAS.map((area) => worstStars(area).specialName)).toEqual(['Toy boat', 'Frog statue']);
+    expect(AREAS.map((area) => worstStars(area).specialName)).toEqual(['Toy boat', 'Frog statue', 'Wooden duck decoy']);
   });
 
   it.each(AREAS.map((area) => [area.id, area] as const))(

@@ -7,6 +7,7 @@ import {
   stepEncounter,
   type EncounterContext,
   type EncounterEvent,
+  type EncounterSource,
   type EncounterState,
   type EncounterStepResult,
 } from './encounter';
@@ -15,12 +16,19 @@ import { TILAPIA_FACT } from './factCards';
 import { GAME_EVENTS, REGISTRY_KEYS } from './gameEvents';
 import type { HazardSpawn, HazardType } from './hazards';
 import { createLegs, isProtected, legSwimTuning, presentCount } from './legs';
-import { TILAPIA_SPECIES, type PredatorSpecies } from './predators';
+import {
+  HERON_SPECIES,
+  TILAPIA_SPECIES,
+  predatorCycleView,
+  type PredatorRoute,
+  type PredatorSpecies,
+  type PredatorState,
+} from './predators';
 import { mulberry32 } from './rng';
 import { stepSwim, type SwimState } from './swimPhysics';
 import { inSafeArea } from './tilapia';
 import { TRIP_EVENTS, TRIP_REGISTRY_KEYS } from './tripEvents';
-import { LEGS, SWIM, TILAPIA } from './tuning';
+import { HERON, LEGS, SWIM, TILAPIA } from './tuning';
 import { normalize } from './vec';
 import { buildCanalZone, inHomeSpot, swimBounds, type Point, type SafeArea, type TilapiaRoute } from './zone';
 
@@ -638,5 +646,155 @@ describe('stagger across species', () => {
       }
     }
     expect([...telegraphs].sort()).toEqual(['eel', 'left']);
+  });
+});
+
+describe('the heron in the encounter (#98)', () => {
+  const heronRoute: PredatorRoute = {
+    id: 'heron-stretch',
+    waypoints: [
+      { x: 600, y: 100 },
+      { x: 1400, y: 100 },
+    ],
+    species: HERON_SPECIES,
+  };
+  const heronSource: EncounterSource = { ...zone, tilapiaRoutes: [], predatorRoutes: [heronRoute] };
+  const inBand: Point = { x: 1000, y: 130 };
+  const shellCtx = createEncounterContext({ legs: { ...LEGS, regrowTime: 1e9 }, shell: true });
+  const period = 8;
+
+  function heronOf(state: EncounterState): PredatorState {
+    return state.predators[state.predators.length - 1];
+  }
+
+  function heronPhase(state: EncounterState): string {
+    const view = predatorCycleView(heronOf(state), HERON);
+    if (!view) throw new Error('the heron has no cycle');
+    return view.phase;
+  }
+
+  it('builds the tilapia first, then the heron route with the heron species and its own tuning', () => {
+    const left: TilapiaRoute = { id: 'left', waypoints: [{ x: 1000, y: 200 }] };
+    const state = createEncounter({ ...heronSource, tilapiaRoutes: [left] });
+    expect(state.predators.map((predator) => [predator.routeId, predator.species])).toEqual([
+      ['left', 'tilapia'],
+      ['heron-stretch', 'heron'],
+    ]);
+    const tunedCtx = createEncounterContext({ tilapia: { ...TILAPIA, windup: 5 } });
+    expect(predatorSpecies(state, state.predators[1], tunedCtx)).toBe(HERON_SPECIES);
+    expect(predatorSpecies(state, state.predators[1], tunedCtx).tuning).toBe(HERON);
+  });
+
+  it('never bumps, even with the axolotl on its warning spot, whatever its contactRadius', () => {
+    const wideReach: PredatorSpecies = { ...HERON_SPECIES, tuning: { ...HERON, contactRadius: 1000, bumpSpeed: 500 } };
+    for (const species of [HERON_SPECIES, wideReach]) {
+      const source: EncounterSource = { ...heronSource, predatorRoutes: [{ ...heronRoute, species }] };
+      const { events, impulses } = run(createEncounter(source), inBand, 2 * period, noRegrowCtx);
+      expect(typesOf(events, ['telegraph', 'hit'])).toEqual(['telegraph', 'hit', 'telegraph', 'hit']);
+      expect(typesOf(events, ['bump'])).toEqual([]);
+      expect(impulses).toBe(0);
+    }
+  });
+
+  it('lands a connected dip as one hit: one leg, protected time and the heron bump cooldown', () => {
+    const { state, events } = run(createEncounter(heronSource), inBand, period, noRegrowCtx, 'hit');
+    expect(typesOf(events, ['telegraph', 'lunge', 'hit', 'regrowStart', 'bump'])).toEqual([
+      'telegraph',
+      'lunge',
+      'hit',
+      'regrowStart',
+    ]);
+    expect(events.find((event) => event.type === 'hit')).toEqual({
+      type: 'hit',
+      sourceId: 'heron-stretch',
+      leg: 0,
+      from: inBand,
+    });
+    expect(presentCount(state.legs)).toBe(LEGS.count - 1);
+    expect(state.legs.protectedLeft).toBe(LEGS.protectedTime);
+    expect(state.bumpCooldownLeft).toBe(HERON.bumpCooldown);
+  });
+
+  it('lets the Shell block the first dip, and the next dip costs a leg', () => {
+    const blocked = run(createEncounter(heronSource), inBand, period, shellCtx, 'shellBlock');
+    expect(blocked.events.filter((event) => event.type === 'shellBlock')).toEqual([
+      { type: 'shellBlock', sourceId: 'heron-stretch', from: inBand },
+    ]);
+    expect(presentCount(blocked.state.legs)).toBe(LEGS.count);
+    expect(blocked.state.legs.protectedLeft).toBe(LEGS.protectedTime);
+    expect(blocked.state.bumpCooldownLeft).toBe(HERON.bumpCooldown);
+    expect(blocked.state.shellUsed).toBe(true);
+    const next = run(blocked.state, inBand, period, shellCtx, 'hit');
+    expect(typesOf(next.events, ['hit', 'shellBlock'])).toEqual(['hit']);
+    expect(presentCount(next.state.legs)).toBe(LEGS.count - 1);
+  });
+
+  it('carries the axolotl home on the fourth dip', () => {
+    const { state, events } = run(createEncounter(heronSource), inBand, 5 * period, noRegrowCtx, 'carriedHome');
+    const hits = events.filter((event) => event.type === 'hit');
+    expect(hits.map((event) => event.leg)).toEqual([0, 1, 2, 3]);
+    expect(events[events.length - 1]).toEqual({ type: 'carriedHome' });
+    expect(state.tripOver).toBe(true);
+  });
+
+  it('passes its cycle when a tilapia is already warning at the heron warn mark', () => {
+    const near: TilapiaRoute = { id: 'near', waypoints: [{ x: 1100, y: 130 }] };
+    const slowCtx = createEncounterContext({ legs: { ...LEGS, regrowTime: 1e9 }, tilapia: { ...TILAPIA, windup: 5 } });
+    let state = createEncounter({ ...heronSource, tilapiaRoutes: [near] });
+    const heronPhases = new Set<string>();
+    const telegraphs: string[] = [];
+    let tilapiaAtMark: string | null = null;
+    for (let i = 0; i < Math.round(period / DT); i++) {
+      const result = stepEncounter(state, inBand, DT, slowCtx);
+      state = result.state;
+      expect(attackingCount(state)).toBeLessThanOrEqual(1);
+      heronPhases.add(heronPhase(state));
+      if (tilapiaAtMark === null && heronPhase(state) === 'glideOff') tilapiaAtMark = state.predators[0].phase;
+      for (const event of result.events) {
+        if (event.type === 'telegraph') telegraphs.push(event.sourceId);
+      }
+    }
+    expect(tilapiaAtMark).toBe('telegraph');
+    expect(telegraphs[0]).toBe('near');
+    expect(telegraphs).not.toContain('heron-stretch');
+    expect([...heronPhases].sort()).toEqual(['gap', 'glideIn', 'glideOff']);
+  });
+
+  it('keeps a tilapia in range from warning until the heron dip ends', () => {
+    const deep: TilapiaRoute = { id: 'deep', waypoints: [{ x: 1000, y: 290 }] };
+    const nearTilapia: Point = { x: 1000, y: 158 };
+    let state = createEncounter({ ...heronSource, tilapiaRoutes: [deep] });
+    let heronWarned = false;
+    let heronDipEnd = -1;
+    let tilapiaTelegraph = -1;
+    const telegraphs: string[] = [];
+    for (let i = 0; i < Math.round(period / DT) && tilapiaTelegraph < 0; i++) {
+      const wasDipping = heronOf(state).phase === 'lunge';
+      const result = stepEncounter(state, heronWarned ? nearTilapia : inBand, DT, noRegrowCtx);
+      state = result.state;
+      expect(attackingCount(state)).toBeLessThanOrEqual(1);
+      if (wasDipping && heronOf(state).phase !== 'lunge') heronDipEnd = i;
+      for (const event of result.events) {
+        if (event.type !== 'telegraph') continue;
+        telegraphs.push(event.sourceId);
+        if (event.sourceId === 'heron-stretch') heronWarned = true;
+        if (event.sourceId === 'deep') tilapiaTelegraph = i;
+      }
+    }
+    expect(telegraphs).toEqual(['heron-stretch', 'deep']);
+    expect(heronDipEnd).toBeGreaterThan(0);
+    expect(tilapiaTelegraph).toBe(heronDipEnd + 1);
+  });
+
+  it('freezes the heron cycle at dt=0 and every other paused dt', () => {
+    const moving = run(createEncounter(heronSource), inBand, 1, noRegrowCtx).state;
+    const cycleTime = heronOf(moving).cycleTime;
+    expect(cycleTime).toBeGreaterThan(0);
+    for (const dt of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const paused = stepEncounter(moving, inBand, dt, noRegrowCtx);
+      expect(paused.state).toBe(moving);
+      expect(paused.events).toEqual([]);
+      expect(heronOf(paused.state).cycleTime).toBe(cycleTime);
+    }
   });
 });

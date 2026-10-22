@@ -6,7 +6,7 @@ It is mostly fun, with real axolotl facts along the way.
 
 ## What you can do now
 
-Version 0.26.0 is playable in two zones, the canal and the Lily pad pond:
+Version 0.27.0 is playable in three areas in two habitats, the canal and the Lily pad pond:
 
 - Make your own axolotl the first time you play, one step at a time in 11 steps: colour (one of eight real morphs), boy or girl (with a boy or girl sign), eyes, mouth (eight to choose from), gills, spots, tail, body, age, size, and name. Every choice is a big picture button that shows it on your axolotl, and the preview changes as you pick. On the first step, Surprise me picks a whole new axolotl at random, with a name that fits. On the other steps, it picks something new for that step only. The other seven colours are the ones you rescue.
 - Type a name, or pick a suggested one that fits a boy or a girl, so typing is optional. Names stay on your device.
@@ -26,6 +26,8 @@ Version 0.26.0 is playable in two zones, the canal and the Lily pad pond:
 - Rescue a stranded axolotl on a trip. On about 3 trips in 10, one real morph you do not have yet waits looking a little lost. Swim to it and it follows you; bring it to the Home Spot or the open exit and it moves into your Home Tank. If you meet one and do not bring it home, it waits for you on your next trip.
 - Meet the tilapia: the first time you swim near one, a fact card tells you about it.
 - Beat Area 1 to unlock Area 2, the Lily pad pond. It is about 5 screens wide, with 4 tilapia, 7 treasure slots, a hollow log that hides treasure, and a stream that works as the current. It has 12 new treasures, including the Frog statue and the Lily green Dream colour.
+- Beat Area 2 to unlock Area 3, the Lily pad pond at dusk. It is about 6 screens wide, with 4 tilapia, 8 treasure slots, a root arch under the bank that works as the cave, and a slightly stronger stream. Some snacks dart away a little, and fireflies glow in the dusk. It has 12 new treasures, including the Wooden duck decoy and the Firefly gold Dream colour.
+- Watch the sky in Area 3: a heron hunts there. Its shadow glides over one stretch near the surface and darkens before its beak dips, so swim away or stay deep. A heron fact card tells you about it.
 - Watch out for plastic worms in the pond. They are shiny, stiff, too-bright fake worms. If your axolotl bites one, it spits it out ("Bleh!") and feels queasy: about 60% speed for 3 seconds. It does not lose a leg, and plastic worms are never snacks. A "Plastic is not food" fact card tells you why.
 - Visit your Home Tank after the title and after every trip. A trip-end message tells you how the trip went.
 - Watch your axolotl swim around the Home Tank. With reduced motion it stays still.
@@ -33,11 +35,11 @@ Version 0.26.0 is playable in two zones, the canal and the Lily pad pond:
 - Give your axolotls Dream colours: on the restyle screen's Dream colour tab, put any Dream colour you banked on any axolotl, or pick Real colour to take it off. One Dream colour can be on lots of axolotls at once, and spots show on top of it. Dream colours are not found in nature.
 - Dress your axolotls in outfits on the restyle screen's Outfit tab: eight slots (Head, Neck, Face, Shirt, Back, Tail, Socks, and Feet), one Wearable you banked in each. Each Wearable gives one small perk on trips: Speed, Regrowth, Dash (a longer Tail Dash), Shell (blocks one hit per trip), Treasure sense (hint sparkles from further away), or Snack magnet (pulls nearby snacks to you). Each perk shows with an icon and words, and each perk type has a cap. Only the axolotl you take exploring uses its perks. A lost leg's sock and shoe come back when the leg has fully regrown.
 - Press Go exploring to pick which axolotl goes on the trip. The card shows each axolotl in its outfit and the chosen one's perks, and Change outfit takes you to its Outfit tab first. The game remembers your pick. Go! then opens the area map.
-- Pick where to explore on the area map: each area shows your best stars, a lock if you cannot play it yet, and "New!" when you just unlocked it. Replay any area you have beaten. Beat an area to unlock the next one. The map has two habitat sections, the canal and the Lily pad pond.
+- Pick where to explore on the area map: each area shows your best stars, a lock if you cannot play it yet, and "New!" when you just unlocked it. Replay any area you have beaten. Beat an area to unlock the next one. The map has two habitat sections: the canal has Area 1, and the Lily pad pond has Areas 2 and 3.
 - Decorate your Home Tank with the Decorations you banked, by touch or keyboard. A Decoration stands on the gravel, floats on the water surface, or hangs from the glass top; the ones that float or hang move only left and right. In the canal, all Decorations stand on the gravel. In the pond, the Lily pad and the Lotus lantern float on the surface, and the Cattail clump and the Frog statue stand on the gravel. On small screens some Home Tank buttons become icon tiles, and a caption names the one you are on.
 - Open the Treasure Chest to see every Decoration, Wearable, and Dream colour. The ones you banked show in full; the ones you have not found yet show as silhouettes with their rarity and a hint for where to look. Each section has a line saying what its items are for. Each Wearable you banked shows its slot and its perk, with the perk's icon.
 - The first Decoration, Wearable, and Paint shell you bank each get a one-time card after the trip. The Paint shell card's "Try it now!" opens the Dream colour tab.
-- Open the Collection Book to see the morphs you rescued, with a fun fact for each, the Dream colours, and the fact cards: the tilapia card, the "Boy or girl?" card, and the "Plastic is not food" card.
+- Open the Collection Book to see the morphs you rescued, with a fun fact for each, the Dream colours, and the fact cards: the tilapia card, the "Boy or girl?" card, the "Plastic is not food" card, and the heron card.
 - Your progress saves on your device by itself: your axolotls, treasures, Home Tank and stars. There is no save button.
 - Start over from the title screen to erase everything and make a new axolotl. It asks twice before it erases anything.
   Grown-ups: progress is saved only in this browser on this device. Clearing browser data erases it.

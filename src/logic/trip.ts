@@ -18,6 +18,7 @@ import { zoneThreats } from './hiding';
 import { createLegs, isProtected, presentCount, quantizeProgress, type LegsState } from './legs';
 import { isAxolotlFindId, type RealMorphId } from './morphs';
 import { DEFAULT_TRIP_SEED, nextTripSeed, placeTreasures, type PlacedFind } from './placement';
+import { predatorVisible } from './predators';
 import {
   createPlasticWorms,
   eatPlasticWorm,
@@ -623,7 +624,8 @@ function isPassedEvent(event: EncounterEvent): event is PassedEncounterEvent {
 /**
  * Every predator and hazard of `encounter` not in `met` as the axolotl at `pos` sees it, predators
  * first, in encounter order: a predator by centre distance and its species meet range, a hazard by
- * shape distance and its type meet range.
+ * shape distance and its type meet range. A predator that is not shown (`predatorVisible` false, a
+ * heron in its gap) is skipped, so a predator the player cannot see is never met.
  */
 function unmetSightings(
   encounter: EncounterState,
@@ -634,7 +636,8 @@ function unmetSightings(
   const sightings: ThreatSighting[] = [];
   for (const predator of encounter.predators) {
     if (met.includes(predator.species)) continue;
-    const { meetRange } = predatorSpecies(encounter, predator, ctx);
+    const { meetRange, tuning } = predatorSpecies(encounter, predator, ctx);
+    if (!predatorVisible(predator, tuning)) continue;
     sightings.push({ id: predator.species, distance: distanceTo(predator.pos, pos), meetRange });
   }
   for (const hazard of encounter.hazards) {

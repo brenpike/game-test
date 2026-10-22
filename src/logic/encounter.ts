@@ -216,7 +216,8 @@ export function resetEncounter(
  *
  * Bump: when no hit landed this step, the bump cooldown is ready and a non-lunging predator
  * touches the axolotl, emit `bump` and return `impulse`, using the bumper's species tuning.
- * A predator hit also starts the bump cooldown, so a hit is never followed at once by a bump.
+ * A species with `neverTouches` (the heron) is skipped, whatever its contactRadius, so it never
+ * bumps. A predator hit also starts the bump cooldown, so a hit is never followed at once by a bump.
  */
 export function stepEncounter(
   state: EncounterState,
@@ -381,13 +382,13 @@ function applyBump(
   ctx: EncounterContext,
 ): EncounterStepResult {
   for (const predator of state.predators) {
-    const tuning = predatorSpecies(state, predator, ctx).tuning;
-    if (!touching(predator, axolotlPos, tuning)) continue;
+    const species = predatorSpecies(state, predator, ctx);
+    if (species.neverTouches || !touching(predator, axolotlPos, species.tuning)) continue;
     events.push({ type: 'bump', sourceId: predator.routeId, from: { ...predator.pos } });
     return {
-      state: { ...state, bumpCooldownLeft: tuning.bumpCooldown },
+      state: { ...state, bumpCooldownLeft: species.tuning.bumpCooldown },
       events,
-      impulse: bumpImpulse(predator, axolotlPos, tuning),
+      impulse: bumpImpulse(predator, axolotlPos, species.tuning),
     };
   }
   return { state, events };

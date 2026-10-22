@@ -14,14 +14,18 @@ import { paintRarityGlow, rarityGlowTextureSize } from './drawRarityGlow';
 import {
   decorationBaseOffset,
   paintTreasureIcon,
+  paintWideDecoration,
   treasureIconTextureSize,
+  wideDecorationTextureSize,
   type TreasureIconSlug,
 } from './drawTreasures';
+import type { TexSize } from './canvasKit';
 import { bake, type TexInfo } from './textures';
 
 /**
  * The Decorations that can stand in the Home Tank: the treasure icon slugs of the four canal
- * Decorations, then the four pond ones (the text after `canal/` or `pond/` in src/logic/catalogue.ts).
+ * Decorations, the four pond ones, then the six pond Area 3 ones (the text after `canal/` or `pond/` in
+ * src/logic/catalogue.ts), in catalogue order.
  * This file does not import the logic; keep it in step with the catalogue (treasureArt.test.ts checks).
  */
 export const TANK_DECORATION_SLUGS = [
@@ -33,13 +37,20 @@ export const TANK_DECORATION_SLUGS = [
   'cattail-clump',
   'frog-statue',
   'lotus-lantern',
+  'reed-bundle',
+  'drifting-feather',
+  'wooden-duck-decoy',
+  'firefly-string-lights',
+  'firefly-jar',
+  'golden-lotus-throne',
 ] as const satisfies readonly TreasureIconSlug[];
 export type TankDecorationSlug = (typeof TANK_DECORATION_SLUGS)[number];
 
 /**
  * Badge shape of each Decoration's rarity (catalogue: Pond plant Common, Toy boat Rare, Castle tower
  * Epic, Sun pyramid Legendary; Lily pad Common, Cattail clump Common, Frog statue Rare, Lotus lantern
- * Epic). This file does not import the logic; keep it in step with the catalogue (treasureArt.test.ts
+ * Epic; Reed bundle Common, Drifting feather Common, Wooden duck decoy Rare, Firefly string lights Rare,
+ * Firefly jar Epic, Golden lotus throne Legendary). This file does not import the logic; keep it in step with the catalogue (treasureArt.test.ts
  * checks).
  */
 export const TANK_DECORATION_BADGES: Readonly<Record<TankDecorationSlug, BadgeShape>> = {
@@ -51,7 +62,48 @@ export const TANK_DECORATION_BADGES: Readonly<Record<TankDecorationSlug, BadgeSh
   'cattail-clump': 'circle',
   'frog-statue': 'diamond',
   'lotus-lantern': 'shield',
+  'reed-bundle': 'circle',
+  'drifting-feather': 'circle',
+  'wooden-duck-decoy': 'diamond',
+  'firefly-string-lights': 'diamond',
+  'firefly-jar': 'shield',
+  'golden-lotus-throne': 'star',
 };
+
+/** Where a Decoration goes in the Home Tank: on the gravel, on the water surface, or from the glass top. */
+export type TankPlacementKind = 'floor' | 'floating' | 'hanging';
+
+/** Placement kind and footprint width of a Decoration; an absent `width` means the standard 80 tank units. */
+export interface TankDecorationShape {
+  readonly placement: TankPlacementKind;
+  /** Footprint width in tank units, set only when it is not the standard 80 (catalogue `width`). */
+  readonly width?: number;
+}
+
+/**
+ * Placement kind and width of each Decoration (catalogue `placement` and `width`): Hanging items are baked
+ * with their anchor at the hook, and a wide item on its width x 80 box. This file does not import the
+ * logic; keep it in step with the catalogue (treasureArt.test.ts checks).
+ */
+export const TANK_DECORATION_SHAPES: Readonly<Record<TankDecorationSlug, TankDecorationShape>> = {
+  'pond-plant': { placement: 'floor' },
+  'toy-boat': { placement: 'floor' },
+  'castle-tower': { placement: 'floor' },
+  'sun-pyramid': { placement: 'floor' },
+  'lily-pad': { placement: 'floating' },
+  'cattail-clump': { placement: 'floor' },
+  'frog-statue': { placement: 'floor' },
+  'lotus-lantern': { placement: 'floating' },
+  'reed-bundle': { placement: 'floor' },
+  'drifting-feather': { placement: 'floating' },
+  'wooden-duck-decoy': { placement: 'floating' },
+  'firefly-string-lights': { placement: 'hanging', width: 144 },
+  'firefly-jar': { placement: 'hanging' },
+  'golden-lotus-throne': { placement: 'floor' },
+};
+
+/** The standard Decoration footprint in tank units (TANK.decorationPx): a width x this box. */
+const TANK_DECORATION_BOX = 80;
 
 /** Rarity glow width as a multiple of the Decoration size (96 across at 80). */
 export const TANK_GLOW_SCALE = 1.2;
@@ -89,16 +141,18 @@ export interface TankTextures {
   /** The 24 px "no" icon for an invalid move. Anchor is the disc centre. */
   readonly noIcon: TexInfo;
   /**
-   * One per Decoration, baked at `decorationPx`. Anchor is bottom-centre: the
-   * lowest ink edge of the item at the horizontal middle, so place the sprite at
-   * the base point (x, base y) on the gravel.
+   * One per Decoration, baked at `decorationPx` high (a wide one on its width x
+   * 80 box, TANK_DECORATION_SHAPES). Anchor is the Decoration anchor: for Floor
+   * and Floating, bottom-centre, the lowest ink edge of the item at the
+   * horizontal middle, so place the sprite at the base point (x, base y); for
+   * Hanging, top-centre, the hook on the glass top one footprint above it.
    */
   readonly decorations: Readonly<Record<TankDecorationSlug, TexInfo>>;
   /**
-   * One rarity glow per Decoration, round(TANK_GLOW_SCALE * decorationPx) across,
-   * centred on the icon centre. Anchor is the same base point as
-   * `decorations[slug]`, so give it the same position, scale and rotation as the
-   * Decoration sprite, at a lower depth.
+   * One rarity glow per Decoration, round(TANK_GLOW_SCALE * width) across and
+   * round(TANK_GLOW_SCALE * decorationPx) tall, centred on the icon centre (the
+   * box centre). Anchor is the same as `decorations[slug]`, so give it the same
+   * position, scale and rotation as the Decoration sprite, at a lower depth.
    */
   readonly decorationGlows: Readonly<Record<TankDecorationSlug, TexInfo>>;
 }
@@ -145,33 +199,69 @@ export function bakeTankTextures(scene: Phaser.Scene, bakeScale: number, opts: T
   const front = add(bake(scene, TANK_TEX.front, TANK_FRAME, layerScale, paintTankFront));
   const noIcon = add(bake(scene, TANK_TEX.noIcon, NO_ICON_TEX, bakeScale, paintNoIcon));
 
-  // Decorations: the icon frame, with the anchor moved from the icon centre down to the lowest ink edge.
-  const iconFrame = treasureIconTextureSize(decorationPx);
+  // Decorations: the icon frame (a wide one's box frame), with the anchor moved from its centre to the Decoration anchor.
   const decorations = {} as Record<TankDecorationSlug, TexInfo>;
   for (const slug of TANK_DECORATION_SLUGS) {
-    const baseY = decorationBaseOffset(slug, decorationPx);
-    const frame = { ...iconFrame, originY: iconFrame.originY + baseY };
+    const anchorY = decorationAnchorOffset(slug, decorationPx);
+    const frame = decorationFrame(slug, decorationPx);
     decorations[slug] = add(
-      bake(scene, tankDecorationKey(slug, decorationPx), frame, bakeScale, (ctx) => {
-        ctx.translate(0, -baseY);
-        paintTreasureIcon(ctx, slug, decorationPx);
+      bake(scene, tankDecorationKey(slug, decorationPx), { ...frame, originY: frame.originY + anchorY }, bakeScale, (ctx) => {
+        ctx.translate(0, -anchorY);
+        paintDecorationSprite(ctx, slug, decorationPx);
       }),
     );
   }
 
   const glowPx = Math.round(TANK_GLOW_SCALE * decorationPx);
-  const glowFrame = rarityGlowTextureSize(glowPx);
   const decorationGlows = {} as Record<TankDecorationSlug, TexInfo>;
   for (const slug of TANK_DECORATION_SLUGS) {
-    const baseY = decorationBaseOffset(slug, decorationPx);
-    const frame = { ...glowFrame, originY: glowFrame.originY + baseY };
+    const anchorY = decorationAnchorOffset(slug, decorationPx);
+    const glowW = decorationGlowWidth(slug, decorationPx);
+    const frame = glowFrame(glowW, glowPx);
     decorationGlows[slug] = add(
-      bake(scene, tankDecorationGlowKey(slug, decorationPx), frame, bakeScale, (ctx) => {
-        ctx.translate(0, -baseY);
+      bake(scene, tankDecorationGlowKey(slug, decorationPx), { ...frame, originY: frame.originY + anchorY }, bakeScale, (ctx) => {
+        ctx.translate(0, -anchorY);
+        if (glowW !== glowPx) ctx.scale(glowW / glowPx, 1);
         paintRarityGlow(ctx, TANK_DECORATION_BADGES[slug], glowPx);
       }),
     );
   }
 
   return { info, back, glass, front, noIcon, decorations, decorationGlows };
+}
+
+/**
+ * Distance from the centre of a Decoration's box down to its anchor, logical px: the lowest ink edge for
+ * Floor and Floating, and minus half the box (its top-centre hook) for Hanging.
+ */
+function decorationAnchorOffset(slug: TankDecorationSlug, decorationPx: number): number {
+  if (TANK_DECORATION_SHAPES[slug].placement === 'hanging') return -decorationPx / 2;
+  return decorationBaseOffset(slug, decorationPx);
+}
+
+/** Sprite frame anchored at the box centre: the icon frame, or the box frame of a wide Decoration. */
+function decorationFrame(slug: TankDecorationSlug, decorationPx: number): TexSize {
+  const { width } = TANK_DECORATION_SHAPES[slug];
+  return width === undefined ? treasureIconTextureSize(decorationPx) : wideDecorationTextureSize(width, decorationPx);
+}
+
+/** Paint the sprite centred on its box centre: the treasure icon, or the wide Decoration's own painter. */
+function paintDecorationSprite(ctx: CanvasRenderingContext2D, slug: TankDecorationSlug, decorationPx: number): void {
+  const { width } = TANK_DECORATION_SHAPES[slug];
+  if (width === undefined) paintTreasureIcon(ctx, slug, decorationPx);
+  else paintWideDecoration(ctx, slug, width, decorationPx);
+}
+
+/** Glow width across, logical px: TANK_GLOW_SCALE x the Decoration's width at `decorationPx` high. */
+function decorationGlowWidth(slug: TankDecorationSlug, decorationPx: number): number {
+  const { width } = TANK_DECORATION_SHAPES[slug];
+  const widthPx = width === undefined ? decorationPx : (width * decorationPx) / TANK_DECORATION_BOX;
+  return Math.round(TANK_GLOW_SCALE * widthPx);
+}
+
+/** Glow frame `w` across by `h` tall, centred on the glow: the rarity glow frame of each size on its own axis. */
+function glowFrame(w: number, h: number): TexSize {
+  const across = rarityGlowTextureSize(w);
+  const tall = rarityGlowTextureSize(h);
+  return { w: across.w, originX: across.originX, h: tall.h, originY: tall.originY };
 }

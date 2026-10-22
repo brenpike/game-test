@@ -13,7 +13,8 @@ import {
   starLines,
   starsShortLine,
 } from './areaText';
-import { ALL_TREASURES } from './catalogue';
+import { AREAS, POND_2_AREA } from './areas';
+import { ALL_TREASURES, treasureById } from './catalogue';
 import { NO_STARS, STARS_PER_AREA, type AreaStars } from './stars';
 
 /** The tripText.test banned list, plus "level" (areas are named "Area 1" in UI text). */
@@ -152,6 +153,31 @@ describe('starLines', () => {
   it('asks for all four legs only for a missing star 3 once no rescue is open', () => {
     for (const rescued of [false, true]) {
       expect(starLines(NO_STARS, 'Sun hat', rescued, false)[2]).toBe('Keep all four legs next time.');
+    }
+  });
+});
+
+describe('Area beaten card specials (H5, H8)', () => {
+  it('names the Wooden duck decoy, the Area 3 special, in the star 2 lines', () => {
+    expect(treasureById(POND_2_AREA.specialTreasureId)?.name).toBe('Wooden duck decoy');
+    expect(SPECIAL_NAMES).toContain('Wooden duck decoy');
+    expect(starLines(ALL_STARS, 'Wooden duck decoy', false, true)).toEqual([
+      'You reached the exit!',
+      'You found the Wooden duck decoy!',
+      'You kept all four legs!',
+    ]);
+    expect(starLines(NO_STARS, 'Wooden duck decoy', false, true)).toEqual([
+      'Reach the exit next time.',
+      'Find the Wooden duck decoy next time.',
+      'Rescue or keep every leg next time.',
+    ]);
+  });
+
+  it('gives every area a catalogue special named in the star 2 line', () => {
+    for (const area of AREAS) {
+      const name = treasureById(area.specialTreasureId)?.name;
+      if (name === undefined) throw new Error(`no catalogue special for ${area.id}`);
+      expect(starLines(ALL_STARS, name, false, false)[1]).toBe(`You found the ${name}!`);
     }
   });
 });

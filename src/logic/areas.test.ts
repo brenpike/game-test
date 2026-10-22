@@ -4,6 +4,7 @@ import {
   CANAL_AREA,
   CANAL_HABITAT,
   HABITATS,
+  POND_2_AREA,
   POND_AREA,
   POND_HABITAT,
   areaById,
@@ -24,13 +25,16 @@ import {
   type AreaData,
   type NewThings,
 } from './areas';
-import { CANAL_TREASURES, POND_TREASURES, treasureById } from './catalogue';
+import { CANAL_TREASURES, POND_2_TREASURES, POND_TREASURES, treasureById } from './catalogue';
 import { createCollectibles, snackDriftMaxSpeed, snackX, snackY } from './collectibles';
 import { DEV_AREAS, DEV_TEST_AREA } from './devAreas';
-import { PLASTIC_WORM_FACT, TILAPIA_FACT, type FactCard } from './factCards';
+import { HERON_FACT, PLASTIC_WORM_FACT, TILAPIA_FACT, type FactCard } from './factCards';
 import type { ElementType, HazardType } from './hazards';
-import { TILAPIA_SPECIES, type PredatorSpecies } from './predators';
+import { SNACK_MAGNET_PULL_SPEED } from './perks';
+import { HERON_SHADOW_CYCLE, TILAPIA_SPECIES, type PredatorSpecies } from './predators';
+import { POND_2_AREA_ID, POND_2_LAYOUT } from './pond2Layout';
 import { POND_AREA_ID, POND_LAYOUT } from './pondLayout';
+import { SNACK_DART } from './snackDart';
 import { NO_STARS, type AreaStars, type AreaStarsRecord } from './stars';
 import { inSafeArea } from './tilapia';
 import { FINDS, LEGS, SWIM } from './tuning';
@@ -88,6 +92,14 @@ function pikeRoute(id: string) {
 
 function glassAt(id: string, type: HazardType = TEST_GLASS) {
   return { id, type, shape: { kind: 'circle' as const, x: 900, y: 290, r: 10 } };
+}
+
+/** Fastest snack drift any area may have, in px/s: half the Snack magnet pull, 20 (PRD H4, Tuning values). */
+const MAX_SNACK_DRIFT = SNACK_MAGNET_PULL_SPEED / 2;
+
+/** Strength in px/s of the strongest current in an area's default zone. */
+function strongestCurrentIn(area: AreaData): number {
+  return Math.max(...buildZone(area.layout, DEFAULT_ZONE_SEED).currents.map((current) => Math.hypot(current.force.x, current.force.y)));
 }
 
 /** Areas that add more than one new threat or element (PRD N2). */
@@ -160,8 +172,47 @@ describe('POND_AREA', () => {
   });
 });
 
+describe('POND_2_AREA', () => {
+  it('is Area 3, the lily pad pond at dusk, in the pond habitat', () => {
+    expect(POND_2_AREA.id).toBe('pond-2');
+    expect(POND_2_AREA.id).toBe(POND_2_AREA_ID);
+    expect(POND_2_AREA.number).toBe(3);
+    expect(POND_2_AREA.habitatId).toBe(POND_HABITAT.id);
+    expect(POND_2_AREA.layout).toBe(POND_2_LAYOUT);
+    expect(POND_2_AREA.look).toBe('pond-dusk');
+  });
+
+  it('names the Wooden duck decoy, a Rare treasure from the Area 3 catalogue, as its special treasure', () => {
+    expect(POND_2_AREA.specialTreasureId).toBe('pond/wooden-duck-decoy');
+    expect(POND_2_TREASURES.map((treasure) => treasure.id)).toContain(POND_2_AREA.specialTreasureId);
+    expect(treasureById(POND_2_AREA.specialTreasureId)?.rarity).toBe('rare');
+  });
+
+  it.each(ALL_SEEDS)('names a special treasure the zone hides for seed %i', (seed) => {
+    const special = buildZone(POND_2_LAYOUT, seed).finds.find((find) => find.id === POND_2_AREA.specialTreasureId);
+    expect(special).toBeDefined();
+    expect(special?.pool.length).toBeGreaterThan(0);
+  });
+
+  it('makes 3 of its snacks dart; the earlier areas have no darters and no look of their own', () => {
+    expect(POND_2_AREA.snackDart).toBe(SNACK_DART);
+    expect(POND_2_AREA.snackDart?.darters).toBe(3);
+    expect(CANAL_AREA.snackDart).toBeUndefined();
+    expect(POND_AREA.snackDart).toBeUndefined();
+    expect(CANAL_AREA.look).toBeUndefined();
+    expect(POND_AREA.look).toBeUndefined();
+  });
+
+  it('is frozen area data', () => {
+    expect(Object.isFrozen(POND_2_AREA)).toBe(true);
+    expect(Object.isFrozen(POND_2_AREA.exit)).toBe(true);
+    expect(Object.isFrozen(POND_2_AREA.snackDrift)).toBe(true);
+    expect(Object.isFrozen(POND_2_AREA.snackDart)).toBe(true);
+  });
+});
+
 describe('habitats', () => {
-  it('has the canal habitat, holding Area 1, and the pond habitat, holding Area 2', () => {
+  it('has the canal habitat, holding Area 1, and the pond habitat, holding Areas 2 and 3', () => {
     expect(CANAL_HABITAT).toEqual({ id: 'canal', name: 'Canal', look: 'canal' });
     expect(POND_HABITAT).toEqual({ id: 'pond', name: 'Lily pad pond', look: 'pond' });
     expect(HABITATS).toEqual([CANAL_HABITAT, POND_HABITAT]);
@@ -170,6 +221,7 @@ describe('habitats', () => {
     expect(Object.isFrozen(HABITATS)).toBe(true);
     expect(CANAL_AREA.habitatId).toBe(CANAL_HABITAT.id);
     expect(POND_AREA.habitatId).toBe(POND_HABITAT.id);
+    expect(POND_2_AREA.habitatId).toBe(POND_HABITAT.id);
   });
 
   it('finds a habitat by id', () => {
@@ -215,8 +267,14 @@ describe('threats', () => {
     expect(threatIds(layoutWith({ tilapiaRoutes: [] }))).toEqual([]);
   });
 
-  it('gives the tilapia card, then the plastic worm card, for the shipped areas', () => {
-    expect(areaFactCards()).toEqual([TILAPIA_FACT, PLASTIC_WORM_FACT]);
+  it('gives the tilapia card, then the plastic worm card, then the heron card, for the shipped areas', () => {
+    expect(areaFactCards()).toEqual([TILAPIA_FACT, PLASTIC_WORM_FACT, HERON_FACT]);
+  });
+
+  it('names the tilapia, the heron and the plastic worm for Area 3, from its data or its zone', () => {
+    expect(threatIds(POND_2_LAYOUT)).toEqual(['tilapia', 'heron', 'plastic-worm']);
+    expect(threatIds(buildZone(POND_2_LAYOUT, DEFAULT_ZONE_SEED))).toEqual(['tilapia', 'heron', 'plastic-worm']);
+    expect(threatFactCards(POND_2_LAYOUT)).toEqual([TILAPIA_FACT, HERON_FACT, PLASTIC_WORM_FACT]);
   });
 
   it('names the tilapia and the plastic worm for the pond, from its data or its zone', () => {
@@ -240,11 +298,13 @@ describe('newThingsByArea', () => {
     expect(areasOverNewLimit(AREAS)).toEqual([]);
   });
 
-  it('counts the canal tilapia as new in Area 1 and the plastic worm as new in Area 2', () => {
+  it('counts the canal tilapia as new in Area 1, the plastic worm in Area 2, and the heron and its shadow cycle in Area 3', () => {
     expect(newThingsByArea()).toEqual([
       { areaId: 'canal', threats: ['tilapia'], elements: [] },
       { areaId: 'pond-1', threats: ['plastic-worm'], elements: [] },
+      { areaId: 'pond-2', threats: ['heron'], elements: [HERON_SHADOW_CYCLE.id] },
     ]);
+    expect(HERON_SHADOW_CYCLE.id).toBe('heron-shadow-cycle');
   });
 
   it('does not count carried-forward threats and elements as new', () => {
@@ -328,6 +388,21 @@ describe('unlocking', () => {
     expect(unlockedAreaIds({ [POND_AREA_ID]: ALL_STARS })).toEqual(['canal']);
   });
 
+  it('unlocks Area 3 once the pond is beaten, with no star gates, in the shipped areas', () => {
+    const pondBeaten: AreaStarsRecord = { canal: EXIT_ONLY, [POND_AREA_ID]: EXIT_ONLY };
+    expect(isAreaUnlocked(canalBeaten, POND_2_AREA_ID)).toBe(false);
+    expect(isAreaUnlocked({ canal: ALL_STARS, [POND_AREA_ID]: SPECIAL_ONLY }, POND_2_AREA_ID)).toBe(false);
+    expect(unlockedAreaIds(pondBeaten)).toEqual(['canal', POND_AREA_ID, POND_2_AREA_ID]);
+    expect(isAreaUnlocked(pondBeaten, POND_2_AREA_ID)).toBe(true);
+    expect(newestUnlockedAreaId(pondBeaten)).toBe(POND_2_AREA_ID);
+    expect(isNewArea(pondBeaten, POND_2_AREA_ID)).toBe(true);
+    expect(isNewArea({ ...pondBeaten, [POND_2_AREA_ID]: EXIT_ONLY }, POND_2_AREA_ID)).toBe(false);
+    expect(unlockedAreaIds({ ...pondBeaten, [POND_2_AREA_ID]: EXIT_ONLY })).toEqual(['canal', POND_AREA_ID, POND_2_AREA_ID]);
+    expect(unlockedAreaIds({ canal: EXIT_ONLY, [POND_2_AREA_ID]: ALL_STARS })).toEqual(['canal', POND_AREA_ID]);
+    expect(resolveAreaId(POND_2_AREA_ID, canalBeaten)).toBe(POND_AREA_ID);
+    expect(resolveAreaId(POND_2_AREA_ID, pondBeaten)).toBe(POND_2_AREA_ID);
+  });
+
   it('names the newest unlocked area', () => {
     expect(newestUnlockedAreaId({}, TWO_AREAS)).toBe('canal');
     expect(newestUnlockedAreaId(canalBeaten, TWO_AREAS)).toBe(TEST_ID);
@@ -403,9 +478,10 @@ describe('resolveAreaId', () => {
 });
 
 describe('areaById', () => {
-  it('finds the canal and the pond by id', () => {
+  it('finds the canal, the pond and Area 3 by id', () => {
     expect(areaById('canal')).toBe(CANAL_AREA);
     expect(areaById(POND_AREA_ID)).toBe(POND_AREA);
+    expect(areaById(POND_2_AREA_ID)).toBe(POND_2_AREA);
   });
 
   it('returns undefined for an unknown id', () => {
@@ -414,8 +490,8 @@ describe('areaById', () => {
   });
 
   it('lists every area in number order', () => {
-    expect(AREAS.map((area) => area.number)).toEqual([1, 2]);
-    expect(AREAS).toEqual([CANAL_AREA, POND_AREA]);
+    expect(AREAS.map((area) => area.number)).toEqual([1, 2, 3]);
+    expect(AREAS).toEqual([CANAL_AREA, POND_AREA, POND_2_AREA]);
   });
 });
 
@@ -488,18 +564,29 @@ describe.each(AREA_CASES)('%s exit geometry', (_id, area) => {
 describe('snack drift', () => {
   const surfacePeak = SURF + 1.6 + 0.8;
 
-  it('pins the canal drift at about 11.9 px/s and the pond drift at about 14.8 px/s', () => {
+  it('pins the canal drift at about 11.9 px/s, the pond drift at about 14.8 px/s and the Area 3 drift at about 15.2 px/s', () => {
     expect(snackDriftMaxSpeed(CANAL_AREA.snackDrift)).toBeCloseTo(11.9, 1);
     expect(snackDriftMaxSpeed(POND_AREA.snackDrift)).toBeCloseTo(14.8, 1);
+    expect(snackDriftMaxSpeed(POND_2_AREA.snackDrift)).toBeCloseTo(15.2, 1);
   });
 
-  it.each(AREA_CASES)('drifts slower than a one-leg axolotl swims against the strongest current in %s', (_id, area) => {
-    const strongestCurrent = Math.max(
-      ...buildZone(area.layout, DEFAULT_ZONE_SEED).currents.map((current) => Math.hypot(current.force.x, current.force.y)),
-    );
-    const oneLegNet = SWIM.maxSpeed * LEGS.speedByLegs[0] - strongestCurrent;
-    expect(oneLegNet).toBe(20);
+  it('pins the one-leg headway against the strongest current: 20 px/s in the canal and the pond, 16 in Area 3', () => {
+    const headways = AREAS.map((area) => SWIM.maxSpeed * LEGS.speedByLegs[0] - strongestCurrentIn(area));
+    expect(headways).toEqual([20, 20, 16]);
+  });
+
+  it.each(AREA_CASES)('drifts slower than a one-leg axolotl swims against the strongest current, and at most 20 px/s, in %s', (_id, area) => {
+    const oneLegNet = SWIM.maxSpeed * LEGS.speedByLegs[0] - strongestCurrentIn(area);
+    expect(oneLegNet).toBeGreaterThan(0);
     expect(snackDriftMaxSpeed(area.snackDrift)).toBeLessThan(oneLegNet);
+    expect(snackDriftMaxSpeed(area.snackDrift)).toBeLessThanOrEqual(MAX_SNACK_DRIFT);
+  });
+
+  it('drifts each later area at least as fast as the one before it', () => {
+    const speeds = AREAS.map((area) => snackDriftMaxSpeed(area.snackDrift));
+    for (let i = 1; i < speeds.length; i++) {
+      expect(speeds[i], AREAS[i].id).toBeGreaterThan(speeds[i - 1]);
+    }
   });
 
   it.each(AREA_SEED_CASES)('keeps every %s snack in the water, in reach and out of the ring for seed %i', (_id, seed, area) => {

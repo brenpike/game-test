@@ -126,6 +126,16 @@ export function cardTightTextWidth(cssW: number): number {
 }
 
 /**
+ * Body wrap widths a trip fact card tries, in order, as its fitCard() body variants: cardTextWidth(),
+ * then cardTightTextWidth(). The second wraps the same full body to fewer lines on canvases under
+ * 484 px wide, so it is used only when the body at the body width does not fit the canvas height;
+ * the body then keeps at least `tightPad` of room at each side, like the title.
+ */
+export function factCardBodyWrapWidths(cssW: number): readonly number[] {
+  return [cardTextWidth(cssW), cardTightTextWidth(cssW)];
+}
+
+/**
  * Icon row wrap width of a card on a `cssW` wide canvas: the room inside the canvas margins and card
  * padding, never less than cardTextWidth(). Wider than the text on canvases over 500 px wide.
  */

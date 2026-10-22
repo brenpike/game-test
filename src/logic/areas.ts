@@ -2,7 +2,9 @@ import type { SnackDrift } from './collectibles';
 import { TILAPIA_FACT, type FactCard } from './factCards';
 import type { HazardSpawn } from './hazards';
 import type { PredatorRoute } from './predators';
+import { POND_2_AREA_ID, POND_2_LAYOUT } from './pond2Layout';
 import { POND_AREA_ID, POND_LAYOUT } from './pondLayout';
+import { SNACK_DART, type SnackDartRule } from './snackDart';
 import { bestStarsFor, starCount, type AreaStarsRecord } from './stars';
 import { CANAL_AREA_ID, CANAL_LAYOUT, type AreaLayoutData, type Point } from './zone';
 
@@ -28,6 +30,12 @@ export function habitatById(id: string): Readonly<Habitat> | undefined {
   return HABITATS.find((habitat) => habitat.id === id);
 }
 
+/**
+ * Id of an area's own look, a variant of its habitat's look: the pond at dusk for Area 3. The art
+ * layer maps it to colours; this layer only names it.
+ */
+export type AreaLookVariant = 'pond-dusk';
+
 /** An area's exit: a circle the axolotl centre reaches to leave. Inclusive edge. */
 export interface AreaExit {
   x: number;
@@ -48,6 +56,10 @@ export interface AreaData {
   /** Catalogue id of the area's special treasure. */
   specialTreasureId: string;
   snackDrift: SnackDrift;
+  /** The area's own look, a variant of its habitat's look; absent means the habitat's look. */
+  look?: AreaLookVariant;
+  /** Which of the area's snacks dart away a little (PRD H4, N2); absent means none dart. */
+  snackDart?: Readonly<SnackDartRule>;
 }
 
 /** What touching the exit did this frame. */
@@ -93,8 +105,31 @@ export const POND_AREA: Readonly<AreaData> = Object.freeze({
   snackDrift: Object.freeze({ amplitudeX: 16, amplitudeY: 8, periodX: 8, periodY: 6.4 }),
 });
 
+/** Area 3, the lily pad pond at dusk, where the heron hunts. */
+export const POND_2_AREA: Readonly<AreaData> = Object.freeze({
+  id: POND_2_AREA_ID,
+  number: 3,
+  habitatId: POND_HABITAT.id,
+  layout: POND_2_LAYOUT,
+  /**
+   * Provisional exit at the far end of the main swim path, past the stream and out of the heron's
+   * reach, inside the swim bounds and clear of every hiding spot by more than the exit radius plus
+   * the find pickup radius.
+   */
+  exit: Object.freeze({ x: 2810, y: 200, radius: 40 }),
+  specialTreasureId: 'pond/wooden-duck-decoy',
+  /**
+   * Provisional drift, a little faster than Area 2 (PRD H4): the same amplitudes with shorter
+   * periods, peak speed about 15.2 px/s. That is below the 16 px/s a one-leg axolotl makes against
+   * the stream and at most half the 40 px/s Snack magnet pull.
+   */
+  snackDrift: Object.freeze({ amplitudeX: 16, amplitudeY: 8, periodX: 7.8, periodY: 6.24 }),
+  look: 'pond-dusk',
+  snackDart: SNACK_DART,
+});
+
 /** Every area, in area-number order. */
-export const AREAS: readonly Readonly<AreaData>[] = Object.freeze([CANAL_AREA, POND_AREA]);
+export const AREAS: readonly Readonly<AreaData>[] = Object.freeze([CANAL_AREA, POND_AREA, POND_2_AREA]);
 
 /** The area with this id, or undefined when there is none. */
 export function areaById(id: string): Readonly<AreaData> | undefined {

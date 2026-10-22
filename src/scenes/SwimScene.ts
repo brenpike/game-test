@@ -41,9 +41,11 @@ import { legSwimTuning } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { outfitPerks, perkTripContext, perkTuning, type PerkTuning } from '../logic/perks';
 import { isQueasy, queasySwimTuning, type SpitAvoid } from '../logic/plasticWorms';
+import { HERON_SPECIES } from '../logic/predators';
 import { mulberry32 } from '../logic/rng';
 import { tripStranding } from '../logic/rescue';
 import { explorerAxolotl, restoreSnacks, tripStart } from '../logic/session';
+import { createSnackDarts, stepSnackDarts, type SnackDartAvoid, type SnackDartState } from '../logic/snackDart';
 import { steerFromKeys, type KeyState } from '../logic/steering';
 import { startDashVelocity, stepSwim, swimIntensity, type SwimBounds, type SwimState } from '../logic/swimPhysics';
 import { createDash, dashCharge, tryStartDash, updateDash, type DashState } from '../logic/tailDash';
@@ -83,6 +85,8 @@ import {
   type SwimStart,
 } from './BootScene';
 import { ExitView } from './ExitView';
+import { FireflyView } from './FireflyView';
+import { HeronView } from './HeronView';
 import { HomeSpotView } from './HomeSpotView';
 import { HUD_EVENTS, type FactCardSeenPayload } from './HudScene';
 import { addMotionTween, settleMotionTweens } from './motionTweens';
@@ -199,6 +203,10 @@ export class SwimScene extends Phaser.Scene {
   private look!: HabitatLook;
   /** Where a spat plastic worm must not land: the swim bounds, the currents and the safe area. Fixed for the trip. */
   private spitAvoid!: SpitAvoid;
+  /** Dart state of the trip's snacks (PRD H4, N2), or null in an area whose snacks never dart. */
+  private snackDarts: SnackDartState | null = null;
+  /** Where a darted snack must not land; built again only when the plastic worms move. */
+  private snackDartAvoid: SnackDartAvoid | null = null;
   /** Swim tuning for `tunedLegs` legs and `tunedQueasy`, worked out again only when either changes. */
   private tuned: SwimTuning = SWIM;
   private tunedLegs = -1;
@@ -226,6 +234,10 @@ export class SwimScene extends Phaser.Scene {
   private axolotlView!: AxolotlRigView;
   private axolotl!: Phaser.GameObjects.Container;
   private predatorView!: PredatorView;
+  /** The herons' shadows and beak dips, or null in an area with no heron. */
+  private heronView: HeronView | null = null;
+  /** The dusk fireflies, or null in an area whose look has none. */
+  private fireflyView: FireflyView | null = null;
   private homeSpotView!: HomeSpotView;
   private treasureView!: TreasureView;
   private plasticWormView!: PlasticWormView;
@@ -294,6 +306,10 @@ export class SwimScene extends Phaser.Scene {
     this.tunedLegs = -1;
     this.tunedQueasy = false;
     this.queasyCheeks = null;
+    this.snackDarts = null;
+    this.snackDartAvoid = null;
+    this.heronView = null;
+    this.fireflyView = null;
     this.swimPhase = (TAU * T_STATIC) / 1.2;
     this.gillPhase = (TAU * T_STATIC) / 0.8;
   }
@@ -331,6 +347,7 @@ export class SwimScene extends Phaser.Scene {
     });
     this.setItems(restoreSnacks(zone.collectibles, start.eatenSnacks));
     this.allDone = this.snackTally.left === 0;
+    this.snackDarts = area.snackDart ? createSnackDarts(zone.collectibles, area.snackDart) : null;
     const stranding = tripStranding(start.ownedMorphs, start.waitingStranded, zone.strandingPlaces, start.tripSeed);
     this.trip = createTrip(zone, LEGS, start.banked, start.tripSeed, {
       stranding,
@@ -383,6 +400,16 @@ export class SwimScene extends Phaser.Scene {
    * drawnAxolotl input. The eat runs only in an area with plastic worms and while not queasy; there
    * eatPlasticWorms (trip.ts) returns one small result object per frame, the same bounded class as
    * stepTrip below. The canal and a queasy frame call nothing.
+   * Snack dart (#98): only in an area with a dart rule (Area 3); the canal and Area 2 call nothing.
+   * stepSnackDarts allocates nothing when no darter darts and no hop glides, which is every frame
+   * once its few darters have hopped. While a hop glides it builds a new items array, one object per
+   * moved snack and a new dart state, and setItems works the tally out again: bounded by the
+   * darter count and only for the hop's third of a second. The avoid object is built again only
+   * when the plastic worms move.
+   * Heron and fireflies (#98): made once per trip, and only in an area with a heron or a look with
+   * fireflies; the canal and Area 2 call nothing. FireflyView.render allocates nothing. HeronView
+   * reads predatorCycleView, which returns two small objects (the view and its timing) per heron per
+   * frame, plus its render argument object: the same bounded class as the residual below.
    * Recorded residual, inherited from main: stepSwim and stepTrip return new immutable state and
    * event lists each frame, syncSnapshot builds a trip snapshot to compare, the views take a render
    * argument object, and the reeds-near Set, bubble views and surface x list are rebuilt each frame.
@@ -405,6 +432,8 @@ export class SwimScene extends Phaser.Scene {
     // INVARIANT: a trip that left swimming in its step eats nothing.
     if (this.trip.phase === 'swimming') {
       const head = headPoint(this.body);
+      // INVARIANT: the dart runs before the Snack magnet and the eat, so a darter hops before either reads it.
+      this.dartSnacks(head, dt);
       this.pullSnacks(head, dt);
       this.collectSnacks(head);
       this.eatPlasticWormsAtHead();
@@ -511,6 +540,11 @@ export class SwimScene extends Phaser.Scene {
       this.assets,
       this.trip.encounter.predators.map((predator) => predator.species),
     );
+    const predators = this.trip.encounter.predators;
+    this.heronView = predators.some((predator) => predator.species === HERON_SPECIES.id)
+      ? new HeronView(this, this.assets, predators)
+      : null;
+    this.fireflyView = this.look.firefliesPerScreen > 0 ? new FireflyView(this, this.assets, this.look, zone) : null;
 
     this.bubbleImages = Array.from({ length: BUBBLE_MAX_ALIVE }, () =>
       this.add.image(0, 0, baked.bubbles[0].key).setVisible(false).setDepth(DEPTH.bubbles),
@@ -670,6 +704,43 @@ export class SwimScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Snack dart (PRD H4, N2): a darter near `head` hops a little away, before the Snack magnet and
+   * the eat. Only in an area with a dart rule; the canal and Area 2 call nothing here. Reads reduced
+   * motion every frame, and allocates nothing when no snack darts or glides.
+   */
+  private dartSnacks(head: Vec2, dt: number): void {
+    if (this.snackDarts === null) return;
+    const step = stepSnackDarts(
+      this.items,
+      head,
+      this.snackView,
+      this.snackDarts,
+      !this.motion.ambient,
+      this.dartAvoid(),
+      dt,
+    );
+    if (!step) return;
+    this.snackDarts = step.state;
+    this.setItems(step.items);
+  }
+
+  /** Where a darted snack must not land, built again only when the plastic worm positions change. */
+  private dartAvoid(): SnackDartAvoid {
+    const worms = this.trip.plasticWorms.worms;
+    if (this.snackDartAvoid === null || this.snackDartAvoid.worms !== worms) {
+      const zone = this.zone;
+      this.snackDartAvoid = {
+        bounds: this.bounds,
+        homeSpot: zone.homeSpot,
+        safeArea: zone.safeArea,
+        currents: zone.currents,
+        worms,
+      };
+    }
+    return this.snackDartAvoid;
+  }
+
   /** Snack magnet (PRD A19): pulls the snacks in the perk radius toward `head`, before the eat. */
   private pullSnacks(head: Vec2, dt: number): void {
     const pulled = pullSnacksToward(
@@ -812,6 +883,7 @@ export class SwimScene extends Phaser.Scene {
   private dispatchTripEvents(events: readonly TripEvent[]): void {
     this.handleTripEvents(events);
     this.predatorView.handleEvents(events);
+    this.heronView?.handleEvents(events);
     this.homeSpotView.handleEvents(events);
     this.treasureView.handleEvents(events);
     this.plasticWormView.handleEvents(events);
@@ -939,6 +1011,7 @@ export class SwimScene extends Phaser.Scene {
     this.game.events.off(HUD_EVENTS.FACT_CARD_SEEN, this.handleFactCardSeen, this);
     this.events.off(Phaser.Scenes.Events.RESUME, this.handleResume, this);
     this.strandedView.destroy();
+    this.heronView?.destroy();
     this.axolotlView.destroy();
   }
 
@@ -965,6 +1038,8 @@ export class SwimScene extends Phaser.Scene {
       dt,
       phase: this.trip.phase,
     });
+    this.heronView?.render({ encounter: this.trip.encounter, motion: this.motion, dt });
+    this.fireflyView?.render(this.motion, this.clock);
     this.renderReeds(dt, t);
     this.renderSnacks();
     this.renderSnackStars(dt, t);

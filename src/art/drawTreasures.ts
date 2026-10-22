@@ -1,10 +1,12 @@
 /**
  * Treasure icon painters (guide 6i rarity ladder, 7e, 8): the twelve canal
- * Decorations and Wearables, the eleven pond ones (issue #75), and one Paint
- * shell per Dream colour.
+ * Decorations and Wearables, the eleven pond ones (issue #75), the eleven pond
+ * Area 3 ones (issue #98), and one Paint shell per Dream colour.
  *
  * Each icon is authored in a 28-unit box centred on (0, 0) and scaled
- * uniformly, so the longest side is `size` with the ink included. The ink never
+ * uniformly, so the longest side is `size` with the ink included. A Decoration
+ * wider than 80 tank units also has a Home Tank sprite authored on its own
+ * width x 80 box (see paintWideDecoration). The ink never
  * scales: item silhouettes 2.8 (`shape`), tubes 3.2 with `ol` 2.4, glasses band
  * 3.5 (colour 1.5 plus 1.0 each side), Paint shell 2.6, small inner details
  * 1.6 to 2.4. Round joins and caps everywhere.
@@ -47,14 +49,28 @@ import {
   DRAGONFLY_WING,
   DREAM_DIVIDER,
   DREAM_RIM,
+  DECOY_BEAK,
+  DECOY_BODY,
   DREAM_STAR,
   DREAM_SWATCH,
+  FEATHER_CAP_FILL,
+  FEATHER_FILL,
+  FIREFLY_BULB,
+  FIREFLY_CAPE_FILL,
+  FIREFLY_GLOW,
+  FIREFLY_HOOK,
+  FIREFLY_JAR_GLASS,
+  FIREFLY_JAR_LID,
+  FIREFLY_SOCKET,
   FROG_STATUE_STONE,
   FROGGY_BOOT,
   GEM_GLINT,
   GLASSES_FRAME,
   GLASSES_GEM,
   GLASSES_LENS,
+  GOLDEN_LOTUS_BASE,
+  GOLDEN_LOTUS_PETAL,
+  GOLDEN_LOTUS_SEAT,
   FLIPPER_CUFF,
   FLIPPER_FILL,
   FLIPPER_RIDGE,
@@ -64,22 +80,28 @@ import {
   LILY_CROWN_FLOWER,
   LILY_CROWN_LEAF,
   LILY_PAD_FILL,
+  LILY_PAD_SOCK_FILL,
   LOTUS_LANTERN_BODY,
   LOTUS_PETAL,
   NECKLACE_CORD,
   NECKLACE_SHELL,
   PAINT_SHELL_FILL,
   PAINT_SHELL_RIDGE,
+  PEARL_CHARM_CORD,
+  PEARL_FILL,
   PLANT_LEAF,
   POND_WEED_SCARF,
   PYRAMID_GEM,
   RAINCOAT_FILL,
   PYRAMID_STONE,
+  REED_BUNDLE_STALK,
   SOCK_FILL,
   TANK_TOP_FILL,
   TREASURE_SHINE,
   TREASURE_SILHOUETTE_FILL,
   TREASURE_STAR,
+  WATER_LILY_BLOSSOM,
+  WATER_LILY_SHIRT_FILL,
   type DreamSwatchId,
 } from './treasurePalette';
 
@@ -89,7 +111,7 @@ export type { DreamSwatchId } from './treasurePalette';
 // Ids
 // ---------------------------------------------------------------------------
 
-/** The thirteen Dream swatches in guide 3f order. */
+/** The fourteen Dream swatches in guide 3f order. */
 export const DREAM_SWATCH_IDS: readonly DreamSwatchId[] = [
   'mint',
   'sky-blue',
@@ -104,11 +126,12 @@ export const DREAM_SWATCH_IDS: readonly DreamSwatchId[] = [
   'galaxy',
   'tie-dye-galaxy',
   'lily-green',
+  'firefly-gold',
 ];
 
 /**
  * The Decoration and Wearable slugs: the twelve canal ones (the text after `canal/`), then the
- * eleven pond ones (the text after `pond/`).
+ * eleven pond ones and the eleven pond Area 3 ones (the text after `pond/`), in catalogue order.
  */
 export type TreasureItemSlug =
   | 'pond-plant'
@@ -133,7 +156,18 @@ export type TreasureItemSlug =
   | 'raincoat'
   | 'ladybug-backpack'
   | 'rainbow-dragonfly-wings'
-  | 'froggy-boots';
+  | 'froggy-boots'
+  | 'reed-bundle'
+  | 'drifting-feather'
+  | 'wooden-duck-decoy'
+  | 'firefly-string-lights'
+  | 'firefly-jar'
+  | 'golden-lotus-throne'
+  | 'feather-cap'
+  | 'lily-pad-socks'
+  | 'water-lily-shirt'
+  | 'pearl-tail-charm'
+  | 'firefly-cape';
 
 export type TreasureIconSlug = TreasureItemSlug | `paint-shell-${DreamSwatchId}`;
 
@@ -161,11 +195,22 @@ const ITEM_SLUGS: readonly TreasureItemSlug[] = [
   'ladybug-backpack',
   'rainbow-dragonfly-wings',
   'froggy-boots',
+  'reed-bundle',
+  'drifting-feather',
+  'wooden-duck-decoy',
+  'firefly-string-lights',
+  'firefly-jar',
+  'golden-lotus-throne',
+  'feather-cap',
+  'lily-pad-socks',
+  'water-lily-shirt',
+  'pearl-tail-charm',
+  'firefly-cape',
 ];
 
 /**
- * All thirty-six icon slugs: the twelve canal items, the eleven pond items, then the thirteen Paint
- * shells in Dream order.
+ * All forty-eight icon slugs: the twelve canal items, the eleven pond items, the eleven pond Area 3
+ * items, then the fourteen Paint shells in Dream order.
  */
 export const TREASURE_ICON_SLUGS: readonly TreasureIconSlug[] = [
   ...ITEM_SLUGS,
@@ -230,6 +275,10 @@ export function treasureIconTextureSize(size: number): TexSize {
  * mud mound of the Cattail clump and the plinth of the Frog statue (Floor items, anchored at their
  * lowest ink edge); the root tuber of the Lily pad and the tassel bead of the Lotus lantern
  * (Floating items, anchored at the bottom centre of the 80 box, so these two are the box edge).
+ * The six Area 3 Decorations (issue #98) all end on the 12.6 edge: the flat foot of the Reed bundle,
+ * the Golden lotus throne base, the Firefly jar and the middle bulb of the Firefly string lights (so a
+ * Hanging item's icon box edge is its lowest fill edge too), and the quill nib of the Drifting feather
+ * and the anchor weight of the Wooden duck decoy (Floating items, so the box edge again).
  */
 const DECORATION_FILL_BOTTOM: Readonly<Partial<Record<TreasureIconSlug, number>>> = {
   'pond-plant': 12.3,
@@ -240,6 +289,12 @@ const DECORATION_FILL_BOTTOM: Readonly<Partial<Record<TreasureIconSlug, number>>
   'cattail-clump': 12.6,
   'frog-statue': 12.6,
   'lotus-lantern': 12.6,
+  'reed-bundle': 12.6,
+  'drifting-feather': 12.6,
+  'wooden-duck-decoy': 12.6,
+  'firefly-string-lights': 12.6,
+  'firefly-jar': 12.6,
+  'golden-lotus-throne': 12.6,
 };
 
 /** How far the outer ink reaches past the fill, for the Decorations whose painter is not a plain `shape`. */
@@ -1144,6 +1199,368 @@ function paintFroggyBoots(pen: Pen): void {
 }
 
 // ---------------------------------------------------------------------------
+// Pond Area 3 items (issue #98)
+// ---------------------------------------------------------------------------
+//
+// The same ladder and ink as the canal and pond items. Every outer fill is one of the Area 3 fills of
+// treasurePalette.ts (9:1 or more with ink), which the worn looks of the five Wearables import too.
+// Shape carries the meaning: stalks tied with a band, a notched quill, a duck on a cord, bulbs on a
+// swag, a lidded jar, a petal throne, a cap with a plume, a sock with a pad mark, a shirt with a
+// blossom, a pearl on a chain, a cape with glowing dots.
+
+/** The lowest fill edge of every Area 3 Decoration, design units below the icon centre. */
+const AREA3_FOOT_Y = 12.6;
+
+/**
+ * Common, Floor: a sheaf of four straw reed stalks tied round the waist with one band, flaring out above
+ * the tie (tips pointed) and a little below it, the feet cut flat on one line. One colour and one shine.
+ * The feet are the lowest fill edge.
+ */
+function paintReedBundle(pen: Pen): void {
+  const { k } = pen;
+  const waistY = 2.9;
+  // [foot x, waist x, tip x, tip y] of each stalk, back to front.
+  const stalks: readonly (readonly [number, number, number, number])[] = [
+    [-7.4, -2.6, -7.8, -9.2],
+    [7.4, 2.6, 7.6, -8],
+    [2.8, 0.9, 2.6, -12.6],
+    [-2.8, -0.9, -2.8, -14.18],
+  ];
+  for (const [fx, wx, tx, ty] of stalks) {
+    const stalk = roundedPolygon(
+      pts(
+        fx - 2.1, AREA3_FOOT_Y, wx - 2.1, waistY, tx - 2.1, ty + 6.5, tx, ty,
+        tx + 2.1, ty + 6.5, wx + 2.1, waistY, fx + 2.1, AREA3_FOOT_Y,
+      ),
+      [0.8, 1, 1.2, 0.7, 1.2, 1, 0.8],
+    );
+    outerShape(pen, place(stalk, k), REED_BUNDLE_STALK, ITEM_LW);
+  }
+  const tie = roundedPolygon(pts(-6.4, 1.2, 6.4, 1.2, 6.4, 4.6, -6.4, 4.6), 1.6);
+  outerShape(pen, place(tie, k), REED_BUNDLE_STALK, ITEM_LW);
+  shine(pen, -3.2, -4.4, 0.7, 2.4, -0.1);
+}
+
+/** Length of the Drifting feather, quill nib to tip, design units. */
+const FEATHER_LEN = 29.5;
+
+/** A feather standing at the origin, the quill nib at (0, 0) and the tip at (0, -FEATHER_LEN), one split in the right vane. */
+function featherPath(): Path2D {
+  const p = new Path2D();
+  const len = FEATHER_LEN;
+  p.moveTo(0, -4);
+  p.bezierCurveTo(-3.8, -0.27 * len, -7.4, -0.58 * len, 0, -len);
+  p.bezierCurveTo(4.6, -0.84 * len, 7.4, -0.6 * len, 6, -0.49 * len);
+  p.lineTo(2.8, -0.42 * len);
+  p.lineTo(6.4, -0.34 * len);
+  p.bezierCurveTo(6, -0.22 * len, 3.4, -0.14 * len, 0, -4);
+  p.closePath();
+  return p;
+}
+
+/**
+ * Common, Floating: a feather leaning on the water, a bold ink quill stub dipped below the waterline and
+ * the tip in the air, a split in one vane and a thin ink quill line. One pale colour and one shine. The
+ * stub end is the lowest edge, the box edge of the 80 box.
+ */
+function paintDriftingFeather(pen: Pen): void {
+  const { ctx, k } = pen;
+  const rot = 0.55;
+  const x0 = -7.4;
+  const y0 = AREA3_FOOT_Y;
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = ITEM_LW;
+  ctx.stroke(place(line(0, 0, 0, -6), k, x0, y0, rot));
+  silhouette(pen, place(featherPath(), k, x0, y0, rot), FEATHER_FILL, ITEM_LW, () => {
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = DETAIL_LW;
+    ctx.stroke(place(line(0, -4, 0, -FEATHER_LEN + 2.4), k, x0, y0, rot));
+  });
+  // The shine sits on the left vane, in the feather's own frame.
+  const lx = -2.6;
+  const ly = -0.6 * FEATHER_LEN;
+  const wx = x0 + lx * Math.cos(rot) - ly * Math.sin(rot);
+  const wy = y0 + lx * Math.sin(rot) + ly * Math.cos(rot);
+  shine(pen, wx, wy, 0.8, 2.6, rot);
+}
+
+/**
+ * Rare, Floating: a carved wooden duck sitting on the water with a yellow beak, an upturned tail and an ink
+ * eye, one yellow band across its body, a wavy ink anchor cord and a round anchor weight hanging below. One
+ * shine. The weight is the lowest fill edge, the box edge of the 80 box.
+ */
+function paintWoodenDuckDecoy(pen: Pen): void {
+  const { ctx, k } = pen;
+  const bodyY = waterlineY(INK_OUT_SHAPE) + 2.4;
+  const headR = 3.1;
+  const headX = 6.2;
+  const headY = -AREA3_FOOT_Y + headR;
+  const weightR = 1.7;
+  const weightY = AREA3_FOOT_Y - weightR;
+  const cord = new Path2D();
+  cord.moveTo(-0.6, bodyY + 3);
+  cord.bezierCurveTo(-4.2, 3.4, 3.2, 5.6, -0.6, weightY - weightR);
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = DETAIL_LW;
+  ctx.stroke(place(cord, k));
+  outerShape(pen, place(ellipse(-0.6, weightY, weightR, weightR), k), DECOY_BODY, ITEM_LW);
+  const tail = roundedPolygon(pts(-7.8, bodyY - 1.6, -12.4, bodyY - 6.2, -11, bodyY + 1.8), [1, 1.2, 1]);
+  outerShape(pen, place(tail, k), DECOY_BODY, ITEM_LW);
+  silhouette(pen, place(ellipse(-0.6, bodyY, 9.8, 4.6), k), DECOY_BODY, ITEM_LW, () =>
+    trimBand(pen, bodyY - 1.1, bodyY + 0.9, BOAT_TRIM),
+  );
+  const beak = roundedPolygon(pts(headX + 1.6, headY - 1.7, 13, headY + 0.2, headX + 1.6, headY + 1.7), [0.8, 1, 0.8]);
+  outerShape(pen, place(beak, k), DECOY_BEAK, ITEM_LW);
+  outerShape(pen, place(ellipse(headX, headY, headR, headR), k), DECOY_BODY, ITEM_LW);
+  detail(pen, () => {
+    ctx.fillStyle = INK;
+    ctx.fill(place(ellipse(headX + 0.9, headY - 0.6, 0.8, 0.8), k));
+  });
+  shine(pen, -5.6, bodyY - 2.4, 1.8, 0.7, -0.2);
+}
+
+/**
+ * Rare, Hanging: a thin ink wire swagged between two hook rings with three round glowing bulbs hanging
+ * from pink sockets, the one trim. One shine on the middle bulb. The middle bulb is the lowest fill edge.
+ * Authored in the 28 box for the icon; the 144 wide tank sprite is a wider swag of the same parts.
+ */
+function paintFireflyStringLights(pen: Pen): void {
+  const { ctx, k } = pen;
+  const endX = 10.8;
+  const endY = -10.2;
+  const ctrlX = 7.2;
+  const ctrlY = 7.667;
+  const at = (t: number): { x: number; y: number } => {
+    const u = 1 - t;
+    return {
+      x: -endX * (u ** 3 + t ** 3 * -1) + 3 * u * u * t * -ctrlX + 3 * u * t * t * ctrlX,
+      y: (u ** 3 + t ** 3) * endY + 3 * u * t * (u + t) * ctrlY,
+    };
+  };
+  const wire = new Path2D();
+  wire.moveTo(-endX, endY);
+  wire.bezierCurveTo(-ctrlX, ctrlY, ctrlX, ctrlY, endX, endY);
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = DETAIL_LW;
+  ctx.stroke(place(wire, k));
+  for (const x of [-endX, endX]) {
+    shape(ctx, place(ellipse(x, endY, 1.8, 1.8), k), outerFill(pen, FIREFLY_HOOK), DETAIL_LW);
+  }
+  const socketW = 1.9;
+  const socketH = 2.2;
+  for (const [t, r] of [
+    [0.2, 3],
+    [0.8, 3],
+    [0.5, 3.6],
+  ] as const) {
+    const { x, y } = at(t);
+    const socket = roundedPolygon(pts(x - socketW, y, x + socketW, y, x + socketW, y + socketH, x - socketW, y + socketH), 0.6);
+    shape(ctx, place(socket, k), outerFill(pen, FIREFLY_SOCKET), DETAIL_LW);
+    outerShape(pen, place(ellipse(x, y + socketH + r, r, r), k), FIREFLY_BULB, ITEM_LW);
+  }
+  const mid = at(0.5);
+  shine(pen, mid.x - 1.4, mid.y + socketH + 2.4, 0.7, 1.3, 0.2);
+}
+
+/**
+ * Epic, Hanging: a glass jar on a pale wood lid with a hook ring, three glowing fireflies (an ink body in a
+ * yellow glow) inside, one aqua gem on the lid and one glass shine. The flat jar base is the lowest fill edge.
+ */
+function paintFireflyJar(pen: Pen): void {
+  const { ctx, k } = pen;
+  shape(ctx, place(ellipse(0, -11.3, 1.3, 1.3), k), outerFill(pen, FIREFLY_HOOK), DETAIL_LW);
+  const body = new Path2D();
+  body.moveTo(-4.6, -2.4);
+  body.lineTo(4.6, -2.4);
+  body.bezierCurveTo(10.6, -1.6, 10.8, 2.4, 10.8, 5.6);
+  body.lineTo(10.8, 8.6);
+  body.bezierCurveTo(10.8, 11.6, 9.4, AREA3_FOOT_Y, 6.8, AREA3_FOOT_Y);
+  body.lineTo(-6.8, AREA3_FOOT_Y);
+  body.bezierCurveTo(-9.4, AREA3_FOOT_Y, -10.8, 11.6, -10.8, 8.6);
+  body.lineTo(-10.8, 5.6);
+  body.bezierCurveTo(-10.8, 2.4, -10.6, -1.6, -4.6, -2.4);
+  body.closePath();
+  silhouette(pen, place(body, k), FIREFLY_JAR_GLASS, ITEM_LW, () => {
+    for (const [x, y] of [
+      [-4.2, 3.4],
+      [4.6, 0.8],
+      [1, 8.4],
+    ]) {
+      ctx.fillStyle = FIREFLY_GLOW;
+      ctx.fill(place(ellipse(x, y, 2.9, 2.9), k));
+      ctx.fillStyle = INK;
+      ctx.fill(place(ellipse(x, y, 1.1, 0.9), k));
+    }
+  });
+  const lid = roundedPolygon(pts(-5.8, -5.2, 5.8, -5.2, 5.8, -2.4, -5.8, -2.4), 1.2);
+  outerShape(pen, place(lid, k), FIREFLY_JAR_LID, ITEM_LW);
+  gem(pen, 0, -6.9, CASTLE_GEM);
+  shine(pen, -7.2, 2.6, 0.9, 3.2, 0.05);
+}
+
+/**
+ * Legendary, Floor: a throne of pale gold lotus petals, five fanning behind a pink cushion on a stone base
+ * with one gold band, one aqua-pink gem on the tall petal and one 4-point star. One shine. The base is the
+ * lowest fill edge.
+ */
+function paintGoldenLotusThrone(pen: Pen): void {
+  const { k } = pen;
+  const petals: readonly (readonly [number, number, number])[] = [
+    [-64, 12, 5.6],
+    [64, 12, 5.6],
+    [-34, 12.6, 5.6],
+    [34, 12.6, 5.6],
+    [0, 17.2, 8],
+  ];
+  for (const [deg, len, wid] of petals) {
+    outerShape(pen, place(pointedPetal(0, 4.6, deg, len, wid), k), GOLDEN_LOTUS_PETAL, ITEM_LW);
+  }
+  const base = roundedPolygon(pts(-8.6, AREA3_FOOT_Y, -7.4, 6.8, 7.4, 6.8, 8.6, AREA3_FOOT_Y), [1.8, 1.4, 1.4, 1.8]);
+  silhouette(pen, place(base, k), GOLDEN_LOTUS_BASE, ITEM_LW, () => trimBand(pen, 9, 11.2, GOLD_TRIM));
+  outerShape(pen, place(ellipse(0, 4.8, 8.6, 2.7), k), GOLDEN_LOTUS_SEAT, ITEM_LW);
+  gem(pen, 0, -5.6, PYRAMID_GEM);
+  shine(pen, -1.9, -8.4, 0.8, 2.2, 0.2);
+  legendStar(pen, 9.8, -9.8);
+}
+
+/**
+ * Common: a sky-blue beanie with a rolled cuff and a pale feather plume tucked into the right side of the
+ * cuff and sweeping up past the dome, an ink quill line down the plume. One shine.
+ */
+function paintFeatherCap(pen: Pen): void {
+  const { ctx, k } = pen;
+  silhouette(pen, place(pointedPetal(3.2, 3, 30, 17.4, 7.4), k), FEATHER_FILL, ITEM_LW, () => {
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = DETAIL_LW;
+    ctx.stroke(place(line(3.2, 3, 11, -10.6), k));
+  });
+  const dome = new Path2D();
+  dome.moveTo(-12.2, 4);
+  dome.bezierCurveTo(-12.8, -3.6, -8.2, -8.6, -2.2, -8.6);
+  dome.bezierCurveTo(3.8, -8.6, 7.8, -3.6, 7.4, 4);
+  dome.closePath();
+  outerShape(pen, place(dome, k), FEATHER_CAP_FILL, ITEM_LW);
+  const cuff = roundedPolygon(pts(-12.6, 2.6, 8.6, 2.6, 8.6, 8.6, -12.6, 8.6), 2.6);
+  outerShape(pen, place(cuff, k), FEATHER_CAP_FILL, ITEM_LW);
+  shine(pen, -6.8, -3.8, 1, 2.6, 0.3);
+}
+
+/** A lily pad of radius `r` at (cx, cy) with a wedge notch on the right, as a single path. */
+function notchedPadPath(cx: number, cy: number, r: number): Path2D {
+  const p = new Path2D();
+  const notch = 0.75;
+  const start = 0.2;
+  p.moveTo(cx, cy);
+  p.ellipse(cx, cy, r, r * 0.78, 0, start, start + TAU - notch);
+  p.closePath();
+  return p;
+}
+
+/**
+ * Common: one `shape` silhouette (2.8) of an upright leg, a round heel and a foot to the right, as the Stripy
+ * socks, in pale pad green with two notched lily-pad marks (ink at alpha 0.30), clipped to the sock. One shine.
+ */
+function paintLilyPadSocks(pen: Pen): void {
+  const { ctx, k } = pen;
+  const sock = new Path2D();
+  sock.moveTo(-8.4 + 1.6, -12.6);
+  sock.arcTo(3.6, -12.6, 3.6, -12.6 + 1.6, 1.6);
+  sock.lineTo(3.6, 3.6 - 1.5);
+  sock.arcTo(3.6, 3.6, 3.6 + 1.5, 3.6, 1.5);
+  sock.lineTo(8.1, 3.6);
+  sock.arc(8.1, 8.1, 4.5, -Math.PI / 2, Math.PI / 2, false);
+  sock.lineTo(-8.4 + 5, 12.6);
+  sock.arcTo(-8.4, 12.6, -8.4, 12.6 - 5, 5);
+  sock.lineTo(-8.4, -12.6 + 1.6);
+  sock.arcTo(-8.4, -12.6, -8.4 + 1.6, -12.6, 1.6);
+  sock.closePath();
+  silhouette(pen, place(sock, k), LILY_PAD_SOCK_FILL, ITEM_LW, () => {
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = INK;
+    ctx.fill(place(notchedPadPath(-2.4, -3.6, 4.2), k));
+    ctx.fill(place(notchedPadPath(-1.6, 7.6, 3.2), k));
+    ctx.globalAlpha = 1;
+  });
+  shine(pen, -5.4, -9.8, 0.9, 2.2, 0.1);
+}
+
+/**
+ * Rare: a short-sleeved shirt in `shape` 2.8 in pale water blue with an ink neck scoop, a blush white
+ * five-petal water-lily blossom on the chest and one yellow hem band. One shine.
+ */
+function paintWaterLilyShirt(pen: Pen): void {
+  const { ctx, k } = pen;
+  const shirt = roundedPolygon(
+    pts(-4.4, -12.4, 4.4, -12.4, 11.2, -9.6, 12.6, -3.2, 8.4, -1.6, 8.4, 12.6, -8.4, 12.6, -8.4, -1.6, -12.6, -3.2, -11.2, -9.6),
+    [1.4, 1.4, 1.8, 1.6, 1, 2, 2, 1, 1.6, 1.8],
+  );
+  silhouette(pen, place(shirt, k), WATER_LILY_SHIRT_FILL, ITEM_LW, () => {
+    trimBand(pen, 8.8, 11.2, BOAT_TRIM);
+    const scoop = new Path2D();
+    scoop.ellipse(0, -12.4, 4.4, 3.6, 0, 0, Math.PI);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = DETAIL_LW;
+    ctx.stroke(place(scoop, k));
+  });
+  detail(pen, () => {
+    shape(ctx, place(blossomPath(0, 1.2, 5.6), k), WATER_LILY_BLOSSOM, DETAIL_LW);
+    ctx.fillStyle = BOAT_TRIM;
+    ctx.fill(place(ellipse(0, 1.2, 1.2, 1.2), k));
+  });
+  shine(pen, -6.6, -6.6, 0.8, 2.2, 0.15);
+}
+
+/**
+ * Epic: a large pearl on a short chain under one aqua gem, with two pink ribbon tails hanging from it. One
+ * shine on the pearl.
+ */
+function paintPearlTailCharm(pen: Pen): void {
+  const { k } = pen;
+  for (const deg of [-160, 160]) {
+    outerShape(pen, place(pointedPetal(0, 6, deg, 7, 3.2), k), PEARL_CHARM_CORD, ITEM_LW);
+  }
+  const chain = roundedPolygon(pts(-1.2, -8, 1.2, -8, 1.2, -4.6, -1.2, -4.6), 0.6);
+  outerShape(pen, place(chain, k), PEARL_CHARM_CORD, ITEM_LW);
+  outerShape(pen, place(ellipse(0, 0.4, 6.4, 6.4), k), PEARL_FILL, ITEM_LW);
+  gem(pen, 0, -9.8, CASTLE_GEM);
+  shine(pen, -2.4, -2.4, 1, 2, 0.5);
+}
+
+/**
+ * Legendary: a flowing cape in pale night periwinkle with shoulders, a neck scoop, a scalloped hem, a gold band
+ * above the hem, one pink gem at the clasp, four glowing dots (a yellow glow round an ink body) and one 4-point star. One shine.
+ */
+function paintFireflyCape(pen: Pen): void {
+  const { ctx, k } = pen;
+  const cape = new Path2D();
+  cape.moveTo(-7.4, -11.8);
+  cape.quadraticCurveTo(0, -7.6, 7.4, -11.8);
+  cape.bezierCurveTo(10.4, -6, 12.4, 2, 12.4, 10.4);
+  cape.quadraticCurveTo(8.27, 14.8, 4.13, 10.4);
+  cape.quadraticCurveTo(0, 14.8, -4.13, 10.4);
+  cape.quadraticCurveTo(-8.27, 14.8, -12.4, 10.4);
+  cape.bezierCurveTo(-12.4, 2, -10.4, -6, -7.4, -11.8);
+  cape.closePath();
+  silhouette(pen, place(cape, k), FIREFLY_CAPE_FILL, ITEM_LW, () => {
+    trimBand(pen, 5.8, 8.6, GOLD_TRIM);
+    for (const [x, y] of [
+      [-6.4, -0.4],
+      [6, -3.4],
+      [-2.2, 2.2],
+      [4.4, 2.4],
+    ]) {
+      ctx.fillStyle = FIREFLY_GLOW;
+      ctx.fill(place(ellipse(x, y, 2.2, 2.2), k));
+      ctx.fillStyle = INK;
+      ctx.fill(place(ellipse(x, y, 0.8, 0.7), k));
+    }
+  });
+  gem(pen, 0, -5.4, BOW_GEM);
+  shine(pen, -7.2, -5.2, 0.8, 2.4, 0.2);
+  legendStar(pen, 9.8, -9.8);
+}
+
+// ---------------------------------------------------------------------------
 // Paint shell and the Dream blob
 // ---------------------------------------------------------------------------
 
@@ -1375,6 +1792,106 @@ export function paintDreamSwatch(ctx: CanvasRenderingContext2D, id: DreamSwatchI
 }
 
 // ---------------------------------------------------------------------------
+// Wide Decoration tank sprites
+// ---------------------------------------------------------------------------
+// A Decoration wider than the 80 box (catalogue `width`) has its Home Tank sprite authored in tank
+// units on its width x 80 box, centred on (0, 0), and scaled uniformly by decorationPx / 80. The ink
+// never scales. Its tray and Chest icons stay the 28-box icon above.
+
+/** Hook ring line of the wide Firefly string lights, tank units: the rings' ink touches the box top. */
+const WIDE_LIGHTS_HOOK_Y = -FLOAT_BOX_PX / 2 + DETAIL_LW / 2 + 3.2;
+/** Wire ends and the centre hook, x in tank units: two swags, each from an end ring to the centre ring. */
+const WIDE_LIGHTS_END_X = 66;
+const WIDE_LIGHTS_SOCKET_W = 3.2;
+const WIDE_LIGHTS_SOCKET_H = 6;
+/** Bulb radius at the middle of each swag (the biggest) and at its sides, tank units. */
+const WIDE_LIGHTS_MID_R = 8.4;
+const WIDE_LIGHTS_SIDE_R = 7;
+/** Bulbs per swag, left to right: [t along the swag, bulb radius]. */
+const WIDE_LIGHTS_BULBS = [
+  [0.2, WIDE_LIGHTS_SIDE_R],
+  [0.5, WIDE_LIGHTS_MID_R],
+  [0.8, WIDE_LIGHTS_SIDE_R],
+] as const;
+/** Wire y at the middle of each swag: its socket and middle bulb hang from it, their ink ending on the box bottom. */
+const WIDE_LIGHTS_MID_Y = FLOAT_BOX_PX / 2 - ITEM_LW / 2 - 2 * WIDE_LIGHTS_MID_R - WIDE_LIGHTS_SOCKET_H;
+/** Cubic control y of each swag that puts its middle at WIDE_LIGHTS_MID_Y (the middle is 1/4 end and 3/4 control). */
+const WIDE_LIGHTS_SAG_Y = (WIDE_LIGHTS_MID_Y - WIDE_LIGHTS_HOOK_Y / 4) / (3 / 4);
+
+/** A point at `t` on a swag from (x0, y) to (x1, y) whose cubic controls sit a third of the way in at `sagY`. */
+function swagPointAt(t: number, x0: number, x1: number, y: number, sagY: number): { x: number; y: number } {
+  const spread = 3 * (1 - t) * t;
+  return { x: x0 + (x1 - x0) * t, y: (1 - spread) * y + spread * sagY };
+}
+
+/** A swag path from (x0, y) to (x1, y) with its cubic controls a third of the way in at `sagY`. */
+function swagPath(x0: number, x1: number, y: number, sagY: number): Path2D {
+  const p = new Path2D();
+  p.moveTo(x0, y);
+  p.bezierCurveTo(x0 + (x1 - x0) / 3, sagY, x1 - (x1 - x0) / 3, sagY, x1, y);
+  return p;
+}
+
+/**
+ * Rare, Hanging, 144 wide: the icon's parts on a wider swag. A thin ink wire in two swags strung from three
+ * hook rings on the box top (the ends and the centre hook), three round glowing bulbs on pink sockets
+ * hanging from each swag, the middle one of each the biggest. The pink sockets are the one trim; one shine,
+ * on the left middle bulb. The two middle bulbs are the lowest fill edge, on the box bottom with their ink.
+ */
+function paintWideFireflyStringLights(pen: Pen): void {
+  const { ctx, k } = pen;
+  const hookY = WIDE_LIGHTS_HOOK_Y;
+  const swags = [
+    [-WIDE_LIGHTS_END_X, 0],
+    [0, WIDE_LIGHTS_END_X],
+  ] as const;
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = DETAIL_LW;
+  for (const [x0, x1] of swags) ctx.stroke(place(swagPath(x0, x1, hookY, WIDE_LIGHTS_SAG_Y), k));
+  for (const x of [-WIDE_LIGHTS_END_X, 0, WIDE_LIGHTS_END_X]) {
+    shape(ctx, place(ellipse(x, hookY, 3.2, 3.2), k), outerFill(pen, FIREFLY_HOOK), DETAIL_LW);
+  }
+  const socketW = WIDE_LIGHTS_SOCKET_W;
+  const socketH = WIDE_LIGHTS_SOCKET_H;
+  for (const [x0, x1] of swags) {
+    for (const [t, r] of WIDE_LIGHTS_BULBS) {
+      const { x, y } = swagPointAt(t, x0, x1, hookY, WIDE_LIGHTS_SAG_Y);
+      const socket = roundedPolygon(pts(x - socketW, y, x + socketW, y, x + socketW, y + socketH, x - socketW, y + socketH), 1.2);
+      shape(ctx, place(socket, k), outerFill(pen, FIREFLY_SOCKET), DETAIL_LW);
+      outerShape(pen, place(ellipse(x, y + socketH + r, r, r), k), FIREFLY_BULB, ITEM_LW);
+    }
+  }
+  const mid = swagPointAt(0.5, -WIDE_LIGHTS_END_X, 0, hookY, WIDE_LIGHTS_SAG_Y);
+  shine(pen, mid.x - 3.4, mid.y + socketH + WIDE_LIGHTS_MID_R - 2.8, 1.8, 3.4, 0.2);
+}
+
+/** The wide tank sprites by slug: the catalogue width in tank units each is authored at, and its painter. */
+const WIDE_DECORATIONS: Readonly<Partial<Record<TreasureIconSlug, { readonly width: number; readonly paint: (pen: Pen) => void }>>> = {
+  'firefly-string-lights': { width: 144, paint: paintWideFireflyStringLights },
+};
+
+/**
+ * Texture frame for the tank sprite of a Decoration `width` tank units wide, at `decorationPx` high: its
+ * width x 80 box scaled to `decorationPx`, plus 1 px each side. Anchor is the box centre.
+ */
+export function wideDecorationTextureSize(width: number, decorationPx: number): TexSize {
+  const halfW = (width * decorationPx) / FLOAT_BOX_PX / 2;
+  const halfH = decorationPx / 2;
+  return frameFromBounds(-halfW, -halfH, halfW, halfH, FRAME_PAD);
+}
+
+/**
+ * Paint the tank sprite of the wide Decoration `slug` centred at local (0, 0), on its `width` x 80 box
+ * (tank units) scaled to `decorationPx` high. Ink widths do not change with size. Throws when `slug` has
+ * no tank sprite authored at `width`.
+ */
+export function paintWideDecoration(ctx: CanvasRenderingContext2D, slug: TreasureIconSlug, width: number, decorationPx: number): void {
+  const art = WIDE_DECORATIONS[slug];
+  if (art === undefined || art.width !== width) throw new Error(`no ${width} wide tank sprite for "${slug}"`);
+  art.paint({ ctx, k: decorationPx / FLOAT_BOX_PX });
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -1464,6 +1981,39 @@ function paintIcon(ctx: CanvasRenderingContext2D, slug: TreasureIconSlug, size: 
       break;
     case 'froggy-boots':
       paintFroggyBoots({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'reed-bundle':
+      paintReedBundle({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'drifting-feather':
+      paintDriftingFeather({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'wooden-duck-decoy':
+      paintWoodenDuckDecoy({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'firefly-string-lights':
+      paintFireflyStringLights({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'firefly-jar':
+      paintFireflyJar({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'golden-lotus-throne':
+      paintGoldenLotusThrone({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'feather-cap':
+      paintFeatherCap({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'lily-pad-socks':
+      paintLilyPadSocks({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'water-lily-shirt':
+      paintWaterLilyShirt({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'pearl-tail-charm':
+      paintPearlTailCharm({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'firefly-cape':
+      paintFireflyCape({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
       break;
   }
 }

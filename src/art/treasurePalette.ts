@@ -129,6 +129,50 @@ export const DRAGONFLY_WING = '#d9f3ff';
 /** Froggy boots, minty frog green. 10.34:1. */
 export const FROGGY_BOOT = '#8cf0a0';
 
+// ---- Pond Area 3 silhouette fills (issue #98; all at least 9:1 with ink) ----
+// Icons and the worn looks of the five Wearables share these (the worn looks import them from here, they
+// never repeat the hex). Later steps may add only internal detail colours, never outer fills. Legendary
+// items reuse GOLD_TRIM (#ffc12e). None equals a BADGE_FILL rarity colour. Ratios are fill against ink.
+
+/** Reed bundle stalks, a pale straw. 10.69:1. */
+export const REED_BUNDLE_STALK = '#e8e0a0';
+/** Feather vane, a pale lilac-white. Shared by the Drifting feather and the Feather cap plume. 11.69:1. */
+export const FEATHER_FILL = '#dde8ff';
+/** Wooden duck decoy body and anchor weight, pale carved wood (the true wood brown fails 9:1). 10.59:1. */
+export const DECOY_BODY = '#f6d9ae';
+/** Wooden duck decoy beak, sun yellow. 11.05:1. */
+export const DECOY_BEAK = SUN;
+/** Firefly string lights bulbs, a pale glowing yellow. 11.84:1. */
+export const FIREFLY_BULB = '#ffe98a';
+/** Firefly string lights and Firefly jar hook rings, pebble A. 9.50:1. */
+export const FIREFLY_HOOK = PEBBLE_A;
+/** Firefly string lights sockets, soft pink (the one trim of the Rare). 11.19:1. */
+export const FIREFLY_SOCKET = NECKLACE_CORD;
+/** Firefly jar glass, a pale glass blue. 11.84:1. */
+export const FIREFLY_JAR_GLASS = '#cdeeff';
+/** Firefly jar lid, the decoy's pale wood. 10.59:1. */
+export const FIREFLY_JAR_LID = DECOY_BODY;
+/** Golden lotus throne petals, a pale gold. 11.68:1. */
+export const GOLDEN_LOTUS_PETAL = '#ffe69a';
+/** Golden lotus throne seat cushion, the lotus lantern petal pink. 9.90:1. */
+export const GOLDEN_LOTUS_SEAT = LOTUS_PETAL;
+/** Golden lotus throne base, pebble C. 10.70:1. */
+export const GOLDEN_LOTUS_BASE = PEBBLE_C;
+/** Feather cap, a pale sky blue. 11.04:1. */
+export const FEATHER_CAP_FILL = '#c4e6ff';
+/** Lily-pad socks, a pale pad green. 11.09:1. */
+export const LILY_PAD_SOCK_FILL = '#bff0a0';
+/** Water-lily shirt, a pale water blue. 11.74:1. */
+export const WATER_LILY_SHIRT_FILL = '#d0ecff';
+/** Water-lily shirt blossom, the lily flower crown blush white. 11.75:1. */
+export const WATER_LILY_BLOSSOM = LILY_CROWN_FLOWER;
+/** Pearl tail charm pearl, a pale pearl pink. 12.13:1. */
+export const PEARL_FILL = '#fbe6f2';
+/** Pearl tail charm chain and ribbon tails, soft pink. 11.19:1. */
+export const PEARL_CHARM_CORD = NECKLACE_CORD;
+/** Firefly cape, a pale night periwinkle (the true night blue fails 9:1). 10.40:1. */
+export const FIREFLY_CAPE_FILL = '#d4d9ff';
+
 // ---- Trims, gems and details inside the silhouette (free) -----------------
 
 /** Legendary trim (3e, 6i). */
@@ -147,6 +191,8 @@ export const CASTLE_WINDOW = EYE;
 export const PYRAMID_GEM = '#ff5f8d';
 export const GLASSES_GEM = WATER_SHALLOW;
 export const BOW_GEM = '#ff5f8d';
+/** The yellow glow round a firefly inside the Firefly jar and on the Firefly cape; inside the silhouette, so free. */
+export const FIREFLY_GLOW = 'rgba(255,225,74,0.75)';
 /** Glint inside a gem. */
 export const GEM_GLINT = WHITE;
 /** 4-point star on Legendary icons (guide 4e): white with an ink outline. */
@@ -178,7 +224,7 @@ export const DREAM_DIVIDER = 'rgba(255,255,255,0.8)';
 /** Galaxy and Tie-dye galaxy stars: plain white, no outline, on a dark base. */
 export const DREAM_STAR = WHITE;
 
-/** The thirteen Dream colour ids, in the order the guide lists them (3f). */
+/** The fourteen Dream colour ids, in the order the guide lists them (3f). */
 export type DreamSwatchId =
   | 'mint'
   | 'sky-blue'
@@ -192,7 +238,8 @@ export type DreamSwatchId =
   | 'rainbow'
   | 'galaxy'
   | 'tie-dye-galaxy'
-  | 'lily-green';
+  | 'lily-green'
+  | 'firefly-gold';
 
 /** The simplified pattern drawn in the paint blob (guide 8). */
 export type DreamPattern = 'plain' | 'hearts' | 'spiral' | 'stripes' | 'bands' | 'stars' | 'spiral-stars';
@@ -237,4 +284,5 @@ export const DREAM_SWATCH: Readonly<Record<DreamSwatchId, DreamSwatchLook>> = {
     dark: true,
   },
   'lily-green': { body: '#ddf274', pattern: 'plain', marks: [], dark: false },
+  'firefly-gold': { body: '#ffd52a', pattern: 'plain', marks: [], dark: false },
 };

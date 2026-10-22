@@ -16,7 +16,14 @@ import {
   type BookFeaturePage,
   type BookFeatureMeasure,
 } from './collectionBook';
-import { BOY_OR_GIRL_FACT, FACT_CARD_UNFOUND_HINT, PLASTIC_WORM_FACT, TILAPIA_FACT, type FactCard } from './factCards';
+import {
+  BOY_OR_GIRL_FACT,
+  FACT_CARD_UNFOUND_HINT,
+  HERON_FACT,
+  PLASTIC_WORM_FACT,
+  TILAPIA_FACT,
+  type FactCard,
+} from './factCards';
 import type { HudView, Rect, Size } from './hudLayout';
 import { MORPH_UNFOUND_HINT, MORPH_UNFOUND_NAME, REAL_MORPHS, type RealMorphId } from './morphs';
 import { CHEST_BUTTON, UI, chestLayout, rowsPerPage, type ChestLayout, type ChestMeasure } from './tankUi';
@@ -50,8 +57,8 @@ const CANVAS_HEIGHTS: readonly number[] = [
 
 const ALL_MORPHS: readonly RealMorphId[] = REAL_MORPHS.map((morph) => morph.id);
 
-/** Every hazard met that has an area fact card: the canal's tilapia and the pond's plastic worm. */
-const ALL_MET: readonly string[] = ['tilapia', 'plastic-worm'];
+/** Every hazard met that has an area fact card: the canal's tilapia, the pond's plastic worm and Area 3's heron. */
+const ALL_MET: readonly string[] = ['tilapia', 'plastic-worm', 'heron'];
 
 const exportedStrings = Object.entries(collectionBook as Record<string, unknown>).filter(
   (entry): entry is [string, string] => typeof entry[1] === 'string',
@@ -237,15 +244,15 @@ describe('bookListing', () => {
     expect(sections.map((section) => section.heading)).toEqual([
       'Morphs: 0 of 8 found',
       'Dream colours',
-      'Fact cards: 1 of 3 found',
+      'Fact cards: 1 of 4 found',
     ]);
   });
 
   it('counts found morphs and fact cards in the headings', () => {
     const [morphs, , factCards] = bookListing(['wild', 'melanoid', 'wild'], ['tilapia']);
     expect(morphs.heading).toBe('Morphs: 2 of 8 found');
-    expect(factCards.heading).toBe('Fact cards: 2 of 3 found');
-    expect(bookListing([], ALL_MET)[2].heading).toBe('Fact cards: 3 of 3 found');
+    expect(factCards.heading).toBe('Fact cards: 2 of 4 found');
+    expect(bookListing([], ALL_MET)[2].heading).toBe('Fact cards: 4 of 4 found');
     expect(bookListing(ALL_MORPHS, ['tilapia'])[0].heading).toBe('Morphs: 8 of 8 found');
   });
 
@@ -365,12 +372,26 @@ describe('bookListing', () => {
     });
   });
 
+  it('holds the heron card only once the heron is met, never with a picture (C14)', () => {
+    const [, , met] = bookListing([], ALL_MET);
+    expect(met.entries[2]).toEqual({ id: 'heron', found: true, name: 'Heron', text: HERON_FACT.body, hasPicture: false });
+    const [, , notMet] = bookListing(ALL_MORPHS, ['tilapia', 'plastic-worm']);
+    expect(notMet.entries[2]).toEqual({
+      id: 'heron',
+      found: false,
+      name: '???',
+      text: 'Explore the lily pad pond to find this card.',
+      hasPicture: false,
+    });
+  });
+
   it('hints each unfound area card with the habitat of the first area that has it', () => {
     const [, , factCards] = bookListing([], []);
     const hints = factCards.entries.filter((entry) => !entry.found).map((entry) => [entry.id, entry.text]);
     expect(hints).toEqual([
       ['tilapia', 'Explore the canal to find this card.'],
       ['plastic-worm', 'Explore the lily pad pond to find this card.'],
+      ['heron', 'Explore the lily pad pond to find this card.'],
     ]);
     expect(FACT_CARD_UNFOUND_HINT).toBe('Explore the canal to find this card.');
   });
@@ -385,20 +406,20 @@ describe('bookListing', () => {
   it('always holds the boy or girl card last, after every area card, found and with no picture (C14)', () => {
     const boyOrGirl = { id: 'boyOrGirl', found: true, name: 'Boy or girl?', text: BOY_OR_GIRL_FACT.body, hasPicture: false };
     for (const [, , factCards] of everyListing()) {
-      expect(factCards.entries.map((entry) => entry.id)).toEqual(['tilapia', 'plastic-worm', 'boyOrGirl']);
-      expect(factCards.entries[2]).toEqual(boyOrGirl);
+      expect(factCards.entries.map((entry) => entry.id)).toEqual(['tilapia', 'plastic-worm', 'heron', 'boyOrGirl']);
+      expect(factCards.entries[3]).toEqual(boyOrGirl);
     }
   });
 
   it('lists the given fact cards in order before the boy or girl card, found when met, a picture only with Book art', () => {
-    const heron: FactCard = { id: 'heron', name: 'Heron', title: 'Meet the heron', body: 'Herons wade and hunt.' };
-    const [, , factCards] = bookListing([], ['heron', 'tilapia', 'moon'], [heron, TILAPIA_FACT]);
-    expect(factCards.entries.map((entry) => entry.id)).toEqual(['heron', 'tilapia', 'boyOrGirl']);
-    expect(factCards.entries[0]).toEqual({ id: 'heron', found: true, name: 'Heron', text: heron.body, hasPicture: false });
+    const egret: FactCard = { id: 'egret', name: 'Egret', title: 'Meet the egret', body: 'Egrets wade and hunt.' };
+    const [, , factCards] = bookListing([], ['egret', 'tilapia', 'moon'], [egret, TILAPIA_FACT]);
+    expect(factCards.entries.map((entry) => entry.id)).toEqual(['egret', 'tilapia', 'boyOrGirl']);
+    expect(factCards.entries[0]).toEqual({ id: 'egret', found: true, name: 'Egret', text: egret.body, hasPicture: false });
     expect(factCards.entries[1].hasPicture).toBe(true);
     expect(factCards.heading).toBe('Fact cards: 3 of 3 found');
-    const [, , unmet] = bookListing([], [], [heron, TILAPIA_FACT]);
-    expect(unmet.entries[0]).toEqual({ id: 'heron', found: false, name: '???', text: FACT_CARD_UNFOUND_HINT, hasPicture: false });
+    const [, , unmet] = bookListing([], [], [egret, TILAPIA_FACT]);
+    expect(unmet.entries[0]).toEqual({ id: 'egret', found: false, name: '???', text: FACT_CARD_UNFOUND_HINT, hasPicture: false });
     expect(unmet.heading).toBe('Fact cards: 1 of 3 found');
   });
 });
@@ -411,7 +432,8 @@ describe('bookPages', () => {
       ...REAL_MORPHS.map(() => ['morph', 1]),
       ['dreamColour', 5],
       ['dreamColour', 5],
-      ['dreamColour', 3],
+      ['dreamColour', 4],
+      ['factCard', 1],
       ['factCard', 1],
       ['factCard', 1],
       ['factCard', 1],
@@ -422,8 +444,8 @@ describe('bookPages', () => {
   });
 
   it('puts every Dream colour on its own page at one row per page', () => {
-    expect(DREAM_COLOURS).toHaveLength(13);
-    expect(bookPages(bookListing([], []), 1)).toHaveLength(REAL_MORPHS.length + 13 + 3);
+    expect(DREAM_COLOURS).toHaveLength(14);
+    expect(bookPages(bookListing([], []), 1)).toHaveLength(REAL_MORPHS.length + 14 + 4);
   });
 
   it('gives an empty section one page', () => {
@@ -642,12 +664,13 @@ describe('collection book fit', () => {
   });
 
   it.each([SMALLEST_CANVAS.landscape, SMALLEST_CANVAS.portrait])(
-    'keeps the title for the tilapia, the unfound plastic worm and Boy or girl at $cssW x $cssH',
+    'keeps the title for the tilapia, the unfound plastic worm and heron, and Boy or girl at $cssW x $cssH',
     (view) => {
       const entries = [
         featuredEntry('tilapia', true),
         featuredEntry('tilapia', false),
         featuredEntry('plastic-worm', false),
+        featuredEntry('heron', false),
         featuredEntry('boyOrGirl', true),
       ];
       for (const entry of entries) {
@@ -667,6 +690,40 @@ describe('collection book fit', () => {
       expect(page.feature.fits).toBe(true);
     },
   );
+
+  it.each([SMALLEST_CANVAS.landscape, SMALLEST_CANVAS.portrait])(
+    'hides the title for the found heron at $cssW x $cssH and shows its whole text with no picture',
+    (view) => {
+      const entry = featuredEntry('heron', true);
+      expect(entry.hasPicture).toBe(false);
+      const { chest, page } = featurePageOf(view, entry);
+      expect(page.showsTitle).toBe(false);
+      expect(page.heading.y).toBe(chest.title.y);
+      expect(page.list.h).toBe(chest.list.h + chest.heading.y - chest.title.y);
+      expect(page.feature.fits).toBe(true);
+      expect(page.feature.picture).toBeNull();
+      expect(featureProblems('heron', page.list, page.feature, featureMeasure(entry))).toEqual([]);
+    },
+  );
+
+  it('hides the title only for the found plastic worm and heron pages, and only below 520 x 360', () => {
+    const hidden = supportedCanvases().flatMap((view) =>
+      featuredEntries()
+        .filter((entry) => !featurePageOf(view, entry).page.showsTitle)
+        .map((entry) => `${view.cssW}x${view.cssH} ${entry.id} found=${entry.found}`),
+    );
+    expect(hidden).toEqual([
+      '320x440 plastic-worm found=true',
+      '320x440 heron found=true',
+      '340x440 heron found=true',
+      '460x320 plastic-worm found=true',
+      '460x320 heron found=true',
+      '460x340 plastic-worm found=true',
+      '460x340 heron found=true',
+      '480x320 heron found=true',
+      '480x340 heron found=true',
+    ]);
+  });
 
   it('puts the heading at the top of the title whenever the title hides', () => {
     for (const view of supportedCanvases()) {

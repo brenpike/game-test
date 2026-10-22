@@ -9,7 +9,7 @@ import type { TexInfo } from '../art/textures';
 import type { EncounterState } from '../logic/encounter';
 import { isProtected } from '../logic/legs';
 import type { MotionProfile } from '../logic/motion';
-import { TILAPIA_SPECIES } from '../logic/predators';
+import { HERON_SPECIES, TILAPIA_SPECIES } from '../logic/predators';
 import { anchorWorld } from '../logic/spriteAnchor';
 import { phaseProgress, type TilapiaPhase, type TilapiaState } from '../logic/tilapia';
 import type { TripEvent } from '../logic/trip';
@@ -128,7 +128,8 @@ function axolotlSizeFactor(axolotl: Phaser.GameObjects.Container, bake: AxolotlR
 export class PredatorView {
   private readonly scene: Phaser.Scene;
   private readonly assets: GameAssets;
-  private readonly predators: TilapiaSprites[];
+  /** Sprites of each encounter predator, in `predators` order; null for a heron (HeronView draws it). */
+  private readonly predators: (TilapiaSprites | null)[];
   private readonly poofs: LegEffect[];
   private readonly regrowSparkles: LegEffect[];
   private readonly boostStars: LegEffect[];
@@ -146,7 +147,8 @@ export class PredatorView {
 
   /**
    * `speciesIds` holds the species id of each encounter predator, in `predators` order.
-   * Throws for a species with no art; only the tilapia has art.
+   * Only the tilapia gets sprites here; a heron is skipped, as HeronView draws it.
+   * Throws for any other species, which has no art.
    */
   constructor(scene: Phaser.Scene, assets: GameAssets, speciesIds: readonly string[]) {
     this.scene = scene;
@@ -202,7 +204,8 @@ export class PredatorView {
   /** Draws one frame. Call after the axolotl rig root has its final transform for the frame. */
   render(frame: PredatorFrame): void {
     frame.encounter.predators.forEach((predator, i) => {
-      this.renderTilapia(this.predators[i], predator, frame);
+      const sprites = this.predators[i];
+      if (sprites) this.renderTilapia(sprites, predator, frame);
     });
     this.refreshEffectLook();
     this.renderHalo(frame);
@@ -225,7 +228,8 @@ export class PredatorView {
     this.carryBubble.setVisible(false);
   }
 
-  private createPredatorSprites(speciesId: string): TilapiaSprites {
+  private createPredatorSprites(speciesId: string): TilapiaSprites | null {
+    if (speciesId === HERON_SPECIES.id) return null;
     if (speciesId !== TILAPIA_SPECIES.id) {
       throw new Error(`PredatorView: no art for predator species ${speciesId}`);
     }

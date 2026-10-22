@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CANAL_AREA, POND_AREA } from './areas';
+import { CANAL_AREA, POND_2_AREA, POND_AREA } from './areas';
 import { DEV_TEST_AREA } from './devAreas';
 import { DEFAULT_LOOK, LOOK_FIELDS, rescuedLook, type AxolotlLook, type AxolotlSex } from './axolotlLook';
 import { NAME_MAX, nameFits, nameLength, suggestedNamesFor } from './axolotlNames';
@@ -73,6 +73,7 @@ const HAT = 'canal/sun-hat';
 const MINT_SHELL = 'canal/paint-shell-mint';
 const GALAXY_SHELL = 'canal/paint-shell-galaxy';
 const POND_ID = POND_AREA.id;
+const POND_2_ID = POND_2_AREA.id;
 const LILY_PAD = 'pond/lily-pad';
 
 /** Steps the trip once with the axolotl at `pos`. */
@@ -269,6 +270,7 @@ describe('createSession', () => {
       areas: {
         canal: { eatenSnacks: [], lastTripSeed: null, waitingStranded: null, returnedFinds: [] },
         'pond-1': { eatenSnacks: [], lastTripSeed: null, waitingStranded: null, returnedFinds: [] },
+        'pond-2': { eatenSnacks: [], lastTripSeed: null, waitingStranded: null, returnedFinds: [] },
       },
     });
     expect(STARTER_AXOLOTL_ID).toBe('starter');
@@ -1467,6 +1469,28 @@ describe('per-area memory (#73)', () => {
     expect(tripStart(both, 0, CANAL_AREA_ID).factCardsSeen).toEqual(['tilapia', 'plastic-worm']);
   });
 
+  it('keeps the heron met in Area 3 after the tilapia and the plastic worm, in area-table order', () => {
+    const heronFirst = recordTripEnd(withStarter(), { ...record([], 1), areaId: POND_2_ID, met: ['heron'] });
+    expect(heronFirst.hub.metHazards).toEqual(['heron']);
+    const withTilapia = recordTripEnd(heronFirst, { ...record([], 2), met: ['tilapia'] });
+    expect(withTilapia.hub.metHazards).toEqual(['tilapia', 'heron']);
+    const all = recordTripEnd(withTilapia, { ...record([], 3), areaId: POND_ID, met: ['plastic-worm'] });
+    expect(all.hub.metHazards).toEqual(['tilapia', 'plastic-worm', 'heron']);
+    expect(tripStart(all, 0, POND_2_ID).factCardsSeen).toEqual(['tilapia', 'plastic-worm', 'heron']);
+  });
+
+  it('keeps an Area 3 trip in its own memory, apart from the pond', () => {
+    const pondTrip = recordTripEnd(withStarter(), { ...record([LILY_PAD], 11, ['pond/snack-3']), areaId: POND_ID });
+    const pond2Trip = recordTripEnd(pondTrip, { ...record([], 13, ['pond-2/snack-1']), areaId: POND_2_ID });
+    expect(pond2Trip.areas[POND_ID]).toBe(pondTrip.areas[POND_ID]);
+    expect(areaMemory(pond2Trip, POND_2_ID)).toEqual({
+      eatenSnacks: ['pond-2/snack-1'],
+      lastTripSeed: 13,
+      waitingStranded: null,
+      returnedFinds: [],
+    });
+  });
+
   it('counts the tilapia card seen in every area once a tilapia was met in any', () => {
     const met = recordTripEnd(withStarter(), { ...record([], 1), areaId: DEV_ID, met: ['tilapia'] });
     expect(met.hub.metHazards).toEqual(['tilapia']);
@@ -1501,6 +1525,17 @@ describe('chooseArea (#73)', () => {
     expect(chooseArea(chosen, CANAL_AREA_ID).hub.lastAreaId).toBe(CANAL_AREA_ID);
   });
 
+  it('keeps Area 3 locked until the pond is beaten', () => {
+    const canalBeaten = recordTripEnd(withStarter(), beatenRecord({ exit: true, special: false, legsOrRescue: false }, 1));
+    expect(() => chooseArea(canalBeaten, POND_2_ID)).toThrow(/area pond-2 is locked/);
+    const pondBeaten = recordTripEnd(canalBeaten, {
+      ...record([], 2),
+      areaId: POND_ID,
+      stars: { areaId: POND_ID, earned: { exit: true, special: false, legsOrRescue: false } },
+    });
+    expect(chooseArea(pondBeaten, POND_2_ID).hub.lastAreaId).toBe(POND_2_ID);
+  });
+
   it('throws for a locked area and chooses it once the area before it is beaten', () => {
     const session = withStarter();
     expect(() => chooseArea(session, DEV_TEST_AREA.id, TWO_AREAS)).toThrow(/locked/);
@@ -1516,9 +1551,10 @@ describe('Start over (#73)', () => {
     const fresh = createSession();
     expect(fresh.hub.lastAreaId).toBe(CANAL_AREA_ID);
     expect(fresh.hub.metHazards).toEqual([]);
-    expect(Object.keys(fresh.areas)).toEqual([CANAL_AREA_ID, POND_ID]);
+    expect(Object.keys(fresh.areas)).toEqual([CANAL_AREA_ID, POND_ID, POND_2_ID]);
     expect(fresh.areas.canal).toEqual(areaMemory(fresh, DEV_TEST_AREA.id));
     expect(fresh.areas[POND_ID]).toEqual(areaMemory(fresh, DEV_TEST_AREA.id));
+    expect(fresh.areas[POND_2_ID]).toEqual(areaMemory(fresh, DEV_TEST_AREA.id));
   });
 });
 
