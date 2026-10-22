@@ -155,7 +155,7 @@ A fantasy colour, not found in nature, that can be put on any owned axolotl; sol
 _Avoid_: skin
 
 **Treasure Chest**:
-The list of every catalogue Decoration, Wearable, and Dream colour: owned ones in full, with their rarity glow, and unfound ones as silhouettes with "???" and a rarity hint, with a line per section saying what its items are for.
+The list of every catalogue Decoration, Wearable, and Dream colour: owned ones in full, with their rarity glow, and unfound ones as silhouettes with "???" and an area and rarity hint, with a line per section saying what its items are for.
 _Avoid_: inventory
 
 **First-find card**:
@@ -299,7 +299,7 @@ A themed group of Wearables, named by a Wearable's optional set ID, that unlocks
 - **Restyle** can change **Tail**, **Body**, **Age**, **Size**, face, gills, spots, and name, can put on or take off the applied **Dream colour**, and can change the **Outfit** on the Outfit tab, but never the **Real morph** or **Boy or girl**; none of these looks changes the hit area or speed, and only the **Perks** of the **Explorer**'s **Outfit** change play, on a **Trip**
 - The starter axolotl's **Real morph**, chosen in the **Character creator**, decides which seven **Real morphs** can be **Stranded axolotls**
 - Each **Trip** has at most one **Stranded axolotl**, on about 3 trips in 10, or always when one is left waiting from the last **Trip** in that **Area**; a **Rescue** moves it into the **Home Tank** and unlocks its **Morph** in the **Collection Book**
-- The **Treasure Chest** lists every catalogue **Decoration**, **Wearable**, and **Dream colour**: owned ones in full with their **Rarity** glow, unfound ones as silhouettes with "???" and a **Rarity** hint, and a line per section saying what its items are for; placed **Decorations** live in the **Home Tank**
+- The **Treasure Chest** lists every catalogue **Decoration**, **Wearable**, and **Dream colour**: owned ones in full with their **Rarity** glow, unfound ones as silhouettes with "???" and an **Area** and **Rarity** hint, and a line per section saying what its items are for; placed **Decorations** live in the **Home Tank**
 - The **Collection Book** holds one entry per **Real morph**, each with a **Fun-fact card**, and lists **Dream colours** separately as not found in nature
 - The **Refuge** has one **Refuge section** per **Habitat** that holds an **Area**, and each **Refuge section** has one **Trash batch** per **Area** in it; beating an **Area** (its exit **Star**) clears its **Trash batch**
 - A **Trip** in a real **Area** that newly beats it adds a pending clean-up, and one that newly makes a **Refuge section** clean adds a **Habitat milestone**; both live in memory only, a dev area **Trip** or a replay adds neither, and the **Refuge nudge** shows while a clean-up is pending
