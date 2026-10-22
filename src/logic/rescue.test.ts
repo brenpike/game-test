@@ -328,6 +328,15 @@ describe('tripStranding and strandingRoll', () => {
     }
   });
 
+  it.each([-0.01, 1.01, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    'throws for chance %f, outside 0 to 1, with or without a waiting record',
+    (chance) => {
+      const waiting = { morph: 'melanoid' as const, sex: 'boy' as const, placeId: STRANDING_PLACES[1].id };
+      expect(() => tripStranding(owned, null, STRANDING_PLACES, 1, chance)).toThrow(RangeError);
+      expect(() => tripStranding(owned, waiting, STRANDING_PLACES, 1, chance)).toThrow(RangeError);
+    },
+  );
+
   it('never calls Math.random', () => {
     const random = vi.spyOn(Math, 'random');
     tripStranding(owned, null, STRANDING_PLACES, 1);

@@ -58,6 +58,8 @@ export const DEFAULT_TRIP_SEED = 0x7a1b5eed;
 const SLOT_STREAM_SALT = 0x85ebca6b;
 const PICK_STREAM_SALT = 0x9e3779b9;
 const RARITIES_RAREST_FIRST: readonly Rarity[] = Object.freeze([...RARITIES].reverse());
+/** How far the slot chances may add up away from 1, for rounding. */
+const CHANCE_TOTAL_TOLERANCE = 1e-9;
 
 /** The trip seed after this one; deterministic uint32. */
 export function nextTripSeed(seed: number): number {
@@ -82,8 +84,34 @@ export function slotRarity(chance: Readonly<Record<Rarity, number>>, roll: numbe
   return rarest;
 }
 
-/** The rarity of each of this trip's treasure slots: exactly `tuning.slots` draws from the trip's slot rng. */
+/**
+ * Throws unless `tuning` has a whole slot count of 0 or more and a finite chance of 0 or more for
+ * each rarity, the chances adding up to 1.
+ */
+function checkSlotTuning(tuning: Pick<TripTreasureTuning, 'slots' | 'chance'>): void {
+  if (!Number.isInteger(tuning.slots) || tuning.slots < 0) {
+    throw new RangeError(`rollSlotRarities: slots ${tuning.slots} is not a whole number of 0 or more`);
+  }
+  let total = 0;
+  for (const rarity of RARITIES) {
+    const chance = tuning.chance[rarity];
+    if (!Number.isFinite(chance) || chance < 0) {
+      throw new RangeError(`rollSlotRarities: ${rarity} chance ${chance} is not a finite number of 0 or more`);
+    }
+    total += chance;
+  }
+  if (Math.abs(total - 1) > CHANCE_TOTAL_TOLERANCE) {
+    throw new RangeError(`rollSlotRarities: the chances add up to ${total}, not 1`);
+  }
+}
+
+/**
+ * The rarity of each of this trip's treasure slots: exactly `tuning.slots` draws from the trip's
+ * slot rng. Throws, before any draw, unless the slot count is a whole number of 0 or more and the
+ * chances are finite, 0 or more, and add up to 1.
+ */
 export function rollSlotRarities(tuning: Pick<TripTreasureTuning, 'slots' | 'chance'>, tripSeed: number): Rarity[] {
+  checkSlotTuning(tuning);
   const rng = mulberry32((tripSeed ^ SLOT_STREAM_SALT) >>> 0);
   return Array.from({ length: tuning.slots }, () => slotRarity(tuning.chance, rng()));
 }
@@ -105,10 +133,19 @@ function rarityOf(id: string): Rarity {
   return rarity;
 }
 
-/** Each unbanked find's rarity by id; throws on a pool naming an unknown spot or a non-catalogue find. */
+/**
+ * Each unbanked find's rarity by id; throws on a find listed twice, a pool naming a spot twice or
+ * an unknown spot, or a non-catalogue find.
+ */
 function validateFinds(unbanked: readonly FindSpawn[], spotById: ReadonlyMap<string, HidingSpot>): Map<string, Rarity> {
   const rarityById = new Map<string, Rarity>();
   for (const find of unbanked) {
+    if (rarityById.has(find.id)) {
+      throw new Error(`placeTreasures: ${find.id} is listed twice`);
+    }
+    if (new Set(find.pool).size !== find.pool.length) {
+      throw new Error(`placeTreasures: ${find.id} pool names a spot twice`);
+    }
     const unknownId = find.pool.find((spotId) => !spotById.has(spotId));
     if (unknownId !== undefined) {
       throw new Error(`placeTreasures: ${find.id} pool names unknown spot ${unknownId}`);
@@ -127,14 +164,23 @@ function poolsShareSpot(first: readonly string[], second: ReadonlySet<string>): 
   return first.some((spotId) => second.has(spotId));
 }
 
+/** How many of `others`, `find` itself aside, have a pool sharing a spot with `find`'s. */
+function rivalCount(find: FindSpawn, others: readonly FindSpawn[]): number {
+  const pool = new Set(find.pool);
+  return others.filter((other) => other !== find && poolsShareSpot(other.pool, pool)).length;
+}
+
 /**
  * Whether `find` can still be placed: its pool has more spots than the chosen treasures whose
- * pools share a spot with it.
+ * pools share a spot with it, and adding it leaves each of those chosen treasures the same room.
+ * A pool names each spot once (validateFinds) and each treasure takes one spot, so a treasure's
+ * spots can only run out under the treasures sharing its pool; with fewer of those than spots,
+ * every chosen treasure keeps a free spot in any placing order.
  */
 function hasRoom(find: FindSpawn, chosen: readonly FindSpawn[]): boolean {
   const pool = new Set(find.pool);
-  const rivals = chosen.filter((other) => poolsShareSpot(other.pool, pool)).length;
-  return find.pool.length > rivals;
+  const rivals = chosen.filter((other) => poolsShareSpot(other.pool, pool));
+  return find.pool.length > rivals.length && rivals.every((other) => other.pool.length > rivalCount(other, chosen) + 1);
 }
 
 /**
@@ -275,8 +321,9 @@ function drawWeighted(free: readonly string[], weights: ReadonlyMap<string, numb
  * nothing left stays empty. Banked, unknown and duplicate ids in the options are ignored. Each
  * placed treasure takes a weighted free spot from its pool (pool order, spots already used
  * skipped); a spot's weight is its hiddenness weight times its risk weight for the treasure's
- * rarity. Throws when a pool names an unknown spot, an unbanked find is not a catalogue treasure,
- * or a pool has no free spot left, which only the extras and must-place ids can cause.
+ * rarity. Throws when the slot tuning is invalid (rollSlotRarities), an unbanked find is listed
+ * twice, a pool names a spot twice or an unknown spot, an unbanked find is not a catalogue
+ * treasure, or a pool has no free spot left, which only the extras and must-place ids can cause.
  */
 export function placeTreasures(
   finds: readonly FindSpawn[],

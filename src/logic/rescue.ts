@@ -118,7 +118,8 @@ export function strandingRoll(tripSeed: number): number {
  * This trip's stranded axolotl, or null. A valid waiting record always comes back met, with no
  * roll (C5); null when pickStranding gives null (C6). Otherwise the axolotl pickStranding picks
  * is stranded only when strandingRoll is below `chance`. A waiting record whose morph is now owned
- * or whose place is unknown counts as nobody waiting, so the roll applies.
+ * or whose place is unknown counts as nobody waiting, so the roll applies. Throws when `chance`
+ * is not a number from 0 to 1.
  */
 export function tripStranding(
   owned: readonly RealMorphId[],
@@ -127,6 +128,9 @@ export function tripStranding(
   tripSeed: number,
   chance: number = STRANDING_CHANCE,
 ): Stranding | null {
+  if (!(chance >= 0 && chance <= 1)) {
+    throw new RangeError(`tripStranding: chance ${chance} is not a number from 0 to 1`);
+  }
   const stranding = pickStranding(owned, waiting, places, tripSeed);
   if (stranding === null || stranding.met) return stranding;
   return strandingRoll(tripSeed) < chance ? stranding : null;

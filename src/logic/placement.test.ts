@@ -240,6 +240,26 @@ describe('rollSlotRarities', () => {
     }
     expect(rolls.size).toBeGreaterThanOrEqual(2);
   });
+
+  it('rolls no slots for a slot count of 0', () => {
+    expect(rollSlotRarities({ ...TRIP_TREASURES, slots: 0 }, 1)).toEqual([]);
+  });
+
+  it.each([2.5, -1, Number.NaN, Number.POSITIVE_INFINITY])('throws for slot count %f', (slots) => {
+    expect(() => rollSlotRarities({ ...TRIP_TREASURES, slots }, 1)).toThrow(RangeError);
+  });
+
+  it.each<[string, Readonly<Record<Rarity, number>>]>([
+    ['a negative chance', { common: 0.75, rare: 0.27, epic: 0, legendary: -0.02 }],
+    ['a NaN chance', { ...HALVES, rare: Number.NaN }],
+    ['an infinite chance', { ...HALVES, legendary: Number.POSITIVE_INFINITY }],
+    ['chances adding up to below 1', { common: 0.5, rare: 0.25, epic: 0, legendary: 0 }],
+    ['chances adding up to above 1', { ...HALVES, common: 0.6 }],
+  ])('throws for %s', (_label, chance) => {
+    const zone = buildCanalZone();
+    expect(() => rollSlotRarities({ ...TRIP_TREASURES, chance }, 1)).toThrow(RangeError);
+    expect(() => placeAll(zone, 1, [], { tuning: { ...TRIP_TREASURES, chance } })).toThrow(RangeError);
+  });
 });
 
 describe('fallbackOrder', () => {
@@ -477,6 +497,40 @@ describe('placeTreasures', () => {
     for (const seed of TRIP_SEEDS) {
       expect(placeTreasures(finds, [spot], [], seed)).toHaveLength(1);
     }
+  });
+
+  it('never lets a slot pick leave a chosen treasure no free spot when pools overlap', () => {
+    const spots = ['a', 'b', 'c', 'd', 'e', 'f'].map(
+      (name, i): HidingSpot => ({ id: `test/spot-${name}`, cover: 'reeds', rarity: 'common', container: false, x: i * 100, y: 0 }),
+    );
+    const [first, second, third] = idsOfRarity('common');
+    const finds = [
+      { id: first, pool: ['test/spot-a', 'test/spot-c', 'test/spot-d'] },
+      { id: second, pool: ['test/spot-b', 'test/spot-e', 'test/spot-f'] },
+      { id: third, pool: ['test/spot-a', 'test/spot-b'] },
+    ];
+    const allCommon: TripTreasureTuning = { ...TRIP_TREASURES, slots: 3, chance: { common: 1, rare: 0, epic: 0, legendary: 0 } };
+    for (const seed of SEEDS_300) {
+      const placements = placeTreasures(finds, spots, [], seed, { tuning: allCommon });
+      expect(placements).toHaveLength(2);
+      expect(new Set(placements.map((placed) => placed.spotId)).size).toBe(2);
+      for (const placed of placements) {
+        expect(finds.find((find) => find.id === placed.id)?.pool).toContain(placed.spotId);
+      }
+    }
+  });
+
+  it('throws when an unbanked find is listed twice or its pool names a spot twice', () => {
+    const spot: HidingSpot = { id: 'canal/spot-a', cover: 'reeds', rarity: 'common', container: false, x: 0, y: 0 };
+    const other: HidingSpot = { ...spot, id: 'canal/spot-b', x: 100 };
+    const twice = [
+      { id: 'canal/pond-plant', pool: [spot.id] },
+      { id: 'canal/pond-plant', pool: [other.id] },
+    ];
+    expect(() => placeTreasures(twice, [spot, other], [], 1)).toThrow('placeTreasures: canal/pond-plant is listed twice');
+    expect(placeTreasures(twice, [spot, other], ['canal/pond-plant'], 1)).toEqual([]);
+    const repeated = [{ id: 'canal/pond-plant', pool: [spot.id, spot.id] }];
+    expect(() => placeTreasures(repeated, [spot], [], 1)).toThrow('placeTreasures: canal/pond-plant pool names a spot twice');
   });
 
   it('throws when a pool names an unknown spot', () => {
