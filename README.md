@@ -6,7 +6,7 @@ It is mostly fun, with real axolotl facts along the way.
 
 ## What you can do now
 
-Version 0.23.1 is playable in one canal zone:
+Version 0.24.0 is playable in one canal zone:
 
 - Make your own axolotl the first time you play, one step at a time in 11 steps: colour (one of eight real morphs), boy or girl (with a boy or girl sign), eyes, mouth (eight to choose from), gills, spots, tail, body, age, size, and name. Every choice is a big picture button that shows it on your axolotl, and the preview changes as you pick. On the first step, Surprise me picks a whole new axolotl at random, with a name that fits. On the other steps, it picks something new for that step only. The other seven colours are the ones you rescue.
 - Type a name, or pick a suggested one that fits a boy or a girl, so typing is optional. Names stay on your device.
@@ -32,7 +32,7 @@ Version 0.23.1 is playable in one canal zone:
 - Dress your axolotls in outfits on the restyle screen's Outfit tab: eight slots (Head, Neck, Face, Shirt, Back, Tail, Socks, and Feet), one Wearable you banked in each. Each Wearable gives one small perk on trips: Speed, Regrowth, Dash (a longer Tail Dash), Shell (blocks one hit per trip), Treasure sense (hint sparkles from further away), or Snack magnet (pulls nearby snacks to you). Each perk shows with an icon and words, and each perk type has a cap. Only the axolotl you take exploring uses its perks. A lost leg's sock and shoe come back when the leg has fully regrown.
 - Press Go exploring to pick which axolotl goes on the trip. The card shows each axolotl in its outfit and the chosen one's perks, and Change outfit takes you to its Outfit tab first. The game remembers your pick. Go! then opens the area map.
 - Pick where to explore on the area map: each area shows your best stars, a lock if you cannot play it yet, and "New!" when you just unlocked it. Replay any area you have beaten. Beat an area to unlock the next one. Only Area 1 exists so far.
-- Decorate your Home Tank with the Decorations you banked, by touch or keyboard.
+- Decorate your Home Tank with the Decorations you banked, by touch or keyboard. A Decoration stands on the gravel, floats on the water surface, or hangs from the glass top; the ones that float or hang move only left and right. The canal's Decorations all stand on the gravel. On small screens some Home Tank buttons become icon tiles, and a caption names the one you are on.
 - Open the Treasure Chest to see every Decoration, Wearable, and Dream colour. The ones you banked show in full; the ones you have not found yet show as silhouettes with their rarity and a hint for where to look. Each section has a line saying what its items are for. Each Wearable you banked shows its slot and its perk, with the perk's icon.
 - The first Decoration, Wearable, and Paint shell you bank each get a one-time card after the trip. The Paint shell card's "Try it now!" opens the Dream colour tab.
 - Open the Collection Book to see the morphs you rescued, with a fun fact for each, the Dream colours, and the fact cards: the tilapia card and the "Boy or girl?" card.
@@ -81,6 +81,7 @@ They work only on the dev server, never in the build (`npm run build`, `npm run 
 | `?perf` | Shows a frame-time overlay (live p50 and p95 frame time, p95 axolotl drawing time, and texture bakes) and logs a p50/p95 summary to the console every 30 s of frames. Stores and sends nothing. |
 | `?compare` | Runs only the rig compare view: the reference `drawAxolotl` on the left, the axolotl rig on the right, in the same pose. Keys: `x` `t` `b` `a` `z` `g` `e` `u` `s` cycle the look, `m` the morph, `d` the Dream colour, `o` the full outfit, `l` the leg state; `h` Tail Dash, `p` pause, `n` step, `r` still pose, `v` overlay the rig on the reference at 50%. Shift steps back. The on-screen legend lists them all; see [`src/scenes/RigCompareScene.ts`](src/scenes/RigCompareScene.ts). |
 | `?area=<id>` | Loads a test area instead of the area map. For example, `?area=dev-test-area` loads a 6 x 2 screen test area for play-testing and the frame-time check. Absent from the production build. |
+| `?decor` | Adds three test Decorations to the Home Tank: a lily pad that floats, a firefly jar that hangs, and a wide string of lights that hangs. They are yours for this page session only: never saved and never in the Treasure Chest. Absent from the production build. |
 | `?renderer=canvas` | Forces Phaser's Canvas renderer instead of WebGL. |
 
 On a phone they need the dev server, which is harder to reach on WSL2 (see [Testing on a phone](#testing-on-a-phone)).
@@ -109,7 +110,7 @@ On a phone they need the dev server, which is harder to reach on WSL2 (see [Test
 | First-find card (after the trip-end message) | Try it now! or Maybe later button on the Paint shell card, OK button on the others | Tab/Shift+Tab or Left/Right to choose, Enter or Space to press, Esc to close |
 | Treasure Chest | Back, Next, and Close buttons | Left/Right to turn pages, Tab/Shift+Tab to move focus, Enter or Space to press, Esc to close |
 | Collection Book | Back, Next, and Close buttons | Left/Right to turn pages, Tab/Shift+Tab to move focus, Enter or Space to press, Esc to close |
-| Decorate | Tap a Decoration in the tray to place it, drag it to move it, Put away button, Done button | Tab/Shift+Tab to pick, Enter or Space to place or select, arrow keys to move, Delete or Backspace to put it away, Esc for Done |
+| Decorate | Tap a Decoration in the tray to place it, drag it to move it (one that floats or hangs stays on its line), Put away button, Done button | Tab/Shift+Tab to pick, Enter or Space to place or select, arrow keys to move (Up and Down do nothing for one that floats or hangs), Delete or Backspace to put it away, Esc for Done |
 
 The game respects your device's reduced-motion setting.
 

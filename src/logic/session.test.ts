@@ -1472,3 +1472,33 @@ describe('Start over (#73)', () => {
     expect(fresh.areas.canal).toEqual(areaMemory(fresh, DEV_TEST_AREA.id));
   });
 });
+
+describe('setTankLayout with options', () => {
+  type CatalogueEntry = NonNullable<NonNullable<Parameters<typeof setTankLayout>[2]>['catalogue']>[number];
+  const FLOATER: CatalogueEntry = {
+    id: 'test/float',
+    name: 'Test floater',
+    rarity: 'common',
+    category: 'decoration',
+    placement: 'floating',
+  };
+  const TEST_CATALOGUE = [FLOATER];
+  const FLOATING_LAYOUT = { placed: [{ id: FLOATER.id, x: 240, y: 104 }] };
+
+  it('keeps an owned injected Floating placement at y 104 when given its catalogue and owned ids', () => {
+    const session = withStarter();
+    const next = setTankLayout(session, FLOATING_LAYOUT, { catalogue: TEST_CATALOGUE, owned: [FLOATER.id] });
+    expect(next.hub.tank).toEqual(FLOATING_LAYOUT);
+    expect(next.hub.banked).toBe(session.hub.banked);
+  });
+
+  it('drops the injected placement without options', () => {
+    const next = setTankLayout(withStarter(), FLOATING_LAYOUT);
+    expect(next.hub.tank).toEqual({ placed: [] });
+  });
+
+  it('drops it when the catalogue is given but the id is not owned', () => {
+    const next = setTankLayout(withStarter(), FLOATING_LAYOUT, { catalogue: TEST_CATALOGUE });
+    expect(next.hub.tank).toEqual({ placed: [] });
+  });
+});

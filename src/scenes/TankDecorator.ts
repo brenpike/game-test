@@ -1,23 +1,33 @@
 import * as Phaser from 'phaser';
 import { INK, LW, UI_PANEL, WHITE } from '../art/palette';
-import { TANK_DECORATION_SLUGS, type TankDecorationSlug, type TankTextures } from '../art/tankTextures';
+import {
+  TANK_DECORATION_SLUGS,
+  type ExtraDecorationIconSize,
+  type ExtraDecorationTextures,
+  type TankDecorationSlug,
+  type TankTextures,
+} from '../art/tankTextures';
 import type { BakedTextures, TexInfo } from '../art/textures';
-import type { TreasureTextures } from '../art/treasureTextures';
-import { treasureById, treasureSlug } from '../logic/catalogue';
-import type { Rect } from '../logic/hudLayout';
+import type { RarityGlowSize, TreasureTextures } from '../art/treasureTextures';
+import { treasureSlug, type Decoration } from '../logic/catalogue';
+import { badgeShape } from '../logic/hints';
+import type { Rect, Size } from '../logic/hudLayout';
 import type { MotionProfile } from '../logic/motion';
 import {
-  TANK_SWAYING_DECORATIONS,
   cssToTank,
-  decorationFootprint,
+  decorationAnchor,
+  decorationById,
+  decorationFootprintFor,
+  decorationMotion,
   drawOrder,
-  isValidPlacement,
+  isValidPlacementFor,
   moveDecoration,
-  nudge,
+  nudgeDecoration,
   ownedDecorations,
   placeDecoration,
   placementOf,
   putAway,
+  snapPlacement,
   suggestSpot,
   tankToCss,
   type TankChange,
@@ -33,20 +43,30 @@ import {
   NO_DECORATIONS_TO_PLACE,
   PUT_AWAY_LABEL,
 } from '../logic/tankText';
-import { TRAY_PX, UI, decorateLayout, nextFocusIndex, type DecorateLayout, type TankKey } from '../logic/tankUi';
+import {
+  COMPACT_DONE,
+  COMPACT_TRAY_PX,
+  ICON_TILE,
+  TILE_BUTTON,
+  TRAY_PX,
+  UI,
+  decorateLayout,
+  nextFocusIndex,
+  type DecorateLayout,
+  type DecorateSizes,
+  type TankKey,
+} from '../logic/tankUi';
 import type { Point } from '../logic/zone';
 import { createButton, cssColor, drawPanel, uiTextStyle, type SceneView, type UiButton } from './BootScene';
-import { addGlowingTreasureIcon } from './FindPopup';
+import { addRarityGlow } from './FindPopup';
 
 const CAPTION_PX = 18;
-const TRAY_ICON_PX = 48;
-const TRAY_GLOW_PX = 56;
 const PUT_AWAY_SIZE = 0.8;
+/** createButton size of a square tile that makes the ICON_TILE body. */
+const ICON_TILE_SIZE = ICON_TILE.w / TILE_BUTTON.w;
 const DRAG_THRESHOLD_PX = 8;
 const GHOST_ALPHA = 0.5;
 const INVALID_GHOST_MS = 700;
-const SWAY_RAD = 0.05;
-const SWAY_PERIOD_S = 4;
 const DEPTH_STEP = 0.01;
 const RING_RADIUS_PX = 18;
 const RING_LINE_PX = 3;
@@ -55,12 +75,38 @@ const RING_OUTER_PX = LW / 2 + 4.5;
 const DASH_PX = 8;
 const DASH_GAP_PX = 6;
 
+/** A tray square look: its side in CSS px and the sizes of its icon and the rarity glow under it. */
+interface TrayLook {
+  squarePx: number;
+  iconPx: ExtraDecorationIconSize;
+  glowPx: RarityGlowSize;
+}
+
+/** Full tray square: 64 px, the 48 px icon over the 56 px glow. */
+const FULL_TRAY: TrayLook = Object.freeze({ squarePx: TRAY_PX, iconPx: 48, glowPx: 56 });
+
+/** Compact tray square: 48 px, the 32 px icon over the 40 px glow. */
+const COMPACT_TRAY: TrayLook = Object.freeze({ squarePx: COMPACT_TRAY_PX, iconPx: 32, glowPx: 40 });
+
 /** Textures the decorator draws with. */
 export interface TankDecoratorTextures {
   baked: BakedTextures;
   treasure: TreasureTextures;
   tank: TankTextures;
 }
+
+/** The art of one Decoration. */
+export interface DecorationArt {
+  /** Tank sprite, anchored at the Decoration anchor (decorationAnchor). */
+  readonly sprite: TexInfo;
+  /** Tank rarity glow, with the sprite's anchor. */
+  readonly glow: TexInfo;
+  /** Centre-anchored tray icons by size. */
+  readonly icons: Readonly<Record<ExtraDecorationIconSize, TexInfo>>;
+}
+
+/** The art of the Decoration `id`. Throws when there is none. */
+export type DecorationArtResolver = (id: string) => DecorationArt;
 
 /** Display depths: placed Decorations stack up from `decorations`; the toolbar, rings and ghost sit at `ui`. */
 export interface TankDecoratorDepths {
@@ -72,6 +118,10 @@ export interface TankDecoratorDepths {
 export interface TankDecoratorOptions {
   scene: Phaser.Scene;
   textures: TankDecoratorTextures;
+  /** The art of every Decoration in `catalogue`. */
+  art: DecorationArtResolver;
+  /** The Decorations the tank rules use: the shipped ones, plus any page-only dev ones. */
+  catalogue: readonly Decoration[];
   depths: TankDecoratorDepths;
   dpr: number;
   /** Called after every placement, move and put away with the new layout. */
@@ -83,19 +133,27 @@ export interface TankDecoratorOptions {
 /** A keyboard focus target in decorate mode. */
 type FocusTarget = { kind: 'tray' | 'placed'; id: string } | { kind: 'putAway' | 'done' };
 
-/** One placed Decoration image, its rarity glow just behind it, and the textures they show. */
+/** One placed Decoration image, its rarity glow just behind it, the textures they show, and its CSS anchor. */
 interface DecorationSprite {
+  decoration: Decoration;
   image: Phaser.GameObjects.Image;
   info: TexInfo;
   glow: Phaser.GameObjects.Image;
   glowInfo: TexInfo;
-  sways: boolean;
+  /** CSS point of the Decoration anchor, before idle motion; null until the tank frame is known. */
+  anchor: Point | null;
 }
 
-/** One tray square: a white panel with the 48 px treasure icon over its 56 px rarity glow, and a hit zone. */
+/** One tray square: a white panel with the treasure icon over its rarity glow, and a hit zone. */
 interface TrayButton {
   id: string;
   container: Phaser.GameObjects.Container;
+}
+
+/** A control with its full and compact variants; only the one the layout picks shows. */
+interface ButtonPair {
+  full: UiButton;
+  compact: UiButton;
 }
 
 /** A touch drag of a placed Decoration by its first pointer. */
@@ -125,22 +183,75 @@ function decorationSlug(id: string): TankDecorationSlug {
   return slug;
 }
 
-/** Adds an image showing `info` at its baked origin (the Decoration base point). */
-function addBaseImage(scene: Phaser.Scene, info: TexInfo): Phaser.GameObjects.Image {
-  return scene.add.image(0, 0, info.key).setOrigin(info.originNormX, info.originNormY);
+/** The texture `key` in `record`. Throws naming `what` when it is missing. */
+function requireTex(record: Readonly<Record<string, TexInfo | undefined>>, key: string, what: string): TexInfo {
+  const info = record[key];
+  if (info === undefined) throw new Error(`TankDecorator: no ${what} for Decoration ${key}`);
+  return info;
 }
 
-/** Display name of the treasure `id`. Throws for an unknown id. */
-function treasureName(id: string): string {
-  const treasure = treasureById(id);
-  if (treasure === undefined) throw new Error(`TankDecorator: unknown treasure ${id}`);
-  return treasure.name;
+/** The art of a shipped Decoration: the tank sprite and glow, and the treasure icons. */
+function shippedDecorationArt(tank: TankTextures, treasure: TreasureTextures, id: string): DecorationArt {
+  const slug = decorationSlug(id);
+  return {
+    sprite: tank.decorations[slug],
+    glow: tank.decorationGlows[slug],
+    icons: { 48: treasure.icons[48][slug], 32: treasure.icons[32][slug] },
+  };
+}
+
+/** The art of an extra (dev pack) Decoration from its own textures. Throws for a missing texture. */
+function extraDecorationArt(extra: ExtraDecorationTextures, id: string): DecorationArt {
+  return {
+    sprite: requireTex(extra.decorations, id, 'tank sprite'),
+    glow: requireTex(extra.decorationGlows, id, 'tank glow'),
+    icons: { 48: requireTex(extra.icons[48], id, '48 px icon'), 32: requireTex(extra.icons[32], id, '32 px icon') },
+  };
+}
+
+/**
+ * Resolves Decoration art: ids with a sprite in `extra` (a Decoration pack, such as the dev one) from
+ * its textures, every other id from the shipped tank and treasure textures. The resolver throws for
+ * an id with art in neither.
+ */
+export function createDecorationArtResolver(
+  tank: TankTextures,
+  treasure: TreasureTextures,
+  extra: ExtraDecorationTextures | null,
+): DecorationArtResolver {
+  return (id) =>
+    extra !== null && Object.hasOwn(extra.decorations, id)
+      ? extraDecorationArt(extra, id)
+      : shippedDecorationArt(tank, treasure, id);
+}
+
+/** Adds an image showing `info` at its baked origin (a Decoration's anchor, or an icon's centre). */
+function addAnchoredImage(scene: Phaser.Scene, info: TexInfo): Phaser.GameObjects.Image {
+  return scene.add.image(0, 0, info.key).setOrigin(info.originNormX, info.originNormY);
 }
 
 /** Destroys a placed Decoration image and its glow. */
 function destroyDecorationSprite(sprite: DecorationSprite): void {
   sprite.image.destroy();
   sprite.glow.destroy();
+}
+
+/** The body size of `button`. */
+function buttonSize(button: UiButton): Size {
+  return { w: button.width, h: button.height };
+}
+
+/**
+ * Shows the variant of `pair` the layout picks at `rect` (when `shown`) with `focused`, and hides the
+ * other one unfocused, so it takes no press and shows no focus.
+ */
+function placeButtonPair(pair: ButtonPair, rect: Rect, compact: boolean, shown: boolean, focused: boolean): void {
+  const active = compact ? pair.compact : pair.full;
+  const inactive = compact ? pair.full : pair.compact;
+  active.container.setPosition(rect.x, rect.y).setVisible(shown);
+  active.setFocused(focused);
+  inactive.container.setVisible(false);
+  inactive.setFocused(false);
 }
 
 /** Strokes a rounded rect `outset` px outside `rect` with the current line style. */
@@ -189,27 +300,32 @@ function strokeDashedRect(graphics: Phaser.GameObjects.Graphics, rect: Rect): vo
 
 /**
  * Draws the placed Decorations in the Home Tank and runs decorate mode (PRD C9, X5): a toolbar of
- * tray squares for owned Decorations not yet placed, Put away and Done, and a caption. Placing,
- * moving and putting away go through src/logic/tank, so a Decoration is placed at most once and
- * never outside the tank. Works by touch (tap, drag with a ghost) and by keyboard (focus cycling,
+ * tray squares for owned Decorations not yet placed, Put away and Done, and a caption, each in its
+ * full or compact look as decorateLayout picks. Placing, moving and putting away go through
+ * src/logic/tank with the decorator's catalogue, so a Decoration is placed at most once and only
+ * where its kind may stand: Floor items on the gravel, Floating and Hanging items in the top band,
+ * moving left and right only. Works by touch (tap, drag with a ghost) and by keyboard (focus cycling,
  * arrow nudges, confirm, cancel, put away). The scene owns layout persistence via onLayoutChange.
  */
 export class TankDecorator {
   private readonly scene: Phaser.Scene;
   private readonly options: TankDecoratorOptions;
-  private readonly banked: readonly string[];
+  /** Owned ids the tank rules check placements against: banked plus any page-only dev ids. */
+  private readonly ownedIds: readonly string[];
+  /** Owned Decoration ids in catalogue order. */
   private readonly owned: readonly string[];
   private readonly sprites = new Map<string, DecorationSprite>();
   private readonly toolbar: Phaser.GameObjects.Container;
   private readonly caption: Phaser.GameObjects.Text;
-  private readonly putAwayButton: UiButton;
-  private readonly doneButton: UiButton;
+  private readonly putAwayButtons: ButtonPair;
+  private readonly doneButtons: ButtonPair;
   private readonly rings: Phaser.GameObjects.Graphics;
   private readonly ghostImage: Phaser.GameObjects.Image;
   private readonly ghostMarks: Phaser.GameObjects.Graphics;
   private readonly noIcon: Phaser.GameObjects.Image;
   private tankLayout: TankLayout;
   private trayButtons: TrayButton[] = [];
+  private trayLook: TrayLook = FULL_TRAY;
   private view: SceneView | null = null;
   private frame: TankFrame | null = null;
   private decorate: DecorateLayout | null = null;
@@ -219,41 +335,31 @@ export class TankDecorator {
   private drag: DragState | null = null;
   private trayPressId: string | null = null;
   private invalidTimer: Phaser.Time.TimerEvent | null = null;
+  private motionTimeS = 0;
+  private motionStill = false;
 
-  constructor(options: TankDecoratorOptions, layout: TankLayout, banked: readonly string[]) {
+  constructor(options: TankDecoratorOptions, layout: TankLayout, owned: readonly string[]) {
     this.scene = options.scene;
     this.options = options;
     this.tankLayout = layout;
-    this.banked = [...banked];
-    this.owned = ownedDecorations(banked);
-    const { scene, textures, depths, dpr } = options;
+    this.ownedIds = [...owned];
+    this.owned = ownedDecorations(owned, options.catalogue);
+    const { scene, depths, dpr } = options;
     this.caption = scene.add.text(0, 0, '', { ...uiTextStyle(CAPTION_PX, dpr, false), align: 'center' });
-    this.putAwayButton = createButton(scene, textures.baked, {
-      fill: 'secondary',
-      shape: 'wide',
-      size: PUT_AWAY_SIZE,
-      label: PUT_AWAY_LABEL,
-      icon: 'putAway',
-      dpr,
-      pressOnDown: false,
-      onPress: () => this.putAwaySelected(),
-    });
-    this.doneButton = createButton(scene, textures.baked, {
-      fill: 'primary',
-      shape: 'wide',
-      size: 1,
-      label: DONE_LABEL,
-      icon: 'check',
-      dpr,
-      pressOnDown: false,
-      onPress: () => this.pressDone(),
-    });
+    this.putAwayButtons = this.createPutAwayButtons();
+    this.doneButtons = this.createDoneButtons();
     this.toolbar = scene.add
-      .container(0, 0, [this.caption, this.putAwayButton.container, this.doneButton.container])
+      .container(0, 0, [
+        this.caption,
+        this.putAwayButtons.full.container,
+        this.putAwayButtons.compact.container,
+        this.doneButtons.full.container,
+        this.doneButtons.compact.container,
+      ])
       .setDepth(depths.ui)
       .setVisible(false);
     this.rings = scene.add.graphics().setDepth(depths.ui + DEPTH_STEP);
-    const noIconInfo = textures.tank.noIcon;
+    const noIconInfo = options.textures.tank.noIcon;
     this.ghostImage = scene.add.image(0, 0, noIconInfo.key).setAlpha(GHOST_ALPHA).setDepth(depths.ui + 2 * DEPTH_STEP);
     this.ghostMarks = scene.add.graphics().setDepth(depths.ui + 3 * DEPTH_STEP);
     this.noIcon = scene.add
@@ -278,19 +384,22 @@ export class TankDecorator {
 
   setResolution(dpr: number): void {
     this.caption.setResolution(dpr);
-    this.putAwayButton.setResolution(dpr);
-    this.doneButton.setResolution(dpr);
+    for (const pair of [this.putAwayButtons, this.doneButtons]) {
+      pair.full.setResolution(dpr);
+      pair.compact.setResolution(dpr);
+    }
     this.relayoutToolbar();
   }
 
-  /** Sways the plant Decorations about their base at full motion; holds them upright under reduced motion. */
+  /**
+   * Idle motion at `timeS` seconds (decorationMotion): the Pond plant sways about its base, Floating
+   * items bob and Hanging items sway about the hook, on each sprite and its glow. Everything stands
+   * still at once when the reed sway is off (reduced motion). Transforms only.
+   */
   update(timeS: number, motion: MotionProfile): void {
-    const angle = motion.reedSway ? SWAY_RAD * Math.sin((2 * Math.PI * timeS) / SWAY_PERIOD_S) : 0;
-    for (const sprite of this.sprites.values()) {
-      if (!sprite.sways) continue;
-      sprite.image.setRotation(angle);
-      sprite.glow.setRotation(angle);
-    }
+    this.motionTimeS = timeS;
+    this.motionStill = !motion.reedSway;
+    for (const sprite of this.sprites.values()) this.applyMotion(sprite);
   }
 
   /** Starts decorate mode: shows the toolbar and makes the placed Decorations pressable, with no focus yet. */
@@ -354,10 +463,52 @@ export class TankDecorator {
     this.noIcon.destroy();
   }
 
+  /** Put away: a wide secondary button at size 0.8, and an icon-only ICON_TILE when compact. */
+  private createPutAwayButtons(): ButtonPair {
+    const { scene, textures, dpr } = this.options;
+    const common = {
+      fill: 'secondary',
+      label: PUT_AWAY_LABEL,
+      icon: 'putAway',
+      dpr,
+      pressOnDown: false,
+      onPress: () => this.putAwaySelected(),
+    } as const;
+    return {
+      full: createButton(scene, textures.baked, { ...common, shape: 'wide', size: PUT_AWAY_SIZE }),
+      compact: createButton(scene, textures.baked, { ...common, shape: 'square', size: ICON_TILE_SIZE, iconOnly: true }),
+    };
+  }
+
+  /** Done: a wide primary button, and a label-sized COMPACT_DONE when compact. */
+  private createDoneButtons(): ButtonPair {
+    const { scene, textures, dpr } = this.options;
+    const common = {
+      fill: 'primary',
+      shape: 'wide',
+      size: 1,
+      label: DONE_LABEL,
+      icon: 'check',
+      dpr,
+      pressOnDown: false,
+      onPress: () => this.pressDone(),
+    } as const;
+    return {
+      full: createButton(scene, textures.baked, common),
+      compact: createButton(scene, textures.baked, { ...common, width: COMPACT_DONE.w }),
+    };
+  }
+
+  /** The catalogue Decoration `id`. Throws when the catalogue has none. */
+  private decorationOf(id: string): Decoration {
+    const decoration = decorationById(id, this.options.catalogue);
+    if (decoration === undefined) throw new Error(`TankDecorator: unknown Decoration ${id}`);
+    return decoration;
+  }
+
   /** Brings images, tray, toolbar and rings in line with the layout, selection and focus. */
   private refresh(): void {
     this.syncDecorations();
-    this.syncTray();
     if (this.selection !== null && placementOf(this.tankLayout, this.selection) === undefined) this.selection = null;
     const focus = this.focus;
     if (focus !== null && !this.focusTargets().some((target) => focusKey(target) === focusKey(focus))) {
@@ -366,45 +517,68 @@ export class TankDecorator {
     this.applyFocusVisuals();
   }
 
-  /** One image per placement, stacked by drawOrder within the decorations depth. */
+  /** One image per placement, stacked by drawOrder within the decorations depth, every kind behind the axolotls. */
   private syncDecorations(): void {
     for (const [id, sprite] of this.sprites) {
       if (placementOf(this.tankLayout, id) !== undefined) continue;
       destroyDecorationSprite(sprite);
       this.sprites.delete(id);
     }
-    drawOrder(this.tankLayout).forEach((placement, index) => {
+    drawOrder(this.tankLayout, this.options.catalogue).forEach((placement, index) => {
       const sprite = this.sprites.get(placement.id) ?? this.addDecorationSprite(placement.id);
       const depth = this.options.depths.decorations + index * DEPTH_STEP;
       sprite.image.setDepth(depth);
       sprite.glow.setDepth(depth - DEPTH_STEP / 2);
-      this.positionImage(sprite.info, sprite.image, placement);
-      this.positionImage(sprite.glowInfo, sprite.glow, placement);
+      this.placeSprite(sprite, placement);
     });
   }
 
   private addDecorationSprite(id: string): DecorationSprite {
-    const slug = decorationSlug(id);
-    const { decorations, decorationGlows } = this.options.textures.tank;
-    const info = decorations[slug];
-    const glowInfo = decorationGlows[slug];
-    const glow = addBaseImage(this.scene, glowInfo);
-    const image = addBaseImage(this.scene, info);
+    const art = this.options.art(id);
+    const glow = addAnchoredImage(this.scene, art.glow);
+    const image = addAnchoredImage(this.scene, art.sprite);
     image.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, (pointer: Phaser.Input.Pointer) =>
       this.handleDecorationDown(id, pointer),
     );
     if (this.active) image.setInteractive({ useHandCursor: true });
-    const sprite: DecorationSprite = { image, info, glow, glowInfo, sways: TANK_SWAYING_DECORATIONS.includes(id) };
+    const sprite: DecorationSprite = {
+      decoration: this.decorationOf(id),
+      image,
+      info: art.sprite,
+      glow,
+      glowInfo: art.glow,
+      anchor: null,
+    };
     this.sprites.set(id, sprite);
     return sprite;
   }
 
-  /** Puts a base-anchored image showing `info` at the tank point `pos`, scaled to the tank frame. */
-  private positionImage(info: TexInfo, image: Phaser.GameObjects.Image, pos: Point): void {
+  /** CSS point of the anchor of `decoration` with its base point at `pos`, or null before the frame is known. */
+  private anchorCss(decoration: Decoration, pos: Point): Point | null {
+    const frame = this.frame;
+    if (frame === null) return null;
+    return tankToCss(frame, decorationAnchor(decoration, pos));
+  }
+
+  /** Scales a placed Decoration and its glow to the tank frame at the anchor for base point `pos`, with its idle motion. */
+  private placeSprite(sprite: DecorationSprite, pos: Point): void {
     const frame = this.frame;
     if (frame === null) return;
-    const css = tankToCss(frame, pos);
-    image.setPosition(css.x, css.y).setScale(frame.scale / info.scale);
+    sprite.anchor = this.anchorCss(sprite.decoration, pos);
+    sprite.image.setScale(frame.scale / sprite.info.scale);
+    sprite.glow.setScale(frame.scale / sprite.glowInfo.scale);
+    this.applyMotion(sprite);
+  }
+
+  /** Moves a placed Decoration and its glow by the current idle motion (bob down, sway angle) from its anchor. */
+  private applyMotion(sprite: DecorationSprite): void {
+    const frame = this.frame;
+    const anchor = sprite.anchor;
+    if (frame === null || anchor === null) return;
+    const motion = decorationMotion(sprite.decoration, this.motionTimeS, this.motionStill);
+    const y = anchor.y + motion.dy * frame.scale;
+    sprite.image.setPosition(anchor.x, y).setRotation(motion.angle);
+    sprite.glow.setPosition(anchor.x, y).setRotation(motion.angle);
   }
 
   /** Owned Decorations not in the tank, in catalogue order. */
@@ -412,74 +586,87 @@ export class TankDecorator {
     return this.owned.filter((id) => placementOf(this.tankLayout, id) === undefined);
   }
 
-  /** Rebuilds the tray squares when the set of unplaced Decorations changes. */
-  private syncTray(): void {
-    const ids = this.trayIds();
-    if (ids.join('\n') === this.trayButtons.map((button) => button.id).join('\n')) return;
+  /** Rebuilds the tray squares when the set of unplaced Decorations or the tray look changes. */
+  private syncTray(ids: readonly string[], look: TrayLook): void {
+    const sameIds = ids.join('\n') === this.trayButtons.map((button) => button.id).join('\n');
+    if (sameIds && look === this.trayLook) return;
     for (const button of this.trayButtons) button.container.destroy();
     this.trayPressId = null;
-    this.trayButtons = ids.map((id) => this.addTrayButton(id));
+    this.trayLook = look;
+    this.trayButtons = ids.map((id) => this.addTrayButton(id, look));
   }
 
-  private addTrayButton(id: string): TrayButton {
+  private addTrayButton(id: string, look: TrayLook): TrayButton {
     const scene = this.scene;
+    const side = look.squarePx;
     const panel = scene.add.graphics();
-    drawPanel(panel, 0, 0, TRAY_PX, TRAY_PX, UI_PANEL);
-    const treasure = this.options.textures.treasure;
-    const icon = addGlowingTreasureIcon(scene, treasure, TRAY_ICON_PX, id, TRAY_GLOW_PX).setPosition(
-      TRAY_PX / 2,
-      TRAY_PX / 2,
-    );
-    const zone = scene.add.zone(0, 0, TRAY_PX, TRAY_PX).setOrigin(0, 0).setInteractive({ useHandCursor: true });
+    drawPanel(panel, 0, 0, side, side, UI_PANEL);
+    const glow = addRarityGlow(scene, this.options.textures.treasure, look.glowPx, badgeShape(this.decorationOf(id).rarity));
+    const iconInfo = this.options.art(id).icons[look.iconPx];
+    const icon = addAnchoredImage(scene, iconInfo).setScale(1 / iconInfo.scale);
+    const iconGroup = scene.add.container(side / 2, side / 2, [glow, icon]);
+    const zone = scene.add.zone(0, 0, side, side).setOrigin(0, 0).setInteractive({ useHandCursor: true });
     zone.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.handleTrayDown(id));
     zone.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.handleTrayUp(id));
     zone.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => this.handleTrayOut(id));
-    const container = scene.add.container(0, 0, [panel, icon, zone]);
+    const container = scene.add.container(0, 0, [panel, iconGroup, zone]);
     this.toolbar.add(container);
     return { id, container };
   }
 
-  /** The caption: the focused item's name, else the hint or the empty-tray message. */
-  private captionText(): string {
+  /**
+   * The caption: the focused item's name, or "Put away" when the icon-only compact Put away is
+   * focused, else the hint or the empty-tray message.
+   */
+  private captionText(compact: boolean): string {
     const focus = this.focus;
-    if (focus !== null && 'id' in focus) return treasureName(focus.id);
+    if (focus !== null && 'id' in focus) return this.decorationOf(focus.id).name;
+    if (focus?.kind === 'putAway' && compact) return PUT_AWAY_LABEL;
     if (this.owned.length === 0) return NO_DECORATIONS_TO_PLACE;
     if (this.trayIds().length === 0) return ALL_DECORATIONS_PLACED;
     return DECORATE_HINT;
   }
 
-  /** Lays the tray, Put away, Done and the caption out with decorateLayout. */
+  /** Measured full and compact sizes of the decorate controls, with `caption`. */
+  private decorateSizes(caption: Size | null): DecorateSizes {
+    return {
+      putAway: buttonSize(this.putAwayButtons.full),
+      done: buttonSize(this.doneButtons.full),
+      caption,
+      compact: { putAway: buttonSize(this.putAwayButtons.compact), done: buttonSize(this.doneButtons.compact) },
+    };
+  }
+
+  /**
+   * Lays the tray, Put away, Done and the caption out with decorateLayout, its look held still by the
+   * owned count, and shows the full or compact variant of each control as it picks.
+   */
   private relayoutToolbar(): void {
     const view = this.view;
     const frame = this.frame;
     if (view === null || frame === null) return;
+    const ids = this.trayIds();
+    const maxTrayCount = this.owned.length;
+    const compact = decorateLayout(view, frame, ids.length, this.decorateSizes(null), maxTrayCount).compact;
     this.caption.setWordWrapWidth(Math.max(1, view.cssW - 2 * UI.margin), true);
-    this.caption.setText(this.captionText());
-    const putAwaySize = { w: this.putAwayButton.width, h: this.putAwayButton.height };
-    const doneSize = { w: this.doneButton.width, h: this.doneButton.height };
+    this.caption.setText(this.captionText(compact));
     const captionSize = { w: this.caption.width, h: this.caption.height };
-    const decorate = decorateLayout(view, frame, this.trayButtons.length, {
-      putAway: putAwaySize,
-      done: doneSize,
-      caption: captionSize,
-    });
+    const decorate = decorateLayout(view, frame, ids.length, this.decorateSizes(captionSize), maxTrayCount);
     this.decorate = decorate;
+    this.syncTray(ids, decorate.compact ? COMPACT_TRAY : FULL_TRAY);
     this.trayButtons.forEach((button, index) => {
       const rect = decorate.tray[index];
       button.container.setPosition(rect.x, rect.y);
     });
-    this.putAwayButton.container.setPosition(decorate.putAway.x, decorate.putAway.y);
-    this.putAwayButton.container.setVisible(this.selection !== null);
-    this.doneButton.container.setPosition(decorate.done.x, decorate.done.y);
+    const kind = this.focus?.kind;
+    placeButtonPair(this.putAwayButtons, decorate.putAway, decorate.compact, this.selection !== null, kind === 'putAway');
+    placeButtonPair(this.doneButtons, decorate.done, decorate.compact, true, kind === 'done');
     this.caption.setVisible(decorate.caption !== null);
     if (decorate.caption !== null) this.caption.setPosition(decorate.caption.x, decorate.caption.y);
   }
 
-  /** Button focus states, the toolbar layout (the caption follows focus) and the rings. */
+  /** The toolbar layout with its button focus states (the caption follows focus), then the rings. */
   private applyFocusVisuals(): void {
-    const kind = this.focus?.kind;
-    this.putAwayButton.setFocused(kind === 'putAway');
-    this.doneButton.setFocused(kind === 'done');
     this.relayoutToolbar();
     this.drawRings();
   }
@@ -499,14 +686,14 @@ export class TankDecorator {
     if (this.selection !== null) ringed.add(this.selection);
     for (const id of ringed) {
       const placement = placementOf(this.tankLayout, id);
-      if (placement !== undefined) strokeDoubleRing(this.rings, this.footprintCss(placement));
+      if (placement !== undefined) strokeDoubleRing(this.rings, this.footprintCss(this.decorationOf(id), placement));
     }
   }
 
-  /** The Decoration footprint at base point `pos`, in CSS px. */
-  private footprintCss(pos: Point): Rect {
+  /** The footprint of `decoration` (its own width) at base point `pos`, in CSS px. */
+  private footprintCss(decoration: Decoration, pos: Point): Rect {
     const frame = this.frame;
-    const footprint = decorationFootprint(pos);
+    const footprint = decorationFootprintFor(decoration, pos);
     if (frame === null) return footprint;
     const topLeft = tankToCss(frame, footprint);
     return { x: topLeft.x, y: topLeft.y, w: footprint.w * frame.scale, h: footprint.h * frame.scale };
@@ -515,7 +702,9 @@ export class TankDecorator {
   /** Focus order: tray items, placed Decorations back to front, Put away when shown, Done. */
   private focusTargets(): FocusTarget[] {
     const tray = this.trayIds().map((id): FocusTarget => ({ kind: 'tray', id }));
-    const placed = drawOrder(this.tankLayout).map((placement): FocusTarget => ({ kind: 'placed', id: placement.id }));
+    const placed = drawOrder(this.tankLayout, this.options.catalogue).map(
+      (placement): FocusTarget => ({ kind: 'placed', id: placement.id }),
+    );
     const putAwayTarget: FocusTarget[] = this.selection !== null ? [{ kind: 'putAway' }] : [];
     return [...tray, ...placed, ...putAwayTarget, { kind: 'done' }];
   }
@@ -569,10 +758,12 @@ export class TankDecorator {
     this.options.onLayoutChange(this.tankLayout);
   }
 
-  /** Places a tray Decoration at the suggested spot, then selects and focuses it. */
+  /** Places a tray Decoration at the spot suggested for its kind, then selects and focuses it. */
   private placeFromTray(id: string): void {
     if (!this.active) return;
-    const change = placeDecoration(this.tankLayout, this.banked, id, suggestSpot(this.tankLayout));
+    const { catalogue } = this.options;
+    const spot = suggestSpot(this.tankLayout, id, catalogue);
+    const change = placeDecoration(this.tankLayout, this.ownedIds, id, spot, catalogue);
     if (!this.applyChange(change, 'placed')) return;
     this.selection = id;
     this.focus = { kind: 'placed', id };
@@ -601,17 +792,22 @@ export class TankDecorator {
     this.options.onDone();
   }
 
-  /** One keyboard step: moves when the new base point is valid, else shows the invalid ghost briefly. */
+  /**
+   * One keyboard step for the Decoration's kind: moves when the new base point is valid, else shows
+   * the invalid ghost briefly. Up and down on a Floating or Hanging item do nothing, with no cue.
+   */
   private nudgePlaced(id: string, direction: TankDirection): void {
     const placement = placementOf(this.tankLayout, id);
     if (placement === undefined) return;
-    const candidate = nudge(placement, direction);
-    if (!isValidPlacement(candidate)) {
+    const decoration = this.decorationOf(id);
+    const candidate = nudgeDecoration(decoration, placement, direction);
+    if (candidate === null) return;
+    if (!isValidPlacementFor(decoration, candidate)) {
       this.showGhost(id, candidate);
       this.invalidTimer = this.scene.time.delayedCall(INVALID_GHOST_MS, this.hideGhost, [], this);
       return;
     }
-    if (!this.applyChange(moveDecoration(this.tankLayout, id, candidate), 'moved')) return;
+    if (!this.applyChange(moveDecoration(this.tankLayout, id, candidate, this.options.catalogue), 'moved')) return;
     this.hideGhost();
     this.selection = id;
     this.finishChange();
@@ -655,7 +851,10 @@ export class TankDecorator {
     };
   }
 
-  /** Moves the ghost with the drag pointer once it passes the drag threshold. */
+  /**
+   * Moves the ghost with the drag pointer once it passes the drag threshold, snapped for the
+   * Decoration's kind (Floating and Hanging stay in the top band).
+   */
   private handlePointerMove(pointer: Phaser.Input.Pointer): void {
     const drag = this.drag;
     const frame = this.frame;
@@ -663,17 +862,19 @@ export class TankDecorator {
     const point = this.pointerCss(pointer);
     if (!drag.moving && Math.hypot(point.x - drag.start.x, point.y - drag.start.y) < DRAG_THRESHOLD_PX) return;
     drag.moving = true;
-    drag.target = cssToTank(frame, { x: point.x - drag.grab.x, y: point.y - drag.grab.y });
+    const base = cssToTank(frame, { x: point.x - drag.grab.x, y: point.y - drag.grab.y });
+    drag.target = snapPlacement(this.decorationOf(drag.id), base);
     this.showGhost(drag.id, drag.target);
   }
 
-  /** Ends the drag: moves the Decoration only when the ghost is at a valid base point. */
+  /** Ends the drag: moves the Decoration only when the ghost is at a valid base point for its kind. */
   private handlePointerUp(pointer: Phaser.Input.Pointer): void {
     const drag = this.drag;
     if (drag === null || pointer.id !== drag.pointerId) return;
     this.cancelDrag();
-    if (!drag.moving || !isValidPlacement(drag.target)) return;
-    if (!this.applyChange(moveDecoration(this.tankLayout, drag.id, drag.target), 'moved')) return;
+    if (!drag.moving || !isValidPlacementFor(this.decorationOf(drag.id), drag.target)) return;
+    const change = moveDecoration(this.tankLayout, drag.id, drag.target, this.options.catalogue);
+    if (!this.applyChange(change, 'moved')) return;
     this.finishChange();
   }
 
@@ -683,18 +884,26 @@ export class TankDecorator {
   }
 
   /**
-   * The ghost at base point `pos` (art guide 7f): the image at half alpha inside the double focus
-   * ring; at an invalid point also a dashed ink outline round the footprint and the "no" icon.
+   * The ghost at base point `pos` (art guide 7f): the still image at half alpha at its kind's anchor,
+   * inside the double focus ring round its footprint; at an invalid point also a dashed ink outline
+   * round the footprint and the "no" icon.
    */
   private showGhost(id: string, pos: Point): void {
     const sprite = this.sprites.get(id);
-    if (sprite === undefined || this.frame === null) return;
+    if (sprite === undefined) return;
+    const frame = this.frame;
+    const anchor = this.anchorCss(sprite.decoration, pos);
+    if (frame === null || anchor === null) return;
     this.hideGhost();
-    const { info } = sprite;
-    this.ghostImage.setTexture(info.key).setOrigin(info.originNormX, info.originNormY).setVisible(true);
-    this.positionImage(info, this.ghostImage, pos);
-    const footprint = this.footprintCss(pos);
-    const valid = isValidPlacement(pos);
+    const { info, decoration } = sprite;
+    this.ghostImage
+      .setTexture(info.key)
+      .setOrigin(info.originNormX, info.originNormY)
+      .setPosition(anchor.x, anchor.y)
+      .setScale(frame.scale / info.scale)
+      .setVisible(true);
+    const footprint = this.footprintCss(decoration, pos);
+    const valid = isValidPlacementFor(decoration, pos);
     if (!valid) strokeDashedRect(this.ghostMarks, footprint);
     strokeDoubleRing(this.ghostMarks, footprint);
     this.noIcon.setPosition(footprint.x + footprint.w, footprint.y).setVisible(!valid);

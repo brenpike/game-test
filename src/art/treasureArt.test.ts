@@ -7,7 +7,9 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { badgeShape } from '../logic/hints';
-import { treasureById } from '../logic/catalogue';
+import { treasureById, type Decoration } from '../logic/catalogue';
+import { DEV_DECORATIONS } from '../logic/devDecorations';
+import { TANK, TOP_BASE_Y } from '../logic/tank';
 import { BADGE_SHAPES } from './drawBadges';
 import { paintRarityGlow, rarityGlowTextureSize } from './drawRarityGlow';
 import {
@@ -22,9 +24,23 @@ import {
   decorationBaseOffset,
   type TreasureIconSlug,
 } from './drawTreasures';
-import { DEPTH } from './layers';
-import { INK } from './palette';
 import {
+  bakeDevDecorations,
+  devDecorationGlowKey,
+  devDecorationGlowSize,
+  devDecorationGlowTextureSize,
+  devDecorationIconKey,
+  devDecorationIconTextureSize,
+  devDecorationKey,
+  devDecorationTextureSize,
+  paintDevDecoration,
+  paintDevDecorationGlow,
+  paintDevDecorationIcon,
+} from './devDecorationArt';
+import { DEPTH } from './layers';
+import { INK, LILY_PAD } from './palette';
+import {
+  EXTRA_DECORATION_ICON_SIZES,
   TANK_DECORATION_BADGES,
   TANK_DECORATION_SLUGS,
   TANK_GLOW_SCALE,
@@ -32,6 +48,7 @@ import {
   tankDecorationGlowKey,
 } from './tankTextures';
 import type { TexSize } from './canvasKit';
+import tankTexturesSource from './tankTextures.ts?raw';
 import {
   DREAM_SWATCH_SILHOUETTE_KEY,
   RARITY_GLOW_SIZES,
@@ -492,6 +509,379 @@ describe('Home Tank Decoration glows', () => {
       const glowRgb = parseRgba(rec.gradients[0].stops[0][1]).rgb;
       expect(glowRgb).toEqual(channelsOf(BADGE_FILL[TANK_DECORATION_BADGES[slug]]));
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Painted extents: where every fill and stroke lands, in anchor space
+// ---------------------------------------------------------------------------
+
+interface Box {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/** One fill or stroke: its style, its stroke width as it shows on screen, and the box it covers. */
+interface Painted {
+  readonly op: 'fill' | 'stroke';
+  readonly style: unknown;
+  /** Stroke width times the transform scale. 0 for a fill. */
+  readonly screenWidth: number;
+  readonly box: Box;
+}
+
+/**
+ * Run `paint` against a context that follows save, restore, translate, scale and setTransform, and
+ * return the box of every path it fills or strokes, strokes widened by half their on-screen width.
+ * Only paths built with Path2D are tracked (the dev painters build every path that way).
+ */
+function paintedOps(paint: (ctx: CanvasRenderingContext2D) => void): Painted[] {
+  const out: Painted[] = [];
+  let m = [1, 0, 0, 1, 0, 0];
+  const mStack: number[][] = [];
+  let style: Record<string, unknown> = { fillStyle: '#000000', strokeStyle: '#000000', lineWidth: 1 };
+  const styleStack: Record<string, unknown>[] = [];
+  const point = (x: number, y: number): [number, number] => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+  const boxOf = (cmds: unknown[][], pad: number): Box => {
+    const box: Box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    const add = (x: number, y: number, extra = 0): void => {
+      const [px, py] = point(x, y);
+      box.minX = Math.min(box.minX, px - pad - extra);
+      box.minY = Math.min(box.minY, py - pad - extra);
+      box.maxX = Math.max(box.maxX, px + pad + extra);
+      box.maxY = Math.max(box.maxY, py + pad + extra);
+    };
+    // Curves are sampled, so the box is the curve's, not its control polygon's.
+    let cur: [number, number] = [0, 0];
+    const sample = (points: readonly [number, number][]): void => {
+      for (let i = 0; i <= 24; i++) {
+        const t = i / 24;
+        const u = 1 - t;
+        const [x, y] =
+          points.length === 3
+            ? [0, 1].map((k) => u * u * points[0][k] + 2 * u * t * points[1][k] + t * t * points[2][k])
+            : [0, 1].map(
+                (k) => u * u * u * points[0][k] + 3 * u * u * t * points[1][k] + 3 * u * t * t * points[2][k] + t * t * t * points[3][k],
+              );
+        add(x, y);
+      }
+      cur = points[points.length - 1];
+    };
+    for (const [name, ...a] of cmds as [string, ...number[]][]) {
+      if (name === 'moveTo' || name === 'lineTo') {
+        add(a[0], a[1]);
+        cur = [a[0], a[1]];
+      } else if (name === 'quadraticCurveTo') {
+        sample([cur, [a[0], a[1]], [a[2], a[3]]]);
+      } else if (name === 'bezierCurveTo') {
+        sample([cur, [a[0], a[1]], [a[2], a[3]], [a[4], a[5]]]);
+      } else if (name === 'ellipse') {
+        // Unrotated ellipses only: a rotated one is bounded by its larger radius, which is safe.
+        const rx = a[4] === 0 ? a[2] : Math.max(a[2], a[3]);
+        const ry = a[4] === 0 ? a[3] : Math.max(a[2], a[3]);
+        add(a[0] - rx, a[1] - ry);
+        add(a[0] + rx, a[1] + ry);
+      } else expect(['closePath'], `unhandled path command ${name}`).toContain(name);
+    }
+    return box;
+  };
+  const scaleOf = (): number => Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+  const draw = (op: 'fill' | 'stroke', path: unknown): void => {
+    expect(path instanceof LogPath, `${op} of a Path2D`).toBe(true);
+    const width = op === 'stroke' ? (style.lineWidth as number) * scaleOf() : 0;
+    out.push({
+      op,
+      style: op === 'fill' ? style.fillStyle : style.strokeStyle,
+      screenWidth: width,
+      box: boxOf((path as LogPath).cmds as unknown[][], width / 2),
+    });
+  };
+  const methods: Record<string, (...args: number[]) => void> = {
+    save: () => {
+      mStack.push([...m]);
+      styleStack.push({ ...style });
+    },
+    restore: () => {
+      m = mStack.pop() ?? m;
+      style = styleStack.pop() ?? style;
+    },
+    translate: (x, y) => {
+      m = [m[0], m[1], m[2], m[3], m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+    },
+    scale: (x, y) => {
+      m = [m[0] * x, m[1] * x, m[2] * y, m[3] * y, m[4], m[5]];
+    },
+    setTransform: (a, b, c, d, e, f) => {
+      m = [a, b, c, d, e, f];
+    },
+  };
+  const ctx = new Proxy(
+    {},
+    {
+      get: (_target, key) => {
+        const name = String(key);
+        if (name in style) return style[name];
+        if (name === 'fill' || name === 'stroke') return (path: unknown) => draw(name, path);
+        const method = methods[name];
+        if (method) return method;
+        expect(['lineJoin', 'lineCap', 'globalAlpha'], `unexpected context call ${name}`).toContain(name);
+        return undefined;
+      },
+      set: (_target, key, value) => {
+        style[String(key)] = value;
+        return true;
+      },
+    },
+  ) as unknown as CanvasRenderingContext2D;
+  vi.stubGlobal('Path2D', LogPath);
+  try {
+    paint(ctx);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  return out;
+}
+
+/** Union of the boxes of `ops`. */
+function unionBox(ops: readonly Painted[]): Box {
+  return ops.reduce<Box>(
+    (all, { box }) => ({
+      minX: Math.min(all.minX, box.minX),
+      minY: Math.min(all.minY, box.minY),
+      maxX: Math.max(all.maxX, box.maxX),
+      maxY: Math.max(all.maxY, box.maxY),
+    }),
+    { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
+  );
+}
+
+/** The box of a texture frame in anchor space. */
+function frameBox(size: TexSize): Box {
+  return { minX: -size.originX, minY: -size.originY, maxX: size.w - size.originX, maxY: size.h - size.originY };
+}
+
+/** Distinct on-screen widths of the ink strokes, to 6 places. */
+function inkWidths(ops: readonly Painted[]): number[] {
+  const widths = ops.filter((o) => o.op === 'stroke' && o.style === INK).map((o) => Math.round(o.screenWidth * 1e6) / 1e6);
+  return [...new Set(widths)].sort((a, b) => a - b);
+}
+
+const DEV_PX = 80;
+const devDecoration = (id: string): Decoration => DEV_DECORATIONS.find((d) => d.id === id) as Decoration;
+const FLOATING = DEV_DECORATIONS.filter((d) => d.placement === 'floating');
+const HANGING = DEV_DECORATIONS.filter((d) => d.placement === 'hanging');
+/** Ink may reach this far past the 80-high footprint box at the anchor edge. */
+const BOX_SLACK = 1;
+
+describe('Dev Decoration art', () => {
+  const bakeDev = (): ReturnType<typeof bakeDevDecorations> => {
+    bakes.length = 0;
+    return bakeDevDecorations({} as never, 2, DEV_PX);
+  };
+
+  it('covers a floating and two hanging dev Decorations, one of them 144 wide', () => {
+    expect(FLOATING.map((d) => d.id)).toEqual(['dev/test-lily-pad']);
+    expect(HANGING.map((d) => d.id)).toEqual(['dev/test-firefly-jar', 'dev/test-string-lights']);
+    expect(devDecoration('dev/test-string-lights').width).toBe(144);
+  });
+
+  it('bakes a sprite, a glow and both tray icons for every dev Decoration, with dev keys', () => {
+    const tex = bakeDev();
+    expect(EXTRA_DECORATION_ICON_SIZES).toEqual([48, 32]);
+    for (const d of DEV_DECORATIONS) {
+      expect(tex.decorations[d.id].key).toBe(devDecorationKey(d.id, DEV_PX));
+      expect(tex.decorationGlows[d.id].key).toBe(devDecorationGlowKey(d.id, DEV_PX));
+      for (const size of EXTRA_DECORATION_ICON_SIZES) {
+        expect(tex.icons[size][d.id].key).toBe(devDecorationIconKey(d.id, size));
+        expect(tex.icons[size][d.id].key).toBe(`treasure-dev-${d.id.slice(4)}-${size}`);
+      }
+      for (const info of [tex.decorations[d.id], tex.decorationGlows[d.id], tex.icons[48][d.id], tex.icons[32][d.id]]) {
+        expect(info.key, d.id).toContain('dev');
+        expect(tex.info[info.key]).toBe(info);
+        expect(info.scale).toBe(2);
+      }
+    }
+    expect(Object.keys(tex.info)).toHaveLength(DEV_DECORATIONS.length * 4);
+    expect(new Set(bakes.map((b) => b.key)).size).toBe(bakes.length);
+  });
+
+  it('never reuses a shipped texture key', () => {
+    bakes.length = 0;
+    bakeTankTextures({} as never, 2, { decorationPx: DEV_PX, rand: () => 0.5 });
+    bakeTreasureTextures({} as never, 2);
+    const shipped = new Set(bakes.map((b) => b.key));
+    expect(shipped.size).toBeGreaterThan(0);
+    const tex = bakeDev();
+    for (const key of Object.keys(tex.info)) expect(shipped.has(key), key).toBe(false);
+  });
+
+  it('keeps the shipped tank bake free of any dev module', () => {
+    expect(tankTexturesSource).not.toMatch(/devDecoration/i);
+    expect(tankTexturesSource).not.toMatch(/from '\.\.\/logic\/dev/);
+  });
+
+  it('sizes each sprite frame from the item width and anchors by kind', () => {
+    bakeDev();
+    for (const d of DEV_DECORATIONS) {
+      const size = bakes.find((b) => b.key === devDecorationKey(d.id, DEV_PX))!.size;
+      expect(size).toEqual(devDecorationTextureSize(d, DEV_PX));
+      const width = d.width as number;
+      expect(size.w).toBeGreaterThanOrEqual(width);
+      expect(size.w).toBeLessThanOrEqual(width + 10);
+      expect(size.originX * 2, `${d.id} centred across`).toBe(size.w);
+      expect(size.h).toBeGreaterThanOrEqual(DEV_PX);
+      expect(size.h).toBeLessThanOrEqual(DEV_PX + 10);
+      const box = frameBox(size);
+      if (d.placement === 'hanging') {
+        // The anchor is the top-centre hook: the 80 high box hangs below it.
+        expect(box.minY, d.id).toBeLessThanOrEqual(0);
+        expect(box.minY, d.id).toBeGreaterThanOrEqual(-5);
+        expect(box.maxY, d.id).toBeGreaterThanOrEqual(DEV_PX);
+      } else {
+        // The anchor is the bottom-centre: the 80 high box stands on it.
+        expect(box.maxY, d.id).toBeGreaterThanOrEqual(0);
+        expect(box.maxY, d.id).toBeLessThanOrEqual(5);
+        expect(box.minY, d.id).toBeLessThanOrEqual(-DEV_PX);
+      }
+    }
+  });
+
+  it('sizes each glow 1.2 x the width by 96, centred on the box with the sprite anchor', () => {
+    bakeDev();
+    for (const d of DEV_DECORATIONS) {
+      const glow = devDecorationGlowSize(d, DEV_PX);
+      expect(glow.w).toBe(Math.round(TANK_GLOW_SCALE * (d.width as number)));
+      expect(glow.h).toBe(96);
+      const size = bakes.find((b) => b.key === devDecorationGlowKey(d.id, DEV_PX))!.size;
+      expect(size).toEqual(devDecorationGlowTextureSize(d, DEV_PX));
+      expect(size.w).toBeGreaterThanOrEqual(glow.w);
+      expect(size.w).toBeLessThanOrEqual(glow.w + 4);
+      expect(size.h).toBeGreaterThanOrEqual(96);
+      expect(size.h).toBeLessThanOrEqual(100);
+      const box = frameBox(size);
+      expect((box.minX + box.maxX) / 2, `${d.id} centred across`).toBe(0);
+      expect((box.minY + box.maxY) / 2, `${d.id} centred on the box`).toBe(d.placement === 'hanging' ? DEV_PX / 2 : -DEV_PX / 2);
+
+      const rec = record(bakes.find((b) => b.key === devDecorationGlowKey(d.id, DEV_PX))!.paint);
+      expect(rec.gradients).toHaveLength(1);
+      expect(rec.gradients[0].args[5]).toBe(glow.h / 2);
+      expect(parseRgba(rec.gradients[0].stops[0][1]).rgb).toEqual(channelsOf(BADGE_FILL[badgeShape(d.rarity)]));
+      const scaleCall = rec.calls.find(([name]) => name === 'scale');
+      expect(scaleCall?.[1]).toEqual([glow.w / glow.h, 1]);
+      // The stretched disc reaches half the glow width and half its height, inside the frame.
+      expect(glow.w / 2).toBeLessThanOrEqual(box.maxX);
+      expect(Math.abs((box.minY + box.maxY) / 2) + glow.h / 2).toBeLessThanOrEqual(Math.max(Math.abs(box.minY), Math.abs(box.maxY)));
+    }
+  });
+
+  it('makes the 80-wide glow the same size as the shipped Decoration glow', () => {
+    const lily = devDecorationGlowSize(devDecoration('dev/test-lily-pad'), DEV_PX);
+    expect(lily).toEqual({ w: 96, h: 96 });
+  });
+
+  it('bakes tray icons centre-anchored at 48 and 32 in the shipped icon frame', () => {
+    bakeDev();
+    for (const d of DEV_DECORATIONS) {
+      for (const size of EXTRA_DECORATION_ICON_SIZES) {
+        const frame = bakes.find((b) => b.key === devDecorationIconKey(d.id, size))!.size;
+        expect(frame).toEqual(treasureIconTextureSize(size));
+        expect(frame).toEqual(devDecorationIconTextureSize(size));
+        expect(frame.originX * 2).toBe(frame.w);
+        expect(frame.originY * 2).toBe(frame.h);
+      }
+    }
+  });
+
+  it.each(DEV_DECORATIONS.map((d) => [d.id, d] as const))('%s paints inside its sprite frame and its footprint box', (_id, d) => {
+    const ops = paintedOps((ctx) => paintDevDecoration(ctx, d, DEV_PX));
+    expect(ops.length).toBeGreaterThan(5);
+    const painted = unionBox(ops);
+    const frame = frameBox(devDecorationTextureSize(d, DEV_PX));
+    expect(painted.minX).toBeGreaterThanOrEqual(frame.minX);
+    expect(painted.maxX).toBeLessThanOrEqual(frame.maxX);
+    expect(painted.minY).toBeGreaterThanOrEqual(frame.minY);
+    expect(painted.maxY).toBeLessThanOrEqual(frame.maxY);
+    // Inside the footprint box too, with a pixel for ink.
+    const half = (d.width as number) / 2;
+    expect(painted.minX).toBeGreaterThanOrEqual(-half - BOX_SLACK);
+    expect(painted.maxX).toBeLessThanOrEqual(half + BOX_SLACK);
+    if (d.placement === 'hanging') {
+      expect(painted.minY).toBeGreaterThanOrEqual(-BOX_SLACK);
+      expect(painted.maxY).toBeLessThanOrEqual(DEV_PX + BOX_SLACK);
+      // The item hangs from the hook at the top-centre: ink touches the top edge near the middle.
+      expect(painted.minY).toBeLessThanOrEqual(1);
+    } else {
+      expect(painted.minY).toBeGreaterThanOrEqual(-DEV_PX - BOX_SLACK);
+      expect(painted.maxY).toBeLessThanOrEqual(BOX_SLACK);
+      // Standing on the base point at the bottom-centre: the lowest ink edge sits on it.
+      expect(painted.maxY).toBeGreaterThanOrEqual(-2);
+    }
+  });
+
+  it.each(DEV_DECORATIONS.flatMap((d) => EXTRA_DECORATION_ICON_SIZES.map((size) => [d.id, d, size] as const)))(
+    '%s icon at %i paints inside its frame with the sprite ink widths',
+    (_id, d, size) => {
+      const icon = paintedOps((ctx) => paintDevDecorationIcon(ctx, d, size));
+      const painted = unionBox(icon);
+      const frame = frameBox(devDecorationIconTextureSize(size));
+      expect(painted.minX).toBeGreaterThanOrEqual(frame.minX);
+      expect(painted.maxX).toBeLessThanOrEqual(frame.maxX);
+      expect(painted.minY).toBeGreaterThanOrEqual(frame.minY);
+      expect(painted.maxY).toBeLessThanOrEqual(frame.maxY);
+      // The whole item fits the icon box, ink included.
+      expect(Math.max(painted.maxX - painted.minX, painted.maxY - painted.minY)).toBeLessThanOrEqual(size);
+      // Ink never scales: the icon draws the same ink widths on screen as the tank sprite.
+      const sprite = paintedOps((ctx) => paintDevDecoration(ctx, d, DEV_PX));
+      expect(inkWidths(icon)).toEqual(inkWidths(sprite));
+      expect(inkWidths(icon).length).toBeGreaterThan(0);
+    },
+  );
+
+  it('keeps every shape outline ink, the main outline widths at 3.15 or less', () => {
+    for (const d of DEV_DECORATIONS) {
+      const widths = inkWidths(paintedOps((ctx) => paintDevDecoration(ctx, d, DEV_PX)));
+      expect(Math.max(...widths), d.id).toBeLessThanOrEqual(2 * 3.5);
+      expect(Math.min(...widths), d.id).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('puts the lily pad waterline 20 units below its footprint top, at the water surface', () => {
+    const d = devDecoration('dev/test-lily-pad');
+    const ops = paintedOps((ctx) => paintDevDecoration(ctx, d, DEV_PX));
+    const pad = ops.find((o) => o.op === 'fill' && o.style === LILY_PAD);
+    expect(pad).toBeDefined();
+    const centreY = ((pad as Painted).box.minY + (pad as Painted).box.maxY) / 2;
+    // Floating anchor is the box bottom, so the box top is 80 above it.
+    expect(centreY - -DEV_PX).toBeCloseTo(20, 9);
+    // With the base point at TOP_BASE_Y the pad sits on the water surface line.
+    expect(TOP_BASE_Y + centreY).toBe(TANK.waterTop);
+    // Flower above the water, roots and tuber below it, down to the base point.
+    const painted = unionBox(ops);
+    expect(painted.minY).toBeLessThan(centreY - 10);
+    expect(painted.maxY).toBeGreaterThan(centreY + 40);
+  });
+
+  it('draws the string lights as a wire with six bulbs of three shapes', () => {
+    const d = devDecoration('dev/test-string-lights');
+    const ops = paintedOps((ctx) => paintDevDecoration(ctx, d, DEV_PX));
+    // Bulbs are the ink shapes of ink width 2.4 whose fill is not a ring/socket colour.
+    const bulbOutlines = ops.filter((o) => o.op === 'stroke' && o.style === INK && Math.abs(o.screenWidth - 2.4) < 1e-9);
+    expect(bulbOutlines).toHaveLength(6);
+    const sizes = new Set(bulbOutlines.map((o) => `${(o.box.maxX - o.box.minX).toFixed(1)}x${(o.box.maxY - o.box.minY).toFixed(1)}`));
+    expect(sizes.size).toBeGreaterThanOrEqual(3);
+    // The wire spans most of the 144 width.
+    const painted = unionBox(ops);
+    expect(painted.maxX - painted.minX).toBeGreaterThan(130);
+  });
+
+  it('paints the glow through the shipped rarity glow stretched across the box', () => {
+    const d = devDecoration('dev/test-string-lights');
+    const rec = record((ctx) => paintDevDecorationGlow(ctx, d, DEV_PX));
+    expect(rec.calls[0]).toEqual(['translate', [0, DEV_PX / 2]]);
+    expect(rec.calls[1]).toEqual(['scale', [devDecorationGlowSize(d, DEV_PX).w / 96, 1]]);
+    expect(rec.ops).toHaveLength(1);
   });
 });
 

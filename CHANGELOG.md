@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-10-22
+
+### Added
+
+- Home Tank Decorations can now be Floating or Hanging. Floating items rest on the water's surface and Hanging items hang from the top of the tank. Both slide left and right (#95).
+- Floating items bob gently and Hanging items sway. With reduced motion on, they stay still, like the Pond plant (#95).
+- Wide Hanging items, such as string lights, slide along the top of the tank (#95).
+- Dev builds have a `?decor` flag that adds test Decorations: a lily pad, a firefly jar and string lights. They are never saved and are not in the production build (#95).
+- Every canal Decoration stays a Floor item (#95).
+
+### Changed
+
+- The Home Tank hub and decorate controls now keep clear of the top of the tank. They sit in the wall above the tank, or in the open water below the top band (#95).
+- On small screens, Decorate, Treasure Chest, Collection Book and Put away are smaller 48x48 icon buttons, with a caption naming the focused one. The tray squares get smaller and Done gets narrower (#95).
+- On large screens the hub sits in the open water below the top band (#95).
+- Saves are unchanged (#95).
+
 ## [0.23.1] - 2026-10-21
 
 ### Fixed

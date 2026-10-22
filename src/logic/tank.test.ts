@@ -1,26 +1,42 @@
 import { describe, expect, it } from 'vitest';
-import { CANAL_TREASURES } from './catalogue';
+import { CANAL_TREASURES, type Decoration } from './catalogue';
 import {
+  SHIPPED_DECORATIONS,
   SUGGEST_BASE_Y,
   SUGGEST_XS,
   TANK,
   TANK_SWAYING_DECORATIONS,
+  TOP_BASE_Y,
+  TOP_KEEP_CLEAR,
+  TOP_MOTION_MARGIN,
   createTankLayout,
   cssToTank,
+  decorationAnchor,
   decorationBandTop,
+  decorationById,
   decorationFootprint,
+  decorationFootprintFor,
+  decorationMotion,
+  decorationWidth,
+  decorationsOverlap,
   drawOrder,
   isValidPlacement,
+  isValidPlacementFor,
+  lidTopCss,
   moveDecoration,
   nudge,
+  nudgeDecoration,
   ownedDecorations,
   placeDecoration,
   placementXRange,
+  placementXRangeFor,
   putAway,
   sanitizeLayout,
+  snapPlacement,
   suggestSpot,
   tankFrame,
   tankToCss,
+  topKeepClearCss,
   type TankLayout,
 } from './tank';
 import type { Point } from './zone';
@@ -36,6 +52,53 @@ const ALL_DECORATIONS = [PLANT, BOAT, CASTLE, PYRAMID];
 const BANKED = [HAT, PYRAMID, PLANT, SHELL, BOAT, CASTLE, PLANT];
 const MIDDLE: Point = { x: 240, y: 318 };
 const X_RANGE = placementXRange();
+
+const LILY = 'test/lily-pad';
+const LANTERN = 'test/lantern';
+const BANNER = 'test/banner';
+const LILY_PAD: Decoration = {
+  id: LILY,
+  name: 'Lily pad',
+  rarity: 'common',
+  category: 'decoration',
+  placement: 'floating',
+};
+const PAPER_LANTERN: Decoration = {
+  id: LANTERN,
+  name: 'Paper lantern',
+  rarity: 'rare',
+  category: 'decoration',
+  placement: 'hanging',
+};
+const WIDE_BANNER: Decoration = {
+  id: BANNER,
+  name: 'Banner',
+  rarity: 'epic',
+  category: 'decoration',
+  placement: 'hanging',
+  width: 144,
+};
+const TEST_CATALOGUE: readonly Decoration[] = [...SHIPPED_DECORATIONS, LILY_PAD, PAPER_LANTERN, WIDE_BANNER];
+const TEST_BANKED = [...BANKED, BANNER, LANTERN, LILY];
+const TOP_MIDDLE: Point = { x: 240, y: TOP_BASE_Y };
+
+/** The shipped Decoration with this id; fails the test when it is missing. */
+function shipped(id: string): Decoration {
+  const decoration = decorationById(id);
+  if (decoration === undefined) throw new Error(`no shipped Decoration ${id}`);
+  return decoration;
+}
+
+/** A layout with each id placed at its own suggested spot from the test catalogue, in order. */
+function testLayoutWith(ids: readonly string[]): TankLayout {
+  let layout = createTankLayout();
+  for (const id of ids) {
+    const change = placeDecoration(layout, TEST_BANKED, id, suggestSpot(layout, id, TEST_CATALOGUE), TEST_CATALOGUE);
+    expect(change.result).toBe('placed');
+    layout = change.layout;
+  }
+  return layout;
+}
 
 /** A layout with each id placed at its suggested spot, in order. */
 function layoutWith(ids: readonly string[]): TankLayout {
@@ -308,5 +371,323 @@ describe('tankFrame', () => {
     const top = tankToCss(frame, { x: 0, y: TANK.floorBand.y0 - TANK.decorationPx }).y;
     expect(decorationBandTop(frame)).toBeCloseTo(top);
     expect(decorationBandTop(tankFrame(480, 360))).toBe(224);
+  });
+});
+
+describe('placement kinds geometry (issue #95)', () => {
+  it('ships only the canal Decorations, in catalogue order, all Floor at the standard width', () => {
+    expect(SHIPPED_DECORATIONS.map((decoration) => decoration.id)).toEqual(ALL_DECORATIONS);
+    for (const decoration of SHIPPED_DECORATIONS) {
+      expect(decoration.placement).toBeUndefined();
+      expect(decorationWidth(decoration)).toBe(TANK.decorationPx);
+    }
+    expect(decorationById(LILY)).toBeUndefined();
+    expect(decorationById(LILY, TEST_CATALOGUE)).toBe(LILY_PAD);
+    expect(decorationById(HAT)).toBeUndefined();
+  });
+
+  it('puts the top band under the lid, hanging from the glass top, with the waterline inside it', () => {
+    expect(TANK.lidTop).toBe(16);
+    expect(TANK.topBand).toEqual({ y0: 24, y1: 104 });
+    expect(TOP_BASE_Y).toBe(104);
+    const footprint = decorationFootprintFor(PAPER_LANTERN, TOP_MIDDLE);
+    expect(footprint.y).toBe(TANK.glass.y0);
+    expect(footprint.y + footprint.h).toBe(TOP_BASE_Y);
+    expect(TANK.lidTop).toBeLessThan(TANK.topBand.y0);
+    expect(TANK.waterTop).toBeGreaterThan(TANK.topBand.y0);
+    expect(TANK.waterTop).toBeLessThan(TANK.topBand.y1);
+    expect(TANK.topBand.y1).toBeLessThan(TANK.floorBand.y0 - TANK.decorationPx);
+  });
+
+  it('keeps clear the top band grown by the motion margin', () => {
+    expect(TOP_MOTION_MARGIN).toBe(4);
+    expect(TOP_KEEP_CLEAR).toEqual({ y0: 20, y1: 108 });
+  });
+
+  it('gives each width its own x range', () => {
+    expect(placementXRangeFor(PAPER_LANTERN)).toEqual(X_RANGE);
+    expect(placementXRangeFor(LILY_PAD)).toEqual({ x0: 64, x1: 416 });
+    expect(placementXRangeFor(WIDE_BANNER)).toEqual({ x0: 96, x1: 384 });
+    expect(decorationWidth(WIDE_BANNER)).toBe(144);
+  });
+
+  it('sizes the footprint by the item width, 80 high', () => {
+    expect(decorationFootprintFor(WIDE_BANNER, TOP_MIDDLE)).toEqual({ x: 168, y: 24, w: 144, h: 80 });
+    expect(decorationFootprintFor(shipped(PLANT), MIDDLE)).toEqual(decorationFootprint(MIDDLE));
+    const range = placementXRangeFor(WIDE_BANNER);
+    for (const x of [range.x0, range.x1]) {
+      const footprint = decorationFootprintFor(WIDE_BANNER, { x, y: TOP_BASE_Y });
+      expect(footprint.x).toBeGreaterThanOrEqual(TANK.glass.x0 + TANK.wallInset);
+      expect(footprint.x + footprint.w).toBeLessThanOrEqual(TANK.glass.x1 - TANK.wallInset);
+    }
+  });
+});
+
+describe('isValidPlacementFor', () => {
+  it('matches isValidPlacement for every shipped Decoration', () => {
+    const points: Point[] = [MIDDLE, { x: 10, y: 318 }, { x: 240, y: 200 }, TOP_MIDDLE, { x: 64, y: 304 }];
+    for (const decoration of SHIPPED_DECORATIONS) {
+      for (const pos of points) expect(isValidPlacementFor(decoration, pos)).toBe(isValidPlacement(pos));
+    }
+  });
+
+  it('accepts Floating and Hanging only at the fixed base y within the x range', () => {
+    for (const decoration of [LILY_PAD, PAPER_LANTERN, WIDE_BANNER]) {
+      const range = placementXRangeFor(decoration);
+      expect(isValidPlacementFor(decoration, { x: range.x0, y: TOP_BASE_Y })).toBe(true);
+      expect(isValidPlacementFor(decoration, { x: range.x1, y: TOP_BASE_Y })).toBe(true);
+      expect(isValidPlacementFor(decoration, { x: range.x0 - 0.5, y: TOP_BASE_Y })).toBe(false);
+      expect(isValidPlacementFor(decoration, { x: range.x1 + 0.5, y: TOP_BASE_Y })).toBe(false);
+      for (const y of [TOP_BASE_Y - 0.5, TOP_BASE_Y + 0.5, SUGGEST_BASE_Y, TANK.waterTop]) {
+        expect(isValidPlacementFor(decoration, { x: 240, y })).toBe(false);
+      }
+      for (const bad of [Number.NaN, Number.POSITIVE_INFINITY]) {
+        expect(isValidPlacementFor(decoration, { x: bad, y: TOP_BASE_Y })).toBe(false);
+        expect(isValidPlacementFor(decoration, { x: 240, y: bad })).toBe(false);
+      }
+    }
+  });
+
+  it('keeps a wide item between x 96 and 384', () => {
+    expect(isValidPlacementFor(WIDE_BANNER, { x: 96, y: TOP_BASE_Y })).toBe(true);
+    expect(isValidPlacementFor(WIDE_BANNER, { x: 384, y: TOP_BASE_Y })).toBe(true);
+    expect(isValidPlacementFor(WIDE_BANNER, { x: 80, y: TOP_BASE_Y })).toBe(false);
+    expect(isValidPlacementFor(WIDE_BANNER, { x: 400, y: TOP_BASE_Y })).toBe(false);
+  });
+});
+
+describe('decorationsOverlap', () => {
+  it('uses both widths; touching edges do not overlap', () => {
+    const at = (x: number): Point => ({ x, y: TOP_BASE_Y });
+    expect(decorationsOverlap(LILY_PAD, at(240), PAPER_LANTERN, at(320))).toBe(false);
+    expect(decorationsOverlap(LILY_PAD, at(240), PAPER_LANTERN, at(319.5))).toBe(true);
+    expect(decorationsOverlap(WIDE_BANNER, at(240), PAPER_LANTERN, at(352))).toBe(false);
+    expect(decorationsOverlap(WIDE_BANNER, at(240), PAPER_LANTERN, at(351.5))).toBe(true);
+    expect(decorationsOverlap(PAPER_LANTERN, at(128), WIDE_BANNER, at(240))).toBe(false);
+    expect(decorationsOverlap(WIDE_BANNER, at(96), WIDE_BANNER, at(240))).toBe(false);
+    expect(decorationsOverlap(WIDE_BANNER, at(97), WIDE_BANNER, at(240))).toBe(true);
+  });
+
+  it('never overlaps a top item with a Floor item', () => {
+    expect(decorationsOverlap(WIDE_BANNER, TOP_MIDDLE, shipped(CASTLE), { x: 240, y: TANK.floorBand.y0 })).toBe(false);
+  });
+});
+
+describe('snapPlacement', () => {
+  it('pins y and clamps x for Floating and Hanging', () => {
+    expect(snapPlacement(LILY_PAD, { x: 300, y: 250 })).toEqual({ x: 300, y: TOP_BASE_Y });
+    expect(snapPlacement(LILY_PAD, { x: 500, y: 0 })).toEqual({ x: 416, y: TOP_BASE_Y });
+    expect(snapPlacement(WIDE_BANNER, { x: 20, y: 330 })).toEqual({ x: 96, y: TOP_BASE_Y });
+    expect(snapPlacement(WIDE_BANNER, { x: 460, y: 40 })).toEqual({ x: 384, y: TOP_BASE_Y });
+    expect(isValidPlacementFor(PAPER_LANTERN, snapPlacement(PAPER_LANTERN, { x: 123.5, y: 7 }))).toBe(true);
+  });
+
+  it('leaves Floor drags as they are', () => {
+    expect(snapPlacement(shipped(BOAT), { x: 10, y: 200 })).toEqual({ x: 10, y: 200 });
+    expect(snapPlacement(shipped(BOAT), MIDDLE)).toEqual(MIDDLE);
+  });
+});
+
+describe('nudgeDecoration', () => {
+  it('nudges Floor items in every direction like nudge', () => {
+    for (const direction of ['left', 'right', 'up', 'down'] as const) {
+      expect(nudgeDecoration(shipped(PLANT), MIDDLE, direction)).toEqual(nudge(MIDDLE, direction));
+    }
+  });
+
+  it('moves Floating and Hanging left and right only; up and down give null', () => {
+    for (const decoration of [LILY_PAD, PAPER_LANTERN, WIDE_BANNER]) {
+      expect(nudgeDecoration(decoration, TOP_MIDDLE, 'left')).toEqual({ x: 224, y: TOP_BASE_Y });
+      expect(nudgeDecoration(decoration, TOP_MIDDLE, 'right')).toEqual({ x: 256, y: TOP_BASE_Y });
+      expect(nudgeDecoration(decoration, TOP_MIDDLE, 'up')).toBeNull();
+      expect(nudgeDecoration(decoration, TOP_MIDDLE, 'down')).toBeNull();
+    }
+  });
+
+  it('can step a wide item past its x range, which then reads as outside', () => {
+    const edge = { x: 384, y: TOP_BASE_Y };
+    const past = nudgeDecoration(WIDE_BANNER, edge, 'right');
+    expect(past).toEqual({ x: 400, y: TOP_BASE_Y });
+    expect(past !== null && isValidPlacementFor(WIDE_BANNER, past)).toBe(false);
+  });
+});
+
+describe('decorationAnchor', () => {
+  it('anchors Floor and Floating at the base point and Hanging at the hook on the glass top', () => {
+    expect(decorationAnchor(shipped(PLANT), MIDDLE)).toEqual(MIDDLE);
+    expect(decorationAnchor(LILY_PAD, TOP_MIDDLE)).toEqual(TOP_MIDDLE);
+    expect(decorationAnchor(PAPER_LANTERN, TOP_MIDDLE)).toEqual({ x: 240, y: TANK.glass.y0 });
+    expect(decorationAnchor(WIDE_BANNER, { x: 100, y: TOP_BASE_Y })).toEqual({ x: 100, y: 24 });
+  });
+});
+
+describe('decorationMotion', () => {
+  const TIMES = [0, 0.25, 0.75, 1, 1.25, 2.5, 3.7, 10];
+
+  it('is 0 for every kind when still', () => {
+    for (const decoration of [...SHIPPED_DECORATIONS, LILY_PAD, PAPER_LANTERN, WIDE_BANNER]) {
+      for (const timeS of TIMES) expect(decorationMotion(decoration, timeS, true)).toEqual({ dy: 0, angle: 0 });
+    }
+  });
+
+  it('sways the pond plant 0.05 rad over 4 s and holds other Floor items', () => {
+    expect(decorationMotion(shipped(PLANT), 1, false).angle).toBeCloseTo(0.05);
+    expect(decorationMotion(shipped(PLANT), 3, false).angle).toBeCloseTo(-0.05);
+    expect(decorationMotion(shipped(PLANT), 1, false).dy).toBe(0);
+    for (const id of [BOAT, CASTLE, PYRAMID]) {
+      for (const timeS of TIMES) expect(decorationMotion(shipped(id), timeS, false)).toEqual({ dy: 0, angle: 0 });
+    }
+  });
+
+  it('bobs Floating 3 units over 3 s and sways Hanging 0.04 rad over 5 s', () => {
+    expect(decorationMotion(LILY_PAD, 0.75, false).dy).toBeCloseTo(3);
+    expect(decorationMotion(LILY_PAD, 2.25, false).dy).toBeCloseTo(-3);
+    expect(decorationMotion(LILY_PAD, 0.75, false).angle).toBe(0);
+    expect(decorationMotion(PAPER_LANTERN, 1.25, false).angle).toBeCloseTo(0.04);
+    expect(decorationMotion(WIDE_BANNER, 3.75, false).angle).toBeCloseTo(-0.04);
+    expect(decorationMotion(PAPER_LANTERN, 1.25, false).dy).toBe(0);
+  });
+
+  it('keeps the moving top items inside the keep-clear band', () => {
+    const halfWidth = decorationWidth(WIDE_BANNER) / 2;
+    for (let step = 0; step <= 100; step++) {
+      const timeS = step / 10;
+      const bob = decorationMotion(LILY_PAD, timeS, false).dy;
+      expect(TANK.topBand.y0 + bob).toBeGreaterThanOrEqual(TOP_KEEP_CLEAR.y0);
+      expect(TANK.topBand.y1 + bob).toBeLessThanOrEqual(TOP_KEEP_CLEAR.y1);
+      const swing = Math.abs(decorationMotion(WIDE_BANNER, timeS, false).angle);
+      const lift = halfWidth * Math.sin(swing);
+      expect(TANK.topBand.y0 - lift).toBeGreaterThanOrEqual(TOP_KEEP_CLEAR.y0);
+      expect(TANK.topBand.y1 + lift).toBeLessThanOrEqual(TOP_KEEP_CLEAR.y1);
+    }
+  });
+});
+
+describe('tank changes with an injected catalogue', () => {
+  it('owns injected Decorations only with that catalogue', () => {
+    expect(ownedDecorations(TEST_BANKED, TEST_CATALOGUE)).toEqual([...ALL_DECORATIONS, LILY, LANTERN, BANNER]);
+    expect(ownedDecorations(TEST_BANKED)).toEqual(ALL_DECORATIONS);
+  });
+
+  it('places Floating and Hanging items only at the fixed base y', () => {
+    const empty = createTankLayout();
+    const placed = placeDecoration(empty, TEST_BANKED, LILY, TOP_MIDDLE, TEST_CATALOGUE);
+    expect(placed.result).toBe('placed');
+    expect(placed.layout.placed).toEqual([{ id: LILY, ...TOP_MIDDLE }]);
+    expect(placeDecoration(empty, TEST_BANKED, LILY, MIDDLE, TEST_CATALOGUE).result).toBe('outside');
+    expect(placeDecoration(empty, TEST_BANKED, BANNER, { x: 90, y: TOP_BASE_Y }, TEST_CATALOGUE).result).toBe(
+      'outside',
+    );
+    expect(placeDecoration(empty, TEST_BANKED, BANNER, { x: 96, y: TOP_BASE_Y }, TEST_CATALOGUE).result).toBe(
+      'placed',
+    );
+    expect(placeDecoration(empty, TEST_BANKED, LILY, TOP_MIDDLE).result).toBe('notDecoration');
+    expect(placeDecoration(empty, BANKED, LILY, TOP_MIDDLE, TEST_CATALOGUE).result).toBe('notOwned');
+  });
+
+  it('moves a top item along the top only', () => {
+    const layout = testLayoutWith([LANTERN]);
+    const moved = moveDecoration(layout, LANTERN, { x: 300, y: TOP_BASE_Y }, TEST_CATALOGUE);
+    expect(moved.result).toBe('moved');
+    expect(moved.layout.placed).toEqual([{ id: LANTERN, x: 300, y: TOP_BASE_Y }]);
+    const down = moveDecoration(layout, LANTERN, { x: 300, y: TOP_BASE_Y + TANK.moveStep.y }, TEST_CATALOGUE);
+    expect(down.result).toBe('outside');
+    expect(down.layout).toBe(layout);
+  });
+
+  it('suggests top spots in the same x order, past items already there', () => {
+    expect(suggestSpot(createTankLayout(), LILY, TEST_CATALOGUE)).toEqual(TOP_MIDDLE);
+    expect(suggestSpot(testLayoutWith([LILY]), LANTERN, TEST_CATALOGUE)).toEqual({ x: 144, y: TOP_BASE_Y });
+    expect(suggestSpot(testLayoutWith([LILY, LANTERN]), BANNER, TEST_CATALOGUE)).toEqual({ x: 384, y: TOP_BASE_Y });
+    expect(suggestSpot(testLayoutWith([LILY]), BANNER, TEST_CATALOGUE)).toEqual({ x: 96, y: TOP_BASE_Y });
+  });
+
+  it('keeps Floor and top suggestions apart', () => {
+    const floorOnly = testLayoutWith([PLANT, BOAT]);
+    expect(suggestSpot(floorOnly, LILY, TEST_CATALOGUE)).toEqual(TOP_MIDDLE);
+    const topOnly = testLayoutWith([LILY, BANNER]);
+    expect(suggestSpot(topOnly, PLANT, TEST_CATALOGUE)).toEqual(MIDDLE);
+    expect(suggestSpot(topOnly)).toEqual(MIDDLE);
+    expect(suggestSpot(createTankLayout(), LILY)).toEqual(MIDDLE);
+  });
+
+  it('suggests a valid top spot even when every spot overlaps', () => {
+    const crowded: TankLayout = {
+      placed: SUGGEST_XS.map((x, i) => ({ id: `test/${i}`, x, y: TOP_BASE_Y })),
+    };
+    for (const id of [LILY, LANTERN, BANNER]) {
+      const decoration = decorationById(id, TEST_CATALOGUE);
+      const spot = suggestSpot(crowded, id, TEST_CATALOGUE);
+      expect(decoration !== undefined && isValidPlacementFor(decoration, spot)).toBe(true);
+    }
+    expect(suggestSpot(crowded, LILY, TEST_CATALOGUE)).toEqual({ x: SUGGEST_XS[0], y: TOP_BASE_Y });
+  });
+
+  it('clamps suggested x into a very wide item range', () => {
+    const huge: Decoration = { ...WIDE_BANNER, id: 'test/huge', width: 400 };
+    const catalogue = [...TEST_CATALOGUE, huge];
+    expect(placementXRangeFor(huge)).toEqual({ x0: 224, x1: 256 });
+    const layout: TankLayout = { placed: [{ id: LANTERN, x: 240, y: TOP_BASE_Y }] };
+    const spot = suggestSpot(layout, huge.id, catalogue);
+    expect(isValidPlacementFor(huge, spot)).toBe(true);
+  });
+
+  it('draws top items first and orders ties by the injected catalogue', () => {
+    const layout: TankLayout = {
+      placed: [
+        { id: PLANT, x: 100, y: 310 },
+        { id: BANNER, x: 300, y: TOP_BASE_Y },
+        { id: LILY, x: 100, y: TOP_BASE_Y },
+      ],
+    };
+    expect(drawOrder(layout, TEST_CATALOGUE).map((placement) => placement.id)).toEqual([LILY, BANNER, PLANT]);
+    expect(drawOrder(layout).map((placement) => placement.id)).toEqual([BANNER, LILY, PLANT]);
+  });
+
+  it('keeps owned injected placements with the injected catalogue and drops them with the default', () => {
+    const layout: TankLayout = {
+      placed: [
+        { id: PLANT, x: 240, y: 318 },
+        { id: LILY, x: 240, y: TOP_BASE_Y },
+        { id: BANNER, x: 330, y: TOP_BASE_Y },
+        { id: LANTERN, x: 144, y: 318 },
+        { id: LILY, x: 100, y: TOP_BASE_Y },
+      ],
+    };
+    expect(sanitizeLayout(layout, TEST_BANKED, TEST_CATALOGUE)).toEqual({
+      placed: [
+        { id: PLANT, x: 240, y: 318 },
+        { id: LILY, x: 240, y: TOP_BASE_Y },
+        { id: BANNER, x: 330, y: TOP_BASE_Y },
+      ],
+    });
+    expect(sanitizeLayout(layout, TEST_BANKED)).toEqual({ placed: [{ id: PLANT, x: 240, y: 318 }] });
+    expect(sanitizeLayout(layout, BANKED, TEST_CATALOGUE)).toEqual({ placed: [{ id: PLANT, x: 240, y: 318 }] });
+  });
+
+  it('restores Floating and Hanging placements exactly through a JSON round trip', () => {
+    const layout: TankLayout = {
+      placed: [
+        { id: PLANT, x: 240, y: 318 },
+        { id: LILY, x: 112, y: TOP_BASE_Y },
+        { id: LANTERN, x: 416, y: TOP_BASE_Y },
+        { id: BANNER, x: 260.5, y: TOP_BASE_Y },
+      ],
+    };
+    const restored = JSON.parse(JSON.stringify(layout)) as TankLayout;
+    expect(sanitizeLayout(restored, TEST_BANKED, TEST_CATALOGUE)).toEqual(layout);
+  });
+});
+
+describe('top band CSS helpers', () => {
+  it('gives the lid top and keep-clear band in CSS px', () => {
+    expect(lidTopCss(tankFrame(480, 360))).toBe(16);
+    expect(topKeepClearCss(tankFrame(480, 360))).toEqual({ y0: 20, y1: 108 });
+    const frame = tankFrame(320, 440);
+    expect(lidTopCss(frame)).toBeCloseTo(tankToCss(frame, { x: 0, y: TANK.lidTop }).y);
+    const band = topKeepClearCss(frame);
+    expect(band.y0).toBeCloseTo(tankToCss(frame, { x: 0, y: TOP_KEEP_CLEAR.y0 }).y);
+    expect(band.y1).toBeCloseTo(tankToCss(frame, { x: 0, y: TOP_KEEP_CLEAR.y1 }).y);
+    expect(band.y1).toBeLessThan(decorationBandTop(frame));
   });
 });

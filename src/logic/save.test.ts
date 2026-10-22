@@ -39,7 +39,7 @@ import {
   type HubState,
   type Session,
 } from './session';
-import { placeDecoration, suggestSpot } from './tank';
+import { SHIPPED_DECORATIONS, placeDecoration, suggestSpot } from './tank';
 import { createTrip, createTripContext, stepTrip } from './trip';
 import { TRIP_REGISTRY_KEYS } from './tripEvents';
 import { LEGS } from './tuning';
@@ -848,5 +848,33 @@ describe('last chosen area and hazards met (#73, D2)', () => {
     const raw = encodeSave(playedSession().hub);
     expect(raw).not.toContain('"areas":');
     expect(raw).not.toContain('canal/snack-0');
+  });
+});
+
+describe('tank placements in the save', () => {
+  const FLOATER: (typeof SHIPPED_DECORATIONS)[number] = {
+    id: 'test/float',
+    name: 'Test floater',
+    rarity: 'common',
+    category: 'decoration',
+    placement: 'floating',
+  };
+
+  it('encodes a hub holding an injected test placement without it', () => {
+    const played = playedSession();
+    const hub = {
+      ...played.hub,
+      tank: { placed: [...played.hub.tank.placed, { id: FLOATER.id, x: 240, y: 104 }] },
+    };
+    const raw = encodeSave(hub);
+    expect(raw).not.toContain(FLOATER.id);
+    expect(JSON.parse(raw).hub.tank).toEqual(played.hub.tank);
+  });
+
+  it('round-trips shipped Floor placements unchanged', () => {
+    const played = playedSession();
+    expect(played.hub.tank.placed.length).toBeGreaterThan(0);
+    const hub = loadedHub(JSON.parse(encodeSave(played.hub)));
+    expect(hub.tank).toEqual(played.hub.tank);
   });
 });

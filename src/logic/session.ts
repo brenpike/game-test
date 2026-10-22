@@ -5,7 +5,7 @@
 import { AREAS, areaFactCards, isAreaUnlocked, type AreaData } from './areas';
 import { copyLook, isAxolotlLook, rescuedLook, type AxolotlLook, type AxolotlSex } from './axolotlLook';
 import { cleanName, isValidName, unusedSuggestedName } from './axolotlNames';
-import { ownedDreamColours, type DreamColourId, type WearableSlot } from './catalogue';
+import { ownedDreamColours, type Decoration, type DreamColourId, type WearableSlot } from './catalogue';
 import { createCollectibles, type Collectible } from './collectibles';
 import { canWearDream } from './dreamPaint';
 import { withFirstFindSeen, type FirstFindKind } from './firstFind';
@@ -14,7 +14,7 @@ import { applyOutfit, emptyOutfit, takeOff, wear, type Outfit } from './outfit';
 import { nextTripSeed } from './placement';
 import { waitingAfterTrip, type RescueState, type WaitingStranded } from './rescue';
 import { bestStarsFor, withStars, type AreaStars, type AreaStarsRecord } from './stars';
-import { createTankLayout, sanitizeLayout, type TankLayout } from './tank';
+import { SHIPPED_DECORATIONS, createTankLayout, sanitizeLayout, type TankLayout } from './tank';
 import type { TripState } from './trip';
 import type { TripEndReason } from './tripEvents';
 import { CANAL_AREA_ID, type CollectibleSpawn } from './zone';
@@ -438,9 +438,22 @@ export function restoreSnacks(spawns: readonly CollectibleSpawn[], eaten: readon
   return createCollectibles(spawns).map((snack) => (eatenIds.has(snack.id) ? { ...snack, collected: true } : snack));
 }
 
-/** The session with `layout` as the tank, sanitized against the banked ids. */
-export function setTankLayout(session: Session, layout: TankLayout): Session {
-  return { ...session, hub: { ...session.hub, tank: sanitizeLayout(layout, session.hub.banked) } };
+/** What `setTankLayout` sanitizes against: the Decoration catalogue and the owned ids. */
+export interface TankLayoutOptions {
+  /** Defaults to SHIPPED_DECORATIONS. */
+  readonly catalogue?: readonly Decoration[];
+  /** Defaults to the session's banked ids. */
+  readonly owned?: readonly string[];
+}
+
+/**
+ * The session with `layout` as the tank, sanitized against the owned ids (default: banked) and the
+ * catalogue (default: SHIPPED_DECORATIONS). A page session may hold dev placements when the caller
+ * passes them in `options`; saving drops them.
+ */
+export function setTankLayout(session: Session, layout: TankLayout, options: TankLayoutOptions = {}): Session {
+  const { catalogue = SHIPPED_DECORATIONS, owned = session.hub.banked } = options;
+  return { ...session, hub: { ...session.hub, tank: sanitizeLayout(layout, owned, catalogue) } };
 }
 
 /**

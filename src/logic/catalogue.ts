@@ -117,9 +117,20 @@ export interface TreasureBase {
   readonly rarity: Rarity;
 }
 
-/** A Home Tank item. */
+/**
+ * Where a Decoration goes in the Home Tank: 'floor' stands on the gravel, 'floating' rests on the
+ * water surface and 'hanging' hangs from the glass top. Floating and Hanging move left and right only.
+ */
+export type PlacementKind = 'floor' | 'floating' | 'hanging';
+
+/**
+ * A Home Tank item. `placement` absent means Floor. `width` is the footprint width in tank units;
+ * absent means the standard square footprint (the tank rules resolve it).
+ */
 export interface Decoration extends TreasureBase {
   readonly category: 'decoration';
+  readonly placement?: PlacementKind;
+  readonly width?: number;
 }
 
 /** An outfit item for one slot, with exactly one perk and an optional set (Implementation Decision 12). */
@@ -237,6 +248,16 @@ export function treasureById(id: string): Treasure | undefined {
 /** The id text after the first '/', e.g. 'canal/sun-hat' gives 'sun-hat'. Art texture keys use it. */
 export function treasureSlug(id: string): string {
   return id.slice(id.indexOf('/') + 1);
+}
+
+/** True when the treasure is a Decoration. */
+export function isDecoration(treasure: Treasure): treasure is Decoration {
+  return treasure.category === 'decoration';
+}
+
+/** The placement kind of a Decoration; an absent `placement` means 'floor'. */
+export function placementKind(decoration: Pick<Decoration, 'placement'>): PlacementKind {
+  return decoration.placement ?? 'floor';
 }
 
 /** Display name of a category. */
