@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-10-22
+
+### Added
+
+- Area 3, the Lily pad pond at dusk, is open. Fireflies glow over the water (#98).
+- The heron hunts in Area 3. Its shadow glides over one stretch of the pond near the surface and darkens just before its beak dips. Swim away or stay deep to be safe (#98).
+- A new fact card: "Meet the heron" (#98).
+- In Area 3, a few snacks dart a short hop away when you swim close. Follow them to catch them (#98).
+- The root arch is a new hiding place in Area 3 (#98).
+- 12 new treasures to find in Area 3, including the Wooden duck decoy (the special treasure) and the Firefly gold Dream colour (#98).
+- Hanging Decorations for the Home Tank: Firefly string lights and a Firefly jar (#98).
+
+### Changed
+
+- The stream in Area 3 is a little stronger (#98).
+- On the smallest screens, the decorate caption can hide when all 14 Decorations are in the tray (#98).
+- The heron fact card's text wraps a little wider on 320 x 440 screens (#98).
+
 ## [0.26.0] - 2026-10-22
 
 ### Added
