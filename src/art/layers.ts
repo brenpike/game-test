@@ -18,9 +18,13 @@
  * pads and reeds, below fx. The dash-needed bubble and crumble shards use fx.
  * `friend` (the stranded axolotl, waiting or following) sits between the halo
  * and the axolotl, so the hero always draws in front; its lost bubble uses fx.
+ * `queasyTint` (the green cheek tint of a queasy axolotl, issue #75) sits just over
+ * the axolotl so it tints the cheeks and is never hidden by the hero, and under
+ * bubbles. It is a soft see-through fill, not a cue object, so it never covers an
+ * outline the pair rule relies on.
  * Full order: bg < caveBack < hiddenTreasure < reeds < caveFront = currentMarker
  * < haze < homeSpot < homeRing < treasureGlow < treasure < collectibles < tilapia < halo
- * < friend < axolotl < bubbles < surface < pads < hint < fx < ui.
+ * < friend < axolotl < queasyTint < bubbles < surface < pads < hint < fx < ui.
  */
 export const DEPTH = {
   bg: 0,
@@ -50,6 +54,8 @@ export const DEPTH = {
   /** Provisional. Stranded axolotl: behind the axolotl, in front of the halo. */
   friend: 39,
   axolotl: 40,
+  /** Provisional. Green cheek tint of a queasy axolotl: over the axolotl, under bubbles. */
+  queasyTint: 41,
   bubbles: 50,
   surface: 60,
   pads: 70,

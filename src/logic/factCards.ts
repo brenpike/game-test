@@ -27,11 +27,27 @@ export const BOY_OR_GIRL_FACT: Readonly<FactCard> = Object.freeze({
   body: 'Grown-up boy axolotls are longer and slimmer, with a bigger bump by the back legs. Girls are rounder and plumper.',
 });
 
+/**
+ * The plastic worm fact card, shown the first time the axolotl meets a plastic worm (PRD C13).
+ * Source (owner to review): NOAA Marine Debris Program, https://marinedebris.noaa.gov/why-marine-debris-problem/ingestion
+ */
+export const PLASTIC_WORM_FACT: Readonly<FactCard> = Object.freeze({
+  id: 'plastic-worm',
+  name: 'Plastic worm',
+  title: 'Plastic is not food',
+  body: 'Bits of plastic in the water can look like food. Animals sometimes eat them by mistake, and it makes them feel sick. Keeping rubbish out of the water helps.',
+});
+
 /** Label of the button that closes a fact card. */
 export const FACT_CARD_OK_LABEL = 'OK';
 
-/** Collection Book hint of a fact card not yet found. */
-export const FACT_CARD_UNFOUND_HINT = 'Explore the canal to find this card.';
+/** Collection Book hint of a fact card not yet found, naming the place to explore. */
+export function unfoundFactCardHint(place: string): string {
+  return `Explore ${place} to find this card.`;
+}
+
+/** Collection Book hint of a fact card not yet found in the canal. */
+export const FACT_CARD_UNFOUND_HINT = unfoundFactCardHint('the canal');
 
 /**
  * Centre distance in px within which the axolotl meets a tilapia. Provisional; tune in play.

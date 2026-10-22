@@ -7,9 +7,6 @@
 import { blob, ell, frameFromBounds, inkMany, line, seg, shape, TAU, type Seg, type TexSize } from './canvasKit';
 import {
   BANK_SOIL,
-  BED_BOTTOM,
-  BED_LIP,
-  BED_TOP,
   CATTAIL,
   CLOUD_SHINE,
   FLOWER_CENTRE,
@@ -21,8 +18,8 @@ import {
   LILY_PAD,
   LILY_PAD_SHINE,
   LW,
-  MUD,
-  PEBBLE_COLOURS,
+  PEBBLE_B,
+  PEBBLE_D,
   PEBBLE_SHINE,
   PETAL_SHINE,
   RAY_ALPHA,
@@ -41,17 +38,13 @@ import {
   T_STATIC,
   VIEW_H,
   VIEW_W,
-  WATER_DEEP,
-  WATER_GRADIENT_END_Y,
-  WATER_MID,
-  WATER_SHALLOW,
-  WATER_STOP_MID,
   WHITE,
   WILLOW_FOLIAGE,
   WILLOW_SHINE,
   WILLOW_STRAND,
   WILLOW_TRUNK,
 } from './palette';
+import { habitatLook, type EdgeReedLook, type HabitatLook, type HabitatLookId } from './habitatLook';
 
 /** Background chunk size in logical units (the 480 x 360 reference viewport). */
 export const BG_CHUNK = { w: VIEW_W, h: VIEW_H } as const;
@@ -91,6 +84,22 @@ export interface ChunkOptions {
   readonly bankCapLeft?: boolean;
   /** Round off the bank at its right end (neighbour chunk has no bank). Default false. */
   readonly bankCapRight?: boolean;
+  /**
+   * Habitat look (habitatLook.ts). Default 'canal', which paints exactly the canal
+   * chunk. 'pond' swaps the water, haze and bed colours and adds edge reeds and a
+   * stream. Random draws are the same for the canal as before; pond-only draws come
+   * after the canal's draws of the same step.
+   */
+  readonly look?: HabitatLookId;
+  /**
+   * Paint the stream flowing in from the right edge of this chunk (guide 7a, pond).
+   * Only counts on 'single' and 'top' chunks, where the water is. Default false.
+   */
+  readonly stream?: boolean;
+  /** This chunk is the first of its row. Looks with edge reeds paint them on the left. Default false. */
+  readonly edgeLeft?: boolean;
+  /** This chunk is the last of its row. Looks with edge reeds paint them on the right. Default false. */
+  readonly edgeRight?: boolean;
   /** Injected randomness in [0, 1). */
   readonly rand: () => number;
 }
@@ -312,11 +321,12 @@ function paintBank(ctx: CanvasRenderingContext2D, o: ChunkOptions): void {
   }
 }
 
-function paintWater(ctx: CanvasRenderingContext2D): void {
-  const g = ctx.createLinearGradient(0, SURF, 0, WATER_GRADIENT_END_Y);
-  g.addColorStop(0, WATER_SHALLOW);
-  g.addColorStop(WATER_STOP_MID, WATER_MID);
-  g.addColorStop(1, WATER_DEEP);
+function paintWater(ctx: CanvasRenderingContext2D, look: HabitatLook): void {
+  const { water } = look;
+  const g = ctx.createLinearGradient(0, SURF, 0, water.gradientEndY);
+  g.addColorStop(0, water.shallow);
+  g.addColorStop(water.stopMid, water.mid);
+  g.addColorStop(1, water.deep);
   ctx.fillStyle = g;
   ctx.fillRect(0, SURF_WATER_TOP, VIEW_W, VIEW_H - SURF_WATER_TOP);
 }
@@ -350,7 +360,8 @@ function bedEdgeY(worldX: number): number {
   return 322 + 2.6 * Math.sin(worldX * 0.021 + 0.7) + 1.4 * Math.sin(worldX * 0.057 + 2.1);
 }
 
-function paintBed(ctx: CanvasRenderingContext2D, index: number, rand: () => number): void {
+function paintBed(ctx: CanvasRenderingContext2D, index: number, rand: () => number, look: HabitatLook): void {
+  const { bed } = look;
   const wx0 = index * VIEW_W;
   const pts: [number, number][] = [];
   for (let x = -40; x <= VIEW_W + 40; x += 40) pts.push([x, bedEdgeY(wx0 + x)]);
@@ -369,8 +380,8 @@ function paintBed(ctx: CanvasRenderingContext2D, index: number, rand: () => numb
   bedFill.closePath();
 
   const g = ctx.createLinearGradient(0, 316, 0, VIEW_H);
-  g.addColorStop(0, BED_TOP);
-  g.addColorStop(1, BED_BOTTOM);
+  g.addColorStop(0, bed.top);
+  g.addColorStop(1, bed.bottom);
   ctx.fillStyle = g;
   ctx.fill(bedFill);
   ctx.lineWidth = LW;
@@ -380,12 +391,12 @@ function paintBed(ctx: CanvasRenderingContext2D, index: number, rand: () => numb
   ctx.save();
   ctx.translate(0, 4.5);
   ctx.lineWidth = 2.2;
-  ctx.strokeStyle = BED_LIP;
+  ctx.strokeStyle = bed.lip;
   ctx.stroke(bedEdge);
   ctx.restore();
 
-  ctx.fillStyle = MUD;
-  for (let i = 0; i < 12; i++) {
+  ctx.fillStyle = bed.mud;
+  for (let i = 0; i < bed.mudCount; i++) {
     const x = 10 + rand() * (VIEW_W - 20);
     const y = 328 + rand() * 30;
     const rx = 3 + rand() * 4;
@@ -394,26 +405,143 @@ function paintBed(ctx: CanvasRenderingContext2D, index: number, rand: () => numb
     ell(p, x, y, rx, ry);
     ctx.fill(p);
   }
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < bed.pebbleCount; i++) {
     const x = 14 + rand() * (VIEW_W - 28);
     const y = 332 + rand() * 20;
     const rx = 4.5 + rand() * 5;
     const ry = 3 + rand() * 2.6;
-    const c = PEBBLE_COLOURS[Math.floor(rand() * PEBBLE_COLOURS.length)];
+    const c = bed.pebbles[Math.floor(rand() * bed.pebbles.length)];
     const p = new Path2D();
     ell(p, x, y, rx, ry);
     shape(ctx, p, c, 2.6);
     const hp = new Path2D();
     ell(hp, x - rx * 0.3, y - ry * 0.4, rx * 0.32, ry * 0.25);
-    ctx.fillStyle = PEBBLE_SHINE;
+    ctx.fillStyle = bed.pebbleShine;
     ctx.fill(hp);
   }
 }
 
 /** Flat deep water over the whole chunk: the last stop of the water gradient, so rows meet with no seam (7a). */
-function paintDeepWater(ctx: CanvasRenderingContext2D): void {
-  ctx.fillStyle = WATER_DEEP;
+function paintDeepWater(ctx: CanvasRenderingContext2D, look: HabitatLook): void {
+  ctx.fillStyle = look.water.deep;
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+}
+
+/**
+ * Stream flowing in from the right edge (guide 7a, pond). The band matches the
+ * canal's current rows (y 120 to 280), so the scene's current zone can sit in it.
+ * `reach` is how far left the lighter water runs before it fades out.
+ */
+export const STREAM_BAND = { y0: 120, y1: 280, reach: 200 } as const;
+/** Chevron (flow arrow) rows of the stream, each as [x from the right edge, y]. All point left, the way the water runs. */
+const STREAM_CHEVRONS: readonly (readonly [number, number])[] = [
+  [34, 150],
+  [92, 180],
+  [40, 205],
+  [104, 232],
+  [52, 258],
+];
+const STREAM_CHEVRON_W = 11;
+const STREAM_CHEVRON_H = 6;
+const STREAM_TRAIL_LEN = 36;
+const STREAM_LIGHT = 'rgba(240,255,228,0.3)';
+const STREAM_LINE = 'rgba(255,255,255,0.6)';
+const STREAM_LINE_WIDTH = 2.4;
+
+/**
+ * Paint the stream: a lighter band of water that widens toward the right edge,
+ * five white flow lines each ending in a left-pointing chevron, and a cool stone
+ * at each side of the mouth. Static, no randomness. The chevrons are the shape
+ * cue that the water runs left, so it reads without colour. The scene's current
+ * streaks (motion) sit over it.
+ */
+function paintStream(ctx: CanvasRenderingContext2D): void {
+  const { y0, y1, reach } = STREAM_BAND;
+  const mid = (y0 + y1) / 2;
+  const tipX = VIEW_W - reach;
+  const band = new Path2D();
+  band.moveTo(VIEW_W + 10, y0);
+  band.quadraticCurveTo(VIEW_W - reach * 0.45, y0 + 4, tipX, mid);
+  band.quadraticCurveTo(VIEW_W - reach * 0.45, y1 - 4, VIEW_W + 10, y1);
+  band.closePath();
+  const g = ctx.createLinearGradient(tipX, 0, VIEW_W, 0);
+  g.addColorStop(0, 'rgba(240,255,228,0)');
+  g.addColorStop(1, STREAM_LIGHT);
+  ctx.fillStyle = g;
+  ctx.fill(band);
+
+  ctx.lineWidth = STREAM_LINE_WIDTH;
+  ctx.strokeStyle = STREAM_LINE;
+  for (const [fromRight, y] of STREAM_CHEVRONS) {
+    const tip = VIEW_W - fromRight;
+    const trail = new Path2D();
+    trail.moveTo(tip + STREAM_TRAIL_LEN, y + 2);
+    trail.quadraticCurveTo(tip + STREAM_TRAIL_LEN * 0.5, y - 3, tip, y);
+    ctx.stroke(trail);
+    const head = new Path2D();
+    head.moveTo(tip + STREAM_CHEVRON_W, y - STREAM_CHEVRON_H);
+    head.lineTo(tip, y);
+    head.lineTo(tip + STREAM_CHEVRON_W, y + STREAM_CHEVRON_H);
+    ctx.stroke(head);
+  }
+
+  for (const [sy, fill] of [
+    [y0 - 8, PEBBLE_D],
+    [y1 + 8, PEBBLE_B],
+  ] as const) {
+    const stone = new Path2D();
+    ell(stone, VIEW_W - 6, sy, 17, 12);
+    shape(ctx, stone, fill, LW * 0.75);
+    const shine = new Path2D();
+    ell(shine, VIEW_W - 12, sy - 4.5, 5, 2.6, -0.4);
+    ctx.fillStyle = PEBBLE_SHINE;
+    ctx.fill(shine);
+  }
+}
+
+/** Edge reed cluster geometry: reeds per side, the x span from the chunk edge, and the height ranges (guide 7a, pond). */
+const EDGE_REED_COUNT = 6;
+const EDGE_REED_SPAN = [6, 54] as const;
+/** Left edge reeds are tall; right edge reeds stay low, under the stream band (y 280 and below). */
+const EDGE_REED_HEIGHT_LEFT = [92, 168] as const;
+const EDGE_REED_HEIGHT_RIGHT = [30, 44] as const;
+/** Reed bases sink this far below the bed edge so no root floats. */
+const EDGE_REED_SINK = 6;
+
+/**
+ * Paint a cluster of reeds and cattails along one chunk edge, rooted in the bed.
+ * Draws `rand` six times per reed. Used by looks with `edgeReeds` only.
+ */
+function paintEdgeReeds(
+  ctx: CanvasRenderingContext2D,
+  index: number,
+  rand: () => number,
+  colours: EdgeReedLook,
+  side: 'left' | 'right',
+): void {
+  const wx0 = index * VIEW_W;
+  const heights = side === 'left' ? EDGE_REED_HEIGHT_LEFT : EDGE_REED_HEIGHT_RIGHT;
+  const [from, to] = EDGE_REED_SPAN;
+  for (let i = 0; i < EDGE_REED_COUNT; i++) {
+    const offset = from + ((to - from) * i) / (EDGE_REED_COUNT - 1) + (rand() - 0.5) * 4;
+    const x = side === 'left' ? offset : VIEW_W - offset;
+    const height = heights[0] + rand() * (heights[1] - heights[0]);
+    // Lean toward the centre of the area's water, so the cluster frames the view.
+    const inward = side === 'left' ? 1 : -1;
+    const look: ReedLook = {
+      height,
+      lean: inward * (2 + rand() * 12),
+      bend: (rand() - 0.5) * 10,
+      cat: rand() < 0.6,
+      leafU: 0.35 + rand() * 0.3,
+      leafDir: rand() < 0.5 ? -1 : 1,
+      light: i % 2 === 0,
+    };
+    ctx.save();
+    ctx.translate(x, bedEdgeY(wx0 + x) + EDGE_REED_SINK);
+    paintReedColoured(ctx, look, look.light ? colours.stalkLight : colours.stalk, colours.leaf, colours.cattail);
+    ctx.restore();
+  }
 }
 
 /**
@@ -424,9 +552,14 @@ function paintDeepWater(ctx: CanvasRenderingContext2D): void {
  * water; a 'bottom' chunk is flat deep water with the bed (guide 7a, Area
  * size). Reeds, haze, surface line and pads are separate layers. The caller
  * sets the transform so one logical unit is one unit here.
+ *
+ * `look` picks the habitat (default 'canal', unchanged). A look with edge reeds
+ * paints them at the row's first and last chunk, after the bed; `stream` adds
+ * the stream after the rays.
  */
 export function paintBackgroundChunk(ctx: CanvasRenderingContext2D, opts: ChunkOptions): void {
   const { rand } = opts;
+  const look = habitatLook(opts.look ?? 'canal');
   const row = opts.row ?? 'single';
   const hasSky = row === 'single' || row === 'top';
   const hasBed = row === 'single' || row === 'bottom';
@@ -435,12 +568,19 @@ export function paintBackgroundChunk(ctx: CanvasRenderingContext2D, opts: ChunkO
     if (opts.hasSun) paintSun(ctx);
     paintClouds(ctx, rand, opts.hasSun ? 16 : 120);
     if (opts.hasBank) paintBank(ctx, opts);
-    paintWater(ctx);
+    paintWater(ctx, look);
     paintRays(ctx, rand);
+    if (opts.stream === true) paintStream(ctx);
   } else {
-    paintDeepWater(ctx);
+    paintDeepWater(ctx, look);
   }
-  if (hasBed) paintBed(ctx, opts.index, rand);
+  if (hasBed) {
+    paintBed(ctx, opts.index, rand, look);
+    if (look.edgeReeds) {
+      if (opts.edgeLeft === true) paintEdgeReeds(ctx, opts.index, rand, look.edgeReeds, 'left');
+      if (opts.edgeRight === true) paintEdgeReeds(ctx, opts.index, rand, look.edgeReeds, 'right');
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -499,6 +639,17 @@ function reedGeom(look: ReedLook): ReedGeom {
  * Static: sway it by rotating the sprite about its base.
  */
 export function paintReed(ctx: CanvasRenderingContext2D, look: ReedLook): void {
+  paintReedColoured(ctx, look, look.light ? REED_LIGHT : REED_DARK, REED_LEAF, CATTAIL);
+}
+
+/** {@link paintReed} with the stalk, leaf and cattail colours given, so a habitat can recolour its edge reeds. */
+function paintReedColoured(
+  ctx: CanvasRenderingContext2D,
+  look: ReedLook,
+  stalkColour: string,
+  leafColour: string,
+  cattailColour: string,
+): void {
   const g = reedGeom(look);
   const stalk = new Path2D();
   stalk.moveTo(0, 0);
@@ -509,8 +660,8 @@ export function paintReed(ctx: CanvasRenderingContext2D, look: ReedLook): void {
   leaf.quadraticCurveTo(g.leafCtl[0], g.leafCtl[1], g.leafTip[0], g.leafTip[1]);
 
   const segs: Seg[] = [
-    seg(stalk, 3.6, look.light ? REED_LIGHT : REED_DARK, 2.5),
-    seg(leaf, 3.2, REED_LEAF, 2.4),
+    seg(stalk, 3.6, stalkColour, 2.5),
+    seg(leaf, 3.2, leafColour, 2.4),
   ];
   if (look.cat) {
     const len = Math.hypot(g.tx, g.ty);
@@ -520,7 +671,7 @@ export function paintReed(ctx: CanvasRenderingContext2D, look: ReedLook): void {
     };
     const a0 = q(1 - 16 / len);
     const a1 = q(1);
-    segs.push(seg(line(a0[0], a0[1], a1[0], a1[1]), 6.4, CATTAIL, 2.6));
+    segs.push(seg(line(a0[0], a0[1], a1[0], a1[1]), 6.4, cattailColour, 2.6));
   }
   inkMany(ctx, segs);
 }

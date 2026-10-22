@@ -165,6 +165,22 @@ export interface SnackReachTuning {
   radius: number;
 }
 
+/** Plastic worm tuning: a slow-only hazard the axolotl eats by mistake, then spits out. */
+export interface PlasticWormTuning {
+  /** Top speed multiplier while queasy; acceleration and Tail Dash are unchanged. */
+  speedFactor: number;
+  /** Seconds the axolotl stays queasy after eating a plastic worm. */
+  queasyTime: number;
+  /** Distance in px past the head reach centre, along the facing and rotation, where a spat worm lands. */
+  spitDistance: number;
+  /** Range in px from a plastic worm within which the axolotl meets it, unlocking its fact card. */
+  meetRange: number;
+  /** Peak queasy wobble angle in radians. */
+  wobbleAmp: number;
+  /** Queasy wobble cycle length in seconds. */
+  wobblePeriod: number;
+}
+
 /** Treasure hint sparkle tuning. */
 export interface HintTuning {
   /** Distance in px within which a treasure's hint sparkle shows; strictly shorter for rarer. */
@@ -328,6 +344,20 @@ export function tripTreasureTuning(
 export const SNACK_REACH: Readonly<SnackReachTuning> = Object.freeze({
   headAhead: 25,
   radius: 36,
+});
+
+/**
+ * Provisional plastic worm values (issue #75); tune in play. While queasy the axolotl swims at
+ * 0.6 of its top speed for 3 s and wobbles gently; a spat worm lands 48 px past the head reach
+ * centre. The axolotl meets a plastic worm within 100 px.
+ */
+export const PLASTIC_WORMS: Readonly<PlasticWormTuning> = Object.freeze({
+  speedFactor: 0.6,
+  queasyTime: 3,
+  spitDistance: 48,
+  meetRange: 100,
+  wobbleAmp: 0.08,
+  wobblePeriod: 0.6,
 });
 
 /** Provisional hint values; rarer treasures get a subtler, shorter-range hint (PRD B7). */

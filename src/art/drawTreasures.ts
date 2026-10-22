@@ -74,7 +74,7 @@ export type { DreamSwatchId } from './treasurePalette';
 // Ids
 // ---------------------------------------------------------------------------
 
-/** The twelve Dream swatches in guide 3f order. */
+/** The thirteen Dream swatches in guide 3f order. */
 export const DREAM_SWATCH_IDS: readonly DreamSwatchId[] = [
   'mint',
   'sky-blue',
@@ -88,6 +88,7 @@ export const DREAM_SWATCH_IDS: readonly DreamSwatchId[] = [
   'rainbow',
   'galaxy',
   'tie-dye-galaxy',
+  'lily-green',
 ];
 
 /** The twelve Decoration and Wearable slugs (the text after `canal/`). */
@@ -122,7 +123,7 @@ const ITEM_SLUGS: readonly TreasureItemSlug[] = [
   'flippers',
 ];
 
-/** All twenty-four icon slugs: the twelve items, then the twelve Paint shells in Dream order. */
+/** All twenty-five icon slugs: the twelve items, then the thirteen Paint shells in Dream order. */
 export const TREASURE_ICON_SLUGS: readonly TreasureIconSlug[] = [
   ...ITEM_SLUGS,
   ...DREAM_SWATCH_IDS.map((id): TreasureIconSlug => `paint-shell-${id}`),
