@@ -121,7 +121,7 @@ _Avoid_: loot
 How rare a treasure is: Common, Rare, Epic, or Legendary.
 
 **Decoration**:
-A treasure placed in the Home Tank.
+A treasure placed in the Home Tank. Each has one Placement kind and a footprint width, 80 tank units unless its catalogue entry sets a wider one.
 _Avoid_: loot
 
 **Wearable**:
@@ -204,6 +204,10 @@ The hard limit on the total of one perk type in an outfit.
 The hub where owned axolotls live and decorations are placed.
 _Avoid_: fish tank (axolotls are amphibians)
 
+**Placement kind**:
+Where a Decoration goes in the Home Tank, set in its catalogue entry: Floor (the default; it stands on the gravel and moves left, right, and a little up and down), Floating (it rests on the water surface), or Hanging (it hangs from the glass top). Floating and Hanging Decorations move left and right only.
+_Avoid_: slot (a Slot is where a Wearable goes)
+
 **Collection Book**:
 The in-game book of morphs and fact cards, nicknamed the Axolotl-dex in game.
 
@@ -250,6 +254,7 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - Each **Leg loss** is undone by **Regrowth**, one leg at a time; eating a **Snack** speeds up **Regrowth**
 - Losing the fourth leg means the axolotl is **Carried home**
 - A **Treasure** is exactly one of **Decoration**, **Wearable**, or **Paint shell**, and has exactly one **Rarity**
+- Each **Decoration** has exactly one **Placement kind**: Floor, Floating, or Hanging; the **Save** keeps only where it is placed, and its kind comes from the catalogue
 - A **Paint shell** holds exactly one **Dream colour**; banking it makes that **Dream colour** owned
 - One owned **Dream colour** can be on any number of owned axolotls; an axolotl shows at most one at a time
 - A **Wearable** fits exactly one **Slot**, gives exactly one **Perk**, and may belong to one **Wearable set**

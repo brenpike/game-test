@@ -95,14 +95,15 @@ No shared cap replaces them until the measurements below say one is needed.
 
 **Stance.** No texture is repainted after a bake. The only live drawing is the Iridescent tail stripe, which is a vector redraw with no texture upload.
 
-**Dev flags.** Four query flags exist only under `npm run dev`. `src/logic/devFlags.ts` parses them (pure), and `main.ts` loads the dev modules with `import.meta.env.DEV` dynamic imports:
+**Dev flags.** Five query flags exist only under `npm run dev`. `src/logic/devFlags.ts` parses them (pure), and `main.ts` loads the dev modules with `import.meta.env.DEV` dynamic imports:
 
 - `?perf` adds the frame-time overlay (`src/scenes/PerfOverlay.ts`). It stores and sends nothing.
 - `?compare` runs only the rig compare scene (`src/scenes/RigCompareScene.ts`): `drawAxolotl` painted live beside a rig view in the same pose, with keys to cycle every look option, morph, Dream colour, the full outfit, leg states and the pose, and an overlay toggle at 50% alpha.
 - `?renderer=canvas` forces the Canvas renderer.
 - `?area=<id>` swims every trip in that dev area (`src/logic/devAreas.ts`, [ADR 0014](0014-area-framework.md)), skipping the area map. Only `dev-test-area` exists.
+- `?decor` adds three test Decorations to the Home Tank (`src/logic/devDecorations.ts`, art in `src/art/devDecorationArt.ts`): a Floating lily pad, a Hanging firefly jar and a wide Hanging string of lights. They are owned for the page session only, never saved and never in the Treasure Chest. Their bob and sway are transforms only, with no texture baked again.
 
-None of them is in the `vite build` output: a search of the built files for the marker strings `glam-gills-dev-perf`, `glam-gills-dev-compare`, `glam-gills-dev-flags` and `glam-gills-dev-areas`, and for the dev area id `dev-test-area`, finds nothing, and the build is a single index chunk.
+None of them is in the `vite build` output: a search of the built files for the marker strings `glam-gills-dev-perf`, `glam-gills-dev-compare`, `glam-gills-dev-flags`, `glam-gills-dev-areas` and `glam-gills-dev-decor`, for the dev area id `dev-test-area`, for the dev Decoration ids `dev/test-*` and for their texture keys `tank-deco-dev-*`, finds nothing, and the build is a single index chunk.
 
 ## Budget
 
