@@ -7,6 +7,7 @@ import {
   cardButtonsStacked,
   cardIconRowWidth,
   cardTextWidth,
+  cardTightTextWidth,
   fitCard,
   homeTitleWrapWidth,
   isSupportedCanvas,
@@ -253,11 +254,11 @@ function bankingSections(
   ];
 }
 
-/** Fact card sections: bold title, body, one OK button. */
+/** Fact card sections: bold title (wrapped at the tight width), body, one OK button. */
 function factCardSections(card: Readonly<FactCard>, cssW: number): CardSection[] {
   const textW = cardTextWidth(cssW);
   return [
-    { kind: 'fixed', height: titleHeight(card.title, textW) },
+    { kind: 'fixed', height: titleHeight(card.title, cardTightTextWidth(cssW)) },
     { kind: 'body', variants: [bodyFit(card.body, textW)] },
     { kind: 'actions', height: BUTTON_H },
   ];
@@ -419,6 +420,16 @@ describe('card copy fit', () => {
 describe('area fact card copy fit', () => {
   it('checks every area fact card: the tilapia and the plastic worm', () => {
     expect(AREA_FACT_CARDS.map((card) => card.id)).toEqual(['tilapia', 'plastic-worm']);
+  });
+
+  it('keeps the plastic worm title one line at 460 wide, which the body width would wrap', () => {
+    const card = AREA_FACT_CARDS.find((candidate) => candidate.id === 'plastic-worm');
+    if (card === undefined) throw new Error('no plastic worm fact card');
+    expect(card.title).toBe('Plastic is not food');
+    const cssW = SMALLEST_CANVAS.landscape.cssW;
+    expect(estimateLines(card.title, CARD.titlePx, cardTightTextWidth(cssW), BOLD_EM)).toBe(1);
+    expect(estimateLines(card.title, CARD.titlePx, cardTextWidth(cssW), BOLD_EM)).toBe(2);
+    expect(titleHeight(card.title, cardTightTextWidth(cssW))).toBe(LINE_HEIGHT_EM * CARD.titlePx);
   });
 
   it('fits every area fact card on every supported canvas without clipping', () => {

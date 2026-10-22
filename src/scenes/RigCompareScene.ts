@@ -28,7 +28,7 @@ import {
   type LookField,
   type LookOption,
 } from '../logic/axolotlLook';
-import { CANAL_TREASURES, DREAM_COLOURS, type DreamColour, type Wearable } from '../logic/catalogue';
+import { ALL_TREASURES, DREAM_COLOURS, type DreamColour, type Wearable } from '../logic/catalogue';
 import { REAL_MORPHS } from '../logic/morphs';
 import { VIEW } from '../logic/tuning';
 import { blinkAt, readSceneView, uiTextStyle, useCssCamera, type SceneView } from './BootScene';
@@ -72,8 +72,8 @@ const LEG_STATES: readonly { readonly name: string; readonly legs: readonly LegL
 /** Dream colour choices: none (the real colour), then every Dream colour in catalogue order. */
 const DREAM_CHOICES: readonly (DreamColour | null)[] = [null, ...DREAM_COLOURS];
 
-/** Every Wearable in the catalogue, one per slot. */
-const ALL_WEARABLES: readonly Wearable[] = CANAL_TREASURES.filter(
+/** Every Wearable in the catalogue, every area, in catalogue order. */
+const ALL_WEARABLES: readonly Wearable[] = ALL_TREASURES.filter(
   (treasure): treasure is Wearable => treasure.category === 'wearable',
 );
 

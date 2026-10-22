@@ -15,7 +15,7 @@ import {
   type RealMorph,
   type RealMorphId,
 } from './morphs';
-import { nextFocusIndex } from './tankUi';
+import { nextFocusIndex, type ChestLayout } from './tankUi';
 import { DREAM_COLOUR_LABEL, foundCountText } from './treasureChest';
 
 /** Title of the Collection Book screen. */
@@ -368,4 +368,32 @@ export function bookFeatureLayout(area: Rect, measure: BookFeatureMeasure): Book
   }
   const [pictureW, arrangement] = options[options.length - 1];
   return arrangeFeature(area, measure, pictureW, arrangement, true);
+}
+
+/**
+ * A featured page placed in the Treasure Chest layout: whether the "Collection Book" title shows,
+ * where the section heading sits, the list rect the entry is laid out in, and that layout.
+ */
+export interface BookFeaturePage {
+  readonly showsTitle: boolean;
+  readonly heading: Rect;
+  readonly list: Rect;
+  readonly feature: BookFeatureLayout;
+}
+
+/**
+ * Places a featured page (a morph or a fact card) in `chest`. It first lays the entry out in
+ * `chest.list` with bookFeatureLayout() and keeps the title when that fits. When it does not fit
+ * (a long text on the smallest canvases), the title hides: the heading moves up to `chest.title.y`
+ * (same x, width and height) and the list grows upward by `chest.heading.y - chest.title.y`, and the
+ * entry is laid out in that taller list. If it still does not fit, bookFeatureLayout()'s clipped
+ * fallback applies there. The card's own name always stays visible.
+ */
+export function bookFeaturePage(chest: ChestLayout, measure: BookFeatureMeasure): BookFeaturePage {
+  const feature = bookFeatureLayout(chest.list, measure);
+  if (feature.fits) return { showsTitle: true, heading: chest.heading, list: chest.list, feature };
+  const lift = chest.heading.y - chest.title.y;
+  const heading: Rect = { ...chest.heading, y: chest.title.y };
+  const list: Rect = { ...chest.list, y: chest.list.y - lift, h: chest.list.h + lift };
+  return { showsTitle: false, heading, list, feature: bookFeatureLayout(list, measure) };
 }

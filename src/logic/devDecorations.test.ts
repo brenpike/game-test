@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CANAL_TREASURES, placementKind } from './catalogue';
+import { ALL_TREASURES, placementKind, treasureSlug } from './catalogue';
 import { DEV_DECORATIONS, DEV_DECOR_MARK, devDecorationById } from './devDecorations';
 import {
   SHIPPED_DECORATIONS,
@@ -40,11 +40,21 @@ describe('DEV_DECORATIONS', () => {
     expect(DEV_DECORATIONS.every((decoration) => decoration.category === 'decoration')).toBe(true);
   });
 
-  it('has unique ids that are absent from CANAL_TREASURES', () => {
+  it('has unique ids that are absent from ALL_TREASURES', () => {
     const ids = DEV_DECORATIONS.map((decoration) => decoration.id);
     expect(new Set(ids).size).toBe(ids.length);
-    const shippedIds = new Set(CANAL_TREASURES.map((treasure) => treasure.id));
+    const shippedIds = new Set(ALL_TREASURES.map((treasure) => treasure.id));
     expect(ids.filter((id) => shippedIds.has(id))).toEqual([]);
+  });
+
+  it('has slugs that are absent from ALL_TREASURES and never equal a shipped Decoration slug', () => {
+    const slugs = DEV_DECORATIONS.map((decoration) => treasureSlug(decoration.id));
+    expect(new Set(slugs).size).toBe(slugs.length);
+    const shippedSlugs = new Set(ALL_TREASURES.map((treasure) => treasureSlug(treasure.id)));
+    expect(slugs.filter((slug) => shippedSlugs.has(slug))).toEqual([]);
+    const decorationSlugs = new Set(SHIPPED_DECORATIONS.map((decoration) => treasureSlug(decoration.id)));
+    expect(decorationSlugs).toContain('lily-pad');
+    expect(slugs.filter((slug) => decorationSlugs.has(slug))).toEqual([]);
   });
 
   it('has widths that fit inside the glass', () => {

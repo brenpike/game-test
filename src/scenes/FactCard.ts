@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 import { INK, UI_PANEL } from '../art/palette';
-import { CARD, cardTextWidth, fitCard } from '../logic/cardFit';
+import { CARD, cardTextWidth, cardTightTextWidth, fitCard } from '../logic/cardFit';
 import { FACT_CARD_OK_LABEL, type FactCard as FactCardData } from '../logic/factCards';
 import {
   createButton,
@@ -99,13 +99,16 @@ export class FactCard {
   /**
    * Centres the panel on a canvas that has room for it. fitCard() sizes it from the current title, the
    * current body (clipped to whole lines only when nothing fits) and the button: it tightens the padding on a
-   * short screen and keeps the button inside the canvas. Safe to call before show() and after hide().
+   * short screen and keeps the button inside the canvas. The title wraps at cardTightTextWidth() and the body
+   * at cardTextWidth(), so a long title such as "Plastic is not food" stays on one line on a small canvas; the
+   * panel width rule is unchanged, so the title keeps at least 12 px of room at each side. The title always
+   * shows. Safe to call before show() and after hide().
    */
   layout(view: SceneView): void {
     this.view = view;
     const { cssW, cssH } = view;
     const textW = cardTextWidth(cssW);
-    this.title.setWordWrapWidth(textW, true);
+    this.title.setWordWrapWidth(cardTightTextWidth(cssW), true);
     this.body.setWordWrapWidth(textW, true);
     this.body.setMaxLines(0);
     const lineH = this.body.getTextMetrics().fontSize;

@@ -15,8 +15,8 @@ describe('REAL_COLOUR_OPTION_ID and MAX_DREAM_OPTIONS', () => {
     expect(isDreamColourId(REAL_COLOUR_OPTION_ID)).toBe(false);
   });
 
-  it('offers at most the real colour and all 12 Dream colours', () => {
-    expect(MAX_DREAM_OPTIONS).toBe(13);
+  it('offers at most the real colour and all 13 Dream colours', () => {
+    expect(MAX_DREAM_OPTIONS).toBe(14);
     expect(MAX_DREAM_OPTIONS).toBe(DREAM_COLOURS.length + 1);
   });
 });

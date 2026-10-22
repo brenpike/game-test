@@ -4,7 +4,7 @@
  * and art layers.
  */
 import {
-  CANAL_TREASURES,
+  ALL_TREASURES,
   DREAM_COLOURS,
   ownedDreamColours,
   type Decoration,
@@ -32,7 +32,7 @@ export const UNFOUND_NAME = '???';
 export const UNFOUND_HINTS: Readonly<Record<Rarity, string>> = Object.freeze({
   common: 'Look near the main swim path!',
   rare: 'Look off the main path!',
-  epic: 'Look in the cave or past the current!',
+  epic: 'Look in a cave or log, or past the current!',
   legendary: 'Break a Dash pot with Tail Dash!',
 });
 
@@ -176,9 +176,9 @@ const HEADINGS: Readonly<Record<ChestCategory, string>> = Object.freeze({
   dreamColour: 'Dream colours',
 });
 
-const DECORATIONS: readonly Decoration[] = CANAL_TREASURES.filter(isDecoration);
+const DECORATIONS: readonly Decoration[] = ALL_TREASURES.filter(isDecoration);
 
-const WEARABLES: readonly Wearable[] = CANAL_TREASURES.filter(isWearable);
+const WEARABLES: readonly Wearable[] = ALL_TREASURES.filter(isWearable);
 
 function isDecoration(treasure: Treasure): treasure is Decoration {
   return treasure.category === 'decoration';

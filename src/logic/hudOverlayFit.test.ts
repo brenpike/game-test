@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { exitClosedText, snacksLeftLabel } from './areaText';
-import { CANAL_TREASURES, categoryName, type Treasure } from './catalogue';
+import { ALL_TREASURES, categoryName, type Treasure } from './catalogue';
 import { isSupportedCanvas } from './cardFit';
 import { rarityName } from './hints';
 import {
@@ -25,7 +25,7 @@ import {
   type Size,
 } from './hudLayout';
 import { REAL_MORPHS, RESCUE_POPUP_DETAIL } from './morphs';
-import { ALL_SNACKS_BANNER, BANKING_HINT, LEGS_LABEL, TRIP_BAG_LABEL, tripBagStatus } from './tripText';
+import { ALL_SNACKS_BANNER, BANKING_HINT, LEGS_LABEL, PLASTIC_WORM_BANNER, TRIP_BAG_LABEL, tripBagStatus } from './tripText';
 import { LEGS } from './tuning';
 import { buildCanalZone } from './zone';
 
@@ -82,7 +82,8 @@ interface ToastText {
   detail: string;
 }
 
-const TREASURE_TOASTS: readonly ToastText[] = CANAL_TREASURES.map((treasure: Treasure) => ({
+/** One find toast per catalogue treasure, every area. */
+const TREASURE_TOASTS: readonly ToastText[] = ALL_TREASURES.map((treasure: Treasure) => ({
   name: treasure.name,
   detail: `${rarityName(treasure.rarity)} ${categoryName(treasure.category)}`,
 }));
@@ -104,11 +105,17 @@ const COMBINATION_TOASTS: readonly ToastText[] = [...new Set([...SORTED_TOASTS.s
 const MOST_SNACKS_LEFT = 16;
 const EXIT_CLOSED_BANNER = exitClosedText(MOST_SNACKS_LEFT);
 
+/** Every message the snack banner shows: the closed exit, the last snack and the plastic worm. */
+const SNACK_BANNER_TEXTS: readonly string[] = [EXIT_CLOSED_BANNER, ALL_SNACKS_BANNER, PLASTIC_WORM_BANNER];
+
+/** The longest snack banner message: the worst case the fit runs. */
+const LONGEST_SNACK_BANNER = SNACK_BANNER_TEXTS.reduce((longest, text) => (text.length > longest.length ? text : longest));
+
 type BannerId = Exclude<HudOverlayId, 'findToast'>;
 
 const BANNER_TEXTS: Readonly<Record<BannerId, string>> = {
   hint: BANKING_HINT,
-  snackBanner: EXIT_CLOSED_BANNER.length > ALL_SNACKS_BANNER.length ? EXIT_CLOSED_BANNER : ALL_SNACKS_BANNER,
+  snackBanner: LONGEST_SNACK_BANNER,
 };
 const BANNER_IDS: readonly BannerId[] = ['snackBanner', 'hint'];
 
@@ -417,6 +424,12 @@ describe('estimateLines', () => {
 });
 
 describe('HUD overlay fit', () => {
+  it('runs a find toast for every catalogue treasure and the longest snack banner, plastic worm included', () => {
+    expect(TREASURE_TOASTS.map((toast) => toast.name)).toEqual(ALL_TREASURES.map((treasure) => treasure.name));
+    expect(SNACK_BANNER_TEXTS).toContain(PLASTIC_WORM_BANNER);
+    for (const text of SNACK_BANNER_TEXTS) expect(BANNER_TEXTS.snackBanner.length).toBeGreaterThanOrEqual(text.length);
+  });
+
   it(
     'keeps every placed overlay clear of the controls, the other overlays and the middle, at its text size, on every supported canvas',
     () => {
@@ -438,9 +451,11 @@ describe('HUD overlay fit', () => {
       // A banner with no place at 24 px retries at 20 px, so every banner alone finds a place on
       // every supported canvas. The toast never shrinks: below 375 tall and 520 wide (460 and 480
       // wide, 360 tall or less on this grid) a long toast may have no place outside the open
-      // middle and wait (X10); the next test pins those waits. A toast with Go home visible is
-      // unreachable: trip.ts banks a non-empty bag inside the ring in the same step, and HudScene
-      // clears the toast on 'banked'.
+      // middle and wait (X10); the next test pins those waits. Long pond names wait the same way:
+      // with Go home visible at 460 x 320 and 460 x 340, "Rainbow dragonfly wings" waits as the
+      // canal's "Tie-dye galaxy Paint shell" does, never overlapping. A toast with Go home visible
+      // is unreachable: trip.ts banks a non-empty bag inside the ring in the same step, and
+      // HudScene clears the toast on 'banked'.
       const huds = allHudCases();
       const roomy = huds.filter(({ view }) => view.cssH >= 375 || view.cssW >= 520);
       const toastCases = roomy
@@ -458,8 +473,18 @@ describe('HUD overlay fit', () => {
   );
 
   it.each([
-    { cssW: 460, cssH: 320, shown: ['findToast "Tie-dye galaxy Paint shell"'], hidden: [] },
-    { cssW: 460, cssH: 340, shown: ['findToast "Tie-dye galaxy Paint shell"'], hidden: [] },
+    {
+      cssW: 460,
+      cssH: 320,
+      shown: ['findToast "Tie-dye galaxy Paint shell"', 'findToast "Rainbow dragonfly wings"'],
+      hidden: [],
+    },
+    {
+      cssW: 460,
+      cssH: 340,
+      shown: ['findToast "Tie-dye galaxy Paint shell"', 'findToast "Rainbow dragonfly wings"'],
+      hidden: [],
+    },
     { cssW: 460, cssH: 360, shown: [], hidden: [] },
     { cssW: 480, cssH: 320, shown: [], hidden: [] },
     { cssW: 480, cssH: 340, shown: [], hidden: [] },

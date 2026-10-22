@@ -131,7 +131,7 @@ function addRowLead(
     : addTreasureSilhouette(scene, treasure, entry.id);
 }
 
-/** Heading text of a section, e.g. 'Dream colours: 2 of 12 found'. */
+/** Heading text of a section, e.g. 'Dream colours: 2 of 13 found'. */
 function headingText(section: ChestSection): string {
   return `${section.heading}: ${section.countText}`;
 }

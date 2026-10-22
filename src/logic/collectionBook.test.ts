@@ -1,23 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { isSupportedCanvas } from './cardFit';
+import { SMALLEST_CANVAS, isSupportedCanvas } from './cardFit';
 import { DREAM_COLOURS } from './catalogue';
 import * as collectionBook from './collectionBook';
 import {
   BOOK_FEATURE,
   COLLECTION_BOOK_TITLE,
   bookFeatureLayout,
+  bookFeaturePage,
   bookListing,
   bookPages,
   nextPageIndex,
   previousPageIndex,
   type BookEntry,
   type BookFeatureLayout,
+  type BookFeaturePage,
   type BookFeatureMeasure,
 } from './collectionBook';
 import { BOY_OR_GIRL_FACT, FACT_CARD_UNFOUND_HINT, PLASTIC_WORM_FACT, TILAPIA_FACT, type FactCard } from './factCards';
 import type { HudView, Rect, Size } from './hudLayout';
 import { MORPH_UNFOUND_HINT, MORPH_UNFOUND_NAME, REAL_MORPHS, type RealMorphId } from './morphs';
-import { CHEST_BUTTON, UI, chestLayout, rowsPerPage, type ChestMeasure } from './tankUi';
+import { CHEST_BUTTON, UI, chestLayout, rowsPerPage, type ChestLayout, type ChestMeasure } from './tankUi';
 import { DREAM_COLOUR_LABEL, pageText } from './treasureChest';
 
 const BANNED = ['die', 'dead', 'death', 'killed', 'game over', 'level', 'fish tank'];
@@ -97,17 +99,31 @@ function everyListing(): ReturnType<typeof bookListing>[] {
   ];
 }
 
+/** A featured (morph or fact card) entry as the fit tests measure it. */
+interface FeaturedEntry {
+  id: string;
+  found: boolean;
+  name: string;
+  text: string;
+  hasPicture: boolean;
+  hasBadge: boolean;
+}
+
 /** Every featured (morph or fact card) entry, found and unfound. */
-function featuredEntries(): { name: string; text: string; hasPicture: boolean; hasBadge: boolean }[] {
+function featuredEntries(): FeaturedEntry[] {
   const [unfoundMorphs, , unfoundCards] = bookListing([], []);
   const [foundMorphs, , foundCards] = bookListing(ALL_MORPHS, ALL_MET);
   const morphs = [...unfoundMorphs.entries, ...foundMorphs.entries].map((entry) => ({
+    id: entry.id,
+    found: entry.found,
     name: entry.name,
     text: entry.text,
     hasPicture: true,
     hasBadge: entry.badge !== null,
   }));
   const cards = [...unfoundCards.entries, ...foundCards.entries].map((entry) => ({
+    id: entry.id,
+    found: entry.found,
     name: entry.name,
     text: entry.text,
     hasPicture: entry.hasPicture,
@@ -116,7 +132,7 @@ function featuredEntries(): { name: string; text: string; hasPicture: boolean; h
   return [...morphs, ...cards];
 }
 
-function featureMeasure(entry: { name: string; text: string; hasPicture: boolean; hasBadge: boolean }): BookFeatureMeasure {
+function featureMeasure(entry: Pick<FeaturedEntry, 'name' | 'text' | 'hasPicture' | 'hasBadge'>): BookFeatureMeasure {
   return {
     hasPicture: entry.hasPicture,
     hasBadge: entry.hasBadge,
@@ -526,18 +542,140 @@ describe('bookFeatureLayout', () => {
   });
 });
 
+/** The featured page of `entry` on `view`, with the real chest layout and the estimated texts. */
+function featurePageOf(view: HudView, entry: FeaturedEntry): { chest: ChestLayout; page: BookFeaturePage } {
+  const chest = chestLayout(view, BOOK_MEASURE);
+  return { chest, page: bookFeaturePage(chest, featureMeasure(entry)) };
+}
+
+/** Finds the featured entry with this id and found state. Throws when there is none. */
+function featuredEntry(id: string, found: boolean): FeaturedEntry {
+  const entry = featuredEntries().find((candidate) => candidate.id === id && candidate.found === found);
+  if (entry === undefined) throw new Error(`no featured entry ${id} found=${found}`);
+  return entry;
+}
+
+describe('bookFeaturePage', () => {
+  /** A chest layout with the title above the heading above the list, in easy numbers. */
+  const chest: ChestLayout = {
+    panel: { x: 0, y: 0, w: 420, h: 300 },
+    title: { x: 10, y: 10, w: 150, h: 34 },
+    heading: { x: 10, y: 52, w: 140, h: 22 },
+    pageText: { x: 10, y: 270, w: 100, h: 20 },
+    list: { x: 10, y: 82, w: 300, h: 100 },
+    close: { x: 320, y: 10, w: 80, h: 80 },
+    back: { x: 320, y: 100, w: 80, h: 80 },
+    next: { x: 320, y: 190, w: 80, h: 80 },
+  };
+
+  /** A picture-less entry whose text is `lines` whole lines at any width. */
+  function cardOfLines(lines: number): BookFeatureMeasure {
+    return {
+      hasPicture: false,
+      hasBadge: false,
+      nameAt: () => ({ w: 100, h: 27.5 }),
+      textAt: (wrapW) => ({ w: wrapW, h: lines * TEXT_LINE_H }),
+      textLineH: TEXT_LINE_H,
+    };
+  }
+
+  it('keeps the title, the heading and the list when the entry fits the list', () => {
+    const page = bookFeaturePage(chest, cardOfLines(2));
+    expect(page.showsTitle).toBe(true);
+    expect(page.heading).toEqual(chest.heading);
+    expect(page.list).toEqual(chest.list);
+    expect(page.feature).toEqual(bookFeatureLayout(chest.list, cardOfLines(2)));
+    expect(page.feature.fits).toBe(true);
+  });
+
+  it('hides the title, lifts the heading to the title top and grows the list upward when the list is too short', () => {
+    const lift = chest.heading.y - chest.title.y;
+    const measure = cardOfLines(4);
+    expect(bookFeatureLayout(chest.list, measure).fits).toBe(false);
+    const page = bookFeaturePage(chest, measure);
+    expect(page.showsTitle).toBe(false);
+    expect(page.heading).toEqual({ x: chest.heading.x, y: chest.title.y, w: chest.heading.w, h: chest.heading.h });
+    expect(page.list).toEqual({ x: chest.list.x, y: chest.list.y - lift, w: chest.list.w, h: chest.list.h + lift });
+    expect(page.list.y + page.list.h).toBe(chest.list.y + chest.list.h);
+    expect(page.feature).toEqual(bookFeatureLayout(page.list, measure));
+    expect(page.feature.fits).toBe(true);
+    expect(page.feature.text.y).toBeLessThan(chest.list.y + 27.5);
+  });
+
+  it('falls back to the clipped layout in the taller list when the entry still does not fit', () => {
+    const page = bookFeaturePage(chest, cardOfLines(40));
+    expect(page.showsTitle).toBe(false);
+    expect(page.feature.fits).toBe(false);
+    expect(page.feature.textLines).toBeGreaterThan(0);
+    expect(page.feature.textLines).toBeLessThan(40);
+    expect(page.feature.text.y + page.feature.text.h).toBeLessThanOrEqual(page.list.y + page.list.h + 1e-9);
+  });
+
+  it('does not change the chest layout it is given', () => {
+    const before = JSON.parse(JSON.stringify(chest)) as ChestLayout;
+    bookFeaturePage(chest, cardOfLines(4));
+    expect(chest).toEqual(before);
+  });
+});
+
 describe('collection book fit', () => {
   it('fits every featured entry with a picture at least 64 wide and no clipping, on every supported canvas', () => {
     const problems: string[] = [];
     for (const view of supportedCanvases()) {
-      const { list } = chestLayout(view, BOOK_MEASURE);
+      const chest = chestLayout(view, BOOK_MEASURE);
       for (const entry of featuredEntries()) {
         const measure = featureMeasure(entry);
-        const layout = bookFeatureLayout(list, measure);
-        problems.push(...featureProblems(`${view.cssW}x${view.cssH} ${entry.name}`, list, layout, measure));
+        const { list, feature } = bookFeaturePage(chest, measure);
+        problems.push(...featureProblems(`${view.cssW}x${view.cssH} ${entry.name}`, list, feature, measure));
       }
     }
     expect(problems).toEqual([]);
+  });
+
+  it.each([
+    { cssW: 800, cssH: 600 },
+    { cssW: 1024, cssH: 768 },
+  ])('shows the title for every featured entry at $cssW x $cssH', (view) => {
+    for (const entry of featuredEntries()) {
+      expect(featurePageOf(view, entry).page.showsTitle, `${entry.id} found=${entry.found}`).toBe(true);
+    }
+  });
+
+  it.each([SMALLEST_CANVAS.landscape, SMALLEST_CANVAS.portrait])(
+    'keeps the title for the tilapia, the unfound plastic worm and Boy or girl at $cssW x $cssH',
+    (view) => {
+      const entries = [
+        featuredEntry('tilapia', true),
+        featuredEntry('tilapia', false),
+        featuredEntry('plastic-worm', false),
+        featuredEntry('boyOrGirl', true),
+      ];
+      for (const entry of entries) {
+        expect(featurePageOf(view, entry).page.showsTitle, `${entry.id} found=${entry.found}`).toBe(true);
+      }
+    },
+  );
+
+  it.each([SMALLEST_CANVAS.landscape, SMALLEST_CANVAS.portrait])(
+    'hides the title for the found plastic worm at $cssW x $cssH and keeps its picture-less layout whole',
+    (view) => {
+      const entry = featuredEntry('plastic-worm', true);
+      const { chest, page } = featurePageOf(view, entry);
+      expect(page.showsTitle).toBe(false);
+      expect(page.heading.y).toBe(chest.title.y);
+      expect(page.list.h).toBe(chest.list.h + chest.heading.y - chest.title.y);
+      expect(page.feature.fits).toBe(true);
+    },
+  );
+
+  it('puts the heading at the top of the title whenever the title hides', () => {
+    for (const view of supportedCanvases()) {
+      for (const entry of featuredEntries()) {
+        const { chest, page } = featurePageOf(view, entry);
+        if (page.showsTitle) continue;
+        expect(page.heading, `${view.cssW}x${view.cssH} ${entry.id}`).toEqual({ ...chest.heading, y: chest.title.y });
+      }
+    }
   });
 
   it('gives at least one whole Dream colour row per page on every supported canvas', () => {

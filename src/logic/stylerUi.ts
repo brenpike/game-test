@@ -10,7 +10,7 @@
  * moving Back to slots into the body, and then sets each label beside its picture.
  */
 import { NAME_MAX, SUGGESTED_NAMES } from './axolotlNames';
-import { CANAL_TREASURES, WEARABLE_SLOTS } from './catalogue';
+import { ALL_TREASURES, WEARABLE_SLOTS } from './catalogue';
 import { MAX_DREAM_OPTIONS } from './dreamPaint';
 import type { HudView, Rect, Size } from './hudLayout';
 import { MAX_STEP_OPTIONS, RESTYLE_ONLY_STEPS, RESTYLE_STEPS, STYLER_STEPS, type StylerStep } from './stylerSteps';
@@ -48,11 +48,14 @@ export const MAX_OUTFIT_CHOICES =
   1 +
   Math.max(
     ...WEARABLE_SLOTS.map(
-      (slot) => CANAL_TREASURES.filter((treasure) => treasure.category === 'wearable' && treasure.slot === slot).length,
+      (slot) => ALL_TREASURES.filter((treasure) => treasure.category === 'wearable' && treasure.slot === slot).length,
     ),
   );
 
-/** Widest an Outfit choices view label block wraps to, in CSS px (art guide 8). */
+/**
+ * Widest an Outfit choices view label block wraps to under its picture, in CSS px (art guide 8).
+ * Beside its picture it may wrap wider, up to the band less PICTURE_PX.min and UI.gap.
+ */
 export const OUTFIT_LABEL_MAX_PX = 168;
 
 /** Least side of any touch target, in CSS px (art guide 10). */
@@ -614,7 +617,8 @@ function sameLevel(first: FitLevel, second: FitLevel): boolean {
  * count down to 1 fits before it, and each starting the fit steps again from the first: it hides the
  * tab row (`tabs` null) and Back to slots joins the body above the pictures, with Cancel and Done
  * still step buttons (and the hidden Surprise me's place kept); then it sets each label beside its
- * picture (`labelsBeside`). With the tab row hidden, fit step 6 leaves no heading and no bold tab,
+ * picture (`labelsBeside`), each label block wrapped at OUTFIT_LABEL_MAX_PX or, when that does not
+ * fit, wider, up to the band less PICTURE_PX.min and UI.gap. With the tab row hidden, fit step 6 leaves no heading and no bold tab,
  * so Back to slots is what shows where the player is.
  */
 export function stylerLayout(view: HudView, screen: StylerScreen, measure: StylerMeasure): StylerLayout {
@@ -692,7 +696,7 @@ function arrangeScreen(
   const body =
     screen.step === 'name'
       ? bestNameBody(chrome, screen.optionCount, measure, level)
-      : bestPictureBody(chrome, pictureSpecOf(screen, perPage, measure, frame), measure, level);
+      : firstFittingPictureBody(chrome, pictureSpecsOf(screen, perPage, measure, frame, chrome.band.w), measure, level);
   const layout: StylerLayout = {
     panel,
     fitStep,
@@ -1147,12 +1151,13 @@ function moreOf(screen: StylerScreen, perPage: number): MorePiece | null {
 
 /**
  * The least label cell width of `screen`: the longest label word, and on the Outfit choices view the
- * label blocks' widest line wrapped at OUTFIT_LABEL_MAX_PX (art guide 8), so they take fewer lines.
+ * label blocks' widest line wrapped at `wrapW` (OUTFIT_LABEL_MAX_PX, art guide 8, unless wider
+ * beside the pictures), so they take fewer lines.
  */
-function labelMinWOf(screen: StylerScreen, measure: StylerMeasure): number {
+function labelMinWOf(screen: StylerScreen, measure: StylerMeasure, wrapW: number = OUTFIT_LABEL_MAX_PX): number {
   if (!isOutfitChoices(screen)) return measure.optionLabelMinW;
-  const wrapW = Math.max(OUTFIT_LABEL_MAX_PX, measure.optionLabelMinW);
-  return Math.max(measure.optionLabelMinW, measure.optionLabelAt(wrapW).w);
+  const blockWrapW = Math.max(wrapW, measure.optionLabelMinW);
+  return Math.max(measure.optionLabelMinW, measure.optionLabelAt(blockWrapW).w);
 }
 
 /** The picture buttons of `screen` with `perPage` to a page, in `frame`. */
@@ -1164,6 +1169,26 @@ function pictureSpecOf(screen: StylerScreen, perPage: number, measure: StylerMea
     labelsBeside: frame.labelsBeside,
     backToSlots: isOutfitChoices(screen) && frame.tabsHidden,
   };
+}
+
+/** Widest an Outfit choices label block beside its picture wraps to in a band `bandW` wide: room for PICTURE_PX.min and UI.gap. */
+function besideLabelMaxW(bandW: number): number {
+  return bandW - PICTURE_PX.min - UI.gap;
+}
+
+/**
+ * The picture buttons of `screen` with `perPage` to a page, in `frame`, in the order to try them: the
+ * labels wrapped at OUTFIT_LABEL_MAX_PX, then, on the Outfit choices view with each label block beside
+ * its picture, the label blocks wrapped wider, at besideLabelMaxW of the band `bandW`, when that is
+ * wider and they take fewer lines.
+ */
+function pictureSpecsOf(screen: StylerScreen, perPage: number, measure: StylerMeasure, frame: StylerFrame, bandW: number): PictureSpec[] {
+  const spec = pictureSpecOf(screen, perPage, measure, frame);
+  const wideW = besideLabelMaxW(bandW);
+  if (!spec.labelsBeside || !isOutfitChoices(screen) || wideW <= OUTFIT_LABEL_MAX_PX) return [spec];
+  const wideMinW = labelMinWOf(screen, measure, wideW);
+  const fewerLines = measure.optionLabelAt(wideMinW).h < measure.optionLabelAt(spec.labelMinW).h - 1e-9;
+  return fewerLines ? [spec, { ...spec, labelMinW: wideMinW }] : [spec];
 }
 
 /** The picture grid of `spec` at side `side` across `maxW`: labels under the buttons, or beside them. */
@@ -1286,6 +1311,18 @@ function bestPictureBody(chrome: Chrome, spec: PictureSpec, measure: StylerMeasu
     }
   }
   return { pieces: placeInBand(best.block, chrome), columns: best.columns, fits: true };
+}
+
+/** The best picture body of the first of `specs` that fits, else the first spec's try. */
+function firstFittingPictureBody(chrome: Chrome, specs: readonly PictureSpec[], measure: StylerMeasure, level: FitLevel): PlacedBody {
+  let firstTry: PlacedBody | null = null;
+  for (const spec of specs) {
+    const body = bestPictureBody(chrome, spec, measure, level);
+    if (body.fits) return body;
+    firstTry ??= body;
+  }
+  if (firstTry === null) throw new Error('stylerLayout: no picture buttons to try');
+  return firstTry;
 }
 
 /**

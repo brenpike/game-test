@@ -23,7 +23,7 @@ import {
   suggestedNamesFor,
 } from './axolotlNames';
 import {
-  CANAL_TREASURES,
+  ALL_TREASURES,
   WEARABLE_SLOTS,
   dreamColourById,
   treasureById,
@@ -314,7 +314,7 @@ function wearableById(id: string): Wearable {
 /** The Wearable ids among `banked`, in catalogue order without repeats; other ids are ignored. */
 function bankedWearableIds(banked: readonly string[]): string[] {
   const bankedIds = new Set(banked);
-  return CANAL_TREASURES.filter((treasure) => treasure.category === 'wearable' && bankedIds.has(treasure.id)).map(
+  return ALL_TREASURES.filter((treasure) => treasure.category === 'wearable' && bankedIds.has(treasure.id)).map(
     (treasure) => treasure.id,
   );
 }

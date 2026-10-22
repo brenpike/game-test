@@ -116,6 +116,16 @@ export function cardTextWidth(cssW: number): number {
 }
 
 /**
+ * Text wrap width of a bold title that may use the card's tight side room: the canvas width less the
+ * canvas margins and only `tightPad` of padding on each side, clamped to [textMinW, textMaxW]. Never
+ * less than cardTextWidth(). Up to 2 * (pad - tightPad) = 24 px wider on canvases under 484 px wide,
+ * so a long title wraps to fewer lines on a small canvas.
+ */
+export function cardTightTextWidth(cssW: number): number {
+  return Math.max(CARD.textMinW, Math.min(CARD.textMaxW, cssW - 2 * (CARD.margin + CARD.tightPad)));
+}
+
+/**
  * Icon row wrap width of a card on a `cssW` wide canvas: the room inside the canvas margins and card
  * padding, never less than cardTextWidth(). Wider than the text on canvases over 500 px wide.
  */
