@@ -89,6 +89,33 @@ export interface TankTextures {
   readonly decorationGlows: Readonly<Record<TankDecorationSlug, TexInfo>>;
 }
 
+/** Tray icon sizes baked for an extra Decoration, logical px on the longest side (48 in the tray square, 32 in the box). */
+export const EXTRA_DECORATION_ICON_SIZES = [48, 32] as const;
+export type ExtraDecorationIconSize = (typeof EXTRA_DECORATION_ICON_SIZES)[number];
+
+/**
+ * Textures of Decorations that are not in the shipped four (the dev and test Decorations of the
+ * dev build), keyed by Decoration id. Dev-free on purpose: the pack that fills it lives in its own
+ * module, and this file never imports one. Every value is a TexInfo, so a sprite shows at logical
+ * size with setScale(1 / info.scale), as the shipped records do.
+ */
+export interface ExtraDecorationTextures {
+  /** Every extra texture by key. */
+  readonly info: Readonly<Record<string, TexInfo>>;
+  /**
+   * Tank sprite per id, baked on a width x `decorationPx` box. A Floating item is anchored at
+   * bottom-centre, a Hanging item at its top-centre hook, so place it at the Decoration anchor.
+   */
+  readonly decorations: Readonly<Record<string, TexInfo>>;
+  /**
+   * Tank rarity glow per id: round(TANK_GLOW_SCALE * width) across and round(TANK_GLOW_SCALE *
+   * decorationPx) tall, centred on the box, with the same anchor as `decorations[id]`.
+   */
+  readonly decorationGlows: Readonly<Record<string, TexInfo>>;
+  /** Tray icons by size, then id. Anchor is the icon centre. Tray glows reuse the shipped rarity glows by badge shape. */
+  readonly icons: Readonly<Record<ExtraDecorationIconSize, Readonly<Record<string, TexInfo>>>>;
+}
+
 /** Bake the Home Tank layers, the "no" icon, the Decoration sprites and their rarity glows into the scene's texture manager. */
 export function bakeTankTextures(scene: Phaser.Scene, bakeScale: number, opts: TankBakeOptions): TankTextures {
   const info: Record<string, TexInfo> = {};
