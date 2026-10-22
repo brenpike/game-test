@@ -398,7 +398,7 @@ export class RefugeScene extends Phaser.Scene {
   /**
    * One section's objects. The picture is the hidden silhouette, the dirty picture (a dirty section,
    * or a section that turns clean now) or the clean one. Trash lies at refugeTrashSlots() for every
-   * batch not yet cleared or cleaned up now.
+   * batch not yet cleared or cleaned up now, never on a hidden section (its silhouette only).
    */
   private createSection(section: RefugeSection, cleansNow: (batch: Readonly<RefugeBatch>) => boolean): SectionParts {
     const art = this.assets.refuge;
@@ -407,9 +407,11 @@ export class RefugeScene extends Phaser.Scene {
     const blooms = section.state === 'clean' && section.batches.some(cleansNow);
     const showsClean = section.state === 'clean' && !blooms;
     const pictureInfo = look === null ? art.hidden : art.sections[look][showsClean ? 'clean' : 'dirty'];
-    const trash = section.batches.flatMap((batch, index) =>
-      batch.cleared && !cleansNow(batch) ? [] : [this.createTrash(index, cleansNow(batch))],
-    );
+    const trash = hidden
+      ? []
+      : section.batches.flatMap((batch, index) =>
+          batch.cleared && !cleansNow(batch) ? [] : [this.createTrash(index, cleansNow(batch))],
+        );
     return {
       section,
       name: this.addPanel(NAME_PANEL.fontPx, hidden ? REFUGE_HIDDEN_NAME : section.habitatName),
