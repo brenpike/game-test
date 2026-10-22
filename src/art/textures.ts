@@ -12,7 +12,7 @@ import { beginDraw, type TexSize } from './canvasKit';
 import { drawAxolotl, type AxolotlPose } from './drawAxolotl';
 import type { AxolotlArtLook, Bounds } from './drawAxolotlParts';
 import { NO_OUTFIT, type ArtOutfit } from './drawWearables';
-import type { HabitatLookId } from './habitatLook';
+import type { AreaLookId } from './habitatLook';
 import {
   CAVE_TEX,
   CURRENT_MARKER_TEX,
@@ -420,12 +420,13 @@ export interface AreaSceneryOptions {
   readonly reeds: readonly ReedLook[];
   readonly pads: readonly PadSpec[];
   /**
-   * Habitat look of the chunks (habitatLook.ts). Default 'canal', which bakes exactly
+   * Area look of the chunks (habitatLook.ts). Default 'canal', which bakes exactly
    * what it did before. 'pond' bakes the warmer water, the mud bed and the edge reeds
-   * on the first and last column of every row that has a bed.
+   * on the first and last column of every row that has a bed. 'pond-dusk' bakes the
+   * same pond in the dusk palette.
    */
-  readonly look?: HabitatLookId;
-  /** Bake the stream flowing in at the far right (last column, top row). Default false. */
+  readonly look?: AreaLookId;
+  /** Bake the stream flowing in at the far right (last column, top row). Default false. Pass the look's `stream`. */
   readonly stream?: boolean;
 }
 

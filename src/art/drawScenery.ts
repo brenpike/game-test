@@ -28,8 +28,6 @@ import {
   REED_DARK,
   REED_LEAF,
   REED_LIGHT,
-  SKY_HORIZON,
-  SKY_TOP,
   SOIL_DETAIL,
   SUN,
   SUN_RAY,
@@ -44,7 +42,7 @@ import {
   WILLOW_STRAND,
   WILLOW_TRUNK,
 } from './palette';
-import { habitatLook, type EdgeReedLook, type HabitatLook, type HabitatLookId } from './habitatLook';
+import { habitatLook, type AreaLookId, type EdgeReedLook, type HabitatLook } from './habitatLook';
 
 /** Background chunk size in logical units (the 480 x 360 reference viewport). */
 export const BG_CHUNK = { w: VIEW_W, h: VIEW_H } as const;
@@ -85,12 +83,15 @@ export interface ChunkOptions {
   /** Round off the bank at its right end (neighbour chunk has no bank). Default false. */
   readonly bankCapRight?: boolean;
   /**
-   * Habitat look (habitatLook.ts). Default 'canal', which paints exactly the canal
+   * Area look (habitatLook.ts). Default 'canal', which paints exactly the canal
    * chunk. 'pond' swaps the water, haze and bed colours and adds edge reeds and a
-   * stream. Random draws are the same for the canal as before; pond-only draws come
-   * after the canal's draws of the same step.
+   * stream. 'pond-dusk' is the pond with the dusk palette: its own sky, a wash over
+   * the sky, sun, clouds, bank and willows, dimmer rays, and dusk water, bed and
+   * reeds. Random draws are the same for the canal as before; pond-only draws come
+   * after the canal's draws of the same step, and the dusk pond draws exactly what
+   * the pond draws.
    */
-  readonly look?: HabitatLookId;
+  readonly look?: AreaLookId;
   /**
    * Paint the stream flowing in from the right edge of this chunk (guide 7a, pond).
    * Only counts on 'single' and 'top' chunks, where the water is. Default false.
@@ -106,12 +107,21 @@ export interface ChunkOptions {
 
 const SURF_WATER_TOP = SURF + 3;
 
-function paintSky(ctx: CanvasRenderingContext2D): void {
+/** Bottom of the sky band: the sky fill and the air wash cover y 0 to here; the water covers the rest from SURF + 3. */
+const SKY_BAND_BOTTOM = SURF + 6;
+
+function paintSky(ctx: CanvasRenderingContext2D, look: HabitatLook): void {
   const g = ctx.createLinearGradient(0, 0, 0, SURF + 4);
-  g.addColorStop(0, SKY_TOP);
-  g.addColorStop(1, SKY_HORIZON);
+  g.addColorStop(0, look.sky.top);
+  g.addColorStop(1, look.sky.horizon);
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, VIEW_W, SURF + 6);
+  ctx.fillRect(0, 0, VIEW_W, SKY_BAND_BOTTOM);
+}
+
+/** Lay the look's air wash over everything painted so far in the sky band (sky, sun, clouds, bank, willows). */
+function paintAirWash(ctx: CanvasRenderingContext2D, wash: string): void {
+  ctx.fillStyle = wash;
+  ctx.fillRect(0, 0, VIEW_W, SKY_BAND_BOTTOM);
 }
 
 function paintSun(ctx: CanvasRenderingContext2D): void {
@@ -331,7 +341,7 @@ function paintWater(ctx: CanvasRenderingContext2D, look: HabitatLook): void {
   ctx.fillRect(0, SURF_WATER_TOP, VIEW_W, VIEW_H - SURF_WATER_TOP);
 }
 
-function paintRays(ctx: CanvasRenderingContext2D, rand: () => number): void {
+function paintRays(ctx: CanvasRenderingContext2D, rand: () => number, alphaScale: number): void {
   const specs: readonly (readonly [number, number, number])[] = [
     [120, 30, 0.4],
     [250, 38, 2.0],
@@ -340,7 +350,7 @@ function paintRays(ctx: CanvasRenderingContext2D, rand: () => number): void {
   for (const [bx, w, ph] of specs) {
     const x = bx + (rand() - 0.5) * 28;
     const dx = 6 * Math.sin((TAU * T_STATIC) / 8 + ph);
-    const a = RAY_ALPHA + RAY_ALPHA_SWING * Math.sin((TAU * T_STATIC) / 6 + ph);
+    const a = (RAY_ALPHA + RAY_ALPHA_SWING * Math.sin((TAU * T_STATIC) / 6 + ph)) * alphaScale;
     const g = ctx.createLinearGradient(0, SURF, 0, RAY_END_Y);
     g.addColorStop(0, `rgba(255,255,255,${a.toFixed(3)})`);
     g.addColorStop(1, 'rgba(255,255,255,0)');
@@ -553,9 +563,10 @@ function paintEdgeReeds(
  * size). Reeds, haze, surface line and pads are separate layers. The caller
  * sets the transform so one logical unit is one unit here.
  *
- * `look` picks the habitat (default 'canal', unchanged). A look with edge reeds
- * paints them at the row's first and last chunk, after the bed; `stream` adds
- * the stream after the rays.
+ * `look` picks the area look (default 'canal', unchanged). A look with an air
+ * wash lays it over the sky band after the bank, before the water. A look with
+ * edge reeds paints them at the row's first and last chunk, after the bed;
+ * `stream` adds the stream after the rays.
  */
 export function paintBackgroundChunk(ctx: CanvasRenderingContext2D, opts: ChunkOptions): void {
   const { rand } = opts;
@@ -564,12 +575,13 @@ export function paintBackgroundChunk(ctx: CanvasRenderingContext2D, opts: ChunkO
   const hasSky = row === 'single' || row === 'top';
   const hasBed = row === 'single' || row === 'bottom';
   if (hasSky) {
-    paintSky(ctx);
+    paintSky(ctx, look);
     if (opts.hasSun) paintSun(ctx);
     paintClouds(ctx, rand, opts.hasSun ? 16 : 120);
     if (opts.hasBank) paintBank(ctx, opts);
+    if (look.airWash !== null) paintAirWash(ctx, look.airWash);
     paintWater(ctx, look);
-    paintRays(ctx, rand);
+    paintRays(ctx, rand, look.rayAlphaScale);
     if (opts.stream === true) paintStream(ctx);
   } else {
     paintDeepWater(ctx, look);

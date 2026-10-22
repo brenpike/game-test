@@ -11,6 +11,13 @@
  * object keeps its ink outline at 3:1 on every pond background, whatever its fill.
  * The canal cannot promise this: its deep water and bed bottom sit in the band where
  * both ink and a light fill fall under 3:1 (the recorded Leucistic residual).
+ *
+ * Area looks (issue #98): an area may use a variant of its habitat's look, such as
+ * the pond at dusk ('pond-dusk', Area 3). A variant is a whole palette baked into the
+ * background, haze and surface, never an overlay over gameplay depths. The dusk pond
+ * keeps the pond contrast rule above. Each look also says what its area needs beside
+ * colours (stream, cave, pond props, fireflies), so callers read properties and never
+ * compare look ids.
  */
 import {
   BED_BOTTOM,
@@ -20,6 +27,8 @@ import {
   MUD,
   PEBBLE_COLOURS,
   PEBBLE_SHINE,
+  SKY_HORIZON,
+  SKY_TOP,
   SURFACE_LINE,
   SURFACE_LINE_WIDTH,
   WATER_DEEP,
@@ -31,6 +40,25 @@ import {
 
 /** Look ids shipped so far. Must match the logic layer's Habitat.look values. */
 export type HabitatLookId = 'canal' | 'pond';
+
+/** Every look an area can use: a habitat's own look, or a variant of it for one area (the pond at dusk, Area 3). */
+export type AreaLookId = HabitatLookId | 'pond-dusk';
+
+/** Sky gradient (guide 7a): `top` at y 0 down to `horizon` at the surface. */
+export interface SkyLook {
+  readonly top: string;
+  readonly horizon: string;
+}
+
+/** The hiding place an area's cave is drawn as (guide 7e): the canal's rocks, the pond's hollow log, or the dusk pond's root arch. */
+export type CaveKind = 'rocks' | 'log' | 'rootArch';
+/** Where a cave hangs: base centre on the bed, or top centre under the bank at the waterline. */
+export type CaveAnchor = 'bed' | 'bank';
+
+export interface CaveLook {
+  readonly kind: CaveKind;
+  readonly anchor: CaveAnchor;
+}
 
 /** Water gradient (guide 3c): shallow at the surface, mid at `stopMid`, deep at `gradientEndY` and below. */
 export interface WaterLook {
@@ -65,7 +93,17 @@ export interface EdgeReedLook {
 }
 
 export interface HabitatLook {
-  readonly id: HabitatLookId;
+  readonly id: AreaLookId;
+  /** Sky gradient above the water. */
+  readonly sky: SkyLook;
+  /**
+   * Wash laid over the sky, sun, clouds, bank and willows, inside the background chunk
+   * only (above the water, where no cue object goes). `null` lays none. Baked, never a
+   * layer over gameplay depths.
+   */
+  readonly airWash: string | null;
+  /** Multiplies the light ray alpha (guide 7a). 1 is full strength. */
+  readonly rayAlphaScale: number;
   readonly water: WaterLook;
   /** Haze laid over the water of every row (guide 3c). */
   readonly haze: string;
@@ -76,11 +114,25 @@ export interface HabitatLook {
   readonly bed: BedLook;
   /** Reeds and cattails silhouetted at the left and right area edges. `null` paints none (the canal). */
   readonly edgeReeds: EdgeReedLook | null;
+  /** Bake the stream flowing in at the area's last column, top row (guide 7a). */
+  readonly stream: boolean;
+  /** What the area's cave is drawn as, and where it hangs. */
+  readonly cave: CaveLook;
+  /** The area needs the pond props (hollow log, plastic worms, queasy cheeks; pondTextures.ts). */
+  readonly pondProps: boolean;
+  /** Fireflies hovering above the water, per screen of area width. 0 shows none. */
+  readonly firefliesPerScreen: number;
 }
+
+/** Sky of the daytime looks: the prototype sky (guide 7a). */
+const DAY_SKY: SkyLook = Object.freeze({ top: SKY_TOP, horizon: SKY_HORIZON });
 
 /** Canal look: today's palette constants, unchanged. */
 const CANAL_LOOK: HabitatLook = Object.freeze({
   id: 'canal',
+  sky: DAY_SKY,
+  airWash: null,
+  rayAlphaScale: 1,
   water: Object.freeze({
     shallow: WATER_SHALLOW,
     mid: WATER_MID,
@@ -103,6 +155,10 @@ const CANAL_LOOK: HabitatLook = Object.freeze({
     pebbleCount: 16,
   }),
   edgeReeds: null,
+  stream: false,
+  cave: Object.freeze({ kind: 'rocks', anchor: 'bed' }),
+  pondProps: false,
+  firefliesPerScreen: 0,
 });
 
 /**
@@ -139,6 +195,9 @@ export const POND_CATTAIL = '#a8693a';
 
 const POND_LOOK: HabitatLook = Object.freeze({
   id: 'pond',
+  sky: DAY_SKY,
+  airWash: null,
+  rayAlphaScale: 1,
   water: Object.freeze({
     shallow: POND_WATER_SHALLOW,
     mid: POND_WATER_MID,
@@ -167,19 +226,121 @@ const POND_LOOK: HabitatLook = Object.freeze({
     leaf: POND_REED_LEAF,
     cattail: POND_CATTAIL,
   }),
+  stream: true,
+  cave: Object.freeze({ kind: 'log', anchor: 'bed' }),
+  pondProps: true,
+  firefliesPerScreen: 0,
 });
 
-const LOOKS: Readonly<Record<HabitatLookId, HabitatLook>> = { canal: CANAL_LOOK, pond: POND_LOOK };
+/**
+ * Dusk pond sky (guide 7a, derived, provisional): lavender at the top to peach at the
+ * horizon, under the dusk wash. Seen through the wash: #c29acf (luminance 0.3909) and
+ * #f0bd96 (0.5712).
+ */
+export const DUSK_SKY_TOP = '#c9a6e0';
+export const DUSK_SKY_HORIZON = '#ffcf9e';
+/**
+ * Dusk wash over the sky, sun, clouds, bank and willows: a dim rose. Exception to the
+ * contrast rule, recorded here: under it the bank soil #a2623a falls from luminance
+ * 0.1672 (already under 0.1687 in every look) to 0.1603, and the soil detail #7f4a2a
+ * stays under too (0.1001). Nothing a kid must find sits there: the bank is above the
+ * water, and every cue object stays in the water.
+ */
+export const DUSK_AIR_WASH = 'rgba(150,80,100,0.14)';
+/** Dusk light rays: dimmer, at 0.6 of the day alpha. */
+export const DUSK_RAY_ALPHA_SCALE = 0.6;
+/**
+ * Dusk pond water (guide 3c, derived, provisional): the pond green turned warmer
+ * (hue 81 / 106 / 130 against the pond's 96 / 130 / 146) and dimmer. Luminance 0.6003,
+ * 0.3442 and 0.1989. Deep #428a4e is 3.41:1 with ink, shallow #b4d872 8.91:1.
+ */
+export const DUSK_WATER_SHALLOW = '#b4d872';
+export const DUSK_WATER_MID = '#6fae5c';
+export const DUSK_WATER_DEEP = '#428a4e';
+/** Dusk haze: a warm amber. Over the deep stop it lightens it (to luminance 0.2186), so the contrast rule holds. */
+export const DUSK_HAZE = 'rgba(225,170,95,0.12)';
+/** Dusk surface line: a warmer cream than the pond's. */
+export const DUSK_SURFACE_LINE = 'rgba(255,236,204,0.95)';
+/**
+ * Dusk mud bed (guide 7a, derived, provisional): the pond mud, warmer and dimmer.
+ * Top #b09060 (luminance 0.3002), bottom #9a7c4c (0.2181, 3.67:1 with ink), lip
+ * #d4b884 (0.4994). Mud dots #78602f at 0.40 (the pond's 0.45, so the dimmer bed
+ * keeps the rule) over the bottom stop blend to #8c7140, luminance 0.1776 (3.12:1).
+ */
+export const DUSK_BED_TOP = '#b09060';
+export const DUSK_BED_BOTTOM = '#9a7c4c';
+export const DUSK_BED_LIP = '#d4b884';
+export const DUSK_MUD = 'rgba(120,96,47,0.40)';
+/**
+ * Dusk edge reeds (guide 7a, derived, provisional): the pond reeds a little warmer.
+ * Stalk #4a8848 (luminance 0.1953), light stalk #5a9646 (0.2443), leaf #68a644
+ * (0.3063), and the pond cattail #a8693a (0.1873). All are 3:1 or better with ink.
+ */
+export const DUSK_REED_STALK = '#4a8848';
+export const DUSK_REED_STALK_LIGHT = '#5a9646';
+export const DUSK_REED_LEAF = '#68a644';
+/** Fireflies per screen of a dusk area (issue #98: a few above the water). */
+export const DUSK_FIREFLIES_PER_SCREEN = 2;
 
-/** Every shipped look id, in habitat order. */
+const POND_DUSK_LOOK: HabitatLook = Object.freeze({
+  id: 'pond-dusk',
+  sky: Object.freeze({ top: DUSK_SKY_TOP, horizon: DUSK_SKY_HORIZON }),
+  airWash: DUSK_AIR_WASH,
+  rayAlphaScale: DUSK_RAY_ALPHA_SCALE,
+  water: Object.freeze({
+    shallow: DUSK_WATER_SHALLOW,
+    mid: DUSK_WATER_MID,
+    deep: DUSK_WATER_DEEP,
+    stopMid: WATER_STOP_MID,
+    gradientEndY: WATER_GRADIENT_END_Y,
+  }),
+  haze: DUSK_HAZE,
+  surfaceFill: DUSK_WATER_SHALLOW,
+  surfaceLine: DUSK_SURFACE_LINE,
+  surfaceLineWidth: SURFACE_LINE_WIDTH,
+  bed: Object.freeze({
+    top: DUSK_BED_TOP,
+    bottom: DUSK_BED_BOTTOM,
+    lip: DUSK_BED_LIP,
+    mud: DUSK_MUD,
+    mudCount: 22,
+    pebbles: PEBBLE_COLOURS,
+    pebbleShine: PEBBLE_SHINE,
+    pebbleCount: 5,
+  }),
+  edgeReeds: Object.freeze({
+    stalk: DUSK_REED_STALK,
+    stalkLight: DUSK_REED_STALK_LIGHT,
+    leaf: DUSK_REED_LEAF,
+    cattail: POND_CATTAIL,
+  }),
+  stream: true,
+  cave: Object.freeze({ kind: 'rootArch', anchor: 'bank' }),
+  pondProps: true,
+  firefliesPerScreen: DUSK_FIREFLIES_PER_SCREEN,
+});
+
+const LOOKS: Readonly<Record<AreaLookId, HabitatLook>> = { canal: CANAL_LOOK, pond: POND_LOOK, 'pond-dusk': POND_DUSK_LOOK };
+
+/** Every shipped habitat look id, in habitat order. Area-map markers are keyed by these. */
 export const HABITAT_LOOK_IDS: readonly HabitatLookId[] = ['canal', 'pond'];
+
+/** Every shipped area look id: the habitat looks, then the per-area variants. */
+export const AREA_LOOK_IDS: readonly AreaLookId[] = [...HABITAT_LOOK_IDS, 'pond-dusk'];
 
 export function isHabitatLookId(id: string): id is HabitatLookId {
   return (HABITAT_LOOK_IDS as readonly string[]).includes(id);
 }
 
-/** The look for a habitat's `look` id. Throws a RangeError for an unknown id, so a typo never falls back to the canal. */
+export function isAreaLookId(id: string): id is AreaLookId {
+  return (AREA_LOOK_IDS as readonly string[]).includes(id);
+}
+
+/**
+ * The look for a habitat's `look` id or an area's look variant id. Throws a RangeError
+ * for an unknown id, so a typo never falls back to the canal.
+ */
 export function habitatLook(id: string): HabitatLook {
-  if (!isHabitatLookId(id)) throw new RangeError(`unknown habitat look "${id}"`);
+  if (!isAreaLookId(id)) throw new RangeError(`unknown habitat look "${id}"`);
   return LOOKS[id];
 }
