@@ -301,10 +301,12 @@ export const TRIP_TREASURES: Readonly<TripTreasureTuning> = Object.freeze({
 
 /**
  * Per-area changes to TRIP_TREASURES, keyed by area id. An area with no entry uses the default (PRD B4).
- * The canal key is the literal area id because this file cannot import zone.ts.
+ * The keys are the literal area ids because this file cannot import zone.ts or pondLayout.ts.
+ * The pond, Area 2, has 7 slots.
  */
 export const TRIP_TREASURES_BY_AREA: Readonly<Record<string, Readonly<TripTreasureOverride>>> = Object.freeze({
   canal: Object.freeze({ slots: 6 }),
+  'pond-1': Object.freeze({ slots: 7 }),
 });
 
 /**

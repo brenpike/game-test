@@ -1,5 +1,6 @@
 import { areaById, type AreaData } from './areas';
 import { treasureById } from './catalogue';
+import type { DrawnBody } from './collectibles';
 import {
   createEncounter,
   createEncounterContext,
@@ -17,6 +18,14 @@ import { zoneThreats } from './hiding';
 import { createLegs, isProtected, presentCount, quantizeProgress, type LegsState } from './legs';
 import { isAxolotlFindId, type RealMorphId } from './morphs';
 import { DEFAULT_TRIP_SEED, nextTripSeed, placeTreasures, type PlacedFind } from './placement';
+import {
+  createPlasticWorms,
+  eatPlasticWorm,
+  endQueasy,
+  tickQueasy,
+  type PlasticWormState,
+  type SpitAvoid,
+} from './plasticWorms';
 import { earnStars, type AreaStars } from './stars';
 import {
   createRescue,
@@ -38,7 +47,18 @@ import {
   type Holdings,
 } from './tripBag';
 import type { FoundInfo, LegsSnapshot, RescueSnapshot, TripEnding, TripPhase, TripSnapshot } from './tripEvents';
-import { CARRY, FINDS, LEGS, SWIM, TILAPIA, tripTreasureTuning, type CarryTuning, type FindTuning, type LegTuning } from './tuning';
+import {
+  CARRY,
+  FINDS,
+  LEGS,
+  SWIM,
+  TILAPIA,
+  tripTreasureTuning,
+  type CarryTuning,
+  type FindTuning,
+  type LegTuning,
+  type PlasticWormTuning,
+} from './tuning';
 import type { Vec2 } from './vec';
 import {
   inHomeSpot as isInHomeSpot,
@@ -90,6 +110,9 @@ export interface CarryState {
  * cards were seen, before or during this trip, and `met` the hazard and predator ids the axolotl met
  * this trip, in meet order.
  * `legsLost` is how many legs tilapia hits took this trip; a leg grown back still counts.
+ * `plasticWorms` is where each plastic worm is and the explorer's queasy time left; queasy time
+ * runs only on swimming steps, ends when the carry starts or the trip ends, and never affects a
+ * following stranded axolotl.
  */
 export interface TripState {
   phase: TripPhase;
@@ -115,6 +138,7 @@ export interface TripState {
   factCardsSeen: string[];
   met: string[];
   legsLost: number;
+  plasticWorms: PlasticWormState;
 }
 
 /**
@@ -165,6 +189,7 @@ export interface TripInput {
  * Bag, with its pop-up data. `at` is the spot position. `rescued` is the stranded axolotl going into
  * the Trip Bag, with `at` its position; it carries no pop-up data. `banked` is the ids moved from the
  * bag to banked, in bag order. `arrivedHome.returned` is the Trip Bag ids sent back to the world.
+ * `wormSpat` is the explorer eating plastic worm `id` and spitting it from `from` to `to`.
  */
 export type TripEvent =
   | Exclude<EncounterEvent, { type: 'carriedHome' }>
@@ -174,7 +199,8 @@ export type TripEvent =
   | { type: 'rescued'; id: FindId; morph: RealMorphId; at: Point }
   | { type: 'banked'; ids: FindId[] }
   | { type: 'carryStart'; from: Point; still: boolean }
-  | { type: 'arrivedHome'; still: boolean; returned: FindId[] };
+  | { type: 'arrivedHome'; still: boolean; returned: FindId[] }
+  | { type: 'wormSpat'; id: string; from: Point; to: Point };
 
 /**
  * Result of a trip step or a trip action. `impulse` is set only on a swimming step with a bump
@@ -187,6 +213,9 @@ export interface TripStepResult {
 }
 
 type PassedEncounterEvent = Exclude<EncounterEvent, { type: 'carriedHome' }>;
+
+// INVARIANT: frozen and shared; no caller mutates the events of a trip step result.
+const NO_EVENTS = Object.freeze<TripEvent[]>([]) as TripEvent[];
 
 /** Default context: the default encounter context and the shared carry and find tuning. */
 export function createTripContext(overrides: Partial<TripContext> = {}): TripContext {
@@ -213,7 +242,9 @@ function tripArea(areaId: string, area: Readonly<AreaData> | undefined): Readonl
  * slots (B9, H6). The area is `options.area` when given, else the AREAS entry for the source's
  * area id. Spots on the rarity's risky side of the area's threats are picked more often (issue #70).
  * `options.stranding` sets this trip's stranded axolotl, waiting at its place; it never changes the
- * placement. Throws when a pool cannot be placed or `options.area` is not the source's area.
+ * placement. A plastic worm waits at the centre of each plastic worm hazard of the source, and the
+ * axolotl starts not queasy; worms never change the placement. Throws when a pool cannot be placed
+ * or `options.area` is not the source's area.
  */
 export function createTrip(
   source: TripSource,
@@ -257,6 +288,7 @@ export function createTrip(
     factCardsSeen: [...(options.factCardsSeen ?? [])],
     met: [],
     legsLost: 0,
+    plasticWorms: createPlasticWorms(source.hazards ?? []),
   };
 }
 
@@ -266,8 +298,9 @@ export function createTrip(
  * the seed after this trip's) picks this trip's treasures afresh, and every Dash pot is sealed
  * again. The treasures returned when carried home (`ending.returned`) come back this trip, always
  * placed, and the area's special treasure is always placed while unbanked, on top of the treasure
- * slots. It passes no other trip options, so the new trip has no stranded axolotl and every fact
- * card counts as unseen. Any other phase returns the input state unchanged.
+ * slots. Every plastic worm is back at its spawn and the axolotl is not queasy. It passes no other
+ * trip options, so the new trip has no stranded axolotl and every fact card counts as unseen. Any
+ * other phase returns the input state unchanged.
  */
 export function newTrip(state: TripState, tripSeed: number = nextTripSeed(state.tripSeed)): TripState {
   if (state.phase !== 'ended') return state;
@@ -310,7 +343,7 @@ export function markFactCardSeen(state: TripState, id: string): TripState {
  * Ends the trip by choice. Allowed while 'banked', or while swimming inside the Home Spot ring;
  * any other case returns the input state unchanged with no events. Banks the Trip Bag first
  * (emitting `banked` when it was not empty), then ends with reason 'wentHome', nothing returned,
- * and every id banked this trip.
+ * and every id banked this trip. Queasy time ends.
  */
 export function goHome(state: TripState): TripStepResult {
   const allowed = state.phase === 'banked' || (state.phase === 'swimming' && state.inHomeSpot);
@@ -320,7 +353,8 @@ export function goHome(state: TripState): TripStepResult {
   if (banking.ids.length > 0) events.push({ type: 'banked', ids: [...banking.ids] });
   const next = banking.state;
   const ending: TripEnding = { reason: 'wentHome', returned: [], bankedThisTrip: [...next.bankedThisTrip] };
-  return { state: { ...next, phase: 'ended', heldAt: null, ending }, events };
+  const plasticWorms = endQueasy(next.plasticWorms);
+  return { state: { ...next, phase: 'ended', heldAt: null, ending, plasticWorms }, events };
 }
 
 /**
@@ -347,12 +381,35 @@ export function eatSnacks(
 }
 
 /**
+ * The explorer eats the first plastic worm in reach of the head reach centre of `body` and spits
+ * it out (`eatPlasticWorm`): queasy time starts and only that worm moves, landing clear of
+ * `avoid`. Allowed only while swimming. Any other phase, a queasy axolotl (no stacking) or no worm
+ * in reach returns the input state and a shared frozen empty events array. Otherwise emits
+ * `wormSpat`. Only `plasticWorms` changes: a plastic worm is not a snack, so legs, regrowth, the
+ * encounter (Shell included), the Trip Bag, finds and met are untouched, and it never counts
+ * toward opening the exit. A following stranded axolotl never eats one; pass only the explorer.
+ */
+export function eatPlasticWorms(
+  state: TripState,
+  body: DrawnBody,
+  avoid: SpitAvoid,
+  tuning?: Pick<PlasticWormTuning, 'queasyTime' | 'spitDistance'>,
+): TripStepResult {
+  if (state.phase !== 'swimming') return { state, events: NO_EVENTS };
+  const eaten = eatPlasticWorm(state.plasticWorms, body, avoid, tuning);
+  if (eaten === null) return { state, events: NO_EVENTS };
+  const { id, from, to } = eaten.spat;
+  return { state: { ...state, plasticWorms: eaten.state }, events: [{ type: 'wormSpat', id, from, to }] };
+}
+
+/**
  * Ends the trip at the open exit (PRD H5). Allowed only while swimming; any other phase returns the
  * input state unchanged with no events. Banks the Trip Bag first, as at the Home Spot (A14), emitting
  * `banked` when it was not empty, then ends with reason 'areaBeaten', nothing returned, every id
  * banked this trip and the stars earned (H6): the exit, the special treasure when banked now or on
  * an earlier trip, and a rescue banked this trip (at the Home Spot or the exit) or no leg lost this
- * trip. Banking comes first so a following axolotl banked at the exit counts as rescued.
+ * trip. Banking comes first so a following axolotl banked at the exit counts as rescued. Queasy
+ * time ends.
  */
 export function beatArea(state: TripState, ctx: StarContext): TripStepResult {
   if (state.phase !== 'swimming') return { state, events: [] };
@@ -372,7 +429,8 @@ export function beatArea(state: TripState, ctx: StarContext): TripStepResult {
     bankedThisTrip: [...next.bankedThisTrip],
     stars,
   };
-  return { state: { ...next, phase: 'ended', heldAt: null, ending }, events };
+  const plasticWorms = endQueasy(next.plasticWorms);
+  return { state: { ...next, phase: 'ended', heldAt: null, ending, plasticWorms }, events };
 }
 
 /**
@@ -393,7 +451,8 @@ export function beatArea(state: TripState, ctx: StarContext): TripStepResult {
  * onto `found` (`rescued`); a following one swims behind the axolotl and a safe one swims to its
  * rest point by the Home Spot. It is never part of the encounter, so it cannot be hit. The first
  * step where the axolotl meets a hazard or predator adds its id to `met`. When the carry starts, a following
- * stranded axolotl goes back to its place.
+ * stranded axolotl goes back to its place. Queasy time counts down by the capped step, and ends
+ * when the carry starts.
  * Carrying: the encounter is not stepped, so legs stay frozen, and nothing is picked up. The
  * carry follows `input.reduced` on every step (`followReducedMotion`); on arrival `arrivedHome` is
  * emitted and the phase becomes 'ended'.
@@ -613,7 +672,11 @@ function stepSwimming(state: TripState, input: TripInput, step: number, ctx: Tri
     const carry = startCarry(input.axolotlPos, state.home, input.reduced, ctx.carry);
     events.push({ type: 'carryStart', from: { x: carry.from.x, y: carry.from.y }, still: carry.still });
     const rescue = rescueAtCarryStart(state);
-    return { state: { ...state, phase: 'carrying', encounter: result.state, carry, rescue, legsLost }, events };
+    const plasticWorms = endQueasy(state.plasticWorms);
+    return {
+      state: { ...state, phase: 'carrying', encounter: result.state, carry, rescue, legsLost, plasticWorms },
+      events,
+    };
   }
   const pots = touchPots(state, input, ctx.finds, events);
   const pickup = pickUpNearby({ ...state, ...pots }, input.axolotlPos, ctx.finds, events);
@@ -628,6 +691,7 @@ function stepSwimming(state: TripState, input: TripInput, step: number, ctx: Tri
     inHomeSpot: inside,
     met,
     legsLost,
+    plasticWorms: tickQueasy(state.plasticWorms, step),
   };
   if (inside && next.holdings.bag.length > 0) return bankAtHomeSpot(next, input.axolotlPos, events);
   if (result.impulse) return { state: next, events, impulse: result.impulse };

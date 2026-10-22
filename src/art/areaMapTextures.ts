@@ -22,6 +22,7 @@
  * drawPanel: the look is the same.
  */
 import * as Phaser from 'phaser';
+import type { HabitatLookId } from './habitatLook';
 import {
   MAP_BADGE_TEX,
   MAP_FOCUS_TEX,
@@ -47,6 +48,8 @@ import { bake, type TexInfo } from './textures';
 // ---------------------------------------------------------------------------
 
 export const areaMapMarkerKey = (locked: boolean): string => `area-map-marker-${locked ? 'locked' : 'unlocked'}`;
+/** Key of a pond-look marker texture (the canal's keys stay {@link areaMapMarkerKey}). */
+export const areaMapPondMarkerKey = (locked: boolean): string => `area-map-marker-pond-${locked ? 'locked' : 'unlocked'}`;
 export const AREA_MAP_FOCUS_KEY = 'area-map-focus-ring';
 export const AREA_MAP_BADGE_KEY = 'area-map-padlock-badge';
 export const AREA_MAP_PILL_KEY = 'area-map-new-pill';
@@ -62,11 +65,23 @@ export const areaMapPanelKey = (role: string): string => `area-map-panel-${role}
 // Bake
 // ---------------------------------------------------------------------------
 
+/** The two markers of one habitat look: same frame and anchor. */
+export interface AreaMapMarkerPair {
+  readonly unlocked: TexInfo;
+  readonly locked: TexInfo;
+}
+
 export interface AreaMapTextures {
   /** Unlocked marker: #ffe14a disc, ink 3.5, 64 px to the ink edge. Anchor is the disc centre (MAP_MARKER_CENTRE in the cell). */
   readonly markerUnlocked: TexInfo;
   /** Locked marker: the same disc in #ffffff. Same frame and anchor. The padlock badge is a separate texture. */
   readonly markerLocked: TexInfo;
+  /**
+   * Markers by habitat look. `canal` is the same textures as `markerUnlocked` and
+   * `markerLocked`; `pond` is the notched lily pad (green unlocked, white locked).
+   * All four share one frame and anchor (the marker centre), so they swap freely.
+   */
+  readonly markersByLook: Readonly<Record<HabitatLookId, AreaMapMarkerPair>>;
   /** Double focus ring (white r 35.25, ink r 38.25). Anchor is the ring centre: put it on the marker centre. */
   readonly focusRing: TexInfo;
   /** White disc r 12 with the 18 px lock icon. Anchor is the disc centre: put it at MAP_BADGE_OFFSET from the marker centre. */
@@ -87,9 +102,21 @@ export function bakeAreaMapTextures(scene: Phaser.Scene, bakeScale: number): Are
   for (let n = 0; n <= MAP_STAR_COUNT; n++) {
     starRows.push(bake(scene, areaMapStarRowKey(n), MAP_STAR_ROW_TEX, bakeScale, (ctx) => paintMapStarRow(ctx, n)));
   }
+  const markerUnlocked = bake(scene, areaMapMarkerKey(false), MAP_MARKER_TEX, bakeScale, (ctx) => paintMapMarker(ctx, false));
+  const markerLocked = bake(scene, areaMapMarkerKey(true), MAP_MARKER_TEX, bakeScale, (ctx) => paintMapMarker(ctx, true));
+  const pondUnlocked = bake(scene, areaMapPondMarkerKey(false), MAP_MARKER_TEX, bakeScale, (ctx) =>
+    paintMapMarker(ctx, false, 'pond'),
+  );
+  const pondLocked = bake(scene, areaMapPondMarkerKey(true), MAP_MARKER_TEX, bakeScale, (ctx) =>
+    paintMapMarker(ctx, true, 'pond'),
+  );
   return {
-    markerUnlocked: bake(scene, areaMapMarkerKey(false), MAP_MARKER_TEX, bakeScale, (ctx) => paintMapMarker(ctx, false)),
-    markerLocked: bake(scene, areaMapMarkerKey(true), MAP_MARKER_TEX, bakeScale, (ctx) => paintMapMarker(ctx, true)),
+    markerUnlocked,
+    markerLocked,
+    markersByLook: {
+      canal: { unlocked: markerUnlocked, locked: markerLocked },
+      pond: { unlocked: pondUnlocked, locked: pondLocked },
+    },
     focusRing: bake(scene, AREA_MAP_FOCUS_KEY, MAP_FOCUS_TEX, bakeScale, paintMapFocusRing),
     padlockBadge: bake(scene, AREA_MAP_BADGE_KEY, MAP_BADGE_TEX, bakeScale, paintMapPadlockBadge),
     newPill: bake(scene, AREA_MAP_PILL_KEY, MAP_PILL_TEX, bakeScale, paintMapNewPill),

@@ -12,8 +12,9 @@ import {
 } from './drawnAxolotl';
 import { legWobble } from './legs';
 import { motionProfile } from './motion';
+import { queasyWobble } from './plasticWorms';
 import type { SwimState } from './swimPhysics';
-import { LEGS, SNACK_REACH, SWIM, TILAPIA } from './tuning';
+import { LEGS, PLASTIC_WORMS, SNACK_REACH, SWIM, TILAPIA } from './tuning';
 import type { Vec2 } from './vec';
 
 const TAU = Math.PI * 2;
@@ -138,6 +139,37 @@ describe('drawnAxolotl', () => {
         const body = drawnAxolotl(inputFor(swimAt(facing, 30, 10), { squash }));
         expect(body.squash).toBe(squash);
         expect(body.facing).toBe(facing);
+      }
+    }
+  });
+
+  it('adds the queasy wobble to the rotation while queasy and swimming, in both facings', () => {
+    for (const facing of [1, -1] as const) {
+      for (const clock of [0.1, 0.25, 0.4, 1.3]) {
+        for (let legsPresent = 1; legsPresent <= LEGS.count; legsPresent++) {
+          const swim = swimAt(facing, 30, -20);
+          const plain = drawnAxolotl(inputFor(swim, { clock, legsPresent }));
+          const queasy = drawnAxolotl(inputFor(swim, { clock, legsPresent, queasy: true }));
+          expect(queasy.rotation - plain.rotation).toBeCloseTo(queasyWobble(clock, true, false), 12);
+          expect({ ...queasy, rotation: 0 }).toEqual({ ...plain, rotation: 0 });
+        }
+      }
+    }
+    expect(Math.abs(queasyWobble(PLASTIC_WORMS.wobblePeriod / 4, true, false))).toBeCloseTo(PLASTIC_WORMS.wobbleAmp, 12);
+  });
+
+  it('has no queasy wobble when not queasy or absent, when not swimming, or under reduced motion', () => {
+    for (const clock of [0.15, 0.45, 2.05]) {
+      const swim = swimAt(1, 0, 0);
+      const absent = drawnAxolotl(inputFor(swim, { clock }));
+      expect(queasyWobble(clock, true, false)).not.toBe(0);
+      expect(drawnAxolotl(inputFor(swim, { clock, queasy: false }))).toEqual(absent);
+      const still = inputFor(swim, { clock, swimming: false });
+      expect(drawnAxolotl({ ...still, queasy: true })).toEqual(drawnAxolotl(still));
+      for (let legsPresent = 0; legsPresent <= LEGS.count; legsPresent++) {
+        const reduced = reducedInput(swim, clock, legsPresent);
+        expect(drawnAxolotl({ ...reduced, queasy: true })).toEqual(drawnAxolotl(reduced));
+        expect(drawnAxolotl({ ...reduced, queasy: true }).rotation).toBeCloseTo(0, 12);
       }
     }
   });

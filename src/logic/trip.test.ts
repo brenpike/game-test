@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { DrawnBody } from './collectibles';
 import { createEncounter, createEncounterContext } from './encounter';
 import { meetsTilapia, type FactCard } from './factCards';
-import type { HazardType } from './hazards';
+import type { HazardSpawn, HazardType } from './hazards';
 import { TILAPIA_SPECIES, type PredatorSpecies } from './predators';
 import { GAME_EVENTS, REGISTRY_KEYS } from './gameEvents';
 import { createLegs, isProtected, presentCount, tryHit, type LegsState } from './legs';
@@ -12,6 +13,7 @@ import {
   beatArea,
   createTrip,
   createTripContext,
+  eatPlasticWorms,
   foundInfo,
   followReducedMotion,
   foundInfos,
@@ -35,10 +37,11 @@ import {
 } from './trip';
 import { axolotlFindId, type RealMorphId } from './morphs';
 import { DEFAULT_TRIP_SEED, nextTripSeed, placeTreasures, type PlacedFind, type PlacementOptions } from './placement';
+import { PLASTIC_WORM, isQueasy, spitLanding, type SpitAvoid } from './plasticWorms';
 import { RESCUE, pickStranding, type Stranding } from './rescue';
 import { TRIP_EVENTS, TRIP_REGISTRY_KEYS, type TripSnapshot } from './tripEvents';
 import { withStars } from './stars';
-import { CARRY, FINDS, LEGS, SWIM, TILAPIA, tripTreasureTuning } from './tuning';
+import { CARRY, FINDS, LEGS, PLASTIC_WORMS, SNACK_REACH, SWIM, TILAPIA, tripTreasureTuning } from './tuning';
 import { buildCanalZone, swimBounds, type HidingSpot, type Point } from './zone';
 
 const DT = 1 / 60;
@@ -1821,5 +1824,227 @@ describe('Shell perk through stepTrip (A22, F11)', () => {
     const again = driveShell(next, 'shellBlock');
     expect(countOf(again.events, 'shellBlock')).toBe(1);
     expect(again.state.legsLost).toBe(0);
+  });
+});
+
+describe('plastic worms in the trip (#75)', () => {
+  const WORM_A: Point = { x: 900, y: 200 };
+  const WORM_B: Point = { x: 1300, y: 200 };
+  const wormAt = (id: string, at: Point): HazardSpawn => ({
+    id,
+    type: PLASTIC_WORM,
+    shape: { kind: 'circle', x: at.x, y: at.y, r: 0 },
+  });
+  const worms = [wormAt('test/worm-a', WORM_A), wormAt('test/worm-b', WORM_B)];
+  const wormZone: TripSource = { ...findZone, hazards: worms };
+  const carryWormZone: TripSource = { ...zone, hazards: [...(zone.hazards ?? []), ...worms] };
+  const avoid: SpitAvoid = { bounds: swimBounds(), currents: [], safeArea: zone.safeArea };
+  const longQueasy = { ...PLASTIC_WORMS, queasyTime: 1e6 };
+  const shellCtx = createTripContext({
+    encounter: createEncounterContext({ legs: { ...LEGS, regrowTime: 1e9 }, shell: true }),
+  });
+  const calm: Point = { x: 700, y: 120 };
+
+  function bodyWithHeadAt(head: Point, facing: 1 | -1 = 1): DrawnBody {
+    return { x: head.x - facing * SNACK_REACH.headAhead, y: head.y, facing, rotation: 0 };
+  }
+
+  function eatenAt(state: TripState, head: Point, tuning = PLASTIC_WORMS): TripStepResult {
+    const result = eatPlasticWorms(state, bodyWithHeadAt(head), avoid, tuning);
+    if (result.events.length !== 1) throw new Error('expected a plastic worm to be eaten');
+    return result;
+  }
+
+  function queasyFor(state: TripState, seconds: number): TripState {
+    return { ...state, plasticWorms: { ...state.plasticWorms, queasyLeft: seconds } };
+  }
+
+  function swimUntilWell(state: TripState, pos: Point, stepCtx = ctx): TripState {
+    let current = state;
+    for (let i = 0; i < 1000 && isQueasy(current.plasticWorms); i++) {
+      current = stepTrip(current, { axolotlPos: pos, reduced: false, dashing: false }, SWIM.dtMax, stepCtx).state;
+    }
+    if (isQueasy(current.plasticWorms)) throw new Error('expected queasy time to run out');
+    return current;
+  }
+
+  it('starts with a worm at each plastic worm hazard centre, in data order, not queasy', () => {
+    expect(createTrip(wormZone).plasticWorms).toEqual({
+      worms: [
+        { id: 'test/worm-a', ...WORM_A },
+        { id: 'test/worm-b', ...WORM_B },
+      ],
+      queasyLeft: 0,
+    });
+  });
+
+  it('gives canal trips no worms and the same placements as with worm hazards added', () => {
+    expect(createTrip(zone).plasticWorms).toEqual({ worms: [], queasyLeft: 0 });
+    for (const seed of [1, 7, 42, DEFAULT_TRIP_SEED]) {
+      expect(createTrip(carryWormZone, LEGS, [], seed).placed).toEqual(createTrip(zone, LEGS, [], seed).placed);
+    }
+  });
+
+  it('eats the worm in reach, spits it out, starts queasy time and emits wormSpat', () => {
+    const trip = createTrip(wormZone);
+    const body = bodyWithHeadAt(WORM_A);
+    const result = eatPlasticWorms(trip, body, avoid);
+    const to = spitLanding(body);
+    expect(result.events).toEqual([{ type: 'wormSpat', id: 'test/worm-a', from: WORM_A, to }]);
+    expect(result.state.plasticWorms).toEqual({
+      worms: [
+        { id: 'test/worm-a', ...to },
+        { id: 'test/worm-b', ...WORM_B },
+      ],
+      queasyLeft: PLASTIC_WORMS.queasyTime,
+    });
+    expect(result.impulse).toBeUndefined();
+  });
+
+  it('is not a snack: only the worms change, legs and regrowth stay, nothing counts toward the exit', () => {
+    const fresh = createTrip(wormZone);
+    const trip: TripState = { ...fresh, encounter: { ...fresh.encounter, legs: regrowingLegs(0.4) } };
+    const result = eatenAt(trip, WORM_A);
+    expect(Object.keys(result)).toEqual(['state', 'events']);
+    expect({ ...result.state, plasticWorms: trip.plasticWorms }).toEqual(trip);
+    expect(result.state.encounter).toBe(trip.encounter);
+    expect(result.state.holdings).toBe(trip.holdings);
+    expect(result.state.found).toBe(trip.found);
+    expect(result.state.placed).toBe(trip.placed);
+    expect(result.state.met).toBe(trip.met);
+    expect(sameTripSnapshot(tripSnapshot(result.state), tripSnapshot(trip))).toBe(true);
+    const eatenStep = stepAt(result.state, calm).state;
+    const plainStep = stepAt(trip, calm).state;
+    expect(eatenStep.encounter.legs).toEqual(plainStep.encounter.legs);
+    expect(eatenStep.legsLost).toBe(plainStep.legsLost);
+  });
+
+  it('returns the input state and one shared frozen empty events array when nothing is eaten', () => {
+    const trip = createTrip(wormZone);
+    const missed = eatPlasticWorms(trip, bodyWithHeadAt(calm), avoid);
+    expect(missed.state).toBe(trip);
+    expect(missed.events).toEqual([]);
+    expect(Object.isFrozen(missed.events)).toBe(true);
+    expect(eatPlasticWorms(createTrip(zone), bodyWithHeadAt(WORM_A), avoid).events).toBe(missed.events);
+  });
+
+  it('never stacks: a second worm does nothing while queasy, and can be eaten once queasy ends', () => {
+    const queasy = eatenAt(createTrip(wormZone), WORM_A).state;
+    const again = eatPlasticWorms(queasy, bodyWithHeadAt(WORM_B), avoid);
+    expect(again.state).toBe(queasy);
+    expect(again.events).toEqual([]);
+    const well = swimUntilWell(queasy, calm);
+    const second = eatenAt(well, WORM_B);
+    expect(second.events[0]).toMatchObject({ type: 'wormSpat', id: 'test/worm-b', from: WORM_B });
+    expect(second.state.plasticWorms.queasyLeft).toBe(PLASTIC_WORMS.queasyTime);
+  });
+
+  it('lets a spat worm slow the axolotl again at its new spot once queasy ends', () => {
+    const first = eatenAt(createTrip(wormZone), WORM_A);
+    const spat = first.events[0];
+    if (spat.type !== 'wormSpat') throw new Error('expected wormSpat');
+    expect(spat.to).not.toEqual(WORM_A);
+    expect(eatPlasticWorms(first.state, bodyWithHeadAt(spat.to), avoid).state).toBe(first.state);
+    expect(eatPlasticWorms(first.state, bodyWithHeadAt(WORM_A), avoid).state).toBe(first.state);
+    const well = swimUntilWell(first.state, calm);
+    const again = eatenAt(well, spat.to);
+    expect(again.events[0]).toMatchObject({ type: 'wormSpat', id: 'test/worm-a', from: spat.to });
+    expect(isQueasy(again.state.plasticWorms)).toBe(true);
+  });
+
+  it('counts queasy time down by the capped step while swimming, and never on a paused step', () => {
+    const queasy = eatenAt(createTrip(wormZone), WORM_A).state;
+    expect(stepAt(queasy, calm).state.plasticWorms.queasyLeft).toBeCloseTo(PLASTIC_WORMS.queasyTime - DT, 12);
+    const long = stepTrip(queasy, { axolotlPos: calm, reduced: false, dashing: false }, 1, ctx).state;
+    expect(long.plasticWorms.queasyLeft).toBeCloseTo(PLASTIC_WORMS.queasyTime - SWIM.dtMax, 12);
+    expect(long.plasticWorms.worms).toBe(queasy.plasticWorms.worms);
+    for (const dt of PAUSE_DTS) {
+      expect(stepTrip(queasy, { axolotlPos: calm, reduced: false, dashing: false }, dt, ctx).state).toBe(queasy);
+    }
+    const well = swimUntilWell(queasy, calm);
+    expect(well.plasticWorms.queasyLeft).toBe(0);
+    expect(stepAt(well, calm).state.plasticWorms).toBe(well.plasticWorms);
+  });
+
+  it('holds queasy time on the banking card and resumes it after keepExploring', () => {
+    const picked = walk(createTrip(wormZone), [spotA]).state;
+    const queasy = eatenAt(picked, WORM_A).state;
+    const bankedTrip = walk(queasy, [outside, home]).state;
+    expect(bankedTrip.phase).toBe('banked');
+    const held = bankedTrip.plasticWorms.queasyLeft;
+    expect(held).toBeCloseTo(PLASTIC_WORMS.queasyTime - 2 * DT, 12);
+    expect(stepAt(bankedTrip, calm).state).toBe(bankedTrip);
+    const atWorm = eatPlasticWorms(bankedTrip, bodyWithHeadAt(WORM_B), avoid);
+    expect(atWorm.state).toBe(bankedTrip);
+    expect(atWorm.events).toEqual([]);
+    const exploring = keepExploring(bankedTrip);
+    expect(exploring.plasticWorms).toBe(bankedTrip.plasticWorms);
+    expect(stepAt(exploring, calm).state.plasticWorms.queasyLeft).toBeCloseTo(held - DT, 12);
+  });
+
+  it('ends queasy time when the carry starts, and never ticks or eats while carrying or ended', () => {
+    const queasy = eatenAt(createTrip(carryWormZone), WORM_A, longQueasy).state;
+    const carry = drive(queasy, { axolotlPos: inRange, reduced: false, dashing: false }, 'carryStart');
+    expect(carry.state.phase).toBe('carrying');
+    expect(carry.state.plasticWorms.queasyLeft).toBe(0);
+    expect(carry.state.plasticWorms.worms).toBe(queasy.plasticWorms.worms);
+    const carryAtWorm = eatPlasticWorms(carry.state, bodyWithHeadAt(WORM_B), avoid);
+    expect(carryAtWorm.state).toBe(carry.state);
+    expect(carryAtWorm.events).toEqual([]);
+    const done = drive(carry.state, { axolotlPos: inRange, reduced: false, dashing: false }, 'arrivedHome').state;
+    expect(done.phase).toBe('ended');
+    expect(done.plasticWorms).toBe(carry.state.plasticWorms);
+    expect(eatPlasticWorms(done, bodyWithHeadAt(WORM_B), avoid).state).toBe(done);
+  });
+
+  it('ends queasy time when the trip ends at the Home Spot or the exit, keeping the worms where they are', () => {
+    const queasy = queasyFor(eatenAt(createTrip(wormZone), WORM_A).state, 2);
+    const wentHome = goHome(queasy).state;
+    expect(wentHome.phase).toBe('ended');
+    expect(wentHome.plasticWorms).toEqual({ worms: queasy.plasticWorms.worms, queasyLeft: 0 });
+    const beaten = beatArea(queasy, { specialTreasureId: PLANT }).state;
+    expect(beaten.phase).toBe('ended');
+    expect(beaten.plasticWorms).toEqual({ worms: queasy.plasticWorms.worms, queasyLeft: 0 });
+    expect(stepAt(beaten, calm).state).toBe(beaten);
+  });
+
+  it('starts the next trip with every worm back at its spawn and no queasy time', () => {
+    const queasy = eatenAt(createTrip(wormZone), WORM_A).state;
+    const fresh = newTrip(beatArea(queasy, { specialTreasureId: PLANT }).state);
+    expect(fresh.plasticWorms).toEqual(createTrip(wormZone).plasticWorms);
+    const carried = drive(
+      eatenAt(createTrip(carryWormZone), WORM_A).state,
+      { axolotlPos: inRange, reduced: false, dashing: false },
+      'arrivedHome',
+    ).state;
+    expect(newTrip(carried).plasticWorms).toEqual(createTrip(carryWormZone).plasticWorms);
+  });
+
+  it('is not stopped by the Shell perk, which stays unused', () => {
+    const queasy = eatenAt(createTrip(wormZone), WORM_A).state;
+    const shellStep = stepTrip(queasy, { axolotlPos: calm, reduced: false, dashing: false }, DT, shellCtx);
+    expect(shellStep.events).toEqual([]);
+    expect(shellStep.state.plasticWorms).toEqual(stepAt(queasy, calm).state.plasticWorms);
+    expect(shellStep.state.encounter.shellUsed).toBe(false);
+    const well = swimUntilWell(queasy, calm, shellCtx);
+    expect(well.encounter.shellUsed).toBe(false);
+    expect(isProtected(well.encounter.legs)).toBe(false);
+    expect(eatenAt(well, WORM_B).state.encounter.shellUsed).toBe(false);
+  });
+
+  it('never lets a following stranded axolotl eat a worm, only the explorer', () => {
+    const following = walk(rescueTrip(wormZone), [strandPlace]).state;
+    expect(tripSnapshot(following).rescue?.status).toBe('following');
+    const rescue = following.rescue as NonNullable<TripState['rescue']>;
+    const onWorm: TripState = { ...following, rescue: { ...rescue, pos: { ...WORM_A } } };
+    const explorer: Point = { x: WORM_A.x - 200, y: 140 };
+    const stepped = stepAt(onWorm, explorer).state;
+    expect(stepped.plasticWorms).toBe(onWorm.plasticWorms);
+    const missed = eatPlasticWorms(onWorm, bodyWithHeadAt(explorer), avoid);
+    expect(missed.state).toBe(onWorm);
+    expect(missed.events).toEqual([]);
+    const eaten = eatenAt(onWorm, WORM_A);
+    expect(eaten.state.rescue).toBe(onWorm.rescue);
+    expect(eaten.state.holdings).toBe(onWorm.holdings);
   });
 });
