@@ -6,7 +6,7 @@ import { VIEW } from './logic/tuning';
 import { fitView, type ViewFit } from './logic/viewport';
 import { WORLD_H } from './logic/zone';
 import { AreaMapScene } from './scenes/AreaMapScene';
-import { BootScene, DEV_AREA_REGISTRY_KEY } from './scenes/BootScene';
+import { BootScene, DEV_AREA_REGISTRY_KEY, DEV_DECOR_REGISTRY_KEY, type DecorationPack } from './scenes/BootScene';
 import { CreatorScene } from './scenes/CreatorScene';
 import { HomeTankScene } from './scenes/HomeTankScene';
 import { HudScene } from './scenes/HudScene';
@@ -71,13 +71,15 @@ function watchReducedMotion(game: Phaser.Game): void {
 
 /**
  * Creates the game in `parent` with `scenes`, on renderer `type` (Phaser.AUTO or Phaser.CANVAS).
- * `devArea`, when given, is put in the registry before any scene runs, for the boot scene to read.
+ * `devArea` and `devDecor`, when given, are put in the registry before any scene runs, for the boot
+ * scene to read.
  */
 function startGame(
   parent: HTMLElement,
   type: number,
   scenes: Phaser.Types.Scenes.SceneType[],
   devArea: Readonly<AreaData> | null = null,
+  devDecor: DecorationPack | null = null,
 ): Phaser.Game {
   const initialView = measureView(parent);
   const game = new Phaser.Game({
@@ -95,6 +97,7 @@ function startGame(
     callbacks: {
       preBoot: (booting: Phaser.Game) => {
         if (devArea !== null) booting.registry.set(DEV_AREA_REGISTRY_KEY, devArea);
+        if (devDecor !== null) booting.registry.set(DEV_DECOR_REGISTRY_KEY, devDecor);
       },
     },
   });
@@ -130,9 +133,24 @@ async function loadDevArea(id: string): Promise<Readonly<AreaData> | null> {
 }
 
 /**
+ * Dev builds only: the dev Decoration pack (Floating and Hanging test items and their art), loaded on
+ * demand so it never ships in the production build. Logs the ids it loads.
+ */
+async function loadDevDecor(): Promise<DecorationPack | null> {
+  if (!import.meta.env.DEV) return null;
+  const [{ DEV_DECORATION_PACK }, { DEV_DECOR_MARK }] = await Promise.all([
+    import('./art/devDecorationArt'),
+    import('./logic/devDecorations'),
+  ]);
+  console.info(DEV_DECOR_MARK, DEV_DECORATION_PACK.decorations.map((decoration) => decoration.id).join(' '));
+  return DEV_DECORATION_PACK;
+}
+
+/**
  * Dev builds only: starts the game with the dev tools the query flags ask for. `?compare` runs only
  * the rig compare scene, `?perf` adds the frame-time overlay, `?renderer=canvas` forces Canvas,
- * `?area=<id>` swims every trip in that dev area.
+ * `?area=<id>` swims every trip in that dev area, `?decor` adds the dev Floating and Hanging
+ * Decorations to the Home Tank.
  */
 async function startDevGame(parent: HTMLElement): Promise<void> {
   if (import.meta.env.DEV) {
@@ -141,7 +159,8 @@ async function startDevGame(parent: HTMLElement): Promise<void> {
     const type = flags.renderer === 'canvas' ? Phaser.CANVAS : Phaser.AUTO;
     const scenes = flags.compare ? [(await import('./scenes/RigCompareScene')).RigCompareScene] : GAME_SCENES;
     const devArea = flags.area === null ? null : await loadDevArea(flags.area);
-    const game = startGame(parent, type, scenes, devArea);
+    const devDecor = flags.decor ? await loadDevDecor() : null;
+    const game = startGame(parent, type, scenes, devArea, devDecor);
     if (flags.perf) (await import('./scenes/PerfOverlay')).installPerfOverlay(game);
   }
 }

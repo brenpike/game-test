@@ -6,7 +6,7 @@ import type { ReedLook } from '../art/drawScenery';
 import { bakeMorphTextures, type MorphTextures } from '../art/morphTextures';
 import { INK, LW, UI_FONT } from '../art/palette';
 import { bakePredatorTextures, type PredatorTextures } from '../art/predatorTextures';
-import { bakeTankTextures, type TankTextures } from '../art/tankTextures';
+import { bakeTankTextures, type ExtraDecorationTextures, type TankTextures } from '../art/tankTextures';
 import { bakeTreasureTextures, type TreasureTextures } from '../art/treasureTextures';
 import {
   TEX,
@@ -23,8 +23,9 @@ import {
   type SceneryTextures,
   type TexInfo,
 } from '../art/textures';
-import { BUTTON_PRESS_OFFSET, BUTTON_SQUARE, BUTTON_WIDE, type IconKind } from '../art/drawUi';
+import { BUTTON_PRESS_OFFSET, BUTTON_SQUARE, BUTTON_WIDE, ICON_SIZE, type IconKind } from '../art/drawUi';
 import { AREAS, type AreaData } from '../logic/areas';
+import type { Decoration } from '../logic/catalogue';
 import { mulberry32 } from '../logic/rng';
 import { TANK } from '../logic/tank';
 import { VIEW } from '../logic/tuning';
@@ -50,9 +51,32 @@ export const SCENE_KEYS = Object.freeze({
 export const DEV_AREA_REGISTRY_KEY = 'devArea';
 
 /**
+ * Game registry key for a dev Decoration pack: main.ts sets it (dev builds only, from `?decor`)
+ * before the boot scene runs. Never equals a `REGISTRY_KEYS`, `TRIP_REGISTRY_KEYS`,
+ * `SESSION_REGISTRY_KEY`, `SAVE_GATE_REGISTRY_KEY` or `DEV_AREA_REGISTRY_KEY` value.
+ */
+export const DEV_DECOR_REGISTRY_KEY = 'devDecor';
+
+/**
+ * Extra Decorations and the function that bakes their textures. The dev build's pack lives in
+ * src/art/devDecorationArt.ts; this file never imports it, so it never ships.
+ */
+export interface DecorationPack {
+  readonly decorations: readonly Decoration[];
+  bake(scene: Phaser.Scene, bakeScale: number, decorationPx: number): ExtraDecorationTextures;
+}
+
+/** A baked Decoration pack: its Decorations and their textures, keyed by Decoration id. */
+export interface BakedDecorationPack {
+  readonly decorations: readonly Decoration[];
+  readonly textures: ExtraDecorationTextures;
+}
+
+/**
  * Everything the boot scene prepares, handed from scene to scene as start data. `areas` is AREAS
  * plus the dev area when one was asked for; `zones` and `scenery` hold each of those areas' layout
- * and baked scenery by area id. `devAreaId` is the dev area's id, or null.
+ * and baked scenery by area id. `devAreaId` is the dev area's id, or null. `devDecor` is the dev
+ * Decoration pack baked at the tank Decoration size, or null when none was asked for.
  */
 export interface GameAssets {
   areas: readonly Readonly<AreaData>[];
@@ -67,6 +91,7 @@ export interface GameAssets {
   morph: MorphTextures;
   area: AreaTextures;
   areaMap: AreaMapTextures;
+  devDecor: BakedDecorationPack | null;
 }
 
 /** What the swim scene and its HUD start from: the game assets and the id of the area to swim in. */
@@ -111,6 +136,11 @@ const BLINK_CLOSED = 0.12;
 const BUTTON_LABEL_PX = 24;
 const SQUARE_LABEL_PX = 22;
 const BUTTON_ICON_GAP = 8;
+/** Icon size of an icon-only button in CSS px, whatever its size (tankUi ICON_TILE.iconPx). */
+const ICON_ONLY_PX = 32;
+
+/** Container data key holding a button's label, drawn or not, for focus captions. */
+export const BUTTON_LABEL_DATA_KEY = 'label';
 
 /**
  * Reads the CSS viewport from the Scale Manager. main.ts sizes the canvas to
@@ -203,8 +233,14 @@ export interface ButtonOptions {
    * label size and press offset still follow `size`. Omit for the standard baked body.
    */
   width?: number;
+  /** The button's name. Drawn unless `iconOnly`; always kept as UiButton.label and container data. */
   label: string;
   icon: IconKind;
+  /**
+   * Draw no label, only a 32 px icon (not scaled by `size`) centred on the body. A square button
+   * at size 0.75 makes the 48 x 48 tile of tankUi ICON_TILE.
+   */
+  iconOnly?: boolean;
   dpr: number;
   /** Fire on pointer down (for held, multi-touch actions) instead of pointer up. */
   pressOnDown: boolean;
@@ -214,6 +250,8 @@ export interface ButtonOptions {
 /** A baked button with an icon and a text label, laid out in CSS px. */
 export interface UiButton {
   container: Phaser.GameObjects.Container;
+  /** The button's name (`ButtonOptions.label`), also when it is not drawn. */
+  readonly label: string;
   /** Button body size in CSS px; the container origin is the body's top-left corner. */
   width: number;
   height: number;
@@ -223,12 +261,16 @@ export interface UiButton {
 
 function placeButtonContent(
   icon: Phaser.GameObjects.Image,
-  label: Phaser.GameObjects.Text,
+  label: Phaser.GameObjects.Text | null,
   shape: ButtonShape,
   width: number,
   height: number,
   offsetY: number,
 ): void {
+  if (label === null) {
+    icon.setPosition(width / 2 - icon.displayWidth / 2, height / 2 - icon.displayHeight / 2 + offsetY);
+    return;
+  }
   if (shape === 'wide') {
     const rowW = icon.displayWidth + BUTTON_ICON_GAP + label.width;
     const left = (width - rowW) / 2;
@@ -260,7 +302,23 @@ function bakeCustomWidthBodies(
   return bakeSizedButton(scene, opts.fill, opts.width / opts.size, logicalH, stdInfo.scale);
 }
 
-/** Builds a baked button (body texture + icon + label) inside a container at (0, 0). */
+/** Icon display size as a multiple of the 1x ICON_SIZE icon. */
+function buttonIconScale(opts: ButtonOptions): number {
+  if (opts.iconOnly === true) return ICON_ONLY_PX / ICON_SIZE;
+  return opts.shape === 'wide' ? opts.size : opts.size * 0.85;
+}
+
+/** The label text, or null for an icon-only button. */
+function addButtonLabel(scene: Phaser.Scene, opts: ButtonOptions): Phaser.GameObjects.Text | null {
+  if (opts.iconOnly === true) return null;
+  const labelPx = opts.shape === 'wide' ? Math.round(BUTTON_LABEL_PX * Math.min(1, opts.size)) : SQUARE_LABEL_PX;
+  return scene.add.text(0, 0, opts.label, uiTextStyle(Math.max(SQUARE_LABEL_PX, labelPx), opts.dpr));
+}
+
+/**
+ * Builds a baked button (body texture + icon + label, or only the icon when `iconOnly`) inside a
+ * container at (0, 0). The container's BUTTON_LABEL_DATA_KEY data holds the label.
+ */
 export function createButton(scene: Phaser.Scene, baked: BakedTextures, opts: ButtonOptions): UiButton {
   const dims = opts.shape === 'wide' ? BUTTON_WIDE : BUTTON_SQUARE;
   const width = opts.width ?? dims.w * opts.size;
@@ -275,14 +333,13 @@ export function createButton(scene: Phaser.Scene, baked: BakedTextures, opts: Bu
     .setOrigin(bodyInfo.originNormX, bodyInfo.originNormY)
     .setScale(opts.size / bodyInfo.scale);
   const iconInfo = baked.icons[opts.icon];
-  const iconScale = opts.shape === 'wide' ? opts.size : opts.size * 0.85;
   const icon = scene.add
     .image(0, 0, iconKey(opts.icon))
     .setOrigin(0, 0)
-    .setScale(iconScale / iconInfo.scale);
-  const labelPx = opts.shape === 'wide' ? Math.round(BUTTON_LABEL_PX * Math.min(1, opts.size)) : SQUARE_LABEL_PX;
-  const label = scene.add.text(0, 0, opts.label, uiTextStyle(Math.max(SQUARE_LABEL_PX, labelPx), opts.dpr));
-  const container = scene.add.container(0, 0, [body, icon, label]);
+    .setScale(buttonIconScale(opts) / iconInfo.scale);
+  const label = addButtonLabel(scene, opts);
+  const container = scene.add.container(0, 0, label === null ? [body, icon] : [body, icon, label]);
+  container.setData(BUTTON_LABEL_DATA_KEY, opts.label);
 
   const refresh = (): void => {
     const visual: ButtonVisual = pressed ? 'pressed' : focused ? 'focused' : 'normal';
@@ -312,6 +369,7 @@ export function createButton(scene: Phaser.Scene, baked: BakedTextures, opts: Bu
 
   return {
     container,
+    label: opts.label,
     width,
     height,
     setFocused(next: boolean): void {
@@ -319,7 +377,7 @@ export function createButton(scene: Phaser.Scene, baked: BakedTextures, opts: Bu
       refresh();
     },
     setResolution(dpr: number): void {
-      label.setResolution(dpr);
+      label?.setResolution(dpr);
       refresh();
     },
   };
@@ -378,6 +436,7 @@ export class BootScene extends Phaser.Scene {
     const { fit } = readSceneView(this.scale);
     const bakeScale = Math.min(VIEW.bakeScaleMax, Math.max(fit.bakeScale, fit.dpr));
     const devArea = this.registry.get(DEV_AREA_REGISTRY_KEY) as Readonly<AreaData> | undefined;
+    const devDecorPack = this.registry.get(DEV_DECOR_REGISTRY_KEY) as DecorationPack | undefined;
     const areas = devArea === undefined ? [...AREAS] : [...AREAS, devArea];
     const zones: Record<string, ZoneLayout> = {};
     for (const area of areas) zones[area.id] = buildZone(area.layout, DEFAULT_ZONE_SEED);
@@ -404,6 +463,10 @@ export class BootScene extends Phaser.Scene {
     });
     const area = bakeAreaTextures(this, bakeScale);
     const areaMap = bakeAreaMapTextures(this, bakeScale);
+    const devDecor: BakedDecorationPack | null =
+      devDecorPack === undefined
+        ? null
+        : { decorations: devDecorPack.decorations, textures: devDecorPack.bake(this, bakeScale, TANK.decorationPx) };
     const assets: GameAssets = {
       areas,
       zones,
@@ -417,6 +480,7 @@ export class BootScene extends Phaser.Scene {
       morph,
       area,
       areaMap,
+      devDecor,
     };
     this.scene.start(SCENE_KEYS.title, assets);
   }
