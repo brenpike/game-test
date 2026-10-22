@@ -7,6 +7,11 @@
  * rarity rule (B6), with spots farther from the main swim path picked more often (B4) and spots
  * on the rarity's risky side of the area's threats picked more often (issue #70). Every draw
  * comes from seeded trip rngs.
+ *
+ * Pools that share a spot must be the same spots: zone buildFinds gives each treasure every spot
+ * of its rarity, so a pool with fewer chosen treasures than spots is exactly a pool with room.
+ * Partly overlapping pools throw before any draw. Arbitrary overlap is not supported: it would
+ * need a matching plus a constrained spot draw, which would change how B4 and B10 pick spots.
  */
 import { RARITIES, treasureById, type Rarity } from './catalogue';
 import { distanceToPath, riskDistance, routeDistance, type Threat } from './hiding';
@@ -159,53 +164,82 @@ function knownIds(ids: readonly string[] | undefined, allowed: ReadonlySet<strin
   return new Set((ids ?? []).filter((id) => allowed.has(id) && !excluded.has(id)));
 }
 
-/** Whether two pools name a spot in common. */
-function poolsShareSpot(first: readonly string[], second: ReadonlySet<string>): boolean {
-  return first.some((spotId) => second.has(spotId));
-}
-
-/** How many of `others`, `find` itself aside, have a pool sharing a spot with `find`'s. */
-function rivalCount(find: FindSpawn, others: readonly FindSpawn[]): number {
-  const pool = new Set(find.pool);
-  return others.filter((other) => other !== find && poolsShareSpot(other.pool, pool)).length;
+/** The pool group of each unbanked find by id, and the spot count of each group by group index. */
+interface PoolGroups {
+  groupById: Map<string, number>;
+  sizes: number[];
 }
 
 /**
- * Whether `find` can still be placed: its pool has more spots than the chosen treasures whose
- * pools share a spot with it, and adding it leaves each of those chosen treasures the same room.
- * A pool names each spot once (validateFinds) and each treasure takes one spot, so a treasure's
- * spots can only run out under the treasures sharing its pool; with fewer of those than spots,
- * every chosen treasure keeps a free spot in any placing order.
+ * Groups the unbanked finds, in order, by pool: finds whose pools are the same spots (in any
+ * order) share a group, a find with an empty pool has a group of its own with no spots, and each
+ * group's size is its spot count. Pools that share a spot must be the same spots, as zone
+ * buildFinds gives them, so a group with fewer chosen treasures than spots is exactly a pool with
+ * room. Throws when a pool partly overlaps an earlier find's pool, naming the find that first
+ * claimed that pool. Draws nothing.
  */
-function hasRoom(find: FindSpawn, chosen: readonly FindSpawn[]): boolean {
-  const pool = new Set(find.pool);
-  const rivals = chosen.filter((other) => poolsShareSpot(other.pool, pool));
-  return find.pool.length > rivals.length && rivals.every((other) => other.pool.length > rivalCount(other, chosen) + 1);
+function poolGroups(unbanked: readonly FindSpawn[]): PoolGroups {
+  const groupBySpot = new Map<string, number>();
+  const ownerIds: string[] = [];
+  const groupById = new Map<string, number>();
+  const sizes: number[] = [];
+  for (const find of unbanked) {
+    const firstGroup = find.pool.length === 0 ? undefined : groupBySpot.get(find.pool[0]);
+    if (firstGroup === undefined) {
+      const claimedGroup = find.pool.map((spotId) => groupBySpot.get(spotId)).find((group) => group !== undefined);
+      if (claimedGroup !== undefined) {
+        throw new Error(`placeTreasures: ${find.id} pool partly overlaps the pool of ${ownerIds[claimedGroup]}`);
+      }
+      const group = sizes.length;
+      for (const spotId of find.pool) groupBySpot.set(spotId, group);
+      ownerIds.push(find.id);
+      sizes.push(find.pool.length);
+      groupById.set(find.id, group);
+      continue;
+    }
+    const samePool =
+      find.pool.length === sizes[firstGroup] && find.pool.every((spotId) => groupBySpot.get(spotId) === firstGroup);
+    if (!samePool) {
+      throw new Error(`placeTreasures: ${find.id} pool partly overlaps the pool of ${ownerIds[firstGroup]}`);
+    }
+    groupById.set(find.id, firstGroup);
+  }
+  return { groupById, sizes };
 }
 
 /**
  * Fills each slot with an unchosen unbanked treasure of its rarity that has room, or of the first
  * rarity in its fallback order that has one, picked uniformly in catalogue order by `pickRng`. A
- * slot with nothing left stays empty and draws nothing. Returns `extras` followed by the picks.
+ * treasure has room while its pool group (poolGroups) holds fewer chosen treasures, the extras
+ * included, than spots; each pick takes one place in its group. A slot with nothing left stays
+ * empty and draws nothing. Returns `extras` followed by the picks.
  */
 function fillSlots(
   slotRarities: readonly Rarity[],
   unbanked: readonly FindSpawn[],
   rarityById: ReadonlyMap<string, Rarity>,
+  groups: PoolGroups,
   extras: readonly FindSpawn[],
   pickRng: () => number,
 ): FindSpawn[] {
   const chosen = [...extras];
   const chosenIds = new Set(chosen.map((find) => find.id));
+  const usedCounts = groups.sizes.map(() => 0);
+  const groupOf = (find: FindSpawn): number => groups.groupById.get(find.id) as number;
+  for (const extra of extras) usedCounts[groupOf(extra)] += 1;
   for (const slot of slotRarities) {
     for (const rarity of [slot, ...fallbackOrder(slot)]) {
       const candidates = unbanked.filter(
-        (find) => !chosenIds.has(find.id) && rarityById.get(find.id) === rarity && hasRoom(find, chosen),
+        (find) =>
+          !chosenIds.has(find.id) &&
+          rarityById.get(find.id) === rarity &&
+          usedCounts[groupOf(find)] < groups.sizes[groupOf(find)],
       );
       if (candidates.length === 0) continue;
       const pick = candidates[Math.floor(pickRng() * candidates.length)];
       chosen.push(pick);
       chosenIds.add(pick.id);
+      usedCounts[groupOf(pick)] += 1;
       break;
     }
   }
@@ -321,9 +355,14 @@ function drawWeighted(free: readonly string[], weights: ReadonlyMap<string, numb
  * nothing left stays empty. Banked, unknown and duplicate ids in the options are ignored. Each
  * placed treasure takes a weighted free spot from its pool (pool order, spots already used
  * skipped); a spot's weight is its hiddenness weight times its risk weight for the treasure's
- * rarity. Throws when the slot tuning is invalid (rollSlotRarities), an unbanked find is listed
- * twice, a pool names a spot twice or an unknown spot, an unbanked find is not a catalogue
- * treasure, or a pool has no free spot left, which only the extras and must-place ids can cause.
+ * rarity. Pools that share a spot must be the same spots (zone buildFinds gives each treasure
+ * every spot of its rarity), so a pool with fewer chosen treasures than spots is exactly a pool
+ * with room; arbitrary overlap is not supported, as it would need a matching plus a constrained
+ * spot draw that would change B4 and B10 spot picking. Throws, in this order, when an unbanked
+ * find is listed twice, a pool names a spot twice or an unknown spot, an unbanked find is not a
+ * catalogue treasure, or an unbanked find's pool partly overlaps another's (all before any draw);
+ * when the slot tuning is invalid (rollSlotRarities); or when a pool has no free spot left, which
+ * can only happen when the extras and must-place ids alone outnumber their pool's spots.
  */
 export function placeTreasures(
   finds: readonly FindSpawn[],
@@ -338,13 +377,14 @@ export function placeTreasures(
   const bankedIds = new Set(banked);
   const unbanked = finds.filter((find) => !bankedIds.has(find.id));
   const rarityById = validateFinds(unbanked, spotById);
+  const groups = poolGroups(unbanked);
   const unbankedIds = new Set(unbanked.map((find) => find.id));
   const extraIds = knownIds(options.extras, unbankedIds, new Set());
   for (const id of knownIds(options.mustPlace, unbankedIds, extraIds)) extraIds.add(id);
 
   const extras = unbanked.filter((find) => extraIds.has(find.id));
   const pickRng = mulberry32((tripSeed ^ PICK_STREAM_SALT) >>> 0);
-  const chosen = fillSlots(rollSlotRarities(tuning, tripSeed), unbanked, rarityById, extras, pickRng);
+  const chosen = fillSlots(rollSlotRarities(tuning, tripSeed), unbanked, rarityById, groups, extras, pickRng);
   const placedIds = new Set(chosen.map((find) => find.id));
 
   const usedSpotIds = new Set<string>();

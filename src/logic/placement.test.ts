@@ -499,24 +499,65 @@ describe('placeTreasures', () => {
     }
   });
 
-  it('never lets a slot pick leave a chosen treasure no free spot when pools overlap', () => {
+  it('throws before any draw when pools partly overlap, unless the overlapping find is banked', () => {
     const spots = ['a', 'b', 'c', 'd', 'e', 'f'].map(
       (name, i): HidingSpot => ({ id: `test/spot-${name}`, cover: 'reeds', rarity: 'common', container: false, x: i * 100, y: 0 }),
     );
     const [first, second, third] = idsOfRarity('common');
-    const finds = [
+    const crossing = [
       { id: first, pool: ['test/spot-a', 'test/spot-c', 'test/spot-d'] },
       { id: second, pool: ['test/spot-b', 'test/spot-e', 'test/spot-f'] },
       { id: third, pool: ['test/spot-a', 'test/spot-b'] },
     ];
+    const shrinking = [
+      { id: first, pool: ['test/spot-a', 'test/spot-b'] },
+      { id: second, pool: ['test/spot-a'] },
+    ];
+    const growing = [
+      { id: first, pool: ['test/spot-a'] },
+      { id: second, pool: ['test/spot-a', 'test/spot-b'] },
+    ];
     const allCommon: TripTreasureTuning = { ...TRIP_TREASURES, slots: 3, chance: { common: 1, rare: 0, epic: 0, legendary: 0 } };
+    const noSlots: TripTreasureTuning = { ...allCommon, slots: 0 };
+    for (const finds of [crossing, shrinking, growing]) {
+      for (const tuning of [allCommon, noSlots]) {
+        expect(() => placeTreasures(finds, spots, [], 1, { tuning })).toThrow(/partly overlaps/);
+      }
+    }
+    expect(() => placeTreasures(crossing, spots, [], 1, { tuning: allCommon })).toThrow(
+      `placeTreasures: ${third} pool partly overlaps the pool of ${first}`,
+    );
+    expect(() => placeTreasures(shrinking, spots, [], 1)).toThrow(`placeTreasures: ${second} pool partly overlaps the pool of ${first}`);
+    expect(() => placeTreasures(growing, spots, [], 1)).toThrow(`placeTreasures: ${second} pool partly overlaps the pool of ${first}`);
+    for (const seed of TRIP_SEEDS) {
+      expect(placeTreasures(crossing, spots, [third], seed, { tuning: allCommon })).toHaveLength(2);
+      expect(placeTreasures(shrinking, spots, [second], seed, { tuning: allCommon })).toHaveLength(1);
+      expect(placeTreasures(growing, spots, [first], seed, { tuning: allCommon })).toHaveLength(1);
+    }
+  });
+
+  it('fills identical pools in any order and disjoint pools each to exactly min(treasures, spots)', () => {
+    const spots = ['a', 'b', 'c'].map(
+      (name, i): HidingSpot => ({ id: `test/spot-${name}`, cover: 'reeds', rarity: 'common', container: false, x: i * 100, y: 0 }),
+    );
+    const [first, second, third, fourth] = idsOfRarity('common');
+    const finds = [
+      { id: first, pool: ['test/spot-a', 'test/spot-b'] },
+      { id: second, pool: ['test/spot-b', 'test/spot-a'] },
+      { id: third, pool: ['test/spot-a', 'test/spot-b'] },
+      { id: fourth, pool: ['test/spot-c'] },
+    ];
+    const sharedIds = [first, second, third];
+    const allCommon: TripTreasureTuning = { ...TRIP_TREASURES, slots: 4, chance: { common: 1, rare: 0, epic: 0, legendary: 0 } };
     for (const seed of SEEDS_300) {
       const placements = placeTreasures(finds, spots, [], seed, { tuning: allCommon });
-      expect(placements).toHaveLength(2);
-      expect(new Set(placements.map((placed) => placed.spotId)).size).toBe(2);
+      expect(placements).toHaveLength(3);
+      expect(new Set(placements.map((placed) => placed.spotId)).size).toBe(3);
       for (const placed of placements) {
         expect(finds.find((find) => find.id === placed.id)?.pool).toContain(placed.spotId);
       }
+      expect(placements.filter((placed) => sharedIds.includes(placed.id))).toHaveLength(2);
+      expect(placements.map((placed) => placed.id)).toContain(fourth);
     }
   });
 
