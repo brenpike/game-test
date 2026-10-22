@@ -12,6 +12,21 @@
  * of its rarity, so a pool with fewer chosen treasures than spots is exactly a pool with room.
  * Partly overlapping pools throw before any draw. Arbitrary overlap is not supported: it would
  * need a matching plus a constrained spot draw, which would change how B4 and B10 pick spots.
+ *
+ * Recorded residual (review findings 3e528bd8 and cb9c327f; both behaviors predate treasure slots):
+ * - Pools are trusted for rarity. validateFinds checks that a pool's spots exist and are listed
+ *   once, not that each spot has the treasure's rarity. Every pool in play comes from zone
+ *   buildFinds (every spot of the treasure's rarity, in spot order) and is copied unchanged into
+ *   the trip; saves never keep pools. zone.test.ts and devAreas.test.ts check each pool spot's
+ *   rarity for every shipped zone, so a wrong pool only comes from a hand-built test pool. At
+ *   worst it hides a treasure under another rarity's rules: no crash, no save change. Rejected: a
+ *   label check here does not check B6 or B10, and building pools from rarity here would leave
+ *   FindSpawn.pool as a second copy that placement ignores and remove the narrow pools that many
+ *   placement and trip tests use. One source for pools belongs in zone buildFinds and FindSpawn.
+ * - Extras and must-place ids that are not unbanked finds are ignored, not thrown on. newTrip
+ *   passes back the whole Trip Bag, axolotl ids included. areas.test.ts checks every area's
+ *   special treasure is a find its zone hides. At worst a bad id is not placed that trip.
+ *   Rejected: throwing would turn a data slip into a trip that cannot start.
  */
 import { RARITIES, treasureById, type Rarity } from './catalogue';
 import { distanceToPath, riskDistance, routeDistance, type Threat } from './hiding';
@@ -140,7 +155,7 @@ function rarityOf(id: string): Rarity {
 
 /**
  * Each unbanked find's rarity by id; throws on a find listed twice, a pool naming a spot twice or
- * an unknown spot, or a non-catalogue find.
+ * an unknown spot, or a non-catalogue find. See the recorded residual in the module header.
  */
 function validateFinds(unbanked: readonly FindSpawn[], spotById: ReadonlyMap<string, HidingSpot>): Map<string, Rarity> {
   const rarityById = new Map<string, Rarity>();
