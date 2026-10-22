@@ -15,15 +15,15 @@ Version 0.24.0 is playable in one canal zone:
 - Use Tail Dash, ride the current, and eat snacks.
 - Dodge three tilapia. A hit costs a leg, and legs regrow. If you lose all four, you are carried home, you lose the finds you had not banked, and the snacks start over.
 - Find hidden treasures: Decorations, Wearables, and Paint shells for Dream colours. Each has a rarity badge, and hint sparkles help you look. Once revealed or found, a treasure glows faintly in its rarity's colour; it never glows while hidden.
-- Each trip hides only a few treasures, in hiding spots that shuffle each trip. Rarer treasures hide nearer the tilapia, so they are harder to get.
+- Each trip in Area 1 has 6 treasure slots, and chance picks each slot's rarity, so no trip is sure to have an Epic or a Legendary. Treasures you lost, and the Toy boat until you bank it, come on top of the slots. They hide in hiding spots that shuffle each trip. Rarer treasures hide nearer the tilapia, so they are harder to get.
 - The snack counter shows how many snacks are left. The last 3 snacks sparkle, and snacks drift slowly.
 - The exit opens when every snack is eaten. While it is closed, it shows a padlock sign and a message.
 - Swim into the open exit at the far end of the canal to beat Area 1 and bank the Trip Bag. A rescued axolotl following you moves into your Home Tank.
-- Earn up to 3 stars: reach the exit, find the Castle tower, and rescue the stranded axolotl or keep all four legs.
+- Earn up to 3 stars: reach the exit, find the Toy boat, and rescue the stranded axolotl or keep all four legs.
 - Your best stars show on the "Area beaten" card and in the Home Tank. They are saved on your device.
 - Eaten snacks come back after you are carried home or beat the area. They stay eaten after Go home.
 - Bank your finds at the Home Spot to keep them safe.
-- Rescue a stranded axolotl in the canal. Each trip, one real morph you do not have yet waits looking a little lost. Swim to it and it follows you; bring it to the Home Spot or the open exit and it moves into your Home Tank.
+- Rescue a stranded axolotl in the canal. On about 3 trips in 10, one real morph you do not have yet waits looking a little lost. Swim to it and it follows you; bring it to the Home Spot or the open exit and it moves into your Home Tank. If you meet one and do not bring it home, it waits for you on your next trip.
 - Meet the tilapia: the first time you swim near one, a fact card tells you about it.
 - Visit your Home Tank after the title and after every trip. A trip-end message tells you how the trip went.
 - Watch your axolotl swim around the Home Tank. With reduced motion it stays still.

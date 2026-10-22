@@ -1,15 +1,17 @@
 /**
- * Per-trip treasure placement. The trip seed picks only a few unbanked treasures by rarity share
- * and per-trip chance (PRD B4); lost treasures and the area's special treasure are always placed
- * (B4, B9); banked treasures never are (B9). Each picked treasure takes a free spot from its own
- * pool, every one of which meets its rarity rule (B6), with spots farther from the main swim path
- * picked more often (B4) and spots on the rarity's risky side of the area's threats picked more
- * often (issue #70). Every draw comes from seeded trip rngs.
+ * Per-trip treasure placement. A trip has a fixed number of treasure slots; the trip seed rolls a
+ * rarity for each slot from the per-slot chances and fills it with an unbanked treasure of that
+ * rarity, or of the nearest rarity that has one left (PRD B4). Lost treasures and the area's
+ * special treasure are always placed on top of the slots (B4, B9); banked treasures never are
+ * (B9). Each placed treasure takes a free spot from its own pool, every one of which meets its
+ * rarity rule (B6), with spots farther from the main swim path picked more often (B4) and spots
+ * on the rarity's risky side of the area's threats picked more often (issue #70). Every draw
+ * comes from seeded trip rngs.
  */
 import { RARITIES, treasureById, type Rarity } from './catalogue';
 import { distanceToPath, riskDistance, routeDistance, type Threat } from './hiding';
 import { mulberry32 } from './rng';
-import { RISK, TRIP_TREASURES, type RarerRarity, type RiskSide, type RiskTuning, type TripTreasureTuning } from './tuning';
+import { RISK, TRIP_TREASURES, type RiskSide, type RiskTuning, type TripTreasureTuning } from './tuning';
 import type { FindSpawn, HidingSpot, Point, TilapiaRoute } from './zone';
 
 /** One treasure placed for a trip. `sealed` starts equal to `container` and is true while the pot is intact. */
@@ -27,9 +29,9 @@ export type RarityCounts = Record<Rarity, number>;
 
 /** Extra inputs to placeTreasures. */
 export interface PlacementOptions {
-  /** Treasures lost on the last trip: always placed, taking their rarity's share first and placed past it if needed. */
+  /** Treasures lost on the last trip: always placed while unbanked, on top of the treasure slots. */
   mustPlace?: readonly string[];
-  /** The area's special treasure: always placed while unbanked, as an extra outside the mix. */
+  /** The area's special treasure: always placed while unbanked, on top of the treasure slots. */
   extras?: readonly string[];
   /** Trip treasure tuning; TRIP_TREASURES when absent. */
   tuning?: TripTreasureTuning;
@@ -53,9 +55,8 @@ export interface PlacementOptions {
 
 export const DEFAULT_TRIP_SEED = 0x7a1b5eed;
 
-const CHANCE_STREAM_SALT = 0x85ebca6b;
+const SLOT_STREAM_SALT = 0x85ebca6b;
 const PICK_STREAM_SALT = 0x9e3779b9;
-const RARER_CARRY_ORDER: readonly RarerRarity[] = Object.freeze(['legendary', 'epic', 'rare']);
 const RARITIES_RAREST_FIRST: readonly Rarity[] = Object.freeze([...RARITIES].reverse());
 
 /** The trip seed after this one; deterministic uint32. */
@@ -63,58 +64,37 @@ export function nextTripSeed(seed: number): number {
   return Math.floor(mulberry32(seed)() * 0x100000000) >>> 0;
 }
 
-function emptyCounts(): RarityCounts {
-  return { common: 0, rare: 0, epic: 0, legendary: 0 };
+/**
+ * The rarity of one treasure slot for a roll from 0 (inclusive) to 1: Common, then Rare, then Epic
+ * each take their chance in turn, a roll equal to an edge going to the next rarity, and the
+ * rarest rarity with a chance above 0 takes what is left. Throws when no rarity has a chance.
+ */
+export function slotRarity(chance: Readonly<Record<Rarity, number>>, roll: number): Rarity {
+  let edge = 0;
+  for (const rarity of RARITIES.slice(0, -1)) {
+    edge += chance[rarity];
+    if (roll < edge) return rarity;
+  }
+  const rarest = RARITIES_RAREST_FIRST.find((rarity) => chance[rarity] > 0);
+  if (rarest === undefined) {
+    throw new Error('slotRarity: no rarity has a chance above 0');
+  }
+  return rarest;
+}
+
+/** The rarity of each of this trip's treasure slots: exactly `tuning.slots` draws from the trip's slot rng. */
+export function rollSlotRarities(tuning: Pick<TripTreasureTuning, 'slots' | 'chance'>, tripSeed: number): Rarity[] {
+  const rng = mulberry32((tripSeed ^ SLOT_STREAM_SALT) >>> 0);
+  return Array.from({ length: tuning.slots }, () => slotRarity(tuning.chance, rng()));
 }
 
 /**
- * Each rarity's share of one trip from its chance rolls. Legendary, then Epic, then Rare is in
- * when its roll is below its chance; a missed share carries to the next more common rarity that
- * is in, ending at Common. The shares always add up to the mix total.
+ * The rarities a slot of `rarity` falls back to when none of its own is left: the more common
+ * rarities, nearest first, then the rarer ones, nearest first.
  */
-export function rollShares(
-  tuning: Pick<TripTreasureTuning, 'mix' | 'chance'>,
-  rolls: Readonly<Record<RarerRarity, number>>,
-): RarityCounts {
-  const shares = emptyCounts();
-  let carry = 0;
-  for (const rarity of RARER_CARRY_ORDER) {
-    if (rolls[rarity] < tuning.chance[rarity]) {
-      shares[rarity] = tuning.mix[rarity] + carry;
-      carry = 0;
-    } else {
-      carry += tuning.mix[rarity];
-    }
-  }
-  shares.common = tuning.mix.common + carry;
-  return shares;
-}
-
-function giftOrder(rarity: Rarity): Rarity[] {
+export function fallbackOrder(rarity: Rarity): Rarity[] {
   const index = RARITIES.indexOf(rarity);
   return [...RARITIES.slice(0, index).reverse(), ...RARITIES.slice(index + 1)];
-}
-
-/**
- * Caps each wanted share at what is left of that rarity, rarest first. The excess goes to more
- * common rarities first, then rarer ones, nearest first, each only up to what it has left; any
- * leftover is dropped. The shares add up to the smaller of the wanted and available totals.
- */
-export function rarityShares(wanted: Readonly<RarityCounts>, available: Readonly<RarityCounts>): RarityCounts {
-  const shares: RarityCounts = { ...wanted };
-  for (const rarity of RARITIES_RAREST_FIRST) {
-    let excess = shares[rarity] - available[rarity];
-    if (excess <= 0) {
-      continue;
-    }
-    shares[rarity] = available[rarity];
-    for (const other of giftOrder(rarity)) {
-      const gift = Math.min(excess, Math.max(0, available[other] - shares[other]));
-      shares[other] += gift;
-      excess -= gift;
-    }
-  }
-  return shares;
 }
 
 function rarityOf(id: string): Rarity {
@@ -142,21 +122,48 @@ function knownIds(ids: readonly string[] | undefined, allowed: ReadonlySet<strin
   return new Set((ids ?? []).filter((id) => allowed.has(id) && !excluded.has(id)));
 }
 
-function rollChances(tripSeed: number): Record<RarerRarity, number> {
-  const rng = mulberry32((tripSeed ^ CHANCE_STREAM_SALT) >>> 0);
-  const rare = rng();
-  const epic = rng();
-  const legendary = rng();
-  return { rare, epic, legendary };
+/** Whether two pools name a spot in common. */
+function poolsShareSpot(first: readonly string[], second: ReadonlySet<string>): boolean {
+  return first.some((spotId) => second.has(spotId));
 }
 
-function pickSome(candidates: readonly string[], count: number, rng: () => number): string[] {
-  const deck = [...candidates];
-  for (let i = 0; i < count; i++) {
-    const j = i + Math.floor(rng() * (deck.length - i));
-    [deck[i], deck[j]] = [deck[j], deck[i]];
+/**
+ * Whether `find` can still be placed: its pool has more spots than the chosen treasures whose
+ * pools share a spot with it.
+ */
+function hasRoom(find: FindSpawn, chosen: readonly FindSpawn[]): boolean {
+  const pool = new Set(find.pool);
+  const rivals = chosen.filter((other) => poolsShareSpot(other.pool, pool)).length;
+  return find.pool.length > rivals;
+}
+
+/**
+ * Fills each slot with an unchosen unbanked treasure of its rarity that has room, or of the first
+ * rarity in its fallback order that has one, picked uniformly in catalogue order by `pickRng`. A
+ * slot with nothing left stays empty and draws nothing. Returns `extras` followed by the picks.
+ */
+function fillSlots(
+  slotRarities: readonly Rarity[],
+  unbanked: readonly FindSpawn[],
+  rarityById: ReadonlyMap<string, Rarity>,
+  extras: readonly FindSpawn[],
+  pickRng: () => number,
+): FindSpawn[] {
+  const chosen = [...extras];
+  const chosenIds = new Set(chosen.map((find) => find.id));
+  for (const slot of slotRarities) {
+    for (const rarity of [slot, ...fallbackOrder(slot)]) {
+      const candidates = unbanked.filter(
+        (find) => !chosenIds.has(find.id) && rarityById.get(find.id) === rarity && hasRoom(find, chosen),
+      );
+      if (candidates.length === 0) continue;
+      const pick = candidates[Math.floor(pickRng() * candidates.length)];
+      chosen.push(pick);
+      chosenIds.add(pick.id);
+      break;
+    }
   }
-  return deck.slice(0, count);
+  return chosen;
 }
 
 /** The spot's distance to the main path, computed once per spot and kept in `distanceById`. */
@@ -261,14 +268,15 @@ function drawWeighted(free: readonly string[], weights: ReadonlyMap<string, numb
 }
 
 /**
- * Picks this trip's treasures and places each in catalogue order. Extras (unbanked ones only) are
- * always placed outside the mix. The rest share the mix by rarity (rollShares, then rarityShares
- * against what is left unbanked); must-place ids take their rarity's share first and are placed
- * past it if needed; the remaining share is picked at random. Banked, unknown and duplicate ids
- * in the options are ignored. Each placed treasure takes a weighted free spot from its pool (pool
- * order, spots already used skipped); a spot's weight is its hiddenness weight times its risk
- * weight for the treasure's rarity. Throws when a pool names an unknown spot, an unbanked find
- * is not a catalogue treasure, or a pool has no free spot left.
+ * Picks this trip's treasures and places each in catalogue order. Extras and must-place ids
+ * (unbanked ones only, each once) are always placed, on top of the treasure slots. Each slot
+ * (rollSlotRarities) then takes an unbanked treasure not yet picked whose pool still has room, of
+ * the slot's rarity or else of the first rarity in its fallback order that has one; a slot with
+ * nothing left stays empty. Banked, unknown and duplicate ids in the options are ignored. Each
+ * placed treasure takes a weighted free spot from its pool (pool order, spots already used
+ * skipped); a spot's weight is its hiddenness weight times its risk weight for the treasure's
+ * rarity. Throws when a pool names an unknown spot, an unbanked find is not a catalogue treasure,
+ * or a pool has no free spot left, which only the extras and must-place ids can cause.
  */
 export function placeTreasures(
   finds: readonly FindSpawn[],
@@ -285,27 +293,12 @@ export function placeTreasures(
   const rarityById = validateFinds(unbanked, spotById);
   const unbankedIds = new Set(unbanked.map((find) => find.id));
   const extraIds = knownIds(options.extras, unbankedIds, new Set());
-  const mustIds = knownIds(options.mustPlace, unbankedIds, extraIds);
+  for (const id of knownIds(options.mustPlace, unbankedIds, extraIds)) extraIds.add(id);
 
-  const available = emptyCounts();
-  const mustCounts = emptyCounts();
-  for (const find of unbanked) {
-    if (extraIds.has(find.id)) continue;
-    const rarity = rarityById.get(find.id) as Rarity;
-    available[rarity] += 1;
-    if (mustIds.has(find.id)) mustCounts[rarity] += 1;
-  }
-  const shares = rarityShares(rollShares(tuning, rollChances(tripSeed)), available);
-
-  const placedIds = new Set([...extraIds, ...mustIds]);
+  const extras = unbanked.filter((find) => extraIds.has(find.id));
   const pickRng = mulberry32((tripSeed ^ PICK_STREAM_SALT) >>> 0);
-  for (const rarity of RARITIES) {
-    const candidates = unbanked
-      .filter((find) => !placedIds.has(find.id) && rarityById.get(find.id) === rarity)
-      .map((find) => find.id);
-    const needed = Math.max(0, shares[rarity] - mustCounts[rarity]);
-    for (const id of pickSome(candidates, needed, pickRng)) placedIds.add(id);
-  }
+  const chosen = fillSlots(rollSlotRarities(tuning, tripSeed), unbanked, rarityById, extras, pickRng);
+  const placedIds = new Set(chosen.map((find) => find.id));
 
   const usedSpotIds = new Set<string>();
   const distanceById = new Map<string, number>();

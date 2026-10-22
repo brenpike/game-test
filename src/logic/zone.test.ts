@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { areaById } from './areas';
-import { CANAL_TREASURES, RARITIES, treasureById } from './catalogue';
+import { CANAL_TREASURES, RARITIES, treasureById, type Rarity } from './catalogue';
 import { coversAt, inReeds, isDeep, routeDistance, spotMatchesLabels, turnDistance } from './hiding';
 import { inSafeArea } from './tilapia';
-import { FINDS, RISK, TILAPIA, treasuresPerTrip, tripTreasureTuning } from './tuning';
+import { createTrip } from './trip';
+import { FINDS, LEGS, RISK, TILAPIA } from './tuning';
 import {
   BED_TOP,
   CANAL_AREA_ID,
@@ -393,27 +393,33 @@ describe('finds', () => {
     }
   });
 
-  it.each(ALL_SEEDS)('fits in each pool the most treasures of one rarity a trip can place, plus one spare, for seed %i', (seed) => {
+  it.each(ALL_SEEDS)('gives every find a non-empty pool of spots of its own rarity for seed %i', (seed) => {
     const zone = buildCanalZone(seed);
     const spotById = new Map(zone.spots.map((spot) => [spot.id, spot]));
-    const perTrip = treasuresPerTrip(tripTreasureTuning(zone.areaId));
-    const specialId = areaById(zone.areaId)?.specialTreasureId;
     for (const find of zone.finds) {
-      const treasure = treasureById(find.id);
-      expect(treasure).toBeDefined();
-      const rarity = treasure?.rarity;
-      const sameRarity = zone.finds.filter((other) => treasureById(other.id)?.rarity === rarity).length;
-      const specialOfRarity = zone.finds.some((other) => other.id === specialId && treasureById(other.id)?.rarity === rarity) ? 1 : 0;
-      // INVARIANT: the base share is not the cap. Missed rarer shares pass down to Common and
-      // shares above what is left pass to any rarity with room, so one rarity can take every
-      // treasure per trip; lost treasures never exceed what the last trip placed, and the special
-      // treasure is placed outside the mix, so it adds one more.
-      const mostOfRarity = Math.min(perTrip + specialOfRarity, sameRarity);
+      const rarity = treasureById(find.id)?.rarity;
+      expect(rarity).toBeDefined();
       expect(find.pool.length).toBeGreaterThan(0);
-      expect(find.pool.length).toBeGreaterThanOrEqual(mostOfRarity + 1);
       for (const spotId of find.pool) {
         expect(spotById.get(spotId)?.rarity).toBe(rarity);
       }
+    }
+  });
+
+  it.each(ALL_SEEDS)('fits every trip in its pools over trip seeds 1..25, with and without lost treasures, for seed %i', (seed) => {
+    const zone = buildCanalZone(seed);
+    const poolSpots = (rarity: Rarity): number =>
+      new Set(zone.finds.filter((find) => treasureById(find.id)?.rarity === rarity).flatMap((find) => find.pool)).size;
+    let lost: string[] = [];
+    for (let tripSeed = 1; tripSeed <= 25; tripSeed++) {
+      for (const returnedFinds of [[], lost]) {
+        const placed = createTrip(zone, LEGS, [], tripSeed, { returnedFinds }).placed;
+        for (const rarity of RARITIES) {
+          const ofRarity = placed.filter((find) => treasureById(find.id)?.rarity === rarity).length;
+          expect(ofRarity, `${rarity} on trip seed ${tripSeed}`).toBeLessThanOrEqual(poolSpots(rarity));
+        }
+      }
+      lost = createTrip(zone, LEGS, [], tripSeed).placed.map((find) => find.id);
     }
   });
 });

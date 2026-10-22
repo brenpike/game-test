@@ -1,15 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AREAS, CANAL_AREA, areaById } from './areas';
 import { CANAL_TREASURES, RARITIES, treasureById, type Rarity } from './catalogue';
-import { DEV_TEST_AREA } from './devAreas';
+import { DEV_AREAS, DEV_TEST_AREA } from './devAreas';
 import { coversAt, distanceToPath, inCave, meetsRarity, pastCurrent, routeDistance, zoneThreats, type Threat } from './hiding';
 import { axolotlFindId } from './morphs';
 import {
   DEFAULT_TRIP_SEED,
+  fallbackOrder,
   nextTripSeed,
   placeTreasures,
-  rarityShares,
-  rollShares,
+  rollSlotRarities,
+  slotRarity,
   type PlacedFind,
   type PlacementOptions,
   type RarityCounts,
@@ -21,7 +22,6 @@ import {
   TILAPIA,
   TRIP_TREASURES,
   TRIP_TREASURES_BY_AREA,
-  treasuresPerTrip,
   tripTreasureTuning,
   type RiskTuning,
   type TripTreasureTuning,
@@ -33,10 +33,8 @@ const TRIP_SEEDS = Array.from({ length: 25 }, (_, i) => i + 1);
 const SEEDS_300 = Array.from({ length: 300 }, (_, i) => i + 1);
 const SEEDS_1000 = Array.from({ length: 1000 }, (_, i) => i + 1);
 const SEEDS_2000 = Array.from({ length: 2000 }, (_, i) => i + 1);
-const PER_TRIP = treasuresPerTrip(TRIP_TREASURES);
-const RATE_TOLERANCE = 0.05;
-const ALL_IN = { rare: 0, epic: 0, legendary: 0 };
-const MISS = 0.99;
+const PER_TRIP = TRIP_TREASURES.slots;
+const HALVES: Readonly<Record<Rarity, number>> = { common: 0.5, rare: 0.25, epic: 0.125, legendary: 0.125 };
 
 function placeAll(
   zone: ZoneLayout,
@@ -77,8 +75,35 @@ function counts(common: number, rare: number, epic: number, legendary: number): 
   return { common, rare, epic, legendary };
 }
 
-function sumCounts(shares: Readonly<RarityCounts>): number {
-  return shares.common + shares.rare + shares.epic + shares.legendary;
+/**
+ * The rarity count the slots should fill for a trip: each rolled slot takes its own rarity or the
+ * first in its fallback order with a treasure left that its pool has room for. Assumes one pool
+ * per rarity, as in the canal.
+ */
+function expectedSlotCounts(zone: ZoneLayout, banked: readonly string[], extras: readonly string[], tripSeed: number): RarityCounts {
+  const left = counts(0, 0, 0, 0);
+  for (const rarity of RARITIES) {
+    const ofRarity = zone.finds.filter((find) => rarityOf(find.id) === rarity);
+    const free = ofRarity.filter((find) => !banked.includes(find.id) && !extras.includes(find.id)).length;
+    const room = (ofRarity[0]?.pool.length ?? 0) - extras.filter((id) => rarityOf(id) === rarity).length;
+    left[rarity] = Math.min(free, room);
+  }
+  const filled = counts(0, 0, 0, 0);
+  for (const slot of rollSlotRarities(TRIP_TREASURES, tripSeed)) {
+    const rarity = [slot, ...fallbackOrder(slot)].find((candidate) => left[candidate] > 0);
+    if (rarity === undefined) continue;
+    filled[rarity] += 1;
+    left[rarity] -= 1;
+  }
+  return filled;
+}
+
+/** Each placement's spot is in its own find's pool. */
+function expectInOwnPools(zone: ZoneLayout, placements: readonly PlacedFind[]): void {
+  const poolById = new Map(zone.finds.map((find) => [find.id, find.pool]));
+  for (const placed of placements) {
+    expect(poolById.get(placed.id), placed.id).toContain(placed.spotId);
+  }
 }
 
 function usesAllHidingKinds(zone: ZoneLayout, placements: readonly PlacedFind[]): boolean {
@@ -133,10 +158,6 @@ function expectValidLayout(zone: ZoneLayout, placements: readonly PlacedFind[]):
   });
 }
 
-function tripRate(zone: ZoneLayout, seeds: readonly number[], hasIt: (placements: PlacedFind[]) => boolean, options?: PlacementOptions): number {
-  return seeds.filter((seed) => hasIt(placeAll(zone, seed, [], options))).length / seeds.length;
-}
-
 function meanDistanceByRarity(zone: ZoneLayout, seeds: readonly number[], options: PlacementOptions): RarityCounts {
   const total = counts(0, 0, 0, 0);
   const seen = counts(0, 0, 0, 0);
@@ -176,50 +197,59 @@ describe('nextTripSeed', () => {
   });
 });
 
-describe('rollShares', () => {
-  it.each([
-    ['all in', ALL_IN, counts(2, 1, 1, 1)],
-    ['all missed', { rare: MISS, epic: MISS, legendary: MISS }, counts(5, 0, 0, 0)],
-    ['Legendary missed', { rare: 0, epic: 0, legendary: MISS }, counts(2, 1, 2, 0)],
-    ['Epic missed', { rare: 0, epic: MISS, legendary: 0 }, counts(2, 2, 0, 1)],
-    ['Epic and Legendary missed', { rare: 0, epic: MISS, legendary: MISS }, counts(2, 3, 0, 0)],
-    ['Rare missed', { rare: MISS, epic: 0, legendary: 0 }, counts(3, 0, 1, 1)],
-    ['Rare and Epic missed', { rare: MISS, epic: MISS, legendary: 0 }, counts(4, 0, 0, 1)],
-  ])('gives the default mix shares when %s', (_label, rolls, expected) => {
-    const shares = rollShares(TRIP_TREASURES, rolls);
-    expect(shares).toEqual(expected);
-    expect(sumCounts(shares)).toBe(PER_TRIP);
+describe('slotRarity', () => {
+  it.each<[number, Rarity]>([
+    [0, 'common'],
+    [0.4999, 'common'],
+    [0.5, 'rare'],
+    [0.7499, 'rare'],
+    [0.75, 'epic'],
+    [0.8749, 'epic'],
+    [0.875, 'legendary'],
+    [0.9999, 'legendary'],
+  ])('gives roll %f the rarity %s, Common then Rare then Epic, an edge going to the next rarity', (roll, rarity) => {
+    expect(slotRarity(HALVES, roll)).toBe(rarity);
   });
 
-  it('counts a roll equal to the chance as missed', () => {
-    expect(rollShares(TRIP_TREASURES, { ...TRIP_TREASURES.chance })).toEqual(counts(PER_TRIP, 0, 0, 0));
+  it('gives what is left to the rarest rarity with a chance above 0', () => {
+    expect(slotRarity({ common: 0.5, rare: 0.25, epic: 0, legendary: 0 }, 0.9)).toBe('rare');
+    expect(slotRarity({ common: 0.5, rare: 0, epic: 0.5, legendary: 0 }, 0.5)).toBe('epic');
+    expect(slotRarity({ common: 1, rare: 0, epic: 0, legendary: 0 }, 0.9999)).toBe('common');
+    expect(slotRarity(TRIP_TREASURES.chance, 0.9999)).toBe('legendary');
+  });
+
+  it('throws when no rarity has a chance', () => {
+    expect(() => slotRarity({ common: 0, rare: 0, epic: 0, legendary: 0 }, 0.5)).toThrow('no rarity has a chance');
   });
 });
 
-describe('rarityShares', () => {
-  it('keeps the wanted shares when plenty is left', () => {
-    expect(rarityShares(counts(2, 1, 1, 1), counts(9, 9, 9, 9))).toEqual(counts(2, 1, 1, 1));
+describe('rollSlotRarities', () => {
+  it.each([1, 3, 6, 10])('rolls exactly %i slots', (slots) => {
+    for (const seed of TRIP_SEEDS) {
+      expect(rollSlotRarities({ ...TRIP_TREASURES, slots }, seed)).toHaveLength(slots);
+    }
   });
 
-  it('pushes a short Common share to rarer rarities, nearest first', () => {
-    expect(rarityShares(counts(2, 1, 1, 1), counts(1, 9, 9, 9))).toEqual(counts(1, 2, 1, 1));
-    expect(rarityShares(counts(2, 1, 1, 1), counts(0, 1, 9, 9))).toEqual(counts(0, 1, 3, 1));
+  it('gives the same rarities for the same seed, varies across seeds, and draws the slots in turn', () => {
+    const rolls = new Set<string>();
+    for (const seed of TRIP_SEEDS) {
+      const rarities = rollSlotRarities(TRIP_TREASURES, seed);
+      expect(rollSlotRarities(TRIP_TREASURES, seed)).toEqual(rarities);
+      expect(rollSlotRarities({ ...TRIP_TREASURES, slots: 3 }, seed)).toEqual(rarities.slice(0, 3));
+      rolls.add(rarities.join());
+    }
+    expect(rolls.size).toBeGreaterThanOrEqual(2);
   });
+});
 
-  it('passes a Legendary share to Epic when no Legendary is left', () => {
-    expect(rarityShares(counts(2, 1, 1, 1), counts(9, 9, 9, 0))).toEqual(counts(2, 1, 2, 0));
-  });
-
-  it('gives the excess to more common rarities before rarer ones', () => {
-    expect(rarityShares(counts(2, 3, 0, 0), counts(9, 1, 9, 9))).toEqual(counts(4, 1, 0, 0));
-    expect(rarityShares(counts(2, 3, 0, 0), counts(2, 1, 9, 9))).toEqual(counts(2, 1, 2, 0));
-  });
-
-  it('places everything left when fewer than the trip total are left', () => {
-    const available = counts(1, 0, 1, 1);
-    const shares = rarityShares(counts(2, 1, 1, 1), available);
-    expect(shares).toEqual(available);
-    expect(sumCounts(shares)).toBe(sumCounts(available));
+describe('fallbackOrder', () => {
+  it.each<[Rarity, Rarity[]]>([
+    ['common', ['rare', 'epic', 'legendary']],
+    ['rare', ['common', 'epic', 'legendary']],
+    ['epic', ['rare', 'common', 'legendary']],
+    ['legendary', ['epic', 'rare', 'common']],
+  ])('falls back from %s to more common rarities nearest first, then rarer ones', (rarity, order) => {
+    expect(fallbackOrder(rarity)).toEqual(order);
   });
 });
 
@@ -244,12 +274,13 @@ describe('placeTreasures', () => {
     }
   });
 
-  it('places exactly the trip total in valid spots for every trip seed with nothing banked', () => {
+  it('fills exactly the slots, each in a free spot of its own pool, for every trip seed with nothing banked', () => {
     expect(zone.finds.length).toBeGreaterThan(PER_TRIP);
     for (const seed of SEEDS_300) {
       const placements = placeAll(zone, seed);
       expect(placements).toHaveLength(PER_TRIP);
       expectValidLayout(zone, placements);
+      expectInOwnPools(zone, placements);
     }
   });
 
@@ -261,30 +292,84 @@ describe('placeTreasures', () => {
     }
   });
 
-  it('hides rarer treasures less often, keeps Common on every trip and matches each chance (B4)', () => {
+  it('gives each rarity its chance of the slots over 2000 trip seeds, rarer ones less often (B4)', () => {
     const totals = counts(0, 0, 0, 0);
-    const trips = counts(0, 0, 0, 0);
     for (const seed of SEEDS_2000) {
       const perTrip = countByRarity(placeAll(zone, seed));
-      for (const rarity of RARITIES) {
-        totals[rarity] += perTrip[rarity];
-        if (perTrip[rarity] > 0) trips[rarity] += 1;
-      }
+      for (const rarity of RARITIES) totals[rarity] += perTrip[rarity];
+    }
+    const slots = SEEDS_2000.length * PER_TRIP;
+    for (const rarity of RARITIES) {
+      const chance = TRIP_TREASURES.chance[rarity];
+      const tolerance = 4 * Math.sqrt((chance * (1 - chance)) / slots);
+      expect(Math.abs(totals[rarity] / slots - chance), rarity).toBeLessThanOrEqual(tolerance);
     }
     expect(totals.legendary).toBeLessThan(totals.epic);
     expect(totals.epic).toBeLessThan(totals.rare);
     expect(totals.rare).toBeLessThan(totals.common);
-    expect(trips.common).toBe(SEEDS_2000.length);
-    expect(Math.abs(trips.rare / SEEDS_2000.length - TRIP_TREASURES.chance.rare)).toBeLessThanOrEqual(RATE_TOLERANCE);
-    expect(Math.abs(trips.epic / SEEDS_2000.length - TRIP_TREASURES.chance.epic)).toBeLessThanOrEqual(RATE_TOLERANCE);
-    expect(Math.abs(trips.legendary / SEEDS_2000.length - TRIP_TREASURES.chance.legendary)).toBeLessThanOrEqual(
-      RATE_TOLERANCE,
-    );
   });
 
-  it('places every zone find on some trip seed', () => {
-    const seen = new Set(SEEDS_300.flatMap((seed) => placeAll(zone, seed).map((placed) => placed.id)));
-    expect([...seen].sort()).toEqual(zone.finds.map((find) => find.id).sort());
+  it('places every catalogue treasure on some trip seed over 2000 seeds', () => {
+    const seen = new Set(SEEDS_2000.flatMap((seed) => placeAll(zone, seed).map((placed) => placed.id)));
+    expect([...seen].sort()).toEqual(CANAL_TREASURES.map((treasure) => treasure.id).sort());
+  });
+
+  it('has trips with no Epic and trips with no Legendary, with the special placed (createTrip)', () => {
+    const trips = SEEDS_300.map((seed) => createTrip(zone, LEGS, [], seed).placed);
+    expect(trips.every((placed) => placed.some((find) => find.id === specialId))).toBe(true);
+    expect(trips.some((placed) => !placed.some((find) => rarityOf(find.id) === 'epic'))).toBe(true);
+    expect(trips.some((placed) => !placed.some((find) => rarityOf(find.id) === 'legendary'))).toBe(true);
+  });
+
+  it.each<[string, readonly Rarity[]]>([
+    ['every Legendary', ['legendary']],
+    ['every Common', ['common']],
+    ['every Common and Rare', ['common', 'rare']],
+  ])('fills a slot whose rarity has nothing left from its fallback order, with %s banked', (_label, rarities) => {
+    const banked = rarities.flatMap(idsOfRarity);
+    for (const seed of SEEDS_300) {
+      const placements = placeAll(zone, seed, banked);
+      expect(placements.some((placed) => banked.includes(placed.id))).toBe(false);
+      expect(countByRarity(placements)).toEqual(expectedSlotCounts(zone, banked, [], seed));
+      expectValidLayout(zone, placements);
+    }
+  });
+
+  it('falls back from a rarity whose pool is full: one Rare spot, two Rares', () => {
+    const rareSpot: HidingSpot = { id: 'test/spot-rare', cover: 'reeds', rarity: 'rare', container: false, x: 0, y: 0 };
+    const commonSpot: HidingSpot = { ...rareSpot, id: 'test/spot-common', rarity: 'common', x: 100 };
+    const finds = [
+      { id: 'canal/pond-plant', pool: [commonSpot.id] },
+      { id: 'canal/shell-necklace', pool: [rareSpot.id] },
+      { id: 'canal/diving-tank', pool: [rareSpot.id] },
+    ];
+    const allRare: TripTreasureTuning = { ...TRIP_TREASURES, slots: 2, chance: { common: 0, rare: 1, epic: 0, legendary: 0 } };
+    for (const seed of TRIP_SEEDS) {
+      const placements = placeTreasures(finds, [commonSpot, rareSpot], [], seed, { tuning: allRare });
+      expect(countByRarity(placements)).toEqual(counts(1, 1, 0, 0));
+      expect(new Set(placements.map((placed) => placed.spotId)).size).toBe(2);
+    }
+  });
+
+  it('places the special and lost treasures as extras on top of the slots, which they never use up', () => {
+    const extras = [specialId, lostLegendary];
+    for (const seed of SEEDS_300) {
+      const placements = placeAll(zone, seed, [], { mustPlace: [lostLegendary], extras: [specialId] });
+      expect(placements).toHaveLength(PER_TRIP + extras.length);
+      for (const id of extras) expect(placements.map((placed) => placed.id)).toContain(id);
+      const slotted = placements.filter((placed) => !extras.includes(placed.id));
+      expect(countByRarity(slotted)).toEqual(expectedSlotCounts(zone, [], extras, seed));
+      expectValidLayout(zone, placements);
+      expectInOwnPools(zone, placements);
+    }
+  });
+
+  it('counts a lost treasure that is also the special once', () => {
+    for (const seed of TRIP_SEEDS) {
+      const placements = placeAll(zone, seed, [], { mustPlace: [specialId], extras: [specialId] });
+      expect(placements.filter((placed) => placed.id === specialId)).toHaveLength(1);
+      expect(placements).toEqual(placeAll(zone, seed, [], { extras: [specialId] }));
+    }
   });
 
   it('uses all five hiding kinds for some trip seed with nothing banked', () => {
@@ -315,18 +400,13 @@ describe('placeTreasures', () => {
     }
   });
 
-  it('always places a lost Legendary, as the only Legendary, inside or past its share', () => {
-    const totals = new Set<number>();
+  it('always places a lost Legendary on top of the slots', () => {
     for (const seed of SEEDS_300) {
       const placements = placeAll(zone, seed, [], { mustPlace: [lostLegendary] });
       expect(placements.map((placed) => placed.id)).toContain(lostLegendary);
-      expect(placements.filter((placed) => rarityOf(placed.id) === 'legendary').map((placed) => placed.id)).toEqual([
-        lostLegendary,
-      ]);
+      expect(placements).toHaveLength(PER_TRIP + 1);
       expectValidLayout(zone, placements);
-      totals.add(placements.length);
     }
-    expect([...totals].sort()).toEqual([PER_TRIP, PER_TRIP + 1]);
   });
 
   it('ignores banked, unknown and duplicate lost ids', () => {
@@ -339,20 +419,18 @@ describe('placeTreasures', () => {
     }
   });
 
-  it('places lost treasures past their rarity share', () => {
+  it('places several lost treasures of one rarity, each on top of the slots', () => {
     const lost = legendaryIds.slice(0, 3);
     for (const seed of SEEDS_300) {
       const placements = placeAll(zone, seed, [], { mustPlace: lost });
-      const legendaries = placements.filter((placed) => rarityOf(placed.id) === 'legendary').map((placed) => placed.id);
-      expect(legendaries).toEqual(lost);
-      expect(placements.length - legendaries.length).toBeGreaterThanOrEqual(PER_TRIP - 1);
-      expect(placements.length - legendaries.length).toBeLessThanOrEqual(PER_TRIP);
+      const ids = placements.map((placed) => placed.id);
+      for (const id of lost) expect(ids).toContain(id);
+      expect(placements).toHaveLength(PER_TRIP + lost.length);
       expectValidLayout(zone, placements);
     }
   });
 
-  it('always places the special treasure as an extra outside the mix while it is unbanked', () => {
-    const otherSameRarity = idsOfRarity(specialRarity).filter((id) => id !== specialId);
+  it('always places the special treasure as an extra on top of the slots while it is unbanked', () => {
     const options: PlacementOptions = { extras: [specialId] };
     for (const seed of SEEDS_300) {
       const placements = placeAll(zone, seed, [], options);
@@ -363,13 +441,7 @@ describe('placeTreasures', () => {
       expect(afterBanked).toHaveLength(PER_TRIP);
       expect(afterBanked.map((placed) => placed.id)).not.toContain(specialId);
     }
-    const otherRate = tripRate(
-      zone,
-      SEEDS_2000,
-      (placements) => placements.some((placed) => otherSameRarity.includes(placed.id)),
-      options,
-    );
-    expect(Math.abs(otherRate - TRIP_TREASURES.chance.epic)).toBeLessThanOrEqual(RATE_TOLERANCE);
+    expect(['common', 'rare']).toContain(specialRarity);
   });
 
   it('never places banked treasures', () => {
@@ -382,22 +454,29 @@ describe('placeTreasures', () => {
     expect(placeAll(zone, 1, CANAL_TREASURES.map((treasure) => treasure.id))).toEqual([]);
   });
 
-  it('places every unbanked treasure when no more than the trip total are left', () => {
-    const left = zone.finds.slice(0, PER_TRIP - 1).map((find) => find.id);
-    const banked = zone.finds.map((find) => find.id).filter((id) => !left.includes(id));
-    for (const tripSeed of TRIP_SEEDS) {
-      expect(placeAll(zone, tripSeed, banked).map((placed) => placed.id)).toEqual(left);
+  it('places every unbanked treasure when there are enough slots for all of them', () => {
+    for (const count of [PER_TRIP - 1, PER_TRIP]) {
+      const left = zone.finds.slice(0, count).map((find) => find.id);
+      const banked = zone.finds.map((find) => find.id).filter((id) => !left.includes(id));
+      for (const tripSeed of TRIP_SEEDS) {
+        expect(placeAll(zone, tripSeed, banked).map((placed) => placed.id)).toEqual(left);
+      }
     }
   });
 
-  it('throws when a pool has no free spot left', () => {
+  it('throws when the extras alone leave a pool no free spot, and slots never overfill one', () => {
     const spot: HidingSpot = { id: 'canal/spot-a', cover: 'reeds', rarity: 'common', container: false, x: 0, y: 0 };
     const finds = [
       { id: 'canal/pond-plant', pool: [spot.id] },
       { id: 'canal/sun-hat', pool: [spot.id] },
     ];
-    expect(() => placeTreasures(finds, [spot], [], 1)).toThrow('no free spot left for canal/sun-hat');
-    expect(placeTreasures(finds, [spot], ['canal/pond-plant'], 1)).toHaveLength(1);
+    const ids = finds.map((find) => find.id);
+    expect(() => placeTreasures(finds, [spot], [], 1, { extras: ids })).toThrow('no free spot left for canal/sun-hat');
+    expect(() => placeTreasures(finds, [spot], [], 1, { mustPlace: ids })).toThrow('no free spot left for canal/sun-hat');
+    expect(placeTreasures(finds, [spot], ['canal/pond-plant'], 1, { extras: ids })).toHaveLength(1);
+    for (const seed of TRIP_SEEDS) {
+      expect(placeTreasures(finds, [spot], [], seed)).toHaveLength(1);
+    }
   });
 
   it('throws when a pool names an unknown spot', () => {
@@ -417,6 +496,8 @@ describe('placeTreasures', () => {
     placeAll(zone, DEFAULT_TRIP_SEED);
     placeAll(zone, DEFAULT_TRIP_SEED, [], { mustPlace: [lostLegendary], extras: [specialId], mainPath: zone.mainPath });
     nextTripSeed(DEFAULT_TRIP_SEED);
+    rollSlotRarities(TRIP_TREASURES, DEFAULT_TRIP_SEED);
+    slotRarity(TRIP_TREASURES.chance, 0.5);
     expect(random).not.toHaveBeenCalled();
   });
 });
@@ -623,22 +704,22 @@ describe('createTrip area option', () => {
 
 describe('trip treasure tuning', () => {
   function expectSaneTuning(tuning: TripTreasureTuning): void {
+    expect(Number.isInteger(tuning.slots)).toBe(true);
+    expect(tuning.slots).toBeGreaterThanOrEqual(1);
     for (const rarity of RARITIES) {
-      expect(Number.isInteger(tuning.mix[rarity])).toBe(true);
-      expect(tuning.mix[rarity]).toBeGreaterThanOrEqual(0);
+      expect(tuning.chance[rarity]).toBeGreaterThanOrEqual(0);
+      expect(tuning.chance[rarity]).toBeLessThanOrEqual(1);
     }
-    for (const chance of Object.values(tuning.chance)) {
-      expect(chance).toBeGreaterThanOrEqual(0);
-      expect(chance).toBeLessThanOrEqual(1);
-    }
+    expect(RARITIES.reduce((sum, rarity) => sum + tuning.chance[rarity], 0)).toBeCloseTo(1);
     expect(tuning.leastHiddenWeight).toBeGreaterThanOrEqual(1);
     expect(tuning.bestHiddenWeight).toBeGreaterThanOrEqual(tuning.leastHiddenWeight);
   }
 
-  it('has sane defaults and a sane tuning for every area', () => {
+  it('has sane defaults and a sane tuning for every area and dev area', () => {
     expectSaneTuning(TRIP_TREASURES);
-    expect(treasuresPerTrip(TRIP_TREASURES)).toBe(5);
-    for (const area of AREAS) {
+    expect(TRIP_TREASURES.slots).toBe(6);
+    expect(TRIP_TREASURES.chance).toEqual({ common: 0.65, rare: 0.27, epic: 0.06, legendary: 0.02 });
+    for (const area of [...AREAS, ...DEV_AREAS]) {
       expectSaneTuning(tripTreasureTuning(area.id));
     }
   });
@@ -649,15 +730,22 @@ describe('trip treasure tuning', () => {
     }
   });
 
-  it('merges an area override per rarity and gives the default for an unknown area', () => {
-    const overrides = { reef: { mix: { epic: 2 }, chance: { legendary: 0.1 }, bestHiddenWeight: 4 } };
+  it('merges an area override field by field and gives the default for an unknown area', () => {
+    const overrides = { reef: { slots: 8, bestHiddenWeight: 4 } };
     const reef = tripTreasureTuning('reef', overrides);
-    expect(reef.mix).toEqual({ ...TRIP_TREASURES.mix, epic: 2 });
-    expect(reef.chance).toEqual({ ...TRIP_TREASURES.chance, legendary: 0.1 });
+    expect(reef.slots).toBe(8);
+    expect(reef.chance).toEqual(TRIP_TREASURES.chance);
     expect(reef.leastHiddenWeight).toBe(TRIP_TREASURES.leastHiddenWeight);
     expect(reef.bestHiddenWeight).toBe(4);
-    expect(treasuresPerTrip(reef)).toBe(treasuresPerTrip(TRIP_TREASURES) + 1);
     expect(tripTreasureTuning('nowhere', overrides)).toEqual(TRIP_TREASURES);
     expect(tripTreasureTuning('constructor', overrides)).toEqual(TRIP_TREASURES);
+  });
+
+  it('replaces the whole chance record with an override chance', () => {
+    const chance = { common: 1, rare: 0, epic: 0, legendary: 0 };
+    const reef = tripTreasureTuning('reef', { reef: { chance } });
+    expect(reef.chance).toEqual(chance);
+    expect(reef.slots).toBe(TRIP_TREASURES.slots);
+    expectSaneTuning(reef);
   });
 });

@@ -37,7 +37,8 @@ import { axolotlFindId, type RealMorphId } from './morphs';
 import { DEFAULT_TRIP_SEED, nextTripSeed, placeTreasures, type PlacedFind, type PlacementOptions } from './placement';
 import { RESCUE, pickStranding, type Stranding } from './rescue';
 import { TRIP_EVENTS, TRIP_REGISTRY_KEYS, type TripSnapshot } from './tripEvents';
-import { CARRY, FINDS, LEGS, SWIM, TILAPIA, treasuresPerTrip, tripTreasureTuning } from './tuning';
+import { withStars } from './stars';
+import { CARRY, FINDS, LEGS, SWIM, TILAPIA, tripTreasureTuning } from './tuning';
 import { buildCanalZone, swimBounds, type HidingSpot, type Point } from './zone';
 
 const DT = 1 / 60;
@@ -463,24 +464,24 @@ describe('risk-weighted placement (issue #70)', () => {
 describe('treasures per trip (B4, B9, H6)', () => {
   const SEEDS = Array.from({ length: 200 }, (_, i) => i + 1);
   const SPECIAL = CANAL_AREA.specialTreasureId;
-  const perTrip = treasuresPerTrip(tripTreasureTuning(zone.areaId));
+  const RETURNED_COMMONS = 3;
+  const perTrip = tripTreasureTuning(zone.areaId).slots;
 
   function placedIds(trip: TripState): string[] {
     return trip.placed.map((find) => find.id);
   }
 
-  function commonsPastShare(): string[] {
+  function returnedCommons(): string[] {
     const commons = zone.finds.map((find) => find.id).filter((id) => treasureById(id)?.rarity === 'common');
-    return commons.slice(0, tripTreasureTuning(zone.areaId).mix.common + 1);
+    return commons.slice(0, RETURNED_COMMONS);
   }
 
-  it('places the treasures per trip plus the unbanked special, and no more than the returned overflow', () => {
-    const returned = commonsPastShare();
+  it('places the treasure slots plus the unbanked special, and the returned treasures on top', () => {
+    const returned = returnedCommons();
     for (const seed of SEEDS) {
       expect(createTrip(zone, LEGS, [], seed).placed).toHaveLength(perTrip + 1);
       const withReturned = createTrip(zone, LEGS, [], seed, { returnedFinds: returned }).placed;
-      expect(withReturned.length).toBeGreaterThanOrEqual(perTrip + 1);
-      expect(withReturned.length).toBeLessThanOrEqual(perTrip + 1 + returned.length);
+      expect(withReturned).toHaveLength(perTrip + 1 + returned.length);
     }
   });
 
@@ -493,9 +494,9 @@ describe('treasures per trip (B4, B9, H6)', () => {
     }
   });
 
-  it('always places the returned treasures, even several of one rarity past its share', () => {
-    const returned = commonsPastShare();
-    expect(returned.length).toBeGreaterThan(tripTreasureTuning(zone.areaId).mix.common);
+  it('always places the returned treasures, even several of one rarity', () => {
+    const returned = returnedCommons();
+    expect(returned).toHaveLength(RETURNED_COMMONS);
     for (const seed of SEEDS) {
       const ids = placedIds(createTrip(zone, LEGS, [], seed, { returnedFinds: returned }));
       for (const id of returned) expect(ids).toContain(id);
@@ -1651,6 +1652,18 @@ describe('beatArea (H5, H6)', () => {
     const canal = createTrip(zone, LEGS, [CANAL_AREA.specialTreasureId]);
     const canalCtx: StarContext = { specialTreasureId: CANAL_AREA.specialTreasureId };
     expect(beatArea(canal, canalCtx).state.ending?.stars?.special).toBe(true);
+  });
+
+  it('misses the special star this trip when only the old canal special is banked, and keeps an earlier one', () => {
+    const special = CANAL_AREA.specialTreasureId;
+    expect(special).toBe('canal/toy-boat');
+    const oldSpecialOnly = createTrip(zone, LEGS, ['canal/castle-tower']);
+    expect(oldSpecialOnly.holdings.banked).not.toContain(special);
+    const earned = beatArea(oldSpecialOnly, { specialTreasureId: special }).state.ending?.stars;
+    expect(earned?.special).toBe(false);
+    const earnedStars = earned as NonNullable<typeof earned>;
+    const kept = withStars({ [CANAL_AREA.id]: { exit: true, special: true, legsOrRescue: false } }, CANAL_AREA.id, earnedStars);
+    expect(kept[CANAL_AREA.id].special).toBe(true);
   });
 
   it('misses the special star when the special is not owned', () => {

@@ -60,7 +60,7 @@ export const CANAL_AREA: Readonly<AreaData> = Object.freeze({
    * every hiding spot by more than the exit radius plus the find pickup radius.
    */
   exit: Object.freeze({ x: 1850, y: 200, radius: 40 }),
-  specialTreasureId: 'canal/castle-tower',
+  specialTreasureId: 'canal/toy-boat',
   /**
    * Provisional slow drift (PRD H4): peak speed about 11.9 px/s, below the 20 px/s a one-leg
    * axolotl makes against the strongest current. Peak offset about 17.9 px, less than the gap

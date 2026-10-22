@@ -1,6 +1,7 @@
 /**
- * Stranded axolotl rescue rules (PRD C2 to C6): which morph waits where this trip, whether it is
- * waiting, following or safe, how it follows the player and where it rests once banked.
+ * Stranded axolotl rescue rules (PRD C2 to C6): whether an axolotl is stranded this trip, which
+ * morph waits where, whether it is waiting, following or safe, how it follows the player and
+ * where it rests once banked.
  */
 import type { AxolotlSex } from './axolotlLook';
 import { axolotlFindId, rescuableMorphs, type RealMorphId } from './morphs';
@@ -75,7 +76,11 @@ export interface RescueState {
 /** Waiting at its place, following the player (in the Trip Bag), or banked for good. */
 export type RescueStatus = 'waiting' | 'following' | 'safe';
 
+/** Chance from 0 to 1 that a trip with nobody waiting has a stranded axolotl (PRD Tuning values). */
+export const STRANDING_CHANCE = 0.3;
+
 const STRANDING_SEED_SALT = 0x5743a11d;
+const STRANDING_CHANCE_SALT = 0xc2b2ae35;
 /** Smallest |x velocity| in px/s before the follower's facing may flip. */
 const FACING_HYSTERESIS = 2;
 
@@ -102,6 +107,29 @@ export function pickStranding(
   const place = places[Math.floor(rng() * places.length)];
   const sex: AxolotlSex = rng() < 0.5 ? 'boy' : 'girl';
   return createStranding(morph, sex, place, false);
+}
+
+/** This trip's stranding roll from 0 (inclusive) to 1: one draw from its own trip seed stream. */
+export function strandingRoll(tripSeed: number): number {
+  return mulberry32((tripSeed ^ STRANDING_CHANCE_SALT) >>> 0)();
+}
+
+/**
+ * This trip's stranded axolotl, or null. A valid waiting record always comes back met, with no
+ * roll (C5); null when pickStranding gives null (C6). Otherwise the axolotl pickStranding picks
+ * is stranded only when strandingRoll is below `chance`. A waiting record whose morph is now owned
+ * or whose place is unknown counts as nobody waiting, so the roll applies.
+ */
+export function tripStranding(
+  owned: readonly RealMorphId[],
+  waiting: WaitingStranded | null,
+  places: readonly StrandingPlace[],
+  tripSeed: number,
+  chance: number = STRANDING_CHANCE,
+): Stranding | null {
+  const stranding = pickStranding(owned, waiting, places, tripSeed);
+  if (stranding === null || stranding.met) return stranding;
+  return strandingRoll(tripSeed) < chance ? stranding : null;
 }
 
 /** A rescue waiting at its stranding place, with an empty trail, facing left. */

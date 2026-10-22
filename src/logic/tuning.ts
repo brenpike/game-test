@@ -130,25 +130,25 @@ export interface FindTuning {
   containerRadius: number;
 }
 
-/** A rarity that has a per-trip chance; Common is always in. */
-export type RarerRarity = Exclude<Rarity, 'common'>;
-
-/** How many treasures one trip hides and how the trip picks their rarities (PRD B4, Tuning values). */
+/** How many treasure slots one trip has and how each slot picks its rarity (PRD B4, Tuning values). */
 export interface TripTreasureTuning {
-  /** Each rarity's share of one trip; the shares add up to the treasures per trip. */
-  mix: Readonly<Record<Rarity, number>>;
-  /** Chance from 0 to 1 that a rarity gets its share on a trip; a missed share moves to the next more common rarity that is in. */
-  chance: Readonly<Record<RarerRarity, number>>;
+  /** Treasure slots per trip; lost treasures and the special treasure come on top of the slots. */
+  slots: number;
+  /** Chance from 0 to 1 that one slot is each rarity; the chances add up to 1. */
+  chance: Readonly<Record<Rarity, number>>;
   /** Spot weight for the pool spot nearest the main swim path. */
   leastHiddenWeight: number;
   /** Spot weight for the pool spot farthest from the main swim path; weights between are linear in distance. */
   bestHiddenWeight: number;
 }
 
-/** One area's changes to TRIP_TREASURES; anything left out keeps the default (PRD B4). */
+/**
+ * One area's changes to TRIP_TREASURES; anything left out keeps the default (PRD B4). A given
+ * `chance` replaces the whole default chance record, so the chances still add up to 1.
+ */
 export interface TripTreasureOverride {
-  mix?: Partial<Record<Rarity, number>>;
-  chance?: Partial<Record<RarerRarity, number>>;
+  slots?: number;
+  chance?: Readonly<Record<Rarity, number>>;
   leastHiddenWeight?: number;
   bestHiddenWeight?: number;
 }
@@ -272,47 +272,47 @@ export const FINDS: Readonly<FindTuning> = Object.freeze({
 });
 
 /**
- * Provisional trip treasure values from the PRD Tuning values (B4): 2 Common, 1 Rare, 1 Epic and
- * 1 Legendary, so a trip holds 5; Rare is in on 80% of trips, Epic on 50% and Legendary on 25%.
- * The farthest spot from the main swim path is picked 3 times as often as the nearest.
+ * Provisional trip treasure values from the PRD Tuning values (B4): 6 treasure slots per trip,
+ * each slot Common 65%, Rare 27%, Epic 6% or Legendary 2%. The farthest spot from the main swim
+ * path is picked 3 times as often as the nearest.
  */
 export const TRIP_TREASURES: Readonly<TripTreasureTuning> = Object.freeze({
-  mix: Object.freeze({ common: 2, rare: 1, epic: 1, legendary: 1 }),
-  chance: Object.freeze({ rare: 0.8, epic: 0.5, legendary: 0.25 }),
+  slots: 6,
+  chance: Object.freeze({ common: 0.65, rare: 0.27, epic: 0.06, legendary: 0.02 }),
   leastHiddenWeight: 1,
   bestHiddenWeight: 3,
 });
 
-/** Per-area changes to TRIP_TREASURES, keyed by area id. An area with no entry uses the default (PRD B4). */
-export const TRIP_TREASURES_BY_AREA: Readonly<Record<string, Readonly<TripTreasureOverride>>> = Object.freeze({});
+/**
+ * Per-area changes to TRIP_TREASURES, keyed by area id. An area with no entry uses the default (PRD B4).
+ * The canal key is the literal area id because this file cannot import zone.ts.
+ */
+export const TRIP_TREASURES_BY_AREA: Readonly<Record<string, Readonly<TripTreasureOverride>>> = Object.freeze({
+  canal: Object.freeze({ slots: 6 }),
+});
 
-/** The trip treasure tuning for an area: TRIP_TREASURES with that area's override merged per rarity. */
+/**
+ * The trip treasure tuning for an area: TRIP_TREASURES with that area's override merged field by
+ * field, except `chance`, which an override replaces whole.
+ */
 export function tripTreasureTuning(
   areaId: string,
   overrides: Readonly<Record<string, Readonly<TripTreasureOverride>>> = TRIP_TREASURES_BY_AREA,
 ): TripTreasureTuning {
   const override: Readonly<TripTreasureOverride> = Object.hasOwn(overrides, areaId) ? overrides[areaId] : {};
   const base = TRIP_TREASURES;
+  const chance = override.chance ?? base.chance;
   return Object.freeze({
-    mix: Object.freeze({
-      common: override.mix?.common ?? base.mix.common,
-      rare: override.mix?.rare ?? base.mix.rare,
-      epic: override.mix?.epic ?? base.mix.epic,
-      legendary: override.mix?.legendary ?? base.mix.legendary,
-    }),
+    slots: override.slots ?? base.slots,
     chance: Object.freeze({
-      rare: override.chance?.rare ?? base.chance.rare,
-      epic: override.chance?.epic ?? base.chance.epic,
-      legendary: override.chance?.legendary ?? base.chance.legendary,
+      common: chance.common,
+      rare: chance.rare,
+      epic: chance.epic,
+      legendary: chance.legendary,
     }),
     leastHiddenWeight: override.leastHiddenWeight ?? base.leastHiddenWeight,
     bestHiddenWeight: override.bestHiddenWeight ?? base.bestHiddenWeight,
   });
-}
-
-/** Treasures one trip hides before lost treasures and the special treasure: the sum of the mix. */
-export function treasuresPerTrip(tuning: Pick<TripTreasureTuning, 'mix'>): number {
-  return tuning.mix.common + tuning.mix.rare + tuning.mix.epic + tuning.mix.legendary;
 }
 
 /**
