@@ -3,10 +3,13 @@ import { CARD, SMALLEST_CANVAS, cardTightTextWidth, factCardBodyWrapWidths, isSu
 import type { HudView, Rect, Size } from './hudLayout';
 import {
   REFUGE_BACK_BUTTON,
+  REFUGE_NEXT_LABEL,
+  REFUGE_NEXT_TILE,
   REFUGE_PAN_STEP,
-  REFUGE_PAN_TILE,
   REFUGE_PAN_TOP_MIN_W,
   REFUGE_PICTURE,
+  REFUGE_PREV_LABEL,
+  REFUGE_PREV_TILE,
   REFUGE_SECTION_W,
   REFUGE_SEE_AGAIN_TILE,
   REFUGE_SLOT_H,
@@ -39,6 +42,9 @@ const GAP = 12;
 const MIN_TARGET_PX = 48;
 const PRIMARY_PX = 64;
 const BUTTON_H = 64;
+/** A square tile's label size and the pad each side of a label-sized body (art guide 8, Button width). */
+const TILE_LABEL_PX = 22;
+const LABEL_PAD = 6;
 const EPS = 1e-6;
 
 const TITLE_TEXT = 'Xochimilco refuge';
@@ -171,18 +177,30 @@ describe('refuge section parts', () => {
     expect(REFUGE_SECTION_W).toBe(200);
   });
 
-  it('sizes the tiles and Back: See it again 171 x 64, Prev and Next 64 x 64, Back 200 x 64', () => {
+  it('sizes the tiles and Back: See it again 171 x 64, Previous 118 x 64, Next 65 x 64, Back 200 x 64', () => {
     expect(REFUGE_SEE_AGAIN_TILE).toEqual({ w: 171, h: PRIMARY_PX });
-    expect(REFUGE_PAN_TILE).toEqual({ w: PRIMARY_PX, h: PRIMARY_PX });
+    expect(REFUGE_PREV_TILE).toEqual({ w: 118, h: PRIMARY_PX });
+    expect(REFUGE_NEXT_TILE).toEqual({ w: 65, h: PRIMARY_PX });
     expect(REFUGE_BACK_BUTTON).toEqual({ w: 200, h: PRIMARY_PX });
     expect(REFUGE_SLOT_H).toBe(PRIMARY_PX);
     expect(REFUGE_SEE_AGAIN_TILE.w).toBeLessThanOrEqual(REFUGE_SECTION_W);
   });
 
-  it('puts the pan tiles beside Back from 384 px wide', () => {
-    expect(REFUGE_PAN_TOP_MIN_W).toBe(384);
-    expect(refugeLayout({ cssW: 384, cssH: 440 }, ONE_SECTION, measureFor(ONE_SECTION)).panAtBottom).toBe(false);
-    expect(refugeLayout({ cssW: 383, cssH: 440 }, ONE_SECTION, measureFor(ONE_SECTION)).panAtBottom).toBe(true);
+  it('labels the pan tiles Previous and Next, as wide as their labels need (art guide 8, Button width)', () => {
+    expect(REFUGE_PREV_LABEL).toBe('Previous');
+    expect(REFUGE_NEXT_LABEL).toBe('Next');
+    for (const [label, tile] of [
+      [REFUGE_PREV_LABEL, REFUGE_PREV_TILE],
+      [REFUGE_NEXT_LABEL, REFUGE_NEXT_TILE],
+    ] as const) {
+      expect(tile.w).toBe(Math.max(PRIMARY_PX, Math.ceil(label.length * BOLD_EM * TILE_LABEL_PX + 2 * LABEL_PAD - EPS)));
+    }
+  });
+
+  it('puts the pan tiles beside Back from 439 px wide: 16 + Back 200 + 12 + Previous 118 + 12 + Next 65 + 16', () => {
+    expect(REFUGE_PAN_TOP_MIN_W).toBe(439);
+    expect(refugeLayout({ cssW: 439, cssH: 440 }, ONE_SECTION, measureFor(ONE_SECTION)).panAtBottom).toBe(false);
+    expect(refugeLayout({ cssW: 438, cssH: 440 }, ONE_SECTION, measureFor(ONE_SECTION)).panAtBottom).toBe(true);
   });
 });
 
@@ -305,8 +323,9 @@ describe('refugeLayout at the smallest canvases', () => {
     expect(layout.viewport).toEqual({ x: 0, y: 92, w: 460, h: 212 });
     expect(layout.sections[0].rect.h).toBeCloseTo(206.5);
     expect(layout.panAtBottom).toBe(false);
-    expect(layout.prev).toEqual({ x: 304, y: MARGIN, w: 64, h: 64 });
-    expect(layout.next).toEqual({ x: 380, y: MARGIN, w: 64, h: 64 });
+    expect(layout.prev).toEqual({ x: 249, y: MARGIN, w: 118, h: 64 });
+    expect(layout.next).toEqual({ x: 379, y: MARGIN, w: 65, h: 64 });
+    expect(layout.title).toBeNull();
     expect(sectionShows(layout, 0, 0)).toBe(true);
     expect(sectionShows(layout, 1, 0)).toBe(true);
     expect(sectionShows(layout, 2, 0)).toBe(false);
@@ -316,8 +335,8 @@ describe('refugeLayout at the smallest canvases', () => {
     const layout = layoutOf(SMALL_PORTRAIT, fiveSections(0));
     expect(layout.viewport).toEqual({ x: 0, y: 92, w: 320, h: 256 });
     expect(layout.panAtBottom).toBe(true);
-    expect(layout.prev).toEqual({ x: 90, y: 360, w: 64, h: 64 });
-    expect(layout.next).toEqual({ x: 166, y: 360, w: 64, h: 64 });
+    expect(layout.prev).toEqual({ x: 62.5, y: 360, w: 118, h: 64 });
+    expect(layout.next).toEqual({ x: 192.5, y: 360, w: 65, h: 64 });
     expect(sectionShows(layout, 0, 0)).toBe(true);
     expect(sectionShows(layout, 1, 0)).toBe(false);
   });

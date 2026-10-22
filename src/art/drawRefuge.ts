@@ -28,8 +28,9 @@
  * differ by outline: upright cylinders with a rim (cans), long necked bodies (bottles) and
  * squat sacks with handle loops (bags). The nudge badge is a disc with an ink 4-point star
  * and an ink ring, so it reads without colour. Every value is `derived (provisional)`.
- * Presentational only: no Phaser, and no import from src/logic.
+ * Presentational only: no Phaser. The only src/logic import is REFUGE_PICTURE, the shared picture size.
  */
+import { REFUGE_PICTURE } from '../logic/refugeUi';
 import { TAU, ell, frameFromBounds, inkMany, line, seg, shape, type Seg, type TexSize } from './canvasKit';
 import { paintLilyPad, paintReed, type ReedLook } from './drawScenery';
 import { habitatLook, type HabitatLook, type HabitatLookId } from './habitatLook';
@@ -85,8 +86,7 @@ const SOFT_LINE = PEBBLE_B;
 // Sizes and frames
 // ---------------------------------------------------------------------------
 
-/** Section picture, logical px to the outer ink edge. The refuge screen lays out 200 x 96 pictures. */
-export const REFUGE_PICTURE = { w: 200, h: 96 } as const;
+/** Section picture, logical px to the outer ink edge: the size the refuge screen lays out (REFUGE_PICTURE in logic/refugeUi). */
 /** Texture frame of a picture, the hidden silhouette and the teaser. Anchor is the top-left ink corner. */
 export const REFUGE_PICTURE_TEX: TexSize = frameFromBounds(0, 0, REFUGE_PICTURE.w, REFUGE_PICTURE.h, 2);
 

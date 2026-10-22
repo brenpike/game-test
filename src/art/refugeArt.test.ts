@@ -4,6 +4,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HABITATS } from '../logic/areas';
+import { REFUGE_PICTURE } from '../logic/refugeUi';
 import {
   REFUGE_ART_STATES,
   REFUGE_HIDDEN_FILL,
@@ -11,7 +12,6 @@ import {
   REFUGE_NUDGE_INSET,
   REFUGE_NUDGE_SIZE,
   REFUGE_NUDGE_TEX,
-  REFUGE_PICTURE,
   REFUGE_PICTURE_TEX,
   REFUGE_PLANTS_BASE,
   REFUGE_PLANTS_PAINTERS,

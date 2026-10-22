@@ -234,11 +234,29 @@ The in-game book of morphs and fact cards, nicknamed the Axolotl-dex in game.
 A short, true fact about axolotls or their world.
 
 **Save**:
-Progress kept in device storage by itself: banked treasures, the axolotls, the tank, the Collection Book, stars, the last chosen area, and the hazards and predators met; never anything from a trip in progress.
+Progress kept in device storage by itself: banked treasures, the axolotls, the tank, the Collection Book, stars, the last chosen area, and the fact cards found (`metHazards`: the hazards and predators met, then the refuge fact cards found); never anything from a trip in progress, and never the refuge's pending clean-ups and milestones.
 _Avoid_: banking (banking moves trip finds to ownership)
 
 **Start over**:
-Erasing all saved progress on this device after two confirmations, from the title screen.
+Erasing all saved progress on this device after two confirmations, from the title screen; it also clears the refuge's pending clean-ups and milestones.
+
+### Refuge
+
+**Refuge**:
+The safe axolotl refuge in Xochimilco, opened by the Refuge tile, the fifth and last Home Tank action, that grows as areas are beaten (N2). It has one **Refuge section** per **Habitat**, and it is worked out from the saved **Stars** alone, so nothing about it is saved. It has no end: a dim "More to come" section closes it, and later areas and habitats add to it.
+
+**Refuge section**:
+One **Habitat**'s part of the **Refuge**, in area-table order: hidden ("???" and "Beat Area N") until one of its areas is beaten, clean once every one is, else dirty, still tinted with its remaining trash. It has one **Trash batch** per **Area** in its habitat.
+
+**Trash batch**:
+One **Area**'s trash in its habitat's **Refuge section**, cleared once that area is beaten. When the refuge next opens, the cleared trash floats up and fades with a sparkle (the clean-up).
+
+**Habitat milestone**:
+A **Trip** that newly makes a **Refuge section** clean. Back in the **Home Tank**, after the tank arrival card and its **First-find cards**, the "All clean!" card names the trip's **Explorer** and the habitat; "See it again" in the refuge shows it again, naming the current **Explorer**.
+_Avoid_: finale, ending, "refuge complete"
+
+**Refuge nudge**:
+The "Refuge grew" badge on the Refuge tile, a pink disc with an ink ring and an ink star, shown while a clean-up is waiting to play.
 
 ### After the MVP
 
@@ -247,9 +265,6 @@ Trying on Wearables and posing in a spotlight, started from the Home Tank (N1); 
 
 **Wearable set**:
 A themed group of Wearables, named by a Wearable's optional set ID, that unlocks a small bonus when worn together (N5).
-
-**Refuge**:
-The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 
 ## Relationships
 
@@ -286,6 +301,9 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - Each **Trip** has at most one **Stranded axolotl**, on about 3 trips in 10, or always when one is left waiting from the last **Trip** in that **Area**; a **Rescue** moves it into the **Home Tank** and unlocks its **Morph** in the **Collection Book**
 - The **Treasure Chest** lists every catalogue **Decoration**, **Wearable**, and **Dream colour**: owned ones in full with their **Rarity** glow, unfound ones as silhouettes with "???" and a **Rarity** hint, and a line per section saying what its items are for; placed **Decorations** live in the **Home Tank**
 - The **Collection Book** holds one entry per **Real morph**, each with a **Fun-fact card**, and lists **Dream colours** separately as not found in nature
+- The **Refuge** has one **Refuge section** per **Habitat** that holds an **Area**, and each **Refuge section** has one **Trash batch** per **Area** in it; beating an **Area** (its exit **Star**) clears its **Trash batch**
+- A **Trip** in a real **Area** that newly beats it adds a pending clean-up, and one that newly makes a **Refuge section** clean adds a **Habitat milestone**; both live in memory only, a dev area **Trip** or a replay adds neither, and the **Refuge nudge** shows while a clean-up is pending
+- The **Refuge** holds two **Fun-fact cards**, "Axolotl refuges" (first visit) and "Canal clean-ups" (the first time cleared trash shows); the **Collection Book** lists them after the **Hazard** cards and before "Boy or girl?"
 
 ## Example dialogue
 
@@ -307,5 +325,5 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - "Tilapia" and "predator" were used for the same fish (PRD glossary, `src/scenes/PredatorView.ts`, `src/art/predatorTextures.ts`): resolved: a **Predator** is the kind of **Hazard** that hunts, and the **Tilapia** is the first **Predator**; say **Tilapia** for the fish, and avoid "monster".
 - "habitat" was another name for one **Area** before the area framework (#73): resolved: a **Habitat** is a group of **Areas** that share a look.
 - `tilapiaRoutes` and `predatorRoutes` both hold predator patrol routes in area data: resolved: the **Tilapia** keeps its own `tilapiaRoutes` column, matching the PRD area table's tilapia column, and every other species goes in `predatorRoutes`.
-- `metHazards` (the hub's met list) holds **Predator** ids too, such as `'tilapia'`: resolved: a **Predator** is a **Hazard**, so "hazards met" covers both.
+- `metHazards` (the hub's met list) holds **Predator** ids too, such as `'tilapia'`, and, since the **Refuge** (#74), the refuge fact card ids `'axolotl-refuges'` and `'canal-clean-ups'`: resolved: it is the list of **Fun-fact cards** found, hazards and predators met first, then the refuge cards. The name stays, because renaming a saved field needs a save version bump ([ADR 0017](docs/adr/0017-xochimilco-refuge-and-habitat-milestones.md)).
 - "worm" names both a **Snack** (`CollectibleKind` `'worm'`) and the **Plastic worm** (`'plastic-worm'`): resolved: a worm alone is a **Snack**; always say **Plastic worm** in full for the hazard.

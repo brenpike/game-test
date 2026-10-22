@@ -6,9 +6,10 @@
  * habitats or the stars, so the scene passes one RefugeEntry per section, in habitat order.
  *
  * Fixed parts. Back, the standard wide button (REFUGE_BACK_BUTTON, 64 px tall), sits top-left inside
- * the 16 px margins. The Prev and Next pan tiles (REFUGE_PAN_TILE, 64 x 64, left and right icons, no
- * label) sit top-right, Prev 12 px before Next, when the canvas is at least REFUGE_PAN_TOP_MIN_W
- * wide; else they sit in a bottom row on the bottom margin, centred, 12 px apart. The title panel
+ * the 16 px margins. The Prev and Next pan tiles (REFUGE_PREV_TILE and REFUGE_NEXT_TILE: labelled
+ * square tiles, 64 px tall, the left or right icon over the label "Previous" or "Next") sit
+ * top-right, Prev 12 px before Next, when the canvas is at least REFUGE_PAN_TOP_MIN_W wide; else
+ * they sit in a bottom row on the bottom margin, centred, 12 px apart. The title panel
  * sits 12 px beside Back, centred on the canvas where it can be and centred down Back, only when it
  * fits there (as wide as the room up to 12 px before Prev, or to the right margin when the pan tiles
  * are in the bottom row, and no taller than Back); else it hides. These parts are in screen CSS px
@@ -42,6 +43,7 @@
  */
 import { fitCard, type CardFit, type CardSection, type TextFit } from './cardFit';
 import type { HudView, Rect, Size } from './hudLayout';
+import { REFUGE_SEE_AGAIN_LABEL } from './refuge';
 import { BACK_LABEL } from './stylerText';
 import { TILE_BUTTON, UI, WIDE_BUTTON, nextFocusIndex, tileButtonWidth, wideButtonWidth, type TankKey } from './tankUi';
 
@@ -57,9 +59,6 @@ export const REFUGE_PART_GAP_PX = 8;
 /** Height of the slot under a section's picture that holds its "See it again" tile or its hint, in CSS px. */
 export const REFUGE_SLOT_H = TILE_BUTTON.h;
 
-/** Label of the tile that shows a clean section's milestone again. */
-export const REFUGE_SEE_AGAIN_LABEL = 'See it again';
-
 /** The "See it again" tile: a size-1 square tile widened to hold its label, 64 px tall. */
 export const REFUGE_SEE_AGAIN_TILE: Size = Object.freeze({ w: tileButtonWidth(REFUGE_SEE_AGAIN_LABEL), h: TILE_BUTTON.h });
 
@@ -69,11 +68,21 @@ export const REFUGE_BACK_LABEL = BACK_LABEL;
 /** Back: the standard wide button, 64 px tall, sized to its label. */
 export const REFUGE_BACK_BUTTON: Size = Object.freeze({ w: wideButtonWidth(REFUGE_BACK_LABEL), h: WIDE_BUTTON.h });
 
-/** The Prev and Next pan tiles: size-1 square tiles with a left or right icon and no label. */
-export const REFUGE_PAN_TILE: Size = Object.freeze({ w: TILE_BUTTON.w, h: TILE_BUTTON.h });
+/** Label of the pan tile that pans one section back. */
+export const REFUGE_PREV_LABEL = 'Previous';
+
+/** Label of the pan tile that pans one section on. */
+export const REFUGE_NEXT_LABEL = 'Next';
+
+/** The Prev pan tile: a size-1 square tile, the left icon over its label, widened to hold the label, 64 px tall. */
+export const REFUGE_PREV_TILE: Size = Object.freeze({ w: tileButtonWidth(REFUGE_PREV_LABEL), h: TILE_BUTTON.h });
+
+/** The Next pan tile: a size-1 square tile, the right icon over its label, widened to hold the label, 64 px tall. */
+export const REFUGE_NEXT_TILE: Size = Object.freeze({ w: tileButtonWidth(REFUGE_NEXT_LABEL), h: TILE_BUTTON.h });
 
 /** Least canvas width with room for Back, Prev and Next along the top, 12 px apart inside the margins, in CSS px. */
-export const REFUGE_PAN_TOP_MIN_W = 2 * UI.margin + REFUGE_BACK_BUTTON.w + 2 * UI.gap + 2 * REFUGE_PAN_TILE.w;
+export const REFUGE_PAN_TOP_MIN_W =
+  2 * UI.margin + REFUGE_BACK_BUTTON.w + 2 * UI.gap + REFUGE_PREV_TILE.w + REFUGE_NEXT_TILE.w;
 
 /** Distance along x from one section's start to the next: a section and the gap, in CSS px. */
 export const REFUGE_PAN_STEP = REFUGE_SECTION_W + UI.gap;
@@ -210,14 +219,20 @@ function centredIn(size: Size, box: Rect): Rect {
 
 /** Places Prev and Next top-right when the canvas is wide enough for them beside Back, else in a bottom row, centred. */
 function panTiles(view: HudView): { prev: Rect; next: Rect; panAtBottom: boolean } {
-  const { w, h } = REFUGE_PAN_TILE;
+  const prevW = REFUGE_PREV_TILE.w;
+  const nextW = REFUGE_NEXT_TILE.w;
+  const h = TILE_BUTTON.h;
   if (view.cssW >= REFUGE_PAN_TOP_MIN_W) {
-    const nextX = view.cssW - UI.margin - w;
-    return { prev: { x: nextX - UI.gap - w, y: UI.margin, w, h }, next: { x: nextX, y: UI.margin, w, h }, panAtBottom: false };
+    const nextX = view.cssW - UI.margin - nextW;
+    return {
+      prev: { x: nextX - UI.gap - prevW, y: UI.margin, w: prevW, h },
+      next: { x: nextX, y: UI.margin, w: nextW, h },
+      panAtBottom: false,
+    };
   }
-  const prevX = (view.cssW - (2 * w + UI.gap)) / 2;
+  const prevX = (view.cssW - (prevW + UI.gap + nextW)) / 2;
   const y = view.cssH - UI.margin - h;
-  return { prev: { x: prevX, y, w, h }, next: { x: prevX + w + UI.gap, y, w, h }, panAtBottom: true };
+  return { prev: { x: prevX, y, w: prevW, h }, next: { x: prevX + prevW + UI.gap, y, w: nextW, h }, panAtBottom: true };
 }
 
 /** The title beside Back, centred on the canvas where it can be and down Back, when it fits the room up to `roomEnd`; else null. */

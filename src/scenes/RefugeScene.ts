@@ -23,7 +23,11 @@ import {
 import {
   REFUGE_BACK_BUTTON,
   REFUGE_BACK_LABEL,
+  REFUGE_NEXT_LABEL,
+  REFUGE_NEXT_TILE,
   REFUGE_PART_GAP_PX,
+  REFUGE_PREV_LABEL,
+  REFUGE_PREV_TILE,
   REFUGE_SEE_AGAIN_TILE,
   clampRefugeScroll,
   initialRefugeScroll,
@@ -69,9 +73,6 @@ import {
 const NAME_PANEL: MapPanelSpec = { padX: 8, padY: 4, minH: 0, fill: UI_PANEL, fontPx: 18 };
 /** A hidden section's hint ("Beat Area N"): bold ink 18 px on the area map's soft pink message fill, padding 8 across and 4 down. */
 const HINT_PANEL: MapPanelSpec = { padX: 8, padY: 4, minH: 0, fill: UI_PANEL_PINK, fontPx: 18 };
-/** Labels of the Prev and Next pan tiles, kept as their names; the tiles draw only their icons. */
-const PAN_PREV_LABEL = 'Previous';
-const PAN_NEXT_LABEL = 'Next';
 /** The "More to come" teaser picture shows dimmed. */
 const TEASER_ALPHA = 0.5;
 /** The fact cards and the milestone card sit above every refuge part. */
@@ -348,8 +349,8 @@ export class RefugeScene extends Phaser.Scene {
       pressOnDown: false,
       onPress: () => this.goBack(),
     });
-    this.prevButton = this.createPanTile(PAN_PREV_LABEL, 'left', -1);
-    this.nextButton = this.createPanTile(PAN_NEXT_LABEL, 'right', 1);
+    this.prevButton = this.createPanTile(REFUGE_PREV_LABEL, REFUGE_PREV_TILE.w, 'left', -1);
+    this.nextButton = this.createPanTile(REFUGE_NEXT_LABEL, REFUGE_NEXT_TILE.w, 'right', 1);
     this.fixedLayer = this.add.container(0, 0, [
       backdrop,
       this.title.panel,
@@ -360,15 +361,15 @@ export class RefugeScene extends Phaser.Scene {
     ]);
   }
 
-  /** A Prev or Next pan tile: a size-1 square tile with only its icon, panning one section by `step`. */
-  private createPanTile(label: string, icon: 'left' | 'right', step: 1 | -1): UiButton {
+  /** A Prev or Next pan tile: a size-1 square tile `width` wide, its icon over `label`, panning one section by `step`. */
+  private createPanTile(label: string, width: number, icon: 'left' | 'right', step: 1 | -1): UiButton {
     return createButton(this, this.assets.baked, {
       fill: 'secondary',
       shape: 'square',
       size: 1,
+      width,
       label,
       icon,
-      iconOnly: true,
       dpr: this.view.fit.dpr,
       pressOnDown: false,
       onPress: () => this.pressPan(step),
