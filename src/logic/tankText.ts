@@ -10,6 +10,9 @@ export const TREASURE_CHEST_LABEL = 'Treasure Chest';
 /** Home Tank button that opens the Collection Book. */
 export const COLLECTION_BOOK_LABEL = 'Collection Book';
 
+/** Home Tank button that opens the Xochimilco refuge (PRD N2). */
+export const REFUGE_LABEL = 'Refuge';
+
 /** Home Tank button that starts placing Decorations. */
 export const DECORATE_LABEL = 'Decorate';
 

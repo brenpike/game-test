@@ -6,6 +6,8 @@ export interface FactCard {
   name: string;
   title: string;
   body: string;
+  /** Collection Book hint while the card is not found; absent means the habitat rule decides. */
+  unfoundHint?: string;
 }
 
 /** The tilapia fact card, shown the first time the axolotl meets a tilapia. */
@@ -51,6 +53,51 @@ export const HERON_FACT: Readonly<FactCard> = Object.freeze({
   title: 'Meet the heron',
   body: "Herons are tall birds that live around Xochimilco's canals. They stand very still and watch the water for food. Axolotls are safer down deep, away from the surface.",
 });
+
+/**
+ * The axolotl refuges fact card, found on a visit to the refuge (PRD C14).
+ * Sources (owner to verify): Tec Science (Tec de Monterrey), "How to Save the mexican Axolotl? Start
+ * by Restoring Their Home", 2025-01-31, https://tecscience.tec.mx/en/biotechnology/how-to-save-the-axolotl ;
+ * The Wildlife Society, "Creating refuges for axolotls in Mexico City", 2021-12-06,
+ * https://wildlife.org/creating-refuges-for-axolotls-in-mexico-city/ (Zambrano et al., Aquatic
+ * Conservation, doi:10.1002/aqc.3520).
+ */
+export const AXOLOTL_REFUGES_FACT: Readonly<FactCard> = Object.freeze({
+  id: 'axolotl-refuges',
+  name: 'Axolotl refuges',
+  title: 'Axolotl refuges',
+  body: 'In Xochimilco, people make safe canals for axolotls next to chinampa gardens. Filters of volcanic rock let water in but keep big fish like tilapia out.',
+  unfoundHint: 'Visit the refuge to find this card.',
+});
+
+/**
+ * The canal clean-ups fact card, found on a visit to the refuge once an area is beaten (PRD C14).
+ * Sources (owner to verify): EU Delegation to Mexico, "Clean-up activity in Xochimilco, Mexico City,
+ * as part of the #EUBeachCleanup campaign", 27.09.2021,
+ * https://www.eeas.europa.eu/delegations/mexico/clean-activity-xochimilco-mexico-city-part-eubeachcleanup-campaign_en ;
+ * AFP via The Jakarta Post, "Mexican kayaker on mission to clean up floating gardens", 2022-02-04,
+ * https://www.thejakartapost.com/culture/2022/02/04/mexican-kayaker-on-mission-to-clean-up-floating-gardens .
+ */
+export const CANAL_CLEAN_UPS_FACT: Readonly<FactCard> = Object.freeze({
+  id: 'canal-clean-ups',
+  name: 'Canal clean-ups',
+  title: 'Canal clean-ups',
+  body: 'People in Xochimilco pull rubbish, like plastic bottles, out of the canals. Keeping the water clean helps keep axolotls safe.',
+  unfoundHint: 'Beat an area, then visit the refuge to find this card.',
+});
+
+/** The refuge fact cards, in Collection Book order: the axolotl refuges, then the canal clean-ups. */
+export const REFUGE_FACT_CARDS: readonly Readonly<FactCard>[] = Object.freeze([AXOLOTL_REFUGES_FACT, CANAL_CLEAN_UPS_FACT]);
+
+/**
+ * The refuge fact cards to show now, in REFUGE_FACT_CARDS order: each not yet in `found`, the canal
+ * clean-ups card only when `clearedTrashShown` (the refuge shows the trash cleared).
+ */
+export function refugeFactCardsDue(found: readonly string[], clearedTrashShown: boolean): Readonly<FactCard>[] {
+  return REFUGE_FACT_CARDS.filter(
+    (card) => !found.includes(card.id) && (clearedTrashShown || card.id !== CANAL_CLEAN_UPS_FACT.id),
+  );
+}
 
 /** Label of the button that closes a fact card. */
 export const FACT_CARD_OK_LABEL = 'OK';

@@ -14,6 +14,7 @@ import {
   GO_EXPLORING_LABEL,
   NEXT_PAGE_LABEL,
   PREVIOUS_PAGE_LABEL,
+  REFUGE_LABEL,
   TREASURE_CHEST_LABEL,
 } from './tankText';
 
@@ -87,7 +88,7 @@ export function tileButtonWidth(label: string): number {
 }
 
 /** A Home Tank hub action id. */
-export type HubActionId = 'goExploring' | 'decorate' | 'treasureChest' | 'collectionBook';
+export type HubActionId = 'goExploring' | 'decorate' | 'treasureChest' | 'collectionBook' | 'refuge';
 
 /** One hub action button: its id, its label, and whether it is the primary action. */
 export interface HubButtonSpec {
@@ -96,12 +97,13 @@ export interface HubButtonSpec {
   primary: boolean;
 }
 
-/** The hub actions in focus and layout order, Go exploring first (PRD C7). */
+/** The hub actions in focus and layout order, Go exploring first (PRD C7) and Refuge last (PRD N2). */
 export const HUB_BUTTONS: readonly HubButtonSpec[] = Object.freeze([
   Object.freeze({ id: 'goExploring', label: GO_EXPLORING_LABEL, primary: true }),
   Object.freeze({ id: 'decorate', label: DECORATE_LABEL, primary: false }),
   Object.freeze({ id: 'treasureChest', label: TREASURE_CHEST_LABEL, primary: false }),
   Object.freeze({ id: 'collectionBook', label: COLLECTION_BOOK_LABEL, primary: false }),
+  Object.freeze({ id: 'refuge', label: REFUGE_LABEL, primary: false }),
 ]);
 
 /** How a hub button is drawn: its createButton shape and its size-1 body in CSS px. */
@@ -164,12 +166,14 @@ export interface HubActionPlacement {
 
 /**
  * The hub layout: the title (null when it does not fit), the action buttons in input order, whether
- * they use their compact sizes, and the room of the last row (the first room when there are none).
+ * they use their compact sizes, whether their rows reach over the floor Decorations (into the reach
+ * rooms), and the room of the last row (the first room when there are none).
  */
 export interface HubLayout {
   title: Rect | null;
   actions: HubActionPlacement[];
   compact: boolean;
+  reach: boolean;
   room: TankRoom;
 }
 
@@ -467,8 +471,10 @@ function fullSize(action: HubAction): Size {
 /**
  * The hub layout. The actions take the first of: their full sizes in one room (the wall, then the
  * water); their compact sizes in one room; compact rows split across the rooms in order; compact rows
- * from the top of the tallest room. The title (measured at `cssW - 2 * UI.margin`) sits at the top
- * of a single room, above the actions, only when it fits across and the actions still fit that room.
+ * in the reach rooms (trayReachRooms) by the same order of tries, over the floor Decorations (`reach`);
+ * compact rows from the top of the tallest room. The title (measured at `cssW - 2 * UI.margin`) sits
+ * at the top of a single room, above the actions, only when it fits across and the actions still fit
+ * that room; never when the rows reach.
  */
 export function hubLayout(view: HudView, frame: TankFrame, actions: readonly HubAction[], title: Size | null): HubLayout {
   const full = actions.map(fullSize);
@@ -478,14 +484,22 @@ export function hubLayout(view: HudView, frame: TankFrame, actions: readonly Hub
   const rows = splitRows(sizes, view.cssW - 2 * UI.margin);
   const isCompact = plan.look === 1;
   const titled = plan.rooms.length === 1 ? titledFill(view, rows, plan.rooms[0], title) : null;
-  const fill = titled ?? fillPlan(rows, plan);
+  const reached = titled === null ? reachFill(view, frame, rows, plan) : null;
+  const fill = titled ?? reached ?? fillPlan(rows, plan);
   const rects = placeRows(sizes, rows, view.cssW / 2, fill.tops);
   return {
     title: titled !== null && title !== null ? centredAt(view, title, plan.rooms[0].top) : null,
     actions: placeActions(actions, rects),
     compact: isCompact,
+    reach: reached !== null,
     room: fill.room,
   };
+}
+
+/** `rows` in the reach rooms when they fit none of the plan's rooms; null when they fit the plan or not the reach rooms either. */
+function reachFill(view: HudView, frame: TankFrame, rows: readonly FlowRow[], plan: RowPlan): RoomFill | null {
+  if (fillRooms(rows, plan.rooms) !== null) return null;
+  return fillReach(rows, trayReachRooms(view, frame));
 }
 
 /** `rows` under `title` at the top of `room`; null without a title or when it and the rows do not fit across and down. */
@@ -533,7 +547,7 @@ interface DecorateLook {
 }
 
 /**
- * The rooms a tray of more than 4 may reach into (art guide 7f), top first: the wall down to a gap
+ * The rooms a tray of more than 4 (art guide 7f) and hub rows that fit no room may reach into, top first: the wall down to a gap
  * above the Floating and Hanging keep-clear band, and the open water down to the bottom margin, over
  * the floor Decorations. Rooms under ICON_TILE.h tall are dropped.
  */

@@ -2,7 +2,7 @@
  * The play session across trips: what the Home Tank hub owns and what each area remembers between
  * trips. `hub` is the part a save holds (#15); `areas` is session-only and never saved.
  */
-import { AREAS, areaFactCards, isAreaUnlocked, type AreaData } from './areas';
+import { AREAS, bookFactCards, isAreaUnlocked, type AreaData } from './areas';
 import { copyLook, isAxolotlLook, rescuedLook, type AxolotlLook, type AxolotlSex } from './axolotlLook';
 import { cleanName, isValidName, unusedSuggestedName } from './axolotlNames';
 import { ownedDreamColours, type Decoration, type DreamColourId, type WearableSlot } from './catalogue';
@@ -58,7 +58,8 @@ export interface CollectionBookState {
  * Tank layout, the Collection Book, the best stars per area (PRD H7, D2), the id of the last
  * chosen explorer, null while no axolotl is owned (PRD F7), the kinds whose first-find card was
  * seen, in FIRST_FIND_KINDS order (PRD C15, D2), the id of the last chosen area, and the ids of the
- * hazards and predators met, whose fact cards are found, in areaFactCards order.
+ * found fact cards in bookFactCards order: the hazards and predators met, then the refuge cards
+ * found (PRD C14).
  */
 export interface HubState {
   banked: string[];
@@ -173,11 +174,12 @@ export function areaMemory(session: Session, areaId: string): AreaMemory {
 }
 
 /**
- * Known hazard and predator ids in `ids`, each once, in areaFactCards order (the canonical
- * `metHazards` order). Unknown ids and non-strings are dropped.
+ * Known fact card ids in `ids`, each once, in bookFactCards order (the canonical `metHazards`
+ * order): hazard and predator ids in areaFactCards order, then refuge card ids in
+ * REFUGE_FACT_CARDS order. Unknown ids and non-strings are dropped.
  */
 export function orderedMetHazards(ids: readonly unknown[]): string[] {
-  return areaFactCards()
+  return bookFactCards()
     .map((card) => card.id)
     .filter((id) => ids.includes(id));
 }
@@ -270,7 +272,7 @@ export function newOwnedAxolotl(
  * What the next trip in area `areaId` starts from, read from that area's memory. The first trip
  * there uses `freshSeed`; every later one uses the seed after its last trip's (`nextTripSeed`), as
  * `newTrip` does. The owned morphs and the waiting stranded axolotl are what `pickStranding` needs;
- * every met hazard and predator's fact card counts as seen. The treasures lost on the area's last
+ * every found fact card (`metHazards`, refuge cards included) counts as seen. The treasures lost on the area's last
  * trip are handed to `createTrip` as its `returnedFinds`, as `newTrip` does (PRD A12, B9).
  */
 export function tripStart(session: Session, freshSeed: number, areaId: string = CANAL_AREA_ID): TripStart {
@@ -342,7 +344,7 @@ export function tripEndRecord(
  * never banked. Each rescued morph not already owned becomes an owned axolotl of the rescued sex,
  * appended after the others, and its morph is found in the Collection Book, kept in REAL_MORPHS order (PRD C4). Each
  * known hazard and predator met joins the hazards met and stays there, so its fact card stays
- * unlocked; unknown ids are dropped (`orderedMetHazards`). Stars earned merge into the best stars for their area, so they never go down (PRD H7).
+ * unlocked; refuge cards already found are kept; unknown ids are dropped (`orderedMetHazards`). Stars earned merge into the best stars for their area, so they never go down (PRD H7).
  * The eaten snacks, the trip seed and the waiting stranded axolotl are stored in the memory of the
  * record's area, so eaten snacks are kept after going home and cleared after being carried home or
  * beating the area, whose records have none (PRD A12, A19, open question 14, ADR 0010). The lost
@@ -504,6 +506,17 @@ export function chooseExplorer(session: Session, id: string): Session {
  */
 export function markFirstFindSeen(session: Session, kind: FirstFindKind): Session {
   return { ...session, hub: { ...session.hub, firstFindsSeen: withFirstFindSeen(session.hub.firstFindsSeen, kind) } };
+}
+
+/**
+ * The session with fact card `id` found (PRD C14): `id` joins `metHazards` in bookFactCards order.
+ * An unknown id, or one already found, changes nothing. Nothing else changes; the caller saves the
+ * session.
+ */
+export function markFactCardFound(session: Session, id: string): Session {
+  const { metHazards } = session.hub;
+  if (metHazards.includes(id) || !bookFactCards().some((card) => card.id === id)) return session;
+  return { ...session, hub: { ...session.hub, metHazards: orderedMetHazards([...metHazards, id]) } };
 }
 
 /**

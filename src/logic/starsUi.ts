@@ -29,17 +29,30 @@ function belowHub(hub: HubLayout): number {
   return Math.max(...rects.map((rect) => rect.y + rect.h)) + UI.gap;
 }
 
+/** How the hub best-stars badge is laid out: the area label beside the stars, or stacked above them. */
+export type HubBadgeShape = 'beside' | 'stacked';
+
 /**
- * Where the hub best-stars badge of size `badge` goes: centred a gap under the hub title and actions
- * (at the top of the hub's room when there are none) when it fits across and inside the room of the
- * hub's last row, else in the bottom-right corner inside the edge margins. `frame` is unused and
- * kept for callers.
+ * The hub best-stars badge shape for `hub`: stacked when the hub rows reach over the floor
+ * Decorations (it then sits in the bottom-right corner), else beside. Text and star sizes are the same.
+ */
+export function hubStarsBadgeShape(hub: HubLayout): HubBadgeShape {
+  return hub.reach ? 'stacked' : 'beside';
+}
+
+/**
+ * Where the hub best-stars badge of size `badge` goes. When the hub rows reach over the floor
+ * Decorations, always the bottom-right corner inside the edge margins. Else centred a gap under the
+ * hub title and actions (at the top of the hub's room when there are none) when it fits across and
+ * inside the room of the hub's last row, else that corner. `frame` is unused and kept for callers.
  */
 export function hubStarsBadgeRect(view: HudView, _frame: TankFrame, hub: HubLayout, badge: Size): Rect {
+  const corner: Rect = { x: view.cssW - UI.margin - badge.w, y: view.cssH - UI.margin - badge.h, w: badge.w, h: badge.h };
+  if (hub.reach) return corner;
   const top = belowHub(hub);
   const fitsAcross = badge.w <= view.cssW - 2 * UI.margin;
   if (fitsAcross && top + badge.h <= hub.room.bottom) {
     return { x: (view.cssW - badge.w) / 2, y: top, w: badge.w, h: badge.h };
   }
-  return { x: view.cssW - UI.margin - badge.w, y: view.cssH - UI.margin - badge.h, w: badge.w, h: badge.h };
+  return corner;
 }

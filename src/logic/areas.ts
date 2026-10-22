@@ -1,5 +1,5 @@
 import type { SnackDrift } from './collectibles';
-import { TILAPIA_FACT, type FactCard } from './factCards';
+import { REFUGE_FACT_CARDS, TILAPIA_FACT, type FactCard } from './factCards';
 import type { HazardSpawn } from './hazards';
 import type { PredatorRoute } from './predators';
 import { POND_2_AREA_ID, POND_2_LAYOUT } from './pond2Layout';
@@ -207,6 +207,14 @@ export function threatFactCards(source: ThreatSource): Readonly<FactCard>[] {
 /** Every hazard and predator fact card of these areas, in area-table order, each once. */
 export function areaFactCards(areas: readonly Readonly<AreaData>[] = AREAS): Readonly<FactCard>[] {
   return uniqueThreats(areas.flatMap((area) => listThreats(area.layout))).map((threat) => threat.fact);
+}
+
+/**
+ * Every fact card found by playing, in Collection Book order: these areas' hazard and predator
+ * cards (areaFactCards order), then the refuge cards (REFUGE_FACT_CARDS order).
+ */
+export function bookFactCards(areas: readonly Readonly<AreaData>[] = AREAS): Readonly<FactCard>[] {
+  return [...areaFactCards(areas), ...REFUGE_FACT_CARDS];
 }
 
 /** What one area adds that no earlier area has: threat ids and element type ids (PRD N2). */

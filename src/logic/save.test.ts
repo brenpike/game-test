@@ -39,6 +39,7 @@ import {
   addStarter,
   chooseExplorer,
   createSession,
+  markFactCardFound,
   markFirstFindSeen,
   recordTripEnd,
   restyleAxolotl,
@@ -1087,5 +1088,48 @@ describe('Area 3 progress in the save (#98, D2)', () => {
     expect(hub.stars[CANAL_AREA_ID]).toEqual(playedSession().hub.stars[CANAL_AREA_ID]);
     expect(hub.metHazards).toEqual(['tilapia', 'heron']);
     expect(hubWithFields({}).stars[POND_2_ID]).toBeUndefined();
+  });
+});
+
+describe('refuge fact cards in the save (#74, C14, D2)', () => {
+  /** The played session with both refuge cards found, after the tilapia met. */
+  function refugeSession(): Session {
+    return markFactCardFound(markFactCardFound(playedSession(), 'canal-clean-ups'), 'axolotl-refuges');
+  }
+
+  it('round-trips the refuge cards found in metHazards, after the hazards met, with no new field', () => {
+    const json = JSON.parse(encodeSave(refugeSession().hub));
+    expect(json.hub.metHazards).toEqual(['tilapia', 'axolotl-refuges', 'canal-clean-ups']);
+    expect(Object.keys(json.hub).sort()).toEqual(Object.keys(savedJson().hub).sort());
+    const hub = loadedHub(json);
+    expect(hub.metHazards).toEqual(['tilapia', 'axolotl-refuges', 'canal-clean-ups']);
+    expect(hub).toEqual(refugeSession().hub);
+  });
+
+  it('loads refuge ids into a version 1 save additively, with no version bump', () => {
+    expect(SAVE_VERSION).toBe(1);
+    expect(savedJson().version).toBe(1);
+    const hub = hubWithFields({ metHazards: ['canal-clean-ups', 'moon', 'heron', 7, 'axolotl-refuges', 'heron'] });
+    expect(hub.metHazards).toEqual(['tilapia', 'heron', 'axolotl-refuges', 'canal-clean-ups']);
+  });
+
+  it('drops unknown ids and keeps the legacy tilapia card alongside refuge cards', () => {
+    const book = { foundMorphs: [STARTER_MORPH], tilapiaCard: true };
+    expect(hubWithFields({ metHazards: ['canal-clean-ups', 'refuge'], book }).metHazards).toEqual([
+      'tilapia',
+      'canal-clean-ups',
+    ]);
+    const noLegacy = { foundMorphs: [STARTER_MORPH] };
+    expect(hubWithFields({ metHazards: ['axolotl-refuge', 'clean-ups'], book: noLegacy }).metHazards).toEqual([]);
+  });
+
+  it('writes the legacy book.tilapiaCard from the tilapia alone, not the refuge cards', () => {
+    const unmet = markFactCardFound(addStarter(createSession(), { name: 'Bubbles', look: DEFAULT_LOOK }), 'axolotl-refuges');
+    expect(JSON.parse(encodeSave(unmet.hub)).hub.book).toEqual({ foundMorphs: [STARTER_MORPH], tilapiaCard: false });
+  });
+
+  it('starts a trip from a loaded save with the hazards met still seen', () => {
+    const loaded = sessionFromSave(decodeSave(encodeSave(refugeSession().hub)));
+    expect(tripStart(loaded, 0).factCardsSeen).toEqual(['tilapia', 'axolotl-refuges', 'canal-clean-ups']);
   });
 });

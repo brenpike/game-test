@@ -30,6 +30,10 @@
  * or non-array metHazards loads as none met; unknown ids are dropped; each id is kept once, in
  * areaFactCards order. Stars saved under an unknown area id are dropped.
  *
+ * Refuge fact cards (#74) came under the additive rule, with no new field and no version bump: the
+ * refuge card ids found join `metHazards`, after the hazard and predator ids, in bookFactCards order.
+ * An older save has none, so they load as not found; an older build drops them as unknown ids.
+ *
  * Legacy `book.tilapiaCard`: the Collection Book no longer holds the tilapia card, the hub's
  * `metHazards` does. The encoder still writes `book.tilapiaCard` (true when 'tilapia' is met), so
  * an older build reads the card, and the loader adds 'tilapia' to metHazards when it is exactly true.
@@ -345,8 +349,9 @@ function repairedBook(saved: unknown, axolotls: readonly OwnedAxolotl[]): Collec
 }
 
 /**
- * The saved hazards met, plus the tilapia when the saved book's legacy tilapiaCard is exactly true:
- * known ids only, each once, in areaFactCards order; a non-array is none met.
+ * The saved fact cards found (hazards met and refuge cards), plus the tilapia when the saved book's
+ * legacy tilapiaCard is exactly true: known ids only, each once, in bookFactCards order; a
+ * non-array is none found.
  */
 function repairedMetHazards(saved: unknown, savedBook: unknown): string[] {
   const met: unknown[] = Array.isArray(saved) ? saved : [];

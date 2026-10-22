@@ -25,9 +25,11 @@ import {
   explorerAxolotl,
   explorerId,
   explorerMorph,
+  markFactCardFound,
   markFirstFindSeen,
   needsStarter,
   newOwnedAxolotl,
+  orderedMetHazards,
   recordTripEnd,
   restoreSnacks,
   restyleAxolotl,
@@ -1385,6 +1387,60 @@ describe('markFirstFindSeen (C15, D2)', () => {
     expect(dueFirstFindCards(banked.hub.banked, banked.hub.firstFindsSeen)).toEqual([
       { kind: 'paintShell', pictureId: MINT_SHELL },
     ]);
+  });
+});
+
+describe('refuge fact cards (#74, C14)', () => {
+  it('orders known ids with the threat cards first, then the refuge cards, dropping unknown ids', () => {
+    expect(orderedMetHazards(['canal-clean-ups', 'heron', 'moon', 3, 'axolotl-refuges', 'tilapia', 'heron'])).toEqual([
+      'tilapia',
+      'heron',
+      'axolotl-refuges',
+      'canal-clean-ups',
+    ]);
+  });
+
+  it('finds a refuge card once, in bookFactCards order', () => {
+    const cleanUps = markFactCardFound(withStarter(), 'canal-clean-ups');
+    expect(cleanUps.hub.metHazards).toEqual(['canal-clean-ups']);
+    const both = markFactCardFound(cleanUps, 'axolotl-refuges');
+    expect(both.hub.metHazards).toEqual(['axolotl-refuges', 'canal-clean-ups']);
+    const met = recordTripEnd(withStarter(), { ...record([], 1), met: ['heron', 'tilapia'] });
+    expect(markFactCardFound(met, 'axolotl-refuges').hub.metHazards).toEqual(['tilapia', 'heron', 'axolotl-refuges']);
+  });
+
+  it('changes nothing for a card already found or an unknown id', () => {
+    const found = markFactCardFound(withStarter(), 'axolotl-refuges');
+    expect(markFactCardFound(found, 'axolotl-refuges')).toBe(found);
+    expect(markFactCardFound(found, 'moon')).toBe(found);
+    expect(markFactCardFound(found, 'boyOrGirl')).toBe(found);
+  });
+
+  it('keeps every other field and leaves the input session alone', () => {
+    const before = recordTripEnd(withStarter(), record([PLANT, MINT_SHELL], 3, ['snack-1']));
+    const copy = JSON.parse(JSON.stringify(before)) as Session;
+    const after = markFactCardFound(before, 'axolotl-refuges');
+    expect({ ...after.hub, metHazards: before.hub.metHazards }).toEqual(before.hub);
+    expect(after.hub.axolotls).toBe(before.hub.axolotls);
+    expect(after.areas).toBe(before.areas);
+    expect(before).toEqual(copy);
+  });
+
+  it('keeps refuge cards found across trip ends and adds only the ids met on the trip', () => {
+    const found = markFactCardFound(markFactCardFound(withStarter(), 'canal-clean-ups'), 'axolotl-refuges');
+    const quiet = recordTripEnd(found, record([], 1));
+    expect(quiet.hub.metHazards).toEqual(['axolotl-refuges', 'canal-clean-ups']);
+    const met = recordTripEnd(quiet, { ...record([], 2), areaId: POND_2_AREA.id, met: ['heron', 'plastic-worm'] });
+    expect(met.hub.metHazards).toEqual(['plastic-worm', 'heron', 'axolotl-refuges', 'canal-clean-ups']);
+  });
+
+  it('still counts the threat cards met as seen at trip start, with refuge cards found alongside', () => {
+    const met = recordTripEnd(withStarter(), { ...record([], 1), met: ['tilapia'] });
+    const found = markFactCardFound(met, 'axolotl-refuges');
+    const start = tripStart(found, 0);
+    expect(start.factCardsSeen).toEqual(['tilapia', 'axolotl-refuges']);
+    expect(start.factCardsSeen).not.toBe(found.hub.metHazards);
+    expect(tripStart(markFactCardFound(withStarter(), 'axolotl-refuges'), 0).factCardsSeen).not.toContain('tilapia');
   });
 });
 
