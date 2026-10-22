@@ -1,5 +1,6 @@
 import type { DrawnBody } from './collectibles';
 import { legWobble } from './legs';
+import { queasyWobble } from './plasticWorms';
 import { swimIntensity, type SwimState } from './swimPhysics';
 import { SWIM } from './tuning';
 import type { Vec2 } from './vec';
@@ -42,14 +43,17 @@ export interface DrawnAxolotlInput {
   legsPresent: number;
   /** True while the trip is swimming; only a swimming axolotl wobbles. */
   swimming: boolean;
+  /** True while queasy after eating a plastic worm, for the queasy wobble; absent means not queasy. */
+  queasy?: boolean;
   /** Body x squash along its axis during a turn; 1 when not turning. */
   squash: number;
 }
 
 /**
  * Where the axolotl sprite is drawn this frame: swim position plus its bob, facing, rotation (swim
- * tilt, idle tilt and missing-leg wobble) and turn squash. Pure, so the eat check and the sprite
- * read one source.
+ * tilt, idle tilt, missing-leg wobble and queasy wobble) and turn squash. Both wobbles show only
+ * while swimming and never under reduced motion. Pure, so the eat check and the sprite read one
+ * source.
  */
 export function drawnAxolotl(input: DrawnAxolotlInput): DrawnAxolotl {
   const { swim, t } = input;
@@ -59,11 +63,12 @@ export function drawnAxolotl(input: DrawnAxolotlInput): DrawnAxolotl {
   const swimTilt = Math.max(-1, Math.min(1, swim.vy / SWIM.maxSpeed)) * MAX_TILT;
   const idleTilt = input.ambient ? IDLE_TILT * (1 - intensity) * Math.cos((TAU * t) / AXO_BOB_PERIOD) : 0;
   const wobble = input.swimming ? legWobble(input.legsPresent, input.clock, !input.ambient) : 0;
+  const queasyTilt = queasyWobble(input.clock, input.swimming && input.queasy === true, !input.ambient);
   return {
     x: swim.x,
     y: swim.y + bob,
     facing,
-    rotation: facing * (swimTilt + idleTilt) + wobble,
+    rotation: facing * (swimTilt + idleTilt) + wobble + queasyTilt,
     squash: input.squash,
   };
 }

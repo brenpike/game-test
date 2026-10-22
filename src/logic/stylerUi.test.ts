@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { LOOK_FIELD_OPTIONS, LOOK_FIELDS } from './axolotlLook';
 import { NAME_MAX, SUGGESTED_NAMES, suggestedNamesFor } from './axolotlNames';
 import { isSupportedCanvas } from './cardFit';
-import { CANAL_TREASURES, DREAM_COLOURS, PERK_VALUES, WEARABLE_SLOTS, type Wearable } from './catalogue';
+import { ALL_TREASURES, DREAM_COLOURS, PERK_VALUES, WEARABLE_SLOTS, type Wearable } from './catalogue';
 import { MAX_DREAM_OPTIONS } from './dreamPaint';
 import type { HudView, Rect, Size } from './hudLayout';
 import { REAL_MORPHS } from './morphs';
@@ -165,8 +165,8 @@ function memoByWidth(sizeAt: (wrapW: number) => Size): (wrapW: number) => Size {
   };
 }
 
-/** Every catalogue Wearable. */
-const WEARABLES: readonly Wearable[] = CANAL_TREASURES.filter(
+/** Every catalogue Wearable, every area. */
+const WEARABLES: readonly Wearable[] = ALL_TREASURES.filter(
   (treasure): treasure is Wearable => treasure.category === 'wearable',
 );
 
@@ -576,7 +576,7 @@ describe('styler sizes', () => {
 });
 
 describe('stylerLayout', () => {
-  it.each(SMALLEST)('fits every step with 2, 3, 4, 5 and 8 options, Dream colour with 1 to 13 and the Name step in both modes on %j', (view) => {
+  it.each(SMALLEST)('fits every step with 2, 3, 4, 5 and 8 options, Dream colour with 1 to 14 and the Name step in both modes on %j', (view) => {
     expect(problemsOn([view])).toEqual([]);
   });
 
@@ -757,12 +757,12 @@ describe('stylerLayout', () => {
     expect(() => stylerLayout(view, { mode: 'restyle', step: 'eyes', optionCount: 3, tabPage: 0.5 }, measure)).toThrow(RangeError);
   });
 
-  it('rejects a Dream colour option count outside 1 to 13, and the Dream colour step in the creator', () => {
+  it('rejects a Dream colour option count outside 1 to 14, and the Dream colour step in the creator', () => {
     const view = { cssW: 844, cssH: 390 };
     const measure = measureFor('restyle', 'dream');
     const at = (mode: StylerMode, optionCount: number): StylerLayout =>
       stylerLayout(view, { mode, step: 'dream', optionCount, tabPage: null }, measure);
-    expect(MAX_DREAM_OPTIONS).toBe(13);
+    expect(MAX_DREAM_OPTIONS).toBe(14);
     expect(() => at('restyle', 0)).toThrow(RangeError);
     expect(() => at('restyle', MAX_DREAM_OPTIONS + 1)).toThrow(RangeError);
     expect(() => at('restyle', 2.5)).toThrow(RangeError);
@@ -788,7 +788,7 @@ describe('stylerLayout Dream colour step', () => {
     return dream.perPage;
   }
 
-  it('fits 1 to 13 options with labels always shown and no caption on every supported canvas', () => {
+  it('fits 1 to 14 options with labels always shown and no caption on every supported canvas', () => {
     expect(problemsOn(DREAM_VIEWS).filter((problem) => problem.includes(' dream '))).toEqual([]);
     for (const view of DREAM_VIEWS) {
       for (const count of DREAM_COUNTS) {
@@ -846,6 +846,13 @@ describe('stylerLayout Dream colour step', () => {
     }
   }, MATRIX_TIMEOUT_MS);
 
+  it('pages every Dream colour as 7 pages of 2 on the smallest canvases', () => {
+    for (const view of SMALLEST) {
+      expect(perPageOn(view, MAX_DREAM_OPTIONS), JSON.stringify(view)).toBe(2);
+      expect(Math.ceil(MAX_DREAM_OPTIONS / perPageOn(view, MAX_DREAM_OPTIONS)), JSON.stringify(view)).toBe(7);
+    }
+  });
+
   it('shows 8 options and More colours with everything shown on a large canvas', () => {
     const layout = dreamOn({ cssW: 1280, cssH: 800 }, MAX_DREAM_OPTIONS);
     expect(layout.fitStep).toBe(0);
@@ -884,6 +891,16 @@ describe('stylerLayout Outfit step', () => {
     return layout.outfit;
   }
 
+  /**
+   * The band width of a choices `layout` with the tab row hidden: the panel padding across, less the
+   * right step button column (Surprise me's place, Cancel, Done) and UI.gap on a landscape canvas.
+   */
+  function besideBandW(layout: StylerLayout): number {
+    const inner = panelInner(layout);
+    if (layout.panel.w <= layout.panel.h) return inner.w;
+    return inner.w - Math.max(SURPRISE_BUTTON.w, CANCEL_BUTTON.w, DONE_BUTTON.w) - UI.gap;
+  }
+
   it('derives its counts from the catalogue: eight slots, and None plus the most Wearables of one slot', () => {
     expect(OUTFIT_SLOT_COUNT).toBe(WEARABLE_SLOTS.length);
     expect(OUTFIT_SLOT_COUNT).toBe(MAX_STEP_OPTIONS);
@@ -908,7 +925,8 @@ describe('stylerLayout Outfit step', () => {
   }, MATRIX_TIMEOUT_MS);
 
   it.each(SMALLEST)('fits the choices view on %j with the worst-case label block (three wrapped lines, a longest-named axolotl)', (view) => {
-    const worst = outfitMeasureFor('choices').optionLabelAt(OUTFIT_LABEL_MAX_PX);
+    const measure = outfitMeasureFor('choices');
+    const worst = measure.optionLabelAt(OUTFIT_LABEL_MAX_PX);
     expect(worst.h).toBeGreaterThanOrEqual(3 * LINE_HEIGHT_EM * OPTION_LABEL_PX);
     for (const count of OUTFIT_CHOICE_COUNTS) {
       const layout = choicesOn(view, count);
@@ -917,8 +935,10 @@ describe('stylerLayout Outfit step', () => {
       expect(layout.labelsShown).toBe(true);
       expect(outfit.perPage).toBeGreaterThanOrEqual(1);
       expect(outfit.more !== null).toBe(count > outfit.perPage);
+      const wideH = measure.optionLabelAt(besideBandW(layout) - PICTURE_PX.min - UI.gap).h;
       for (const label of layout.optionLabels) {
-        expect(label.h).toBeCloseTo(worst.h, 6);
+        const wrappedWide = outfit.labelsBeside && label.w > OUTFIT_LABEL_MAX_PX + 1e-9;
+        expect(label.h).toBeCloseTo(wrappedWide ? wideH : worst.h, 6);
         expect(isInside(label, inner)).toBe(true);
       }
       const { done, cancel, surprise } = layout.nav;
@@ -931,18 +951,17 @@ describe('stylerLayout Outfit step', () => {
     }
   });
 
-  it('shows one choice with its label block under it on the smallest canvases, and both choices at 460 x 320', () => {
-    const landscape = choicesOn({ cssW: 460, cssH: 320 }, 2);
-    expect(outfitOf(landscape).perPage).toBe(2);
-    expect(outfitOf(landscape).more).toBeNull();
-    const portrait = choicesOn({ cssW: 320, cssH: 440 }, 2);
-    expect(outfitOf(portrait).perPage).toBe(1);
-    expect(outfitOf(portrait).more).toMatchObject(MORE_WEARABLES_BUTTON);
+  it('shows one choice alone on the smallest canvases, its label block under it at 460 x 320 and beside it at 320 x 440, and pages two choices one a page with More wearables', () => {
+    for (const view of SMALLEST) {
+      const pair = choicesOn(view, 2);
+      expect(outfitOf(pair).perPage, JSON.stringify(view)).toBe(1);
+      expect(outfitOf(pair).more, JSON.stringify(view)).toMatchObject(MORE_WEARABLES_BUTTON);
+    }
     for (const view of SMALLEST) {
       const single = choicesOn(view, 1);
-      expect(outfitOf(single).perPage).toBe(1);
-      expect(outfitOf(single).more).toBeNull();
-      expect(outfitOf(single).labelsBeside).toBe(false);
+      expect(outfitOf(single).perPage, JSON.stringify(view)).toBe(1);
+      expect(outfitOf(single).more, JSON.stringify(view)).toBeNull();
+      expect(outfitOf(single).labelsBeside, JSON.stringify(view)).toBe(view.cssW < view.cssH);
     }
   });
 
@@ -1105,18 +1124,37 @@ describe('stylerLayout Outfit step', () => {
     }
   }, MATRIX_TIMEOUT_MS);
 
-  it('wraps each choices label block at 168 px or less, never cutting a word', () => {
+  it('wraps each choices label block at 168 px or less under its picture, and at the band less 60 px or less beside it, never cutting a word', () => {
     const measure = outfitMeasureFor('choices');
     expect(OUTFIT_LABEL_MAX_PX).toBe(168);
+    expect(PICTURE_PX.min + UI.gap).toBe(60);
     expect(measure.optionLabelMinW).toBeLessThanOrEqual(OUTFIT_LABEL_MAX_PX);
     for (const view of OUTFIT_VIEWS) {
       for (const count of OUTFIT_CHOICE_COUNTS) {
-        for (const label of choicesOn(view, count).optionLabels) {
-          expect(label.w).toBeLessThanOrEqual(OUTFIT_LABEL_MAX_PX + 1e-9);
+        const layout = choicesOn(view, count);
+        const maxW = outfitOf(layout).labelsBeside ? Math.max(OUTFIT_LABEL_MAX_PX, besideBandW(layout) - 60) : OUTFIT_LABEL_MAX_PX;
+        for (const label of layout.optionLabels) {
+          expect(label.w, JSON.stringify(view)).toBeLessThanOrEqual(maxW + 1e-9);
           expect(label.w).toBeGreaterThanOrEqual(measure.optionLabelMinW - 1e-9);
         }
       }
     }
+  }, MATRIX_TIMEOUT_MS);
+
+  it('wraps the label blocks beside the pictures wider than 168 px only when they take fewer lines', () => {
+    const measure = outfitMeasureFor('choices');
+    let wider = 0;
+    for (const view of OUTFIT_VIEWS) {
+      for (const count of OUTFIT_CHOICE_COUNTS) {
+        const layout = choicesOn(view, count);
+        const label = layout.optionLabels[0];
+        if (label.w <= OUTFIT_LABEL_MAX_PX + 1e-9) continue;
+        wider += 1;
+        expect(outfitOf(layout).labelsBeside).toBe(true);
+        expect(label.h).toBeLessThan(measure.optionLabelAt(OUTFIT_LABEL_MAX_PX).h);
+      }
+    }
+    expect(wider).toBeGreaterThan(0);
   }, MATRIX_TIMEOUT_MS);
 
   it('leaves outfit null on every other step', () => {

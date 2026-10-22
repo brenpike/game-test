@@ -1,6 +1,7 @@
 /**
  * The treasure catalogue: rarities, categories, wearable slots, perks, Dream colours and the
- * canal treasures (PRD B1 to B3, F9). Pure data plus lookups; nothing here applies perks.
+ * treasures of every area, canal and pond (PRD B1 to B3, F9). Pure data plus lookups; nothing here
+ * applies perks.
  */
 
 /** Treasure rarity, from most to least common. */
@@ -81,7 +82,8 @@ export type DreamColourId =
   | 'iridescent'
   | 'rainbow'
   | 'galaxy'
-  | 'tie-dye-galaxy';
+  | 'tie-dye-galaxy'
+  | 'lily-green';
 
 /** How a Dream colour is drawn. */
 export type DreamKind = 'solid' | 'patterned' | 'sheen';
@@ -94,8 +96,8 @@ export interface DreamColour {
   readonly kind: DreamKind;
 }
 
-/** The 12 Dream colours with the PRD B3 rarities. */
-export const DREAM_COLOURS: readonly DreamColour[] = Object.freeze([
+/** The 12 canal Dream colours with the PRD B3 rarities, in the canal Paint shell order. */
+export const CANAL_DREAM_COLOURS: readonly DreamColour[] = Object.freeze([
   { id: 'mint', name: 'Mint', rarity: 'common', kind: 'solid' },
   { id: 'sky-blue', name: 'Sky blue', rarity: 'common', kind: 'solid' },
   { id: 'lavender', name: 'Lavender', rarity: 'common', kind: 'solid' },
@@ -109,6 +111,17 @@ export const DREAM_COLOURS: readonly DreamColour[] = Object.freeze([
   { id: 'galaxy', name: 'Galaxy', rarity: 'legendary', kind: 'patterned' },
   { id: 'tie-dye-galaxy', name: 'Tie-dye galaxy', rarity: 'legendary', kind: 'patterned' },
 ]);
+
+/** The pond's Dream colour, held by the pond's one Paint shell. */
+export const LILY_GREEN: DreamColour = Object.freeze({
+  id: 'lily-green',
+  name: 'Lily green',
+  rarity: 'rare',
+  kind: 'solid',
+});
+
+/** Every Dream colour: the canal's 12, then Lily green. */
+export const DREAM_COLOURS: readonly DreamColour[] = Object.freeze([...CANAL_DREAM_COLOURS, LILY_GREEN]);
 
 /** Fields every treasure has. `id` is stable forever, e.g. 'canal/sun-hat'. */
 export interface TreasureBase {
@@ -150,9 +163,10 @@ export interface PaintShell extends TreasureBase {
 /** Any treasure. */
 export type Treasure = Decoration | Wearable | PaintShell;
 
-function createPaintShell(colour: DreamColour): PaintShell {
+/** The Paint shell holding `colour`, with an id under the area `prefix`, e.g. 'canal'. */
+function createPaintShell(colour: DreamColour, prefix: string): PaintShell {
   return {
-    id: `canal/paint-shell-${colour.id}`,
+    id: `${prefix}/paint-shell-${colour.id}`,
     name: `${colour.name} Paint shell`,
     rarity: colour.rarity,
     category: 'paintShell',
@@ -161,8 +175,8 @@ function createPaintShell(colour: DreamColour): PaintShell {
 }
 
 /**
- * The canal treasures: 4 Decorations and 4 Wearables, then one Paint shell per Dream colour, then
- * 4 more Wearables. The newest entries come last so placement by seed stays the same for every
+ * The canal treasures: 4 Decorations and 4 Wearables, then one Paint shell per canal Dream colour,
+ * then 4 more Wearables. The newest entries come last so placement by seed stays the same for every
  * earlier treasure.
  */
 export const CANAL_TREASURES: readonly Treasure[] = Object.freeze([
@@ -202,7 +216,7 @@ export const CANAL_TREASURES: readonly Treasure[] = Object.freeze([
     slot: 'tail',
     perk: { type: 'shell', value: 1 },
   },
-  ...DREAM_COLOURS.map(createPaintShell),
+  ...CANAL_DREAM_COLOURS.map((colour) => createPaintShell(colour, 'canal')),
   {
     id: 'canal/tank-top',
     name: 'Tank top',
@@ -237,15 +251,101 @@ export const CANAL_TREASURES: readonly Treasure[] = Object.freeze([
   },
 ]);
 
+/**
+ * The pond treasures: 4 Decorations, 7 Wearables, then the Lily green Paint shell. Every perk is the
+ * PERK_VALUES value for its type and rarity.
+ */
+export const POND_TREASURES: readonly Treasure[] = Object.freeze([
+  {
+    id: 'pond/lily-pad',
+    name: 'Lily pad',
+    rarity: 'common',
+    category: 'decoration',
+    placement: 'floating',
+  },
+  { id: 'pond/cattail-clump', name: 'Cattail clump', rarity: 'common', category: 'decoration' },
+  { id: 'pond/frog-statue', name: 'Frog statue', rarity: 'rare', category: 'decoration' },
+  {
+    id: 'pond/lotus-lantern',
+    name: 'Lotus lantern',
+    rarity: 'epic',
+    category: 'decoration',
+    placement: 'floating',
+  },
+  {
+    id: 'pond/lily-flower-crown',
+    name: 'Lily flower crown',
+    rarity: 'common',
+    category: 'wearable',
+    slot: 'head',
+    perk: { type: 'regrowth', value: 10 },
+  },
+  {
+    id: 'pond/pond-weed-scarf',
+    name: 'Pond-weed scarf',
+    rarity: 'common',
+    category: 'wearable',
+    slot: 'neck',
+    perk: { type: 'snackMagnet', value: 30 },
+  },
+  {
+    id: 'pond/dragonfly-glasses',
+    name: 'Dragonfly glasses',
+    rarity: 'rare',
+    category: 'wearable',
+    slot: 'face',
+    perk: { type: 'treasureSense', value: 25 },
+  },
+  {
+    id: 'pond/raincoat',
+    name: 'Raincoat',
+    rarity: 'rare',
+    category: 'wearable',
+    slot: 'shirt',
+    perk: { type: 'speed', value: 6 },
+  },
+  {
+    id: 'pond/ladybug-backpack',
+    name: 'Ladybug backpack',
+    rarity: 'epic',
+    category: 'wearable',
+    slot: 'back',
+    perk: { type: 'shell', value: 1 },
+  },
+  {
+    id: 'pond/rainbow-dragonfly-wings',
+    name: 'Rainbow dragonfly wings',
+    rarity: 'legendary',
+    category: 'wearable',
+    slot: 'back',
+    perk: { type: 'dash', value: 25 },
+  },
+  {
+    id: 'pond/froggy-boots',
+    name: 'Froggy boots',
+    rarity: 'legendary',
+    category: 'wearable',
+    slot: 'feet',
+    perk: { type: 'speed', value: 10 },
+  },
+  createPaintShell(LILY_GREEN, 'pond'),
+]);
+
+/** Every treasure of every area: the canal's, then the pond's. */
+export const ALL_TREASURES: readonly Treasure[] = Object.freeze([...CANAL_TREASURES, ...POND_TREASURES]);
+
 const CATEGORY_NAMES: Readonly<Record<TreasureCategory, 'Decoration' | 'Wearable' | 'Paint shell'>> =
   Object.freeze({ decoration: 'Decoration', wearable: 'Wearable', paintShell: 'Paint shell' });
 
-/** The canal treasure with this id, or undefined when no treasure has it. */
+/** The treasure of any area with this id, or undefined when no treasure has it. */
 export function treasureById(id: string): Treasure | undefined {
-  return CANAL_TREASURES.find((treasure) => treasure.id === id);
+  return ALL_TREASURES.find((treasure) => treasure.id === id);
 }
 
-/** The id text after the first '/', e.g. 'canal/sun-hat' gives 'sun-hat'. Art texture keys use it. */
+/**
+ * The id text after the first '/', e.g. 'canal/sun-hat' gives 'sun-hat' and 'pond/raincoat' gives
+ * 'raincoat'. Art texture keys use it, so slugs are unique across every area.
+ */
 export function treasureSlug(id: string): string {
   return id.slice(id.indexOf('/') + 1);
 }
@@ -277,8 +377,8 @@ export function dreamKindAllowed(kind: DreamKind, rarity: Rarity): boolean {
 }
 
 /**
- * Dream colours owned through banked Paint shells, de-duplicated, in DREAM_COLOURS order.
- * Ids that are unknown or not Paint shells are ignored.
+ * Dream colours owned through banked Paint shells of any area, de-duplicated, in DREAM_COLOURS
+ * order. Ids that are unknown or not Paint shells are ignored.
  */
 export function ownedDreamColours(banked: readonly string[]): DreamColourId[] {
   const owned = new Set<DreamColourId>();

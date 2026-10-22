@@ -12,6 +12,7 @@ import { beginDraw, type TexSize } from './canvasKit';
 import { drawAxolotl, type AxolotlPose } from './drawAxolotl';
 import type { AxolotlArtLook, Bounds } from './drawAxolotlParts';
 import { NO_OUTFIT, type ArtOutfit } from './drawWearables';
+import type { HabitatLookId } from './habitatLook';
 import {
   CAVE_TEX,
   CURRENT_MARKER_TEX,
@@ -418,6 +419,14 @@ export interface AreaSceneryOptions {
   readonly rand: () => number;
   readonly reeds: readonly ReedLook[];
   readonly pads: readonly PadSpec[];
+  /**
+   * Habitat look of the chunks (habitatLook.ts). Default 'canal', which bakes exactly
+   * what it did before. 'pond' bakes the warmer water, the mud bed and the edge reeds
+   * on the first and last column of every row that has a bed.
+   */
+  readonly look?: HabitatLookId;
+  /** Bake the stream flowing in at the far right (last column, top row). Default false. */
+  readonly stream?: boolean;
 }
 
 export const areaBgKey = (prefix: string, row: number, column: number): string => `${prefix}bg-${row}-${column}`;
@@ -433,10 +442,11 @@ export const areaPadKey = (prefix: string, i: number): string => `${prefix}pad-$
  * row holds deep water and the bed, and every row between is flat deep water;
  * bank and sun are on the top row only. The flat middle chunks all share one
  * texture (key from {@link areaDeepBgKey}), so a tall area bakes fewer chunks
- * than it shows. Random draws go row by row, then column by column.
+ * than it shows. Random draws go row by row, then column by column. `look` and
+ * `stream` pick the habitat (the pond, issue #75); the default is the canal, unchanged.
  */
 export function bakeAreaScenery(scene: Phaser.Scene, opts: AreaSceneryOptions): SceneryTextures {
-  const { keyPrefix, bakeScale, bgScale, rand, screensWide, screensTall } = opts;
+  const { keyPrefix, bakeScale, bgScale, rand, screensWide, screensTall, look } = opts;
   const bankSet = new Set(opts.bankChunks);
   const bgSize: TexSize = { w: BG_CHUNK.w, h: BG_CHUNK.h, originX: 0, originY: 0 };
 
@@ -448,7 +458,7 @@ export function bakeAreaScenery(scene: Phaser.Scene, opts: AreaSceneryOptions): 
     for (let c = 0; c < screensWide; c++) {
       if (row === 'middle') {
         deep ??= bake(scene, areaDeepBgKey(keyPrefix), bgSize, bgScale, (ctx) =>
-          paintBackgroundChunk(ctx, { row, index: c, hasSun: false, hasBank: false, rand }),
+          paintBackgroundChunk(ctx, { row, index: c, hasSun: false, hasBank: false, look, rand }),
         );
         cells.push(deep);
         continue;
@@ -464,6 +474,10 @@ export function bakeAreaScenery(scene: Phaser.Scene, opts: AreaSceneryOptions): 
             hasBank,
             bankCapLeft: hasBank && !bankSet.has(c - 1),
             bankCapRight: hasBank && !bankSet.has(c + 1),
+            look,
+            stream: onTop && opts.stream === true && c === screensWide - 1,
+            edgeLeft: c === 0,
+            edgeRight: c === screensWide - 1,
             rand,
           }),
         ),

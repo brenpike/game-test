@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_LOOK, type AxolotlLook } from './axolotlLook';
 import { suggestedNamesFor } from './axolotlNames';
-import { CANAL_TREASURES, WEARABLE_SLOTS, ownedDreamColours, type Wearable } from './catalogue';
+import { POND_AREA } from './areas';
+import { ALL_TREASURES, CANAL_TREASURES, WEARABLE_SLOTS, isDecoration, ownedDreamColours, type Wearable } from './catalogue';
 import { DEV_TEST_AREA } from './devAreas';
 import { dueFirstFindCards } from './firstFind';
 import { REGISTRY_KEYS } from './gameEvents';
@@ -51,6 +52,12 @@ const HAT = 'canal/sun-hat';
 const MINT_SHELL = 'canal/paint-shell-mint';
 const WILD = axolotlFindId('wild');
 const FRESH_SEED = 0x5eed1234;
+const POND_ID = POND_AREA.id;
+const LILY_PAD = 'pond/lily-pad';
+const LOTUS_LANTERN = 'pond/lotus-lantern';
+const CATTAILS = 'pond/cattail-clump';
+const LILY_SHELL = 'pond/paint-shell-lily-green';
+const RAINCOAT = 'pond/raincoat';
 
 /** A look with every field off the default, a girl. */
 const STYLED: AxolotlLook = {
@@ -806,7 +813,8 @@ describe('last chosen area and hazards met (#73, D2)', () => {
 
   it('loads an older save with neither field as the newest unlocked area and only its legacy tilapia card', () => {
     const hub = hubWithFields({ lastAreaId: undefined, metHazards: undefined });
-    expect(hub.lastAreaId).toBe(CANAL_AREA_ID);
+    expect(hub.lastAreaId).toBe(POND_ID);
+    expect(hubWithFields({ lastAreaId: undefined, metHazards: undefined, stars: {} }).lastAreaId).toBe(CANAL_AREA_ID);
     expect(hub.metHazards).toEqual(['tilapia']);
     const unmet = hubWithFields({
       lastAreaId: undefined,
@@ -841,7 +849,20 @@ describe('last chosen area and hazards met (#73, D2)', () => {
     ['not a string', 7],
     ['missing', undefined],
   ])('loads a last chosen area that is %s as the newest unlocked area', (_label, lastAreaId) => {
-    expect(hubWithFields({ lastAreaId }).lastAreaId).toBe(CANAL_AREA_ID);
+    expect(hubWithFields({ lastAreaId }).lastAreaId).toBe(POND_ID);
+    expect(hubWithFields({ lastAreaId, stars: {} }).lastAreaId).toBe(CANAL_AREA_ID);
+    const unbeaten = { [CANAL_AREA_ID]: { exit: false, special: true, legsOrRescue: true } };
+    expect(hubWithFields({ lastAreaId, stars: unbeaten }).lastAreaId).toBe(CANAL_AREA_ID);
+  });
+
+  it('loads a last chosen pond only while the pond is unlocked', () => {
+    expect(hubWithFields({ lastAreaId: POND_ID }).lastAreaId).toBe(POND_ID);
+    expect(hubWithFields({ lastAreaId: POND_ID, stars: {} }).lastAreaId).toBe(CANAL_AREA_ID);
+    const unbeaten = { [CANAL_AREA_ID]: { exit: false, special: true, legsOrRescue: true } };
+    expect(hubWithFields({ lastAreaId: POND_ID, stars: unbeaten }).lastAreaId).toBe(CANAL_AREA_ID);
+    const pondStarsOnly = { [POND_ID]: { exit: true, special: true, legsOrRescue: true } };
+    expect(hubWithFields({ lastAreaId: POND_ID, stars: pondStarsOnly }).lastAreaId).toBe(CANAL_AREA_ID);
+    expect(hubWithFields({ lastAreaId: CANAL_AREA_ID }).lastAreaId).toBe(CANAL_AREA_ID);
   });
 
   it('never saves the per-area memory', () => {
@@ -876,5 +897,78 @@ describe('tank placements in the save', () => {
     expect(played.hub.tank.placed.length).toBeGreaterThan(0);
     const hub = loadedHub(JSON.parse(encodeSave(played.hub)));
     expect(hub.tank).toEqual(played.hub.tank);
+  });
+});
+
+/** Every Decoration of every area, for placing pond Decorations whatever the shipped default. */
+const ALL_DECORATIONS = ALL_TREASURES.filter(isDecoration);
+
+/**
+ * `playedSession` after a beaten pond trip: pond treasures banked (a Floating Lily pad and Lotus
+ * lantern, a Floor Cattail clump, the Lily green Paint shell and a Raincoat), the plastic worm met,
+ * pond stars, the wild axolotl wearing Lily green and three pond Decorations placed in the tank.
+ */
+function pondSession(): Session {
+  const afterPond = recordTripEnd(playedSession(), {
+    areaId: POND_ID,
+    banked: [LILY_PAD, LOTUS_LANTERN, CATTAILS, LILY_SHELL, RAINCOAT],
+    rescued: [],
+    eatenSnacks: [],
+    tripSeed: 91,
+    waitingStranded: null,
+    met: ['plastic-worm'],
+    returnedFinds: [],
+    stars: { areaId: POND_ID, earned: { exit: true, special: true, legsOrRescue: false } },
+  });
+  const painted = setDreamColour(afterPond, WILD, 'lily-green');
+  let layout = painted.hub.tank;
+  for (const id of [LILY_PAD, LOTUS_LANTERN, CATTAILS]) {
+    const spot = suggestSpot(layout, id, ALL_DECORATIONS);
+    const placed = placeDecoration(layout, painted.hub.banked, id, spot, ALL_DECORATIONS);
+    expect(placed.result, id).toBe('placed');
+    layout = placed.layout;
+  }
+  return setTankLayout(painted, layout, { catalogue: ALL_DECORATIONS });
+}
+
+/** The hub `pondSession` saves and loads. */
+function pondRoundTrip(): { session: Session; hub: HubState } {
+  const session = pondSession();
+  return { session, hub: loadedHub(JSON.parse(encodeSave(session.hub))) };
+}
+
+describe('pond progress in the save (#75, D2)', () => {
+  it('keeps every banked pond treasure id, in banked order', () => {
+    const { session, hub } = pondRoundTrip();
+    expect(session.hub.banked).toEqual([PLANT, MINT_SHELL, HAT, LILY_PAD, LOTUS_LANTERN, CATTAILS, LILY_SHELL, RAINCOAT]);
+    expect(hub.banked).toEqual(session.hub.banked);
+  });
+
+  it('keeps Lily green owned and worn', () => {
+    const { hub } = pondRoundTrip();
+    expect(ownedDreamColours(hub.banked)).toContain('lily-green');
+    expect(hub.axolotls.find((axolotl) => axolotl.id === WILD)?.dreamColour).toBe('lily-green');
+  });
+
+  it('keeps the pond Decoration placements, Floating ones included', () => {
+    const { session, hub } = pondRoundTrip();
+    const placedIds = session.hub.tank.placed.map((placement) => placement.id);
+    expect(placedIds).toEqual([PLANT, LILY_PAD, LOTUS_LANTERN, CATTAILS]);
+    expect(hub.tank).toEqual(session.hub.tank);
+  });
+
+  it('keeps the plastic worm met, after the tilapia', () => {
+    const { hub } = pondRoundTrip();
+    expect(hub.metHazards).toEqual(['tilapia', 'plastic-worm']);
+    const reordered = hubWithFields({ metHazards: ['plastic-worm', 'moon', 'tilapia', 'plastic-worm'] });
+    expect(reordered.metHazards).toEqual(['tilapia', 'plastic-worm']);
+  });
+
+  it('keeps the pond stars and the pond as the last chosen area', () => {
+    const { session, hub } = pondRoundTrip();
+    expect(hub.stars[POND_ID]).toEqual({ exit: true, special: true, legsOrRescue: false });
+    expect(hub.stars).toEqual(session.hub.stars);
+    const chosen = { ...session.hub, lastAreaId: POND_ID };
+    expect(loadedHub(JSON.parse(encodeSave(chosen))).lastAreaId).toBe(POND_ID);
   });
 });

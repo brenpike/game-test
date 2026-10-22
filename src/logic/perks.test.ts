@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CANAL_AREA } from './areas';
-import { CANAL_TREASURES, PERK_VALUES, WEARABLE_SLOTS, type PerkType, type Wearable, type WearableSlot } from './catalogue';
+import { ALL_TREASURES, PERK_VALUES, WEARABLE_SLOTS, type PerkType, type Wearable, type WearableSlot } from './catalogue';
 import { snackDriftMaxSpeed } from './collectibles';
 import {
   createEncounter,
@@ -71,7 +71,8 @@ function countOf(events: readonly EncounterEvent[], type: EncounterEvent['type']
   return events.filter((event) => event.type === type).length;
 }
 
-const CANAL_WEARABLES = CANAL_TREASURES.filter((treasure): treasure is Wearable => treasure.category === 'wearable');
+/** Every catalogue Wearable, every area, in catalogue order. */
+const CATALOGUE_WEARABLES = ALL_TREASURES.filter((treasure): treasure is Wearable => treasure.category === 'wearable');
 
 describe('outfitPerks', () => {
   it('gives nothing for an empty outfit', () => {
@@ -80,17 +81,17 @@ describe('outfitPerks', () => {
 
   it('gives each worn catalogue Wearable, with its slot and perk, in slot order', () => {
     const outfit: Outfit = emptyOutfit();
-    for (const wearable of [...CANAL_WEARABLES].reverse()) outfit[wearable.slot] = wearable.id;
-    const expected = WEARABLE_SLOTS.flatMap((slot) => CANAL_WEARABLES.filter((wearable) => wearable.id === outfit[slot]));
+    for (const wearable of [...CATALOGUE_WEARABLES].reverse()) outfit[wearable.slot] = wearable.id;
+    const expected = WEARABLE_SLOTS.flatMap((slot) => CATALOGUE_WEARABLES.filter((wearable) => wearable.id === outfit[slot]));
     const worn = outfitPerks(outfit);
     expect(worn).toEqual(expected);
     expect(worn.map((item) => item.slot)).toEqual(WEARABLE_SLOTS.filter((slot) => outfit[slot] !== null));
   });
 
   it('skips empty slots, unknown ids and treasures that are not Wearables', () => {
-    const wearable = CANAL_WEARABLES[0];
-    const decoration = CANAL_TREASURES.find((treasure) => treasure.category === 'decoration');
-    if (decoration === undefined) throw new Error('no canal Decoration');
+    const wearable = CATALOGUE_WEARABLES[0];
+    const decoration = ALL_TREASURES.find((treasure) => treasure.category === 'decoration');
+    if (decoration === undefined) throw new Error('no catalogue Decoration');
     const otherSlot = WEARABLE_SLOTS.find((slot) => slot !== wearable.slot) ?? wearable.slot;
     const outfit: Outfit = { ...emptyOutfit(), [wearable.slot]: wearable.id };
     const withJunk: Outfit = { ...outfit, [otherSlot]: 'canal/no-such-thing' };
@@ -100,9 +101,31 @@ describe('outfitPerks', () => {
 
   it('gives the same summary as the worn Wearables themselves', () => {
     const outfit: Outfit = emptyOutfit();
-    for (const wearable of CANAL_WEARABLES) outfit[wearable.slot] = wearable.id;
-    const wornWearables = CANAL_WEARABLES.filter((wearable) => outfit[wearable.slot] === wearable.id);
+    for (const wearable of CATALOGUE_WEARABLES) outfit[wearable.slot] = wearable.id;
+    const wornWearables = CATALOGUE_WEARABLES.filter((wearable) => outfit[wearable.slot] === wearable.id);
     expect(outfitSummary(outfitPerks(outfit))).toEqual(outfitSummary(wornWearables));
+  });
+});
+
+describe('catalogue Wearable perks (F9)', () => {
+  it('covers the pond Wearables', () => {
+    const ids = CATALOGUE_WEARABLES.map((wearable) => wearable.id);
+    expect(ids.some((id) => id.startsWith('canal/'))).toBe(true);
+    expect(ids.some((id) => id.startsWith('pond/'))).toBe(true);
+  });
+
+  it('gives every Wearable one existing perk at its PERK_VALUES value', () => {
+    for (const wearable of CATALOGUE_WEARABLES) {
+      expect(Object.keys(wearable.perk).sort(), wearable.id).toEqual(['type', 'value']);
+      expect(PERK_ORDER, wearable.id).toContain(wearable.perk.type);
+      expect(wearable.perk.value, wearable.id).toBe(PERK_VALUES[wearable.perk.type][wearable.rarity]);
+    }
+  });
+
+  it('puts Shell only on Epic or Legendary Wearables', () => {
+    for (const wearable of CATALOGUE_WEARABLES.filter((item) => item.perk.type === 'shell')) {
+      expect(['epic', 'legendary'], wearable.id).toContain(wearable.rarity);
+    }
   });
 });
 
@@ -204,8 +227,7 @@ describe('outfitSummary (F10, F11)', () => {
   });
 
   it('takes catalogue Wearables as they are', () => {
-    const wearables = CANAL_TREASURES.filter((treasure): treasure is Wearable => treasure.category === 'wearable');
-    const first = wearables[0];
+    const first = CATALOGUE_WEARABLES[0];
     expect(outfitSummary([first]).rows).toHaveLength(1);
     expect(outfitSummary([first]).rows[0].type).toBe(first.perk.type);
   });

@@ -2,9 +2,12 @@ import * as Phaser from 'phaser';
 import { bakeAreaMapTextures, type AreaMapTextures } from '../art/areaMapTextures';
 import { bakeAreaTextures, type AreaTextures } from '../art/areaTextures';
 import { createAxolotlRigBake, type AxolotlRigBake } from '../art/axolotlRig';
+import { CAVE_H, CAVE_W } from '../art/drawFinds';
 import type { ReedLook } from '../art/drawScenery';
+import { habitatLook, type HabitatLook } from '../art/habitatLook';
 import { bakeMorphTextures, type MorphTextures } from '../art/morphTextures';
 import { INK, LW, UI_FONT } from '../art/palette';
+import { bakePondTextures, type PondTextures } from '../art/pondTextures';
 import { bakePredatorTextures, type PredatorTextures } from '../art/predatorTextures';
 import { bakeTankTextures, type ExtraDecorationTextures, type TankTextures } from '../art/tankTextures';
 import { bakeTreasureTextures, type TreasureTextures } from '../art/treasureTextures';
@@ -24,7 +27,7 @@ import {
   type TexInfo,
 } from '../art/textures';
 import { BUTTON_PRESS_OFFSET, BUTTON_SQUARE, BUTTON_WIDE, ICON_SIZE, type IconKind } from '../art/drawUi';
-import { AREAS, type AreaData } from '../logic/areas';
+import { AREAS, habitatById, type AreaData } from '../logic/areas';
 import type { Decoration } from '../logic/catalogue';
 import { mulberry32 } from '../logic/rng';
 import { TANK } from '../logic/tank';
@@ -76,7 +79,9 @@ export interface BakedDecorationPack {
  * Everything the boot scene prepares, handed from scene to scene as start data. `areas` is AREAS
  * plus the dev area when one was asked for; `zones` and `scenery` hold each of those areas' layout
  * and baked scenery by area id. `devAreaId` is the dev area's id, or null. `devDecor` is the dev
- * Decoration pack baked at the tank Decoration size, or null when none was asked for.
+ * Decoration pack baked at the tank Decoration size, or null when none was asked for. `pond` holds
+ * the pond props (hollow log, plastic worms, queasy cheek tint), baked only when some area has the
+ * pond look, else null.
  */
 export interface GameAssets {
   areas: readonly Readonly<AreaData>[];
@@ -92,6 +97,7 @@ export interface GameAssets {
   area: AreaTextures;
   areaMap: AreaMapTextures;
   devDecor: BakedDecorationPack | null;
+  pond: PondTextures | null;
 }
 
 /** What the swim scene and its HUD start from: the game assets and the id of the area to swim in. */
@@ -119,6 +125,13 @@ export function sceneryFor(assets: GameAssets, areaId: string): SceneryTextures 
   const scenery: SceneryTextures | undefined = assets.scenery[areaId];
   if (scenery === undefined) throw new Error(`sceneryFor: no scenery for area ${areaId}`);
   return scenery;
+}
+
+/** The habitat look of area `area` (its habitat's `look`). Throws when the habitat or the look is unknown. */
+export function areaLook(area: Readonly<AreaData>): HabitatLook {
+  const habitat = habitatById(area.habitatId);
+  if (habitat === undefined) throw new Error(`areaLook: no habitat ${area.habitatId} for area ${area.id}`);
+  return habitatLook(habitat.look);
 }
 
 /** CSS viewport size plus the fitted view derived from the Scale Manager. */
@@ -397,16 +410,22 @@ function toReedLook(reed: ReedSpec): ReedLook {
 
 /**
  * Every area's scenery by area id: the canal's from its `bakeTextures` result, every other area
- * baked with its id as the key prefix.
+ * baked with its id as the key prefix, in its habitat look. The pond look adds the stream flowing
+ * in at the far right, where the pond's current is.
  */
 function bakeScenery(
   scene: Phaser.Scene,
+  areas: readonly Readonly<AreaData>[],
   zones: Readonly<Record<string, ZoneLayout>>,
   baked: BakedTextures,
   bakeScale: number,
 ): Record<string, SceneryTextures> {
   const scenery: Record<string, SceneryTextures> = {};
-  for (const [id, zone] of Object.entries(zones)) {
+  for (const area of areas) {
+    const id = area.id;
+    const zone = zones[id];
+    if (zone === undefined) throw new Error(`bakeScenery: no zone for area ${id}`);
+    const look = areaLook(area).id;
     scenery[id] =
       id === CANAL_AREA_ID
         ? sceneryFromBaked(baked)
@@ -421,9 +440,17 @@ function bakeScenery(
             rand: mulberry32(ART_SEED),
             reeds: zone.reeds.map(toReedLook),
             pads: zone.pads,
+            look,
+            stream: look === 'pond',
           });
   }
   return scenery;
+}
+
+/** The pond props at the cave's size, so the hollow log takes the cave's place; null when no area has the pond look. */
+function bakePondProps(scene: Phaser.Scene, areas: readonly Readonly<AreaData>[], bakeScale: number): PondTextures | null {
+  if (!areas.some((area) => areaLook(area).id === 'pond')) return null;
+  return bakePondTextures(scene, bakeScale, { caveW: CAVE_W, caveH: CAVE_H });
 }
 
 /** Builds every area's zone, bakes every texture at the fitted scale, then starts the title. */
@@ -452,7 +479,7 @@ export class BootScene extends Phaser.Scene {
       reeds: zone.reeds.map(toReedLook),
       pads: zone.pads,
     });
-    const scenery = bakeScenery(this, zones, baked, bakeScale);
+    const scenery = bakeScenery(this, areas, zones, baked, bakeScale);
     const axolotl = createAxolotlRigBake(this, TEX.axolotl, bakeScale);
     const predator = bakePredatorTextures(this, bakeScale);
     const treasure = bakeTreasureTextures(this, bakeScale);
@@ -467,6 +494,7 @@ export class BootScene extends Phaser.Scene {
       devDecorPack === undefined
         ? null
         : { decorations: devDecorPack.decorations, textures: devDecorPack.bake(this, bakeScale, TANK.decorationPx) };
+    const pond = bakePondProps(this, areas, bakeScale);
     const assets: GameAssets = {
       areas,
       zones,
@@ -481,6 +509,7 @@ export class BootScene extends Phaser.Scene {
       area,
       areaMap,
       devDecor,
+      pond,
     };
     this.scene.start(SCENE_KEYS.title, assets);
   }

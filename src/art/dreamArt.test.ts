@@ -45,7 +45,15 @@ import { DREAM_SWATCH } from './treasurePalette';
 
 const TAU = Math.PI * 2;
 const DREAM_IDS = Object.keys(DREAM_SLOTS) as DreamLookId[];
-const SOLID_IDS: readonly DreamLookId[] = ['mint', 'sky-blue', 'lavender', 'sunset-orange', 'bubblegum', 'midnight-blue'];
+const SOLID_IDS: readonly DreamLookId[] = [
+  'mint',
+  'sky-blue',
+  'lavender',
+  'sunset-orange',
+  'bubblegum',
+  'midnight-blue',
+  'lily-green',
+];
 const DARK_IDS: readonly DreamLookId[] = ['midnight-blue', 'galaxy', 'tie-dye-galaxy'];
 const RIM_IDS: readonly DreamLookId[] = ['midnight-blue', 'rainbow', 'galaxy', 'tie-dye-galaxy'];
 const SWIM_SAMPLES = Array.from({ length: 13 }, (_, i) => (i / 12) * TAU);
@@ -96,7 +104,9 @@ function everyPair(): [string, DreamLookId, MorphPalette][] {
 }
 
 describe('Dream colour slots (guide 3f)', () => {
-  it('has the twelve Dream colours with the swatch body colours', () => {
+  it('has the thirteen Dream colours with the swatch body colours', () => {
+    expect(DREAM_IDS).toHaveLength(13);
+    expect(DREAM_IDS.at(-1)).toBe('lily-green');
     expect(DREAM_IDS).toEqual(Object.keys(DREAM_SWATCH));
     for (const id of DREAM_IDS) expect(DREAM_SLOTS[id].body, id).toBe(DREAM_SWATCH[id].body);
   });
@@ -111,6 +121,20 @@ describe('Dream colour slots (guide 3f)', () => {
       expectNear(s.gillFarStem, mixChannels(s.gillNearStem, INK, 0.1), `${id} far stem`);
       expectNear(s.gillFarFilament, mixChannels(s.gillNearFilament, INK, 0.08), `${id} far filament`);
     }
+  });
+
+  it('gives Lily green the 3f mixes of its two picks, a 9:1 body and a plain light swatch (issue #75)', () => {
+    const s = DREAM_SLOTS['lily-green'];
+    expect([s.body, s.gillNearStem]).toEqual(['#ddf274', '#4fb83a']);
+    expectNear(s.farSide, mixChannels(s.body, INK, 0.12), 'far side');
+    expectNear(s.fin, mixChannels(s.body, WHITE, 0.4), 'fin');
+    expectNear(s.belly, mixChannels(s.body, WHITE, 0.55), 'belly');
+    expectNear(s.gillNearFilament, mixChannels(s.gillNearStem, WHITE, 0.22), 'near filament');
+    expectNear(s.gillFarStem, mixChannels(s.gillNearStem, INK, 0.1), 'far stem');
+    expectNear(s.gillFarFilament, mixChannels(s.gillNearFilament, INK, 0.08), 'far filament');
+    expect(contrastRatio(s.body, INK)).toBeGreaterThanOrEqual(9);
+    expect(DREAM_SWATCH['lily-green']).toEqual({ body: '#ddf274', pattern: 'plain', marks: [], dark: false });
+    expect(dreamPalette(MORPH_PALETTES.leucistic, 'lily-green').extras).toEqual({ spot: 'rgba(43,35,80,0.30)' });
   });
 });
 
@@ -466,7 +490,7 @@ describe('Dream marker (guide 4e, 6p)', () => {
 });
 
 describe('Dream greyscale cues (PRD F15, guide 6p)', () => {
-  it('leaves exactly the six solids plain', () => {
+  it('leaves exactly the seven solids plain', () => {
     const plain = DREAM_IDS.filter((id) => DREAM_SWATCH[id].pattern === 'plain');
     expect(plain).toEqual(SOLID_IDS);
   });

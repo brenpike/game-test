@@ -13,6 +13,7 @@
 import {
   EYE,
   FLOWER_PETAL,
+  LILY_PAD_SHINE,
   PEBBLE_A,
   PEBBLE_C,
   PEBBLE_E,
@@ -94,6 +95,40 @@ export const DIVING_TANK_FILL = PEBBLE_A;
 /** Flippers, sun yellow. 11.05:1. */
 export const FLIPPER_FILL = SUN;
 
+// ---- Pond silhouette fills (issue #75; all at least 9:1 with ink) ---------
+// Icons and worn looks share these. Later steps may add only internal detail
+// colours, never outer fills. Legendary pond items reuse GOLD_TRIM (#ffc12e).
+// None equals a BADGE_FILL rarity colour. Ratios are fill against ink.
+
+/** Lily pad Decoration, pad fill: the lily pad shine green. 10.95:1. */
+export const LILY_PAD_FILL = LILY_PAD_SHINE;
+/** Cattail clump stems, the reed leaf green. 9.25:1. */
+export const CATTAIL_STEM = REED_LEAF;
+/** Cattail clump heads, a pale tan (a light cattail brown, since the true brown fails 9:1). 9.64:1. */
+export const CATTAIL_HEAD = '#f0cf94';
+/** Frog statue stone, a pale mossy green stone. 10.87:1. */
+export const FROG_STATUE_STONE = '#cfe8b4';
+/** Lotus lantern petals, pale pink. 9.90:1. */
+export const LOTUS_PETAL = '#ffc6e4';
+/** Lotus lantern glowing body, pale lantern yellow. 12.01:1. */
+export const LOTUS_LANTERN_BODY = '#ffeaa0';
+/** Lily flower crown blooms, blush white. 11.75:1. */
+export const LILY_CROWN_FLOWER = '#ffe0ee';
+/** Lily flower crown leaves, the lily pad shine green. 10.95:1. */
+export const LILY_CROWN_LEAF = LILY_PAD_SHINE;
+/** Pond-weed scarf, spring green. 10.40:1. */
+export const POND_WEED_SCARF = '#b5ec6c';
+/** Dragonfly glasses frame, pale aqua. 10.39:1. */
+export const DRAGONFLY_FRAME = '#8fe8ff';
+/** Raincoat, pale apricot. 9.52:1. */
+export const RAINCOAT_FILL = '#ffc79a';
+/** Ladybug backpack shell, pale ladybug red (a light red, since the true red fails 9:1). 9.05:1. */
+export const LADYBUG_SHELL = '#ffbcc0';
+/** Rainbow dragonfly wings, pale sky film. 12.48:1. */
+export const DRAGONFLY_WING = '#d9f3ff';
+/** Froggy boots, minty frog green. 10.34:1. */
+export const FROGGY_BOOT = '#8cf0a0';
+
 // ---- Trims, gems and details inside the silhouette (free) -----------------
 
 /** Legendary trim (3e, 6i). */
@@ -143,7 +178,7 @@ export const DREAM_DIVIDER = 'rgba(255,255,255,0.8)';
 /** Galaxy and Tie-dye galaxy stars: plain white, no outline, on a dark base. */
 export const DREAM_STAR = WHITE;
 
-/** The twelve Dream colour ids, in the order the guide lists them (3f). */
+/** The thirteen Dream colour ids, in the order the guide lists them (3f). */
 export type DreamSwatchId =
   | 'mint'
   | 'sky-blue'
@@ -156,7 +191,8 @@ export type DreamSwatchId =
   | 'iridescent'
   | 'rainbow'
   | 'galaxy'
-  | 'tie-dye-galaxy';
+  | 'tie-dye-galaxy'
+  | 'lily-green';
 
 /** The simplified pattern drawn in the paint blob (guide 8). */
 export type DreamPattern = 'plain' | 'hearts' | 'spiral' | 'stripes' | 'bands' | 'stars' | 'spiral-stars';
@@ -200,4 +236,5 @@ export const DREAM_SWATCH: Readonly<Record<DreamSwatchId, DreamSwatchLook>> = {
     marks: ['rgba(255,127,191,0.75)', 'rgba(127,212,255,0.75)'],
     dark: true,
   },
+  'lily-green': { body: '#ddf274', pattern: 'plain', marks: [], dark: false },
 };

@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import type { HabitatLook } from '../art/habitatLook';
 import { DEPTH } from '../art/layers';
 import type { TexInfo } from '../art/textures';
 import { treasureById, treasureSlug, type Rarity } from '../logic/catalogue';
@@ -129,6 +130,15 @@ function pastCurrentMarkerX(current: CurrentZone, home: Point): number {
   throw new Error(`TreasureView: current "${current.id}" spans the Home Spot, so it has no far side`);
 }
 
+/** The back and front of the cave for `look`: the hollow log in the pond, else the canal's small cave. */
+function caveTextures(assets: GameAssets, look: HabitatLook): { back: TexInfo; front: TexInfo } {
+  if (look.id !== 'pond') return { back: assets.baked.hiding.caveBack, front: assets.baked.hiding.caveFront };
+  if (assets.pond === null) {
+    throw new Error('TreasureView: the pond look needs the baked pond textures for the hollow log');
+  }
+  return { back: assets.pond.logBack, front: assets.pond.logFront };
+}
+
 function rarityOf(id: FindId): Rarity {
   const treasure = treasureById(id);
   if (!treasure) {
@@ -138,7 +148,8 @@ function rarityOf(id: FindId): Rarity {
 }
 
 /**
- * Draws the hidden treasures and their hiding places: the small cave (interior and rocks), the
+ * Draws the hidden treasures and their hiding places: the cave (the canal's small cave of rocks, or
+ * the pond's hollow log, interior and front), the
  * past-the-current marker, one treasure icon per catalogue find (hidden under cover, or revealed by
  * a crumble), the Dash pots, the hint stars, the dash-needed bubble and pot wobble, the crumble and
  * the pickup pop. Visual only: every timer here is driven by the frame `dt` and the scene clock, so
@@ -162,6 +173,7 @@ export class TreasureView {
     scene: Phaser.Scene,
     assets: GameAssets,
     zone: ZoneLayout,
+    look: HabitatLook,
     placed: readonly PlacedFind[],
     hintMultiplier: number,
   ) {
@@ -170,8 +182,9 @@ export class TreasureView {
     const hiding = assets.baked.hiding;
     const baseY = zone.bedTop + BED_SINK_PX;
     const caveX = (zone.cave.x0 + zone.cave.x1) / 2;
-    bakedImage(scene, hiding.caveBack, caveX, baseY, DEPTH.caveBack);
-    bakedImage(scene, hiding.caveFront, caveX, baseY, DEPTH.caveFront);
+    const cave = caveTextures(assets, look);
+    bakedImage(scene, cave.back, caveX, baseY, DEPTH.caveBack);
+    bakedImage(scene, cave.front, caveX, baseY, DEPTH.caveFront);
     const current = zone.currents[0];
     if (!current) {
       throw new Error('TreasureView: the zone has no current for the past-the-current marker');

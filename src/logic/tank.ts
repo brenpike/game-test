@@ -4,7 +4,7 @@
  * stand on the gravel; Floating and Hanging items (issue #95) sit at one fixed base y in the top band
  * and move left and right only. Pure data plus functions; drawing lives in the art and scene layers.
  */
-import { CANAL_TREASURES, isDecoration, placementKind, type Decoration } from './catalogue';
+import { ALL_TREASURES, isDecoration, placementKind, type Decoration } from './catalogue';
 import type { Rect } from './hudLayout';
 import type { Point } from './zone';
 
@@ -42,8 +42,8 @@ export const TOP_KEEP_CLEAR = Object.freeze({
   y1: TANK.topBand.y1 + TOP_MOTION_MARGIN,
 });
 
-/** The shipped Decorations (the canal ones), in catalogue order. Tank functions use it by default. */
-export const SHIPPED_DECORATIONS: readonly Decoration[] = Object.freeze(CANAL_TREASURES.filter(isDecoration));
+/** The shipped Decorations of every area (canal then pond), in catalogue order. Tank functions use it by default. */
+export const SHIPPED_DECORATIONS: readonly Decoration[] = Object.freeze(ALL_TREASURES.filter(isDecoration));
 
 /** The parts of a Decoration that set where it may go and what it covers. */
 export type DecorationShape = Pick<Decoration, 'placement' | 'width'>;

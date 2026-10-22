@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-10-22
+
+### Added
+
+- Area 2, the Lily pad pond, is open. It has its own place on the area map, with a lily pad marker (#75).
+- The pond has lily pads, cattails, a hollow log to hide treasure in and a stream (#75).
+- Plastic worms live in the pond. They are shiny, stiff fake worms. If your axolotl bites one, it spits it out ("Bleh!") and feels queasy and slow for a moment (#75).
+- A new fact card: "Plastic is not food" (#75).
+- 12 new treasures to find in the pond: Lily pad, Cattail clump, Frog statue (the pond's special treasure), Lotus lantern, Lily flower crown, Pond-weed scarf, Dragonfly glasses, Raincoat, Ladybug backpack, Rainbow dragonfly wings, Froggy boots, and a Paint shell with the Lily green Dream colour (#75).
+
+### Changed
+
+- The Treasure Chest's Epic hint now says "Look in a cave or log, or past the current!" (#75).
+- Outfits with long names may show one choice per page on the smallest screens (#75).
+
 ## [0.25.0] - 2026-10-22
 
 ### Changed

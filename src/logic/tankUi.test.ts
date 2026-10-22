@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { isSupportedCanvas } from './cardFit';
 import type { HudView, Rect, Size } from './hudLayout';
-import { decorationBandTop, lidTopCss, tankFrame, topKeepClearCss } from './tank';
+import { SHIPPED_DECORATIONS, decorationBandTop, lidTopCss, tankFrame, topKeepClearCss } from './tank';
 import { CLOSE_LABEL, COLLECTION_BOOK_LABEL, DONE_LABEL, NEXT_PAGE_LABEL, PREVIOUS_PAGE_LABEL } from './tankText';
 import {
   BUTTON_LABEL_PAD,
@@ -48,6 +48,8 @@ const WIDE: Size = { w: 200, h: 64 };
 const PUT_AWAY: Size = { w: 160, h: 51.2 };
 
 const MIN_TARGET_PX = 48;
+/** Largest tray that keeps the room rule; a larger tray follows the art guide rule for trays of more than 4. */
+const ROOM_RULE_TRAY_MAX = 4;
 const PRIMARY_H = 64;
 const TITLE_PX = 34;
 const CHEST_TITLE_PX = 28;
@@ -59,7 +61,7 @@ const CHEST_ROW_H = 3 * LINE_HEIGHT_EM * BODY_PX;
 const HUB_TITLE = 'Home Tank';
 const DECORATE_CAPTION = 'Pick a Decoration to place it. Drag it or use the arrow keys to move it.';
 const CHEST_TITLE = 'Treasure Chest';
-const CHEST_HEADING = 'Dream colours: 12 of 12 found';
+const CHEST_HEADING = 'Dream colours: 13 of 13 found';
 const CHEST_PAGE = 'Page 9 of 9';
 
 const CANVAS_WIDTHS: readonly number[] = [
@@ -241,20 +243,71 @@ function decorateTargets(layout: DecorateLayout): [string, Rect][] {
   ];
 }
 
-/** Every decorate problem on one canvas with one tray count out of `maxTrayCount`. */
+/** True when `row` spans an even width either side of the view's centre line. */
+function isCentredRow(view: HudView, row: readonly Rect[]): boolean {
+  const left = Math.min(...row.map((rect) => rect.x));
+  const right = Math.max(...row.map((rect) => rect.x + rect.w));
+  return Math.abs((left + right) / 2 - view.cssW / 2) < 1e-9;
+}
+
+/** Problems with rows not centred across the view; rects that share a vertical centre are one row. */
+function centredRowProblems(label: string, view: HudView, rects: readonly [string, Rect][]): string[] {
+  const rows = new Map<number, Rect[]>();
+  for (const [, rect] of rects) {
+    const centreKey = Math.round((rect.y + rect.h / 2) * 1e6);
+    rows.set(centreKey, [...(rows.get(centreKey) ?? []), rect]);
+  }
+  return [...rows.entries()]
+    .filter(([, row]) => !isCentredRow(view, row))
+    .map(([centreKey]) => `${label}: row at y ${centreKey / 1e6} not centred`);
+}
+
+/**
+ * Top of the caption by its rule (art guide 7f, decorate controls), or null when it hides: 12 px under
+ * the controls inside their room, else in the open water (a gap under the top keep-clear band, maybe
+ * over the floor Decorations) inside the bottom margin, and only when it fits across.
+ */
+function captionRuleTop(view: HudView, layout: DecorateLayout, caption: Size): number | null {
+  if (caption.w > view.cssW - 2 * UI.margin + 1e-9) return null;
+  const top = Math.max(...decorateTargets(layout).map(([, rect]) => bottomOf(rect))) + UI.gap;
+  if (top + caption.h <= layout.room.bottom + 1e-9) return top;
+  const waterTop = Math.max(top, topKeepClearCss(tankFrame(view.cssW, view.cssH)).y1 + UI.gap);
+  return waterTop + caption.h <= view.cssH - UI.margin + 1e-9 ? waterTop : null;
+}
+
+/** Problems with a caption not placed, or not hidden, by its rule. */
+function captionRuleProblems(label: string, view: HudView, layout: DecorateLayout, caption: Size | null): string[] {
+  const expected = caption === null ? null : captionRuleTop(view, layout, caption);
+  const actual = layout.caption === null ? null : layout.caption.y;
+  const agrees = expected === null || actual === null ? expected === actual : Math.abs(expected - actual) < 1e-9;
+  return agrees ? [] : [`${label}: caption at ${actual}, its rule gives ${expected}`];
+}
+
+/**
+ * Every decorate problem on one canvas with one tray count out of `maxTrayCount`. Up to
+ * ROOM_RULE_TRAY_MAX the controls stay inside the rooms and the caption always shows. A larger tray
+ * follows the art guide rule for trays of more than 4: its rows may reach over the floor band and the
+ * caption is placed or hidden by its rule.
+ */
 function decorateProblems(view: HudView, trayCount: number, maxTrayCount: number): string[] {
   const label = `decorate ${view.cssW}x${view.cssH} tray=${trayCount}/${maxTrayCount}`;
   const frame = tankFrame(view.cssW, view.cssH);
-  const layout = decorateLayout(view, frame, trayCount, decorateSizes(view), maxTrayCount);
+  const sizes = decorateSizes(view);
+  const layout = decorateLayout(view, frame, trayCount, sizes, maxTrayCount);
   const targets = decorateTargets(layout);
   const all: [string, Rect][] = layout.caption ? [...targets, ['caption', layout.caption]] : targets;
   const problems = [
     ...spacingProblems(label, marginBounds(view), all),
     ...targetProblems(label, targets),
     ...keepClearProblems(label, view, all),
-    ...roomProblems(label, view, targets),
+    ...centredRowProblems(label, view, all),
   ];
-  if (layout.caption === null) problems.push(`${label}: no caption`);
+  if (maxTrayCount <= ROOM_RULE_TRAY_MAX) {
+    problems.push(...roomProblems(label, view, targets));
+    if (layout.caption === null) problems.push(`${label}: no caption`);
+  } else {
+    problems.push(...captionRuleProblems(label, view, layout, sizes.caption));
+  }
   if (layout.tray.length !== trayCount) problems.push(`${label}: ${layout.tray.length} tray squares`);
   if (layout.done.h < PRIMARY_H) problems.push(`${label}: Done under ${PRIMARY_H} px`);
   return problems;
@@ -600,6 +653,17 @@ describe('decorateLayout', () => {
     expect(problems).toEqual([]);
   });
 
+  it('fits every tray up to the shipped Decorations on every supported canvas, more than 4 by the tray rule', () => {
+    expect(SHIPPED_DECORATIONS).toHaveLength(8);
+    const maxCounts = Array.from({ length: SHIPPED_DECORATIONS.length + 1 }, (_, count) => count);
+    const problems = supportedCanvases().flatMap((view) =>
+      maxCounts.flatMap((maxTrayCount) =>
+        maxCounts.filter((trayCount) => trayCount <= maxTrayCount).flatMap((trayCount) => decorateProblems(view, trayCount, maxTrayCount)),
+      ),
+    );
+    expect(problems).toEqual([]);
+  });
+
   it('uses 64 px tray squares and always reserves the Put away slot', () => {
     const view = { cssW: 800, cssH: 600 };
     const layout = decorateLayout(view, tankFrame(view.cssW, view.cssH), 2, { ...decorateSizes(view), caption: null });
@@ -637,6 +701,47 @@ describe('decorateLayout', () => {
     expect(layout.tray).toEqual([302, 378, 454, 530].map((x) => ({ x, y: 228, w: 64, h: 64 })));
     expect(layout.putAway).toEqual({ x: 606, y: 234.4, w: 160, h: 51.2 });
     expect(layout.done).toEqual({ x: 778, y: 228, w: 200, h: 64 });
+  });
+
+  it('lays out the 8 shipped Decorations compact in two rows over the floor band at 460 x 320', () => {
+    const view = { cssW: 460, cssH: 320 };
+    const frame = tankFrame(view.cssW, view.cssH);
+    const layout = decorateLayout(view, frame, 8, decorateSizes(view), 8);
+    expect(layout.compact).toBe(true);
+    expect(layout.tray).toEqual([
+      ...[26, 86, 146, 206, 266, 326, 386].map((x) => ({ x, y: 108, w: 48, h: 48 })),
+      { x: 115, y: 176, w: 48, h: 48 },
+    ]);
+    expect(layout.putAway).toEqual({ x: 175, y: 176, w: 48, h: 48 });
+    expect(layout.done).toEqual({ x: 235, y: 168, w: 110, h: 64 });
+    expect(layout.tray[0].y).toBe(topKeepClearCss(frame).y1 + UI.gap);
+    expect(bottomOf(layout.done)).toBeGreaterThan(decorationBandTop(frame));
+    expect(layout.caption).toEqual({ x: 16, y: 244, w: 428, h: 45 });
+  });
+
+  it('lays out the 8 shipped Decorations compact in three rows on the wall, the caption in the water, at 320 x 440', () => {
+    const view = { cssW: 320, cssH: 440 };
+    const frame = tankFrame(view.cssW, view.cssH);
+    const layout = decorateLayout(view, frame, 8, decorateSizes(view), 8);
+    expect(layout.compact).toBe(true);
+    expect(layout.tray).toEqual([
+      ...[16, 76, 136, 196, 256].map((x) => ({ x, y: 16, w: 48, h: 48 })),
+      ...[46, 106, 166].map((x) => ({ x, y: 76, w: 48, h: 48 })),
+    ]);
+    expect(layout.putAway).toEqual({ x: 226, y: 76, w: 48, h: 48 });
+    expect(layout.done).toEqual({ x: 105, y: 136, w: 110, h: 64 });
+    expect(bottomOf(layout.done)).toBeLessThanOrEqual(topKeepClearCss(frame).y0 - UI.gap);
+    expect(layout.caption).toEqual({ x: 16, y: topKeepClearCss(frame).y1 + UI.gap, w: 288, h: 67.5 });
+    expect(layout.caption?.y).toBe(284);
+  });
+
+  it('puts Done in the open water under the top band when the wall holds only the tray at 340 x 440', () => {
+    const view = { cssW: 340, cssH: 440 };
+    const frame = tankFrame(view.cssW, view.cssH);
+    const layout = decorateLayout(view, frame, 8, decorateSizes(view), 8);
+    expect(layout.tray.map((rect) => rect.y)).toEqual([16, 16, 16, 16, 16, 76, 76, 76]);
+    expect(layout.putAway.y).toBe(76);
+    expect(layout.done).toEqual({ x: 115, y: topKeepClearCss(frame).y1 + UI.gap, w: 110, h: 64 });
   });
 
   it('chooses the look from the most tray items so it holds still as the tray empties', () => {

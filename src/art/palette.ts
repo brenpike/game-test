@@ -458,7 +458,7 @@ export const MORPH_PALETTES: Record<MorphLookId, MorphPalette> = {
 // body and gill slots; the real morph keeps its eye and mouth. Every value in
 // this section is derived (provisional).
 
-/** Look ids of the twelve Dream colours, in the guide 3f order. Must match the logic layer's Dream colour ids. */
+/** Look ids of the thirteen Dream colours, in the guide 3f order. Must match the logic layer's Dream colour ids. */
 export type DreamLookId =
   | 'mint'
   | 'sky-blue'
@@ -471,7 +471,8 @@ export type DreamLookId =
   | 'iridescent'
   | 'rainbow'
   | 'galaxy'
-  | 'tie-dye-galaxy';
+  | 'tie-dye-galaxy'
+  | 'lily-green';
 
 /** The body and gill role slots a Dream colour swaps (guide 3f). */
 export type DreamSlots = Pick<
@@ -530,6 +531,8 @@ export const DREAM_SLOTS: Readonly<Record<DreamLookId, DreamSlots>> = {
     ['#7fd4ff', '#9bddff'],
     ['#77c2ee', '#92cef1'],
   ),
+  // Pond Dream colour (issue #75). Body #ddf274 (hue 70) is 11.67:1 with ink, so 3.42:1 worst case.
+  'lily-green': dreamSlots('#ddf274', '#c8d970', '#ebf7ac', '#f0f9c0', ['#4fb83a', '#76c865'], ['#4ba93c', '#70bb63']),
 };
 
 /** Marks a palette as a Dream colour over a real morph; drawAxolotl paints the layer 6.5 overlay from it. */

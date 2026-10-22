@@ -1,5 +1,5 @@
 import { CANAL_TREASURES, type Rarity, type Treasure } from './catalogue';
-import type { ElementSpawn, HazardSpawn } from './hazards';
+import { shapeDistance, type ElementSpawn, type HazardSpawn } from './hazards';
 import type { PredatorRoute } from './predators';
 import { mulberry32 } from './rng';
 import { FINDS } from './tuning';
@@ -30,6 +30,8 @@ const REED_BASE_Y = 326;
 const SNACK_MIN_SPACING = 40;
 const SNACK_START_CLEARANCE = 90;
 const SNACK_MAX_ATTEMPTS = 400;
+/** Minimum distance in px from every snack to every hazard shape's edge. */
+export const SNACK_HAZARD_CLEARANCE = 80;
 const SPOT_HOME_CLEARANCE = FINDS.pickupRadius + 8;
 
 /** One row of reed hiding spots: a spot at this depth in every column of its bed. */
@@ -102,6 +104,17 @@ export interface PadSpec {
   x: number;
   rx: number;
   flower: boolean;
+}
+
+/**
+ * A lily pad at a fixed place, as area data. `spot` puts a hiding spot under it at depth `y`,
+ * id `spot-pad-<tag>`; that spot is area data and never dropped.
+ */
+export interface FixedPadData {
+  readonly x: number;
+  readonly rx: number;
+  readonly flower: boolean;
+  readonly spot?: Readonly<{ y: number; rarity: 'common' | 'rare'; tag: string }>;
 }
 
 export interface SwimBounds {
@@ -218,7 +231,7 @@ export interface AreaSize {
 
 /**
  * Everything buildZone reads to build one area's layout. Fixed data only: the seed adds the reed
- * shapes, snacks and pads.
+ * shapes, snacks and the seeded pads.
  */
 export interface AreaLayoutData {
   /** Area id; prefixes the hiding spot ids. */
@@ -246,10 +259,13 @@ export interface AreaLayoutData {
   readonly snackBugs: number;
   /** How many snacks start inside the first current; 0 when the area has no current. */
   readonly snacksInCurrent: number;
+  /** How many seeded pads; 0 makes none and no rand() draws. */
   readonly padCount: number;
-  /** Index of the pad with a hiding spot under it. */
-  readonly padSpotIndex: number;
+  /** Index of the seeded pad with a hiding spot under it; null when no seeded pad has one. */
+  readonly padSpotIndex: number | null;
   readonly padSpotY: number;
+  /** Pads at fixed places, after the seeded pads; absent means none. */
+  readonly fixedPads?: readonly Readonly<FixedPadData>[];
   readonly bankChunks: readonly number[];
   readonly sunChunk: number;
 }
@@ -466,22 +482,33 @@ function shuffleKinds(rand: () => number, data: AreaLayoutData): CollectibleKind
   return kinds;
 }
 
-function isSnackSpotClear(candidate: Point, placed: Point[], start: Point): boolean {
+function isSnackSpotClear(
+  candidate: Point,
+  placed: Point[],
+  start: Point,
+  hazards: readonly Readonly<HazardSpawn>[],
+): boolean {
   if (Math.hypot(candidate.x - start.x, candidate.y - start.y) < SNACK_START_CLEARANCE) {
     return false;
   }
-  return placed.every(
+  const spaced = placed.every(
     (other) => Math.hypot(candidate.x - other.x, candidate.y - other.y) >= SNACK_MIN_SPACING,
   );
+  return spaced && hazards.every((hazard) => shapeDistance(candidate, hazard.shape) >= SNACK_HAZARD_CLEARANCE);
 }
 
-function pickSnackSpot(rand: () => number, area: SwimBounds, placed: Point[], start: Point): Point {
+function pickSnackSpot(
+  rand: () => number,
+  area: SwimBounds,
+  placed: Point[],
+  data: AreaLayoutData,
+): Point {
   for (let attempt = 0; attempt < SNACK_MAX_ATTEMPTS; attempt++) {
     const candidate = {
       x: area.minX + rand() * (area.maxX - area.minX),
       y: area.minY + rand() * (area.maxY - area.minY),
     };
-    if (isSnackSpotClear(candidate, placed, start)) {
+    if (isSnackSpotClear(candidate, placed, data.start, data.hazards)) {
       return candidate;
     }
   }
@@ -524,7 +551,7 @@ function buildSnacks(
   const kinds = shuffleKinds(rand, data);
   const placed: Point[] = [];
   for (const area of snackAreas(data, current, bounds)) {
-    placed.push(pickSnackSpot(rand, area, placed, data.start));
+    placed.push(pickSnackSpot(rand, area, placed, data));
   }
   return placed
     .sort((a, b) => a.x - b.x)
@@ -538,7 +565,7 @@ function buildPads(rand: () => number, padCount: number, width: number): PadSpec
     rx: 21 + rand() * 5,
     flower: rand() < 0.35,
   }));
-  if (!pads.some((pad) => pad.flower)) {
+  if (padCount > 0 && !pads.some((pad) => pad.flower)) {
     pads[Math.floor(rand() * padCount)].flower = true;
   }
   return pads;
@@ -594,15 +621,24 @@ function bedSpots(areaId: string, bed: ReedBed, bedIndex: number): HidingSpot[] 
   );
 }
 
-function padSpot(data: AreaLayoutData, pads: PadSpec[]): HidingSpot {
+function padSpot(data: AreaLayoutData, pads: PadSpec[], padIndex: number): HidingSpot {
   return {
-    id: `${data.id}/spot-pad-${data.padSpotIndex}`,
+    id: `${data.id}/spot-pad-${padIndex}`,
     cover: 'pad',
     rarity: 'rare',
     container: false,
-    x: pads[data.padSpotIndex].x,
+    x: pads[padIndex].x,
     y: data.padSpotY,
   };
+}
+
+/** The spots under the area's fixed pads, ids `spot-pad-<tag>`, in data order. */
+function fixedPadSpots(data: AreaLayoutData): HidingSpot[] {
+  return (data.fixedPads ?? []).flatMap((pad): HidingSpot[] =>
+    pad.spot
+      ? [{ id: `${data.id}/spot-pad-${pad.spot.tag}`, cover: 'pad', rarity: pad.spot.rarity, container: false, x: pad.x, y: pad.spot.y }]
+      : [],
+  );
 }
 
 function isSpotClear(
@@ -624,8 +660,9 @@ function isSpotClear(
 
 /**
  * Hiding spots: the fixed cave, past-current and reed spots (area data, never dropped), then the
- * spot under pad `padSpotIndex`, whose x comes from this seed's pads. The pad spot is dropped if it
- * is out of the water, in the safe area, near the ring or too close to an accepted spot.
+ * spot under seeded pad `padSpotIndex` when it is not null, whose x comes from this seed's pads,
+ * then the spots under the fixed pads (area data, never dropped). The seeded pad spot is dropped if
+ * it is out of the water, in the safe area, near the ring or too close to an accepted spot.
  */
 function buildSpots(
   data: AreaLayoutData,
@@ -639,10 +676,13 @@ function buildSpots(
     ...fixedSpots(data.id, data.currentSpots, 'current', 'pastCurrent'),
     ...data.reedBeds.flatMap((bed, bedIndex) => bedSpots(data.id, bed, bedIndex)),
   ];
-  const candidate = padSpot(data, pads);
-  if (isSpotClear(candidate, spots, bounds, safeArea, homeSpot)) {
-    spots.push(candidate);
+  if (data.padSpotIndex !== null) {
+    const candidate = padSpot(data, pads, data.padSpotIndex);
+    if (isSpotClear(candidate, spots, bounds, safeArea, homeSpot)) {
+      spots.push(candidate);
+    }
   }
+  spots.push(...fixedPadSpots(data));
   return spots;
 }
 
@@ -675,7 +715,10 @@ export function buildZone(data: Readonly<AreaLayoutData>, seed: number): ZoneLay
   const currents: CurrentZone[] = data.currents.map((current) => ({ ...current, force: { ...current.force } }));
 
   const collectibles = buildSnacks(rand, data, currents[0], bounds);
-  const pads = buildPads(rand, data.padCount, size.width);
+  const pads = [
+    ...buildPads(rand, data.padCount, size.width),
+    ...(data.fixedPads ?? []).map((pad): PadSpec => ({ x: pad.x, rx: pad.rx, flower: pad.flower })),
+  ];
   const safeArea: SafeArea = { ...data.safeArea };
   const homeSpot: HomeSpot = { x: start.x, y: start.y, radius: data.homeSpotRadius };
   const spots = buildSpots(data, pads, bounds, safeArea, homeSpot);

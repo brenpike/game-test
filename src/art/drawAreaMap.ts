@@ -26,6 +26,15 @@
  * the backdrop by its fill (4.66:1 and 6.08:1), and the focus ring's white line
  * is 6.08:1. The path (3.90:1) is decorative: the numbers carry the order.
  *
+ * The Lily pad pond marker (issue #75) is a notched lily pad in place of the
+ * disc, same frame, anchor, size (64 to the ink edge) and ink (3.5). Unlocked it
+ * is lily pad green {@link MAP_POND_PAD_FILL} (7.49:1 with ink, and 3.16:1 against
+ * the backdrop, so the edge passes 3:1 by its fill as the canal markers do); locked
+ * it is white, as the canal locked disc. The notch, a wedge cut into the lower rim,
+ * is the shape cue apart from the disc (greyscale, guide 10); the padlock badge
+ * still marks locked. It stops short of the number (bold ink 28 px, centred), so
+ * ink on the fill stays 7.49:1 unlocked and 14.39:1 locked.
+ *
  * Sizes are to the outer ink edge, as the guide gives them. Every value is
  * `derived (provisional)`. Presentational only: no Phaser, and no import from
  * src/logic.
@@ -33,6 +42,7 @@
 import { TAU, ell, frameFromBounds, inkMany, seg, shape, type TexSize } from './canvasKit';
 import { paintAreaStar } from './drawArea';
 import { paintIcon } from './drawUi';
+import type { HabitatLookId } from './habitatLook';
 import { INK, LW, UI_ACCENT, UI_PANEL, UI_PANEL_PINK, UI_PRIMARY, UI_SECONDARY, WHITE } from './palette';
 
 // ---------------------------------------------------------------------------
@@ -207,11 +217,45 @@ export const MAP_MARKER_TEX: TexSize = frameFromBounds(
 );
 
 /**
- * Paint a marker disc centred at local (0, 0): #ffe14a unlocked, #ffffff
- * locked, ink 3.5, 64 px to the outer ink edge. The number is scene text; the
- * locked cue is the padlock badge, not the fill.
+ * Unlocked Lily pad pond marker fill: lily pad green, the pond art's #47ce5a
+ * lightened a little so the marker edge reaches 3:1 against the #0c6a8c backdrop
+ * (3.16:1; #47ce5a itself is 2.96:1). Ink 2b2350 on it is 7.49:1. Derived (provisional).
  */
-export function paintMapMarker(ctx: CanvasRenderingContext2D, locked: boolean): void {
+export const MAP_POND_PAD_FILL = '#4fd462';
+
+/**
+ * The pad's notch (derived, provisional): a wedge cut into the rim, opening at
+ * `centreAngle` (canvas radians, y down: PI / 2 is straight down, where nothing
+ * else hangs but the star row 12 px away), `halfAngle` each side of it at the
+ * rim, narrowing to a tip `tipR` from the centre. The tip stops 21 px out, 7 px
+ * clear of the number's box (a two-digit number is about 34 x 28), so the
+ * number never sits on the cut.
+ */
+export const MAP_POND_PAD_NOTCH = { centreAngle: Math.PI / 2, halfAngle: 0.5, tipR: 21 } as const;
+
+/** The lily pad outline (centreline) as a closed path: the long way round the rim, in to the notch tip, out again. */
+function lilyPadPath(): Path2D {
+  const { centreAngle, halfAngle, tipR } = MAP_POND_PAD_NOTCH;
+  const start = centreAngle + halfAngle;
+  const p = new Path2D();
+  p.moveTo(Math.cos(centreAngle) * tipR, Math.sin(centreAngle) * tipR);
+  p.lineTo(Math.cos(start) * MARKER_LINE_R, Math.sin(start) * MARKER_LINE_R);
+  p.arc(0, 0, MARKER_LINE_R, start, start + TAU - 2 * halfAngle);
+  p.closePath();
+  return p;
+}
+
+/**
+ * Paint a marker centred at local (0, 0), 64 px to the outer ink edge, ink 3.5.
+ * The canal look (default) is a disc: #ffe14a unlocked, #ffffff locked. The pond
+ * look is the notched lily pad: {@link MAP_POND_PAD_FILL} unlocked, #ffffff locked.
+ * The number is scene text; the locked cue is the padlock badge, not the fill.
+ */
+export function paintMapMarker(ctx: CanvasRenderingContext2D, locked: boolean, look: HabitatLookId = 'canal'): void {
+  if (look === 'pond') {
+    shape(ctx, lilyPadPath(), locked ? WHITE : MAP_POND_PAD_FILL, MARKER_LW);
+    return;
+  }
   const disc = new Path2D();
   ell(disc, 0, 0, MARKER_LINE_R, MARKER_LINE_R);
   shape(ctx, disc, locked ? WHITE : UI_PRIMARY, MARKER_LW);

@@ -7,6 +7,7 @@ import {
   cardButtonsStacked,
   cardIconRowWidth,
   cardTextWidth,
+  cardTightTextWidth,
   fitCard,
   homeTitleWrapWidth,
   iconRowsSize,
@@ -157,6 +158,20 @@ describe('card text widths', () => {
     expect(cardTextWidth(480)).toBe(400);
     expect(cardTextWidth(568)).toBe(420);
     expect(cardTextWidth(100)).toBe(120);
+  });
+
+  it('gives a card title the tight side room: 12 px of padding instead of 24', () => {
+    expect(cardTightTextWidth(320)).toBe(264);
+    expect(cardTightTextWidth(460)).toBe(404);
+    expect(cardTightTextWidth(480)).toBe(420);
+    expect(cardTightTextWidth(568)).toBe(420);
+    expect(cardTightTextWidth(100)).toBe(120);
+  });
+
+  it('never gives a title less room than the body text', () => {
+    for (const cssW of [0, 100, 320, 340, 460, 483, 484, 500, 800, 1280]) {
+      expect(cardTightTextWidth(cssW)).toBeGreaterThanOrEqual(cardTextWidth(cssW));
+    }
   });
 
   it('leaves room for the house icon beside the title', () => {

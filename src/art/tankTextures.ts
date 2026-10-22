@@ -20,23 +20,37 @@ import {
 import { bake, type TexInfo } from './textures';
 
 /**
- * The Decorations that can stand in the Home Tank: the treasure icon slugs of
- * the four canal Decorations (the text after `canal/` in src/logic/catalogue.ts).
- * This file does not import the logic; keep it in step with the catalogue.
+ * The Decorations that can stand in the Home Tank: the treasure icon slugs of the four canal
+ * Decorations, then the four pond ones (the text after `canal/` or `pond/` in src/logic/catalogue.ts).
+ * This file does not import the logic; keep it in step with the catalogue (treasureArt.test.ts checks).
  */
-export const TANK_DECORATION_SLUGS = ['pond-plant', 'toy-boat', 'castle-tower', 'sun-pyramid'] as const satisfies readonly TreasureIconSlug[];
+export const TANK_DECORATION_SLUGS = [
+  'pond-plant',
+  'toy-boat',
+  'castle-tower',
+  'sun-pyramid',
+  'lily-pad',
+  'cattail-clump',
+  'frog-statue',
+  'lotus-lantern',
+] as const satisfies readonly TreasureIconSlug[];
 export type TankDecorationSlug = (typeof TANK_DECORATION_SLUGS)[number];
 
 /**
- * Badge shape of each Decoration's rarity (catalogue: Pond plant Common, Toy boat
- * Rare, Castle tower Epic, Sun pyramid Legendary). This file does not import the
- * logic; keep it in step with the catalogue (treasureArt.test.ts checks).
+ * Badge shape of each Decoration's rarity (catalogue: Pond plant Common, Toy boat Rare, Castle tower
+ * Epic, Sun pyramid Legendary; Lily pad Common, Cattail clump Common, Frog statue Rare, Lotus lantern
+ * Epic). This file does not import the logic; keep it in step with the catalogue (treasureArt.test.ts
+ * checks).
  */
 export const TANK_DECORATION_BADGES: Readonly<Record<TankDecorationSlug, BadgeShape>> = {
   'pond-plant': 'circle',
   'toy-boat': 'diamond',
   'castle-tower': 'shield',
   'sun-pyramid': 'star',
+  'lily-pad': 'circle',
+  'cattail-clump': 'circle',
+  'frog-statue': 'diamond',
+  'lotus-lantern': 'shield',
 };
 
 /** Rarity glow width as a multiple of the Decoration size (96 across at 80). */

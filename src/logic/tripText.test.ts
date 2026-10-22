@@ -7,6 +7,7 @@ import {
   ALL_SNACKS_BANNER,
   ARRIVAL_OK_LABEL,
   BANKING_HINT,
+  PLASTIC_WORM_BANNER,
   TRIP_END_BODY,
   bankedBody,
   bankedBodyShort,
@@ -198,6 +199,7 @@ describe('trip text', () => {
       'KEEP_EXPLORING_LABEL',
       'LEGS_LABEL',
       'NOT_SAFE_YET',
+      'PLASTIC_WORM_BANNER',
       'TRIP_BAG_LABEL',
       'TRIP_END_BODY',
       'TRIP_END_TITLE',
@@ -801,6 +803,26 @@ describe('ALL_SNACKS_BANNER (H2)', () => {
   it('kindly says the last snack opened the exit', () => {
     expect(ALL_SNACKS_BANNER).toBe('Yum! That was the last snack. The exit is open!');
     expect(ALL_SNACKS_BANNER.toLowerCase()).not.toContain('pond');
+  });
+});
+
+describe('PLASTIC_WORM_BANNER (issue #75)', () => {
+  it('kindly says the plastic worm was not food', () => {
+    expect(PLASTIC_WORM_BANNER).toBe('Bleh! That was plastic, not food.');
+    const lower = PLASTIC_WORM_BANNER.toLowerCase();
+    expect(lower).toContain('plastic');
+    expect(lower).toContain('not food');
+  });
+
+  it('names no area and never calls the plastic worm a snack', () => {
+    const lower = PLASTIC_WORM_BANNER.toLowerCase();
+    expect(lower).not.toContain('pond');
+    expect(lower).not.toContain('canal');
+    expect(lower).not.toContain('snack');
+  });
+
+  it('is no longer than the all-snacks banner, so it fits wherever that banner fits (X10)', () => {
+    expect(PLASTIC_WORM_BANNER.length).toBeLessThanOrEqual(ALL_SNACKS_BANNER.length);
   });
 });
 

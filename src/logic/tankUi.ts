@@ -532,6 +532,29 @@ interface DecorateLook {
   done: Size;
 }
 
+/**
+ * The rooms a tray of more than 4 may reach into (art guide 7f), top first: the wall down to a gap
+ * above the Floating and Hanging keep-clear band, and the open water down to the bottom margin, over
+ * the floor Decorations. Rooms under ICON_TILE.h tall are dropped.
+ */
+function trayReachRooms(view: HudView, frame: TankFrame): TankRoom[] {
+  const [wall, water] = roomCandidates(view, frame);
+  const reach = [
+    { top: wall.top, bottom: topKeepClearCss(frame).y0 - UI.gap },
+    { top: water.top, bottom: view.cssH - UI.margin },
+  ];
+  return reach.filter((room) => room.bottom - room.top >= ICON_TILE.h);
+}
+
+/** `rows` in the reach rooms by the hub's order of tries: one room, top first, then split down them in order. */
+function fillReach(rows: readonly FlowRow[], reach: readonly TankRoom[]): RoomFill | null {
+  for (const room of reach) {
+    const fill = fillRooms(rows, [room]);
+    if (fill !== null) return fill;
+  }
+  return fillRooms(rows, reach);
+}
+
 /** The decorate controls in flow order for `count` tray squares: the squares, Put away, then Done. */
 function decorateFlow(look: DecorateLook, count: number): Size[] {
   const square: Size = { w: look.trayPx, h: look.trayPx };
@@ -543,7 +566,9 @@ function decorateFlow(look: DecorateLook, count: number): Size[] {
  * The look (full: TRAY_PX squares and the measured sizes; compact: COMPACT_TRAY_PX squares and the
  * compact sizes) and the rooms come from `maxTrayCount` squares (at least `trayCount`) by the hub's
  * order of tries, so they hold still as the tray empties; then `trayCount` squares are laid out
- * there. The caption (measured at `cssW - 2 * UI.margin`) goes by the hub focus caption rule.
+ * there. Rows that fit none of those rooms (a tray of more than 4) take the same order of tries in
+ * the reach rooms (trayReachRooms), else stack from the top of the tallest room. The caption
+ * (measured at `cssW - 2 * UI.margin`) goes by the hub focus caption rule.
  */
 export function decorateLayout(
   view: HudView,
@@ -563,7 +588,7 @@ export function decorateLayout(
   const look = looks[plan.look];
   const flow = decorateFlow(look, count);
   const rows = splitRows(flow, view.cssW - 2 * UI.margin);
-  const fill = fillPlan(rows, plan);
+  const fill = fillRooms(rows, plan.rooms) ?? fillReach(rows, trayReachRooms(view, frame)) ?? fillPlan(rows, plan);
   const rects = placeRows(flow, rows, view.cssW / 2, fill.tops);
   const caption = sizes.caption;
   return {

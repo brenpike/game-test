@@ -13,6 +13,7 @@ export const GAME_EVENTS = Object.freeze({
   REDUCED_MOTION: 'reduced-motion',
   STEER: 'steer',
   EXIT_CLOSED: 'exit-closed',
+  PLASTIC_WORM_SPAT: 'plastic-worm-spat',
 } as const);
 
 export type GameEventName = (typeof GAME_EVENTS)[keyof typeof GAME_EVENTS];
@@ -53,6 +54,11 @@ export interface ExitClosedPayload {
   left: number;
 }
 
+/** Sent when the explorer eats a plastic worm and spits it out; `id` is the worm's hazard spawn id. */
+export interface PlasticWormSpatPayload {
+  id: string;
+}
+
 /** Payload type for each event; `undefined` marks payload-less events. */
 export interface GameEventPayloads {
   [GAME_EVENTS.COLLECTED]: CollectedPayload;
@@ -66,6 +72,7 @@ export interface GameEventPayloads {
   [GAME_EVENTS.REDUCED_MOTION]: ReducedMotionPayload;
   [GAME_EVENTS.STEER]: SteerPayload;
   [GAME_EVENTS.EXIT_CLOSED]: ExitClosedPayload;
+  [GAME_EVENTS.PLASTIC_WORM_SPAT]: PlasticWormSpatPayload;
 }
 
 /** Keys for values stored in the shared game registry. */

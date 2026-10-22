@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CANAL_TREASURES, type Decoration } from './catalogue';
+import { ALL_TREASURES, CANAL_TREASURES, isDecoration, placementKind, type Decoration } from './catalogue';
 import {
   SHIPPED_DECORATIONS,
   SUGGEST_BASE_Y,
@@ -49,6 +49,12 @@ const HAT = 'canal/sun-hat';
 const SHELL = 'canal/paint-shell-mint';
 const UNKNOWN = 'canal/not-a-treasure';
 const ALL_DECORATIONS = [PLANT, BOAT, CASTLE, PYRAMID];
+const POND_LILY = 'pond/lily-pad';
+const CATTAIL = 'pond/cattail-clump';
+const FROG = 'pond/frog-statue';
+const LOTUS = 'pond/lotus-lantern';
+const SHIPPED_FLOOR = SHIPPED_DECORATIONS.filter((decoration) => placementKind(decoration) === 'floor');
+const SHIPPED_FLOATING = SHIPPED_DECORATIONS.filter((decoration) => placementKind(decoration) === 'floating');
 const BANKED = [HAT, PYRAMID, PLANT, SHELL, BOAT, CASTLE, PLANT];
 const MIDDLE: Point = { x: 240, y: 318 };
 const X_RANGE = placementXRange();
@@ -375,12 +381,20 @@ describe('tankFrame', () => {
 });
 
 describe('placement kinds geometry (issue #95)', () => {
-  it('ships only the canal Decorations, in catalogue order, all Floor at the standard width', () => {
-    expect(SHIPPED_DECORATIONS.map((decoration) => decoration.id)).toEqual(ALL_DECORATIONS);
-    for (const decoration of SHIPPED_DECORATIONS) {
-      expect(decoration.placement).toBeUndefined();
-      expect(decorationWidth(decoration)).toBe(TANK.decorationPx);
-    }
+  it('ships the canal then pond Decorations, in catalogue order, at the standard width', () => {
+    expect(SHIPPED_DECORATIONS).toEqual(ALL_TREASURES.filter(isDecoration));
+    expect(Object.isFrozen(SHIPPED_DECORATIONS)).toBe(true);
+    expect(SHIPPED_DECORATIONS.map((decoration) => [decoration.id, placementKind(decoration)])).toEqual([
+      [PLANT, 'floor'],
+      [BOAT, 'floor'],
+      [CASTLE, 'floor'],
+      [PYRAMID, 'floor'],
+      [POND_LILY, 'floating'],
+      [CATTAIL, 'floor'],
+      [FROG, 'floor'],
+      [LOTUS, 'floating'],
+    ]);
+    for (const decoration of SHIPPED_DECORATIONS) expect(decorationWidth(decoration)).toBe(TANK.decorationPx);
     expect(decorationById(LILY)).toBeUndefined();
     expect(decorationById(LILY, TEST_CATALOGUE)).toBe(LILY_PAD);
     expect(decorationById(HAT)).toBeUndefined();
@@ -424,15 +438,17 @@ describe('placement kinds geometry (issue #95)', () => {
 });
 
 describe('isValidPlacementFor', () => {
-  it('matches isValidPlacement for every shipped Decoration', () => {
+  it('matches isValidPlacement for every shipped Floor Decoration', () => {
     const points: Point[] = [MIDDLE, { x: 10, y: 318 }, { x: 240, y: 200 }, TOP_MIDDLE, { x: 64, y: 304 }];
-    for (const decoration of SHIPPED_DECORATIONS) {
+    expect(SHIPPED_FLOOR.map((decoration) => decoration.id)).toEqual([PLANT, BOAT, CASTLE, PYRAMID, CATTAIL, FROG]);
+    for (const decoration of SHIPPED_FLOOR) {
       for (const pos of points) expect(isValidPlacementFor(decoration, pos)).toBe(isValidPlacement(pos));
     }
   });
 
   it('accepts Floating and Hanging only at the fixed base y within the x range', () => {
-    for (const decoration of [LILY_PAD, PAPER_LANTERN, WIDE_BANNER]) {
+    expect(SHIPPED_FLOATING.map((decoration) => decoration.id)).toEqual([POND_LILY, LOTUS]);
+    for (const decoration of [...SHIPPED_FLOATING, LILY_PAD, PAPER_LANTERN, WIDE_BANNER]) {
       const range = placementXRangeFor(decoration);
       expect(isValidPlacementFor(decoration, { x: range.x0, y: TOP_BASE_Y })).toBe(true);
       expect(isValidPlacementFor(decoration, { x: range.x1, y: TOP_BASE_Y })).toBe(true);

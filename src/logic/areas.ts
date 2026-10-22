@@ -2,6 +2,7 @@ import type { SnackDrift } from './collectibles';
 import { TILAPIA_FACT, type FactCard } from './factCards';
 import type { HazardSpawn } from './hazards';
 import type { PredatorRoute } from './predators';
+import { POND_AREA_ID, POND_LAYOUT } from './pondLayout';
 import { bestStarsFor, starCount, type AreaStarsRecord } from './stars';
 import { CANAL_AREA_ID, CANAL_LAYOUT, type AreaLayoutData, type Point } from './zone';
 
@@ -16,8 +17,11 @@ export interface Habitat {
 /** The canal habitat, home of Area 1. */
 export const CANAL_HABITAT: Readonly<Habitat> = Object.freeze({ id: 'canal', name: 'Canal', look: 'canal' });
 
+/** The lily pad pond habitat, home of Area 2. */
+export const POND_HABITAT: Readonly<Habitat> = Object.freeze({ id: 'pond', name: 'Lily pad pond', look: 'pond' });
+
 /** Every habitat. */
-export const HABITATS: readonly Readonly<Habitat>[] = Object.freeze([CANAL_HABITAT]);
+export const HABITATS: readonly Readonly<Habitat>[] = Object.freeze([CANAL_HABITAT, POND_HABITAT]);
 
 /** The habitat with this id, or undefined when there is none. */
 export function habitatById(id: string): Readonly<Habitat> | undefined {
@@ -69,8 +73,28 @@ export const CANAL_AREA: Readonly<AreaData> = Object.freeze({
   snackDrift: Object.freeze({ amplitudeX: 16, amplitudeY: 8, periodX: 10, periodY: 8 }),
 });
 
+/** Area 2, the lily pad pond. */
+export const POND_AREA: Readonly<AreaData> = Object.freeze({
+  id: POND_AREA_ID,
+  number: 2,
+  habitatId: POND_HABITAT.id,
+  layout: POND_LAYOUT,
+  /**
+   * Provisional exit at the far end of the main swim path, past the stream, inside the swim
+   * bounds and clear of every hiding spot by more than the exit radius plus the find pickup radius.
+   */
+  exit: Object.freeze({ x: 2330, y: 200, radius: 40 }),
+  specialTreasureId: 'pond/frog-statue',
+  /**
+   * Provisional drift, a little faster than the canal (PRD H4): the canal's amplitudes with
+   * shorter periods, peak speed about 14.8 px/s. That is below the 20 px/s a one-leg axolotl
+   * makes against the stream and at most half the 40 px/s Snack magnet pull.
+   */
+  snackDrift: Object.freeze({ amplitudeX: 16, amplitudeY: 8, periodX: 8, periodY: 6.4 }),
+});
+
 /** Every area, in area-number order. */
-export const AREAS: readonly Readonly<AreaData>[] = Object.freeze([CANAL_AREA]);
+export const AREAS: readonly Readonly<AreaData>[] = Object.freeze([CANAL_AREA, POND_AREA]);
 
 /** The area with this id, or undefined when there is none. */
 export function areaById(id: string): Readonly<AreaData> | undefined {

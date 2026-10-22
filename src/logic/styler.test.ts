@@ -9,7 +9,7 @@ import {
   type LookField,
 } from './axolotlLook';
 import { isValidName, nameFits, suggestedNamesFor } from './axolotlNames';
-import { CANAL_TREASURES, DREAM_COLOURS, WEARABLE_SLOTS, treasureById, type DreamColourId } from './catalogue';
+import { ALL_TREASURES, DREAM_COLOURS, WEARABLE_SLOTS, treasureById, type DreamColourId } from './catalogue';
 import { REAL_COLOUR_OPTION_ID } from './dreamPaint';
 import { REAL_MORPHS, STARTER_MORPH, type RealMorphId } from './morphs';
 import { emptyOutfit, type Outfit } from './outfit';
@@ -888,7 +888,7 @@ describe('Dream colour step', () => {
     expect(reduceStyler(state, { type: 'moreColours', perPage: MAX_STEP_OPTIONS }, noRandom).state.dreamPage).toBe(0);
   });
 
-  it('pages 13 options as 8 then 5 with More colours, wrapping, Real colour first on page 1', () => {
+  it('pages 14 options as 8 then 6 with More colours, wrapping, Real colour first on page 1', () => {
     let state = dreamOn(ALL_DREAMS);
     expect(dreamPageCount(state)).toBe(2);
     expect(optionIds(state)).toHaveLength(8);
@@ -1016,7 +1016,7 @@ describe('Dream colour step', () => {
 });
 
 describe('Outfit step', () => {
-  const WEARABLE_IDS: readonly string[] = CANAL_TREASURES.filter((treasure) => treasure.category === 'wearable').map(
+  const WEARABLE_IDS: readonly string[] = ALL_TREASURES.filter((treasure) => treasure.category === 'wearable').map(
     (treasure) => treasure.id,
   );
   const BANKED: readonly string[] = ['canal/paint-shell-mint', 'nope', ...[...WEARABLE_IDS].reverse()];
@@ -1122,11 +1122,12 @@ describe('Outfit step', () => {
     expect(stepOptions(head)).toEqual([
       { id: NO_WEARABLE_OPTION_ID, label: NONE_LABEL },
       { id: 'canal/sun-hat', label: 'Sun hat', wornOnMark: 'On Milo' },
+      { id: 'pond/lily-flower-crown', label: 'Lily flower crown' },
     ]);
     expect(chosenIndex(head)).toBe(0);
     expect(head.focus).toEqual({ kind: 'option', index: 0 });
     const feet = openSlot('feet');
-    expect(optionIds(feet)).toEqual([NO_WEARABLE_OPTION_ID, 'canal/flippers']);
+    expect(optionIds(feet)).toEqual([NO_WEARABLE_OPTION_ID, 'canal/flippers', 'pond/froggy-boots']);
     expect(feet.focus).toEqual({ kind: 'option', index: 1 });
     expect(chosenIndex(feet)).toBe(1);
   });
@@ -1215,7 +1216,7 @@ describe('Outfit step', () => {
     expect(opened.outfitSlot).toBe('neck');
     const picked = pressKey(pressKey(opened, 'ArrowRight').state, ' ').state;
     expect(picked.outfit.neck).toBe('canal/shell-necklace');
-    expect(pressKey(picked, 'ArrowRight').state.focus).toEqual({ kind: 'option', index: 1 });
+    expect(pressKey(picked, 'ArrowRight').state.focus).toEqual({ kind: 'option', index: 2 });
   });
 
   it('the Outfit tab always opens on the slots view with Head focused', () => {
@@ -1257,15 +1258,18 @@ describe('Outfit step', () => {
     expect(unpaged.focus).toEqual({ kind: 'option', index: 0 });
     const onMore = reduceStyler(openSlot('feet'), { type: 'moreOutfit', perPage: 1 }, noRandom).state;
     expect(onMore.focus).toEqual({ kind: 'moreOutfit' });
-    expect(withOutfitPerPage(onMore, 2).focus).toEqual({ kind: 'option', index: 1 });
+    expect(withOutfitPerPage(onMore, 1 + slotWearables('feet').length).focus).toEqual({ kind: 'option', index: 1 });
   });
 
   it('More wearables pages the choices from the page holding the worn one, wrapping', () => {
     const feet = withOutfitPerPage(openSlot('feet'), 1);
-    expect(outfitPageCount(feet)).toBe(2);
+    expect(outfitPageCount(feet)).toBe(3);
     expect(optionIds(feet)).toEqual(['canal/flippers']);
     expect(feet.focus).toEqual({ kind: 'option', index: 0 });
-    const next = reduceStyler(feet, { type: 'moreOutfit', perPage: 1 }, noRandom).state;
+    const later = reduceStyler(feet, { type: 'moreOutfit', perPage: 1 }, noRandom).state;
+    expect(optionIds(later)).toEqual(['pond/froggy-boots']);
+    expect(chosenIndex(later)).toBe(-1);
+    const next = reduceStyler(later, { type: 'moreOutfit', perPage: 1 }, noRandom).state;
     expect(optionIds(next)).toEqual([NO_WEARABLE_OPTION_ID]);
     expect(chosenIndex(next)).toBe(-1);
     const off = pickId(next, NO_WEARABLE_OPTION_ID);

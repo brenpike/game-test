@@ -4,15 +4,9 @@ import { AXO_MAX_TAIL_AMP, AXO_SCENE_SCALE, type AxolotlPose } from '../art/draw
 import { AXO_SIZE_SCALE } from '../art/drawAxolotlParts';
 import { dreamSheenAt } from '../art/drawDreamOverlay';
 import { artOutfit } from '../art/drawWearables';
+import type { HabitatLook } from '../art/habitatLook';
 import { DEPTH } from '../art/layers';
-import {
-  axolotlPalette,
-  HAZE,
-  SURFACE_LINE,
-  SURFACE_LINE_WIDTH,
-  T_STATIC,
-  WATER_SHALLOW,
-} from '../art/palette';
+import { axolotlPalette, T_STATIC } from '../art/palette';
 import { BUBBLE_RADII, type SceneryTextures, type TexInfo } from '../art/textures';
 import { atExit, exitContact, exitOpen, type AreaData } from '../logic/areas';
 import { BUBBLE_MAX_ALIVE, bubblePos, createBubbles, updateBubbles, type BubbleSystem } from '../logic/bubbles';
@@ -37,6 +31,7 @@ import {
   type CollectedPayload,
   type DashStatePayload,
   type ExitClosedPayload,
+  type PlasticWormSpatPayload,
   type ReducedMotionPayload,
   type SnackBoostPayload,
   type SteerPayload,
@@ -45,6 +40,7 @@ import { hintSparkleRadius } from '../logic/hints';
 import { legSwimTuning } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { outfitPerks, perkTripContext, perkTuning, type PerkTuning } from '../logic/perks';
+import { isQueasy, queasySwimTuning, type SpitAvoid } from '../logic/plasticWorms';
 import { mulberry32 } from '../logic/rng';
 import { tripStranding } from '../logic/rescue';
 import { explorerAxolotl, restoreSnacks, tripStart } from '../logic/session';
@@ -54,6 +50,7 @@ import { createDash, dashCharge, tryStartDash, updateDash, type DashState } from
 import {
   beatArea,
   createTrip,
+  eatPlasticWorms,
   eatSnacks,
   goHome,
   keepExploring,
@@ -68,12 +65,13 @@ import {
   type TripState,
 } from '../logic/trip';
 import { TRIP_EVENTS, TRIP_REGISTRY_KEYS, type TripSnapshot } from '../logic/tripEvents';
-import { LEGS, SWIM } from '../logic/tuning';
+import { LEGS, SWIM, type SwimTuning } from '../logic/tuning';
 import { len, type Vec2 } from '../logic/vec';
 import { SURF, swimBounds, waveY, type CurrentZone, type ZoneLayout } from '../logic/zone';
 import {
   SCENE_KEYS,
   areaFor,
+  areaLook,
   blinkAt,
   cssColor,
   fitWorldCamera,
@@ -88,6 +86,7 @@ import { ExitView } from './ExitView';
 import { HomeSpotView } from './HomeSpotView';
 import { HUD_EVENTS, type FactCardSeenPayload } from './HudScene';
 import { addMotionTween, settleMotionTweens } from './motionTweens';
+import { PlasticWormView } from './PlasticWormView';
 import { PredatorView } from './PredatorView';
 import { readSession, returnToHomeTank } from './sceneFlow';
 import { faceSprite } from './spriteFacing';
@@ -196,6 +195,14 @@ export class SwimScene extends Phaser.Scene {
   private bubbles!: BubbleSystem;
   private allDone = false;
   private area!: Readonly<AreaData>;
+  /** Colours of the area's habitat: haze and surface. */
+  private look!: HabitatLook;
+  /** Where a spat plastic worm must not land: the swim bounds, the currents and the safe area. Fixed for the trip. */
+  private spitAvoid!: SpitAvoid;
+  /** Swim tuning for `tunedLegs` legs and `tunedQueasy`, worked out again only when either changes. */
+  private tuned: SwimTuning = SWIM;
+  private tunedLegs = -1;
+  private tunedQueasy = false;
   /** Snack drift time in seconds; advances only while swimming. */
   private driftClock = 0;
   /** Whether the axolotl centre was at the exit on the latest swimming step. */
@@ -221,6 +228,10 @@ export class SwimScene extends Phaser.Scene {
   private predatorView!: PredatorView;
   private homeSpotView!: HomeSpotView;
   private treasureView!: TreasureView;
+  private plasticWormView!: PlasticWormView;
+  /** Green cheek tint shown while queasy, or null in an area with no plastic worms. */
+  private queasyCheeks: Phaser.GameObjects.Image | null = null;
+  private queasyCheeksBaseScale = 1;
   private strandedView!: StrandedView;
   /** Trip overrides from the explorer's outfit only (PRD F12), fixed for the trip. */
   private perks!: PerkTuning;
@@ -241,6 +252,7 @@ export class SwimScene extends Phaser.Scene {
   private surface!: Phaser.GameObjects.Graphics;
   private surfaceFill = { color: 0, alpha: 1 };
   private surfaceLine = { color: 0, alpha: 1 };
+  private surfaceLineWidth = 0;
 
   private swimPhase = 0;
   private gillPhase = 0;
@@ -278,6 +290,10 @@ export class SwimScene extends Phaser.Scene {
     this.sparkleAcc = 0;
     this.sparkleLevel = 0;
     this.turn = { squash: 1 };
+    this.tuned = SWIM;
+    this.tunedLegs = -1;
+    this.tunedQueasy = false;
+    this.queasyCheeks = null;
     this.swimPhase = (TAU * T_STATIC) / 1.2;
     this.gillPhase = (TAU * T_STATIC) / 0.8;
   }
@@ -288,10 +304,12 @@ export class SwimScene extends Phaser.Scene {
     const area = areaFor(this.assets, areaId);
     this.zone = zone;
     this.area = area;
+    this.look = areaLook(area);
     this.scenery = sceneryFor(this.assets, areaId);
     this.view = readSceneView(this.scale);
     this.motion = motionProfile(this.registry.get(REGISTRY_KEYS.reducedMotion) === true);
     this.bounds = swimBounds(zone);
+    this.spitAvoid = { bounds: this.bounds, currents: zone.currents, safeArea: zone.safeArea };
     this.rand = mulberry32(SIM_SEED);
     this.swim = { x: zone.start.x, y: zone.start.y, vx: 0, vy: 0, facing: 1 };
     this.lastFacing = this.swim.facing;
@@ -360,6 +378,11 @@ export class SwimScene extends Phaser.Scene {
    * Snack magnet (#16): pullSnacksToward allocates nothing when no snack is in the perk radius (and
    * always with no Snack magnet worn). While it pulls, it builds a new items array and one object
    * per pulled snack, and setItems works the tally out again: bounded by the area's snack count.
+   * Plastic worms (#75): swimTuning is worked out only when the leg count or queasy changes, the
+   * worm sprites and the cheek tint are made once per trip, and the queasy flag is a field on the
+   * drawnAxolotl input. The eat runs only in an area with plastic worms and while not queasy; there
+   * eatPlasticWorms (trip.ts) returns one small result object per frame, the same bounded class as
+   * stepTrip below. The canal and a queasy frame call nothing.
    * Recorded residual, inherited from main: stepSwim and stepTrip return new immutable state and
    * event lists each frame, syncSnapshot builds a trip snapshot to compare, the views take a render
    * argument object, and the reeds-near Set, bubble views and surface x list are rebuilt each frame.
@@ -384,6 +407,7 @@ export class SwimScene extends Phaser.Scene {
       const head = headPoint(this.body);
       this.pullSnacks(head, dt);
       this.collectSnacks(head);
+      this.eatPlasticWormsAtHead();
     }
     // INVARIANT: the exit check runs after the eat, so eating the last snack at the exit beats it this frame.
     this.checkExit();
@@ -408,7 +432,7 @@ export class SwimScene extends Phaser.Scene {
         dashing: this.dashingThisFrame,
       },
       dt,
-      legSwimTuning(this.snapshot.legs.present, this.perks.swim),
+      this.swimTuning(),
     );
     const previousPhase = this.dash.phase;
     this.dash = updateDash(this.dash, dt, this.perks.swim);
@@ -416,6 +440,21 @@ export class SwimScene extends Phaser.Scene {
       this.emitDashState();
     }
     this.driftClock += dt;
+  }
+
+  /**
+   * Swim tuning for the legs present, slowed while queasy (Tail Dash never is). Worked out again
+   * only when the leg count or queasy changes, so a swimming frame allocates no tuning object.
+   */
+  private swimTuning(): SwimTuning {
+    const legs = this.snapshot.legs.present;
+    const queasy = isQueasy(this.trip.plasticWorms);
+    if (legs !== this.tunedLegs || queasy !== this.tunedQueasy) {
+      this.tunedLegs = legs;
+      this.tunedQueasy = queasy;
+      this.tuned = queasySwimTuning(legSwimTuning(legs, this.perks.swim), this.trip.plasticWorms);
+    }
+    return this.tuned;
   }
 
   // ---- setup ---------------------------------------------------------------
@@ -429,7 +468,7 @@ export class SwimScene extends Phaser.Scene {
     );
     this.reedNudge = zone.reeds.map(() => 0);
 
-    const haze = cssColor(HAZE);
+    const haze = cssColor(this.look.haze);
     this.add
       .rectangle(0, SURF, zone.width, zone.height - SURF, haze.color, haze.alpha)
       .setOrigin(0, 0)
@@ -438,7 +477,15 @@ export class SwimScene extends Phaser.Scene {
 
     this.homeSpotView = new HomeSpotView(this, this.assets, this.trip.homeSpot, zone.bedTop);
     this.exitView = new ExitView(this, this.assets, this.area.exit, zone.bedTop, exitOpen(this.snackTally.left));
-    this.treasureView = new TreasureView(this, this.assets, zone, this.trip.placed, this.perks.hintMultiplier);
+    this.treasureView = new TreasureView(
+      this,
+      this.assets,
+      zone,
+      this.look,
+      this.trip.placed,
+      this.perks.hintMultiplier,
+    );
+    this.plasticWormView = new PlasticWormView(this, this.assets, this.trip.plasticWorms.worms);
 
     this.snacks.clear();
     for (const item of this.items) {
@@ -457,6 +504,7 @@ export class SwimScene extends Phaser.Scene {
 
     this.axolotlView = createAxolotlRigView(this, this.assets.axolotl);
     this.axolotl = this.axolotlView.root.setPosition(this.swim.x, this.swim.y).setDepth(DEPTH.axolotl);
+    this.queasyCheeks = this.buildQueasyCheeks();
     this.strandedView = new StrandedView(this, this.assets);
     this.predatorView = new PredatorView(
       this,
@@ -468,8 +516,9 @@ export class SwimScene extends Phaser.Scene {
       this.add.image(0, 0, baked.bubbles[0].key).setVisible(false).setDepth(DEPTH.bubbles),
     );
     this.surface = this.add.graphics().setDepth(DEPTH.surface);
-    this.surfaceFill = cssColor(WATER_SHALLOW);
-    this.surfaceLine = cssColor(SURFACE_LINE);
+    this.surfaceFill = cssColor(this.look.surfaceFill);
+    this.surfaceLine = cssColor(this.look.surfaceLine);
+    this.surfaceLineWidth = this.look.surfaceLineWidth;
     this.pads = zone.pads.map((pad, i) =>
       placeBaked(this.add.image(pad.x, SURF, scenery.pads[i].key), scenery.pads[i]).setDepth(DEPTH.pads),
     );
@@ -479,6 +528,23 @@ export class SwimScene extends Phaser.Scene {
         .setDepth(DEPTH.fx),
       age: SPARKLE_LIFE_S,
     }));
+  }
+
+  /**
+   * The queasy cheek tint, hidden until queasy, in an area with plastic worms; null in any other
+   * area. Its texture is in axolotl local units, so it scales with the explorer's size, not the rig.
+   */
+  private buildQueasyCheeks(): Phaser.GameObjects.Image | null {
+    if (this.trip.plasticWorms.worms.length === 0) return null;
+    const pond = this.assets.pond;
+    if (pond === null) {
+      throw new Error('SwimScene: plastic worms need the baked pond textures for the queasy cheek tint');
+    }
+    const info = pond.queasyCheeks;
+    this.queasyCheeksBaseScale = (AXO_SCENE_SCALE * this.axolotlSize()) / info.scale;
+    return placeBaked(this.add.image(this.swim.x, this.swim.y, info.key), info)
+      .setVisible(false)
+      .setDepth(DEPTH.queasyTint);
   }
 
   /** Background chunk row `row` (row 0 on top), each chunk at its column and row in the area. */
@@ -730,11 +796,25 @@ export class SwimScene extends Phaser.Scene {
     this.publishSnapshot(tripSnapshot(this.trip));
   }
 
+  /**
+   * Eats a plastic worm in reach of the head and spits it out (issue #75). Skipped with no worms or
+   * while queasy, where the eat changes nothing, so the canal and a queasy frame call nothing here.
+   */
+  private eatPlasticWormsAtHead(): void {
+    const worms = this.trip.plasticWorms;
+    if (worms.worms.length === 0 || isQueasy(worms)) return;
+    const result = eatPlasticWorms(this.trip, this.body, this.spitAvoid);
+    if (result.state === this.trip) return;
+    this.trip = result.state;
+    this.dispatchTripEvents(result.events);
+  }
+
   private dispatchTripEvents(events: readonly TripEvent[]): void {
     this.handleTripEvents(events);
     this.predatorView.handleEvents(events);
     this.homeSpotView.handleEvents(events);
     this.treasureView.handleEvents(events);
+    this.plasticWormView.handleEvents(events);
   }
 
   /** Puts the axolotl where the trip holds it while banked, carried or ended, with no velocity. */
@@ -746,9 +826,16 @@ export class SwimScene extends Phaser.Scene {
     this.swim = { ...this.swim, x: pos.x, y: pos.y, vx: 0, vy: 0 };
   }
 
-  /** Clears pad steering when the carry starts; a still (reduced-motion) arrival snaps the camera home. */
+  /**
+   * Clears pad steering when the carry starts; a still (reduced-motion) arrival snaps the camera
+   * home; a spat plastic worm tells the HUD.
+   */
   private handleTripEvents(events: readonly TripEvent[]): void {
     for (const event of events) {
+      if (event.type === 'wormSpat') {
+        const payload: PlasticWormSpatPayload = { id: event.id };
+        this.game.events.emit(GAME_EVENTS.PLASTIC_WORM_SPAT, payload);
+      }
       if (event.type === 'carryStart') {
         this.padSteer = { x: 0, y: 0 };
       }
@@ -924,6 +1011,28 @@ export class SwimScene extends Phaser.Scene {
       baseScale * body.squash,
       baseScale,
     );
+    this.renderQueasyCheeks();
+  }
+
+  /**
+   * The cheek tint at the rig root with its rotation, facing and squash, shown while queasy in both
+   * motion modes: reduced motion keeps the tint and drops only the wobble (drawnAxolotl).
+   */
+  private renderQueasyCheeks(): void {
+    const cheeks = this.queasyCheeks;
+    if (cheeks === null) return;
+    if (!isQueasy(this.trip.plasticWorms)) {
+      cheeks.setVisible(false);
+      return;
+    }
+    const body = this.body;
+    const scale = this.queasyCheeksBaseScale;
+    faceSprite(
+      cheeks.setVisible(true).setPosition(body.x, body.y).setRotation(body.rotation),
+      body.facing,
+      scale * body.squash,
+      scale,
+    );
   }
 
   /**
@@ -943,6 +1052,7 @@ export class SwimScene extends Phaser.Scene {
       motionBob: this.motion.bob,
       legsPresent: this.snapshot.legs.present,
       swimming: this.trip.phase === 'swimming',
+      queasy: isQueasy(this.trip.plasticWorms),
       squash: this.turn.squash,
     });
     this.snackView = this.snackFrame();
@@ -1142,7 +1252,7 @@ export class SwimScene extends Phaser.Scene {
     graphics.closePath();
     graphics.fillPath();
 
-    graphics.lineStyle(SURFACE_LINE_WIDTH, line.color, line.alpha);
+    graphics.lineStyle(this.surfaceLineWidth, line.color, line.alpha);
     graphics.beginPath();
     graphics.moveTo(xs[0], waveY(xs[0], t));
     for (const x of xs) graphics.lineTo(x, waveY(x, t));

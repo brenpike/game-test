@@ -6,7 +6,7 @@ import type { TreasureTextures } from '../art/treasureTextures';
 import {
   BOOK_FEATURE,
   COLLECTION_BOOK_TITLE,
-  bookFeatureLayout,
+  bookFeaturePage,
   bookListing,
   bookPages,
   nextPageIndex,
@@ -83,7 +83,7 @@ function wrappedSize(text: Phaser.GameObjects.Text, wrapW: number): Size {
   return textSize(text);
 }
 
-/** The baked picture size of a featured picture rect. Throws for a width bookFeatureLayout() never gives. */
+/** The baked picture size of a featured picture rect. Throws for a width bookFeaturePage() never gives. */
 function pictureSizeOf(rect: Rect): PictureSize {
   if (rect.w === 112) return 112;
   if (rect.w === 64) return 64;
@@ -111,8 +111,12 @@ function arrangeDreamRow(parts: DreamRowParts, rowW: number): number {
  * and the Back, Close and Next buttons, in the Treasure Chest layout. A morph page shows its
  * portrait, name, 24 px badge and fun fact, or the silhouette, "???" and the rescue hint. Dream
  * colour pages list swatch rows with the not-found-in-nature label, as many as fit. The fact card
- * page shows the tilapia picture, name and fact, or "???" and the hint with no picture. Paging
- * wraps. Appears and leaves at once. Keys: left and right page, next and previous move focus over
+ * page shows the tilapia picture, name and fact, or "???" and the hint with no picture. A morph or
+ * fact card page whose text does not fit under the title on a small canvas (the plastic worm card)
+ * hides the "Collection Book" title and moves the section heading up to the title's top, giving the
+ * list the room (bookFeaturePage()); the card's own name stays visible. Dream colour pages always
+ * show the title, and every page restores the title and the heading position, also when the book is
+ * laid out again. Paging wraps. Appears and leaves at once. Keys: left and right page, next and previous move focus over
  * Back, Close and Next, confirm presses the focused button, cancel closes. Closing calls `onClose`.
  */
 export class CollectionBookView {
@@ -360,12 +364,16 @@ export class CollectionBookView {
     return first + Math.min(count - 1, Math.floor(entryIndex / this.entriesPerPage(category)));
   }
 
-  /** Draws the current page: heading, page text, and its morph, Dream colour rows or fact card. */
+  /**
+   * Draws the current page: heading, page text, and its morph, Dream colour rows or fact card. Starts
+   * from the title shown and the heading at its layout position; a featured page may hide the title.
+   */
   private showPage(): void {
     const book = this.book;
     const page = this.pages[this.pageIndex];
     if (book === null || page === undefined) throw new Error('CollectionBookView.showPage: not laid out');
-    this.heading.setText(page.section.heading);
+    this.title.setVisible(true);
+    this.heading.setText(page.section.heading).setPosition(book.heading.x, book.heading.y);
     this.pageLabel.setText(pageText(this.pageIndex + 1, this.pages.length));
     this.pageLabel.setPosition(book.pageText.x + (book.pageText.w - this.pageLabel.width) / 2, book.pageText.y);
     this.clearPage();
@@ -373,13 +381,13 @@ export class CollectionBookView {
     this.featureText.setVisible(false);
     switch (page.section.category) {
       case 'morph':
-        this.showFeature(this.morphSpec(page.entries[0] as BookMorphEntry), book.list);
+        this.showFeature(this.morphSpec(page.entries[0] as BookMorphEntry), book);
         return;
       case 'dreamColour':
         this.showDreamRows(page.entries as readonly BookDreamColourEntry[], book.list);
         return;
       case 'factCard':
-        this.showFeature(this.factCardSpec(page.entries[0] as BookFactCardEntry), book.list);
+        this.showFeature(this.factCardSpec(page.entries[0] as BookFactCardEntry), book);
         return;
     }
   }
@@ -403,8 +411,11 @@ export class CollectionBookView {
     return { name: entry.name, text: entry.text, badge: null, pictureAt };
   }
 
-  /** Lays one featured entry out in `area` with bookFeatureLayout(), measured with the real texts. */
-  private showFeature(spec: FeatureSpec, area: Rect): void {
+  /**
+   * Lays one featured entry out in `book` with bookFeaturePage(), measured with the real texts, and
+   * sets the title's visibility and the heading's position from the result.
+   */
+  private showFeature(spec: FeatureSpec, book: ChestLayout): void {
     this.featureName.setText(spec.name);
     this.featureText.setText(spec.text).setMaxLines(0);
     const measure: BookFeatureMeasure = {
@@ -414,7 +425,9 @@ export class CollectionBookView {
       textAt: (wrapW) => wrappedSize(this.featureText, wrapW),
       textLineH: this.featureText.getTextMetrics().fontSize,
     };
-    const feature = bookFeatureLayout(area, measure);
+    const { showsTitle, heading, feature } = bookFeaturePage(book, measure);
+    this.title.setVisible(showsTitle);
+    this.heading.setPosition(heading.x, heading.y);
     wrappedSize(this.featureName, feature.nameWrapW);
     wrappedSize(this.featureText, feature.textWrapW);
     this.featureText.setMaxLines(feature.fits ? 0 : feature.textLines);

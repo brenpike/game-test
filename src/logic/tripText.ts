@@ -38,6 +38,9 @@ export const BANKING_HINT = 'Bring finds to the Home Spot to keep them safe.';
 /** HUD banner shown once every snack in the area has been eaten, so the exit is open (PRD H2). */
 export const ALL_SNACKS_BANNER = 'Yum! That was the last snack. The exit is open!';
 
+/** HUD banner shown when the explorer eats a plastic worm and spits it out (issue #75). */
+export const PLASTIC_WORM_BANNER = 'Bleh! That was plastic, not food.';
+
 /** Title of the card shown after choosing to go home. */
 export const WENT_HOME_TITLE = 'Welcome home!';
 

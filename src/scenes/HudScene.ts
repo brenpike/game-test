@@ -45,7 +45,15 @@ import {
   type RescueSnapshot,
   type TripSnapshot,
 } from '../logic/tripEvents';
-import { ALL_SNACKS_BANNER, BANKING_HINT, GO_HOME_LABEL, LEGS_LABEL, TRIP_BAG_LABEL, tripBagStatus } from '../logic/tripText';
+import {
+  ALL_SNACKS_BANNER,
+  BANKING_HINT,
+  GO_HOME_LABEL,
+  LEGS_LABEL,
+  PLASTIC_WORM_BANNER,
+  TRIP_BAG_LABEL,
+  tripBagStatus,
+} from '../logic/tripText';
 import { LEGS } from '../logic/tuning';
 import { add, clampLen } from '../logic/vec';
 import { SURF, WORLD_H, type ZoneLayout } from '../logic/zone';
@@ -378,6 +386,7 @@ export class HudScene extends Phaser.Scene {
     this.game.events.on(GAME_EVENTS.COLLECTED, this.handleCollected, this);
     this.game.events.on(GAME_EVENTS.ALL_COLLECTED, this.handleAllCollected, this);
     this.game.events.on(GAME_EVENTS.EXIT_CLOSED, this.handleExitClosed, this);
+    this.game.events.on(GAME_EVENTS.PLASTIC_WORM_SPAT, this.handlePlasticWormSpat, this);
     this.game.events.on(GAME_EVENTS.DASH_STATE, this.handleDashState, this);
     this.game.events.on(GAME_EVENTS.REQUEST_PAUSE, this.pauseSwim, this);
     this.game.events.on(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
@@ -1140,6 +1149,11 @@ export class HudScene extends Phaser.Scene {
     this.showSnackBanner(exitClosedText(payload.left));
   }
 
+  /** Shows the "bleh" message in the snack banner when a plastic worm is spat out (issue #75). */
+  private handlePlasticWormSpat(): void {
+    this.showSnackBanner(PLASTIC_WORM_BANNER);
+  }
+
   /**
    * Shows `text` in the snack banner, fading in unless motion is reduced, for BANNER_MS on the HUD
    * clock. A new message replaces the one up and restarts the timer.
@@ -1362,6 +1376,7 @@ export class HudScene extends Phaser.Scene {
     this.game.events.off(GAME_EVENTS.COLLECTED, this.handleCollected, this);
     this.game.events.off(GAME_EVENTS.ALL_COLLECTED, this.handleAllCollected, this);
     this.game.events.off(GAME_EVENTS.EXIT_CLOSED, this.handleExitClosed, this);
+    this.game.events.off(GAME_EVENTS.PLASTIC_WORM_SPAT, this.handlePlasticWormSpat, this);
     this.game.events.off(GAME_EVENTS.DASH_STATE, this.handleDashState, this);
     this.game.events.off(GAME_EVENTS.REQUEST_PAUSE, this.pauseSwim, this);
     this.game.events.off(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);

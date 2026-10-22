@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CANAL_TREASURES, RARITIES, treasureById, type Rarity } from './catalogue';
+import { shapeDistance, type HazardSpawn, type HazardType } from './hazards';
 import { coversAt, inReeds, isDeep, routeDistance, spotMatchesLabels, turnDistance } from './hiding';
 import { inSafeArea } from './tilapia';
 import { createTrip } from './trip';
@@ -7,6 +8,8 @@ import { FINDS, LEGS, RISK, TILAPIA } from './tuning';
 import {
   BED_TOP,
   CANAL_AREA_ID,
+  CANAL_LAYOUT,
+  SNACK_HAZARD_CLEARANCE,
   SPOT_MIN_SPACING,
   STRANDING_PLACES,
   SURF,
@@ -14,10 +17,13 @@ import {
   ZONE_SCREENS,
   ZONE_W,
   buildCanalZone,
+  buildZone,
   inHomeSpot,
   isInsideCurrent,
   swimBounds,
   waveY,
+  type AreaLayoutData,
+  type FixedPadData,
   type HidingSpot,
   type Point,
   type SafeArea,
@@ -620,5 +626,120 @@ describe('stranding places', () => {
         }
       }
     }
+  });
+});
+
+const TEST_LITTER: HazardType = {
+  id: 'test-litter',
+  name: 'Test litter',
+  costsLeg: false,
+  reach: 12,
+  meetRange: 60,
+  fact: { id: 'test-litter', name: 'test-litter', title: 'Meet the test-litter', body: 'A test-litter for tests.' },
+};
+const LITTER: readonly HazardSpawn[] = [
+  { id: 'litter-0', type: TEST_LITTER, shape: { kind: 'circle', x: 600, y: 200, r: 14 } },
+  { id: 'litter-1', type: TEST_LITTER, shape: { kind: 'circle', x: 960, y: 160, r: 14 } },
+  { id: 'litter-2', type: TEST_LITTER, shape: { kind: 'rect', x0: 1400, x1: 1440, y0: 270, y1: 290 } },
+];
+const FIXED_PADS: readonly FixedPadData[] = [
+  { x: 1000, rx: 24, flower: true, spot: { y: 100, rarity: 'common', tag: 'a' } },
+  { x: 1340, rx: 22, flower: false },
+  { x: 1780, rx: 23, flower: false, spot: { y: 96, rarity: 'rare', tag: 'b' } },
+];
+
+function canalWith(overrides: Partial<AreaLayoutData>): AreaLayoutData {
+  return { ...CANAL_LAYOUT, ...overrides };
+}
+
+describe('fixed lily pads', () => {
+  it.each(ALL_SEEDS)('appends the fixed pads after the seeded pads for seed %i', (seed) => {
+    const canal = buildCanalZone(seed);
+    const zone = buildZone(canalWith({ fixedPads: FIXED_PADS }), seed);
+    expect(zone.pads).toEqual([
+      ...canal.pads,
+      { x: 1000, rx: 24, flower: true },
+      { x: 1340, rx: 22, flower: false },
+      { x: 1780, rx: 23, flower: false },
+    ]);
+  });
+
+  it.each(ALL_SEEDS)('appends a never-dropped spot under each fixed pad that has one for seed %i', (seed) => {
+    const canal = buildCanalZone(seed);
+    const zone = buildZone(canalWith({ fixedPads: FIXED_PADS }), seed);
+    expect(zone.spots).toEqual([
+      ...canal.spots,
+      { id: 'canal/spot-pad-a', cover: 'pad', rarity: 'common', container: false, x: 1000, y: 100 },
+      { id: 'canal/spot-pad-b', cover: 'pad', rarity: 'rare', container: false, x: 1780, y: 96 },
+    ]);
+    for (const spot of zone.spots.slice(canal.spots.length)) {
+      expect(coversAt(spot, zone)).toContain('pad');
+    }
+    expect(zone.collectibles).toEqual(canal.collectibles);
+    expect(zone.reeds).toEqual(canal.reeds);
+  });
+
+  it('treats an empty fixedPads list like an absent one', () => {
+    expect(buildZone(canalWith({ fixedPads: [] }), 7)).toEqual(buildCanalZone(7));
+  });
+
+  it.each(ALL_SEEDS)('builds no seeded pads and no seeded pad spot when padCount is 0 for seed %i', (seed) => {
+    const canal = buildCanalZone(seed);
+    const zone = buildZone(canalWith({ padCount: 0, padSpotIndex: null }), seed);
+    expect(zone.pads).toEqual([]);
+    expect(zone.spots).toEqual(canal.spots.filter((spot) => spot.cover !== 'pad'));
+    expect(zone.collectibles).toEqual(canal.collectibles);
+    expect(zone.reeds).toEqual(canal.reeds);
+  });
+
+  it('keeps only the fixed pads when padCount is 0', () => {
+    const zone = buildZone(canalWith({ padCount: 0, padSpotIndex: null, fixedPads: FIXED_PADS }), 3);
+    expect(zone.pads.map((pad) => pad.x)).toEqual([1000, 1340, 1780]);
+    expect(zone.spots.filter((spot) => spot.cover === 'pad').map((spot) => spot.id)).toEqual(['canal/spot-pad-a', 'canal/spot-pad-b']);
+  });
+
+  it.each(ALL_SEEDS)('keeps the seeded pads but adds no seeded pad spot when padSpotIndex is null for seed %i', (seed) => {
+    const canal = buildCanalZone(seed);
+    const zone = buildZone(canalWith({ padSpotIndex: null }), seed);
+    expect(zone.pads).toEqual(canal.pads);
+    expect(zone.spots).toEqual(canal.spots.filter((spot) => spot.cover !== 'pad'));
+  });
+});
+
+describe('snack hazard clearance', () => {
+  it('is 80 px', () => {
+    expect(SNACK_HAZARD_CLEARANCE).toBe(80);
+  });
+
+  it.each(ALL_SEEDS)('keeps every snack at least SNACK_HAZARD_CLEARANCE from every hazard shape for seed %i', (seed) => {
+    const zone = buildZone(canalWith({ hazards: LITTER }), seed);
+    expect(zone.collectibles).toHaveLength(16);
+    for (const snack of zone.collectibles) {
+      for (const hazard of zone.hazards) {
+        const distance = shapeDistance(snack, hazard.shape);
+        expect(distance, `${snack.id} is ${distance.toFixed(1)} px from ${hazard.id}`).toBeGreaterThanOrEqual(SNACK_HAZARD_CLEARANCE);
+      }
+    }
+  });
+
+  it('tests hazards that sit where the canal would put snacks', () => {
+    const tooClose = ALL_SEEDS.filter((seed) =>
+      buildCanalZone(seed).collectibles.some((snack) => LITTER.some((hazard) => shapeDistance(snack, hazard.shape) < SNACK_HAZARD_CLEARANCE)),
+    );
+    expect(tooClose.length).toBeGreaterThan(0);
+  });
+
+  it.each(ALL_SEEDS)('makes the same draws and snacks as the canal when no hazard is near for seed %i', (seed) => {
+    const far: HazardSpawn[] = [{ id: 'far-0', type: TEST_LITTER, shape: { kind: 'circle', x: -1000, y: -1000, r: 10 } }];
+    const canal = buildCanalZone(seed);
+    const zone = buildZone(canalWith({ hazards: far }), seed);
+    expect(zone.collectibles).toEqual(canal.collectibles);
+    expect(zone.pads).toEqual(canal.pads);
+  });
+
+  it('keeps the canal, which has no hazards, unchanged', () => {
+    expect(CANAL_LAYOUT.hazards).toEqual([]);
+    expect(CANAL_LAYOUT.fixedPads).toBeUndefined();
+    expect(buildZone(CANAL_LAYOUT, 0xa70107)).toEqual(buildCanalZone());
   });
 });

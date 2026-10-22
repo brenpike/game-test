@@ -13,12 +13,12 @@
  * - it meets its slot's minimums in WEARABLE_SLOT_MINIMUMS;
  * - it is listed in WEARABLE_RECORD in wearableArt.test.ts, with its measured
  *   numbers.
- * There are no per-item exceptions. To add a Wearable, add it to
- * CANAL_TREASURES (src/logic/catalogue.ts) and give it art in drawWearables.ts:
- * the suite in wearableArt.test.ts finds it in the catalogue and checks it, and
- * fails until its numbers are recorded. The suite reads CANAL_TREASURES only,
- * so a later area's Wearables are checked only once they are added there, or
- * once the suite's catalogue source is extended to that area's list.
+ * There are no per-item exceptions. To add a Wearable, add it to its area's
+ * list in src/logic/catalogue.ts (CANAL_TREASURES, POND_TREASURES, ...) and give
+ * it art in drawWearables.ts: the suite in wearableArt.test.ts reads the whole
+ * catalogue (ALL_TREASURES, every area), so it finds the new item and checks it,
+ * and fails until its numbers are recorded. A later area's list needs adding to
+ * ALL_TREASURES, and nothing else, for the suite to check its Wearables.
  */
 import { AXO_SCENE_SCALE } from './drawAxolotl';
 import { AXO_SIZE_SCALE } from './drawAxolotlParts';

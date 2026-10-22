@@ -13,7 +13,7 @@ import {
   starLines,
   starsShortLine,
 } from './areaText';
-import { CANAL_TREASURES } from './catalogue';
+import { ALL_TREASURES } from './catalogue';
 import { NO_STARS, STARS_PER_AREA, type AreaStars } from './stars';
 
 /** The tripText.test banned list, plus "level" (areas are named "Area 1" in UI text). */
@@ -46,7 +46,8 @@ const EXIT_CLOSED_MAX = 49;
 
 const SNACKS_LEFT_SAMPLES = [0, 1, 2, 3, 5, 16, 99];
 
-const SPECIAL_NAMES = CANAL_TREASURES.map((treasure) => treasure.name);
+/** Every catalogue treasure name, every area: any of them can be an area special. */
+const SPECIAL_NAMES = ALL_TREASURES.map((treasure) => treasure.name);
 
 const ALL_STARS: AreaStars = { exit: true, special: true, legsOrRescue: true };
 

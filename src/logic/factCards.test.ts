@@ -3,10 +3,12 @@ import {
   BOY_OR_GIRL_FACT,
   FACT_CARD_OK_LABEL,
   FACT_CARD_UNFOUND_HINT,
+  PLASTIC_WORM_FACT,
   TILAPIA_FACT,
   TILAPIA_MEET_RANGE,
   meetsTilapia,
   metThreatIds,
+  unfoundFactCardHint,
   type ThreatSighting,
 } from './factCards';
 import { TILAPIA } from './tuning';
@@ -79,6 +81,36 @@ describe('boy or girl fact card copy', () => {
 
   it.each([BOY_OR_GIRL_FACT.name, BOY_OR_GIRL_FACT.title, BOY_OR_GIRL_FACT.body])('"%s" avoids banned words', (text) => {
     expect(findBannedWords(text)).toEqual([]);
+  });
+});
+
+describe('plastic worm fact card copy', () => {
+  it('has the plastic-worm id, name, title and body', () => {
+    expect(PLASTIC_WORM_FACT).toEqual({
+      id: 'plastic-worm',
+      name: 'Plastic worm',
+      title: 'Plastic is not food',
+      body: 'Bits of plastic in the water can look like food. Animals sometimes eat them by mistake, and it makes them feel sick. Keeping rubbish out of the water helps.',
+    });
+  });
+
+  it('has an id apart from the other cards', () => {
+    expect(PLASTIC_WORM_FACT.id).not.toBe(TILAPIA_FACT.id);
+    expect(PLASTIC_WORM_FACT.id).not.toBe(BOY_OR_GIRL_FACT.id);
+  });
+
+  it.each([PLASTIC_WORM_FACT.name, PLASTIC_WORM_FACT.title, PLASTIC_WORM_FACT.body])('"%s" avoids banned words', (text) => {
+    expect(findBannedWords(text)).toEqual([]);
+  });
+});
+
+describe('unfound fact card hint', () => {
+  it('keeps the canal hint unchanged', () => {
+    expect(FACT_CARD_UNFOUND_HINT).toBe('Explore the canal to find this card.');
+  });
+
+  it('names the place to explore', () => {
+    expect(unfoundFactCardHint('the lily pad pond')).toBe('Explore the lily pad pond to find this card.');
   });
 });
 

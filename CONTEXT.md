@@ -39,11 +39,11 @@ _Avoid_: death, die, game over, wipe, fail
 ### Areas and exploring
 
 **Area**:
-A level that belongs to one **Habitat**, such as the canal (Area 1), W x H screens in size and built from area data; it is beaten by reaching its open exit.
+A level that belongs to one **Habitat**, such as the canal (Area 1) or the Lily pad pond (Area 2), W x H screens in size and built from area data; it is beaten by reaching its open exit.
 _Avoid_: map; "level" in UI text (say "Area 1")
 
 **Habitat**:
-A group of areas that share a look, such as the canal; only the canal habitat exists so far.
+A group of areas that share a look: the canal, which holds Area 1, and the Lily pad pond, which holds Area 2.
 _Avoid_: using it as another name for one area
 
 **Area map**:
@@ -56,7 +56,7 @@ The way out of an area, which stays closed until every snack in the area is eate
 One of up to 3 rewards for beating an area, kept forever once earned.
 
 **Special treasure**:
-The one treasure per area that earns a star when the area is beaten with it owned; always Common or Rare, and the canal's is the Toy boat.
+The one treasure per area that earns a star when the area is beaten with it owned; always Common or Rare; the canal's is the Toy boat and the Lily pad pond's is the Frog statue.
 
 **Snack**:
 A worm or bug the axolotl eats by touching it with its head; not a trip find, it speeds up regrowth while a leg is missing, and every snack must be eaten to open the exit.
@@ -68,10 +68,10 @@ A stretch of flowing water in an area that pushes the axolotl, and that rarer tr
 The axolotl's first power, a short burst of speed that works with any number of legs and is the only way to break a Dash pot.
 
 **Hiding spot**:
-A place in an area where a treasure can hide, picked fresh each trip for each treasure picked for that trip, from that treasure's pool. Each rarity's spots sit in their own risk band, nearer a threat (a predator's patrol route or a leg-costing hazard) the rarer the treasure (B10).
+A place in an area where a treasure can hide, picked fresh each trip for each treasure picked for that trip, from that treasure's pool. Each rarity's spots sit in their own risk band, nearer a threat (a predator's patrol route or a leg-costing hazard) the rarer the treasure (B10). An area's cave holds hiding spots of its own; the Lily pad pond's cave is a hollow log. The Lily pad pond also has two fixed spots under lily pads, one Common and one Rare, that are area data, so every trip there has them.
 
 **Treasure slot**:
-One of an area's set number of places for a treasure on each trip (6 in the canal), with its rarity picked by chance from the trip seed; lost treasures and the **Special treasure** are extras on top of the slots (B4).
+One of an area's set number of places for a treasure on each trip (6 in the canal, 7 in the Lily pad pond), with its rarity picked by chance from the trip seed; lost treasures and the **Special treasure** are extras on top of the slots (B4).
 _Avoid_: Slot alone (that means a Wearable **Slot**)
 
 **Dash pot**:
@@ -84,7 +84,7 @@ _Avoid_: hint star
 ### Hazards, predators and legs
 
 **Hazard**:
-Something in an area, defined as data with its own rules, that may cost the axolotl a leg or only slow it, such as a predator.
+Something in an area, defined as data with its own rules, that may cost the axolotl a leg or only slow it, such as a predator. A slow-only hazard, such as the **Plastic worm**, never costs a leg, never starts **Protected time**, and is not a threat for hiding spots (B10).
 
 **Predator**:
 A kind of **Hazard**: an animal that hunts, with a visible warning before every strike; every predator follows the same shared rules, and each species is data.
@@ -93,6 +93,14 @@ _Avoid_: monster
 **Tilapia**:
 The invasive fish that patrol the canal, the first **Predator**.
 _Avoid_: monster
+
+**Plastic worm**:
+A bit of plastic in the Lily pad pond that looks like a worm, the first slow-only **Hazard**. Touching it with the head eats it, which makes the **Explorer** **Queasy**, and the axolotl spits it out a little way ahead. It is never a **Snack**, never counts toward opening the **Exit**, and the worms start over each **Trip**.
+_Avoid_: worm alone (a worm is a **Snack**)
+
+**Queasy**:
+How the **Explorer** feels for 3 seconds after eating a **Plastic worm**: top speed drops to 0.6 of normal, with a green cheek tint and a gentle wobble (no wobble under reduced motion). **Tail Dash** and speeding up are not slowed, no leg is lost, and eating another plastic worm while queasy does nothing. Queasy time pauses while the game is paused or a banking card shows, and ends when the axolotl starts being **Carried home**, on **Go home**, on beating the area, or at the end of the trip.
+_Avoid_: sick, poisoned, damage
 
 **Telegraph**:
 A predator's visible warning before a lunge; the tilapia's is a glint and a wind-up pose.
@@ -136,7 +144,7 @@ _Avoid_: loot
 A hidden treasure that holds one Dream colour.
 
 **Dream colour**:
-A fantasy colour, not found in nature, that can be put on any owned axolotl; solid ones are Common or Rare, and patterned and sheen ones are Epic or Legendary.
+A fantasy colour, not found in nature, that can be put on any owned axolotl; solid ones are Common or Rare, and patterned and sheen ones are Epic or Legendary. There are 13: 12 from the canal and Lily green from the Lily pad pond.
 _Avoid_: skin
 
 **Treasure Chest**:
@@ -254,6 +262,7 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - A **Hint sparkle** marks a hidden **Treasure** when the axolotl is near, and each of the last 3 **Snacks**
 - A **Predator** is a **Hazard**, and a **Tilapia** is a **Predator**; a **Predator**'s **Telegraph** always comes before its **Lunge**, and only one **Predator** in an **Area** warns or lunges at a time
 - A **Hit** is a **Lunge** that connects, or a touch on a **Hazard** that costs a leg; it starts **Protected time** and causes exactly one **Leg loss**, except a hit blocked by a Shell **Perk** (at most one per trip), which costs no leg; a **Hazard** that only slows never hits
+- Eating a **Plastic worm** makes the **Explorer** **Queasy**; it is not a **Hit**, so the Shell **Perk** plays no part, and it costs no leg
 - The first time the **Explorer** meets a **Hazard** or **Predator**, its **Fun-fact card** shows, once per **Save**
 - Each **Leg loss** is undone by **Regrowth**, one leg at a time; eating a **Snack** speeds up **Regrowth**
 - Losing the fourth leg means the axolotl is **Carried home**
@@ -292,3 +301,4 @@ The safe axolotl refuge in Xochimilco that grows as areas are beaten (N2).
 - "habitat" was another name for one **Area** before the area framework (#73): resolved: a **Habitat** is a group of **Areas** that share a look.
 - `tilapiaRoutes` and `predatorRoutes` both hold predator patrol routes in area data: resolved: the **Tilapia** keeps its own `tilapiaRoutes` column, matching the PRD area table's tilapia column, and every other species goes in `predatorRoutes`.
 - `metHazards` (the hub's met list) holds **Predator** ids too, such as `'tilapia'`: resolved: a **Predator** is a **Hazard**, so "hazards met" covers both.
+- "worm" names both a **Snack** (`CollectibleKind` `'worm'`) and the **Plastic worm** (`'plastic-worm'`): resolved: a worm alone is a **Snack**; always say **Plastic worm** in full for the hazard.

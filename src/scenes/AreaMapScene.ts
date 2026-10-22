@@ -1,5 +1,11 @@
 import * as Phaser from 'phaser';
-import { areaMapPanelKey, bakeAreaMapPanel, bakeAreaMapPath } from '../art/areaMapTextures';
+import {
+  areaMapPanelKey,
+  bakeAreaMapPanel,
+  bakeAreaMapPath,
+  type AreaMapMarkerPair,
+  type AreaMapTextures,
+} from '../art/areaMapTextures';
 import {
   MAP_BADGE_OFFSET,
   MAP_LABEL_PANEL,
@@ -10,6 +16,7 @@ import {
   mapPanelSize,
   type MapPanelSpec,
 } from '../art/drawAreaMap';
+import { isHabitatLookId } from '../art/habitatLook';
 import { LETTERBOX } from '../art/palette';
 import type { TexInfo } from '../art/textures';
 import {
@@ -136,6 +143,18 @@ function areaMapEntry(area: Readonly<AreaData>, stars: AreaStarsRecord): AreaMap
     locked: !isAreaUnlocked(stars, area.id),
     isNew: isNewArea(stars, area.id),
   };
+}
+
+/**
+ * The marker pair of the habitat look of `habitatId` in `art`. Throws a RangeError for an unknown
+ * habitat or look; it never falls back to the canal markers.
+ */
+function markerPairFor(art: AreaMapTextures, habitatId: string): AreaMapMarkerPair {
+  const look = habitatById(habitatId)?.look;
+  if (look === undefined || !isHabitatLookId(look)) {
+    throw new RangeError(`AreaMapScene: no marker look ${String(look)} for habitat ${habitatId}`);
+  }
+  return art.markersByLook[look];
 }
 
 /** Shows the baked texture `info` at its logical size with its anchor at (`x`, `y`). */
@@ -348,7 +367,8 @@ export class AreaMapScene extends Phaser.Scene {
   /** One area's marker, number and star row, with the padlock badge when locked and the "New!" pill and word when new. */
   private createMarker(entry: AreaMapEntry): MarkerParts {
     const art = this.assets.areaMap;
-    const markerInfo = entry.locked ? art.markerLocked : art.markerUnlocked;
+    const markerPair = markerPairFor(art, entry.habitatId);
+    const markerInfo = entry.locked ? markerPair.locked : markerPair.unlocked;
     const starsInfo = art.starRows[entry.locked ? 0 : entry.stars];
     const showsNew = entry.isNew && !entry.locked;
     return {

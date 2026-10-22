@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CANAL_TREASURES, WEARABLE_SLOTS, type Wearable } from './catalogue';
+import { ALL_TREASURES, WEARABLE_SLOTS, type Wearable } from './catalogue';
 import { RESTYLE_STEPS, STYLER_STEPS } from './stylerSteps';
 import * as stylerText from './stylerText';
 import {
@@ -72,8 +72,8 @@ const IT_FOR_A_CHOICE: readonly string[] = ['try it on', 'change it later'];
 
 const MODES: readonly StylerMode[] = ['creator', 'restyle'];
 
-/** Every catalogue Wearable. */
-const WEARABLES: readonly Wearable[] = CANAL_TREASURES.filter(
+/** Every catalogue Wearable, every area. */
+const WEARABLES: readonly Wearable[] = ALL_TREASURES.filter(
   (treasure): treasure is Wearable => treasure.category === 'wearable',
 );
 
