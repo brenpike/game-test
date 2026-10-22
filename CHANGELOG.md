@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Home Tank Decorations can now be Floating or Hanging. Floating items rest on the water's surface and Hanging items hang from the top of the tank. Both slide left and right (#95).
-- Floating items bob gently and Hanging items sway. They still do this when reduced motion is on (#95).
+- Floating items bob gently and Hanging items sway. With reduced motion on, they stay still, like the Pond plant (#95).
 - Wide Hanging items, such as string lights, slide along the top of the tank (#95).
 - Dev builds have a `?decor` flag that adds test Decorations: a lily pad, a firefly jar and string lights. They are never saved and are not in the production build (#95).
 - Every canal Decoration stays a Floor item (#95).
