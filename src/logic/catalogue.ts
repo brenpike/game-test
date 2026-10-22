@@ -1,6 +1,6 @@
 /**
  * The treasure catalogue: rarities, categories, wearable slots, perks, Dream colours and the
- * treasures of every area, canal and pond (PRD B1 to B3, F9). Pure data plus lookups; nothing here
+ * treasures of every area: the canal, the pond and the pond's Area 3 (PRD B1 to B3, F9). Pure data plus lookups; nothing here
  * applies perks.
  */
 
@@ -83,7 +83,8 @@ export type DreamColourId =
   | 'rainbow'
   | 'galaxy'
   | 'tie-dye-galaxy'
-  | 'lily-green';
+  | 'lily-green'
+  | 'firefly-gold';
 
 /** How a Dream colour is drawn. */
 export type DreamKind = 'solid' | 'patterned' | 'sheen';
@@ -120,8 +121,20 @@ export const LILY_GREEN: DreamColour = Object.freeze({
   kind: 'solid',
 });
 
-/** Every Dream colour: the canal's 12, then Lily green. */
-export const DREAM_COLOURS: readonly DreamColour[] = Object.freeze([...CANAL_DREAM_COLOURS, LILY_GREEN]);
+/** The pond Area 3 Dream colour, held by that area's one Paint shell. */
+export const FIREFLY_GOLD: DreamColour = Object.freeze({
+  id: 'firefly-gold',
+  name: 'Firefly gold',
+  rarity: 'rare',
+  kind: 'solid',
+});
+
+/** Every Dream colour: the canal's 12, then Lily green, then Firefly gold. */
+export const DREAM_COLOURS: readonly DreamColour[] = Object.freeze([
+  ...CANAL_DREAM_COLOURS,
+  LILY_GREEN,
+  FIREFLY_GOLD,
+]);
 
 /** Fields every treasure has. `id` is stable forever, e.g. 'canal/sun-hat'. */
 export interface TreasureBase {
@@ -331,8 +344,92 @@ export const POND_TREASURES: readonly Treasure[] = Object.freeze([
   createPaintShell(LILY_GREEN, 'pond'),
 ]);
 
-/** Every treasure of every area: the canal's, then the pond's. */
-export const ALL_TREASURES: readonly Treasure[] = Object.freeze([...CANAL_TREASURES, ...POND_TREASURES]);
+/**
+ * The pond Area 3 treasures, with 'pond/' ids: 6 Decorations, 5 Wearables, then the Firefly gold
+ * Paint shell. The Wooden duck decoy is the area's special treasure. Every perk is the PERK_VALUES
+ * value for its type and rarity.
+ */
+export const POND_2_TREASURES: readonly Treasure[] = Object.freeze([
+  { id: 'pond/reed-bundle', name: 'Reed bundle', rarity: 'common', category: 'decoration' },
+  {
+    id: 'pond/drifting-feather',
+    name: 'Drifting feather',
+    rarity: 'common',
+    category: 'decoration',
+    placement: 'floating',
+  },
+  {
+    id: 'pond/wooden-duck-decoy',
+    name: 'Wooden duck decoy',
+    rarity: 'rare',
+    category: 'decoration',
+    placement: 'floating',
+  },
+  {
+    id: 'pond/firefly-string-lights',
+    name: 'Firefly string lights',
+    rarity: 'rare',
+    category: 'decoration',
+    placement: 'hanging',
+    width: 144,
+  },
+  {
+    id: 'pond/firefly-jar',
+    name: 'Firefly jar',
+    rarity: 'epic',
+    category: 'decoration',
+    placement: 'hanging',
+  },
+  { id: 'pond/golden-lotus-throne', name: 'Golden lotus throne', rarity: 'legendary', category: 'decoration' },
+  {
+    id: 'pond/feather-cap',
+    name: 'Feather cap',
+    rarity: 'common',
+    category: 'wearable',
+    slot: 'head',
+    perk: { type: 'speed', value: 4 },
+  },
+  {
+    id: 'pond/lily-pad-socks',
+    name: 'Lily-pad socks',
+    rarity: 'common',
+    category: 'wearable',
+    slot: 'socks',
+    perk: { type: 'snackMagnet', value: 30 },
+  },
+  {
+    id: 'pond/water-lily-shirt',
+    name: 'Water-lily shirt',
+    rarity: 'rare',
+    category: 'wearable',
+    slot: 'shirt',
+    perk: { type: 'regrowth', value: 15 },
+  },
+  {
+    id: 'pond/pearl-tail-charm',
+    name: 'Pearl tail charm',
+    rarity: 'epic',
+    category: 'wearable',
+    slot: 'tail',
+    perk: { type: 'shell', value: 1 },
+  },
+  {
+    id: 'pond/firefly-cape',
+    name: 'Firefly cape',
+    rarity: 'legendary',
+    category: 'wearable',
+    slot: 'back',
+    perk: { type: 'treasureSense', value: 50 },
+  },
+  createPaintShell(FIREFLY_GOLD, 'pond'),
+]);
+
+/** Every treasure of every area: the canal's, then the pond's, then the pond Area 3's. */
+export const ALL_TREASURES: readonly Treasure[] = Object.freeze([
+  ...CANAL_TREASURES,
+  ...POND_TREASURES,
+  ...POND_2_TREASURES,
+]);
 
 const CATEGORY_NAMES: Readonly<Record<TreasureCategory, 'Decoration' | 'Wearable' | 'Paint shell'>> =
   Object.freeze({ decoration: 'Decoration', wearable: 'Wearable', paintShell: 'Paint shell' });

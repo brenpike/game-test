@@ -458,7 +458,7 @@ export const MORPH_PALETTES: Record<MorphLookId, MorphPalette> = {
 // body and gill slots; the real morph keeps its eye and mouth. Every value in
 // this section is derived (provisional).
 
-/** Look ids of the thirteen Dream colours, in the guide 3f order. Must match the logic layer's Dream colour ids. */
+/** Look ids of the fourteen Dream colours, in the guide 3f order. Must match the logic layer's Dream colour ids. */
 export type DreamLookId =
   | 'mint'
   | 'sky-blue'
@@ -472,7 +472,8 @@ export type DreamLookId =
   | 'rainbow'
   | 'galaxy'
   | 'tie-dye-galaxy'
-  | 'lily-green';
+  | 'lily-green'
+  | 'firefly-gold';
 
 /** The body and gill role slots a Dream colour swaps (guide 3f). */
 export type DreamSlots = Pick<
@@ -533,6 +534,8 @@ export const DREAM_SLOTS: Readonly<Record<DreamLookId, DreamSlots>> = {
   ),
   // Pond Dream colour (issue #75). Body #ddf274 (hue 70) is 11.67:1 with ink, so 3.42:1 worst case.
   'lily-green': dreamSlots('#ddf274', '#c8d970', '#ebf7ac', '#f0f9c0', ['#4fb83a', '#76c865'], ['#4ba93c', '#70bb63']),
+  // Pond Area 3 Dream colour (issue #98). Body #ffd52a (hue 48) is 10.15:1 with ink, so 3.19:1 worst case.
+  'firefly-gold': dreamSlots('#ffd52a', '#e6c02f', '#ffe67f', '#ffec9f', ['#e08214', '#e79e48'], ['#ce781a', '#d89449']),
 };
 
 /** Marks a palette as a Dream colour over a real morph; drawAxolotl paints the layer 6.5 overlay from it. */

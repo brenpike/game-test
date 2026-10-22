@@ -3,6 +3,8 @@ import {
   BOY_OR_GIRL_FACT,
   FACT_CARD_OK_LABEL,
   FACT_CARD_UNFOUND_HINT,
+  HERON_FACT,
+  HERON_MEET_RANGE,
   PLASTIC_WORM_FACT,
   TILAPIA_FACT,
   TILAPIA_MEET_RANGE,
@@ -11,7 +13,7 @@ import {
   unfoundFactCardHint,
   type ThreatSighting,
 } from './factCards';
-import { TILAPIA } from './tuning';
+import { HERON, TILAPIA } from './tuning';
 import type { SafeArea } from './zone';
 
 const BANNED = [
@@ -101,6 +103,29 @@ describe('plastic worm fact card copy', () => {
 
   it.each([PLASTIC_WORM_FACT.name, PLASTIC_WORM_FACT.title, PLASTIC_WORM_FACT.body])('"%s" avoids banned words', (text) => {
     expect(findBannedWords(text)).toEqual([]);
+  });
+});
+
+describe('heron fact card copy', () => {
+  it('has the heron id, name, title and body', () => {
+    expect(HERON_FACT).toEqual({
+      id: 'heron',
+      name: 'Heron',
+      title: 'Meet the heron',
+      body: "Herons are tall birds that live around Xochimilco's canals. They stand very still and watch the water for food. Axolotls are safer down deep, away from the surface.",
+    });
+  });
+
+  it('has an id apart from the other cards', () => {
+    expect([TILAPIA_FACT.id, BOY_OR_GIRL_FACT.id, PLASTIC_WORM_FACT.id]).not.toContain(HERON_FACT.id);
+  });
+
+  it.each([HERON_FACT.name, HERON_FACT.title, HERON_FACT.body])('"%s" avoids banned words', (text) => {
+    expect(findBannedWords(text)).toEqual([]);
+  });
+
+  it('uses a meet range larger than the heron reach band', () => {
+    expect(HERON_MEET_RANGE).toBeGreaterThan(HERON.lungeRange);
   });
 });
 

@@ -89,7 +89,7 @@ export type { DreamSwatchId } from './treasurePalette';
 // Ids
 // ---------------------------------------------------------------------------
 
-/** The thirteen Dream swatches in guide 3f order. */
+/** The fourteen Dream swatches in guide 3f order. */
 export const DREAM_SWATCH_IDS: readonly DreamSwatchId[] = [
   'mint',
   'sky-blue',
@@ -104,6 +104,7 @@ export const DREAM_SWATCH_IDS: readonly DreamSwatchId[] = [
   'galaxy',
   'tie-dye-galaxy',
   'lily-green',
+  'firefly-gold',
 ];
 
 /**
