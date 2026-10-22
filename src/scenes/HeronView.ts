@@ -15,7 +15,11 @@ import type { GameAssets } from './BootScene';
 import type { PredatorFrame } from './PredatorView';
 import { faceSprite } from './spriteFacing';
 
-/** Reduced motion: the shadow fades in over the last FADE_S of its glide-in and fades out over FADE_S. */
+/**
+ * Reduced motion: the shadow fades in over the last FADE_S of its glide-in and fades out over FADE_S.
+ * Full motion: it fades in over the first FADE_S of its glide-in and out over the last FADE_S of its
+ * glide-off, so it never pops in or out at the ends of its route.
+ */
 const FADE_S = 0.4;
 /** Full motion: the shadow crossfades from the glide tone to the warning tone, and back, over DARKEN_S. */
 const DARKEN_S = 0.4;
@@ -40,7 +44,7 @@ interface HeronDrawing {
   glide: Phaser.GameObjects.Image;
   warning: Phaser.GameObjects.Image;
   beak: Phaser.GameObjects.Image;
-  /** Shadow opacity, 0 to 1. Always 1 under full motion while shown. */
+  /** Shadow opacity, 0 to 1. Under full motion, set by the cycle clock (fullFade). */
   fade: number;
   /** Share of the warning tone in the shadow crossfade, 0 to 1. */
   darken: number;
@@ -81,6 +85,16 @@ function reducedFadeGoal(view: PredatorCycleView): number {
   return 0;
 }
 
+/**
+ * Full-motion shadow opacity: 0 to 1 over the first FADE_S of the glide-in, 1 to 0 over the last
+ * FADE_S of the glide-off (up to the gap), and 1 while warning or striking.
+ */
+function fullFade(view: PredatorCycleView): number {
+  if (view.phase === 'glideIn') return Math.max(0, Math.min(1, view.cycleTime / FADE_S));
+  if (view.phase === 'glideOff') return Math.max(0, Math.min(1, (view.timing.visibleFor - view.cycleTime) / FADE_S));
+  return 1;
+}
+
 function striking(phase: PredatorCyclePhase): boolean {
   return phase === 'warn' || phase === 'dip';
 }
@@ -91,7 +105,8 @@ function striking(phase: PredatorCyclePhase): boolean {
  * with the scene, and nothing here changes game state.
  *
  * The shadow is shown whenever the heron is not in its gap. Under full motion it is drawn where the
- * encounter puts it, so it glides in and off. Under reduced motion it does not glide: it stays where
+ * encounter puts it, so it glides in and off, fading in over the first FADE_S of the glide-in and out
+ * over the last FADE_S of the glide-off, so it never pops in or out. Under reduced motion it does not glide: it stays where
  * it was when it became visible, fades in over the last FADE_S of the glide-in, moves only onto the
  * fixed strike spot when the warning starts, and fades out over FADE_S where it was. While the
  * heron warns or strikes, the shadow darkens: a DARKEN_S crossfade to the warning tone under full
@@ -211,7 +226,7 @@ export class HeronView {
       heron.shownY = state.pos.y;
       heron.shownFacing = state.facing;
     }
-    heron.fade = ambient ? 1 : stepToward(heron.fade, reducedFadeGoal(view), frame.dt / FADE_S);
+    heron.fade = ambient ? fullFade(view) : stepToward(heron.fade, reducedFadeGoal(view), frame.dt / FADE_S);
     const darkGoal = atSpot ? 1 : 0;
     heron.darken = ambient ? stepToward(heron.darken, darkGoal, frame.dt / DARKEN_S) : darkGoal;
     this.placeShadow(heron.glide, this.shadowInfo.glide, heron, heron.fade * (1 - heron.darken));
