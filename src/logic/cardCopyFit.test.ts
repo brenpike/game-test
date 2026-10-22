@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { areaLabel } from './areaText';
-import { CANAL_AREA } from './areas';
-import { CANAL_TREASURES, treasureById } from './catalogue';
+import { AREAS, CANAL_AREA, areaFactCards, type AreaData } from './areas';
+import { ALL_TREASURES, treasureById } from './catalogue';
 import {
   CARD,
   cardButtonsStacked,
@@ -15,7 +15,7 @@ import {
   type CardSection,
   type TextFit,
 } from './cardFit';
-import { TILAPIA_FACT } from './factCards';
+import type { FactCard } from './factCards';
 import {
   FIRST_FIND_KINDS,
   FIRST_FIND_TEXT,
@@ -67,39 +67,50 @@ const CANVAS_WIDTHS: readonly number[] = [
 const CANVAS_HEIGHTS: readonly number[] = [
   320, 340, 360, 375, 414, 440, 480, 568, 600, 667, 740, 768, 844, 932,
 ];
-const BANKED_TOTALS: readonly number[] = [0, 1, 9, 24];
+const BANKED_TOTALS: readonly number[] = [0, 1, 9, 24, ALL_TREASURES.length];
 const ARRIVAL_REASONS: readonly ArrivalReason[] = ['carriedHome', 'wentHome', 'areaBeaten'];
 
-/** Catalogue name of the canal special treasure. Throws when the catalogue has no such treasure. */
-function canalSpecialName(): string {
-  const special = treasureById(CANAL_AREA.specialTreasureId);
-  if (special === undefined) throw new Error(`no catalogue treasure ${CANAL_AREA.specialTreasureId}`);
+/** Catalogue name of an area's special treasure. Throws when the catalogue has no such treasure. */
+function specialName(area: Readonly<AreaData>): string {
+  const special = treasureById(area.specialTreasureId);
+  if (special === undefined) throw new Error(`no catalogue treasure ${area.specialTreasureId}`);
   return special.name;
 }
 
 /**
- * Worst-case stars for the "Area beaten" card: every star missing gives the longest star lines, with
- * the Area 1 label and the canal special treasure name from the catalogue. An open rescue gives the
- * longest missed star 3 line.
+ * Worst-case stars for the "Area beaten" card of `area`: every star missing gives the longest star
+ * lines, with the area's label and its special treasure name from the catalogue. An open rescue
+ * gives the longest missed star 3 line.
  */
-const WORST_STARS: ArrivalStars = {
-  areaLabel: areaLabel(CANAL_AREA.number),
-  specialName: canalSpecialName(),
-  earned: NO_STARS,
-  best: NO_STARS,
-  rescueOpen: true,
-};
-
-/**
- * Worst-case stars for an "Area beaten" card with these axolotls: WORST_STARS, except that a rescued
- * axolotl keeps star 3 earned, since a rescue banked this trip always earns star 3 (PRD H6).
- */
-function beatenStars(axolotls: AxolotlCase): ArrivalStars {
-  if (axolotls.rescued.length === 0) return WORST_STARS;
-  return { ...WORST_STARS, earned: { ...NO_STARS, legsOrRescue: true } };
+function worstStars(area: Readonly<AreaData>): ArrivalStars {
+  return {
+    areaLabel: areaLabel(area.number),
+    specialName: specialName(area),
+    earned: NO_STARS,
+    best: NO_STARS,
+    rescueOpen: true,
+  };
 }
 
-const SORTED_NAMES: readonly string[] = CANAL_TREASURES.map((treasure) => treasure.name).sort(
+/**
+ * Worst-case stars for an "Area beaten" card of `area` with these axolotls: worstStars, except that
+ * a rescued axolotl keeps star 3 earned, since a rescue banked this trip always earns star 3 (PRD H6).
+ */
+function beatenStars(area: Readonly<AreaData>, axolotls: AxolotlCase): ArrivalStars {
+  const worst = worstStars(area);
+  if (axolotls.rescued.length === 0) return worst;
+  return { ...worst, earned: { ...NO_STARS, legsOrRescue: true } };
+}
+
+/** Areas an arrival card is checked for: every area for "Area beaten", whose stars name the area; else the canal. */
+function arrivalAreas(reason: ArrivalReason): readonly Readonly<AreaData>[] {
+  return reason === 'areaBeaten' ? AREAS : [CANAL_AREA];
+}
+
+/** Every area's hazard and predator fact card, in area-table order. */
+const AREA_FACT_CARDS: readonly Readonly<FactCard>[] = areaFactCards();
+
+const SORTED_NAMES: readonly string[] = ALL_TREASURES.map((treasure) => treasure.name).sort(
   (left, right) => right.length - left.length,
 );
 
@@ -188,7 +199,8 @@ function supportedCanvases(): Canvas[] {
 
 /**
  * Tank arrival card sections: head, body, icon rows, actions. The "Area beaten" card adds a fixed
- * star row (starRowSize) after the head and names the axolotls and treasures banked this trip.
+ * star row (starRowSize) after the head and names the axolotls and treasures banked this trip, with
+ * the stars of `area`.
  */
 function arrivalSections(
   reason: ArrivalReason,
@@ -196,6 +208,7 @@ function arrivalSections(
   total: number,
   cssW: number,
   axolotls: AxolotlCase = NO_AXOLOTLS,
+  area: Readonly<AreaData> = CANAL_AREA,
 ): CardSection[] {
   const textW = cardTextWidth(cssW);
   const isBeaten = reason === 'areaBeaten';
@@ -206,7 +219,7 @@ function arrivalSections(
     bankedTotal: total,
     rescuedNames: axolotls.rescued,
     waiting: axolotls.waiting,
-    stars: isBeaten ? beatenStars(axolotls) : undefined,
+    stars: isBeaten ? beatenStars(area, axolotls) : undefined,
   });
   const starRow: CardSection[] = isBeaten ? [{ kind: 'fixed', height: starRowSize().h }] : [];
   return [
@@ -240,12 +253,12 @@ function bankingSections(
   ];
 }
 
-/** Tilapia fact card sections: bold title, body, one OK button. */
-function factCardSections(cssW: number): CardSection[] {
+/** Fact card sections: bold title, body, one OK button. */
+function factCardSections(card: Readonly<FactCard>, cssW: number): CardSection[] {
   const textW = cardTextWidth(cssW);
   return [
-    { kind: 'fixed', height: titleHeight(TILAPIA_FACT.title, textW) },
-    { kind: 'body', variants: [bodyFit(TILAPIA_FACT.body, textW)] },
+    { kind: 'fixed', height: titleHeight(card.title, textW) },
+    { kind: 'body', variants: [bodyFit(card.body, textW)] },
     { kind: 'actions', height: BUTTON_H },
   ];
 }
@@ -255,18 +268,29 @@ function makeCombination(label: string, canvas: Canvas, count: number, sections:
   return { label, canvas, count, availH: canvas.cssH - 2 * CARD.margin, sections };
 }
 
-/** Tank arrival card combinations for one treasure list and total, with and without axolotls. */
-function arrivalCombinations(canvas: Canvas, names: readonly string[], total: number): Combination[] {
+/** Tank arrival card combinations for one reason, area, treasure list and total, with and without axolotls. */
+function arrivalAreaCombinations(
+  canvas: Canvas,
+  reason: ArrivalReason,
+  area: Readonly<AreaData>,
+  names: readonly string[],
+  total: number,
+): Combination[] {
   const size = `${canvas.cssW}x${canvas.cssH}`;
-  return ARRIVAL_REASONS.flatMap((reason) =>
-    ARRIVAL_AXOLOTL_CASES.map((axolotls) =>
-      makeCombination(
-        `arrival ${reason} ${size} n=${names.length} total=${total}${axolotls.tag}`,
-        canvas,
-        names.length,
-        arrivalSections(reason, names, total, canvas.cssW, axolotls),
-      ),
+  return ARRIVAL_AXOLOTL_CASES.map((axolotls) =>
+    makeCombination(
+      `arrival ${reason} ${area.id} ${size} n=${names.length} total=${total}${axolotls.tag}`,
+      canvas,
+      names.length,
+      arrivalSections(reason, names, total, canvas.cssW, axolotls, area),
     ),
+  );
+}
+
+/** Tank arrival card combinations for one treasure list and total, for each reason and its areas. */
+function arrivalCombinations(canvas: Canvas, names: readonly string[], total: number): Combination[] {
+  return ARRIVAL_REASONS.flatMap((reason) =>
+    arrivalAreas(reason).flatMap((area) => arrivalAreaCombinations(canvas, reason, area, names, total)),
   );
 }
 
@@ -297,9 +321,10 @@ function canvasCombinations(canvas: Canvas): Combination[] {
   return combinations;
 }
 
-/** The tilapia fact card on one canvas. */
-function factCardCombination(canvas: Canvas): Combination {
-  return makeCombination(`tilapia fact ${canvas.cssW}x${canvas.cssH}`, canvas, 0, factCardSections(canvas.cssW));
+/** One fact card on one canvas. */
+function factCardCombination(card: Readonly<FactCard>, canvas: Canvas): Combination {
+  const label = `${card.id} fact ${canvas.cssW}x${canvas.cssH}`;
+  return makeCombination(label, canvas, 0, factCardSections(card, canvas.cssW));
 }
 
 /** Every combination on every supported canvas. */
@@ -391,23 +416,43 @@ describe('card copy fit', () => {
   });
 });
 
-describe('tilapia fact card copy fit', () => {
-  it('fits on every supported canvas without clipping', () => {
-    const problems = supportedCanvases().flatMap((canvas) => {
-      const combination = factCardCombination(canvas);
-      return fitProblems(combination, fitCard(combination.availH, combination.sections));
-    });
+describe('area fact card copy fit', () => {
+  it('checks every area fact card: the tilapia and the plastic worm', () => {
+    expect(AREA_FACT_CARDS.map((card) => card.id)).toEqual(['tilapia', 'plastic-worm']);
+  });
+
+  it('fits every area fact card on every supported canvas without clipping', () => {
+    const problems = supportedCanvases().flatMap((canvas) =>
+      AREA_FACT_CARDS.flatMap((card) => {
+        const combination = factCardCombination(card, canvas);
+        return fitProblems(combination, fitCard(combination.availH, combination.sections));
+      }),
+    );
     expect(problems).toEqual([]);
   });
+
+  it.each([SMALLEST_CANVAS.landscape, SMALLEST_CANVAS.portrait])(
+    'shows every area fact card in full at $cssW x $cssH',
+    (canvas) => {
+      for (const card of AREA_FACT_CARDS) {
+        const combination = factCardCombination(card, canvas);
+        const fit = fitCard(combination.availH, combination.sections);
+        expect(fit.clipped, card.id).toBe(false);
+        expect(fit.bodyVariant, card.id).toBe(0);
+      }
+    },
+  );
 
   it.each([
     { cssW: 800, cssH: 600 },
     { cssW: 1024, cssH: 768 },
   ])('shows the full body at $cssW x $cssH', (canvas) => {
-    const combination = factCardCombination(canvas);
-    const fit = fitCard(combination.availH, combination.sections);
-    expect(fit.clipped).toBe(false);
-    expect(fit.bodyVariant).toBe(0);
+    for (const card of AREA_FACT_CARDS) {
+      const combination = factCardCombination(card, canvas);
+      const fit = fitCard(combination.availH, combination.sections);
+      expect(fit.clipped, card.id).toBe(false);
+      expect(fit.bodyVariant, card.id).toBe(0);
+    }
   });
 });
 
@@ -472,18 +517,29 @@ describe('first-find card copy fit (C15)', () => {
 });
 
 describe('area beaten card copy fit (H5, H8)', () => {
-  it('names the canal special treasure and keeps the short body one line at 460x320', () => {
-    expect(WORST_STARS.specialName).toBe('Toy boat');
-    const canvas = { cssW: 460, cssH: 320 };
-    const text = arrivalText({
-      reason: 'areaBeaten',
-      returnedNames: [],
-      bankedThisTripNames: SORTED_NAMES,
-      bankedTotal: 24,
-      stars: WORST_STARS,
-    });
-    expect(text.shortBody.length).toBeLessThanOrEqual(34);
-    expect(estimateLines(text.shortBody, CARD.bodyPx, cardTextWidth(canvas.cssW), REGULAR_EM)).toBe(1);
+  it('names each area special treasure from the catalogue', () => {
+    expect(AREAS.map((area) => worstStars(area).specialName)).toEqual(['Toy boat', 'Frog statue']);
+  });
+
+  it.each(AREAS.map((area) => [area.id, area] as const))(
+    'keeps the %s short body one line at 460x320',
+    (_id, area) => {
+      const text = arrivalText({
+        reason: 'areaBeaten',
+        returnedNames: [],
+        bankedThisTripNames: SORTED_NAMES,
+        bankedTotal: ALL_TREASURES.length,
+        stars: worstStars(area),
+      });
+      expect(text.shortBody.length).toBeLessThanOrEqual(34);
+      const textW = cardTextWidth(SMALLEST_CANVAS.landscape.cssW);
+      expect(estimateLines(text.shortBody, CARD.bodyPx, textW, REGULAR_EM)).toBe(1);
+    },
+  );
+
+  it('checks every catalogue treasure name, longest first', () => {
+    expect(SORTED_NAMES).toHaveLength(ALL_TREASURES.length);
+    expect(SORTED_NAMES[0]).toBe('Tie-dye galaxy Paint shell');
   });
 
   it('places the star row right after the head', () => {

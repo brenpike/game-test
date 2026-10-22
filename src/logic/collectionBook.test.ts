@@ -13,9 +13,8 @@ import {
   type BookEntry,
   type BookFeatureLayout,
   type BookFeatureMeasure,
-  type BookSection,
 } from './collectionBook';
-import { BOY_OR_GIRL_FACT, FACT_CARD_UNFOUND_HINT, TILAPIA_FACT, type FactCard } from './factCards';
+import { BOY_OR_GIRL_FACT, FACT_CARD_UNFOUND_HINT, PLASTIC_WORM_FACT, TILAPIA_FACT, type FactCard } from './factCards';
 import type { HudView, Rect, Size } from './hudLayout';
 import { MORPH_UNFOUND_HINT, MORPH_UNFOUND_NAME, REAL_MORPHS, type RealMorphId } from './morphs';
 import { CHEST_BUTTON, UI, chestLayout, rowsPerPage, type ChestMeasure } from './tankUi';
@@ -48,6 +47,9 @@ const CANVAS_HEIGHTS: readonly number[] = [
 ];
 
 const ALL_MORPHS: readonly RealMorphId[] = REAL_MORPHS.map((morph) => morph.id);
+
+/** Every hazard met that has an area fact card: the canal's tilapia and the pond's plastic worm. */
+const ALL_MET: readonly string[] = ['tilapia', 'plastic-worm'];
 
 const exportedStrings = Object.entries(collectionBook as Record<string, unknown>).filter(
   (entry): entry is [string, string] => typeof entry[1] === 'string',
@@ -86,14 +88,19 @@ function textSize(text: string, px: number, wrapW: number, em: number): Size {
 }
 
 /** Every Collection Book listing, for each found state of every entry. */
-function everyListing(): (readonly BookSection[])[] {
-  return [bookListing([], []), bookListing(ALL_MORPHS, ['tilapia']), bookListing(['wild'], [])];
+function everyListing(): ReturnType<typeof bookListing>[] {
+  return [
+    bookListing([], []),
+    bookListing(ALL_MORPHS, ['tilapia']),
+    bookListing(ALL_MORPHS, ALL_MET),
+    bookListing(['wild'], []),
+  ];
 }
 
 /** Every featured (morph or fact card) entry, found and unfound. */
 function featuredEntries(): { name: string; text: string; hasPicture: boolean; hasBadge: boolean }[] {
   const [unfoundMorphs, , unfoundCards] = bookListing([], []);
-  const [foundMorphs, , foundCards] = bookListing(ALL_MORPHS, ['tilapia']);
+  const [foundMorphs, , foundCards] = bookListing(ALL_MORPHS, ALL_MET);
   const morphs = [...unfoundMorphs.entries, ...foundMorphs.entries].map((entry) => ({
     name: entry.name,
     text: entry.text,
@@ -214,14 +221,15 @@ describe('bookListing', () => {
     expect(sections.map((section) => section.heading)).toEqual([
       'Morphs: 0 of 8 found',
       'Dream colours',
-      'Fact cards: 1 of 2 found',
+      'Fact cards: 1 of 3 found',
     ]);
   });
 
   it('counts found morphs and fact cards in the headings', () => {
     const [morphs, , factCards] = bookListing(['wild', 'melanoid', 'wild'], ['tilapia']);
     expect(morphs.heading).toBe('Morphs: 2 of 8 found');
-    expect(factCards.heading).toBe('Fact cards: 2 of 2 found');
+    expect(factCards.heading).toBe('Fact cards: 2 of 3 found');
+    expect(bookListing([], ALL_MET)[2].heading).toBe('Fact cards: 3 of 3 found');
     expect(bookListing(ALL_MORPHS, ['tilapia'])[0].heading).toBe('Morphs: 8 of 8 found');
   });
 
@@ -296,7 +304,7 @@ describe('bookListing', () => {
     expect(foundCards.entries[0].text).not.toBe(unfoundCards.entries[0].text);
   });
 
-  it('lists all 12 Dream colours in catalogue order, found or not', () => {
+  it('lists every Dream colour in catalogue order, found or not', () => {
     for (const [, dreamColours] of everyListing()) {
       expect(dreamColours.entries).toEqual(
         DREAM_COLOURS.map((colour) => ({
@@ -322,11 +330,47 @@ describe('bookListing', () => {
     });
   });
 
-  it('always holds the boy or girl card second, found and with no picture (C14)', () => {
+  it('holds the plastic worm card only once the plastic worm is met, never with a picture (C14)', () => {
+    const [, , met] = bookListing([], ALL_MET);
+    expect(met.entries[1]).toEqual({
+      id: 'plastic-worm',
+      found: true,
+      name: 'Plastic worm',
+      text: PLASTIC_WORM_FACT.body,
+      hasPicture: false,
+    });
+    const [, , notMet] = bookListing(ALL_MORPHS, ['tilapia']);
+    expect(notMet.entries[1]).toEqual({
+      id: 'plastic-worm',
+      found: false,
+      name: '???',
+      text: 'Explore the lily pad pond to find this card.',
+      hasPicture: false,
+    });
+  });
+
+  it('hints each unfound area card with the habitat of the first area that has it', () => {
+    const [, , factCards] = bookListing([], []);
+    const hints = factCards.entries.filter((entry) => !entry.found).map((entry) => [entry.id, entry.text]);
+    expect(hints).toEqual([
+      ['tilapia', 'Explore the canal to find this card.'],
+      ['plastic-worm', 'Explore the lily pad pond to find this card.'],
+    ]);
+    expect(FACT_CARD_UNFOUND_HINT).toBe('Explore the canal to find this card.');
+  });
+
+  it('shows a picture only for the found tilapia card', () => {
+    for (const [, , factCards] of everyListing()) {
+      const pictured = factCards.entries.filter((entry) => entry.hasPicture).map((entry) => entry.id);
+      expect(pictured).toEqual(factCards.entries[0].found ? ['tilapia'] : []);
+    }
+  });
+
+  it('always holds the boy or girl card last, after every area card, found and with no picture (C14)', () => {
     const boyOrGirl = { id: 'boyOrGirl', found: true, name: 'Boy or girl?', text: BOY_OR_GIRL_FACT.body, hasPicture: false };
     for (const [, , factCards] of everyListing()) {
-      expect(factCards.entries.map((entry) => entry.id)).toEqual(['tilapia', 'boyOrGirl']);
-      expect(factCards.entries[1]).toEqual(boyOrGirl);
+      expect(factCards.entries.map((entry) => entry.id)).toEqual(['tilapia', 'plastic-worm', 'boyOrGirl']);
+      expect(factCards.entries[2]).toEqual(boyOrGirl);
     }
   });
 
@@ -351,7 +395,8 @@ describe('bookPages', () => {
       ...REAL_MORPHS.map(() => ['morph', 1]),
       ['dreamColour', 5],
       ['dreamColour', 5],
-      ['dreamColour', 2],
+      ['dreamColour', 3],
+      ['factCard', 1],
       ['factCard', 1],
       ['factCard', 1],
     ]);
@@ -361,7 +406,8 @@ describe('bookPages', () => {
   });
 
   it('puts every Dream colour on its own page at one row per page', () => {
-    expect(bookPages(bookListing([], []), 1)).toHaveLength(REAL_MORPHS.length + 12 + 2);
+    expect(DREAM_COLOURS).toHaveLength(13);
+    expect(bookPages(bookListing([], []), 1)).toHaveLength(REAL_MORPHS.length + 13 + 3);
   });
 
   it('gives an empty section one page', () => {

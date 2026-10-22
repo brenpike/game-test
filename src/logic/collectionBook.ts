@@ -3,9 +3,9 @@
  * own section, and the fact cards, with pages and the CSS px layout of one featured entry. Pure
  * data; drawing lives in the scene and art layers.
  */
-import { areaFactCards } from './areas';
+import { AREAS, areaFactCards, habitatById, threatIds } from './areas';
 import { DREAM_COLOURS, type DreamColour, type DreamColourId } from './catalogue';
-import { BOY_OR_GIRL_FACT, FACT_CARD_UNFOUND_HINT, TILAPIA_FACT, type FactCard } from './factCards';
+import { BOY_OR_GIRL_FACT, FACT_CARD_UNFOUND_HINT, TILAPIA_FACT, unfoundFactCardHint, type FactCard } from './factCards';
 import type { Rect, Size } from './hudLayout';
 import {
   MORPH_UNFOUND_HINT,
@@ -54,7 +54,10 @@ export interface BookDreamColourEntry {
   readonly label: string;
 }
 
-/** One fact card: its name and body once found, else "???" and the hint. A picture only when found. */
+/**
+ * One fact card: its name and body once found, else "???" and the hint naming the habitat to
+ * explore. A picture only when found.
+ */
 export interface BookFactCardEntry {
   readonly id: string;
   readonly found: boolean;
@@ -163,9 +166,20 @@ function createDreamColourEntry(colour: DreamColour): BookDreamColourEntry {
   return { id: colour.id, name: colour.name, patterned: colour.kind !== 'solid', label: DREAM_COLOUR_LABEL };
 }
 
+/**
+ * Hint of an unfound fact card: explore the habitat of the first area, in AREAS order, whose
+ * threats include the card's id, else FACT_CARD_UNFOUND_HINT.
+ */
+function factCardHint(cardId: string): string {
+  const area = AREAS.find((candidate) => threatIds(candidate.layout).includes(cardId));
+  const habitat = area === undefined ? undefined : habitatById(area.habitatId);
+  if (habitat === undefined) return FACT_CARD_UNFOUND_HINT;
+  return unfoundFactCardHint(`the ${habitat.name.toLowerCase()}`);
+}
+
 function createFactCardEntry(card: Readonly<FactCard>, found: boolean): BookFactCardEntry {
   if (!found) {
-    return { id: card.id, found: false, name: MORPH_UNFOUND_NAME, text: FACT_CARD_UNFOUND_HINT, hasPicture: false };
+    return { id: card.id, found: false, name: MORPH_UNFOUND_NAME, text: factCardHint(card.id), hasPicture: false };
   }
   return { id: card.id, found: true, name: card.name, text: card.body, hasPicture: BOOK_ART_FACT_CARD_IDS.has(card.id) };
 }
@@ -182,10 +196,11 @@ function countedHeading(name: string, entries: readonly { found: boolean }[]): s
 /**
  * The Collection Book sections, always Morphs, Dream colours, then Fact cards. Morphs lists the eight
  * real morphs in REAL_MORPHS order, found when in `foundMorphs` (duplicates and order ignored).
- * Dream colours lists all 12 in catalogue order, each with DREAM_COLOUR_LABEL. Fact cards holds each
- * card of `cards` in order (area-table order by default), found only when its id is in
- * `metHazards`, with a picture only when found and it has Book art (today the tilapia), then the
- * boy or girl card, always found and with no picture (PRD C14).
+ * Dream colours lists every DREAM_COLOURS entry in catalogue order, each with DREAM_COLOUR_LABEL.
+ * Fact cards holds each card of `cards` in order (area-table order by default), found only when its
+ * id is in `metHazards`, with a picture only when found and it has Book art (today the tilapia),
+ * and when unfound a hint naming the habitat of the first area that has it; then the boy or girl
+ * card, always found and with no picture (PRD C14).
  */
 export function bookListing(
   foundMorphs: readonly RealMorphId[],

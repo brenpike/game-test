@@ -1,6 +1,7 @@
 /**
  * Treasure icon painters (guide 6i rarity ladder, 7e, 8): the twelve canal
- * Decorations and Wearables plus one Paint shell per Dream colour.
+ * Decorations and Wearables, the eleven pond ones (issue #75), and one Paint
+ * shell per Dream colour.
  *
  * Each icon is authored in a 28-unit box centred on (0, 0) and scaled
  * uniformly, so the longest side is `size` with the ink included. The ink never
@@ -25,8 +26,8 @@
  * also the reduced-motion version. Presentational only: no Phaser. Every value
  * is derived (provisional).
  */
-import { INK } from './palette';
-import { TAU, ell, frameFromBounds, inkMany, seg, shape, type Seg, type TexSize } from './canvasKit';
+import { INK, PEBBLE_A } from './palette';
+import { TAU, ell, frameFromBounds, inkMany, line, seg, shape, type Seg, type TexSize } from './canvasKit';
 import { roundedPolygon, type Pt } from './drawBadges';
 import {
   BOAT_CANOPY,
@@ -38,12 +39,18 @@ import {
   CASTLE_STONE,
   CASTLE_TRIM,
   CASTLE_WINDOW,
+  CATTAIL_HEAD,
+  CATTAIL_STEM,
   DIVING_TANK_FILL,
   DIVING_TANK_STRAP,
+  DRAGONFLY_FRAME,
+  DRAGONFLY_WING,
   DREAM_DIVIDER,
   DREAM_RIM,
   DREAM_STAR,
   DREAM_SWATCH,
+  FROG_STATUE_STONE,
+  FROGGY_BOOT,
   GEM_GLINT,
   GLASSES_FRAME,
   GLASSES_GEM,
@@ -53,12 +60,20 @@ import {
   FLIPPER_RIDGE,
   GOLD_TRIM,
   HAT_FILL,
+  LADYBUG_SHELL,
+  LILY_CROWN_FLOWER,
+  LILY_CROWN_LEAF,
+  LILY_PAD_FILL,
+  LOTUS_LANTERN_BODY,
+  LOTUS_PETAL,
   NECKLACE_CORD,
   NECKLACE_SHELL,
   PAINT_SHELL_FILL,
   PAINT_SHELL_RIDGE,
   PLANT_LEAF,
+  POND_WEED_SCARF,
   PYRAMID_GEM,
+  RAINCOAT_FILL,
   PYRAMID_STONE,
   SOCK_FILL,
   TANK_TOP_FILL,
@@ -91,7 +106,10 @@ export const DREAM_SWATCH_IDS: readonly DreamSwatchId[] = [
   'lily-green',
 ];
 
-/** The twelve Decoration and Wearable slugs (the text after `canal/`). */
+/**
+ * The Decoration and Wearable slugs: the twelve canal ones (the text after `canal/`), then the
+ * eleven pond ones (the text after `pond/`).
+ */
 export type TreasureItemSlug =
   | 'pond-plant'
   | 'toy-boat'
@@ -104,7 +122,18 @@ export type TreasureItemSlug =
   | 'tank-top'
   | 'diving-tank'
   | 'stripy-socks'
-  | 'flippers';
+  | 'flippers'
+  | 'lily-pad'
+  | 'cattail-clump'
+  | 'frog-statue'
+  | 'lotus-lantern'
+  | 'lily-flower-crown'
+  | 'pond-weed-scarf'
+  | 'dragonfly-glasses'
+  | 'raincoat'
+  | 'ladybug-backpack'
+  | 'rainbow-dragonfly-wings'
+  | 'froggy-boots';
 
 export type TreasureIconSlug = TreasureItemSlug | `paint-shell-${DreamSwatchId}`;
 
@@ -121,9 +150,23 @@ const ITEM_SLUGS: readonly TreasureItemSlug[] = [
   'diving-tank',
   'stripy-socks',
   'flippers',
+  'lily-pad',
+  'cattail-clump',
+  'frog-statue',
+  'lotus-lantern',
+  'lily-flower-crown',
+  'pond-weed-scarf',
+  'dragonfly-glasses',
+  'raincoat',
+  'ladybug-backpack',
+  'rainbow-dragonfly-wings',
+  'froggy-boots',
 ];
 
-/** All twenty-five icon slugs: the twelve items, then the thirteen Paint shells in Dream order. */
+/**
+ * All thirty-six icon slugs: the twelve canal items, the eleven pond items, then the thirteen Paint
+ * shells in Dream order.
+ */
 export const TREASURE_ICON_SLUGS: readonly TreasureIconSlug[] = [
   ...ITEM_SLUGS,
   ...DREAM_SWATCH_IDS.map((id): TreasureIconSlug => `paint-shell-${id}`),
@@ -182,15 +225,26 @@ export function treasureIconTextureSize(size: number): TexSize {
 }
 
 /**
- * Lowest fill edge below the icon centre, design units, for the Decorations that
- * stand on a surface (guide 7e): the root ellipse of the Pond plant, the hull of
- * the Toy boat, the Castle tower and the Sun pyramid.
+ * Lowest fill edge below the icon centre, design units, for the Decorations (guide 7e): the root
+ * ellipse of the Pond plant, the hull of the Toy boat, the Castle tower and the Sun pyramid; the
+ * mud mound of the Cattail clump and the plinth of the Frog statue (Floor items, anchored at their
+ * lowest ink edge); the root tuber of the Lily pad and the tassel bead of the Lotus lantern
+ * (Floating items, anchored at the bottom centre of the 80 box, so these two are the box edge).
  */
 const DECORATION_FILL_BOTTOM: Readonly<Partial<Record<TreasureIconSlug, number>>> = {
   'pond-plant': 12.3,
   'toy-boat': 11.2,
   'castle-tower': 12.4,
   'sun-pyramid': 11.8,
+  'lily-pad': 11.2,
+  'cattail-clump': 12.6,
+  'frog-statue': 12.6,
+  'lotus-lantern': 12.6,
+};
+
+/** How far the outer ink reaches past the fill, for the Decorations whose painter is not a plain `shape`. */
+const DECORATION_INK_OUT: Readonly<Partial<Record<TreasureIconSlug, number>>> = {
+  'lily-pad': INK_OUT_BLOB,
 };
 
 /**
@@ -201,7 +255,8 @@ const DECORATION_FILL_BOTTOM: Readonly<Partial<Record<TreasureIconSlug, number>>
 export function decorationBaseOffset(slug: TreasureIconSlug, size: number): number {
   const bottom = DECORATION_FILL_BOTTOM[slug];
   if (bottom === undefined) return size / 2;
-  return bottom * fitScale(size, INK_OUT_SHAPE) + INK_OUT_SHAPE;
+  const inkOut = DECORATION_INK_OUT[slug] ?? INK_OUT_SHAPE;
+  return bottom * fitScale(size, inkOut) + inkOut;
 }
 
 /**
@@ -731,6 +786,364 @@ function paintFlippers(pen: Pen): void {
 }
 
 // ---------------------------------------------------------------------------
+// Pond items (issue #75)
+// ---------------------------------------------------------------------------
+//
+// The same ladder and ink as the canal items. Every outer fill is one of the
+// pond fills of treasurePalette.ts (9:1 or more with ink); internal details
+// reuse existing palette values, and no new colour is introduced.
+
+/** The pale grey-lilac of the ladybug head and the wing harness: pebble A, 9.50:1 with ink. */
+const POND_NEUTRAL_FILL = PEBBLE_A;
+
+/** Floating Decorations (guide 7e): the waterline is this far below the top of the 80 px tank box. */
+const FLOAT_WATERLINE_PX = 20;
+/** The tank box of a Decoration, logical px. */
+const FLOAT_BOX_PX = 80;
+
+/** Design y of the waterline of a Floating icon whose painter has `inkOut` of outer ink per side. */
+function waterlineY(inkOut: number): number {
+  return (FLOAT_WATERLINE_PX - FLOAT_BOX_PX / 2) / fitScale(FLOAT_BOX_PX, inkOut);
+}
+
+/**
+ * A pointed petal from (bx, by), `deg` degrees off straight up (+ is right), `len` long and `wid`
+ * wide at the middle.
+ */
+function pointedPetal(bx: number, by: number, deg: number, len: number, wid: number): Path2D {
+  const a = (deg * Math.PI) / 180;
+  const dx = Math.sin(a);
+  const dy = -Math.cos(a);
+  const mx = bx + (dx * len) / 2;
+  const my = by + (dy * len) / 2;
+  const p = new Path2D();
+  p.moveTo(bx, by);
+  p.quadraticCurveTo(mx - dy * wid, my + dx * wid, bx + dx * len, by + dy * len);
+  p.quadraticCurveTo(mx + dy * wid, my - dx * wid, bx, by);
+  p.closePath();
+  return p;
+}
+
+/**
+ * A blossom of outer radius `r` centred on (cx, cy): five round petals round a centre, one pointing up,
+ * outlined as one shape (round lobes with a cusp between them, never a star).
+ */
+function blossomPath(cx: number, cy: number, r: number): Path2D {
+  const petals = 5;
+  const reach = 0.55 * r;
+  const radius = 0.45 * r;
+  const p = new Path2D();
+  const steps = 60;
+  for (let i = 0; i < steps; i++) {
+    const a = (i / steps) * TAU;
+    let rr = 0;
+    for (let j = 0; j < petals; j++) {
+      // Where a ray at angle `a` leaves the round petal centred `reach` out at angle `phi`.
+      const delta = a - (j * TAU) / petals;
+      const across = reach * Math.sin(delta);
+      if (Math.abs(across) <= radius) rr = Math.max(rr, reach * Math.cos(delta) + Math.sqrt(radius * radius - across * across));
+    }
+    // Angle 0 is up: x = sin, y = -cos.
+    const x = cx + rr * Math.sin(a);
+    const y = cy - rr * Math.cos(a);
+    if (i === 0) p.moveTo(x, y);
+    else p.lineTo(x, y);
+  }
+  p.closePath();
+  return p;
+}
+
+/**
+ * A tapering root: a ribbon along a quadratic curve from (x0, y0) to (x1, y1) through (cx, cy), `w0` wide
+ * at the start and `w1` wide at the end.
+ */
+function rootRibbon(x0: number, y0: number, cx: number, cy: number, x1: number, y1: number, w0: number, w1: number): Path2D {
+  const steps = 14;
+  const left: Pt[] = [];
+  const right: Pt[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const u = 1 - t;
+    const x = u * u * x0 + 2 * u * t * cx + t * t * x1;
+    const y = u * u * y0 + 2 * u * t * cy + t * t * y1;
+    const dx = 2 * u * (cx - x0) + 2 * t * (x1 - cx);
+    const dy = 2 * u * (cy - y0) + 2 * t * (y1 - cy);
+    const len = Math.hypot(dx, dy);
+    const half = (w0 + (w1 - w0) * t) / 2;
+    left.push({ x: x - (dy / len) * half, y: y + (dx / len) * half });
+    right.push({ x: x + (dy / len) * half, y: y - (dx / len) * half });
+  }
+  const p = new Path2D();
+  const outline = [...left, ...right.reverse()];
+  p.moveTo(outline[0].x, outline[0].y);
+  for (const { x, y } of outline.slice(1)) p.lineTo(x, y);
+  p.closePath();
+  return p;
+}
+
+/**
+ * Common, Floating: one merged `blob` silhouette (2.8, all outside the fill) of a flat pad with a wedge
+ * notch on the right, centred on the waterline 20 below the top of the 80 box, and two thin tapering
+ * roots hanging below it. All one green. One shine on the pad. The longest root is the lowest fill edge.
+ */
+function paintLilyPad(pen: Pen): void {
+  const { k } = pen;
+  const wy = waterlineY(INK_OUT_BLOB);
+  const notch = 0.75;
+  const start = 0.2;
+  const pad = new Path2D();
+  pad.moveTo(0, wy);
+  pad.ellipse(0, wy, 11.2, 4.4, 0, start, start + TAU - notch);
+  pad.closePath();
+  const pieces: Piece[] = [
+    { path: place(rootRibbon(-1.6, wy + 2, -4.2, 2.4, -2.4, 11.2, 2.4, 0), k), fill: LILY_PAD_FILL },
+    { path: place(rootRibbon(3.6, wy + 2, 6.4, 3.4, 4.8, 8, 2, 0), k), fill: LILY_PAD_FILL },
+    { path: place(pad, k), fill: LILY_PAD_FILL },
+  ];
+  mergedSilhouette(pen, pieces, ITEM_LW);
+  shine(pen, -4.6, wy - 1.2, 2.4, 0.75, -0.08);
+}
+
+/** One cattail standing at the origin: a stem `len` tall (5.2 wide) under a head 6.4 wide and 10.4 tall. */
+function cattailParts(len: number): { readonly stem: Path2D; readonly head: Path2D } {
+  return {
+    stem: roundedPolygon(pts(-2.6, 0, 2.6, 0, 2.6, -len, -2.6, -len), 2.6),
+    head: roundedPolygon(pts(-3.2, -len, 3.2, -len, 3.2, 10.4 - len, -3.2, 10.4 - len), 3.2),
+  };
+}
+
+/**
+ * Common, Floor: three cattails (green stems, tan heads) leaning out of a flat mud mound, one shine on
+ * the tallest head. The mound is the lowest fill edge.
+ */
+function paintCattailClump(pen: Pen): void {
+  const { k } = pen;
+  const baseY = 10.6;
+  const cattails = [
+    { x: -5, rot: -0.22, len: 17 },
+    { x: 5.2, rot: 0.24, len: 15.4 },
+    { x: 0, rot: 0, len: 23.2 },
+  ];
+  for (const { x, rot, len } of cattails) {
+    const { stem, head } = cattailParts(len);
+    outerShape(pen, place(stem, k, x, baseY, rot), CATTAIL_STEM, ITEM_LW);
+    outerShape(pen, place(head, k, x, baseY, rot), CATTAIL_HEAD, ITEM_LW);
+  }
+  outerShape(pen, place(ellipse(0, 10.8, 9, 1.8), k), CATTAIL_STEM, ITEM_LW);
+  shine(pen, -0.9, -8.4, 0.6, 2.2, 0.05);
+}
+
+/**
+ * Rare, Floor: a stone frog sitting on a plinth. Two eye bumps and a round body in pale mossy stone, one
+ * yellow trim band across the plinth, ink pupils and a smile, one shine. The plinth is the lowest fill edge.
+ */
+function paintFrogStatue(pen: Pen): void {
+  const { ctx, k } = pen;
+  const plinth = roundedPolygon(pts(-11, 12.6, -11, 6, 11, 6, 11, 12.6), [1.6, 1.2, 1.2, 1.6]);
+  silhouette(pen, place(plinth, k), FROG_STATUE_STONE, ITEM_LW, () => trimBand(pen, 8.6, 11, BOAT_TRIM));
+  for (const x of [-5.2, 5.2]) outerShape(pen, place(ellipse(x, -9.2, 3.4, 3.4), k), FROG_STATUE_STONE, ITEM_LW);
+  outerShape(pen, place(ellipse(0, -0.2, 9.8, 7.2), k), FROG_STATUE_STONE, ITEM_LW);
+  detail(pen, () => {
+    ctx.fillStyle = INK;
+    for (const x of [-5.2, 5.2]) ctx.fill(place(ellipse(x, -9.8, 1, 1), k));
+    const smile = new Path2D();
+    smile.moveTo(-3.8, 0.4);
+    smile.quadraticCurveTo(0, 3.8, 3.8, 0.4);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = DETAIL_LW;
+    ctx.stroke(place(smile, k));
+  });
+  shine(pen, -5.8, -1.4, 0.9, 2.2, 0.3);
+}
+
+/**
+ * Epic, Floating: a lotus lantern: four pink petals cupping a glowing yellow egg body, a pink cord and
+ * bead hanging below. One pink band round the egg, on the waterline 20 below the top of the 80 box, one
+ * aqua gem below it, one shine. The bead is the lowest fill edge.
+ */
+function paintLotusLantern(pen: Pen): void {
+  const { ctx, k } = pen;
+  const wy = waterlineY(INK_OUT_SHAPE);
+  inkMany(ctx, [outerSeg(pen, place(line(0, 3.2, 0, 8.4), k), TUBE_W, LOTUS_PETAL, TUBE_OL)]);
+  outerShape(pen, place(ellipse(0, 10.2, 2.4, 2.4), k), LOTUS_PETAL, ITEM_LW);
+  const petals: readonly (readonly [number, number, number])[] = [
+    [-68, 12.4, 6.4],
+    [68, 12.4, 6.4],
+    [-36, 12.6, 6],
+    [36, 12.6, 6],
+  ];
+  for (const [deg, len, wid] of petals) {
+    outerShape(pen, place(pointedPetal(0, 2.6, deg, len, wid), k), LOTUS_PETAL, ITEM_LW);
+  }
+  silhouette(pen, place(ellipse(0, -4.4, 5.6, 8.2), k), LOTUS_LANTERN_BODY, ITEM_LW, () =>
+    trimBand(pen, wy - 1.1, wy + 1.1, CASTLE_TRIM),
+  );
+  gem(pen, 0, -1.2, CASTLE_GEM);
+  shine(pen, -1.8, -9.6, 0.7, 1.2, 0.25);
+}
+
+/**
+ * Common: an open wreath (a green tube, ink 3.2 with 2.4 outline, open at the bottom) with three blush
+ * six-lobed blossoms pinned to its upper half. One shine on the top blossom.
+ */
+function paintLilyFlowerCrown(pen: Pen): void {
+  const { ctx, k } = pen;
+  const ring = new Path2D();
+  ring.ellipse(0, 0, 10, 10, 0, Math.PI / 2 + 0.55, Math.PI / 2 + TAU - 0.55);
+  inkMany(ctx, [outerSeg(pen, place(ring, k), TUBE_W, LILY_CROWN_LEAF, TUBE_OL)]);
+  for (const [x, y] of [
+    [-6.2, -3.6],
+    [0, -7],
+    [6.2, -3.6],
+  ]) {
+    outerShape(pen, place(blossomPath(x, y, 3.4), k), LILY_CROWN_FLOWER, ITEM_LW);
+  }
+  shine(pen, -0.9, -7.4, 0.55, 1.1, 0.4);
+}
+
+/**
+ * Common: a green scarf draped in a sagging band, with two forked tails hanging from it, all one colour
+ * in `shape` 2.8. One shine on the band.
+ */
+function paintPondWeedScarf(pen: Pen): void {
+  const { k } = pen;
+  const tailL = roundedPolygon(pts(-5.6, -5, 0.8, -5, 0.8, 8.4, -2.4, 5.4, -5.6, 8.4), [1, 1, 1.4, 1, 1.4]);
+  const tailR = roundedPolygon(pts(2.4, -5, 9, -5, 9, 12.6, 5.7, 9.4, 2.4, 12.6), [1, 1, 1.4, 1, 1.4]);
+  const drape = new Path2D();
+  drape.moveTo(-12.6, -10.4);
+  drape.bezierCurveTo(-8, -10.4, -6, -5.4, 0, -5.4);
+  drape.bezierCurveTo(6, -5.4, 8, -10.4, 12.6, -10.4);
+  drape.lineTo(12.6, -4.6);
+  drape.bezierCurveTo(8, -4.6, 6, 0.6, 0, 0.6);
+  drape.bezierCurveTo(-6, 0.6, -8, -4.6, -12.6, -4.6);
+  drape.closePath();
+  for (const body of [tailL, tailR, drape]) outerShape(pen, place(body, k), POND_WEED_SCARF, ITEM_LW);
+  shine(pen, -7.6, -6.8, 1.8, 0.7, 0.35);
+}
+
+/**
+ * Rare: two tilted oval lens frames (band colour 1.5 in pale aqua with 1.0 ink each side, 3.5 in all), like
+ * a dragonfly's wings, joined by an arched yellow bridge (the one trim band, colour 2.6 with 1.0 ink each
+ * side). Clear lens tint, one shine.
+ */
+function paintDragonflyGlasses(pen: Pen): void {
+  const { ctx, k } = pen;
+  const left = place(ellipse(-6.9, 0.8, 5.6, 4, 0.5), k);
+  const right = place(ellipse(6.9, 0.8, 5.6, 4, -0.5), k);
+  const bridge = new Path2D();
+  bridge.moveTo(-2.4, -0.2);
+  bridge.quadraticCurveTo(0, -3.8, 2.4, -0.2);
+  detail(pen, () => {
+    ctx.fillStyle = GLASSES_LENS;
+    ctx.fill(left);
+    ctx.fill(right);
+  });
+  inkMany(ctx, [
+    outerSeg(pen, left, GLASSES_W, DRAGONFLY_FRAME, GLASSES_OL),
+    outerSeg(pen, right, GLASSES_W, DRAGONFLY_FRAME, GLASSES_OL),
+    outerSeg(pen, place(bridge, k), 2.6, BOAT_TRIM, GLASSES_OL),
+  ]);
+  shine(pen, -9, -1.2, 0.8, 1.6, 0.5);
+}
+
+/**
+ * Rare: a hooded raincoat in `shape` 2.8: a hood dome over a T-shaped coat with two sleeves, one yellow
+ * hem band, a zip line down the front. One shine.
+ */
+function paintRaincoat(pen: Pen): void {
+  const { ctx, k } = pen;
+  outerShape(pen, place(ellipse(0, -8.4, 6.6, 4.2), k), RAINCOAT_FILL, ITEM_LW);
+  const coat = roundedPolygon(
+    pts(-5, -8.2, 5, -8.2, 12.4, -5, 12.4, 5, 6.6, 5, 6.6, 12.6, -6.6, 12.6, -6.6, 5, -12.4, 5, -12.4, -5),
+    [1.6, 1.6, 3, 2, 1, 3, 3, 1, 2, 3],
+  );
+  silhouette(pen, place(coat, k), RAINCOAT_FILL, ITEM_LW, () => {
+    trimBand(pen, 8.4, 10.8, BOAT_TRIM);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = DETAIL_LW;
+    ctx.stroke(place(line(0, -7, 0, 13), k));
+  });
+  shine(pen, -9.2, -1.6, 0.9, 2.4, 0.1);
+}
+
+/**
+ * Epic: a ladybug backpack in `shape` 2.8: a round pale-red shell with a small pale head peeking above it,
+ * a yellow pocket band, a centre seam, four ink spots and one aqua gem on the seam. One shine.
+ */
+function paintLadybugBackpack(pen: Pen): void {
+  const { ctx, k } = pen;
+  outerShape(pen, place(ellipse(0, -9, 5, 3.6), k), POND_NEUTRAL_FILL, ITEM_LW);
+  silhouette(pen, place(ellipse(0, 2.8, 11.4, 9.8), k), LADYBUG_SHELL, ITEM_LW, () => {
+    trimBand(pen, 8.4, 10.8, BOAT_TRIM);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = DETAIL_LW;
+    ctx.stroke(place(line(0, -8, 0, 13), k));
+    ctx.fillStyle = INK;
+    for (const [x, y] of [
+      [-6.4, 1.2],
+      [6.4, 1.2],
+      [-5.2, 5.4],
+      [5.2, 5.4],
+    ]) {
+      ctx.fill(place(ellipse(x, y, 1.5, 1.5), k));
+    }
+  });
+  gem(pen, 0, 1.6, CASTLE_GEM);
+  shine(pen, -6.2, -4, 0.9, 2.2, 0.55);
+}
+
+/** Radii of the four rainbow arcs in a wing, from the wing root, design units. */
+const WING_ARCS_UPPER = [4.2, 5.8, 7.4, 9] as const;
+const WING_ARCS_LOWER = [3.4, 4.8, 6.2, 7.6] as const;
+
+/**
+ * Legendary: two pairs of pale sky wings (an upper and a lower on each side, `shape` 2.8) swept out from a
+ * small harness, each crossed by four concentric rainbow arcs. One gold band on the harness, one pink gem
+ * where the wings meet, one 4-point star above, one shine.
+ */
+function paintRainbowDragonflyWings(pen: Pen): void {
+  const { ctx, k } = pen;
+  const marks = DREAM_SWATCH.rainbow.marks;
+  const arcs = [marks[0], marks[1], marks[3], marks[4]];
+  const wing = (s: 1 | -1, rootY: number, theta: number, half: number, wid: number, radii: readonly number[]): void => {
+    const rootX = s * 2;
+    const centre = ellipse(rootX + s * half * Math.cos(theta), rootY + half * Math.sin(theta), half, wid, s * theta);
+    silhouette(pen, place(centre, k), DRAGONFLY_WING, ITEM_LW, () => {
+      ctx.lineWidth = 1.4;
+      radii.forEach((r, i) => {
+        ctx.strokeStyle = arcs[i];
+        ctx.stroke(place(ellipse(rootX, rootY, r, r), k));
+      });
+    });
+  };
+  for (const s of [-1, 1] as const) wing(s, 2, 0.5, 5.2, 3.7, WING_ARCS_LOWER);
+  for (const s of [-1, 1] as const) wing(s, -0.2, -0.62, 6, 4.4, WING_ARCS_UPPER);
+  const harness = roundedPolygon(pts(-3.2, -4.6, 3.2, -4.6, 3.2, 6.6, -3.2, 6.6), 2.4);
+  silhouette(pen, place(harness, k), POND_NEUTRAL_FILL, ITEM_LW, () => trimBand(pen, 2.6, 4.8, GOLD_TRIM));
+  gem(pen, 0, -1.2, BOW_GEM);
+  shine(pen, -8.6, -6, 2, 0.7, 0.62);
+  legendStar(pen, 0, -10);
+}
+
+/**
+ * Legendary: one froggy boot in `shape` 2.8: a minty boot with two frog-eye bumps on the toe (ink pupils),
+ * a gold cuff band, one pink gem on the shaft and a 4-point star above the toe. One shine.
+ */
+function paintFroggyBoots(pen: Pen): void {
+  const { ctx, k } = pen;
+  for (const x of [6.6, 9.4]) outerShape(pen, place(ellipse(x, 0.8, 3.2, 3.2), k), FROGGY_BOOT, ITEM_LW);
+  const boot = roundedPolygon(pts(-9, -12.6, 2, -12.6, 2, 4.4, 12.4, 4.4, 12.4, 12.6, -9, 12.6), [1.8, 1.8, 1.2, 4, 4.6, 2]);
+  silhouette(pen, place(boot, k), FROGGY_BOOT, ITEM_LW, () => trimBand(pen, -9.2, -6.6, GOLD_TRIM));
+  detail(pen, () => {
+    ctx.fillStyle = INK;
+    for (const x of [6.6, 9.4]) ctx.fill(place(ellipse(x, 0, 1, 1), k));
+  });
+  gem(pen, -3.6, -1.8, PYRAMID_GEM);
+  shine(pen, -6.4, -4.8, 0.8, 2, 0.1);
+  legendStar(pen, 8.4, -8.4);
+}
+
+// ---------------------------------------------------------------------------
 // Paint shell and the Dream blob
 // ---------------------------------------------------------------------------
 
@@ -1018,6 +1431,39 @@ function paintIcon(ctx: CanvasRenderingContext2D, slug: TreasureIconSlug, size: 
       break;
     case 'flippers':
       paintFlippers({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'lily-pad':
+      paintLilyPad({ ctx, k: fitScale(size, INK_OUT_BLOB), flat });
+      break;
+    case 'cattail-clump':
+      paintCattailClump({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'frog-statue':
+      paintFrogStatue({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'lotus-lantern':
+      paintLotusLantern({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'lily-flower-crown':
+      paintLilyFlowerCrown({ ctx, k: fitScale(size, INK_OUT_TUBE), flat });
+      break;
+    case 'pond-weed-scarf':
+      paintPondWeedScarf({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'dragonfly-glasses':
+      paintDragonflyGlasses({ ctx, k: fitScale(size, INK_OUT_GLASSES), flat });
+      break;
+    case 'raincoat':
+      paintRaincoat({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'ladybug-backpack':
+      paintLadybugBackpack({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'rainbow-dragonfly-wings':
+      paintRainbowDragonflyWings({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'froggy-boots':
+      paintFroggyBoots({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
       break;
   }
 }

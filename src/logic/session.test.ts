@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CANAL_AREA } from './areas';
+import { CANAL_AREA, POND_AREA } from './areas';
 import { DEV_TEST_AREA } from './devAreas';
 import { DEFAULT_LOOK, LOOK_FIELDS, rescuedLook, type AxolotlLook, type AxolotlSex } from './axolotlLook';
 import { NAME_MAX, nameFits, nameLength, suggestedNamesFor } from './axolotlNames';
@@ -72,6 +72,8 @@ const BOAT = 'canal/toy-boat';
 const HAT = 'canal/sun-hat';
 const MINT_SHELL = 'canal/paint-shell-mint';
 const GALAXY_SHELL = 'canal/paint-shell-galaxy';
+const POND_ID = POND_AREA.id;
+const LILY_PAD = 'pond/lily-pad';
 
 /** Steps the trip once with the axolotl at `pos`. */
 function stepAt(trip: TripState, pos: Point): TripState {
@@ -264,7 +266,10 @@ describe('createSession', () => {
         lastAreaId: CANAL_AREA_ID,
         metHazards: [],
       },
-      areas: { canal: { eatenSnacks: [], lastTripSeed: null, waitingStranded: null, returnedFinds: [] } },
+      areas: {
+        canal: { eatenSnacks: [], lastTripSeed: null, waitingStranded: null, returnedFinds: [] },
+        'pond-1': { eatenSnacks: [], lastTripSeed: null, waitingStranded: null, returnedFinds: [] },
+      },
     });
     expect(STARTER_AXOLOTL_ID).toBe('starter');
   });
@@ -1430,6 +1435,38 @@ describe('per-area memory (#73)', () => {
     expect(tripEndRecord(ended, [], DEV_ID).areaId).toBe(DEV_ID);
   });
 
+  it('keeps a pond trip in the pond memory, apart from the canal', () => {
+    const canalTrip = recordTripEnd(withStarter(), { ...record([PLANT], 5, ['snack-1']), returnedFinds: [BOAT] });
+    const pondTrip = recordTripEnd(canalTrip, {
+      ...record([LILY_PAD], 11, ['pond/snack-3']),
+      areaId: POND_ID,
+      waitingStranded: waiting,
+    });
+    expect(pondTrip.areas.canal).toBe(canalTrip.areas.canal);
+    expect(areaMemory(pondTrip, POND_ID)).toEqual({
+      eatenSnacks: ['pond/snack-3'],
+      lastTripSeed: 11,
+      waitingStranded: waiting,
+      returnedFinds: [],
+    });
+    expect(tripStart(pondTrip, 0, POND_ID)).toMatchObject({
+      eatenSnacks: ['pond/snack-3'],
+      tripSeed: nextTripSeed(11),
+      waitingStranded: waiting,
+      returnedFinds: [],
+    });
+    expect(tripStart(pondTrip, 0, CANAL_AREA_ID)).toMatchObject({ eatenSnacks: ['snack-1'], returnedFinds: [BOAT] });
+    expect(pondTrip.hub.banked).toEqual([PLANT, LILY_PAD]);
+  });
+
+  it('keeps the plastic worm met in the pond after the tilapia, in area-table order', () => {
+    const pondFirst = recordTripEnd(withStarter(), { ...record([], 1), areaId: POND_ID, met: ['plastic-worm'] });
+    expect(pondFirst.hub.metHazards).toEqual(['plastic-worm']);
+    const both = recordTripEnd(pondFirst, { ...record([], 2), met: ['tilapia'] });
+    expect(both.hub.metHazards).toEqual(['tilapia', 'plastic-worm']);
+    expect(tripStart(both, 0, CANAL_AREA_ID).factCardsSeen).toEqual(['tilapia', 'plastic-worm']);
+  });
+
   it('counts the tilapia card seen in every area once a tilapia was met in any', () => {
     const met = recordTripEnd(withStarter(), { ...record([], 1), areaId: DEV_ID, met: ['tilapia'] });
     expect(met.hub.metHazards).toEqual(['tilapia']);
@@ -1453,6 +1490,17 @@ describe('chooseArea (#73)', () => {
     expect(() => chooseArea(withStarter(), DEV_TEST_AREA.id)).toThrow(/no area has id/);
   });
 
+  it('keeps the pond locked until the canal is beaten', () => {
+    const session = withStarter();
+    expect(() => chooseArea(session, POND_ID)).toThrow(/area pond-1 is locked/);
+    const unbeaten = recordTripEnd(session, beatenRecord({ exit: false, special: true, legsOrRescue: true }, 1));
+    expect(() => chooseArea(unbeaten, POND_ID)).toThrow(/locked/);
+    const beaten = recordTripEnd(session, beatenRecord({ exit: true, special: false, legsOrRescue: false }, 1));
+    const chosen = chooseArea(beaten, POND_ID);
+    expect(chosen.hub.lastAreaId).toBe(POND_ID);
+    expect(chooseArea(chosen, CANAL_AREA_ID).hub.lastAreaId).toBe(CANAL_AREA_ID);
+  });
+
   it('throws for a locked area and chooses it once the area before it is beaten', () => {
     const session = withStarter();
     expect(() => chooseArea(session, DEV_TEST_AREA.id, TWO_AREAS)).toThrow(/locked/);
@@ -1468,8 +1516,9 @@ describe('Start over (#73)', () => {
     const fresh = createSession();
     expect(fresh.hub.lastAreaId).toBe(CANAL_AREA_ID);
     expect(fresh.hub.metHazards).toEqual([]);
-    expect(Object.keys(fresh.areas)).toEqual([CANAL_AREA_ID]);
+    expect(Object.keys(fresh.areas)).toEqual([CANAL_AREA_ID, POND_ID]);
     expect(fresh.areas.canal).toEqual(areaMemory(fresh, DEV_TEST_AREA.id));
+    expect(fresh.areas[POND_ID]).toEqual(areaMemory(fresh, DEV_TEST_AREA.id));
   });
 });
 

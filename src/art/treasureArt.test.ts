@@ -7,7 +7,14 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { badgeShape } from '../logic/hints';
-import { treasureById, type Decoration } from '../logic/catalogue';
+import {
+  ALL_TREASURES,
+  POND_TREASURES,
+  isDecoration,
+  placementKind,
+  treasureSlug,
+  type Decoration,
+} from '../logic/catalogue';
 import { DEV_DECORATIONS } from '../logic/devDecorations';
 import { TANK, TOP_BASE_Y } from '../logic/tank';
 import { BADGE_SHAPES } from './drawBadges';
@@ -46,8 +53,9 @@ import {
   TANK_GLOW_SCALE,
   bakeTankTextures,
   tankDecorationGlowKey,
+  type TankDecorationSlug,
 } from './tankTextures';
-import type { TexSize } from './canvasKit';
+import { TAU, type TexSize } from './canvasKit';
 import tankTexturesSource from './tankTextures.ts?raw';
 import {
   DREAM_SWATCH_SILHOUETTE_KEY,
@@ -57,7 +65,34 @@ import {
   rarityGlowKey,
   treasureSilhouetteKey,
 } from './treasureTextures';
-import { BADGE_FILL, RARITY_GLOW_ALPHA, TREASURE_SILHOUETTE_FILL, type BadgeShape } from './treasurePalette';
+import {
+  BADGE_FILL,
+  BOW_GEM,
+  CASTLE_GEM,
+  CASTLE_TRIM,
+  CATTAIL_HEAD,
+  CATTAIL_STEM,
+  DRAGONFLY_FRAME,
+  DRAGONFLY_WING,
+  DREAM_SWATCH,
+  FROG_STATUE_STONE,
+  FROGGY_BOOT,
+  GEM_GLINT,
+  GOLD_TRIM,
+  LADYBUG_SHELL,
+  LILY_CROWN_FLOWER,
+  LILY_CROWN_LEAF,
+  LILY_PAD_FILL,
+  LOTUS_LANTERN_BODY,
+  LOTUS_PETAL,
+  POND_WEED_SCARF,
+  PYRAMID_GEM,
+  RAINCOAT_FILL,
+  RARITY_GLOW_ALPHA,
+  TREASURE_SILHOUETTE_FILL,
+  TREASURE_STAR,
+  type BadgeShape,
+} from './treasurePalette';
 
 vi.mock('phaser', () => ({}));
 
@@ -93,11 +128,24 @@ const GREYSCALE_PAIRS: readonly [BadgeShape, BadgeShape, number][] = [
 ];
 /** The '?' tube width at every size. */
 const Q_LW = 2.4;
-/** The two icons whose outer silhouette includes coloured tubes (cord, glasses band). */
-const TUBE_SLUGS: readonly TreasureIconSlug[] = ['shell-necklace', 'heart-glasses'];
+/** The icons whose outer silhouette includes coloured tubes (cord, glasses band, wreath, lantern tassel). */
+const TUBE_SLUGS: readonly TreasureIconSlug[] = [
+  'shell-necklace',
+  'heart-glasses',
+  'lotus-lantern',
+  'lily-flower-crown',
+  'dragonfly-glasses',
+];
+/** The slugs the pond added (the text after `pond/`), from the catalogue. */
+const POND_SLUGS: readonly string[] = POND_TREASURES.map((treasure) => treasureSlug(treasure.id));
+/** The slugs the canal had before the pond: 12 items, then its 12 Paint shells. */
+const CANAL_ICON_SLUGS = TREASURE_ICON_SLUGS.filter((slug) => !POND_SLUGS.includes(slug));
+/** The icon slugs the pond added: 11 items, then the Lily green Paint shell. */
+const POND_ICON_SLUGS = TREASURE_ICON_SLUGS.filter((slug) => POND_SLUGS.includes(slug));
 /**
  * Call-log digests of the normal painters, recorded before flat mode existed: per size, the
- * digest of every icon digest in TREASURE_ICON_SLUGS order; then every Dream swatch at 32.
+ * digest of every canal icon digest in TREASURE_ICON_SLUGS order; then every canal Dream
+ * swatch at 32. The canal entries must never change (the canal art is draw-identical).
  */
 const NORMAL_ICON_DIGESTS: Readonly<Record<number, string>> = {
   28: '2bfc2b72efe633fe:529',
@@ -106,6 +154,18 @@ const NORMAL_ICON_DIGESTS: Readonly<Record<number, string>> = {
   80: '010fb26f91be1423:529',
 };
 const NORMAL_SWATCH_DIGEST = 'f7aaf783ea0f56df:259';
+/**
+ * The same digests for the icons and the swatch the pond added, pinned when they were authored (the
+ * 11 pond items, then the Lily green Paint shell). Re-pin these, and only these, when the pond art is
+ * retuned on purpose.
+ */
+const POND_ICON_DIGESTS: Readonly<Record<number, string>> = {
+  28: 'b136eddcd49ad938:264',
+  32: 'd19ffb7ee4b9903a:265',
+  48: 'c39ec83a31bfd326:265',
+  80: '7a0548c9c515be15:265',
+};
+const POND_SWATCH_DIGEST = '8562a1386951ef0c:20';
 const EPS = 1e-9;
 
 // ---------------------------------------------------------------------------
@@ -440,12 +500,16 @@ describe('Unfound silhouettes', () => {
   });
 
   it('leaves the normal icons and swatches making exactly the calls they made before flat mode', () => {
+    const swatchDigests = (ids: readonly (typeof DREAM_SWATCH_IDS)[number][]): string =>
+      digest(ids.map((id) => callLogDigest((ctx) => paintDreamSwatch(ctx, id, 32))).join('|'));
     for (const size of [28, 32, 48, 80]) {
-      const each = TREASURE_ICON_SLUGS.map((slug) => callLogDigest((ctx) => paintTreasureIcon(ctx, slug, size)));
-      expect(digest(each.join('|')), `${size}`).toBe(NORMAL_ICON_DIGESTS[size]);
+      const digestOf = (slugs: readonly TreasureIconSlug[]): string =>
+        digest(slugs.map((slug) => callLogDigest((ctx) => paintTreasureIcon(ctx, slug, size))).join('|'));
+      expect(digestOf(CANAL_ICON_SLUGS), `canal ${size}`).toBe(NORMAL_ICON_DIGESTS[size]);
+      expect(digestOf(POND_ICON_SLUGS), `pond ${size}`).toBe(POND_ICON_DIGESTS[size]);
     }
-    const swatches = DREAM_SWATCH_IDS.map((id) => callLogDigest((ctx) => paintDreamSwatch(ctx, id, 32)));
-    expect(digest(swatches.join('|'))).toBe(NORMAL_SWATCH_DIGEST);
+    expect(swatchDigests(DREAM_SWATCH_IDS.filter((id) => id !== 'lily-green')), 'canal swatches').toBe(NORMAL_SWATCH_DIGEST);
+    expect(swatchDigests(['lily-green']), 'lily-green swatch').toBe(POND_SWATCH_DIGEST);
   });
 });
 
@@ -476,12 +540,36 @@ describe('Treasure texture bakes', () => {
 });
 
 describe('Home Tank Decoration glows', () => {
-  it('keeps each Decoration badge in step with its catalogue rarity', () => {
-    for (const slug of TANK_DECORATION_SLUGS) {
-      const treasure = treasureById(`canal/${slug}`);
-      expect(treasure, slug).toBeDefined();
-      expect(TANK_DECORATION_BADGES[slug], slug).toBe(badgeShape(treasure!.rarity));
+  it('gives every catalogue Decoration a tank slug and a badge matching its catalogue rarity, looked up by id', () => {
+    const decorations = ALL_TREASURES.filter(isDecoration);
+    expect(decorations.map((d) => d.id)).toEqual([
+      'canal/pond-plant',
+      'canal/toy-boat',
+      'canal/castle-tower',
+      'canal/sun-pyramid',
+      'pond/lily-pad',
+      'pond/cattail-clump',
+      'pond/frog-statue',
+      'pond/lotus-lantern',
+    ]);
+    for (const decoration of decorations) {
+      const slug = treasureSlug(decoration.id);
+      expect(TANK_DECORATION_SLUGS as readonly string[], decoration.id).toContain(slug);
+      expect(TANK_DECORATION_BADGES[slug as TankDecorationSlug], decoration.id).toBe(badgeShape(decoration.rarity));
     }
+    expect(TANK_DECORATION_SLUGS.map(String)).toEqual(decorations.map((d) => treasureSlug(d.id)));
+  });
+
+  it('bakes a sprite and a glow for every catalogue Decoration', () => {
+    bakes.length = 0;
+    const tex = bakeTankTextures({} as never, 2, { decorationPx: 80, rand: () => 0.5 });
+    for (const decoration of ALL_TREASURES.filter(isDecoration)) {
+      const slug = treasureSlug(decoration.id) as TankDecorationSlug;
+      expect(tex.decorations[slug].key, decoration.id).toBe(`tank-deco-${slug}-80`);
+      expect(tex.decorationGlows[slug].key, decoration.id).toBe(`tank-deco-glow-${slug}-80`);
+      expect(bakes.some((b) => b.key === tex.decorations[slug].key), decoration.id).toBe(true);
+    }
+    expect(new Set(bakes.map((b) => b.key)).size).toBe(bakes.length);
   });
 
   it('bakes one glow per Decoration, 1.2 times its size, anchored at the Decoration base point', () => {
@@ -666,6 +754,174 @@ function frameBox(size: TexSize): Box {
 function inkWidths(ops: readonly Painted[]): number[] {
   const widths = ops.filter((o) => o.op === 'stroke' && o.style === INK).map((o) => Math.round(o.screenWidth * 1e6) / 1e6);
   return [...new Set(widths)].sort((a, b) => a - b);
+}
+
+// ---------------------------------------------------------------------------
+// Ink extents: the box every fill and stroke of an icon reaches, in anchor space
+// ---------------------------------------------------------------------------
+
+interface Affine {
+  readonly a: number;
+  readonly b: number;
+  readonly c: number;
+  readonly d: number;
+  readonly e: number;
+  readonly f: number;
+}
+
+const IDENTITY: Affine = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+
+/** `m` applied after `n`. */
+function compose(m: Affine, n: Affine): Affine {
+  return {
+    a: m.a * n.a + m.c * n.b,
+    b: m.b * n.a + m.d * n.b,
+    c: m.a * n.c + m.c * n.d,
+    d: m.b * n.c + m.d * n.d,
+    e: m.a * n.e + m.c * n.f + m.e,
+    f: m.b * n.e + m.d * n.f + m.f,
+  };
+}
+
+/**
+ * The points a recorded path reaches, through `m`: moves, lines, `arcTo` corners (the rounded corner's
+ * vertex, so a safe bound), and sampled curves, arcs and ellipses. Nested `addPath` is followed.
+ */
+function pathPoints(cmds: readonly unknown[][], m: Affine, out: [number, number][]): void {
+  const apply = (x: number, y: number): [number, number] => [m.a * x + m.c * y + m.e, m.b * x + m.d * y + m.f];
+  let cur: [number, number] = [0, 0];
+  for (const cmd of cmds) {
+    const [name, ...rest] = cmd as [string, ...unknown[]];
+    const a = rest as number[];
+    if (name === 'moveTo' || name === 'lineTo') {
+      out.push(apply(a[0], a[1]));
+      cur = [a[0], a[1]];
+    } else if (name === 'arcTo') {
+      // The tangent arc of a rounded corner: from the current point toward (x1, y1), turning to (x2, y2).
+      const [x1, y1, x2, y2, r] = a;
+      const v1 = [cur[0] - x1, cur[1] - y1];
+      const v2 = [x2 - x1, y2 - y1];
+      const l1 = Math.hypot(v1[0], v1[1]);
+      const l2 = Math.hypot(v2[0], v2[1]);
+      if (r === 0 || l1 === 0 || l2 === 0) {
+        out.push(apply(x1, y1));
+        cur = [x1, y1];
+        continue;
+      }
+      const u1 = [v1[0] / l1, v1[1] / l1];
+      const u2 = [v2[0] / l2, v2[1] / l2];
+      const theta = Math.acos(Math.max(-1, Math.min(1, u1[0] * u2[0] + u1[1] * u2[1])));
+      const d = r / Math.tan(theta / 2);
+      const t1: [number, number] = [x1 + u1[0] * d, y1 + u1[1] * d];
+      const t2: [number, number] = [x1 + u2[0] * d, y1 + u2[1] * d];
+      const bis = [u1[0] + u2[0], u1[1] + u2[1]];
+      const bl = Math.hypot(bis[0], bis[1]);
+      const centre = [x1 + (bis[0] / bl) * (r / Math.sin(theta / 2)), y1 + (bis[1] / bl) * (r / Math.sin(theta / 2))];
+      const a1 = Math.atan2(t1[1] - centre[1], t1[0] - centre[0]);
+      let delta = Math.atan2(t2[1] - centre[1], t2[0] - centre[0]) - a1;
+      while (delta > Math.PI) delta -= TAU;
+      while (delta < -Math.PI) delta += TAU;
+      for (let i = 0; i <= 16; i++) {
+        const t = a1 + (delta * i) / 16;
+        out.push(apply(centre[0] + r * Math.cos(t), centre[1] + r * Math.sin(t)));
+      }
+      cur = t2;
+    } else if (name === 'quadraticCurveTo' || name === 'bezierCurveTo') {
+      const ctrl: [number, number][] = [cur];
+      for (let i = 0; i < a.length; i += 2) ctrl.push([a[i], a[i + 1]]);
+      for (let i = 0; i <= 24; i++) {
+        const t = i / 24;
+        const u = 1 - t;
+        const [x, y] =
+          ctrl.length === 3
+            ? [0, 1].map((k) => u * u * ctrl[0][k] + 2 * u * t * ctrl[1][k] + t * t * ctrl[2][k])
+            : [0, 1].map(
+                (k) => u * u * u * ctrl[0][k] + 3 * u * u * t * ctrl[1][k] + 3 * u * t * t * ctrl[2][k] + t * t * t * ctrl[3][k],
+              );
+        out.push(apply(x, y));
+      }
+      cur = ctrl[ctrl.length - 1];
+    } else if (name === 'ellipse' || name === 'arc') {
+      const [cx, cy, rx, ry, rot, a0, a1] = name === 'arc' ? [a[0], a[1], a[2], a[2], 0, a[3], a[4]] : a;
+      for (let i = 0; i <= 64; i++) {
+        const t = a0 + ((a1 - a0) * i) / 64;
+        const x = rx * Math.cos(t);
+        const y = ry * Math.sin(t);
+        out.push(apply(cx + x * Math.cos(rot) - y * Math.sin(rot), cy + x * Math.sin(rot) + y * Math.cos(rot)));
+      }
+    } else if (name === 'addPath') {
+      const nested = (rest[1] ?? IDENTITY) as Affine;
+      pathPoints(rest[0] as unknown[][], compose(m, nested), out);
+    } else expect(['closePath'], `unhandled path command ${name}`).toContain(name);
+  }
+}
+
+interface InkReach {
+  /** The box of every fill and stroke, strokes widened by half their width. */
+  readonly box: Box;
+  /** Each fill or stroke: the first point of its path (the base of a petal, the centre of a pad). */
+  readonly starts: readonly (readonly [number, number])[];
+}
+
+/**
+ * Run `paint` and return the box its fills and strokes reach, in anchor space. Everything painted
+ * under a `clip` stays inside the silhouette that clipped it, so it is skipped. Only Path2D draws count.
+ */
+function inkReach(paint: (ctx: CanvasRenderingContext2D) => void): InkReach {
+  const box: Box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  const starts: [number, number][] = [];
+  let lineWidth = 1;
+  let clipped = false;
+  const stack: { lineWidth: number; clipped: boolean }[] = [];
+  const add = (path: unknown, pad: number): void => {
+    if (clipped || !(path instanceof LogPath)) return;
+    const points: [number, number][] = [];
+    pathPoints(path.cmds as unknown[][], IDENTITY, points);
+    starts.push(points[0]);
+    for (const [x, y] of points) {
+      box.minX = Math.min(box.minX, x - pad);
+      box.minY = Math.min(box.minY, y - pad);
+      box.maxX = Math.max(box.maxX, x + pad);
+      box.maxY = Math.max(box.maxY, y + pad);
+    }
+  };
+  const ctx = new Proxy(
+    {},
+    {
+      get: (_target, key) => {
+        const name = String(key);
+        if (name === 'lineWidth') return lineWidth;
+        return (...args: unknown[]) => {
+          if (name === 'save') stack.push({ lineWidth, clipped });
+          else if (name === 'restore') ({ lineWidth, clipped } = stack.pop() ?? { lineWidth, clipped });
+          else if (name === 'clip') clipped = true;
+          else if (name === 'fill') add(args[0], 0);
+          else if (name === 'stroke') add(args[0], lineWidth / 2);
+        };
+      },
+      set: (_target, key, value) => {
+        if (key === 'lineWidth') lineWidth = value as number;
+        return true;
+      },
+    },
+  ) as unknown as CanvasRenderingContext2D;
+  vi.stubGlobal('Path2D', LogPath);
+  try {
+    paint(ctx);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  return { box, starts };
+}
+
+/** Every hex colour an icon paints with, fills and strokes. */
+function hexStyles(paint: (ctx: CanvasRenderingContext2D) => void): Set<string> {
+  const styles = new Set<string>();
+  for (const op of record(paint).ops) {
+    const style = op.op === 'fill' || op.op === 'fillRect' ? op.fillStyle : op.strokeStyle;
+    if (typeof style === 'string' && /^#[0-9a-f]{6}$/i.test(style)) styles.add(style.toLowerCase());
+  }
+  return styles;
 }
 
 const DEV_PX = 80;
@@ -882,6 +1138,210 @@ describe('Dev Decoration art', () => {
     expect(rec.calls[0]).toEqual(['translate', [0, DEV_PX / 2]]);
     expect(rec.calls[1]).toEqual(['scale', [devDecorationGlowSize(d, DEV_PX).w / 96, 1]]);
     expect(rec.ops).toHaveLength(1);
+  });
+});
+
+describe('Pond treasure art (issue #75)', () => {
+  /** The pond fills of the outer silhouettes (treasurePalette.ts), by item. */
+  const OUTER_FILLS: Readonly<Record<string, readonly string[]>> = {
+    'lily-pad': [LILY_PAD_FILL],
+    'cattail-clump': [CATTAIL_STEM, CATTAIL_HEAD],
+    'frog-statue': [FROG_STATUE_STONE],
+    'lotus-lantern': [LOTUS_PETAL, LOTUS_LANTERN_BODY],
+    'lily-flower-crown': [LILY_CROWN_LEAF, LILY_CROWN_FLOWER],
+    'pond-weed-scarf': [POND_WEED_SCARF],
+    'dragonfly-glasses': [DRAGONFLY_FRAME],
+    raincoat: [RAINCOAT_FILL],
+    'ladybug-backpack': [LADYBUG_SHELL],
+    'rainbow-dragonfly-wings': [DRAGONFLY_WING],
+    'froggy-boots': [FROGGY_BOOT],
+  };
+  /** Trims, gems, stars, pattern marks and ink: inside the silhouette, or already shipped, so free. */
+  const FREE_STYLES = new Set(
+    [GOLD_TRIM, CASTLE_TRIM, CASTLE_GEM, PYRAMID_GEM, BOW_GEM, GEM_GLINT, TREASURE_STAR, INK, ...DREAM_SWATCH.rainbow.marks].map((c) =>
+      c.toLowerCase(),
+    ),
+  );
+  const POND_ITEM_SLUGS = POND_ICON_SLUGS.filter((slug) => !slug.startsWith('paint-shell-'));
+  const HALF = (size: number): number => size / 2;
+  const REACH_TOLERANCE = 0.05;
+
+  it('has an icon and a silhouette for every catalogue treasure, and no other', () => {
+    expect(new Set(ALL_TREASURES.map((treasure) => treasureSlug(treasure.id)))).toEqual(new Set(TREASURE_ICON_SLUGS));
+    expect(TREASURE_ICON_SLUGS).toHaveLength(ALL_TREASURES.length);
+    bakes.length = 0;
+    const tex = bakeTreasureTextures({} as never, 2);
+    for (const treasure of ALL_TREASURES) {
+      const slug = treasureSlug(treasure.id) as TreasureIconSlug;
+      expect(tex.icons[32][slug].key, treasure.id).toBe(`treasure-${slug}-32`);
+      expect(tex.silhouettes[slug].key, treasure.id).toBe(treasureSilhouetteKey(slug));
+      expect(bakes.some((b) => b.key === tex.silhouettes[slug].key), treasure.id).toBe(true);
+    }
+  });
+
+  it('adds the eleven pond items after the canal twelve, in catalogue order, then the Lily green shell last', () => {
+    expect(POND_ITEM_SLUGS).toEqual(
+      POND_TREASURES.filter((treasure) => treasure.category !== 'paintShell').map((treasure) => treasureSlug(treasure.id)),
+    );
+    expect(POND_ITEM_SLUGS).toHaveLength(11);
+    expect(TREASURE_ICON_SLUGS.slice(12, 23)).toEqual(POND_ITEM_SLUGS);
+    expect(TREASURE_ICON_SLUGS[TREASURE_ICON_SLUGS.length - 1]).toBe('paint-shell-lily-green');
+    expect(POND_ICON_SLUGS).toEqual([...POND_ITEM_SLUGS, 'paint-shell-lily-green']);
+  });
+
+  it('keeps every pond outer fill at 9:1 or more with ink, and none a rarity badge fill', () => {
+    const fills = Object.values(OUTER_FILLS).flat();
+    expect(fills).toHaveLength(14);
+    for (const fill of fills) {
+      expect(contrastRatio(fill, INK), fill).toBeGreaterThanOrEqual(9);
+      expect(Object.values(BADGE_FILL), fill).not.toContain(fill);
+    }
+  });
+
+  it.each(POND_ITEM_SLUGS.map((slug) => [slug] as const))(
+    '%s paints its pond fills and no other outer colour, every colour 9:1 or free',
+    (slug) => {
+      const styles = hexStyles((ctx) => paintTreasureIcon(ctx, slug, 48));
+      for (const fill of OUTER_FILLS[slug]) expect(styles, `${slug} uses ${fill}`).toContain(fill.toLowerCase());
+      for (const style of styles) {
+        if (FREE_STYLES.has(style)) continue;
+        expect(contrastRatio(style, INK), `${slug} ${style}`).toBeGreaterThanOrEqual(9);
+        expect(
+          Object.values(OUTER_FILLS[slug]).map((c) => c.toLowerCase()).concat(TREASURE_SILHOUETTE_FILL.toLowerCase()),
+          `${slug} paints only its own fills, ${style} is not one`,
+        ).toContain(style);
+      }
+    },
+  );
+
+  it.each(POND_ITEM_SLUGS.flatMap((slug) => [28, 32, 48, 80].map((size) => [slug, size] as const)))(
+    '%s at %i keeps its ink inside the icon box, reaching nearly the whole of the longest side',
+    (slug, size) => {
+      const { box } = inkReach((ctx) => paintTreasureIcon(ctx, slug, size));
+      const half = HALF(size);
+      expect(box.minX, `${slug} left`).toBeGreaterThanOrEqual(-half - REACH_TOLERANCE);
+      expect(box.maxX, `${slug} right`).toBeLessThanOrEqual(half + REACH_TOLERANCE);
+      expect(box.minY, `${slug} top`).toBeGreaterThanOrEqual(-half - REACH_TOLERANCE);
+      expect(box.maxY, `${slug} bottom`).toBeLessThanOrEqual(half + REACH_TOLERANCE);
+      expect(Math.max(box.maxX - box.minX, box.maxY - box.minY), `${slug} longest side`).toBeGreaterThanOrEqual(size - 2);
+    },
+  );
+
+  it.each(POND_ICON_SLUGS.map((slug) => [slug] as const))('%s has a frame that holds its icon and silhouette', (slug) => {
+    const frame = frameBox(treasureIconTextureSize(48));
+    for (const paint of [paintTreasureIcon, paintTreasureSilhouette]) {
+      const { box } = inkReach((ctx) => paint(ctx, slug, 48));
+      expect(box.minX).toBeGreaterThanOrEqual(frame.minX);
+      expect(box.maxX).toBeLessThanOrEqual(frame.maxX);
+      expect(box.minY).toBeGreaterThanOrEqual(frame.minY);
+      expect(box.maxY).toBeLessThanOrEqual(frame.maxY);
+    }
+  });
+
+  it('draws ink at the shipped widths only: item 2.8, blob 5.6, tubes 8.0, glasses 3.5 (bridge 4.6), details 1.6, bands 1.2', () => {
+    const ALLOWED = new Set([2.8, 5.6, 8, 3.5, 4.6, 1.6, 1.2]);
+    for (const slug of POND_ITEM_SLUGS) {
+      const ink = record((ctx) => paintTreasureIcon(ctx, slug, 48)).ops.filter((op) => op.op === 'stroke' && op.strokeStyle === INK);
+      const widths = new Set(ink.map((op) => op.lineWidth));
+      for (const width of widths) expect(ALLOWED, `${slug} ink ${width}`).toContain(width);
+    }
+  });
+
+  describe('Decorations in the Home Tank', () => {
+    const FLOORS = ['cattail-clump', 'frog-statue'] as const;
+    const FLOATS = ['lily-pad', 'lotus-lantern'] as const;
+
+    it('matches the catalogue placement kinds', () => {
+      const kinds = new Map(ALL_TREASURES.filter(isDecoration).map((d) => [treasureSlug(d.id), placementKind(d)]));
+      for (const slug of FLOORS) expect(kinds.get(slug), slug).toBe('floor');
+      for (const slug of FLOATS) expect(kinds.get(slug), slug).toBe('floating');
+    });
+
+    it.each(FLOORS.map((slug) => [slug] as const))('%s is anchored at its lowest ink edge', (slug) => {
+      for (const size of [48, 80]) {
+        const { box } = inkReach((ctx) => paintTreasureIcon(ctx, slug, size));
+        expect(decorationBaseOffset(slug, size), `${slug} ${size}`).toBeCloseTo(box.maxY, 1);
+        expect(box.maxY).toBeLessThanOrEqual(size / 2 + REACH_TOLERANCE);
+      }
+    });
+
+    it.each(FLOATS.map((slug) => [slug] as const))('%s is anchored at the bottom centre of its 80 box', (slug) => {
+      const { box } = inkReach((ctx) => paintTreasureIcon(ctx, slug, 80));
+      expect(decorationBaseOffset(slug, 80)).toBeCloseTo(40, 9);
+      expect(box.maxY).toBeCloseTo(40, 1);
+      const frame = frameBox({ ...treasureIconTextureSize(80), originY: treasureIconTextureSize(80).originY + 40 });
+      expect(frame.maxY).toBeGreaterThanOrEqual(1);
+      expect(frame.maxY).toBeLessThanOrEqual(2);
+    });
+
+    it('puts the Lily pad centre on the waterline, 20 below the top of the 80 box, at the water surface', () => {
+      const { starts } = inkReach((ctx) => paintTreasureIcon(ctx, 'lily-pad', 80));
+      // The pad path starts at its centre (0, waterline); the box top is 40 above the icon centre.
+      expect(starts.some(([x, y]) => Math.abs(x) < 1e-6 && Math.abs(y - (-40 + 20)) < 1e-6)).toBe(true);
+    });
+
+    it('puts the Lotus lantern belt on the waterline, 20 below the top of the 80 box, at the water surface', () => {
+      const bands = record((ctx) => paintTreasureIcon(ctx, 'lotus-lantern', 80)).ops.filter(
+        (op) => op.op === 'fillRect' && op.fillStyle === CASTLE_TRIM,
+      );
+      expect(bands).toHaveLength(1);
+      const [, y, , height] = bands[0].args as number[];
+      expect(y + height / 2).toBeCloseTo(-40 + 20, 9);
+    });
+
+    it('lands both waterlines on the water surface when the base point is TOP_BASE_Y', () => {
+      // The box bottom is the base point, so the waterline is 60 above it.
+      expect(TOP_BASE_Y - (80 - 20)).toBe(TANK.waterTop);
+    });
+
+    it('stays on the shipped floating convention of the dev Test lily pad', () => {
+      const dev = paintedOps((ctx) => paintDevDecoration(ctx, devDecoration('dev/test-lily-pad'), DEV_PX));
+      const pad = dev.find((o) => o.op === 'fill' && o.style === LILY_PAD) as Painted;
+      const centreY = (pad.box.minY + pad.box.maxY) / 2;
+      const { starts } = inkReach((ctx) => paintTreasureIcon(ctx, 'lily-pad', 80));
+      expect(starts.some(([, y]) => Math.abs(y - (centreY + 40)) < 1e-6)).toBe(true);
+    });
+  });
+
+  describe('rarity ladder (guide 6i)', () => {
+    /** The count of shines, gold trims, gem glints and stars in an icon, by their paint. */
+    const count = (slug: TreasureIconSlug): { shine: number; gold: number; glint: number; star: number } => {
+      const ops = record((ctx) => paintTreasureIcon(ctx, slug, 80)).ops;
+      // The gem glint and the star are both white: a glint is an ellipse, a star is a rounded polygon.
+      const whites = ops.filter((op) => op.op === 'fill' && op.fillStyle === GEM_GLINT && op.fillStyle === TREASURE_STAR);
+      const uses = (op: Op, command: string): boolean => JSON.stringify(op.args[0]).includes(`"${command}"`);
+      return {
+        shine: ops.filter((op) => op.op === 'fill' && op.fillStyle === 'rgba(255,255,255,0.8)').length,
+        gold: ops.filter((op) => op.op === 'fillRect' && op.fillStyle === GOLD_TRIM).length,
+        glint: whites.filter((op) => uses(op, 'ellipse')).length,
+        star: whites.filter((op) => uses(op, 'arcTo')).length,
+      };
+    };
+
+    it.each(POND_ITEM_SLUGS.map((slug) => [slug] as const))('%s has its one shine', (slug) => {
+      expect(count(slug).shine, slug).toBe(1);
+    });
+
+    it('gives Legendary the gold trim, one gem and one star, and the others none of the three', () => {
+      for (const slug of ['rainbow-dragonfly-wings', 'froggy-boots'] as const) {
+        const found = count(slug);
+        expect(found.gold, slug).toBe(1);
+        expect(found.glint, slug).toBe(1);
+        expect(found.star, slug).toBe(1);
+      }
+      for (const slug of POND_ITEM_SLUGS.filter((s) => s !== 'rainbow-dragonfly-wings' && s !== 'froggy-boots')) {
+        const found = count(slug);
+        expect(found.gold, slug).toBe(0);
+        expect(found.star, slug).toBe(0);
+      }
+    });
+
+    it('gives Epic one gem and Common and Rare none', () => {
+      for (const slug of ['lotus-lantern', 'ladybug-backpack'] as const) expect(count(slug).glint, slug).toBe(1);
+      for (const slug of ['lily-pad', 'cattail-clump', 'frog-statue', 'lily-flower-crown', 'pond-weed-scarf', 'dragonfly-glasses', 'raincoat'] as const) {
+        expect(count(slug).glint, slug).toBe(0);
+      }
+    });
   });
 });
 
