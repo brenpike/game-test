@@ -19,7 +19,7 @@ import type { IconKind } from '../art/drawUi';
 import type { TexInfo } from '../art/textures';
 import { areaLabel } from '../logic/areaText';
 import { areaById, type AreaData } from '../logic/areas';
-import { ownedDreamColours } from '../logic/catalogue';
+import { ownedDreamColours, type Decoration } from '../logic/catalogue';
 import { dueFirstFindCards, tryItNowAxolotlId, type FirstFindKind } from '../logic/firstFind';
 import { GAME_EVENTS, REGISTRY_KEYS, type ReducedMotionPayload } from '../logic/gameEvents';
 import type { Rect, Size } from '../logic/hudLayout';
@@ -43,7 +43,7 @@ import {
 import { hubStarsBadgeRect } from '../logic/starsUi';
 import { restyleStart, type RestyleOptions, type StylerWearer } from '../logic/styler';
 import type { StylerStep } from '../logic/stylerSteps';
-import { TANK, tankFrame, tankToCss, type TankFrame, type TankLayout } from '../logic/tank';
+import { SHIPPED_DECORATIONS, TANK, tankFrame, tankToCss, type TankFrame, type TankLayout } from '../logic/tank';
 import {
   axolotlFocusIndex,
   nameTagRect,
@@ -56,12 +56,18 @@ import { tankSwimPose } from '../logic/tankSwim';
 import { HOME_TANK_NAME } from '../logic/tankText';
 import {
   HUB_BUTTONS,
+  ICON_TILE,
+  TILE_BUTTON,
   UI,
+  hubButtonCompactLook,
   hubButtonLook,
+  hubCaptionRect,
   hubLayout,
   tankKeyFor,
+  type HubAction,
   type HubActionId,
   type HubButtonSpec,
+  type HubLayout,
   type TankKey,
 } from '../logic/tankUi';
 import type { TripEnding } from '../logic/tripEvents';
@@ -88,7 +94,7 @@ import { settleMotionTweens } from './motionTweens';
 import { goExploring, readSession, writeSession, type HomeTankStart } from './sceneFlow';
 import { faceSprite } from './spriteFacing';
 import { TankArrivalCard, type ArrivalAreaStars } from './TankArrivalCard';
-import { TankDecorator } from './TankDecorator';
+import { TankDecorator, createDecorationArtResolver } from './TankDecorator';
 import { TreasureChestView } from './TreasureChestView';
 
 const TAU = Math.PI * 2;
@@ -105,6 +111,8 @@ const CAPTURED_KEYS: readonly number[] = [
   Phaser.Input.Keyboard.KeyCodes.BACKSPACE,
 ];
 const NAME_TAG_PX = 18;
+/** createButton size of a square tile that makes the ICON_TILE body of a compact hub tile. */
+const ICON_TILE_SIZE = ICON_TILE.w / TILE_BUTTON.w;
 /** Double focus ring round a focused axolotl, as on the decorate footprints (art guide 7f, 8). */
 const RING_RADIUS_PX = 18;
 const RING_LINE_PX = 3;
@@ -151,10 +159,14 @@ type TankMode = 'arrival' | 'chest' | 'book' | 'decorate' | 'restyle' | 'explore
 /** Where a restyle was opened from, and so where Done or Cancel goes back to: the hub, or the explorer card's Change outfit. */
 type RestyleFrom = 'hub' | 'explorer';
 
-/** One hub action button. */
+/**
+ * One hub action: its full button and, for a secondary tile, its icon-only compact variant (null for
+ * the primary, whose compact look is its full one). Only the variant hubLayout picks shows.
+ */
 interface HubButton {
   id: HubActionId;
-  button: UiButton;
+  full: UiButton;
+  compact: UiButton | null;
 }
 
 /**
@@ -269,6 +281,15 @@ export class HomeTankScene extends Phaser.Scene {
   private titlePanel!: Phaser.GameObjects.Graphics;
   private titleText!: Phaser.GameObjects.Text;
   private hubButtons: HubButton[] = [];
+  /** Whether the hub uses its compact variants, as the last hubLayout picked. */
+  private hubCompact = false;
+  /** The last hub layout and best-stars badge rect, for the hub focus caption; null before the first layout. */
+  private hubPlan: HubLayout | null = null;
+  private hubBadgeRect: Rect | null = null;
+  private hubCaptionPanel!: Phaser.GameObjects.Graphics;
+  private hubCaptionText!: Phaser.GameObjects.Text;
+  /** The Decorations the tank uses: the shipped ones plus the dev pack's (page session only). */
+  private tankCatalogue: readonly Decoration[] = SHIPPED_DECORATIONS;
   private titleFits = false;
   private starsBadge!: AreaStarsBadge;
   private decorator!: TankDecorator;
@@ -297,6 +318,9 @@ export class HomeTankScene extends Phaser.Scene {
     this.focusIndex = GO_EXPLORING_INDEX;
     this.swimmers = [];
     this.hubButtons = [];
+    this.hubCompact = false;
+    this.hubPlan = null;
+    this.hubBadgeRect = null;
     this.titleFits = false;
     this.restyler = null;
     this.explorerCard = null;
@@ -311,6 +335,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.frame = tankFrame(this.view.cssW, this.view.cssH);
     useCssCamera(this.cameras.main, this.view.fit.dpr);
     this.cameras.main.setBackgroundColor(HOME_TANK_WALL);
+    this.tankCatalogue = [...SHIPPED_DECORATIONS, ...(this.assets.devDecor?.decorations ?? [])];
 
     this.buildTank();
     this.buildDecorator();
@@ -380,21 +405,33 @@ export class HomeTankScene extends Phaser.Scene {
     this.front = this.add.image(0, 0, tank.front.key).setOrigin(0, 0).setDepth(TANK_DEPTH.front);
   }
 
-  /** The placed Decorations, always drawn, and decorate mode, entered from the hub. */
+  /**
+   * The placed Decorations, always drawn, and decorate mode, entered from the hub. With a dev
+   * Decoration pack, its Decorations join the tank catalogue and count as owned, for this page
+   * session only.
+   */
   private buildDecorator(): void {
-    const { baked, treasure, tank } = this.assets;
+    const { baked, treasure, tank, devDecor } = this.assets;
     this.decorator = new TankDecorator(
       {
         scene: this,
         textures: { baked, treasure, tank },
+        art: createDecorationArtResolver(tank, treasure, devDecor?.textures ?? null),
+        catalogue: this.tankCatalogue,
         depths: { decorations: TANK_DEPTH.decorations, ui: TANK_DEPTH.hub },
         dpr: this.view.fit.dpr,
         onLayoutChange: (layout) => this.saveTankLayout(layout),
         onDone: () => this.stopDecorating(),
       },
       this.session.hub.tank,
-      this.session.hub.banked,
+      this.tankOwnedIds(this.session.hub.banked),
     );
+  }
+
+  /** The ids the tank counts as owned: `banked` plus every dev pack Decoration (page session only). */
+  private tankOwnedIds(banked: readonly string[]): string[] {
+    const devIds = this.assets.devDecor?.decorations.map((decoration) => decoration.id) ?? [];
+    return [...banked, ...devIds];
   }
 
   /**
@@ -455,12 +492,18 @@ export class HomeTankScene extends Phaser.Scene {
     this.nameTagText = this.add.text(0, 0, '', uiTextStyle(NAME_TAG_PX, this.view.fit.dpr)).setDepth(TANK_DEPTH.hub);
   }
 
-  /** The hub actions in focus order (Go exploring first) and the Home Tank name panel. */
+  /**
+   * The hub actions in focus order (Go exploring first), the Home Tank name panel, and the hub focus
+   * caption that names a focused icon-only tile (a white panel with the label in bold ink 18 px, like
+   * the name tag).
+   */
   private buildHub(): void {
     const dpr = this.view.fit.dpr;
     this.titlePanel = this.add.graphics().setDepth(TANK_DEPTH.hub);
     this.titleText = this.add.text(0, 0, HOME_TANK_NAME, uiTextStyle(TITLE_PX, dpr)).setDepth(TANK_DEPTH.hub);
     this.hubButtons = HUB_BUTTONS.map((spec) => this.addHubButton(spec));
+    this.hubCaptionPanel = this.add.graphics().setDepth(TANK_DEPTH.hub);
+    this.hubCaptionText = this.add.text(0, 0, '', uiTextStyle(NAME_TAG_PX, dpr)).setDepth(TANK_DEPTH.hub);
   }
 
   /** The best-stars badge of the area, under the hub, showing the best stars this session (H7). */
@@ -480,23 +523,37 @@ export class HomeTankScene extends Phaser.Scene {
     this.starsBadge.setStars(bestStars(this.session, this.area.id));
   }
 
-  /** A hub button in the shape and size-1 body width hubButtonLook() gives, to hold its icon and label. */
+  /**
+   * A hub button in the shape and size-1 body width hubButtonLook() gives, to hold its icon and label,
+   * and, when hubButtonCompactLook() makes it an icon tile, its icon-only ICON_TILE variant.
+   */
   private addHubButton(spec: HubButtonSpec): HubButton {
     const { id, label, primary } = spec;
     const look = hubButtonLook(spec);
-    const button = createButton(this, this.assets.baked, {
+    const common = {
       fill: primary ? 'primary' : 'secondary',
-      shape: look.shape,
-      size: 1,
-      width: look.w,
       label,
       icon: HUB_ICONS[id],
       dpr: this.view.fit.dpr,
       pressOnDown: false,
       onPress: () => this.runHubAction(id),
+    } as const;
+    const full = createButton(this, this.assets.baked, { ...common, shape: look.shape, size: 1, width: look.w });
+    full.container.setDepth(TANK_DEPTH.hub);
+    if (hubButtonCompactLook(spec).shape !== 'icon') return { id, full, compact: null };
+    const compact = createButton(this, this.assets.baked, {
+      ...common,
+      shape: 'square',
+      size: ICON_TILE_SIZE,
+      iconOnly: true,
     });
-    button.container.setDepth(TANK_DEPTH.hub);
-    return { id, button };
+    compact.container.setDepth(TANK_DEPTH.hub).setVisible(false);
+    return { id, full, compact };
+  }
+
+  /** The variant of `hubButton` the hub shows now: the compact one when the hub is compact and it has one. */
+  private shownHubButton(hubButton: HubButton): UiButton {
+    return this.hubCompact && hubButton.compact !== null ? hubButton.compact : hubButton.full;
   }
 
   /** One keydown handler for every Home Tank key; Tab, arrows, Space and Backspace are captured while it runs. */
@@ -681,9 +738,16 @@ export class HomeTankScene extends Phaser.Scene {
     this.showHub(this.hubIndexOf('decorate'));
   }
 
-  /** Stores a placement, move or put away in the session, so the Home Tank keeps it between trips. */
+  /**
+   * Stores a placement, move or put away in the session, so the Home Tank keeps it between trips.
+   * Dev pack placements stay in the page session only; the save keeps shipped Decorations only.
+   */
   private saveTankLayout(layout: TankLayout): void {
-    this.session = setTankLayout(readSession(this.registry), layout);
+    const session = readSession(this.registry);
+    this.session = setTankLayout(session, layout, {
+      catalogue: this.tankCatalogue,
+      owned: this.tankOwnedIds(session.hub.banked),
+    });
     writeSession(this.registry, this.session);
   }
 
@@ -915,15 +979,20 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * Shows the focus ring on the focused hub button, only while the hub has the input, and lets the
-   * axolotls take taps only then.
+   * Shows the focus ring on the shown variant of the focused hub button, only while the hub has the
+   * input (a hidden variant never shows focus), with the hub focus caption, and lets the axolotls take
+   * taps only then.
    */
   private refreshHubFocus(): void {
-    this.hubButtons.forEach((hubButton, index) =>
-      hubButton.button.setFocused(this.mode === 'hub' && index === this.focusIndex),
-    );
+    this.hubButtons.forEach((hubButton, index) => {
+      const focused = this.mode === 'hub' && index === this.focusIndex;
+      const shown = this.shownHubButton(hubButton);
+      hubButton.full.setFocused(focused && shown === hubButton.full);
+      hubButton.compact?.setFocused(focused && shown === hubButton.compact);
+    });
     this.applySwimmerInput();
     this.renderPickFocus();
+    this.renderHubCaption();
   }
 
   /**
@@ -958,8 +1027,10 @@ export class HomeTankScene extends Phaser.Scene {
     this.titleText.setResolution(dpr);
     this.starsBadge.setResolution(dpr);
     for (const hubButton of this.hubButtons) {
-      hubButton.button.setResolution(dpr);
+      hubButton.full.setResolution(dpr);
+      hubButton.compact?.setResolution(dpr);
     }
+    this.hubCaptionText.setResolution(dpr);
     this.decorator.setResolution(dpr);
     this.chest.setResolution(dpr);
     this.book.setResolution(dpr);
@@ -1028,13 +1099,16 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * Shows the hub buttons and the best-stars badge unless the Treasure Chest, the Collection Book,
-   * decorate mode, restyle, the explorer card or the choices card is up, and the name panel only when it fits.
+   * Shows the hub buttons (only the variant hubLayout picked; a hidden variant takes no press) and the
+   * best-stars badge unless the Treasure Chest, the Collection Book, decorate mode, restyle, the
+   * explorer card or the choices card is up, and the name panel only when it fits.
    */
   private applyHubVisibility(): void {
     const shown = this.mode === 'hub' || this.mode === 'arrival';
     for (const hubButton of this.hubButtons) {
-      hubButton.button.container.setVisible(shown);
+      const active = this.shownHubButton(hubButton);
+      hubButton.full.container.setVisible(shown && active === hubButton.full);
+      hubButton.compact?.container.setVisible(shown && active === hubButton.compact);
     }
     this.starsBadge.setVisible(shown);
     this.titlePanel.setVisible(shown && this.titleFits);
@@ -1042,27 +1116,59 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * Places the hub buttons through hubLayout(), the best-stars badge under them (or in the corner)
-   * through hubStarsBadgeRect(), and the name panel only when it fits.
+   * Places the hub buttons through hubLayout() in the full or compact variants it picks, the
+   * best-stars badge under them (or in the corner) through hubStarsBadgeRect(), the name panel only
+   * when it fits, then the focus and the hub focus caption.
    */
   private layoutHub(): void {
-    const actions = this.hubButtons.map((hubButton) => ({
-      id: hubButton.id,
-      w: hubButton.button.width,
-      h: hubButton.button.height,
-    }));
+    const actions = this.hubButtons.map((hubButton): HubAction => {
+      const { full, compact } = hubButton;
+      const compactSize: Size = compact === null ? { w: full.width, h: full.height } : { w: compact.width, h: compact.height };
+      return { id: hubButton.id, w: full.width, h: full.height, compact: compactSize };
+    });
     const titleSize: Size = { w: this.titleText.width + 2 * UI.pad, h: this.titleText.height + 2 * UI.pad };
     const hub = hubLayout(this.view, this.frame, actions, titleSize);
+    this.hubPlan = hub;
+    this.hubCompact = hub.compact;
     hub.actions.forEach((placement, index) => {
-      this.hubButtons[index].button.container.setPosition(placement.rect.x, placement.rect.y);
+      this.shownHubButton(this.hubButtons[index]).container.setPosition(placement.rect.x, placement.rect.y);
     });
-    this.starsBadge.layout(hubStarsBadgeRect(this.view, this.frame, hub, this.starsBadge.measure()));
+    this.hubBadgeRect = hubStarsBadgeRect(this.view, this.frame, hub, this.starsBadge.measure());
+    this.starsBadge.layout(this.hubBadgeRect);
     const title = hub.title;
     this.titleFits = title !== null;
     this.applyHubVisibility();
-    if (title === null) return;
-    drawPanel(this.titlePanel, title.x, title.y, title.w, title.h, UI_PANEL);
-    this.titleText.setPosition(title.x + UI.pad, title.y + UI.pad);
+    if (title !== null) {
+      drawPanel(this.titlePanel, title.x, title.y, title.w, title.h, UI_PANEL);
+      this.titleText.setPosition(title.x + UI.pad, title.y + UI.pad);
+    }
+    this.refreshHubFocus();
+  }
+
+  /**
+   * The hub focus caption: a white panel (padding 12) naming the focused hub tile in bold ink 18 px,
+   * shown only in the hub while that tile shows icon-only, where hubCaptionRect() puts it, clear of the
+   * best-stars badge; hidden when there is no place.
+   */
+  private renderHubCaption(): void {
+    const rect = this.hubCaptionPlace();
+    this.hubCaptionPanel.setVisible(rect !== null);
+    this.hubCaptionText.setVisible(rect !== null);
+    if (rect === null) return;
+    drawPanel(this.hubCaptionPanel, rect.x, rect.y, rect.w, rect.h, UI_PANEL);
+    this.hubCaptionText.setPosition(rect.x + UI.pad, rect.y + UI.pad);
+  }
+
+  /** Sets the hub focus caption text and returns its rect, or null when it hides. */
+  private hubCaptionPlace(): Rect | null {
+    const target = this.mode === 'hub' ? this.focusTarget() : null;
+    const hubButton = target?.kind === 'hub' ? this.hubButtons[target.i] : undefined;
+    const plan = this.hubPlan;
+    if (hubButton === undefined || plan === null || this.shownHubButton(hubButton) !== hubButton.compact) return null;
+    this.hubCaptionText.setText(hubButton.compact.label);
+    const size: Size = { w: this.hubCaptionText.width + 2 * UI.pad, h: this.hubCaptionText.height + 2 * UI.pad };
+    const obstacles = this.hubBadgeRect === null ? [] : [this.hubBadgeRect];
+    return hubCaptionRect(this.view, this.frame, plan, size, obstacles);
   }
 
   // ---- rendering -----------------------------------------------------------
