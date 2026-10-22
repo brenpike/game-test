@@ -199,7 +199,8 @@ function rectContains(rect: Rect, point: Vec2): boolean {
  * and the Prev and Next pan tiles are fixed on the main camera; the sections are drawn by a second
  * camera whose viewport is the layout's viewport, so they scroll along x by drag (1:1, no fling,
  * from 8 px), by the wheel, by Prev and Next (panRefugeScroll) and to follow the focus
- * (scrollToRefugeFocus).
+ * (scrollToRefugeFocus). A third, full-canvas camera draws only the fact and milestone cards, last,
+ * so a card and its dim cover the sections.
  *
  * A hidden section shows its silhouette, "???" and its hint ("Beat Area N"). A dirty section shows
  * its dirty picture with a trash batch for each area not yet beaten; a clean one its clean picture,
@@ -232,6 +233,8 @@ export class RefugeScene extends Phaser.Scene {
   private press: RefugePress | null = null;
 
   private mapCamera!: Phaser.Cameras.Scene2D.Camera;
+  /** The full-canvas camera, added after the map camera, that draws only the open fact or milestone card. */
+  private cardCamera!: Phaser.Cameras.Scene2D.Camera;
   private fixedLayer!: Phaser.GameObjects.Container;
   private mapLayer!: Phaser.GameObjects.Container;
   private title!: PanelParts;
@@ -299,9 +302,12 @@ export class RefugeScene extends Phaser.Scene {
     this.buildFixed();
     this.buildMap(cleansNow);
     this.mapCamera = this.cameras.add(0, 0, 1, 1);
+    this.cardCamera = this.cameras.add();
+    useCssCamera(this.cardCamera, this.view.fit.dpr);
     this.cameras.main.ignore(this.mapLayer);
     this.mapCamera.ignore(this.fixedLayer);
-    this.factCard = this.keepOffMap(
+    this.cardCamera.ignore([this.fixedLayer, this.mapLayer]);
+    this.factCard = this.onCardCamera(
       () => new FactCard(this, this.assets, this.view, CARD_DEPTH, () => this.closeFactCard()),
     );
 
@@ -469,11 +475,17 @@ export class RefugeScene extends Phaser.Scene {
     };
   }
 
-  /** Runs `build`, then keeps every object it added to the scene off the map camera, so a card shows once, on the main camera. */
-  private keepOffMap<T>(build: () => T): T {
+  /**
+   * Runs `build`, then keeps every object it added to the scene off the main and map cameras, so a
+   * card shows once, on the card camera. The card camera renders after the map camera, so the card
+   * and its dim cover the scrolling sections, and it takes the pointer first.
+   */
+  private onCardCamera<T>(build: () => T): T {
     const before = new Set(this.children.list);
     const built = build();
-    this.mapCamera.ignore(this.children.list.filter((child) => !before.has(child)));
+    const added = this.children.list.filter((child) => !before.has(child));
+    this.cameras.main.ignore(added);
+    this.mapCamera.ignore(added);
     return built;
   }
 
@@ -802,7 +814,7 @@ export class RefugeScene extends Phaser.Scene {
     const habitat = habitatById(id);
     if (habitat === undefined) throw new Error(`RefugeScene: no habitat ${id}`);
     const explorerName = explorerAxolotl(readSession(this.registry)).name;
-    this.milestoneCard = this.keepOffMap(
+    this.milestoneCard = this.onCardCamera(
       () =>
         new RefugeMilestoneCard(this, this.assets, this.view, CARD_DEPTH, habitat, explorerName, () =>
           this.closeMilestone(),
@@ -936,6 +948,7 @@ export class RefugeScene extends Phaser.Scene {
     this.view = readSceneView(this.scale);
     const dpr = this.view.fit.dpr;
     useCssCamera(this.cameras.main, dpr);
+    useCssCamera(this.cardCamera, dpr);
     this.setResolution(dpr);
     this.layout();
     this.factCard.layout(this.view);
