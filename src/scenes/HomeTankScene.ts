@@ -2,6 +2,7 @@ import * as Phaser from 'phaser';
 import { createAxolotlRigBake, createAxolotlRigView, type AxolotlRigBake, type AxolotlRigView } from '../art/axolotlRig';
 import type { AxolotlPose } from '../art/drawAxolotl';
 import { dreamSheenAt } from '../art/drawDreamOverlay';
+import { REFUGE_NUDGE_INSET } from '../art/drawRefuge';
 import { artOutfit } from '../art/drawWearables';
 import { DEPTH } from '../art/layers';
 import {
@@ -18,7 +19,7 @@ import {
 import type { IconKind } from '../art/drawUi';
 import type { TexInfo } from '../art/textures';
 import { areaLabel } from '../logic/areaText';
-import { areaById, type AreaData } from '../logic/areas';
+import { areaById, habitatById, type AreaData } from '../logic/areas';
 import { ownedDreamColours, type Decoration } from '../logic/catalogue';
 import { dueFirstFindCards, tryItNowAxolotlId, type FirstFindKind } from '../logic/firstFind';
 import { GAME_EVENTS, REGISTRY_KEYS, type ReducedMotionPayload } from '../logic/gameEvents';
@@ -26,12 +27,14 @@ import type { Rect, Size } from '../logic/hudLayout';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { wornIds } from '../logic/outfit';
 import { outfitPerks } from '../logic/perks';
+import { hasPendingCleanUps, withoutMilestone } from '../logic/refuge';
 import { spriteFrameBounds } from '../logic/spriteAnchor';
 import {
   areaMemory,
   bestStars,
   canRescueMore,
   chooseExplorer,
+  explorerAxolotl,
   markFirstFindSeen,
   restyleAxolotl,
   setDreamColour,
@@ -40,7 +43,7 @@ import {
   type OwnedAxolotl,
   type Session,
 } from '../logic/session';
-import { hubStarsBadgeRect } from '../logic/starsUi';
+import { hubStarsBadgeRect, hubStarsBadgeShape } from '../logic/starsUi';
 import { restyleStart, type RestyleOptions, type StylerWearer } from '../logic/styler';
 import type { StylerStep } from '../logic/stylerSteps';
 import { SHIPPED_DECORATIONS, TANK, tankFrame, tankToCss, type TankFrame, type TankLayout } from '../logic/tank';
@@ -91,7 +94,16 @@ import { AxolotlChoicesCard } from './AxolotlChoicesCard';
 import { CollectionBookView } from './CollectionBookView';
 import { ExplorerCard, type ExplorerCardAxolotl } from './ExplorerCard';
 import { settleMotionTweens } from './motionTweens';
-import { goExploring, readSession, writeSession, type HomeTankStart } from './sceneFlow';
+import { RefugeMilestoneCard } from './RefugeMilestoneCard';
+import {
+  goExploring,
+  openRefuge,
+  readRefugePending,
+  readSession,
+  writeRefugePending,
+  writeSession,
+  type HomeTankStart,
+} from './sceneFlow';
 import { faceSprite } from './spriteFacing';
 import { TankArrivalCard, type ArrivalAreaStars } from './TankArrivalCard';
 import { TankDecorator, createDecorationArtResolver } from './TankDecorator';
@@ -125,13 +137,15 @@ const HUB_ICONS: Readonly<Record<HubActionId, IconKind>> = Object.freeze({
   decorate: 'decorate',
   treasureChest: 'chest',
   collectionBook: 'book',
+  refuge: 'refuge',
 });
 
 /**
  * Home Tank draw order (art guide 7f): back layer (wall to gravel), placed Decorations, glass shine,
- * axolotls, surface line, tank outline and lid front, hub UI (with a focused axolotl's ring and name
- * tag) and the decorate toolbar, the Treasure Chest, the Collection Book, the explorer card, the
- * choices card or the restyle screen (never open together), then the tank arrival card on top.
+ * axolotls, surface line, tank outline and lid front, hub UI (with the Refuge tile's nudge badge, a
+ * focused axolotl's ring and name tag) and the decorate toolbar, the Treasure Chest, the Collection
+ * Book, the explorer card, the choices card or the restyle screen (never open together), then the
+ * tank arrival card or a refuge milestone card (never open together) on top.
  */
 const TANK_DEPTH = Object.freeze({
   back: DEPTH.bg,
@@ -144,17 +158,27 @@ const TANK_DEPTH = Object.freeze({
   chest: DEPTH.ui + 8,
   book: DEPTH.ui + 8,
   arrival: DEPTH.ui + 9,
+  milestone: DEPTH.ui + 9,
   restyle: DEPTH.ui + 8,
   explorer: DEPTH.ui + 8,
   choices: DEPTH.ui + 8,
 });
 
 /**
- * What the Home Tank is showing and where keys go, in priority order: the tank arrival card, the
- * Treasure Chest, the Collection Book, decorate mode, restyling an axolotl (PRD F6), the explorer
- * card (PRD F7), the axolotl choices card (PRD F6), or the hub.
+ * What the Home Tank is showing and where keys go, in priority order: the tank arrival card, a
+ * refuge milestone card (PRD N2), the Treasure Chest, the Collection Book, decorate mode, restyling
+ * an axolotl (PRD F6), the explorer card (PRD F7), the axolotl choices card (PRD F6), or the hub.
  */
-type TankMode = 'arrival' | 'chest' | 'book' | 'decorate' | 'restyle' | 'explorer' | 'choices' | 'hub';
+type TankMode =
+  | 'arrival'
+  | 'milestone'
+  | 'chest'
+  | 'book'
+  | 'decorate'
+  | 'restyle'
+  | 'explorer'
+  | 'choices'
+  | 'hub';
 
 /** Where a restyle was opened from, and so where Done or Cancel goes back to: the hub, or the explorer card's Change outfit. */
 type RestyleFrom = 'hub' | 'explorer';
@@ -243,13 +267,19 @@ function placeTankLayer(image: Phaser.GameObjects.Image, info: TexInfo, frame: T
 /**
  * The Home Tank hub (PRD C7, C8): the tank on the wall, every owned axolotl swimming on its own
  * in its morph's colours and its own look (still poses under reduced motion), the animated surface
- * line, the hub actions Go exploring, Decorate, Treasure Chest and Collection Book, by touch and by
- * keyboard, and the best-stars badge of the area (H7). Every axolotl wears its outfit (PRD C10, F8).
+ * line, the hub actions Go exploring, Decorate, Treasure Chest, Collection Book and Refuge, by touch
+ * and by keyboard, and the best-stars badge of the area (H7), stacked when the hub rows reach over
+ * the floor Decorations. Every axolotl wears its outfit (PRD C10, F8). Refuge opens the Xochimilco
+ * refuge (PRD N2), whose Back opens this scene with the Refuge tile focused (HomeTankStart focus);
+ * the Refuge tile wears the nudge badge while a clean-up is pending.
  * Go exploring opens the explorer card (PRD F7), even with one axolotl, and Go! there opens the
  * area map (PRD N2), whose Back opens this scene with the card open again (HomeTankStart
  * openExplorer); its Change outfit opens the restyle Outfit tab and comes back to the card. After a trip
  * the tank arrival card shows first and takes every key and press until it closes; after beating
- * the area it is the "Area beaten" card, and closing it leaves the player in the hub. The hub focus
+ * the area it is the "Area beaten" card, and closing it leaves the player in the hub. Each pending
+ * refuge milestone (a habitat newly clean) then shows as its own milestone card naming the explorer,
+ * one at a time in habitat order, before the hub takes the input (or "Try it now!" opens restyle);
+ * with no arrival card they show at once on create. The hub focus
  * runs over the hub buttons and then the axolotls, and a tap on an axolotl, or Enter or Space on a
  * focused one, opens the axolotl choices card for it (PRD F6), whose Restyle, Outfit and Dream colour
  * open the restyle screen on that step and whose Back comes back to the hub with that axolotl focused.
@@ -261,6 +291,8 @@ export class HomeTankScene extends Phaser.Scene {
   private arrivalAreaId = '';
   /** Whether the explorer card opens at once (Back on the area map), from the start data. */
   private openExplorerOnCreate = false;
+  /** Whether the hub opens with the Refuge tile focused (Back in the refuge), from the start data. */
+  private focusRefugeOnCreate = false;
   private session!: Session;
   private area!: Readonly<AreaData>;
   private motion!: MotionProfile;
@@ -269,6 +301,8 @@ export class HomeTankScene extends Phaser.Scene {
   private clock = 0;
   private mode: TankMode = 'hub';
   private exploring = false;
+  /** Whether Refuge was pressed, so the refuge opens once. */
+  private openingRefuge = false;
   private focusIndex = GO_EXPLORING_INDEX;
 
   private back!: Phaser.GameObjects.Image;
@@ -288,6 +322,10 @@ export class HomeTankScene extends Phaser.Scene {
   private hubBadgeRect: Rect | null = null;
   private hubCaptionPanel!: Phaser.GameObjects.Graphics;
   private hubCaptionText!: Phaser.GameObjects.Text;
+  /** The nudge badge on the shown Refuge tile variant, while a refuge clean-up is pending. */
+  private refugeNudge!: Phaser.GameObjects.Image;
+  /** The refuge milestone card showing, if any. */
+  private milestoneCard: RefugeMilestoneCard | null = null;
   /** The Decorations the tank uses: the shipped ones plus the dev pack's (page session only). */
   private tankCatalogue: readonly Decoration[] = SHIPPED_DECORATIONS;
   private titleFits = false;
@@ -312,9 +350,11 @@ export class HomeTankScene extends Phaser.Scene {
     this.arrival = data.arrival;
     this.arrivalAreaId = data.areaId;
     this.openExplorerOnCreate = data.openExplorer === true;
+    this.focusRefugeOnCreate = data.focus === 'refuge';
     this.clock = 0;
     this.mode = 'hub';
     this.exploring = false;
+    this.openingRefuge = false;
     this.focusIndex = GO_EXPLORING_INDEX;
     this.swimmers = [];
     this.hubButtons = [];
@@ -325,6 +365,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.restyler = null;
     this.explorerCard = null;
     this.choicesCard = null;
+    this.milestoneCard = null;
   }
 
   create(): void {
@@ -374,8 +415,20 @@ export class HomeTankScene extends Phaser.Scene {
     this.layout();
     this.animate(0);
     if (this.arrival !== null) this.showArrival(this.arrival);
-    else if (this.openExplorerOnCreate) this.openExplorerCard('go', this.session.hub.explorerId);
+    else this.showMilestones(() => this.openStartView());
     this.refreshHubFocus();
+  }
+
+  /**
+   * With no arrival card, once the milestone cards closed: the explorer card (Back on the area map),
+   * else the hub with the Refuge tile (Back in the refuge) or Go exploring focused.
+   */
+  private openStartView(): void {
+    if (this.openExplorerOnCreate) {
+      this.openExplorerCard('go', this.session.hub.explorerId);
+      return;
+    }
+    this.showHub(this.focusRefugeOnCreate ? this.hubIndexOf('refuge') : GO_EXPLORING_INDEX);
   }
 
   /**
@@ -493,15 +546,22 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * The hub actions in focus order (Go exploring first), the Home Tank name panel, and the hub focus
-   * caption that names a focused icon-only tile (a white panel with the label in bold ink 18 px, like
-   * the name tag).
+   * The hub actions in focus order (Go exploring first), the Home Tank name panel, the Refuge tile's
+   * nudge badge (over the tiles), and the hub focus caption that names a focused icon-only tile (a
+   * white panel with the label in bold ink 18 px, like the name tag).
    */
   private buildHub(): void {
     const dpr = this.view.fit.dpr;
     this.titlePanel = this.add.graphics().setDepth(TANK_DEPTH.hub);
     this.titleText = this.add.text(0, 0, HOME_TANK_NAME, uiTextStyle(TITLE_PX, dpr)).setDepth(TANK_DEPTH.hub);
     this.hubButtons = HUB_BUTTONS.map((spec) => this.addHubButton(spec));
+    const nudge = this.assets.refuge.nudge;
+    this.refugeNudge = this.add
+      .image(0, 0, nudge.key)
+      .setOrigin(nudge.originNormX, nudge.originNormY)
+      .setScale(1 / nudge.scale)
+      .setDepth(TANK_DEPTH.hub)
+      .setVisible(false);
     this.hubCaptionPanel = this.add.graphics().setDepth(TANK_DEPTH.hub);
     this.hubCaptionText = this.add.text(0, 0, '', uiTextStyle(NAME_TAG_PX, dpr)).setDepth(TANK_DEPTH.hub);
   }
@@ -585,11 +645,19 @@ export class HomeTankScene extends Phaser.Scene {
   }
 
   /**
-   * The arrival card and its first-find cards closed. After "Try it now!" opens restyle on the Dream
-   * colour step for the explorer (else the first owned axolotl); otherwise, or with no such swimmer,
-   * back to the hub with Go exploring focused.
+   * The arrival card and its first-find cards closed: the pending milestone cards show first, then
+   * the arrival card's way on (finishArrival), "Try it now!" included.
    */
   private closeArrival(tryItNow = false): void {
+    this.showMilestones(() => this.finishArrival(tryItNow));
+  }
+
+  /**
+   * After the arrival card, its first-find cards and the milestone cards: after "Try it now!" opens
+   * restyle on the Dream colour step for the explorer (else the first owned axolotl); otherwise, or
+   * with no such swimmer, back to the hub with Go exploring focused.
+   */
+  private finishArrival(tryItNow: boolean): void {
     if (tryItNow) {
       const { explorerId, axolotls } = this.session.hub;
       const id = tryItNowAxolotlId(explorerId, axolotls.map((axolotl) => axolotl.id));
@@ -600,6 +668,47 @@ export class HomeTankScene extends Phaser.Scene {
       }
     }
     this.showHub(GO_EXPLORING_INDEX);
+  }
+
+  /**
+   * Shows the first pending refuge milestone (PRD N2, in habitat order) as a milestone card naming
+   * the explorer, which takes every key and press until it closes; with none pending, runs `then`.
+   * Throws when a pending milestone names no habitat.
+   */
+  private showMilestones(then: () => void): void {
+    this.destroyMilestoneCard();
+    const habitatId = readRefugePending(this.registry).milestones[0];
+    if (habitatId === undefined) {
+      then();
+      return;
+    }
+    const habitat = habitatById(habitatId);
+    if (habitat === undefined) throw new Error(`HomeTankScene: no habitat ${habitatId}`);
+    this.mode = 'milestone';
+    this.applyHubVisibility();
+    this.refreshHubFocus();
+    const explorerName = explorerAxolotl(this.session).name;
+    this.milestoneCard = new RefugeMilestoneCard(
+      this,
+      this.assets,
+      this.view,
+      TANK_DEPTH.milestone,
+      habitat,
+      explorerName,
+      () => this.closeMilestone(habitatId, then),
+    );
+  }
+
+  /** A milestone card closed: drops its milestone from the pending ones, then shows the next or runs `then`. */
+  private closeMilestone(habitatId: string, then: () => void): void {
+    writeRefugePending(this.registry, withoutMilestone(readRefugePending(this.registry), habitatId));
+    this.showMilestones(then);
+  }
+
+  /** Removes the milestone card, if any. */
+  private destroyMilestoneCard(): void {
+    this.milestoneCard?.destroy();
+    this.milestoneCard = null;
   }
 
   /** A first-find card closed: remembers its kind as seen and saves it (PRD C15, D1). */
@@ -633,7 +742,7 @@ export class HomeTankScene extends Phaser.Scene {
     return index;
   }
 
-  /** Runs a hub action, only while the hub has the input. */
+  /** Runs a hub action, only while the hub has the input. Throws for an action with no case. */
   private runHubAction(id: HubActionId): void {
     if (this.mode !== 'hub') return;
     switch (id) {
@@ -649,7 +758,21 @@ export class HomeTankScene extends Phaser.Scene {
       case 'collectionBook':
         this.openBook();
         return;
+      case 'refuge':
+        this.startRefuge();
+        return;
+      default: {
+        const unhandled: never = id;
+        throw new Error(`HomeTankScene: no hub action ${String(unhandled)}`);
+      }
     }
+  }
+
+  /** Refuge, once: opens the Xochimilco refuge (PRD N2) through the scene flow (openRefuge). */
+  private startRefuge(): void {
+    if (this.openingRefuge) return;
+    this.openingRefuge = true;
+    openRefuge(this, this.assets);
   }
 
   /**
@@ -905,8 +1028,9 @@ export class HomeTankScene extends Phaser.Scene {
 
   /**
    * Routes a key to what has the input: the restyle screen (every key, as is), the explorer card or
-   * the choices card (every key; each reads its own), the arrival card, the Treasure Chest, the Collection Book,
-   * decorate mode, or the hub. Unmapped keys are ignored, and so is a held confirm outside the hub.
+   * the choices card (every key; each reads its own), the arrival card, a milestone card, the Treasure
+   * Chest, the Collection Book, decorate mode, or the hub. Unmapped keys are ignored, and so is a held
+   * confirm outside the hub.
    */
   private handleKeyDown(event: KeyboardEvent): void {
     if (this.mode === 'restyle') {
@@ -926,6 +1050,9 @@ export class HomeTankScene extends Phaser.Scene {
     switch (this.mode) {
       case 'arrival':
         this.handleArrivalKey(action, event);
+        return;
+      case 'milestone':
+        this.milestoneCard?.handleKey(action, event.repeat);
         return;
       case 'chest':
         if (action !== 'confirm' || !event.repeat) this.chest.handleKey(action);
@@ -1039,6 +1166,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.restyler?.setResolution(dpr);
     this.explorerCard?.setResolution(dpr);
     this.choicesCard?.setResolution(dpr);
+    this.milestoneCard?.setResolution(dpr);
     this.layout();
     this.animate(0);
   }
@@ -1053,6 +1181,7 @@ export class HomeTankScene extends Phaser.Scene {
     this.restyler = null;
     this.destroyExplorerCard();
     this.destroyChoicesCard();
+    this.destroyMilestoneCard();
     this.releaseSwimmers();
     const keyboard = this.input.keyboard;
     if (!keyboard) return;
@@ -1077,7 +1206,7 @@ export class HomeTankScene extends Phaser.Scene {
   /**
    * Fits the tank to the canvas, sizes the axolotl tap areas, then places the Decorations, the hub,
    * the Treasure Chest, the Collection Book, the arrival card, an open restyle screen, an open
-   * explorer card and an open choices card.
+   * explorer card, an open choices card and a showing milestone card.
    */
   private layout(): void {
     this.frame = tankFrame(this.view.cssW, this.view.cssH);
@@ -1096,15 +1225,17 @@ export class HomeTankScene extends Phaser.Scene {
     this.restyler?.layout(this.view);
     this.explorerCard?.layout(this.view);
     this.choicesCard?.layout(this.view);
+    this.milestoneCard?.layout(this.view);
   }
 
   /**
    * Shows the hub buttons (only the variant hubLayout picked; a hidden variant takes no press) and the
    * best-stars badge unless the Treasure Chest, the Collection Book, decorate mode, restyle, the
-   * explorer card or the choices card is up, and the name panel only when it fits.
+   * explorer card or the choices card is up, the name panel only when it fits, and the Refuge tile's
+   * nudge badge only while a refuge clean-up is pending.
    */
   private applyHubVisibility(): void {
-    const shown = this.mode === 'hub' || this.mode === 'arrival';
+    const shown = this.mode === 'hub' || this.mode === 'arrival' || this.mode === 'milestone';
     for (const hubButton of this.hubButtons) {
       const active = this.shownHubButton(hubButton);
       hubButton.full.container.setVisible(shown && active === hubButton.full);
@@ -1113,12 +1244,24 @@ export class HomeTankScene extends Phaser.Scene {
     this.starsBadge.setVisible(shown);
     this.titlePanel.setVisible(shown && this.titleFits);
     this.titleText.setVisible(shown && this.titleFits);
+    this.refugeNudge.setVisible(shown && hasPendingCleanUps(readRefugePending(this.registry)));
   }
 
   /**
-   * Places the hub buttons through hubLayout() in the full or compact variants it picks, the
-   * best-stars badge under them (or in the corner) through hubStarsBadgeRect(), the name panel only
-   * when it fits, then the focus and the hub focus caption.
+   * Puts the nudge badge's centre at the top-right corner of the shown Refuge tile variant, pulled in
+   * REFUGE_NUDGE_INSET on each axis (the full tile or the icon-only tile).
+   */
+  private placeRefugeNudge(): void {
+    const tile = this.shownHubButton(this.hubButtons[this.hubIndexOf('refuge')]);
+    const { x, y } = tile.container;
+    this.refugeNudge.setPosition(x + tile.width - REFUGE_NUDGE_INSET, y + REFUGE_NUDGE_INSET);
+  }
+
+  /**
+   * Places the hub buttons through hubLayout() in the full or compact variants it picks, the Refuge
+   * tile's nudge badge on the shown variant, the best-stars badge in the shape hubStarsBadgeShape()
+   * picks under them (or in the corner) through hubStarsBadgeRect(), the name panel only when it
+   * fits, then the focus and the hub focus caption.
    */
   private layoutHub(): void {
     const actions = this.hubButtons.map((hubButton): HubAction => {
@@ -1133,6 +1276,8 @@ export class HomeTankScene extends Phaser.Scene {
     hub.actions.forEach((placement, index) => {
       this.shownHubButton(this.hubButtons[index]).container.setPosition(placement.rect.x, placement.rect.y);
     });
+    this.placeRefugeNudge();
+    this.starsBadge.setShape(hubStarsBadgeShape(hub));
     this.hubBadgeRect = hubStarsBadgeRect(this.view, this.frame, hub, this.starsBadge.measure());
     this.starsBadge.layout(this.hubBadgeRect);
     const title = hub.title;

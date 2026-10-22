@@ -3,7 +3,7 @@ import { UI_PANEL } from '../art/palette';
 import { AREA_STAR_SIZES, type AreaStarSize, type AreaTextures } from '../art/areaTextures';
 import type { Rect, Size } from '../logic/hudLayout';
 import { NO_STARS, type AreaStars } from '../logic/stars';
-import { HUB_STARS_BADGE } from '../logic/starsUi';
+import { HUB_STARS_BADGE, type HubBadgeShape } from '../logic/starsUi';
 import { drawPanel, uiTextStyle } from './BootScene';
 
 /** The Area star textures: earned and missing, by box size. */
@@ -46,8 +46,10 @@ export function addAreaStar(scene: Phaser.Scene, textures: AreaStarTextures, px:
 
 /**
  * The Home Tank best-stars badge (PRD H7): a white panel holding the area label (such as "Area 1")
- * in bold ink 18 px with its three 24 px stars beside it, each earned or missing. Not interactive.
- * measure() gives its size; layout() draws it in a rect of that size.
+ * in bold ink 18 px with its three 24 px stars, each earned or missing. Not interactive. Its shape
+ * (setShape) puts the stars beside the label (the default) or stacks the label centred above the
+ * centred star row; the text and star sizes are the same in both. measure() gives its size in the
+ * current shape; layout() draws that shape in a rect of that size.
  */
 export class AreaStarsBadge {
   private readonly textures: AreaStarTextures;
@@ -55,6 +57,7 @@ export class AreaStarsBadge {
   private readonly panel: Phaser.GameObjects.Graphics;
   private readonly label: Phaser.GameObjects.Text;
   private readonly stars: Phaser.GameObjects.Image[];
+  private shape: HubBadgeShape = 'beside';
 
   constructor(scene: Phaser.Scene, textures: AreaStarTextures, label: string, depth: number, dpr: number) {
     this.textures = textures;
@@ -79,23 +82,59 @@ export class AreaStarsBadge {
     this.label.setResolution(dpr);
   }
 
-  /** Badge size: the padding around the label, the label-to-stars gap and the star row. */
+  /** Sets the shape measure() and layout() use: the stars beside the label, or stacked under it. */
+  setShape(shape: HubBadgeShape): void {
+    this.shape = shape;
+  }
+
+  /**
+   * Badge size in the current shape: the padding around the content, and beside, the label, the
+   * label-to-stars gap and the star row across; stacked, the wider of the label and the star row
+   * across and the label, the gap and the star row down.
+   */
   measure(): Size {
     const { pad, gap, starPx } = HUB_STARS_BADGE;
+    if (this.shape === 'stacked') {
+      return {
+        w: 2 * pad + Math.max(this.label.width, this.starsWidth()),
+        h: 2 * pad + this.label.height + gap + starPx,
+      };
+    }
     return {
       w: 2 * pad + this.label.width + gap + this.starsWidth(),
       h: 2 * pad + Math.max(this.label.height, starPx),
     };
   }
 
-  /** Draws the panel in `rect` (a measure() size) with the label at the left and the stars beside it, centred down. */
+  /**
+   * Draws the panel in `rect` (a measure() size) in the current shape: beside, the label at the left
+   * and the stars beside it, centred down; stacked, the label centred across at the top inside the
+   * padding and the star row centred across a gap under it.
+   */
   layout(rect: Rect): void {
-    const { pad, gap, starPx, starGap } = HUB_STARS_BADGE;
     drawPanel(this.panel, rect.x, rect.y, rect.w, rect.h, UI_PANEL);
+    if (this.shape === 'stacked') {
+      this.layoutStacked(rect);
+      return;
+    }
+    const { pad, gap } = HUB_STARS_BADGE;
     const centreY = rect.y + rect.h / 2;
     this.label.setPosition(rect.x + pad, centreY - this.label.height / 2);
-    const starsX = rect.x + pad + this.label.width + gap;
-    this.stars.forEach((star, index) => star.setPosition(starsX + index * (starPx + starGap) + starPx / 2, centreY));
+    this.placeStars(rect.x + pad + this.label.width + gap, centreY);
+  }
+
+  /** Places the label centred across at the top of `rect` inside the padding, the star row centred a gap under it. */
+  private layoutStacked(rect: Rect): void {
+    const { pad, gap, starPx } = HUB_STARS_BADGE;
+    const labelY = rect.y + pad;
+    this.label.setPosition(rect.x + (rect.w - this.label.width) / 2, labelY);
+    this.placeStars(rect.x + (rect.w - this.starsWidth()) / 2, labelY + this.label.height + gap + starPx / 2);
+  }
+
+  /** Places the star row with its left edge at `left` and its stars centred down on `centreY`. */
+  private placeStars(left: number, centreY: number): void {
+    const { starPx, starGap } = HUB_STARS_BADGE;
+    this.stars.forEach((star, index) => star.setPosition(left + index * (starPx + starGap) + starPx / 2, centreY));
   }
 
   /** Width of the 3 stars and the gaps between them. */

@@ -10,6 +10,7 @@ import { BootScene, DEV_AREA_REGISTRY_KEY, DEV_DECOR_REGISTRY_KEY, type Decorati
 import { CreatorScene } from './scenes/CreatorScene';
 import { HomeTankScene } from './scenes/HomeTankScene';
 import { HudScene } from './scenes/HudScene';
+import { RefugeScene } from './scenes/RefugeScene';
 import { SwimScene } from './scenes/SwimScene';
 import { TitleScene } from './scenes/TitleScene';
 
@@ -111,6 +112,7 @@ const GAME_SCENES: Phaser.Types.Scenes.SceneType[] = [
   TitleScene,
   HomeTankScene,
   AreaMapScene,
+  RefugeScene,
   SwimScene,
   HudScene,
   CreatorScene,
