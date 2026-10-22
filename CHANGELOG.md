@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.1] - 2026-10-21
+
+### Fixed
+
+- The tilapia body and edge fins now use the art style guide's sage colours, so they stand out from the dark outline at 9:1. The Collection Book and fact card tilapia picture change colour too, because they use the same painter (#24).
+- The protected-time ring is now a solid double line: dark outside, white inside, with a white glint. It can no longer be mistaken for the dotted edge of the Home Spot (#24).
+- The puff when an axolotl loses a leg now fades out over 0.4 seconds (#24).
+- The legs display fill is now #e8567e. Present and regrowing legs now stand out from empty ones at 3:1 or more (#24).
+
+### Changed
+
+- The art style guide now records the art as built for the tilapia, leg loss, legs display, protected ring, carried-home bubble and trip-end card (#24).
+
 ## [0.23.0] - 2026-10-21
 
 ### Added

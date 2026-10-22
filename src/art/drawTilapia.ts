@@ -19,7 +19,6 @@
 import { blob, ell, frameFromBounds, inkMany, line, seg, shape, type TexSize } from './canvasKit';
 import {
   ALERT_FILL,
-  BODY_SHINE,
   EYE,
   GLINT_FILL,
   INK,
@@ -27,8 +26,10 @@ import {
   TILAPIA_BELLY,
   TILAPIA_BODY,
   TILAPIA_FIN,
-  TILAPIA_MARK,
+  TILAPIA_BARS,
+  TILAPIA_LINE,
   TILAPIA_MOUTH,
+  TILAPIA_SHINE,
   WHITE,
 } from './palette';
 
@@ -252,7 +253,7 @@ function paintGillLine(ctx: CanvasRenderingContext2D, L: Layout): void {
   gill.moveTo(g0[0], g0[1]);
   gill.quadraticCurveTo(gc[0], gc[1], g1[0], g1[1]);
   ctx.lineWidth = 2;
-  ctx.strokeStyle = TILAPIA_MARK;
+  ctx.strokeStyle = TILAPIA_LINE;
   ctx.stroke(gill);
 }
 
@@ -327,13 +328,13 @@ export function paintTilapia(ctx: CanvasRenderingContext2D, pose: TilapiaPose): 
   const tail = tailFin(L);
   blob(ctx, tail.fin, TILAPIA_FIN, LW);
   ctx.lineWidth = 1.5;
-  ctx.strokeStyle = TILAPIA_MARK;
+  ctx.strokeStyle = TILAPIA_LINE;
   ctx.stroke(tail.rays);
 
   const dorsal = dorsalFin(L);
   blob(ctx, dorsal.fin, TILAPIA_FIN, LW);
   ctx.lineWidth = 1.5;
-  ctx.strokeStyle = TILAPIA_MARK;
+  ctx.strokeStyle = TILAPIA_LINE;
   ctx.stroke(dorsal.rays);
 
   blob(ctx, analFin(L), TILAPIA_FIN, LW);
@@ -354,7 +355,7 @@ export function paintTilapia(ctx: CanvasRenderingContext2D, pose: TilapiaPose): 
 
   // three soft bars across the body: a non-colour pattern cue
   ctx.lineWidth = 4.5;
-  ctx.strokeStyle = TILAPIA_MARK;
+  ctx.strokeStyle = TILAPIA_BARS;
   for (const t of [0.3, 0.43, 0.56]) {
     const top = L.atW(t, 1.2);
     const bot = L.atW(t, 0.1);
@@ -365,7 +366,7 @@ export function paintTilapia(ctx: CanvasRenderingContext2D, pose: TilapiaPose): 
   const sh = L.atW(0.42, 0.66);
   const shine = new Path2D();
   ell(shine, sh[0], sh[1], 12, 3, L.ang(0.42));
-  ctx.fillStyle = BODY_SHINE;
+  ctx.fillStyle = TILAPIA_SHINE;
   ctx.fill(shine);
   ctx.restore();
 

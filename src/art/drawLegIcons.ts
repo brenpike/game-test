@@ -3,7 +3,7 @@
  * Still frames only: no motion, no state, no Phaser. Presentational only.
  *
  * Three leg states are told apart by fill and stroke style, not by hue:
- *   present   = pink body fill + solid ink outline
+ *   present   = LEGS_FILL pink fill + solid ink outline
  *   lost      = no fill + dashed ink outline (the "faint outline" of PRD A6)
  *   regrowing = composed by the HUD at runtime, in this order:
  *               1. paintLegIcon(ctx, 'outline')
@@ -20,14 +20,15 @@
  * with a text label or count (guide section 8, icons).
  *
  * Contrast (guide section 10): ink #2b2350 on UI_PANEL #ffffff is 14.39:1, far
- * above the 3:1 icon rule, so the outline carries it. The pink fill is only
- * about 1.6:1 against white, so the fill is a second cue, never the only one.
+ * above the 3:1 icon rule, so the outline carries it. The LEGS_FILL pink
+ * #e8567e is 3.46:1 against the white panel and 4.16:1 against ink (guide
+ * section 3g), so the fill is a second cue as well as the outline.
  *
  * Every value marked "provisional" below is new to this module and needs
  * prototype confirmation (guide section 12). Palette constants are reused as
- * they are; none is added or changed.
+ * they are.
  */
-import { INK, LEUCISTIC, BODY_SHINE, UI_PRIMARY } from './palette';
+import { INK, LEGS_FILL, BODY_SHINE, UI_PRIMARY } from './palette';
 
 /** Leg icon box, logical px. Same box as ICON_SIZE in drawUi.ts. */
 export const LEG_ICON_SIZE = 32;
@@ -92,7 +93,7 @@ function capsule(part: Part, grow: number): Path2D {
  * Paint a leg icon in the box (0, 0) to (LEG_ICON_SIZE, LEG_ICON_SIZE):
  * a short leg with three toes.
  *
- * 'present': LEUCISTIC body fill, solid ink outline sitting outside the fill
+ * 'present': LEGS_FILL fill, solid ink outline sitting outside the fill
  * (the `inkMany` order: all ink first, then all fills, so the parts merge into
  * one inked shape), plus one small shine.
  * 'outline': no fill, dashed ink outline on the same footprint.
@@ -107,7 +108,7 @@ export function paintLegIcon(ctx: CanvasRenderingContext2D, kind: LegIconKind): 
     const paths = PARTS.map((part) => capsule(part, 0));
     ctx.lineWidth = 2 * ICON_INK;
     for (const p of paths) ctx.stroke(p);
-    ctx.fillStyle = LEUCISTIC.body;
+    ctx.fillStyle = LEGS_FILL;
     for (const p of paths) ctx.fill(p);
 
     // one simple shine, upper left of the leg (guide section 5)

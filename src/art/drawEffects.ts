@@ -22,12 +22,13 @@ import {
   BUBBLE_STROKE,
   BUBBLE_STROKE_WIDTH,
   CARRY_RIM,
-  HALO_BAND,
-  HALO_DOT,
   LW,
   POOF_PUFF,
   POOF_SHINE,
   POOF_SPARKLE,
+  PROTECTED_RING_GLINT,
+  PROTECTED_RING_INNER,
+  PROTECTED_RING_OUTER,
   WHITE,
 } from './palette';
 
@@ -96,34 +97,57 @@ export function paintPoof(ctx: CanvasRenderingContext2D): void {
 export const HALO_RX = 84;
 export const HALO_RY = 54;
 
-const HALO_DOTS = 22;
-
 /** Texture frame for the protected halo (provisional). Anchor is the halo centre. */
 export const HALO_TEX: TexSize = frameFromBounds(-HALO_RX - 6, -HALO_RY - 6, HALO_RX + 6, HALO_RY + 6, 4);
 
+/** Ink line width of the protected ring (guide 6q). */
+const RING_OUTER_W = 2.0;
+/** White line width of the protected ring (guide 6q). */
+const RING_INNER_W = 2.4;
+/** How far inside the ink line the white line sits (guide 6q). */
+const RING_INNER_INSET = 2.2;
+/** Glint stroke width (guide 6q). */
+const RING_GLINT_W = 3;
+/** Glint arc length in radians (guide 6q). */
+const RING_GLINT_LEN = 0.5;
+/** Glint centre angle: upper left, in canvas angles (y down). */
+const RING_GLINT_MID = Math.PI * 1.25;
+/** Glint sits on the white line pulled inward so its outer edge stays inside the ink line's inner edge. */
+const RING_GLINT_INSET = RING_INNER_INSET + 0.5;
+
 /**
- * Protected halo: a soft pale band with a ring of dots on it. Big and small dots
- * alternate, so the cue is a dotted pattern and not a colour. Dots have a thin
- * ink stroke (bubble stroke) so they hold up on shallow water. Steady, static.
+ * Protected ring (guide 6q): an opaque ink line with an opaque white line just
+ * inside it, and one white glint arc at the upper left. No fill, no dots, no
+ * alpha: the ring shape is the greyscale cue and the two lines hold up on any
+ * water. Steady, constant, static; the glint is fixed at the upper left, which is
+ * also the reduced-motion frame.
  */
 export function paintProtectedHalo(ctx: CanvasRenderingContext2D): void {
-  const band = new Path2D();
-  ell(band, 0, 0, HALO_RX, HALO_RY);
-  ctx.lineWidth = 8;
-  ctx.strokeStyle = HALO_BAND;
-  ctx.stroke(band);
+  const outer = new Path2D();
+  ell(outer, 0, 0, HALO_RX, HALO_RY);
+  ctx.lineWidth = RING_OUTER_W;
+  ctx.strokeStyle = PROTECTED_RING_OUTER;
+  ctx.stroke(outer);
 
-  ctx.lineWidth = 1.8;
-  ctx.strokeStyle = BUBBLE_STROKE;
-  ctx.fillStyle = HALO_DOT;
-  for (let k = 0; k < HALO_DOTS; k++) {
-    const a = (k * TAU) / HALO_DOTS;
-    const r = k % 2 === 0 ? 3.4 : 2.2;
-    const d = new Path2D();
-    ell(d, Math.cos(a) * HALO_RX, Math.sin(a) * HALO_RY, r, r);
-    ctx.fill(d);
-    ctx.stroke(d);
-  }
+  const inner = new Path2D();
+  ell(inner, 0, 0, HALO_RX - RING_INNER_INSET, HALO_RY - RING_INNER_INSET);
+  ctx.lineWidth = RING_INNER_W;
+  ctx.strokeStyle = PROTECTED_RING_INNER;
+  ctx.stroke(inner);
+
+  const glint = new Path2D();
+  glint.ellipse(
+    0,
+    0,
+    HALO_RX - RING_GLINT_INSET,
+    HALO_RY - RING_GLINT_INSET,
+    0,
+    RING_GLINT_MID - RING_GLINT_LEN / 2,
+    RING_GLINT_MID + RING_GLINT_LEN / 2,
+  );
+  ctx.lineWidth = RING_GLINT_W;
+  ctx.strokeStyle = PROTECTED_RING_GLINT;
+  ctx.stroke(glint);
 }
 
 // ---------------------------------------------------------------------------

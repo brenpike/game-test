@@ -32,7 +32,8 @@ const POOF_POOL = 2;
 const POOF_LIFE_S = 0.6;
 const POOF_SCALE = 0.8;
 const POOF_GROW_FROM = 0.7;
-const POOF_FADE_FROM = 0.6;
+const POOF_GROW_S = 0.36;
+const POOF_FADE_S = 0.4;
 const REGROW_POOL = 6;
 const REGROW_PER_LEG = 3;
 const REGROW_LIFE_S = 0.7;
@@ -339,11 +340,11 @@ export class PredatorView {
   private renderPoofs(frame: PredatorFrame): void {
     const info = this.assets.predator.poof;
     for (const poof of this.poofs) {
-      const life = this.advanceEffect(poof, frame);
-      if (life === null) continue;
+      if (this.advanceEffect(poof, frame) === null) continue;
       const ambient = frame.motion.ambient;
-      const grow = ambient ? POOF_GROW_FROM + (1 - POOF_GROW_FROM) * Math.min(1, life / POOF_FADE_FROM) : 1;
-      const fade = ambient && life > POOF_FADE_FROM ? 1 - (life - POOF_FADE_FROM) / (1 - POOF_FADE_FROM) : 1;
+      const grow = ambient ? POOF_GROW_FROM + (1 - POOF_GROW_FROM) * Math.min(1, poof.age / POOF_GROW_S) : 1;
+      const fadeAge = poof.age - (POOF_LIFE_S - POOF_FADE_S);
+      const fade = ambient && fadeAge > 0 ? 1 - fadeAge / POOF_FADE_S : 1;
       poof.image.setScale((POOF_SCALE * grow) / info.scale).setAlpha(fade);
     }
   }
