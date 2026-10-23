@@ -1,6 +1,6 @@
 /**
- * Chinampa look, root tangle, garden plot bank, overhang, gap edge, ghost net and snag cue art
- * (issue #76; guide 3c, 3g, 7a, 7b, 7e, 10), headless. The painters run against a recording context
+ * Chinampa look, root tangle, garden plot bank, overhang, gap edge, ghost net, snag cue and water
+ * hyacinth mat art (issues #76 and #103; guide 3c, 3g, 7a, 7b, 7e, 10), headless. The painters run against a recording context
  * and a stub Path2D, and the Phaser bake runs against a fake scene whose canvases record. No Phaser
  * is loaded.
  */
@@ -36,6 +36,14 @@ import {
   GHOST_NET_MESH,
   GHOST_NET_PAD,
   GHOST_NET_ROPE,
+  HYACINTH_FLOWER,
+  HYACINTH_FLOWER_CENTRE,
+  HYACINTH_LEAF,
+  HYACINTH_LEAF_LIGHT,
+  HYACINTH_MAT_H,
+  HYACINTH_MAT_TEX,
+  HYACINTH_MAT_W,
+  HYACINTH_SHINE,
   LETTUCE_INNER,
   LETTUCE_OUTER,
   MARIGOLD_CENTRE,
@@ -54,6 +62,7 @@ import {
   paintChinampaBankRoots,
   paintGapEdge,
   paintGhostNet,
+  paintHyacinthMat,
   paintSnagCue,
   ROOT_TANGLE_BARK,
   ROOT_TANGLE_BARK_LIGHT,
@@ -98,6 +107,7 @@ import {
   AXANTHIC,
   BANK_SOIL,
   COPPER,
+  EYE,
   GRASS,
   GOLDEN_ALBINO,
   INK,
@@ -756,6 +766,10 @@ const NEW_FILLS: readonly (readonly [string, string, number])[] = [
   ['net rope', GHOST_NET_ROPE, 0.2413],
   ['net knot', GHOST_NET_KNOT, 0.5765],
   ['net float', GHOST_NET_FLOAT, 0.7261],
+  ['hyacinth leaf', HYACINTH_LEAF, 0.2963],
+  ['hyacinth leaf plate', HYACINTH_LEAF_LIGHT, 0.5212],
+  ['hyacinth flower', HYACINTH_FLOWER, 0.467],
+  ['hyacinth flower centre', HYACINTH_FLOWER_CENTRE, 0.756],
 ];
 
 // ---------------------------------------------------------------------------
@@ -1271,6 +1285,207 @@ describe('snag cue (guide 3g, 10)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// The water hyacinth mats (issue #103; guide 3g, 7b, 10)
+// ---------------------------------------------------------------------------
+
+/** The hero's belly: no mat fill is lighter (guide 7c hierarchy). */
+const MAT_HERO_BELLY = '#ffe3ed';
+
+/** The ellipses of a recorded path as [cx, cy, rx, ry, rot], in order. */
+function ellipsesOf(p: Painted): number[][] {
+  return p.cmds.filter((c) => c[0] === 'ellipse').map((c) => c.slice(1) as number[]);
+}
+
+/** The bounding box of a rotated ellipse as [minX, minY, maxX, maxY]. */
+function ellipseBounds([cx, cy, rx, ry, rot]: readonly number[]): [number, number, number, number] {
+  const hx = Math.hypot(rx * Math.cos(rot), ry * Math.sin(rot));
+  const hy = Math.hypot(rx * Math.sin(rot), ry * Math.cos(rot));
+  return [cx - hx, cy - hy, cx + hx, cy + hy];
+}
+
+describe('water hyacinth mat colours (guide 3g, 10)', () => {
+  it('keeps the plates lighter than the leaves and the flowers lighter than the leaves, by value, not hue alone', () => {
+    expect(contrast(HYACINTH_LEAF_LIGHT, HYACINTH_LEAF)).toBeGreaterThanOrEqual(1.6);
+    expect(contrast(HYACINTH_FLOWER, HYACINTH_LEAF)).toBeGreaterThanOrEqual(1.4);
+    expect(contrast(HYACINTH_FLOWER_CENTRE, HYACINTH_FLOWER)).toBeGreaterThanOrEqual(1.5);
+    expect(luminance(HYACINTH_LEAF_LIGHT)).toBeGreaterThan(luminance(HYACINTH_LEAF));
+    expect(luminance(HYACINTH_FLOWER)).toBeGreaterThan(luminance(HYACINTH_LEAF));
+  });
+
+  it('is never lighter than the hero belly, so the axolotl stays the brightest thing on screen', () => {
+    for (const hex of [HYACINTH_LEAF, HYACINTH_LEAF_LIGHT, HYACINTH_FLOWER, HYACINTH_FLOWER_CENTRE]) {
+      expect(luminance(hex), hex).toBeLessThan(luminance(MAT_HERO_BELLY));
+    }
+  });
+
+  it('documents the ratios with ink the comments print', () => {
+    const rows: readonly (readonly [string, string, number])[] = [
+      ['leaf', HYACINTH_LEAF, 4.75],
+      ['leaf plate', HYACINTH_LEAF_LIGHT, 7.83],
+      ['flower', HYACINTH_FLOWER, 7.09],
+      ['flower centre', HYACINTH_FLOWER_CENTRE, 11.05],
+    ];
+    for (const [name, hex, ratio] of rows) expect(contrast(hex, INK).toFixed(2), name).toBe(ratio.toFixed(2));
+  });
+
+  it('keeps the gloss see-through, inside the silhouette', () => {
+    const alpha = Number(/^rgba\(\d+,\d+,\d+,([\d.]+)\)$/.exec(HYACINTH_SHINE)![1]);
+    expect(alpha).toBeGreaterThan(0);
+    expect(alpha).toBeLessThan(1);
+  });
+});
+
+describe('water hyacinth mat frame (guide 7b)', () => {
+  it('is 100 x 120 to the rect edge, anchored at the top-left corner of the rect with 4 px of padding, like the overhang', () => {
+    expect(HYACINTH_MAT_W).toBe(100);
+    expect(HYACINTH_MAT_H).toBe(120);
+    expect(HYACINTH_MAT_TEX.originX).toBe(4);
+    expect(HYACINTH_MAT_TEX.originY).toBe(4);
+    expect(HYACINTH_MAT_TEX.w).toBe(HYACINTH_MAT_W + 8);
+    expect(HYACINTH_MAT_TEX.h).toBe(HYACINTH_MAT_H + 8);
+  });
+});
+
+describe.each(['upper', 'lower'] as const)('water hyacinth mat, %s (guide 7b, 10)', (side) => {
+  const art = record((ctx) => paintHyacinthMat(ctx, side));
+  const silhouette = art[1];
+
+  it('keeps its ink inside the frame, with the 4 px of padding', () => {
+    expectInsideFrame(art, HYACINTH_MAT_TEX);
+  });
+
+  it('is one scalloped, inked silhouette of round leaves: an ink outline 2 x LW wide outside the leaf fill, same path', () => {
+    const outline = art[0];
+    expect(outline.op).toBe('stroke');
+    expect(outline.style).toBe(INK);
+    expect(outline.lineWidth).toBe(2 * LW);
+    expect(silhouette.op).toBe('fill');
+    expect(silhouette.style).toBe(HYACINTH_LEAF);
+    expect(silhouette.cmds).toEqual(outline.cmds);
+    expect(ellipsesOf(silhouette)).toHaveLength(40);
+    expect(new Set(silhouette.cmds.map((c) => c[0]))).toEqual(new Set(['moveTo', 'ellipse']));
+  });
+
+  it('keeps every leaf inside the rect and reaches within 2 px of all four sides, so what is drawn is what blocks', () => {
+    const boxes = ellipsesOf(silhouette).map(ellipseBounds);
+    const minX = Math.min(...boxes.map((b) => b[0]));
+    const minY = Math.min(...boxes.map((b) => b[1]));
+    const maxX = Math.max(...boxes.map((b) => b[2]));
+    const maxY = Math.max(...boxes.map((b) => b[3]));
+    expect(minX).toBeGreaterThanOrEqual(0);
+    expect(minY).toBeGreaterThanOrEqual(0);
+    expect(maxX).toBeLessThanOrEqual(HYACINTH_MAT_W);
+    expect(maxY).toBeLessThanOrEqual(HYACINTH_MAT_H);
+    expect(minX).toBeLessThan(2);
+    expect(minY).toBeLessThan(2);
+    expect(HYACINTH_MAT_W - maxX).toBeLessThan(2);
+    expect(HYACINTH_MAT_H - maxY).toBeLessThan(2);
+  });
+
+  it('scallops the channel edge: leaves along it touch it and dip between, within 3 px, so the edge is bumpy but the channel is not narrowed', () => {
+    const edgeY = (box: readonly number[]): number => (side === 'lower' ? box[1] : HYACINTH_MAT_H - box[3]);
+    const along = ellipsesOf(silhouette)
+      .map(ellipseBounds)
+      .filter((box) => edgeY(box) < 3);
+    // one row of five leaves touches the channel edge
+    expect(along).toHaveLength(5);
+    for (const box of along) expect(edgeY(box)).toBeGreaterThanOrEqual(0);
+  });
+
+  it('paints glossy light plates on a third of the leaves, each inked 1.6 and with one shine, over the leaves', () => {
+    const plates = fills(art).find((p) => p.style === HYACINTH_LEAF_LIGHT)!;
+    expect(ellipsesOf(plates)).toHaveLength(14);
+    const edge = strokes(art).find((p) => p.cmds === plates.cmds)!;
+    expect(edge.style).toBe(INK);
+    expect(edge.lineWidth).toBe(1.6);
+    expect(art.indexOf(plates)).toBeGreaterThan(art.indexOf(silhouette));
+    const gloss = fills(art).filter((p) => p.style === HYACINTH_SHINE);
+    expect(gloss).toHaveLength(1);
+    expect(ellipsesOf(gloss[0])).toHaveLength(14);
+    // every plate is smaller than its leaf, so it sits inside it
+    const leaves = ellipsesOf(silhouette);
+    for (const [cx, cy, rx, ry] of ellipsesOf(plates)) {
+      expect(leaves.some((l) => Math.abs(l[0] - cx) < 1e-9 && Math.abs(l[1] - cy) < 1e-9 && l[2] > rx && l[3] > ry)).toBe(true);
+    }
+  });
+
+  it('has three lilac flowers, each a six-petal rosette with a sun-yellow centre, upright, near the channel edge and inside the rect', () => {
+    const petals = fills(art).find((p) => p.style === HYACINTH_FLOWER)!;
+    const centres = fills(art).find((p) => p.style === HYACINTH_FLOWER_CENTRE)!;
+    expect(ellipsesOf(petals)).toHaveLength(18);
+    const middles = ellipsesOf(centres);
+    expect(middles).toHaveLength(3);
+    for (const [cx, cy, rx, ry] of middles) {
+      expect(rx).toBe(ry);
+      expect(cx).toBeGreaterThan(8);
+      expect(cx).toBeLessThan(HYACINTH_MAT_W - 8);
+      // the half of the mat nearest the channel
+      if (side === 'lower') expect(cy).toBeLessThan(HYACINTH_MAT_H / 2);
+      else expect(cy).toBeGreaterThan(HYACINTH_MAT_H / 2);
+    }
+    for (const box of ellipsesOf(petals).map(ellipseBounds)) {
+      expect(box[0]).toBeGreaterThanOrEqual(0);
+      expect(box[2]).toBeLessThanOrEqual(HYACINTH_MAT_W);
+      expect(box[1]).toBeGreaterThanOrEqual(0);
+      expect(box[3]).toBeLessThanOrEqual(HYACINTH_MAT_H);
+    }
+    // the rosette's petals and centre are inked
+    for (const colour of [HYACINTH_FLOWER, HYACINTH_FLOWER_CENTRE]) {
+      const fill = fills(art).find((p) => p.style === colour)!;
+      expect(strokes(art).some((p) => p.cmds === fill.cmds && p.style === INK)).toBe(true);
+    }
+  });
+
+  it('paints only mat colours and ink: no face, no eye, no mouth, nothing alive that could look hurt or scary (ADR 0007)', () => {
+    expect(styleSet(art)).toEqual(
+      new Set([INK, HYACINTH_LEAF, HYACINTH_LEAF_LIGHT, HYACINTH_SHINE, HYACINTH_FLOWER, HYACINTH_FLOWER_CENTRE]),
+    );
+    expect(styleSet(art).has(EYE)).toBe(false);
+    expect(styleSet(art).has(WHITE)).toBe(false);
+  });
+
+  it('is still: painting twice gives the same shapes, and the painter reads no random source', () => {
+    expect(signature(record((ctx) => paintHyacinthMat(ctx, side)))).toBe(signature(art));
+  });
+});
+
+describe('water hyacinth mats, upper against lower (guide 7b)', () => {
+  const upper = record((ctx) => paintHyacinthMat(ctx, 'upper'));
+  const lower = record((ctx) => paintHyacinthMat(ctx, 'lower'));
+
+  it('are the same painting about the channel edge: every leaf of the upper mat is the lower mat\'s leaf mirrored in y, its tilt reversed', () => {
+    const a = ellipsesOf(lower[1]);
+    const b = ellipsesOf(upper[1]);
+    expect(b).toHaveLength(a.length);
+    a.forEach(([cx, cy, rx, ry, rot], i) => {
+      expect(b[i][0]).toBeCloseTo(cx, 9);
+      expect(b[i][1]).toBeCloseTo(HYACINTH_MAT_H - cy, 9);
+      expect(b[i][2]).toBe(rx);
+      expect(b[i][3]).toBe(ry);
+      expect(b[i][4]).toBeCloseTo(-rot, 9);
+    });
+    expect(signature(upper)).not.toBe(signature(lower));
+  });
+
+  it('keeps the gloss on the upper left of every plate in both, so the light comes from above and the flowers stay upright', () => {
+    for (const art of [upper, lower]) {
+      const plates = ellipsesOf(fills(art).find((p) => p.style === HYACINTH_LEAF_LIGHT)!);
+      const gloss = ellipsesOf(fills(art).find((p) => p.style === HYACINTH_SHINE)!);
+      gloss.forEach(([gx, gy], i) => {
+        expect(gx).toBeLessThan(plates[i][0]);
+        expect(gy).toBeLessThan(plates[i][1]);
+      });
+    }
+  });
+
+  it('reads in greyscale as an inked, scalloped clump of round plates, against the water by its ink outline alone', () => {
+    // the water the mat floats on, shallow to deep, never takes ink under 3:1 (the chinampa floor, guide 3c)
+    for (const { hex } of chinampaBackgrounds()) expect(contrast(INK, hex)).toBeGreaterThanOrEqual(PAIR_FLOOR);
+    expect(lower[0].lineWidth).toBe(2 * LW);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Home Spot row
 // ---------------------------------------------------------------------------
 
@@ -1318,7 +1533,7 @@ describe('bakeChinampaTextures', () => {
     expect(art.rootTangle.back.pxH).toBe(art.rootTangle.front.pxH);
   });
 
-  it('bakes the overhang, the two gap edges and the snag cue under fixed keys, and no ghost net unless asked', () => {
+  it('bakes the overhang, the two gap edges, the snag cue and the two hyacinth mats under fixed keys, and no ghost net unless asked', () => {
     const { art, created } = bake(2);
     expect(created.map((c) => c.key).sort()).toEqual(Object.values(CHINAMPA_TEX).sort());
     expect(art.ghostNets).toEqual({});
@@ -1327,6 +1542,8 @@ describe('bakeChinampaTextures', () => {
       [art.gapEdges.top, GAP_EDGE_TOP_TEX],
       [art.gapEdges.bottom, GAP_EDGE_BOTTOM_TEX],
       [art.snagCue, SNAG_CUE_TEX],
+      [art.hyacinthMats.upper, HYACINTH_MAT_TEX],
+      [art.hyacinthMats.lower, HYACINTH_MAT_TEX],
     ] as const;
     for (const [info, tex] of sizes) {
       expect(info.scale).toBe(2);
@@ -1339,6 +1556,25 @@ describe('bakeChinampaTextures', () => {
     expect(art.overhang.originNormX).toBeCloseTo(4 / OVERHANG_TEX.w, 6);
     expect(art.overhang.originNormY).toBeCloseTo(4 / OVERHANG_TEX.h, 6);
     expect(art.snagCue.originNormX).toBeCloseTo(0.5, 6);
+    // Both hyacinth mats anchor at the top-left corner of the mat's rect, like the overhang.
+    for (const info of [art.hyacinthMats.upper, art.hyacinthMats.lower]) {
+      expect(info.originNormX).toBeCloseTo(4 / HYACINTH_MAT_TEX.w, 6);
+      expect(info.originNormY).toBeCloseTo(4 / HYACINTH_MAT_TEX.h, 6);
+    }
+  });
+
+  it('bakes the two hyacinth mats under their own keys, with no bake option needed', () => {
+    const { art, created } = bake(2);
+    expect(CHINAMPA_TEX.hyacinthMatUpper).toBe('chinampa-hyacinth-mat-upper');
+    expect(CHINAMPA_TEX.hyacinthMatLower).toBe('chinampa-hyacinth-mat-lower');
+    expect(art.hyacinthMats.upper.key).toBe('chinampa-hyacinth-mat-upper');
+    expect(art.hyacinthMats.lower.key).toBe('chinampa-hyacinth-mat-lower');
+    expect(created.filter((c) => c.key.startsWith('chinampa-hyacinth-mat-')).map((c) => c.key).sort()).toEqual([
+      'chinampa-hyacinth-mat-lower',
+      'chinampa-hyacinth-mat-upper',
+    ]);
+    // Asking for ghost nets changes nothing about the mats.
+    expect(bake(2, [{ w: 60, h: 70 }]).art.hyacinthMats.upper.w).toBe(art.hyacinthMats.upper.w);
   });
 
   it('bakes one ghost net per distinct rect size, keyed by size, anchored at the rect centre', () => {

@@ -7,7 +7,7 @@ import { DEPTH } from '../art/layers';
 import type { PondTextures } from '../art/pondTextures';
 import type { TexInfo } from '../art/textures';
 import { treasureById, treasureSlug, type Rarity } from '../logic/catalogue';
-import { PAST_CURRENT_DEPTH } from '../logic/hiding';
+import { pastCurrentBand } from '../logic/hiding';
 import { badgeShape, hintSparkleRadius, hintVisible } from '../logic/hints';
 import type { MotionProfile } from '../logic/motion';
 import type { PlacedFind } from '../logic/placement';
@@ -130,11 +130,13 @@ function unitAt(index: number, count: number): Vec2 {
   return { x: Math.cos(angle), y: Math.sin(angle) };
 }
 
-/** The marker x: the middle of the past-the-current band, beyond the current's edge farther from home. */
-function pastCurrentMarkerX(current: CurrentZone, home: Point): number {
-  if (home.x < current.x0) return current.x1 + PAST_CURRENT_DEPTH / 2;
-  if (home.x > current.x1) return current.x0 - PAST_CURRENT_DEPTH / 2;
-  throw new Error(`TreasureView: current "${current.id}" spans the Home Spot, so it has no far side`);
+/** The marker x: the middle of the current's past band (pastCurrentBand). Throws when it has none. */
+function pastCurrentMarkerX(current: CurrentZone): number {
+  const band = pastCurrentBand(current);
+  if (band === null) {
+    throw new Error(`TreasureView: current "${current.id}" has no sideways flow, so it has no past band`);
+  }
+  return (band.edgeX + band.farX) / 2;
 }
 
 /** The baked pond props for a cave of kind `kind`. Throws when they were not baked. */
@@ -284,7 +286,7 @@ export class TreasureView {
     if (!current) {
       throw new Error('TreasureView: the zone has no current for the past-the-current marker');
     }
-    bakedImage(scene, hiding.currentMarker, pastCurrentMarkerX(current, zone.homeSpot), baseY, DEPTH.currentMarker);
+    bakedImage(scene, hiding.currentMarker, pastCurrentMarkerX(current), baseY, DEPTH.currentMarker);
     this.finds = zone.finds.map((find, i) => this.createFindSprites(scene, find.id, i));
     this.spritesById = new Map(this.finds.map((sprites) => [sprites.id, sprites]));
     this.crumbles = Array.from({ length: CRUMBLE_POOL }, () => this.createCrumble(scene));

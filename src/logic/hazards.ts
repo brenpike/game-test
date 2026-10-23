@@ -51,6 +51,44 @@ export interface ElementType {
   period: number;
   /** Seconds per cycle the element is active; at or above `period` means always active. */
   activeFor: number;
+  /** Fact card shown the first time the axolotl meets the element; absent means none. */
+  fact?: FactCard;
+  /**
+   * Range in px from the element's sweep (elementSweep) within which the axolotl has met it,
+   * which is what unlocks its fact card; absent means it is never met.
+   */
+  meetRange?: number;
+  /**
+   * Mat pair timing, in seconds, read in this order from the start of each cycle (`offset`):
+   * `openFor` open, then `closingFor` drifting together (the warning), then `closedFor` closed.
+   * The three together fill `period`. The mats drift apart over the first `openingFor` seconds of
+   * the open window, so `openingFor` is part of `openFor`, not added to it. Absent on elements
+   * that are not mat pairs.
+   */
+  openFor?: number;
+  /** Seconds at the start of the open window over which the mats drift apart; part of `openFor`. */
+  openingFor?: number;
+  /** Seconds after the open window over which the mats drift together to close the channel. */
+  closingFor?: number;
+  /** Seconds after closing for which the channel stays closed. */
+  closedFor?: number;
+}
+
+/**
+ * A pair of mats in the side view: an upper mat hanging from `rowTop` and a lower mat standing on
+ * `rowBottom`, with a horizontal channel between them across `x0..x1`. The pair spans one row's
+ * full height, so a closed pair gates that row. The mats drift together along y to close the
+ * channel at `channelY`, and apart to open it to `openHeight` px of clear water centred on
+ * `channelY`. Inclusive edges; `x0 < x1` and `rowTop < channelY < rowBottom`.
+ */
+export interface MatPair {
+  x0: number;
+  x1: number;
+  rowTop: number;
+  rowBottom: number;
+  channelY: number;
+  /** Clear height in px of the fully open channel. */
+  openHeight: number;
 }
 
 export interface ElementSpawn {
@@ -58,6 +96,8 @@ export interface ElementSpawn {
   type: ElementType;
   /** Seconds into the cycle at which the active window starts. */
   offset: number;
+  /** Mat pair geometry; absent on elements with no geometry. */
+  matPair?: MatPair;
 }
 
 /** Returns 0 when `pos` is inside the shape, else the distance from `pos` to its edge. */
@@ -106,4 +146,15 @@ export function elementActive(element: ElementSpawn, timeS: number): boolean {
   }
   const phase = (((timeS - element.offset) % period) + period) % period;
   return phase < activeFor;
+}
+
+/**
+ * The rectangle the element's moving parts can ever occupy: for a mat pair, its whole
+ * `x0..x1` by `rowTop..rowBottom`, since closed mats meet at the channel. Null when the element
+ * has no geometry.
+ */
+export function elementSweep(element: Readonly<ElementSpawn>): HazardRect | null {
+  const pair = element.matPair;
+  if (!pair) return null;
+  return { kind: 'rect', x0: pair.x0, x1: pair.x1, y0: pair.rowTop, y1: pair.rowBottom };
 }

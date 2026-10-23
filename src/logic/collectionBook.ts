@@ -3,7 +3,7 @@
  * own section, and the fact cards, with pages and the CSS px layout of one featured entry. Pure
  * data; drawing lives in the scene and art layers.
  */
-import { AREAS, bookFactCards, habitatById, threatIds } from './areas';
+import { AREAS, bookFactCards, habitatById, sourceFactCards } from './areas';
 import { DREAM_COLOURS, type DreamColour, type DreamColourId } from './catalogue';
 import { BOY_OR_GIRL_FACT, FACT_CARD_UNFOUND_HINT, TILAPIA_FACT, unfoundFactCardHint, type FactCard } from './factCards';
 import type { Rect, Size } from './hudLayout';
@@ -168,12 +168,12 @@ function createDreamColourEntry(colour: DreamColour): BookDreamColourEntry {
 
 /**
  * Hint of an unfound fact card: the card's own `unfoundHint` when it has one, else explore the
- * habitat of the first area, in AREAS order, whose threats include the card's id, else
+ * habitat of the first area, in AREAS order, whose threat or element card ids include the card's id, else
  * FACT_CARD_UNFOUND_HINT.
  */
 function factCardHint(card: Readonly<FactCard>): string {
   if (card.unfoundHint !== undefined) return card.unfoundHint;
-  const area = AREAS.find((candidate) => threatIds(candidate.layout).includes(card.id));
+  const area = AREAS.find((candidate) => sourceFactCards(candidate.layout).ids.includes(card.id));
   const habitat = area === undefined ? undefined : habitatById(area.habitatId);
   if (habitat === undefined) return FACT_CARD_UNFOUND_HINT;
   return unfoundFactCardHint(`the ${habitat.name.toLowerCase()}`);

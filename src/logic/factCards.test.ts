@@ -5,6 +5,8 @@ import {
   CANAL_CLEAN_UPS_FACT,
   FACT_CARD_OK_LABEL,
   FACT_CARD_UNFOUND_HINT,
+  GARTER_SNAKE_FACT,
+  GARTER_SNAKE_MEET_RANGE,
   GHOST_NET_FACT,
   HERON_FACT,
   HERON_MEET_RANGE,
@@ -12,13 +14,14 @@ import {
   REFUGE_FACT_CARDS,
   TILAPIA_FACT,
   TILAPIA_MEET_RANGE,
+  WATER_HYACINTH_FACT,
   meetsTilapia,
   metThreatIds,
   refugeFactCardsDue,
   unfoundFactCardHint,
   type ThreatSighting,
 } from './factCards';
-import { GHOST_NETS, HERON, TILAPIA } from './tuning';
+import { GARTER_SNAKE, GHOST_NETS, HERON, HYACINTH_MATS, TILAPIA } from './tuning';
 import type { SafeArea } from './zone';
 
 const BANNED = [
@@ -168,6 +171,75 @@ describe('ghost net fact card copy', () => {
 
   it('uses a meet range larger than the snag reach', () => {
     expect(GHOST_NETS.meetRange).toBeGreaterThan(GHOST_NETS.reach);
+  });
+});
+
+describe('garter snake fact card copy', () => {
+  it('has the garter-snake id, name, title and body, and no hint of its own', () => {
+    expect(GARTER_SNAKE_FACT).toEqual({
+      id: 'garter-snake',
+      name: 'Garter snake',
+      title: 'Meet garter snakes',
+      body: 'Garter snakes live near water in Mexico and are good swimmers. They hunt small animals near the surface. Axolotls are safer down deep.',
+    });
+    expect(GARTER_SNAKE_FACT.unfoundHint).toBeUndefined();
+  });
+
+  it('has an id apart from the other cards', () => {
+    const others = [
+      TILAPIA_FACT.id,
+      BOY_OR_GIRL_FACT.id,
+      PLASTIC_WORM_FACT.id,
+      HERON_FACT.id,
+      GHOST_NET_FACT.id,
+      WATER_HYACINTH_FACT.id,
+      ...REFUGE_FACT_CARDS.map((card) => card.id),
+    ];
+    expect(others).not.toContain(GARTER_SNAKE_FACT.id);
+  });
+
+  it.each([GARTER_SNAKE_FACT.name, GARTER_SNAKE_FACT.title, GARTER_SNAKE_FACT.body])('"%s" avoids banned words', (text) => {
+    expect(findBannedWords(text)).toEqual([]);
+  });
+
+  it('uses a meet range of 180 px, larger than the lunge range', () => {
+    expect(GARTER_SNAKE_MEET_RANGE).toBe(180);
+    expect(GARTER_SNAKE_MEET_RANGE).toBeGreaterThan(GARTER_SNAKE.lungeRange);
+  });
+});
+
+describe('water hyacinth fact card copy', () => {
+  it('has the water-hyacinth id, name, title and body, and no hint of its own', () => {
+    expect(WATER_HYACINTH_FACT).toEqual({
+      id: 'water-hyacinth',
+      name: 'Water hyacinth',
+      title: 'Water hyacinth',
+      body: 'Water hyacinth is a floating plant that grows very fast. In Xochimilco it can cover the canals and block the light. People clear it out to keep the water healthy.',
+    });
+    expect(WATER_HYACINTH_FACT.unfoundHint).toBeUndefined();
+  });
+
+  it('has an id apart from the other cards', () => {
+    const others = [
+      TILAPIA_FACT.id,
+      BOY_OR_GIRL_FACT.id,
+      PLASTIC_WORM_FACT.id,
+      HERON_FACT.id,
+      GHOST_NET_FACT.id,
+      ...REFUGE_FACT_CARDS.map((card) => card.id),
+    ];
+    expect(others).not.toContain(WATER_HYACINTH_FACT.id);
+  });
+
+  it.each([WATER_HYACINTH_FACT.name, WATER_HYACINTH_FACT.title, WATER_HYACINTH_FACT.body])(
+    '"%s" avoids banned words',
+    (text) => {
+      expect(findBannedWords(text)).toEqual([]);
+    },
+  );
+
+  it('uses a meet range larger than the body grow', () => {
+    expect(HYACINTH_MATS.meetRange).toBeGreaterThan(HYACINTH_MATS.bodyGrow);
   });
 });
 

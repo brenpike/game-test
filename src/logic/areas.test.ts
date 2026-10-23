@@ -3,6 +3,7 @@ import {
   AREAS,
   CANAL_AREA,
   CANAL_HABITAT,
+  CHINAMPA_2_AREA,
   CHINAMPA_AREA,
   CHINAMPA_HABITAT,
   HABITATS,
@@ -22,23 +23,27 @@ import {
   newThingsByArea,
   newestUnlockedAreaId,
   resolveAreaId,
+  sourceFactCards,
   threatFactCards,
   threatIds,
   unlockedAreaIds,
   type AreaData,
   type NewThings,
 } from './areas';
-import { CANAL_TREASURES, CHINAMPA_TREASURES, POND_2_TREASURES, POND_TREASURES, treasureById } from './catalogue';
+import { CANAL_TREASURES, CHINAMPA_2_TREASURES, CHINAMPA_TREASURES, POND_2_TREASURES, POND_TREASURES, treasureById } from './catalogue';
+import { CHINAMPA_2_AREA_ID, CHINAMPA_2_LAYOUT } from './chinampa2Layout';
 import { CHINAMPA_AREA_ID, CHINAMPA_LAYOUT } from './chinampaLayout';
 import { createCollectibles, snackDriftMaxSpeed, snackX, snackY } from './collectibles';
 import { DEV_AREAS, DEV_TEST_AREA } from './devAreas';
 import {
   AXOLOTL_REFUGES_FACT,
   CANAL_CLEAN_UPS_FACT,
+  GARTER_SNAKE_FACT,
   GHOST_NET_FACT,
   HERON_FACT,
   PLASTIC_WORM_FACT,
   TILAPIA_FACT,
+  WATER_HYACINTH_FACT,
   type FactCard,
 } from './factCards';
 import type { ElementType, HazardType } from './hazards';
@@ -86,6 +91,8 @@ const TEST_GLASS: HazardType = { id: 'test-glass', name: 'Test glass', costsLeg:
 const TEST_MUD: HazardType = { id: 'test-mud', name: 'Test mud', costsLeg: false, reach: 0, meetRange: 60, fact: testFact('test-mud') };
 const TEST_GATE: ElementType = { id: 'test-gate', name: 'Test gate', kind: 'cycle', period: 4, activeFor: 2 };
 const TEST_TIDE: ElementType = { id: 'test-tide', name: 'Test tide', kind: 'cycle', period: 6, activeFor: 3 };
+const TEST_MATS: ElementType = { ...TEST_GATE, id: 'test-mats', name: 'Test mats', meetRange: 60, fact: testFact('test-mats') };
+const TEST_LOCK: ElementType = { ...TEST_TIDE, id: 'test-lock', name: 'Test lock', fact: testFact('test-lock') };
 
 /** Canal layout data with these threats and elements in place of the canal's. */
 function layoutWith(
@@ -104,6 +111,10 @@ function pikeRoute(id: string) {
 
 function glassAt(id: string, type: HazardType = TEST_GLASS) {
   return { id, type, shape: { kind: 'circle' as const, x: 900, y: 290, r: 10 } };
+}
+
+function elementOf(id: string, type: ElementType) {
+  return { id, type, offset: 0 };
 }
 
 /** Fastest snack drift any area may have, in px/s: half the Snack magnet pull, 20 (PRD H4, Tuning values). */
@@ -257,8 +268,41 @@ describe('CHINAMPA_AREA', () => {
   });
 });
 
+describe('CHINAMPA_2_AREA', () => {
+  it('is Area 5, the chinampa gardens again, in the chinampa habitat, with no look of its own', () => {
+    expect(CHINAMPA_2_AREA.id).toBe('chinampa-2');
+    expect(CHINAMPA_2_AREA.id).toBe(CHINAMPA_2_AREA_ID);
+    expect(CHINAMPA_2_AREA.number).toBe(5);
+    expect(CHINAMPA_2_AREA.habitatId).toBe(CHINAMPA_HABITAT.id);
+    expect(CHINAMPA_2_AREA.layout).toBe(CHINAMPA_2_LAYOUT);
+    expect(CHINAMPA_2_AREA.look).toBeUndefined();
+  });
+
+  it('names the Piñata, a Rare treasure from the Area 5 catalogue, as its special treasure', () => {
+    expect(CHINAMPA_2_AREA.specialTreasureId).toBe('chinampa/pinata');
+    expect(CHINAMPA_2_TREASURES.map((treasure) => treasure.id)).toContain(CHINAMPA_2_AREA.specialTreasureId);
+    expect(treasureById(CHINAMPA_2_AREA.specialTreasureId)?.rarity).toBe('rare');
+  });
+
+  it.each(ALL_SEEDS)('names a special treasure the zone hides for seed %i', (seed) => {
+    const special = buildZone(CHINAMPA_2_LAYOUT, seed).finds.find((find) => find.id === CHINAMPA_2_AREA.specialTreasureId);
+    expect(special).toBeDefined();
+    expect(special?.pool.length).toBeGreaterThan(0);
+  });
+
+  it('makes 3 of its snacks dart with the shared dart rule, as Areas 3 and 4 do', () => {
+    expect(CHINAMPA_2_AREA.snackDart).toBe(SNACK_DART);
+  });
+
+  it('is frozen area data', () => {
+    expect(Object.isFrozen(CHINAMPA_2_AREA)).toBe(true);
+    expect(Object.isFrozen(CHINAMPA_2_AREA.exit)).toBe(true);
+    expect(Object.isFrozen(CHINAMPA_2_AREA.snackDrift)).toBe(true);
+  });
+});
+
 describe('habitats', () => {
-  it('has the canal habitat, holding Area 1, the pond habitat, holding Areas 2 and 3, and the chinampa habitat, holding Area 4', () => {
+  it('has the canal habitat, holding Area 1, the pond habitat, holding Areas 2 and 3, and the chinampa habitat, holding Areas 4 and 5', () => {
     expect(CANAL_HABITAT).toEqual({ id: 'canal', name: 'Canal', look: 'canal' });
     expect(POND_HABITAT).toEqual({ id: 'pond', name: 'Lily pad pond', look: 'pond' });
     expect(CHINAMPA_HABITAT).toEqual({ id: 'chinampa', name: 'Chinampa gardens', look: 'chinampa' });
@@ -271,6 +315,7 @@ describe('habitats', () => {
     expect(POND_AREA.habitatId).toBe(POND_HABITAT.id);
     expect(POND_2_AREA.habitatId).toBe(POND_HABITAT.id);
     expect(CHINAMPA_AREA.habitatId).toBe(CHINAMPA_HABITAT.id);
+    expect(CHINAMPA_2_AREA.habitatId).toBe(CHINAMPA_HABITAT.id);
   });
 
   it('finds a habitat by id', () => {
@@ -317,8 +362,14 @@ describe('threats', () => {
     expect(threatIds(layoutWith({ tilapiaRoutes: [] }))).toEqual([]);
   });
 
-  it('gives the tilapia card, then the plastic worm card, then the heron card, then the ghost net card, for the shipped areas', () => {
-    expect(areaFactCards()).toEqual([TILAPIA_FACT, PLASTIC_WORM_FACT, HERON_FACT, GHOST_NET_FACT]);
+  it('gives the tilapia, plastic worm, heron, ghost net, garter snake and water hyacinth cards, for the shipped areas', () => {
+    expect(areaFactCards()).toEqual([TILAPIA_FACT, PLASTIC_WORM_FACT, HERON_FACT, GHOST_NET_FACT, GARTER_SNAKE_FACT, WATER_HYACINTH_FACT]);
+  });
+
+  it('names the tilapia, the garter snake and the ghost net for Area 5, from its data or its zone', () => {
+    expect(threatIds(CHINAMPA_2_LAYOUT)).toEqual(['tilapia', 'garter-snake', 'ghost-net']);
+    expect(threatIds(buildZone(CHINAMPA_2_LAYOUT, DEFAULT_ZONE_SEED))).toEqual(['tilapia', 'garter-snake', 'ghost-net']);
+    expect(threatFactCards(CHINAMPA_2_LAYOUT)).toEqual([TILAPIA_FACT, GARTER_SNAKE_FACT, GHOST_NET_FACT]);
   });
 
   it('names the tilapia and the ghost net for Area 4, from its data or its zone', () => {
@@ -348,6 +399,72 @@ describe('threats', () => {
   });
 });
 
+describe('sourceFactCards', () => {
+  it('gives the threat cards, then each element type that carries a card, each id once', () => {
+    const layout = layoutWith({
+      predatorRoutes: [pikeRoute('pike-0')],
+      hazards: [glassAt('glass-0')],
+      elements: [
+        elementOf('gate-0', TEST_GATE),
+        elementOf('mats-0', TEST_MATS),
+        elementOf('lock-0', TEST_LOCK),
+        elementOf('mats-1', TEST_MATS),
+      ],
+    });
+    expect(sourceFactCards(layout)).toEqual({
+      ids: ['tilapia', 'test-pike', 'test-glass', 'test-mats', 'test-lock'],
+      cards: [TILAPIA_FACT, TEST_PIKE.fact, TEST_GLASS.fact, TEST_MATS.fact, TEST_LOCK.fact],
+    });
+  });
+
+  it('keeps an element card out when a threat has its id', () => {
+    const shadow: ElementType = { ...TEST_MATS, id: 'test-glass', fact: testFact('shadow-glass') };
+    const layout = layoutWith({ hazards: [glassAt('glass-0')], elements: [elementOf('shadow-0', shadow)] });
+    expect(sourceFactCards(layout)).toEqual({ ids: ['tilapia', 'test-glass'], cards: [TILAPIA_FACT, TEST_GLASS.fact] });
+  });
+
+  it('gives no element card for elements with none', () => {
+    const layout = layoutWith({ tilapiaRoutes: [], elements: [elementOf('gate-0', TEST_GATE)] });
+    expect(sourceFactCards(layout)).toEqual({ ids: [], cards: [] });
+  });
+
+  it.each(AREAS.filter((area) => area.layout.elements.length === 0).map((area) => [area.id, area] as const))('gives the threat cards alone for %s, which has no elements, from its data or its zone', (_id, area) => {
+    const expected = { ids: threatIds(area.layout), cards: threatFactCards(area.layout) };
+    expect(sourceFactCards(area.layout)).toEqual(expected);
+    expect(sourceFactCards(buildZone(area.layout, DEFAULT_ZONE_SEED))).toEqual(expected);
+  });
+
+  it('gives Area 5 its threat cards, then the water hyacinth card, from its data or its zone', () => {
+    const expected = {
+      ids: ['tilapia', 'garter-snake', 'ghost-net', 'water-hyacinth'],
+      cards: [TILAPIA_FACT, GARTER_SNAKE_FACT, GHOST_NET_FACT, WATER_HYACINTH_FACT],
+    };
+    expect(sourceFactCards(CHINAMPA_2_LAYOUT)).toEqual(expected);
+    expect(sourceFactCards(buildZone(CHINAMPA_2_LAYOUT, DEFAULT_ZONE_SEED))).toEqual(expected);
+  });
+
+  it('puts each area\'s element cards after its threat cards, in area-table order, each once', () => {
+    const areas = [
+      areaWith('one', 1, layoutWith({ elements: [elementOf('mats-0', TEST_MATS)] })),
+      areaWith('two', 2, layoutWith({ hazards: [glassAt('glass-0')], elements: [elementOf('lock-0', TEST_LOCK), elementOf('mats-0', TEST_MATS)] })),
+    ];
+    expect(areaFactCards(areas)).toEqual([TILAPIA_FACT, TEST_MATS.fact, TEST_GLASS.fact, TEST_LOCK.fact]);
+    expect(bookFactCards(areas)).toEqual([
+      TILAPIA_FACT,
+      TEST_MATS.fact,
+      TEST_GLASS.fact,
+      TEST_LOCK.fact,
+      AXOLOTL_REFUGES_FACT,
+      CANAL_CLEAN_UPS_FACT,
+    ]);
+  });
+
+  it('leaves newThingsByArea counting threats and elements apart', () => {
+    const areas = [areaWith('one', 1, layoutWith({ elements: [elementOf('mats-0', TEST_MATS)] }))];
+    expect(newThingsByArea(areas)).toEqual([{ areaId: 'one', threats: ['tilapia'], elements: ['test-mats'] }]);
+  });
+});
+
 describe('bookFactCards', () => {
   it('gives the shipped area cards, then the axolotl refuges and canal clean-ups cards', () => {
     expect(bookFactCards()).toEqual([
@@ -355,6 +472,8 @@ describe('bookFactCards', () => {
       PLASTIC_WORM_FACT,
       HERON_FACT,
       GHOST_NET_FACT,
+      GARTER_SNAKE_FACT,
+      WATER_HYACINTH_FACT,
       AXOLOTL_REFUGES_FACT,
       CANAL_CLEAN_UPS_FACT,
     ]);
@@ -373,12 +492,13 @@ describe('newThingsByArea', () => {
     expect(areasOverNewLimit(AREAS)).toEqual([]);
   });
 
-  it('counts the canal tilapia as new in Area 1, the plastic worm in Area 2, the heron in Area 3, with no timing element (#111), and the ghost net in Area 4', () => {
+  it('counts the canal tilapia as new in Area 1, the plastic worm in Area 2, the heron in Area 3, with no timing element (#111), the ghost net in Area 4, and the garter snake and the water hyacinth mats in Area 5', () => {
     expect(newThingsByArea()).toEqual([
       { areaId: 'canal', threats: ['tilapia'], elements: [] },
       { areaId: 'pond-1', threats: ['plastic-worm'], elements: [] },
       { areaId: 'pond-2', threats: ['heron'], elements: [] },
       { areaId: 'chinampa-1', threats: ['ghost-net'], elements: [] },
+      { areaId: 'chinampa-2', threats: ['garter-snake'], elements: ['water-hyacinth'] },
     ]);
   });
 
@@ -488,10 +608,27 @@ describe('unlocking', () => {
     expect(newestUnlockedAreaId(area3Beaten)).toBe(CHINAMPA_AREA_ID);
     expect(isNewArea(area3Beaten, CHINAMPA_AREA_ID)).toBe(true);
     expect(isNewArea({ ...area3Beaten, [CHINAMPA_AREA_ID]: EXIT_ONLY }, CHINAMPA_AREA_ID)).toBe(false);
-    expect(unlockedAreaIds({ ...area3Beaten, [CHINAMPA_AREA_ID]: ALL_STARS })).toEqual(['canal', POND_AREA_ID, POND_2_AREA_ID, CHINAMPA_AREA_ID]);
+    expect(unlockedAreaIds({ ...area3Beaten, [CHINAMPA_AREA_ID]: ALL_STARS })).toEqual(['canal', POND_AREA_ID, POND_2_AREA_ID, CHINAMPA_AREA_ID, CHINAMPA_2_AREA_ID]);
     expect(unlockedAreaIds({ ...pondBeaten, [CHINAMPA_AREA_ID]: ALL_STARS })).toEqual(['canal', POND_AREA_ID, POND_2_AREA_ID]);
     expect(resolveAreaId(CHINAMPA_AREA_ID, pondBeaten)).toBe(POND_2_AREA_ID);
     expect(resolveAreaId(CHINAMPA_AREA_ID, area3Beaten)).toBe(CHINAMPA_AREA_ID);
+  });
+
+  it('unlocks Area 5 once Area 4 is beaten, with no new rule and no star gates, in the shipped areas', () => {
+    const area3Beaten: AreaStarsRecord = { canal: EXIT_ONLY, [POND_AREA_ID]: EXIT_ONLY, [POND_2_AREA_ID]: EXIT_ONLY };
+    const area4Beaten: AreaStarsRecord = { ...area3Beaten, [CHINAMPA_AREA_ID]: EXIT_ONLY };
+    const firstFour = ['canal', POND_AREA_ID, POND_2_AREA_ID, CHINAMPA_AREA_ID];
+    expect(isAreaUnlocked(area3Beaten, CHINAMPA_2_AREA_ID)).toBe(false);
+    expect(isAreaUnlocked({ ...area3Beaten, [CHINAMPA_AREA_ID]: SPECIAL_ONLY }, CHINAMPA_2_AREA_ID)).toBe(false);
+    expect(unlockedAreaIds(area4Beaten)).toEqual([...firstFour, CHINAMPA_2_AREA_ID]);
+    expect(isAreaUnlocked(area4Beaten, CHINAMPA_2_AREA_ID)).toBe(true);
+    expect(newestUnlockedAreaId(area4Beaten)).toBe(CHINAMPA_2_AREA_ID);
+    expect(isNewArea(area4Beaten, CHINAMPA_2_AREA_ID)).toBe(true);
+    expect(isNewArea({ ...area4Beaten, [CHINAMPA_2_AREA_ID]: EXIT_ONLY }, CHINAMPA_2_AREA_ID)).toBe(false);
+    expect(unlockedAreaIds({ ...area4Beaten, [CHINAMPA_2_AREA_ID]: ALL_STARS })).toEqual([...firstFour, CHINAMPA_2_AREA_ID]);
+    expect(unlockedAreaIds({ ...area3Beaten, [CHINAMPA_2_AREA_ID]: ALL_STARS })).toEqual(firstFour);
+    expect(resolveAreaId(CHINAMPA_2_AREA_ID, area3Beaten)).toBe(CHINAMPA_AREA_ID);
+    expect(resolveAreaId(CHINAMPA_2_AREA_ID, area4Beaten)).toBe(CHINAMPA_2_AREA_ID);
   });
 
   it('names the newest unlocked area', () => {
@@ -569,11 +706,12 @@ describe('resolveAreaId', () => {
 });
 
 describe('areaById', () => {
-  it('finds the canal, the pond, Area 3 and Area 4 by id', () => {
+  it('finds the canal, the pond, Area 3, Area 4 and Area 5 by id', () => {
     expect(areaById('canal')).toBe(CANAL_AREA);
     expect(areaById(POND_AREA_ID)).toBe(POND_AREA);
     expect(areaById(POND_2_AREA_ID)).toBe(POND_2_AREA);
     expect(areaById(CHINAMPA_AREA_ID)).toBe(CHINAMPA_AREA);
+    expect(areaById(CHINAMPA_2_AREA_ID)).toBe(CHINAMPA_2_AREA);
   });
 
   it('returns undefined for an unknown id', () => {
@@ -583,8 +721,8 @@ describe('areaById', () => {
   });
 
   it('lists every area in number order', () => {
-    expect(AREAS.map((area) => area.number)).toEqual([1, 2, 3, 4]);
-    expect(AREAS).toEqual([CANAL_AREA, POND_AREA, POND_2_AREA, CHINAMPA_AREA]);
+    expect(AREAS.map((area) => area.number)).toEqual([1, 2, 3, 4, 5]);
+    expect(AREAS).toEqual([CANAL_AREA, POND_AREA, POND_2_AREA, CHINAMPA_AREA, CHINAMPA_2_AREA]);
   });
 });
 
@@ -657,16 +795,17 @@ describe.each(AREA_CASES)('%s exit geometry', (_id, area) => {
 describe('snack drift', () => {
   const surfacePeak = SURF + 1.6 + 0.8;
 
-  it('pins the canal drift at about 11.9 px/s, the pond drift at about 14.8 px/s, the Area 3 drift at about 15.2 px/s and the Area 4 drift at about 15.6 px/s', () => {
+  it('pins the canal drift at about 11.9 px/s, the pond drift at about 14.8 px/s, the Area 3 drift at about 15.2 px/s, the Area 4 drift at about 15.6 px/s and the Area 5 drift at about 15.8 px/s', () => {
     expect(snackDriftMaxSpeed(CANAL_AREA.snackDrift)).toBeCloseTo(11.9, 1);
     expect(snackDriftMaxSpeed(POND_AREA.snackDrift)).toBeCloseTo(14.8, 1);
     expect(snackDriftMaxSpeed(POND_2_AREA.snackDrift)).toBeCloseTo(15.2, 1);
     expect(snackDriftMaxSpeed(CHINAMPA_AREA.snackDrift)).toBeCloseTo(15.6, 1);
+    expect(snackDriftMaxSpeed(CHINAMPA_2_AREA.snackDrift)).toBeCloseTo(15.8, 1);
   });
 
-  it('pins the one-leg headway against the strongest current: 20 px/s in the canal and the pond, 16 in Area 3, 18 in Area 4', () => {
+  it('pins the one-leg headway against the strongest current: 20 px/s in the canal and the pond, 16 in Area 3, 18 in Area 4, 17 in Area 5', () => {
     const headways = AREAS.map((area) => SWIM.maxSpeed * LEGS.speedByLegs[0] - strongestCurrentIn(area));
-    expect(headways).toEqual([20, 20, 16, 18]);
+    expect(headways).toEqual([20, 20, 16, 18, 17]);
   });
 
   it.each(AREA_CASES)('drifts slower than a one-leg axolotl swims against the strongest current, and at most 20 px/s, in %s', (_id, area) => {

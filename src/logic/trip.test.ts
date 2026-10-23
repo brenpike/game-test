@@ -3,7 +3,7 @@ import type { DrawnBody } from './collectibles';
 import { createEncounter, createEncounterContext, predatorSpecies } from './encounter';
 import { HERON_MEET_RANGE, meetsTilapia, type FactCard } from './factCards';
 import { GHOST_NET, createGhostNets, isSnagged } from './ghostNets';
-import type { HazardSpawn, HazardType } from './hazards';
+import type { ElementSpawn, ElementType, HazardSpawn, HazardType } from './hazards';
 import { inSightCover, zoneThreats } from './hiding';
 import {
   HERON_SPECIES,
@@ -2389,5 +2389,109 @@ describe('per-area tilapia tuning', () => {
       expect(next.placed).toEqual(tunedPlacement(seed));
     }
     expect(newTrip(endedFrom(createTrip(zone)))).not.toHaveProperty('encounter.tilapia');
+  });
+});
+
+describe('elements in the trip (#103)', () => {
+  const testFact = (id: string): FactCard => ({ id, name: id, title: id, body: id });
+  const TEST_MATS: ElementType = {
+    id: 'test-mats',
+    name: 'Test mats',
+    kind: 'cycle',
+    period: 8,
+    activeFor: 4,
+    meetRange: 60,
+    fact: testFact('test-mats'),
+  };
+  const TEST_MUD: HazardType = { id: 'test-mud', name: 'Test mud', costsLeg: false, reach: 0, meetRange: 60, fact: testFact('test-mud') };
+  const TEST_PIKE: PredatorSpecies = { ...TILAPIA_SPECIES, id: 'test-pike', name: 'Test pike', fact: testFact('test-pike') };
+  const matsAt = (id: string, x0: number, type: ElementType = TEST_MATS): ElementSpawn => ({
+    id,
+    type,
+    offset: 0,
+    matPair: { x0, x1: x0 + 100, rowTop: 150, rowBottom: 250, channelY: 200, openHeight: 60 },
+  });
+  const elementZone: TripSource = { ...zone, finds: [], spots: [], tilapiaRoutes: [], elements: [matsAt('mats-a', 900)] };
+  const atMats: Point = { x: 900 - 60, y: 200 };
+  const pastMats: Point = { x: 900 - 60.5, y: 200 };
+  const inMats: Point = { x: 950, y: 200 };
+  const calm: Point = { x: 700, y: 120 };
+
+  it("starts with copies of the source's elements and the element clock at 0", () => {
+    const trip = createTrip(elementZone);
+    expect(trip.elements).toEqual(elementZone.elements);
+    expect(trip.elements[0]).not.toBe(elementZone.elements?.[0]);
+    expect(trip.elements[0].matPair).not.toBe(elementZone.elements?.[0].matPair);
+    expect(trip.elements[0].type).toBe(TEST_MATS);
+    expect(trip.elementTime).toBe(0);
+  });
+
+  it('starts with no elements when the source has none', () => {
+    const noElements: TripSource = { ...zone, elements: undefined };
+    expect(createTrip(noElements).elements).toEqual([]);
+    expect(createTrip(zone).elements).toEqual([]);
+  });
+
+  it('advances the element clock by the capped step on swimming steps only', () => {
+    const trip = createTrip(elementZone);
+    expect(stepAt(trip, calm).state.elementTime).toBe(DT);
+    expect(walk(trip, [calm, calm, calm]).state.elementTime).toBeCloseTo(3 * DT, 12);
+    const long = stepTrip(trip, { axolotlPos: calm, reduced: false, dashing: false }, 1, ctx);
+    expect(long.state.elementTime).toBe(SWIM.dtMax);
+  });
+
+  it('holds the element clock while paused, banked, carrying or ended', () => {
+    const swimming = stepAt(createTrip(elementZone), calm).state;
+    for (const dt of PAUSE_DTS) {
+      expect(stepTrip(swimming, { axolotlPos: calm, reduced: false, dashing: false }, dt, ctx).state).toBe(swimming);
+    }
+    const bankedTrip = banked().state;
+    expect(bankedTrip.phase).toBe('banked');
+    expect(stepAt(bankedTrip, home).state).toBe(bankedTrip);
+    expect(keepExploring(bankedTrip).elementTime).toBe(bankedTrip.elementTime);
+    const carry = carrying(zone, inRange, false).state;
+    expect(carry.elementTime).toBeGreaterThan(0);
+    expect(stepAt(carry, inRange).state.elementTime).toBe(carry.elementTime);
+    const done = ended();
+    expect(done.elementTime).toBe(carry.elementTime);
+  });
+
+  it('keeps the elements and restarts the element clock on newTrip', () => {
+    const swum = walk(createTrip(elementZone), [calm, calm]).state;
+    const done: TripState = { ...swum, phase: 'ended', ending: { reason: 'wentHome', returned: [], bankedThisTrip: [] } };
+    const next = newTrip(done);
+    expect(next.elementTime).toBe(0);
+    expect(next.elements).toEqual(elementZone.elements);
+  });
+
+  it('meets an element at exactly its meet range from its sweep, not past it, and makes its card due', () => {
+    expect(stepAt(createTrip(elementZone), pastMats).state.met).toEqual([]);
+    const met = stepAt(createTrip(elementZone), atMats).state;
+    expect(met.met).toEqual(['test-mats']);
+    expect(tripSnapshot(met).factCardDue).toBe('test-mats');
+    expect(walk(met, [inMats, atMats]).state.met).toEqual(['test-mats']);
+  });
+
+  it('never meets an element with no fact card, no meet range or no sweep', () => {
+    const noFact: ElementType = { ...TEST_MATS, id: 'no-fact', fact: undefined };
+    const noRange: ElementType = { ...TEST_MATS, id: 'no-range', meetRange: undefined };
+    const noSweep: ElementSpawn = { id: 'no-sweep', type: { ...TEST_MATS, id: 'no-sweep' }, offset: 0 };
+    const source: TripSource = { ...elementZone, elements: [matsAt('a', 900, noFact), matsAt('b', 900, noRange), noSweep] };
+    expect(walk(createTrip(source), [atMats, inMats]).state.met).toEqual([]);
+  });
+
+  it('meets nothing inside the safe area', () => {
+    const inSafe: Point = { x: zone.safeArea.x1 - 10, y: 200 };
+    const near: TripSource = { ...elementZone, elements: [matsAt('mats-near', zone.safeArea.x1 + 20)] };
+    expect(stepAt(createTrip(near), inSafe).state.met).toEqual([]);
+  });
+
+  it('lists elements after predators and hazards met on one step', () => {
+    const source: TripSource = {
+      ...elementZone,
+      predatorRoutes: [{ id: 'pike', waypoints: [{ x: 1100, y: 200 }], species: TEST_PIKE }],
+      hazards: [{ id: 'mud', type: TEST_MUD, shape: { kind: 'circle', x: 1050, y: 200, r: 10 } }],
+    };
+    expect(stepAt(createTrip(source), { x: 1020, y: 200 }).state.met).toEqual(['test-pike', 'test-mud', 'test-mats']);
   });
 });

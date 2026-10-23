@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-10-23
+
+### Added
+
+- Area 5, the second Chinampa gardens area, is open. It is a U-turn: swim out along the top, then turn around and come back along the bottom to the exit (#103).
+- Garter snakes swim near the surface of Area 5. Ripple rings on the water warn you before a snake comes. Swim away or stay deep to be safe (#103).
+- Water hyacinth mats float in Area 5. Each mat opens and closes on an 8 second cycle. A closed mat blocks the way, but a mat never traps you (#103).
+- Two new fact cards: "Meet garter snakes" and "Water hyacinth" (#103).
+- 12 new treasures to find in Area 5, including the Piñata (the special treasure) and the Plum Dream colour, the 16th Dream colour (#103).
+- Six new looks for your axolotl to wear (#103).
+
+### Changed
+
+- The Treasure Chest now lists 72 treasures: 25 Decorations, 31 Wearables and 16 Paint shells (#103).
+- The arrow on the exit sign now points the way out. In Area 5 it points left (#103).
+- The chinampa section of the refuge has a second batch of trash to clear (#103).
+- Area 5's tilapia strike faster (#103).
+- On a small portrait screen, Outfit choices show one choice a page (#103).
+
 ## [0.30.1] - 2026-10-23
 
 ### Changed

@@ -2,7 +2,8 @@
  * Chinampa props (issue #76; guide 3g, 7a, 7b, 7e, 10): the ahuejote root tangle (the hiding
  * place of Area 4), the garden plot banks with ahuejote roots in the water, the overhang
  * under a bank, the edges either side of the gap where the current flows, the ghost net and
- * its snag cue. Each part keeps its own colours and geometry and shares nothing but the kit.
+ * its snag cue, and (issue #103) the water hyacinth mats above and below a channel. Each part keeps
+ * its own colours and geometry and shares nothing but the kit.
  * Every colour here is derived (provisional).
  * Presentational only: no game state, no Phaser. The painters take an explicit context and draw
  * at logical scale; the only randomness is the injected `rand` of the bank painter, which draws
@@ -25,7 +26,7 @@
  */
 import { TAU, blob, ell, frameFromBounds, inkMany, line, seg, shape, type Seg, type TexSize } from './canvasKit';
 import { CAVE_H, CAVE_W } from './drawFinds';
-import { INK, LW, VIEW_W, WHITE } from './palette';
+import { INK, LW, SUN, VIEW_W, WHITE } from './palette';
 
 // ---------------------------------------------------------------------------
 // Colours
@@ -925,4 +926,132 @@ export function paintSnagCue(ctx: CanvasRenderingContext2D): void {
   const knot = new Path2D();
   ell(knot, 0, -26, 2.4, 2.4);
   shape(ctx, knot, GHOST_NET_KNOT, 1.4);
+}
+
+// ---------------------------------------------------------------------------
+// Water hyacinth mats (issue #103)
+// ---------------------------------------------------------------------------
+
+/**
+ * Water hyacinth mat colours (guide 3g, derived, provisional). The leaf (luminance 0.2963, 4.75:1
+ * with ink) is a rich green, and the glossy leaf plate over it (0.5212, 7.83:1) is lighter, so the
+ * plates read against the leaves by value. The lilac flower (0.4670, 7.09:1) and its sun-yellow
+ * centre (0.7560) are lighter again. Each is at the luminance floor 0.1687 or more, so its ink
+ * outline is 3:1 or better. A mat is scenery that blocks the explorer, not a cue object: its ink
+ * outline and its scalloped shape carry it in greyscale.
+ */
+export const HYACINTH_LEAF = '#3fa84f';
+export const HYACINTH_LEAF_LIGHT = '#78d46a';
+export const HYACINTH_FLOWER = '#c8a8f2';
+/** Flower centre: the sun yellow, as the marigold-style centres of the prototype. */
+export const HYACINTH_FLOWER_CENTRE = SUN;
+/** Leaf gloss: a see-through white, inside the silhouette. */
+export const HYACINTH_SHINE = 'rgba(255,255,255,0.6)';
+
+/** Nominal size of a mat texture to the rect edge, logical px. The scene stretches it to the mat's rect. */
+export const HYACINTH_MAT_W = 100;
+export const HYACINTH_MAT_H = 120;
+/** Texture frame of both mats. Anchor is the top-left corner of the mat's rect (the overhang's convention). */
+export const HYACINTH_MAT_TEX: TexSize = frameFromBounds(0, 0, HYACINTH_MAT_W, HYACINTH_MAT_H, 4);
+
+/** Which side of the channel a mat is on: `upper` has its bottom edge toward the channel, `lower` its top edge. */
+export type HyacinthMatSide = 'upper' | 'lower';
+
+/** Leaf grid of a mat: 5 columns by 8 rows, row 0 along the edge toward the channel. */
+const MAT_COLS = 5;
+const MAT_ROWS = 8;
+/** Edge margin to the first leaf centre: the leaf radii (at most 15 by 11) keep every leaf inside the rect. */
+const MAT_MARGIN_X = 15;
+const MAT_MARGIN_Y = 11;
+/** Flowers: x as a share of the width, and the distance in from the channel edge, px. Each sits on a leaf with no glossy plate. */
+const MAT_FLOWERS: readonly (readonly [number, number])[] = [
+  [0.15, 25],
+  [0.675, 25],
+  [0.325, 39],
+];
+/** Flower rosette: six petals this far from the centre, each a rx x ry ellipse pointing outward. */
+const FLOWER_RING = 4.4;
+const FLOWER_PETAL_RX = 3.8;
+const FLOWER_PETAL_RY = 2.6;
+const FLOWER_CENTRE_R = 2.2;
+
+interface MatLeaf {
+  /** Centre in the mat's channel-edge frame: y 0 is the edge toward the channel, y grows into the mat. */
+  readonly x: number;
+  readonly y: number;
+  readonly rx: number;
+  readonly ry: number;
+  readonly rot: number;
+  /** Row from the channel edge and column, for picking which leaves carry a glossy plate. */
+  readonly col: number;
+  readonly row: number;
+}
+
+/** The leaves of a mat in the channel-edge frame, a staggered mix of slightly different round leaves. Deterministic. */
+function matLeaves(): MatLeaf[] {
+  const leaves: MatLeaf[] = [];
+  const dx = (HYACINTH_MAT_W - 2 * MAT_MARGIN_X) / (MAT_COLS - 1);
+  const dy = (HYACINTH_MAT_H - 2 * MAT_MARGIN_Y) / (MAT_ROWS - 1);
+  for (let row = 0; row < MAT_ROWS; row++) {
+    for (let col = 0; col < MAT_COLS; col++) {
+      leaves.push({
+        x: MAT_MARGIN_X + col * dx,
+        y: MAT_MARGIN_Y + row * dy,
+        rx: 13.6 + ((col + row) % 2),
+        ry: 9.6 + ((col + row + 1) % 2) * 0.8,
+        rot: (((col * 3 + row * 5) % 7) - 3) * 0.04,
+        col,
+        row,
+      });
+    }
+  }
+  return leaves;
+}
+
+/**
+ * Paint a water hyacinth mat with the top-left corner of its rect at local (0, 0) (guide 7b): a
+ * floating clump of glossy round leaves in a staggered grid, merged into one scalloped, inked
+ * silhouette (`blob`), with a lighter glossy plate on a third of the leaves (one inked group, one
+ * shine each) and three lilac flowers, each a six-petal rosette with a sun-yellow centre. The
+ * edge toward the channel is scalloped and inside the rect, so what is drawn is what blocks.
+ * `upper` has its bottom edge toward the channel; `lower` has its top edge. The painter maps its
+ * y itself rather than flipping the context, so the gloss stays on the upper left of every leaf
+ * and the flowers stay upright. It is the same size for both and is stretched by the scene to the
+ * mat's rect; it never sways here. Still: no time and no randomness.
+ */
+export function paintHyacinthMat(ctx: CanvasRenderingContext2D, side: HyacinthMatSide): void {
+  const upper = side === 'upper';
+  /** A y in the channel-edge frame to the texture's y. */
+  const toY = (y: number): number => (upper ? HYACINTH_MAT_H - y : y);
+  const leaves = matLeaves();
+
+  const silhouette = new Path2D();
+  for (const l of leaves) ell(silhouette, l.x, toY(l.y), l.rx, l.ry, upper ? -l.rot : l.rot);
+  blob(ctx, silhouette, HYACINTH_LEAF, LW);
+
+  const plates = new Path2D();
+  const gloss = new Path2D();
+  for (const l of leaves) {
+    if ((l.col + 2 * l.row) % 3 !== 0) continue;
+    const y = toY(l.y);
+    ell(plates, l.x, y, l.rx - 2.6, l.ry - 2.2, upper ? -l.rot : l.rot);
+    ell(gloss, l.x - 3.4, y - 3, 4.2, 1.7, -0.35);
+  }
+  shape(ctx, plates, HYACINTH_LEAF_LIGHT, 1.6);
+  ctx.fillStyle = HYACINTH_SHINE;
+  ctx.fill(gloss);
+
+  const petals = new Path2D();
+  const centres = new Path2D();
+  for (const [share, inset] of MAT_FLOWERS) {
+    const cx = share * HYACINTH_MAT_W;
+    const cy = toY(inset);
+    for (let i = 0; i < 6; i++) {
+      const a = (i * TAU) / 6 - Math.PI / 2;
+      ell(petals, cx + Math.cos(a) * FLOWER_RING, cy + Math.sin(a) * FLOWER_RING, FLOWER_PETAL_RX, FLOWER_PETAL_RY, a);
+    }
+    ell(centres, cx, cy, FLOWER_CENTRE_R, FLOWER_CENTRE_R);
+  }
+  shape(ctx, petals, HYACINTH_FLOWER, 1.8);
+  shape(ctx, centres, HYACINTH_FLOWER_CENTRE, 1.4);
 }

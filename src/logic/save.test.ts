@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_LOOK, type AxolotlLook } from './axolotlLook';
 import { suggestedNamesFor } from './axolotlNames';
-import { CHINAMPA_AREA, POND_2_AREA, POND_AREA } from './areas';
+import { CHINAMPA_2_AREA, CHINAMPA_AREA, POND_2_AREA, POND_AREA } from './areas';
 import {
   ALL_TREASURES,
   CANAL_TREASURES,
@@ -80,6 +80,7 @@ const SCARECROW = 'chinampa/scarecrow';
 const PAPEL_PICADO = 'chinampa/papel-picado-banner';
 const POPPY_SHELL = 'chinampa/paint-shell-poppy-red';
 const OVERALLS = 'chinampa/garden-overalls';
+const CHINAMPA_2_ID = CHINAMPA_2_AREA.id;
 
 /** A look with every field off the default, a girl. */
 const STYLED: AxolotlLook = {
@@ -1166,6 +1167,37 @@ describe('Area 4 progress in the save (#76, D2)', () => {
     expect(hub.stars[CHINAMPA_ID]).toEqual({ exit: true, special: false, legsOrRescue: true });
     expect(hub.metHazards).toEqual(['tilapia', 'ghost-net']);
     expect(Object.keys(JSON.parse(encodeSave(chinampaSession().hub)).hub).sort()).toEqual(Object.keys(json.hub).sort());
+  });
+});
+
+describe('Area 5 progress in the save (#103, D2)', () => {
+  it('keeps the garter snake and the water hyacinth met after the ghost net, before the refuge cards', () => {
+    const met = recordTripEnd(chinampaSession(), {
+      areaId: CHINAMPA_2_ID,
+      banked: [],
+      rescued: [],
+      eatenSnacks: [],
+      tripSeed: 103,
+      waitingStranded: null,
+      met: ['water-hyacinth', 'garter-snake'],
+      returnedFinds: [],
+    });
+    const hub = loadedHub(JSON.parse(encodeSave(met.hub)));
+    expect(hub.metHazards).toEqual(['tilapia', 'plastic-worm', 'heron', 'ghost-net', 'garter-snake', 'water-hyacinth']);
+    const reordered = hubWithFields({
+      metHazards: ['canal-clean-ups', 'water-hyacinth', 'snake', 'garter-snake', 'ghost-net', 'water-hyacinth'],
+    });
+    expect(reordered.metHazards).toEqual(['tilapia', 'ghost-net', 'garter-snake', 'water-hyacinth', 'canal-clean-ups']);
+  });
+
+  it('loads Area 5 stars and its cards into a version 1 save additively, with no version bump', () => {
+    expect(SAVE_VERSION).toBe(1);
+    const json = savedJson();
+    expect(json.version).toBe(1);
+    const stars = { ...(json.hub.stars as Record<string, unknown>), [CHINAMPA_2_ID]: { exit: true, special: true, legsOrRescue: false } };
+    const hub = loadedHub({ ...json, hub: { ...json.hub, stars, metHazards: ['garter-snake', 'tilapia', 'water-hyacinth'] } });
+    expect(hub.stars[CHINAMPA_2_ID]).toEqual({ exit: true, special: true, legsOrRescue: false });
+    expect(hub.metHazards).toEqual(['tilapia', 'garter-snake', 'water-hyacinth']);
   });
 });
 

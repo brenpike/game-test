@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { badgeShape } from '../logic/hints';
 import {
   ALL_TREASURES,
+  CHINAMPA_2_TREASURES,
   CHINAMPA_TREASURES,
   POND_2_TREASURES,
   POND_TREASURES,
@@ -22,15 +23,30 @@ import { TANK, TOP_BASE_Y } from '../logic/tank';
 import { BADGE_SHAPES } from './drawBadges';
 import { paintRarityGlow, rarityGlowTextureSize } from './drawRarityGlow';
 import {
+  ALEBRIJE_BASE,
+  ALEBRIJE_BODY,
+  ALEBRIJE_HEAD,
+  ALEBRIJE_MARKS,
+  ALEBRIJE_TAIL,
+  ALEBRIJE_WING,
+  BANDANA_DOT,
+  BANDANA_FILL,
+  BEE_HEADBAND_FILL,
   CLAY_FLOWERPOT_FILL,
   CLAY_FLOWERPOT_SPROUT,
   CORN_HUSK_FILL,
   DREAM_SWATCH_IDS,
+  EMBROIDERED_SHIRT_FILL,
+  EMBROIDERY_BAND,
+  EMBROIDERY_PETALS,
   GARDEN_OVERALLS_FILL,
   GOLDEN_CORN_BASE,
   GOLDEN_CORN_HUSK,
   GOLDEN_CORN_KERNEL,
   GOLDEN_CORN_ROW,
+  GOURD_FILL,
+  GOURD_WEIGHT,
+  HUMMINGBIRD_RIBBON_FILL,
   MARIGOLD_PETAL,
   MONARCH_BODY,
   MONARCH_SPOT,
@@ -38,11 +54,23 @@ import {
   PAPEL_PICADO_APRICOT,
   PAPEL_PICADO_HOOK,
   PAPEL_PICADO_PINK,
+  PINATA_APRICOT,
+  PINATA_HOOK,
+  PINATA_PINK,
+  PINATA_SKY,
   SCARECROW_HAT,
   SCARECROW_POST,
   SCARECROW_SHIRT,
+  SERAPE_FILL,
+  SERAPE_STRIPES,
   STRAW_HAT_FILL,
+  SUNFLOWER_CENTRE,
+  SUNFLOWER_FRAME,
+  TALAVERA_COBALT,
+  TALAVERA_TILE,
+  TALAVERA_WATER,
   TREASURE_ICON_SLUGS,
+  WATERING_CAN_FILL,
   WILLOW_FROND,
   WILLOW_HOOK,
   WILLOW_SEAT,
@@ -176,13 +204,14 @@ const GREYSCALE_PAIRS: readonly [BadgeShape, BadgeShape, number][] = [
 ];
 /** The '?' tube width at every size. */
 const Q_LW = 2.4;
-/** The icons whose outer silhouette includes coloured tubes (cord, glasses band, wreath, lantern tassel). */
+/** The icons whose outer silhouette includes coloured tubes (cord, glasses band, wreath, lantern tassel, sunflower glasses). */
 const TUBE_SLUGS: readonly TreasureIconSlug[] = [
   'shell-necklace',
   'heart-glasses',
   'lotus-lantern',
   'lily-flower-crown',
   'dragonfly-glasses',
+  'sunflower-sunglasses',
 ];
 /** The slugs the pond added (the text after `pond/`), from the catalogue. */
 const POND_SLUGS: readonly string[] = POND_TREASURES.map((treasure) => treasureSlug(treasure.id));
@@ -190,9 +219,15 @@ const POND_SLUGS: readonly string[] = POND_TREASURES.map((treasure) => treasureS
 const POND_2_SLUGS: readonly string[] = POND_2_TREASURES.map((treasure) => treasureSlug(treasure.id));
 /** The slugs the chinampa Area 4 added (the text after `chinampa/`), from the catalogue. */
 const CHINAMPA_SLUGS: readonly string[] = CHINAMPA_TREASURES.map((treasure) => treasureSlug(treasure.id));
+/** The slugs the chinampa Area 5 added (the text after `chinampa/`), from the catalogue. */
+const CHINAMPA_2_SLUGS: readonly string[] = CHINAMPA_2_TREASURES.map((treasure) => treasureSlug(treasure.id));
 /** The slugs the canal had before the pond: 12 items, then its 12 Paint shells. */
 const CANAL_ICON_SLUGS = TREASURE_ICON_SLUGS.filter(
-  (slug) => !POND_SLUGS.includes(slug) && !POND_2_SLUGS.includes(slug) && !CHINAMPA_SLUGS.includes(slug),
+  (slug) =>
+    !POND_SLUGS.includes(slug) &&
+    !POND_2_SLUGS.includes(slug) &&
+    !CHINAMPA_SLUGS.includes(slug) &&
+    !CHINAMPA_2_SLUGS.includes(slug),
 );
 /** The icon slugs the pond added: 11 items, then the Lily green Paint shell. */
 const POND_ICON_SLUGS = TREASURE_ICON_SLUGS.filter((slug) => POND_SLUGS.includes(slug));
@@ -200,6 +235,8 @@ const POND_ICON_SLUGS = TREASURE_ICON_SLUGS.filter((slug) => POND_SLUGS.includes
 const AREA3_ICON_SLUGS = TREASURE_ICON_SLUGS.filter((slug) => POND_2_SLUGS.includes(slug));
 /** The icon slugs the chinampa Area 4 added: 11 items, then the Poppy red Paint shell. */
 const CHINAMPA_ICON_SLUGS = TREASURE_ICON_SLUGS.filter((slug) => CHINAMPA_SLUGS.includes(slug));
+/** The icon slugs the chinampa Area 5 added: 11 items, then the Plum Paint shell. */
+const CHINAMPA_2_ICON_SLUGS = TREASURE_ICON_SLUGS.filter((slug) => CHINAMPA_2_SLUGS.includes(slug));
 /**
  * Call-log digests of the normal painters, recorded before flat mode existed: per size, the
  * digest of every canal icon digest in TREASURE_ICON_SLUGS order; then every canal Dream
@@ -248,6 +285,18 @@ const CHINAMPA_ICON_DIGESTS: Readonly<Record<number, string>> = {
   80: 'f6dd00ca9aec61ae:265',
 };
 const CHINAMPA_SWATCH_DIGEST = '59cc1a40f1f204b4:20';
+/**
+ * The same digests for the icons and the swatch the chinampa Area 5 added (the 11 items, then the Plum Paint
+ * shell), pinned when they were authored. Re-pin these, and only these, when the Area 5 art is retuned on
+ * purpose.
+ */
+const CHINAMPA_2_ICON_DIGESTS: Readonly<Record<number, string>> = {
+  28: '193e7af773aa4b1b:265',
+  32: '036f5a5e9b9f56ba:265',
+  48: 'e108a78396ba355f:265',
+  80: '28a050c994cc5105:265',
+};
+const CHINAMPA_2_SWATCH_DIGEST = 'ff8b8631eefdfd9d:20';
 const EPS = 1e-9;
 
 // ---------------------------------------------------------------------------
@@ -591,14 +640,18 @@ describe('Unfound silhouettes', () => {
       expect(digestOf(POND_ICON_SLUGS), `pond ${size}`).toBe(POND_ICON_DIGESTS[size]);
       expect(digestOf(AREA3_ICON_SLUGS), `area 3 ${size}`).toBe(AREA3_ICON_DIGESTS[size]);
       expect(digestOf(CHINAMPA_ICON_SLUGS), `area 4 ${size}`).toBe(CHINAMPA_ICON_DIGESTS[size]);
+      expect(digestOf(CHINAMPA_2_ICON_SLUGS), `area 5 ${size}`).toBe(CHINAMPA_2_ICON_DIGESTS[size]);
     }
     expect(
-      swatchDigests(DREAM_SWATCH_IDS.filter((id) => id !== 'lily-green' && id !== 'firefly-gold' && id !== 'poppy-red')),
+      swatchDigests(
+        DREAM_SWATCH_IDS.filter((id) => id !== 'lily-green' && id !== 'firefly-gold' && id !== 'poppy-red' && id !== 'plum'),
+      ),
       'canal swatches',
     ).toBe(NORMAL_SWATCH_DIGEST);
     expect(swatchDigests(['lily-green']), 'lily-green swatch').toBe(POND_SWATCH_DIGEST);
     expect(swatchDigests(['firefly-gold']), 'firefly-gold swatch').toBe(AREA3_SWATCH_DIGEST);
     expect(swatchDigests(['poppy-red']), 'poppy-red swatch').toBe(CHINAMPA_SWATCH_DIGEST);
+    expect(swatchDigests(['plum']), 'plum swatch').toBe(CHINAMPA_2_SWATCH_DIGEST);
   });
 });
 
@@ -652,6 +705,11 @@ describe('Home Tank Decoration glows', () => {
       'chinampa/papel-picado-banner',
       'chinampa/willow-swing',
       'chinampa/golden-corn',
+      'chinampa/watering-can',
+      'chinampa/floating-gourd',
+      'chinampa/pinata',
+      'chinampa/talavera-fountain',
+      'chinampa/alebrije-statue',
     ]);
     for (const decoration of decorations) {
       const slug = treasureSlug(decoration.id);
@@ -738,8 +796,8 @@ describe('Home Tank Hanging and wide Decorations', () => {
   const bakeOf = (key: string): BakeCall => bakes.find((b) => b.key === key) as BakeCall;
   const HANGING_SLUGS = TANK_DECORATION_SLUGS.filter((slug) => TANK_DECORATION_SHAPES[slug].placement === 'hanging');
 
-  it('has the Firefly string lights and the Papel picado banner, 144 wide, and the Firefly jar and the Willow swing as its Hanging Decorations', () => {
-    expect(HANGING_SLUGS).toEqual(['firefly-string-lights', 'firefly-jar', 'papel-picado-banner', 'willow-swing']);
+  it('has the Firefly string lights and the Papel picado banner, 144 wide, and the Firefly jar, the Willow swing and the Pinata as its Hanging Decorations', () => {
+    expect(HANGING_SLUGS).toEqual(['firefly-string-lights', 'firefly-jar', 'papel-picado-banner', 'willow-swing', 'pinata']);
     expect(TANK_DECORATION_SHAPES['firefly-string-lights'].width).toBe(144);
     expect(TANK_DECORATION_SHAPES['papel-picado-banner'].width).toBe(144);
     expect(TANK_DECORATION_SHAPES['firefly-jar'].width).toBeUndefined();
@@ -1654,10 +1712,10 @@ describe('Pond Area 3 treasure art (issue #98)', () => {
       'pearl-tail-charm',
       'firefly-cape',
     ]);
-    expect(TREASURE_ICON_SLUGS).toHaveLength(60);
+    expect(TREASURE_ICON_SLUGS).toHaveLength(72);
     expect(TREASURE_ICON_SLUGS.slice(23, 34)).toEqual(AREA3_ITEM_SLUGS);
-    expect(TREASURE_ICON_SLUGS.slice(45)).toEqual(DREAM_SWATCH_IDS.map((id) => `paint-shell-${id}`));
-    expect(DREAM_SWATCH_IDS).toHaveLength(15);
+    expect(TREASURE_ICON_SLUGS.slice(56)).toEqual(DREAM_SWATCH_IDS.map((id) => `paint-shell-${id}`));
+    expect(DREAM_SWATCH_IDS).toHaveLength(16);
     expect(AREA3_ICON_SLUGS).toEqual([...AREA3_ITEM_SLUGS, 'paint-shell-firefly-gold']);
     expect(new Set(TREASURE_ICON_SLUGS).size).toBe(TREASURE_ICON_SLUGS.length);
   });
@@ -1804,9 +1862,9 @@ describe('Pond Area 3 treasure art (issue #98)', () => {
       expect(badges['golden-lotus-throne']).toBe('star');
     });
 
-    it('lists the 20 tank Decorations in catalogue order, canal, pond, Area 3, then Area 4', () => {
+    it('lists the 25 tank Decorations in catalogue order, canal, pond, Area 3, Area 4, then Area 5', () => {
       const catalogue = ALL_TREASURES.filter(isDecoration).map((d) => treasureSlug(d.id));
-      expect(catalogue).toHaveLength(20);
+      expect(catalogue).toHaveLength(25);
       expect([...TANK_DECORATION_SLUGS]).toEqual(catalogue);
       expect(Object.keys(TANK_DECORATION_BADGES)).toEqual(catalogue);
     });
@@ -1925,11 +1983,11 @@ describe('Chinampa Area 4 treasure art (issue #76)', () => {
       'golden-corn',
       'monarch-wings',
     ]);
-    expect(TREASURE_ICON_SLUGS).toHaveLength(60);
+    expect(TREASURE_ICON_SLUGS).toHaveLength(72);
     expect(TREASURE_ICON_SLUGS).toHaveLength(ALL_TREASURES.length);
     expect(TREASURE_ICON_SLUGS.slice(34, 45)).toEqual(CHINAMPA_ITEM_SLUGS);
-    expect(TREASURE_ICON_SLUGS.slice(45)).toEqual(DREAM_SWATCH_IDS.map((id) => `paint-shell-${id}`));
-    expect(DREAM_SWATCH_IDS).toHaveLength(15);
+    expect(TREASURE_ICON_SLUGS.slice(56)).toEqual(DREAM_SWATCH_IDS.map((id) => `paint-shell-${id}`));
+    expect(DREAM_SWATCH_IDS).toHaveLength(16);
     expect(DREAM_SWATCH_IDS[14]).toBe('poppy-red');
     expect(CHINAMPA_ICON_SLUGS).toEqual([...CHINAMPA_ITEM_SLUGS, 'paint-shell-poppy-red']);
     expect(new Set(TREASURE_ICON_SLUGS).size).toBe(TREASURE_ICON_SLUGS.length);
@@ -2218,6 +2276,368 @@ describe('Chinampa Area 4 treasure art (issue #76)', () => {
         expect(x).toBeLessThanOrEqual(-72);
         expect(x + w).toBeGreaterThanOrEqual(72);
       }
+    });
+  });
+});
+
+describe('Chinampa Area 5 treasure art (issue #103)', () => {
+  /**
+   * The outer fills each icon may paint (exported by drawTreasures.ts), by item. Gems, gold trim, the hem band,
+   * sunflower centre, embroidery, tile blue, dots, stripes, ink and glows are free.
+   */
+  const OUTER_FILLS: Readonly<Record<string, readonly string[]>> = {
+    'watering-can': [WATERING_CAN_FILL],
+    'floating-gourd': [GOURD_FILL, GOURD_WEIGHT],
+    'bee-headband': [BEE_HEADBAND_FILL],
+    bandana: [BANDANA_FILL],
+    pinata: [PINATA_PINK, PINATA_SKY, PINATA_APRICOT, PINATA_HOOK],
+    'sunflower-sunglasses': [SUNFLOWER_FRAME],
+    'embroidered-shirt': [EMBROIDERED_SHIRT_FILL],
+    'talavera-fountain': [TALAVERA_TILE, TALAVERA_WATER],
+    'hummingbird-tail-ribbon': [HUMMINGBIRD_RIBBON_FILL],
+    'alebrije-statue': [ALEBRIJE_BODY, ALEBRIJE_WING, ALEBRIJE_HEAD, ALEBRIJE_TAIL, ALEBRIJE_BASE],
+    'rainbow-serape-cape': [SERAPE_FILL],
+  };
+  const FREE_STYLES = new Set(
+    [
+      GOLD_TRIM,
+      BOAT_TRIM,
+      CASTLE_GEM,
+      PYRAMID_GEM,
+      BOW_GEM,
+      GEM_GLINT,
+      TREASURE_STAR,
+      INK,
+      SUNFLOWER_CENTRE,
+      EMBROIDERY_BAND,
+      TALAVERA_COBALT,
+      BANDANA_DOT,
+      ...EMBROIDERY_PETALS,
+      ...ALEBRIJE_MARKS,
+      ...SERAPE_STRIPES,
+    ].map((c) => c.toLowerCase()),
+  );
+  const CHINAMPA_2_ITEM_SLUGS = CHINAMPA_2_ICON_SLUGS.filter((slug) => !slug.startsWith('paint-shell-'));
+  const SIZES = [28, 32, 48, 80] as const;
+  const REACH_TOLERANCE = 0.05;
+  /** The ink widths of the shipped icons that an Area 5 painter may use: item 2.8, details 1.6, trim lines 1.2. */
+  const ALLOWED_INK = new Set([2.8, 1.6, 1.2]);
+  /** The Sunflower sunglasses are glasses: their frame is a tube of band 1.5 and 1.0 ink each side (3.5), bridge 2.6 (4.6). */
+  const GLASSES_INK = new Set([3.5, 4.6]);
+  const SHINE = 'rgba(255,255,255,0.8)';
+  /** Counts of shines, gold trim bands, yellow trim bands, teal trim bands, gem glints and stars painted by an icon. */
+  const count = (slug: TreasureIconSlug): { shine: number; gold: number; band: number; teal: number; glint: number; star: number } => {
+    const ops = record((ctx) => paintTreasureIcon(ctx, slug, 80)).ops;
+    const whites = ops.filter((op) => op.op === 'fill' && op.fillStyle === GEM_GLINT);
+    const uses = (op: Op, command: string): boolean => JSON.stringify(op.args[0]).includes(`"${command}"`);
+    return {
+      shine: ops.filter((op) => op.op === 'fill' && op.fillStyle === SHINE).length,
+      gold: ops.filter((op) => op.op === 'fillRect' && op.fillStyle === GOLD_TRIM).length,
+      band: ops.filter((op) => op.op === 'fillRect' && op.fillStyle === BOAT_TRIM).length,
+      teal: ops.filter((op) => op.op === 'fillRect' && op.fillStyle === EMBROIDERY_BAND).length,
+      glint: whites.filter((op) => uses(op, 'ellipse')).length,
+      star: whites.filter((op) => uses(op, 'arcTo')).length,
+    };
+  };
+
+  it('lists the eleven Area 5 items after the Area 4 ones, in catalogue order, with the Plum Paint shell last', () => {
+    expect(CHINAMPA_2_ITEM_SLUGS).toHaveLength(11);
+    expect(CHINAMPA_2_ITEM_SLUGS).toEqual(
+      CHINAMPA_2_TREASURES.filter((treasure) => treasure.category !== 'paintShell').map((treasure) => treasureSlug(treasure.id)),
+    );
+    expect(CHINAMPA_2_ITEM_SLUGS).toEqual([
+      'watering-can',
+      'floating-gourd',
+      'bee-headband',
+      'bandana',
+      'pinata',
+      'sunflower-sunglasses',
+      'embroidered-shirt',
+      'talavera-fountain',
+      'hummingbird-tail-ribbon',
+      'alebrije-statue',
+      'rainbow-serape-cape',
+    ]);
+    expect(TREASURE_ICON_SLUGS).toHaveLength(72);
+    expect(TREASURE_ICON_SLUGS).toHaveLength(ALL_TREASURES.length);
+    expect(TREASURE_ICON_SLUGS.slice(45, 56)).toEqual(CHINAMPA_2_ITEM_SLUGS);
+    expect(TREASURE_ICON_SLUGS.slice(56)).toEqual(DREAM_SWATCH_IDS.map((id) => `paint-shell-${id}`));
+    expect(DREAM_SWATCH_IDS).toHaveLength(16);
+    expect(DREAM_SWATCH_IDS[15]).toBe('plum');
+    expect(CHINAMPA_2_ICON_SLUGS).toEqual([...CHINAMPA_2_ITEM_SLUGS, 'paint-shell-plum']);
+    expect(new Set(TREASURE_ICON_SLUGS).size).toBe(TREASURE_ICON_SLUGS.length);
+    expect(new Set(ALL_TREASURES.map((treasure) => treasureSlug(treasure.id)))).toEqual(new Set(TREASURE_ICON_SLUGS));
+  });
+
+  it('draws the Plum Paint shell icon and its swatch in the Plum body colour, with an icon and silhouette baked', () => {
+    const shell = CHINAMPA_2_TREASURES.find((treasure) => treasure.category === 'paintShell');
+    expect(shell?.category === 'paintShell' ? shell.dreamColour : undefined).toBe('plum');
+    expect(treasureSlug(shell?.id ?? '')).toBe('paint-shell-plum');
+    expect(DREAM_SWATCH.plum).toEqual({ body: '#f68aec', pattern: 'plain', marks: [], dark: false });
+    expect(hexStyles((ctx) => paintTreasureIcon(ctx, 'paint-shell-plum', 48))).toContain('#f68aec');
+    expect(hexStyles((ctx) => paintDreamSwatch(ctx, 'plum', 32))).toContain('#f68aec');
+    bakes.length = 0;
+    const tex = bakeTreasureTextures({} as never, 2);
+    expect(tex.swatches.plum.key).toBe('dream-swatch-plum-32');
+    for (const size of [28, 32, 48] as const) {
+      for (const slug of CHINAMPA_2_ICON_SLUGS) expect(tex.icons[size][slug].key, `${slug} ${size}`).toBe(`treasure-${slug}-${size}`);
+    }
+    for (const slug of CHINAMPA_2_ICON_SLUGS) expect(tex.silhouettes[slug].key, slug).toBe(treasureSilhouetteKey(slug));
+  });
+
+  it('keeps every Area 5 outer fill at 9:1 or more with ink, and none a rarity badge fill', () => {
+    const fills = [...new Set(Object.values(OUTER_FILLS).flat())];
+    expect(fills).toHaveLength(19);
+    for (const fill of fills) {
+      expect(contrastRatio(fill, INK), fill).toBeGreaterThanOrEqual(9);
+      expect(Object.values(BADGE_FILL), fill).not.toContain(fill);
+    }
+    for (const fill of [WATERING_CAN_FILL, GOURD_FILL, BEE_HEADBAND_FILL, BANDANA_FILL, PINATA_SKY, SUNFLOWER_FRAME, EMBROIDERED_SHIRT_FILL]) {
+      expect(fill, fill).toMatch(/^#[0-9a-f]{6}$/);
+    }
+    for (const fill of [TALAVERA_TILE, TALAVERA_WATER, HUMMINGBIRD_RIBBON_FILL, ALEBRIJE_BODY, ALEBRIJE_WING, ALEBRIJE_HEAD, ALEBRIJE_TAIL, SERAPE_FILL]) {
+      expect(fill, fill).toMatch(/^#[0-9a-f]{6}$/);
+    }
+  });
+
+  it.each(CHINAMPA_2_ITEM_SLUGS.map((slug) => [slug] as const))('%s paints its own Area 5 fills and no other outer colour', (slug) => {
+    const styles = hexStyles((ctx) => paintTreasureIcon(ctx, slug, 48));
+    const own = OUTER_FILLS[slug].map((c) => c.toLowerCase());
+    for (const fill of own) expect(styles, `${slug} uses ${fill}`).toContain(fill);
+    for (const style of styles) {
+      if (FREE_STYLES.has(style)) continue;
+      expect(own, `${slug} paints only its own fills, ${style} is not one`).toContain(style);
+    }
+  });
+
+  it.each(CHINAMPA_2_ITEM_SLUGS.flatMap((slug) => SIZES.map((size) => [slug, size] as const)))(
+    '%s at %i keeps its frame: the ink inside the icon box and the texture frame, reaching nearly the whole longest side',
+    (slug, size) => {
+      const half = size / 2;
+      const frame = frameBox(treasureIconTextureSize(size));
+      for (const paint of [paintTreasureIcon, paintTreasureSilhouette]) {
+        const { box } = inkReach((ctx) => paint(ctx, slug, size));
+        expect(box.minX, `${slug} left`).toBeGreaterThanOrEqual(Math.max(-half - REACH_TOLERANCE, frame.minX));
+        expect(box.maxX, `${slug} right`).toBeLessThanOrEqual(Math.min(half + REACH_TOLERANCE, frame.maxX));
+        expect(box.minY, `${slug} top`).toBeGreaterThanOrEqual(Math.max(-half - REACH_TOLERANCE, frame.minY));
+        expect(box.maxY, `${slug} bottom`).toBeLessThanOrEqual(Math.min(half + REACH_TOLERANCE, frame.maxY));
+      }
+      const { box } = inkReach((ctx) => paintTreasureIcon(ctx, slug, size));
+      expect(Math.max(box.maxX - box.minX, box.maxY - box.minY), `${slug} longest side`).toBeGreaterThanOrEqual(size - 2);
+    },
+  );
+
+  it.each(CHINAMPA_2_ITEM_SLUGS.flatMap((slug) => SIZES.map((size) => [slug, size] as const)))(
+    '%s at %i has its ink outline at the shipped widths, the item outline 2.8 among them',
+    (slug, size) => {
+      const ink = record((ctx) => paintTreasureIcon(ctx, slug, size)).ops.filter(
+        (op) => op.op === 'stroke' && op.strokeStyle === INK,
+      );
+      const widths = new Set(ink.map((op) => op.lineWidth));
+      const allowed = slug === 'sunflower-sunglasses' ? new Set([...ALLOWED_INK, ...GLASSES_INK]) : ALLOWED_INK;
+      expect(widths.has(2.8), `${slug} has the 2.8 item outline`).toBe(true);
+      for (const width of widths) expect(allowed, `${slug} ink ${width}`).toContain(width);
+      // The silhouette keeps the outer ink and drops the details.
+      const flat = record((ctx) => paintTreasureSilhouette(ctx, slug, size)).ops.filter(
+        (op) => op.op === 'stroke' && op.strokeStyle === INK && op.lineWidth === 2.8,
+      );
+      expect(flat.length, `${slug} silhouette outer ink`).toBeGreaterThan(0);
+    },
+  );
+
+  it.each(CHINAMPA_2_ITEM_SLUGS.flatMap((slug) => SIZES.map((size) => [slug, size] as const)))(
+    '%s at %i has its one white shine, and none in the unfound silhouette',
+    (slug, size) => {
+      const shines = (paint: typeof paintTreasureIcon): number =>
+        record((ctx) => paint(ctx, slug, size)).ops.filter((op) => op.op === 'fill' && op.fillStyle === SHINE).length;
+      expect(shines(paintTreasureIcon), slug).toBe(1);
+      expect(shines(paintTreasureSilhouette), `${slug} silhouette`).toBe(0);
+    },
+  );
+
+  it('draws every Area 5 unfound silhouette in the flat fill alone, so no icon is told apart by colour', () => {
+    for (const slug of CHINAMPA_2_ITEM_SLUGS) {
+      const fills = hexStyles((ctx) => paintTreasureSilhouette(ctx, slug, 32));
+      expect([...fills].sort(), slug).toEqual([INK, TREASURE_SILHOUETTE_FILL].map((c) => c.toLowerCase()).sort());
+    }
+  });
+
+  it('gives every Area 5 icon its own outline: no two silhouettes are the same drawing', () => {
+    const digests = CHINAMPA_2_ITEM_SLUGS.map((slug) => callLogDigest((ctx) => paintTreasureSilhouette(ctx, slug, 48)));
+    expect(new Set(digests).size).toBe(CHINAMPA_2_ITEM_SLUGS.length);
+  });
+
+  it('keeps the Area 5 cue values apart in greyscale: pale fills, so ink or fill is 3:1 or better on any background', () => {
+    // A fill 9:1 with ink has relative luminance 0.607 or more, so it is 3:1 or better against the deepest background (10).
+    for (const fill of [...new Set(Object.values(OUTER_FILLS).flat())]) {
+      expect(relativeLuminance(fill), fill).toBeGreaterThanOrEqual(0.607);
+    }
+    // The count cues never lean on hue: the Rare and Epic and Legendary counted details are shapes, not colours.
+    expect(contrastRatio(EMBROIDERY_BAND, EMBROIDERED_SHIRT_FILL)).toBeGreaterThan(1.3);
+  });
+
+  describe('rarity ladder (guide 6i)', () => {
+    it('gives Legendary the gold trim, one gem and one star', () => {
+      for (const slug of ['alebrije-statue', 'rainbow-serape-cape'] as const) {
+        expect(count(slug), slug).toMatchObject({ gold: 1, glint: 1, star: 1 });
+      }
+    });
+
+    it('gives Epic one gem and no gold or star', () => {
+      for (const slug of ['talavera-fountain', 'hummingbird-tail-ribbon'] as const) {
+        expect(count(slug), slug).toMatchObject({ gold: 0, glint: 1, star: 0 });
+      }
+    });
+
+    it('gives Common and Rare no gem, no gold trim and no star', () => {
+      for (const slug of [
+        'watering-can',
+        'floating-gourd',
+        'bee-headband',
+        'bandana',
+        'pinata',
+        'sunflower-sunglasses',
+        'embroidered-shirt',
+      ] as const) {
+        expect(count(slug), slug).toMatchObject({ gold: 0, glint: 0, star: 0 });
+      }
+    });
+
+    it('gives Common no trim band, and the Rare icons their one trim band (or, for the glasses, their sunflower)', () => {
+      for (const slug of ['watering-can', 'floating-gourd', 'bee-headband', 'bandana'] as const) {
+        expect(count(slug), slug).toMatchObject({ band: 0, teal: 0 });
+      }
+      // The Pinata's sash is the one yellow band; the blouse's hem is the one teal band, as its worn look.
+      expect(count('pinata')).toMatchObject({ band: 1, teal: 0 });
+      expect(count('embroidered-shirt')).toMatchObject({ band: 0, teal: 1 });
+      // The sunglasses' one Rare detail is the sunflower on the bridge: eight petals round a brown centre.
+      expect(count('sunflower-sunglasses')).toMatchObject({ band: 0, teal: 0 });
+      expect(hexStyles((ctx) => paintTreasureIcon(ctx, 'sunflower-sunglasses', 48))).toContain(SUNFLOWER_CENTRE);
+    });
+
+    it('gives Epic and Legendary no band, so the gem and gold carry them', () => {
+      for (const slug of ['talavera-fountain', 'hummingbird-tail-ribbon', 'alebrije-statue', 'rainbow-serape-cape'] as const) {
+        expect(count(slug), slug).toMatchObject({ band: 0, teal: 0 });
+      }
+    });
+  });
+
+  it('gives the Talavera fountain its blue-and-white tile look: white glaze and aqua water, with cobalt tile blue inside', () => {
+    const styles = hexStyles((ctx) => paintTreasureIcon(ctx, 'talavera-fountain', 80));
+    for (const colour of [TALAVERA_TILE, TALAVERA_WATER, TALAVERA_COBALT]) expect(styles).toContain(colour.toLowerCase());
+    // The cobalt is a detail inside the glaze and is skipped in the unfound silhouette.
+    expect(hexStyles((ctx) => paintTreasureSilhouette(ctx, 'talavera-fountain', 80))).not.toContain(TALAVERA_COBALT.toLowerCase());
+  });
+
+  it('gives the Alebrije statue its four mark colours, a winged friendly creature, and keeps them out of the silhouette', () => {
+    const styles = hexStyles((ctx) => paintTreasureIcon(ctx, 'alebrije-statue', 80));
+    for (const mark of ALEBRIJE_MARKS) expect(styles, mark).toContain(mark.toLowerCase());
+    const flat = hexStyles((ctx) => paintTreasureSilhouette(ctx, 'alebrije-statue', 80));
+    for (const mark of ALEBRIJE_MARKS) expect(flat, mark).not.toContain(mark.toLowerCase());
+  });
+
+  it('draws the Pinata as a star with five wedges, a hook ring and no stick: nothing to hit', () => {
+    const ops = record((ctx) => paintTreasureIcon(ctx, 'pinata', 80)).ops;
+    const wedge = (fill: string): Op[] => ops.filter((op) => op.op === 'fill' && op.fillStyle === fill);
+    // The star body fill is the pink; wedges add one more pink, two sky and one apricot; one hook ring.
+    expect(wedge(PINATA_SKY)).toHaveLength(2);
+    expect(wedge(PINATA_APRICOT)).toHaveLength(1);
+    expect(wedge(PINATA_PINK)).toHaveLength(3);
+    expect(wedge(PINATA_HOOK)).toHaveLength(1);
+  });
+
+  describe('Decorations in the Home Tank', () => {
+    const FLOORS = ['watering-can', 'talavera-fountain', 'alebrije-statue'] as const;
+    const FLOATS = ['floating-gourd'] as const;
+    const PX = 80;
+    const bakeShipped = (): ReturnType<typeof bakeTankTextures> => {
+      bakes.length = 0;
+      return bakeTankTextures({} as never, 2, { decorationPx: PX, rand: () => 0.5 });
+    };
+    const bakeOf = (key: string): BakeCall => bakes.find((b) => b.key === key) as BakeCall;
+
+    it('matches the catalogue placement kinds, rarities and standard widths', () => {
+      const decorations = new Map(CHINAMPA_2_TREASURES.filter(isDecoration).map((d) => [treasureSlug(d.id), d]));
+      expect([...decorations.keys()]).toEqual(['watering-can', 'floating-gourd', 'pinata', 'talavera-fountain', 'alebrije-statue']);
+      for (const slug of FLOORS) expect(placementKind(decorations.get(slug) as Decoration), slug).toBe('floor');
+      for (const slug of FLOATS) expect(placementKind(decorations.get(slug) as Decoration), slug).toBe('floating');
+      expect(placementKind(decorations.get('pinata') as Decoration)).toBe('hanging');
+      for (const decoration of decorations.values()) expect(decoration.width, decoration.id).toBeUndefined();
+      const badges = TANK_DECORATION_BADGES as Readonly<Record<string, BadgeShape>>;
+      expect(badges['watering-can']).toBe('circle');
+      expect(badges['floating-gourd']).toBe('circle');
+      expect(badges.pinata).toBe('diamond');
+      expect(badges['talavera-fountain']).toBe('shield');
+      expect(badges['alebrije-statue']).toBe('star');
+      for (const slug of FLOORS) expect(TANK_DECORATION_SHAPES[slug], slug).toEqual({ placement: 'floor' });
+      expect(TANK_DECORATION_SHAPES['floating-gourd']).toEqual({ placement: 'floating' });
+      expect(TANK_DECORATION_SHAPES.pinata).toEqual({ placement: 'hanging' });
+    });
+
+    it.each([...FLOORS, ...FLOATS].flatMap((slug) => [48, 80].map((size) => [slug, size] as const)))(
+      '%s at %i is anchored at its lowest fill edge, the icon box edge',
+      (slug, size) => {
+        const { box } = inkReach((ctx) => paintTreasureIcon(ctx, slug, size));
+        expect(decorationBaseOffset(slug, size), `${slug} ${size}`).toBeCloseTo(box.maxY, 1);
+        expect(decorationBaseOffset(slug, size), `${slug} ${size}`).toBeCloseTo(size / 2, 1);
+      },
+    );
+
+    it('bakes a tank sprite and glow for each Floor and Floating one, anchored at the icon box edge', () => {
+      const tex = bakeShipped();
+      const iconFrame = treasureIconTextureSize(PX);
+      for (const slug of [...FLOORS, ...FLOATS]) {
+        expect(tex.decorations[slug].key).toBe(`tank-deco-${slug}-80`);
+        expect(tex.decorationGlows[slug].key).toBe(`tank-deco-glow-${slug}-80`);
+        const sprite = bakeOf(tex.decorations[slug].key);
+        expect(sprite.size.originY - iconFrame.originY, slug).toBeCloseTo(40, 0);
+        expect(sprite.size.originY - iconFrame.originY, slug).toBeCloseTo(decorationBaseOffset(slug, PX), 9);
+        expect(sprite.size, slug).toEqual({ ...iconFrame, originY: iconFrame.originY + decorationBaseOffset(slug, PX) });
+      }
+    });
+
+    it('sits the Floating gourd across the waterline, 20 below the top of the 80 box', () => {
+      // The gourd body is the last GOURD_FILL fill (the stem is first): it reaches above and below y = -40 + 20.
+      const fills = record((ctx) => paintTreasureIcon(ctx, 'floating-gourd', PX)).ops.filter(
+        (op) => op.op === 'fill' && op.fillStyle === GOURD_FILL,
+      );
+      const points: [number, number][] = [];
+      pathPoints(fills[fills.length - 1].args[0] as unknown[][], IDENTITY, points);
+      const ys = points.map(([, y]) => y);
+      expect(Math.min(...ys)).toBeLessThan(-20 - 8);
+      expect(Math.max(...ys)).toBeGreaterThan(-20 + 8);
+      expect(Math.min(...ys)).toBeGreaterThan(-40);
+    });
+
+    it('bakes the Pinata from its icon at 80, hanging from its top-centre hook', () => {
+      const tex = bakeShipped();
+      const iconFrame = treasureIconTextureSize(PX);
+      const sprite = bakeOf(tex.decorations.pinata.key);
+      expect(sprite.size).toEqual({ ...iconFrame, originY: iconFrame.originY - PX / 2 });
+      expect(sprite.size.originY).toBe(1);
+      expect(sprite.size.h).toBe(82);
+      expect(sprite.size.originX * 2).toBe(sprite.size.w);
+      const before = (ctx: CanvasRenderingContext2D): void => {
+        ctx.translate(0, PX / 2);
+        paintTreasureIcon(ctx, 'pinata', PX);
+      };
+      expect(callLogDigest(sprite.paint)).toBe(callLogDigest(before));
+      // The hook ring's ink touches the hook point, and the two lower tips reach the base point one footprint below.
+      const { box: reach } = inkReach((ctx) => paintTreasureIcon(ctx, 'pinata', PX));
+      expect(reach.minY + PX / 2).toBeGreaterThanOrEqual(-0.05);
+      expect(reach.minY + PX / 2).toBeLessThan(1);
+      expect(reach.maxY + PX / 2).toBeGreaterThan(PX - 1.5);
+      expect(reach.maxY + PX / 2).toBeLessThanOrEqual(PX + REACH_TOLERANCE);
+    });
+
+    it('centres the Pinata glow on its box, with the sprite anchor at the hook', () => {
+      const tex = bakeShipped();
+      const glow = bakeOf(tex.decorationGlows.pinata.key);
+      const frame = rarityGlowTextureSize(96);
+      expect(glow.size).toEqual({ ...frame, originY: frame.originY - PX / 2 });
+      const rec = record(glow.paint);
+      expect(rec.calls[0]).toEqual(['translate', [0, PX / 2]]);
+      expect(parseRgba(rec.gradients[0].stops[0][1]).rgb).toEqual(channelsOf(BADGE_FILL.diamond));
     });
   });
 });

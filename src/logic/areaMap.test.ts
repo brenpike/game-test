@@ -289,7 +289,7 @@ describe('areaMapLayout', () => {
   it.each(VIEWS)("labels today's three habitat runs once each, in area order, on $cssW x $cssH", (view) => {
     const layout = areaMapLayout(view, TODAYS_AREAS, MEASURE);
     expect(layout.fits).toBe(true);
-    expect(layout.nodes.map((node) => node.id)).toEqual(['canal', 'pond-1', 'pond-2', 'chinampa-1']);
+    expect(layout.nodes.map((node) => node.id)).toEqual(['canal', 'pond-1', 'pond-2', 'chinampa-1', 'chinampa-2']);
     expect(layout.habitats.map((habitat) => [habitat.id, habitat.name])).toEqual([
       ['canal', 'Canal'],
       ['pond', 'Lily pad pond'],

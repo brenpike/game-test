@@ -39,42 +39,46 @@ _Avoid_: death, die, game over, wipe, fail
 ### Areas and exploring
 
 **Area**:
-A level that belongs to one **Habitat**, such as the canal (Area 1), the Lily pad pond (Area 2 and Area 3), or the Chinampa gardens (Area 4), W x H screens in size and built from area data; it is beaten by reaching its open exit. Area 3 (`'pond-2'` in code) is the second area of the Lily pad pond, the pond at dusk where the **Heron** hunts, about 6 x 1 screens, unlocked by beating Area 2. Area 4 (`'chinampa-1'` in code) is the first area of the Chinampa gardens, where the **Ghost nets** are, about 6 x 2 screens, unlocked by beating Area 3; it is the first area that scrolls up and down, with the Home Spot top left and the exit deep bottom right.
+A level that belongs to one **Habitat**, such as the canal (Area 1), the Lily pad pond (Area 2 and Area 3), or the Chinampa gardens (Area 4 and Area 5), W x H screens in size and built from area data; it is beaten by reaching its open exit. Area 3 (`'pond-2'` in code) is the second area of the Lily pad pond, the pond at dusk where the **Heron** hunts, about 6 x 1 screens, unlocked by beating Area 2. Area 4 (`'chinampa-1'` in code) is the first area of the Chinampa gardens, where the **Ghost nets** are, about 6 x 2 screens, unlocked by beating Area 3; it is the first area that scrolls up and down, with the Home Spot top left and the exit deep bottom right. Area 5 (`'chinampa-2'` in code) is the second area of the Chinampa gardens, where the **Garter snakes** and the **Water hyacinth mats** are, 7 x 2 screens, unlocked by beating Area 4; it is the first U-turn area: the way runs right along the top row from the Home Spot top left, down in the rightmost screen column, and back left along the bottom row to the exit straight under the Home Spot.
 _Avoid_: map; "level" in UI text (say "Area 1")
 
 **Habitat**:
-A group of areas that share a look: the canal, which holds Area 1, the Lily pad pond, which holds Area 2 and Area 3, and the Chinampa gardens (`'chinampa'` in code), which holds Area 4: clear green-teal water by garden plots, with crops above the surface and ahuejote willow roots in the water. An area may use its own variant of its habitat's look: Area 3 uses the pond at dusk (`'pond-dusk'`), warmer and dimmer, with fireflies over the water. Besides colours, a look says what its area needs: a stream, its cave's kind and anchor, the pond props, fireflies, how its banks are drawn (willows or garden plots), the gap between two chinampas, and the chinampa props.
+A group of areas that share a look: the canal, which holds Area 1, the Lily pad pond, which holds Area 2 and Area 3, and the Chinampa gardens (`'chinampa'` in code), which holds Area 4 and Area 5: clear green-teal water by garden plots, with crops above the surface and ahuejote willow roots in the water. An area may use its own variant of its habitat's look: Area 3 uses the pond at dusk (`'pond-dusk'`), warmer and dimmer, with fireflies over the water. Besides colours, a look says what its area needs: a stream, its cave's kind and anchor, the pond props, fireflies, how its banks are drawn (willows or garden plots), the gap between two chinampas, and the chinampa props.
 _Avoid_: using it as another name for one area
 
 **Area map**:
 The screen after the explorer card's Go! where the player picks an unlocked **Area** to explore or replay, with the areas on a winding path by **Habitat**, each with its stars, and a padlock on each locked area (N2).
 
 **Exit**:
-The way out of an area, which stays closed until every snack in the area is eaten.
+The way out of an area, which stays closed until every snack in the area is eaten. When it is open, its sign's arrow points toward the nearer side edge of the area: right in Areas 1 to 4, left in Area 5, whose exit is under its Home Spot.
 
 **Star**:
 One of up to 3 rewards for beating an area, kept forever once earned.
 
 **Special treasure**:
-The one treasure per area that earns a star when the area is beaten with it owned; always Common or Rare; the canal's is the Toy boat, Area 2's is the Frog statue, Area 3's is the Wooden duck decoy (Rare), and Area 4's is the Scarecrow (Rare).
+The one treasure per area that earns a star when the area is beaten with it owned; always Common or Rare; the canal's is the Toy boat, Area 2's is the Frog statue, Area 3's is the Wooden duck decoy (Rare), Area 4's is the Scarecrow (Rare), and Area 5's is the Piñata (Rare).
 
 **Snack**:
 A worm or bug the axolotl eats by touching it with its head; not a trip find, it speeds up regrowth while a leg is missing, and every snack must be eaten to open the exit. In some areas a few snacks dart a short hop away when the axolotl gets close, each at most once per **Trip** (3 in Area 3); darting is part of the growth rule (N2), not a new **Timing element**.
 
 **Current**:
-A stretch of flowing water in an area that pushes the axolotl, and that rarer treasures hide past. In Area 4 it is the water flowing sideways through the gap between two chinampas in the bottom row.
+A stretch of flowing water in an area that pushes the axolotl, and that rarer treasures hide past. In Area 4 and Area 5 it is the water flowing sideways through the gap between two chinampas in the bottom row; Area 4's flows left and Area 5's flows right.
 
 **Timing element**:
-Something in an area that runs on a clock. No area has one now: Area 3's was the **Heron**'s shadow cycle, and #111 removed it when the **Heron** became a sight-based wading stalker.
+Something in an area that runs on a clock, and may carry a **Fun-fact card** of its own. Area 5's **Water hyacinth mats** are the only one now, and the first that blocks the **Explorer**. Area 3's was the **Heron**'s shadow cycle, and #111 removed it when the **Heron** became a sight-based wading stalker.
+
+**Water hyacinth mat**:
+A floating mat of water hyacinth in the Chinampa gardens, Area 5's **Timing element** (`'water-hyacinth'` in code). The mats come in pairs, one above and one below a narrow channel; each pair spans its row, and Area 5 has two, one in each row, out of step. On an 8 s cycle the mats drift apart over the first 1 s of a 3 s open window, drift together over 1 s (the warning), and stay closed for 4 s. A closed channel blocks the **Explorer**, who waits or goes round through the other row; a mat that closes on the **Explorer** pushes it out along the channel, never into a **Ghost net**, a **Current** or out of the swim bounds. A mat never costs a leg, is never a **Hit** and never traps. Only the **Explorer** is blocked: a following rescued axolotl, the **Predators** and the **Snacks** are not.
+_Avoid_: wall, terrain
 
 **Tail Dash**:
 The axolotl's first power, a short burst of speed that works with any number of legs and is the only way to break a Dash pot.
 
 **Hiding spot**:
-A place in an area where a treasure can hide, picked fresh each trip for each treasure picked for that trip, from that treasure's pool. Each rarity's spots sit in their own risk band, nearer a threat (a predator's patrol route or a leg-costing hazard) the rarer the treasure (B10). An area's cave holds hiding spots of its own; Area 2's cave is a hollow log, and Area 3's is a root arch under the bank (B6's "a cave or other hollow"). The **Heron** cannot see an axolotl in cover: inside a reed patch, under a lily pad, or in the root arch (N3). Area 4's cave is a tangle of ahuejote roots on the bed of the bottom row, and its Common and Rare spots sit under the overhanging chinampa banks (the bank cover, `'bank'` in code). Each Lily pad pond area also has two fixed spots under lily pads, one Common and one Rare, that are area data, so every trip there has them.
+A place in an area where a treasure can hide, picked fresh each trip for each treasure picked for that trip, from that treasure's pool. Each rarity's spots sit in their own risk band, nearer a threat (a predator's patrol route or a leg-costing hazard) the rarer the treasure (B10). An area's cave holds hiding spots of its own; Area 2's cave is a hollow log, and Area 3's is a root arch under the bank (B6's "a cave or other hollow"). The **Heron** cannot see an axolotl in cover: inside a reed patch, under a lily pad, or in the root arch (N3). Area 4's and Area 5's caves are tangles of ahuejote roots on the bed of the bottom row, and their Common and Rare spots sit under the overhanging chinampa banks (the bank cover, `'bank'` in code). A spot is past a **Current** when it is within 140 px beyond the current's upstream edge, the edge its flow comes from, and inside its y range, so the side follows the flow: right of Area 4's current, left of Area 5's; a current with no sideways flow has no past side. Each Lily pad pond area also has two fixed spots under lily pads, one Common and one Rare, that are area data, so every trip there has them.
 
 **Treasure slot**:
-One of an area's set number of places for a treasure on each trip (6 in the canal, 7 in Area 2, 8 in Area 3, 9 in Area 4), with its rarity picked by chance from the trip seed; lost treasures and the **Special treasure** are extras on top of the slots (B4). If a rarity has no treasure left to fill a slot, the slot falls back to a more common rarity first, then to only one step rarer; otherwise it stays empty (B4).
+One of an area's set number of places for a treasure on each trip (6 in the canal, 7 in Area 2, 8 in Area 3, 9 in Area 4, 10 in Area 5), with its rarity picked by chance from the trip seed; lost treasures and the **Special treasure** are extras on top of the slots (B4). If a rarity has no treasure left to fill a slot, the slot falls back to a more common rarity first, then to only one step rarer; otherwise it stays empty (B4).
 _Avoid_: Slot alone (that means a Wearable **Slot**)
 
 **Dash pot**:
@@ -90,7 +94,7 @@ _Avoid_: hint star
 Something in an area, defined as data with its own rules, that may cost the axolotl a leg or only slow it, such as a predator. A slow-only hazard, such as the **Plastic worm**, never costs a leg, never starts **Protected time**, and is not a threat for hiding spots (B10).
 
 **Predator**:
-A kind of **Hazard**: an animal that hunts, with a visible warning before every strike; every predator follows the same shared rules, and each species is data. A species' warning starts by distance, when the axolotl comes near (the **Tilapia**), or on sight, when the axolotl is within the predator's reach and not in cover (the **Heron**).
+A kind of **Hazard**: an animal that hunts, with a visible warning before every strike; every predator follows the same shared rules, and each species is data. A species' warning starts by distance, when the axolotl comes near (the **Tilapia** and the **Garter snake**), or on sight, when the axolotl is within the predator's reach and not in cover (the **Heron**). A species may warn only while it is on its route (the **Garter snake**), so after a strike it swims back to its route before it can warn again.
 _Avoid_: monster
 
 **Tilapia**:
@@ -100,6 +104,10 @@ _Avoid_: monster
 **Heron**:
 The wading bird that hunts in Area 3 (N3), the first **Predator** whose warning starts on sight. Two herons stand in the back half with legs in the water, head and neck above it, and wade slowly (20 px/s) along short stretches. A heron's head turns to follow the axolotl when it is near and not in cover. Within 110 px of where it stands (down to about y 230) it sees the axolotl, freezes, and pulls its neck into an S for 1.2 seconds, then stabs in 0.3 seconds at the spot where the axolotl was when the warning started, so swimming away dodges it. After a stab it waits 3 seconds, then wades again. It cannot see an axolotl in cover (a reed patch, a lily pad, the root arch); past the current is open water, and the bottom band below its reach is safe ("stay deep"). The **Tilapia** ignores cover. It never grabs, holds or lifts the axolotl.
 _Avoid_: monster, bird alone
+
+**Garter snake**:
+The striped snake that hunts in Area 5 (N3), at the surface (`'garter-snake'` in code). Two snakes swim slowly along short straight stretches with their heads at y 100, in a gentle S-wiggle. When the axolotl comes within 110 px of a snake's head, it stops and ripple rings spread from its head for 0.8 seconds, then it darts in a straight line, so swimming away or swimming deep during the rings dodges it. It warns only while its head is on its stretch, so repeated darts never walk it deeper: its hits reach no deeper than about y 254, and the water below y 260, the whole bottom row included, is safe. Cover does not hide the axolotl from it. A touch is a gentle bump that costs no leg. Its mouth is always closed, and it never bites, holds or eats the axolotl.
+_Avoid_: monster
 
 **Plastic worm**:
 A bit of plastic in the Lily pad pond that looks like a worm, the first slow-only **Hazard**. Touching it with the head eats it, which makes the **Explorer** **Queasy**, and the axolotl spits it out a little way ahead. It is never a **Snack**, never counts toward opening the **Exit**, and the worms start over each **Trip**.
@@ -118,10 +126,10 @@ How the **Explorer** is for 2 seconds after swimming into a **Ghost net**: it wr
 _Avoid_: trapped, caught, stuck, damage
 
 **Telegraph**:
-A predator's visible warning before a lunge; the tilapia's is a glint and a wind-up pose, and the heron's is freezing and pulling its neck into an S.
+A predator's visible warning before a lunge; the tilapia's is a glint and a wind-up pose, the heron's is freezing and pulling its neck into an S, and the garter snake's is stopping in a held S with ripple rings spreading from its head.
 
 **Lunge**:
-A predator's strike; the tilapia's is a quick dash at the axolotl, and the heron's is a stab with its beak at the spot where the axolotl was when its S-neck began.
+A predator's strike; the tilapia's is a quick dash at the axolotl, the heron's is a stab with its beak at the spot where the axolotl was when its S-neck began, and the garter snake's is a straight dart along the aim fixed at the end of its warning.
 
 **Hit**:
 A predator's strike, or a **Hazard** that costs a leg, that connects.
@@ -159,7 +167,7 @@ _Avoid_: loot
 A hidden treasure that holds one Dream colour.
 
 **Dream colour**:
-A fantasy colour, not found in nature, that can be put on any owned axolotl; solid ones are Common or Rare, and patterned and sheen ones are Epic or Legendary. There are 15: 12 from the canal, Lily green from Area 2, Firefly gold from Area 3, and Poppy red from Area 4.
+A fantasy colour, not found in nature, that can be put on any owned axolotl; solid ones are Common or Rare, and patterned and sheen ones are Epic or Legendary. There are 16: 12 from the canal, Lily green from Area 2, Firefly gold from Area 3, Poppy red from Area 4, and Plum from Area 5.
 _Avoid_: skin
 
 **Treasure Chest**:
@@ -239,10 +247,10 @@ _Avoid_: slot (a Slot is where a Wearable goes)
 The in-game book of morphs and fact cards, nicknamed the Axolotl-dex in game.
 
 **Fun-fact card**:
-A short, true fact about axolotls or their world. Besides the morph facts, the **Collection Book** lists 7 fact cards, in this order: the tilapia card, "Plastic is not food" (the **Plastic worm**), the heron card, "Lost fishing nets" (the **Ghost net**), "Axolotl refuges", "Canal clean-ups", and "Boy or girl?".
+A short, true fact about axolotls or their world. Besides the morph facts, the **Collection Book** lists 9 fact cards, in this order: the tilapia card, "Plastic is not food" (the **Plastic worm**), the heron card, "Lost fishing nets" (the **Ghost net**), "Meet garter snakes" (the **Garter snake**), "Water hyacinth" (the **Water hyacinth mats**), "Axolotl refuges", "Canal clean-ups", and "Boy or girl?".
 
 **Save**:
-Progress kept in device storage by itself: banked treasures, the axolotls, the tank, the Collection Book, stars, the last chosen area, and the fact cards found (`metHazards`: the hazards and predators met, then the refuge fact cards found); never anything from a trip in progress, and never the refuge's pending clean-ups and milestones.
+Progress kept in device storage by itself: banked treasures, the axolotls, the tank, the Collection Book, stars, the last chosen area, and the fact cards found (`metHazards`: the hazards, predators and timing elements met, then the refuge fact cards found); never anything from a trip in progress, and never the refuge's pending clean-ups and milestones.
 _Avoid_: banking (banking moves trip finds to ownership)
 
 **Start over**:
@@ -254,7 +262,7 @@ Erasing all saved progress on this device after two confirmations, from the titl
 The safe axolotl refuge in Xochimilco, opened by the Refuge tile, the fifth and last Home Tank action, that grows as areas are beaten (N2). It has one **Refuge section** per **Habitat**, and it is worked out from the saved **Stars** alone, so nothing about it is saved. It has no end: a dim "More to come" section closes it, and later areas and habitats add to it.
 
 **Refuge section**:
-One **Habitat**'s part of the **Refuge**, in area-table order: hidden ("???" and "Beat Area N") until one of its areas is beaten, clean once every one is, else dirty, still tinted with its remaining trash. It has one **Trash batch** per **Area** in its habitat.
+One **Habitat**'s part of the **Refuge**, in area-table order: hidden ("???" and "Beat Area N") until one of its areas is beaten, clean once every one is, else dirty, still tinted with its remaining trash. It has one **Trash batch** per **Area** in its habitat, so the Chinampa gardens section has two (Area 4 and Area 5). A save that had cleaned it by beating Area 4 sees it dirty again with Area 5's batch until Area 5 is beaten.
 
 **Trash batch**:
 One **Area**'s trash in its habitat's **Refuge section**, cleared once that area is beaten. When the refuge next opens, the cleared trash floats up and fades with a sparkle (the clean-up).
@@ -290,12 +298,14 @@ A themed group of Wearables, named by a Wearable's optional set ID, that unlocks
 - Each **Trip** fills its **Area**'s **Treasure slots** with unbanked **Treasures**, each slot's **Rarity** picked by chance, plus any lost **Treasures** and the unbanked **Special treasure** on top, and one **Hiding spot** per **Treasure** picked for that **Trip**, from that **Treasure**'s pool; no two **Treasures** share a spot in one **Trip**
 - A Legendary **Treasure** always hides in a **Dash pot**, which only **Tail Dash** can break
 - A **Hint sparkle** marks a hidden **Treasure** when the axolotl is near, and each of the last 3 **Snacks**
-- A **Predator** is a **Hazard**, and a **Tilapia** and a **Heron** are **Predators**; a **Predator**'s **Telegraph** always comes before its **Lunge**, whether its warning starts by distance or on sight, and only one **Predator** in an **Area** warns or lunges at a time, a **Heron** and a **Tilapia** included
+- A **Predator** is a **Hazard**, and a **Tilapia**, a **Heron** and a **Garter snake** are **Predators**; a **Predator**'s **Telegraph** always comes before its **Lunge**, whether its warning starts by distance or on sight, and only one **Predator** in an **Area** warns or lunges at a time, a **Heron**, a **Garter snake** and a **Tilapia** included
+- A **Garter snake** warns only while its head is on its stretch, so the water below y 260, the whole bottom row included, is out of its reach
+- A **Water hyacinth mat** is a **Timing element**, not a **Hazard**: it blocks only the **Explorer**, never costs a leg and is never a **Hit**, so the Shell **Perk** plays no part
 - A **Hit** is a **Lunge** that connects, or a touch on a **Hazard** that costs a leg; it starts **Protected time** and causes exactly one **Leg loss**, except a hit blocked by a Shell **Perk** (at most one per trip), which costs no leg; a **Hazard** that only slows never hits
 - Eating a **Plastic worm** makes the **Explorer** **Queasy**; it is not a **Hit**, so the Shell **Perk** plays no part, and it costs no leg
 - Swimming into a **Ghost net** makes the **Explorer** **Snagged**, never a following **Stranded axolotl**; it is not a **Hit**, so the Shell **Perk** plays no part, it starts no **Protected time**, and it costs no leg
 - A **Ghost net** is never a threat for **Hiding spots** (B10); each **Area**'s **Tilapia** risk bands come from that area's own strike reach
-- The first time the **Explorer** meets a **Hazard** or **Predator**, its **Fun-fact card** shows, once per **Save**
+- The first time the **Explorer** meets a **Hazard**, **Predator**, or **Timing element** that carries a card, its **Fun-fact card** shows, once per **Save**
 - Each **Leg loss** is undone by **Regrowth**, one leg at a time; eating a **Snack** speeds up **Regrowth**
 - Losing the fourth leg means the axolotl is **Carried home**
 - A **Treasure** is exactly one of **Decoration**, **Wearable**, or **Paint shell**, and has exactly one **Rarity**
@@ -314,7 +324,7 @@ A themed group of Wearables, named by a Wearable's optional set ID, that unlocks
 - The **Refuge** has one **Refuge section** per **Habitat** that holds an **Area**, and each **Refuge section** has one **Trash batch** per **Area** in it; beating an **Area** (its exit **Star**) clears its **Trash batch**
 - A **Trip** in a real **Area** that newly beats it adds a pending clean-up, and one that newly makes a **Refuge section** clean adds a **Habitat milestone**; both live in memory only, a dev area **Trip** or a replay adds neither, and the **Refuge nudge** shows while a clean-up is pending
 - The **Refuge** holds two **Fun-fact cards**, "Axolotl refuges" (first visit) and "Canal clean-ups" (the first time cleared trash shows); the **Collection Book** lists them after the **Hazard** cards and before "Boy or girl?"
-- The **Collection Book** lists the **Hazard** and **Predator** **Fun-fact cards** in area-table order: the tilapia, the **Plastic worm**, the **Heron**, then the **Ghost net**
+- The **Collection Book** lists the **Hazard**, **Predator** and **Timing element** **Fun-fact cards** in area-table order, each area's element cards after its threat cards: the tilapia, the **Plastic worm**, the **Heron**, the **Ghost net**, the **Garter snake**, then the **Water hyacinth mat**
 
 ## Example dialogue
 
@@ -336,7 +346,7 @@ A themed group of Wearables, named by a Wearable's optional set ID, that unlocks
 - "Tilapia" and "predator" were used for the same fish (PRD glossary, `src/scenes/PredatorView.ts`, `src/art/predatorTextures.ts`): resolved: a **Predator** is the kind of **Hazard** that hunts, and the **Tilapia** is the first **Predator**; say **Tilapia** for the fish, and avoid "monster".
 - "habitat" was another name for one **Area** before the area framework (#73): resolved: a **Habitat** is a group of **Areas** that share a look.
 - `tilapiaRoutes` and `predatorRoutes` both hold predator patrol routes in area data: resolved: the **Tilapia** keeps its own `tilapiaRoutes` column, matching the PRD area table's tilapia column, and every other species goes in `predatorRoutes`.
-- `metHazards` (the hub's met list) holds **Predator** ids too, such as `'tilapia'`, and, since the **Refuge** (#74), the refuge fact card ids `'axolotl-refuges'` and `'canal-clean-ups'`: resolved: it is the list of **Fun-fact cards** found, hazards and predators met first, then the refuge cards. The name stays, because renaming a saved field needs a save version bump ([ADR 0017](docs/adr/0017-xochimilco-refuge-and-habitat-milestones.md)).
+- `metHazards` (the hub's met list) holds **Predator** ids too, such as `'tilapia'`, and, since the **Refuge** (#74), the refuge fact card ids `'axolotl-refuges'` and `'canal-clean-ups'`: resolved: it is the list of **Fun-fact cards** found, hazards, predators and timing elements (such as `'water-hyacinth'`) met first, then the refuge cards. The name stays, because renaming a saved field needs a save version bump ([ADR 0017](docs/adr/0017-xochimilco-refuge-and-habitat-milestones.md)).
 - "worm" names both a **Snack** (`CollectibleKind` `'worm'`) and the **Plastic worm** (`'plastic-worm'`): resolved: a worm alone is a **Snack**; always say **Plastic worm** in full for the hazard.
 - The **Ghost net**'s fact card is titled "Lost fishing nets", and its name in the **Collection Book** is "Ghost net": resolved: **Ghost net** is the domain term; "Lost fishing nets" is only the card's title.
 - "bank" names the top-row bank art (`bankChunks` in area data, drawn as willows in the canal and the pond and as garden plots in the Chinampa gardens) and the bank cover of **Hiding spots** (`'bank'`, from `bankOverhangs`): resolved: the bank cover comes only from `bankOverhangs`, never from `bankChunks`, so the canal's and the pond's **Hiding spots** are unchanged.

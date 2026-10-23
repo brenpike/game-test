@@ -65,6 +65,11 @@ const SCARECROW = 'chinampa/scarecrow';
 const PAPEL_PICADO = 'chinampa/papel-picado-banner';
 const SWING = 'chinampa/willow-swing';
 const GOLDEN_CORN = 'chinampa/golden-corn';
+const WATERING_CAN = 'chinampa/watering-can';
+const GOURD = 'chinampa/floating-gourd';
+const PINATA = 'chinampa/pinata';
+const FOUNTAIN = 'chinampa/talavera-fountain';
+const ALEBRIJE = 'chinampa/alebrije-statue';
 const WIDE_SHIPPED = [STRING_LIGHTS, PAPEL_PICADO];
 const SHIPPED_FLOOR = SHIPPED_DECORATIONS.filter((decoration) => placementKind(decoration) === 'floor');
 const SHIPPED_FLOATING = SHIPPED_DECORATIONS.filter((decoration) => placementKind(decoration) === 'floating');
@@ -419,6 +424,11 @@ describe('placement kinds geometry (issue #95)', () => {
       [PAPEL_PICADO, 'hanging'],
       [SWING, 'hanging'],
       [GOLDEN_CORN, 'floor'],
+      [WATERING_CAN, 'floor'],
+      [GOURD, 'floating'],
+      [PINATA, 'hanging'],
+      [FOUNTAIN, 'floor'],
+      [ALEBRIJE, 'floor'],
     ]);
     for (const decoration of SHIPPED_DECORATIONS) {
       expect(decorationWidth(decoration), decoration.id).toBe(
@@ -487,6 +497,9 @@ describe('isValidPlacementFor', () => {
       CORN_DOLL,
       SCARECROW,
       GOLDEN_CORN,
+      WATERING_CAN,
+      FOUNTAIN,
+      ALEBRIJE,
     ]);
     for (const decoration of SHIPPED_FLOOR) {
       for (const pos of points) expect(isValidPlacementFor(decoration, pos)).toBe(isValidPlacement(pos));
@@ -494,8 +507,8 @@ describe('isValidPlacementFor', () => {
   });
 
   it('accepts Floating and Hanging only at the fixed base y within the x range', () => {
-    expect(SHIPPED_FLOATING.map((decoration) => decoration.id)).toEqual([POND_LILY, LOTUS, FEATHER, DUCK]);
-    expect(SHIPPED_HANGING.map((decoration) => decoration.id)).toEqual([STRING_LIGHTS, JAR, PAPEL_PICADO, SWING]);
+    expect(SHIPPED_FLOATING.map((decoration) => decoration.id)).toEqual([POND_LILY, LOTUS, FEATHER, DUCK, GOURD]);
+    expect(SHIPPED_HANGING.map((decoration) => decoration.id)).toEqual([STRING_LIGHTS, JAR, PAPEL_PICADO, SWING, PINATA]);
     for (const decoration of [...SHIPPED_FLOATING, ...SHIPPED_HANGING, LILY_PAD, PAPER_LANTERN, WIDE_BANNER]) {
       const range = placementXRangeFor(decoration);
       expect(isValidPlacementFor(decoration, { x: range.x0, y: TOP_BASE_Y })).toBe(true);

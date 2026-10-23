@@ -6,8 +6,9 @@
  * Text sizes come in measured from the scene; button sizes are estimated wide here. Nothing here
  * shrinks text or a touch target: when a step does not fit, it makes room in the PRD F1 order
  * (FIT_LEVELS), and the picture buttons grow from PICTURE_PX.min only when there is room. The Outfit
- * choices view has two more ways to make room, taken last (see stylerLayout): it hides the tab row,
- * moving Back to slots into the body, and then sets each label beside its picture.
+ * choices view has three more ways to make room, taken last (see stylerLayout): it hides the tab row,
+ * moving Back to slots into the body, then sets each label beside its picture, and then instead sets
+ * More wearables beside one picture with its label block under them.
  */
 import { NAME_MAX, SUGGESTED_NAMES } from './axolotlNames';
 import { ALL_TREASURES, WEARABLE_SLOTS } from './catalogue';
@@ -54,7 +55,8 @@ export const MAX_OUTFIT_CHOICES =
 
 /**
  * Widest an Outfit choices view label block wraps to under its picture, in CSS px (art guide 8).
- * Beside its picture it may wrap wider, up to the band less PICTURE_PX.min and UI.gap.
+ * Beside its picture it may wrap wider, up to the band less PICTURE_PX.min and UI.gap; under the row of
+ * its picture and More wearables (the last fit stage) it wraps at the band width.
  */
 export const OUTFIT_LABEL_MAX_PX = 168;
 
@@ -318,8 +320,8 @@ export interface StylerDreamLayout {
 
 /**
  * The Outfit step controls: the view, how many picture buttons show on one page (the `options` of the
- * layout), the More button under them (More slots or More wearables; null when every button fits on
- * one page), in the slots view the outfit summary under them (null when it does not fit: the layout
+ * layout), the More button under them (More slots or More wearables, or beside the one picture in the
+ * choices view's last fit stage; null when every button fits on one page), in the slots view the outfit summary under them (null when it does not fit: the layout
  * `caption` then shows in its place when that fits) and whether its rows flow side by side, and in
  * the choices view Back to slots (null in the slots view): first among the step buttons, or, once the
  * choices view has hidden the tab row (the layout `tabs` is then null), the first part of the body,
@@ -416,13 +418,15 @@ const FIT_LEVELS: readonly FitLevel[] = Object.freeze([
  * Where the step buttons go: a centred row at the bottom, or a right column under the tab row (restyle
  * landscape). `cancelInStrip` puts restyle Cancel at the end of the tab row. The Outfit choices view
  * also has frames that hide the tab row (`tabsHidden`: Back to slots is then the first part of the
- * body, not a step button) and set each label beside its picture (`labelsBeside`).
+ * body, not a step button), set each label beside its picture (`labelsBeside`), and set More wearables
+ * beside the one picture with its label block under them (`moreBeside`).
  */
 interface StylerFrame {
   nav: 'row' | 'column';
   cancelInStrip: boolean;
   tabsHidden: boolean;
   labelsBeside: boolean;
+  moreBeside: boolean;
 }
 
 /** What borders a layout part, for the gap rule: a touch target, other content, or the panel padding. */
@@ -530,26 +534,33 @@ function isPagedPictureStep(step: StylerStep): boolean {
 
 /**
  * The frames to try, in stages: restyle tries Cancel in the tab row only when nothing else fits. The
- * Outfit choices view adds two stages, each tried only once the stages before it have failed at every
+ * Outfit choices view adds three stages, each tried only once the stages before it have failed at every
  * picture count down to 1: hide the tab row (Back to slots joins the body), then also set each label
- * beside its picture.
+ * beside its picture, then instead set More wearables beside one picture with its label block under
+ * them.
  */
 function frameStagesFor(view: HudView, screen: StylerScreen): StylerFrame[][] {
   if (screen.mode === 'creator') {
-    return [[{ nav: 'row', cancelInStrip: false, tabsHidden: false, labelsBeside: false }]];
+    return [[{ nav: 'row', cancelInStrip: false, tabsHidden: false, labelsBeside: false, moreBeside: false }]];
   }
   const nav = view.cssW > view.cssH ? 'column' : 'row';
   const stages: StylerFrame[][] = [
     [
-      { nav, cancelInStrip: false, tabsHidden: false, labelsBeside: false },
-      { nav, cancelInStrip: true, tabsHidden: false, labelsBeside: false },
+      { nav, cancelInStrip: false, tabsHidden: false, labelsBeside: false, moreBeside: false },
+      { nav, cancelInStrip: true, tabsHidden: false, labelsBeside: false, moreBeside: false },
     ],
   ];
   if (isOutfitChoices(screen)) {
-    stages.push([{ nav, cancelInStrip: false, tabsHidden: true, labelsBeside: false }]);
-    stages.push([{ nav, cancelInStrip: false, tabsHidden: true, labelsBeside: true }]);
+    stages.push([{ nav, cancelInStrip: false, tabsHidden: true, labelsBeside: false, moreBeside: false }]);
+    stages.push([{ nav, cancelInStrip: false, tabsHidden: true, labelsBeside: true, moreBeside: false }]);
+    stages.push([{ nav, cancelInStrip: false, tabsHidden: true, labelsBeside: false, moreBeside: true }]);
   }
   return stages;
+}
+
+/** True when `frames` is the Outfit choices stage that sets More wearables beside the picture. */
+function isMoreBesideStage(frames: readonly StylerFrame[]): boolean {
+  return frames.some((frame) => frame.moreBeside);
 }
 
 /**
@@ -619,7 +630,10 @@ function sameLevel(first: FitLevel, second: FitLevel): boolean {
  * still step buttons (and the hidden Surprise me's place kept); then it sets each label beside its
  * picture (`labelsBeside`), each label block wrapped at OUTFIT_LABEL_MAX_PX or, when that does not
  * fit, wider, up to the band less PICTURE_PX.min and UI.gap. With the tab row hidden, fit step 6 leaves no heading and no bold tab,
- * so Back to slots is what shows where the player is.
+ * so Back to slots is what shows where the player is. Last, only when nothing before it fits, it shows
+ * one choice a page with More wearables beside its picture, UI.gap away, and the label block under
+ * them, wrapped at the band width (`labelsBeside` false); when that does not fit either, it returns
+ * the last try before it.
  */
 export function stylerLayout(view: HudView, screen: StylerScreen, measure: StylerMeasure): StylerLayout {
   checkScreen(screen);
@@ -640,10 +654,10 @@ export function stylerLayout(view: HudView, screen: StylerScreen, measure: Style
   };
   let lastTry: StylerLayout | null = null;
   for (const frames of frameStagesFor(view, screen)) {
-    for (const perPage of pageSizesFor(screen)) {
+    for (const perPage of pageSizesFor(screen, frames)) {
       const tried = firstFittingTry(frames, inner, panel, screen, measure, perPage);
       if (tried.fits) return tried.layout;
-      lastTry = tried.layout;
+      if (!isMoreBesideStage(frames)) lastTry = tried.layout;
     }
   }
   if (lastTry === null) throw new Error('stylerLayout: no page sizes to try');
@@ -653,10 +667,11 @@ export function stylerLayout(view: HudView, screen: StylerScreen, measure: Style
 /**
  * The picture buttons per page to try, most first: on Dream colour and Outfit from the fewer of
  * MAX_STEP_OPTIONS and the option count down to 1, else only the option count (Name pages its names
- * itself).
+ * itself). A stage of `frames` that sets More wearables beside the picture shows one picture a page.
  */
-function pageSizesFor(screen: StylerScreen): number[] {
+function pageSizesFor(screen: StylerScreen, frames: readonly StylerFrame[]): number[] {
   if (!isPagedPictureStep(screen.step)) return [screen.optionCount];
+  if (isMoreBesideStage(frames)) return [1];
   const most = Math.min(MAX_STEP_OPTIONS, screen.optionCount);
   return Array.from({ length: most }, (_unused, index) => most - index);
 }
@@ -1118,6 +1133,26 @@ function besidePictureGrid(
   return { block, columns };
 }
 
+/**
+ * One square picture button of side `side` with `more` (when it has one) to its right, UI.gap away,
+ * the two centred down their row; the label block, wrapped at `labelMinW`, sits TEXT_GAP under the
+ * row. The row and the label block are each centred across the wider of the two.
+ */
+function moreBesideGrid(side: number, more: MorePiece | null, measure: StylerMeasure, labelMinW: number): { block: Block; columns: number } {
+  const rowW = more === null ? side : side + UI.gap + more.size.w;
+  const rowH = more === null ? side : Math.max(side, more.size.h);
+  const labelSize = measure.optionLabelAt(labelMinW);
+  const w = Math.max(rowW, labelSize.w);
+  const rowX = (w - rowW) / 2;
+  const pieces: Piece[] = [{ name: 'option', rect: { x: rowX, y: (rowH - side) / 2, w: side, h: side } }];
+  if (more !== null) {
+    pieces.push({ name: more.name, rect: { x: rowX + side + UI.gap, y: (rowH - more.size.h) / 2, ...more.size } });
+  }
+  pieces.push({ name: 'optionLabel', rect: { x: (w - labelSize.w) / 2, y: rowH + TEXT_GAP, ...labelSize } });
+  const block: Block = { w, h: rowH + TEXT_GAP + labelSize.h, top: 'target', bottom: 'other', pieces, children: [] };
+  return { block, columns: 1 };
+}
+
 /** The helper line block across `wrapW`, or null when the level hides it. */
 function helperBlock(level: FitLevel, measure: StylerMeasure, wrapW: number): Block | null {
   return level.helper ? pieceBlock('helper', measure.helperAt(wrapW), 'other') : null;
@@ -1132,13 +1167,15 @@ interface MorePiece {
 /**
  * The picture buttons of one try: how many show on the page, the More button under them (null when
  * every option shows), the least cell width for their labels, whether each label sits beside its
- * button, and whether Back to slots leads the body.
+ * button, whether the More button sits beside the one button instead, and whether Back to slots leads
+ * the body.
  */
 interface PictureSpec {
   count: number;
   more: MorePiece | null;
   labelMinW: number;
   labelsBeside: boolean;
+  moreBeside: boolean;
   backToSlots: boolean;
 }
 
@@ -1167,6 +1204,7 @@ function pictureSpecOf(screen: StylerScreen, perPage: number, measure: StylerMea
     more: moreOf(screen, perPage),
     labelMinW: labelMinWOf(screen, measure),
     labelsBeside: frame.labelsBeside,
+    moreBeside: frame.moreBeside,
     backToSlots: isOutfitChoices(screen) && frame.tabsHidden,
   };
 }
@@ -1180,10 +1218,12 @@ function besideLabelMaxW(bandW: number): number {
  * The picture buttons of `screen` with `perPage` to a page, in `frame`, in the order to try them: the
  * labels wrapped at OUTFIT_LABEL_MAX_PX, then, on the Outfit choices view with each label block beside
  * its picture, the label blocks wrapped wider, at besideLabelMaxW of the band `bandW`, when that is
- * wider and they take fewer lines.
+ * wider and they take fewer lines. With More wearables beside the picture, the label block under them
+ * wraps at the band `bandW` only.
  */
 function pictureSpecsOf(screen: StylerScreen, perPage: number, measure: StylerMeasure, frame: StylerFrame, bandW: number): PictureSpec[] {
   const spec = pictureSpecOf(screen, perPage, measure, frame);
+  if (spec.moreBeside) return [{ ...spec, labelMinW: labelMinWOf(screen, measure, bandW) }];
   const wideW = besideLabelMaxW(bandW);
   if (!spec.labelsBeside || !isOutfitChoices(screen) || wideW <= OUTFIT_LABEL_MAX_PX) return [spec];
   const wideMinW = labelMinWOf(screen, measure, wideW);
@@ -1191,8 +1231,12 @@ function pictureSpecsOf(screen: StylerScreen, perPage: number, measure: StylerMe
   return fewerLines ? [spec, { ...spec, labelMinW: wideMinW }] : [spec];
 }
 
-/** The picture grid of `spec` at side `side` across `maxW`: labels under the buttons, or beside them. */
+/**
+ * The picture grid of `spec` at side `side` across `maxW`: labels under the buttons, or beside them, or
+ * the More button beside the one button with its label under them.
+ */
 function gridOf(side: number, spec: PictureSpec, level: FitLevel, maxW: number, measure: StylerMeasure): { block: Block; columns: number } {
+  if (spec.moreBeside) return moreBesideGrid(side, spec.more, measure, spec.labelMinW);
   return spec.labelsBeside && level.labels
     ? besidePictureGrid(spec.count, side, maxW, measure, spec.labelMinW)
     : pictureGrid(spec.count, side, level.labels, maxW, measure, spec.labelMinW);
@@ -1222,8 +1266,8 @@ function gridWithFooter(grid: Block, gridW: number, more: MorePiece | null, meas
 
 /**
  * The body blocks to try for the picture buttons of `spec` at side `side`, with their More button
- * under them: the preview above, then beside, the buttons. Back to slots, when `spec` has it, leads
- * the body.
+ * under them (or beside the one button, when `spec` sets it there): the preview above, then beside,
+ * the buttons. Back to slots, when `spec` has it, leads the body.
  */
 function pictureBodies(
   side: number,
@@ -1236,18 +1280,19 @@ function pictureBodies(
   const helper = helperBlock(level, measure, bandW);
   const preview = level.previewScale === null ? null : previewBlock(measure, level.previewScale);
   const lead = spec.backToSlots ? [pieceBlock('backToSlots', BACK_TO_SLOTS_BUTTON, 'target')] : [];
+  const footerMore = spec.moreBeside ? null : spec.more;
   const stackedGrid = gridOf(side, spec, level, bandW, measure);
   const stacked = stackBlocks([
     ...lead,
     ...(helper ? [helper] : []),
     ...(preview ? [preview] : []),
-    gridWithFooter(stackedGrid.block, bandW, spec.more, measure, level),
+    gridWithFooter(stackedGrid.block, bandW, footerMore, measure, level),
   ]);
   const bodies = [{ block: stacked, columns: stackedGrid.columns }];
   if (preview !== null) {
     const sideW = bandW - preview.w - TEXT_GAP;
     const sideGrid = gridOf(side, spec, level, sideW, measure);
-    const row = sideBlocks(preview, gridWithFooter(sideGrid.block, sideW, spec.more, measure, level));
+    const row = sideBlocks(preview, gridWithFooter(sideGrid.block, sideW, footerMore, measure, level));
     bodies.push({ block: stackBlocks([...lead, ...(helper ? [helper] : []), row]), columns: sideGrid.columns });
   }
   return bodies;

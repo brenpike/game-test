@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CANAL_AREA, CHINAMPA_AREA, POND_2_AREA, POND_AREA } from './areas';
+import { CANAL_AREA, CHINAMPA_2_AREA, CHINAMPA_AREA, POND_2_AREA, POND_AREA } from './areas';
 import { DEV_TEST_AREA } from './devAreas';
 import { DEFAULT_LOOK, LOOK_FIELDS, rescuedLook, type AxolotlLook, type AxolotlSex } from './axolotlLook';
 import { NAME_MAX, nameFits, nameLength, suggestedNamesFor } from './axolotlNames';
@@ -77,6 +77,7 @@ const GALAXY_SHELL = 'canal/paint-shell-galaxy';
 const POND_ID = POND_AREA.id;
 const POND_2_ID = POND_2_AREA.id;
 const CHINAMPA_ID = CHINAMPA_AREA.id;
+const CHINAMPA_2_ID = CHINAMPA_2_AREA.id;
 const LILY_PAD = 'pond/lily-pad';
 
 /** Steps the trip once with the axolotl at `pos`. */
@@ -275,6 +276,7 @@ describe('createSession', () => {
         'pond-1': { eatenSnacks: [], lastTripSeed: null, waitingStranded: null, returnedFinds: [] },
         'pond-2': { eatenSnacks: [], lastTripSeed: null, waitingStranded: null, returnedFinds: [] },
         'chinampa-1': { eatenSnacks: [], lastTripSeed: null, waitingStranded: null, returnedFinds: [] },
+        'chinampa-2': { eatenSnacks: [], lastTripSeed: null, waitingStranded: null, returnedFinds: [] },
       },
     });
     expect(STARTER_AXOLOTL_ID).toBe('starter');
@@ -1549,6 +1551,18 @@ describe('per-area memory (#73)', () => {
     expect(tripStart(withHeron, 0, CHINAMPA_ID).factCardsSeen).toEqual(['tilapia', 'plastic-worm', 'heron', 'ghost-net']);
   });
 
+  it('keeps the garter snake and the water hyacinth met in Area 5 after the ghost net, in area-table order', () => {
+    const area5First = recordTripEnd(withStarter(), {
+      ...record([], 1),
+      areaId: CHINAMPA_2_ID,
+      met: ['water-hyacinth', 'garter-snake', 'tilapia'],
+    });
+    expect(area5First.hub.metHazards).toEqual(['tilapia', 'garter-snake', 'water-hyacinth']);
+    const withNet = recordTripEnd(area5First, { ...record([], 2), areaId: CHINAMPA_ID, met: ['ghost-net'] });
+    expect(withNet.hub.metHazards).toEqual(['tilapia', 'ghost-net', 'garter-snake', 'water-hyacinth']);
+    expect(tripStart(withNet, 0, CHINAMPA_2_ID).factCardsSeen).toEqual(['tilapia', 'ghost-net', 'garter-snake', 'water-hyacinth']);
+  });
+
   it('keeps an Area 4 trip in its own memory, apart from Area 3', () => {
     const pond2Trip = recordTripEnd(withStarter(), { ...record([], 13, ['pond-2/snack-1']), areaId: POND_2_ID });
     const chinampaTrip = recordTripEnd(pond2Trip, { ...record([], 17, ['snack-4']), areaId: CHINAMPA_ID });
@@ -1649,11 +1663,12 @@ describe('Start over (#73)', () => {
     const fresh = createSession();
     expect(fresh.hub.lastAreaId).toBe(CANAL_AREA_ID);
     expect(fresh.hub.metHazards).toEqual([]);
-    expect(Object.keys(fresh.areas)).toEqual([CANAL_AREA_ID, POND_ID, POND_2_ID, CHINAMPA_ID]);
+    expect(Object.keys(fresh.areas)).toEqual([CANAL_AREA_ID, POND_ID, POND_2_ID, CHINAMPA_ID, CHINAMPA_2_ID]);
     expect(fresh.areas.canal).toEqual(areaMemory(fresh, DEV_TEST_AREA.id));
     expect(fresh.areas[POND_ID]).toEqual(areaMemory(fresh, DEV_TEST_AREA.id));
     expect(fresh.areas[POND_2_ID]).toEqual(areaMemory(fresh, DEV_TEST_AREA.id));
     expect(fresh.areas[CHINAMPA_ID]).toEqual(areaMemory(fresh, DEV_TEST_AREA.id));
+    expect(fresh.areas[CHINAMPA_2_ID]).toEqual(areaMemory(fresh, DEV_TEST_AREA.id));
   });
 });
 

@@ -5,7 +5,7 @@ import { DEPTH } from '../art/layers';
 import { INK, UI_PANEL, UI_PANEL_PINK, WHITE } from '../art/palette';
 import { iconKey, type TexInfo } from '../art/textures';
 import { exitClosedText, snacksLeftLabel } from '../logic/areaText';
-import { threatFactCards, threatIds } from '../logic/areas';
+import { sourceFactCards } from '../logic/areas';
 import type { FactCard as FactCardData } from '../logic/factCards';
 import { pickToastAnnouncement } from '../logic/findToast';
 import {
@@ -1031,18 +1031,19 @@ export class HudScene extends Phaser.Scene {
   private showFactCardWhenDue(snapshot: TripSnapshot): void {
     const dueId = snapshot.factCardDue;
     if (dueId === null || this.factCardsShown.includes(dueId) || this.paused || snapshot.phase !== 'swimming') return;
-    const card = this.threatFactCard(dueId);
+    const card = this.zoneFactCard(dueId);
     this.factCardsShown.push(dueId);
     this.holdSwim();
     this.factCard.show(card);
     this.game.events.emit(GAME_EVENTS.PAUSED);
   }
 
-  /** The fact card of hazard or predator `id` in this zone. Throws when the zone has no such threat. */
-  private threatFactCard(id: string): Readonly<FactCardData> {
-    const index = threatIds(this.zone).indexOf(id);
-    if (index < 0) throw new Error(`HudScene: no hazard or predator ${id} in the zone`);
-    return threatFactCards(this.zone)[index];
+  /** The fact card of hazard, predator or element `id` in this zone. Throws when the zone has no such card. */
+  private zoneFactCard(id: string): Readonly<FactCardData> {
+    const { ids, cards } = sourceFactCards(this.zone);
+    const index = ids.indexOf(id);
+    if (index < 0) throw new Error(`HudScene: no hazard, predator or element ${id} in the zone`);
+    return cards[index];
   }
 
   /** After OK on the fact card: tells the swim scene that card was seen, then resumes play. */

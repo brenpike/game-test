@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FactCard } from './factCards';
 import {
   elementActive,
+  elementSweep,
   hazardCentre,
   hazardMet,
   hazardTouches,
@@ -51,6 +52,23 @@ const CYCLE: ElementSpawn = {
   id: 'pulse',
   type: { id: 'test-cycle', name: 'Test cycle', kind: 'cycle', period: 10, activeFor: 3 },
   offset: 2,
+};
+
+const MATS: ElementSpawn = {
+  id: 'mats',
+  type: {
+    ...CYCLE.type,
+    id: 'test-mats',
+    name: 'Test mats',
+    fact: TEST_FACT,
+    meetRange: 180,
+    openFor: 3,
+    openingFor: 1,
+    closingFor: 1,
+    closedFor: 6,
+  },
+  offset: 2,
+  matPair: { x0: 400, x1: 460, rowTop: 80, rowBottom: 360, channelY: 220, openHeight: 72 },
 };
 
 describe('shapeDistance', () => {
@@ -214,5 +232,39 @@ describe('elementActive', () => {
     const negative: ElementSpawn = { ...CYCLE, type: { ...CYCLE.type, period: -4 } };
     expect(() => elementActive(zero, 1)).toThrow(RangeError);
     expect(() => elementActive(negative, 1)).toThrow(RangeError);
+  });
+});
+
+describe('mat element data', () => {
+  it('keeps elementActive unchanged by the optional fact, meet range, timing and geometry', () => {
+    for (let time = -12; time <= 24; time += 0.25) {
+      expect(elementActive(MATS, time)).toBe(elementActive(CYCLE, time));
+    }
+  });
+});
+
+describe('elementSweep', () => {
+  it('is the whole x0..x1 by rowTop..rowBottom rect of a mat pair', () => {
+    expect(elementSweep(MATS)).toEqual({ kind: 'rect', x0: 400, x1: 460, y0: 80, y1: 360 });
+  });
+
+  it('is null for an element with no geometry', () => {
+    expect(elementSweep(CYCLE)).toBeNull();
+  });
+
+  it('contains both mats at any channel height, so shapeDistance measures from it', () => {
+    const sweep = elementSweep(MATS);
+    if (!sweep) throw new Error('expected a sweep');
+    expect(shapeDistance({ x: 430, y: 80 }, sweep)).toBe(0);
+    expect(shapeDistance({ x: 430, y: 220 }, sweep)).toBe(0);
+    expect(shapeDistance({ x: 430, y: 360 }, sweep)).toBe(0);
+    expect(shapeDistance({ x: 540, y: 220 }, sweep)).toBe(80);
+  });
+
+  it('returns a new rect that shares nothing with the spawn', () => {
+    const sweep = elementSweep(MATS);
+    if (!sweep) throw new Error('expected a sweep');
+    sweep.x0 = 0;
+    expect(MATS.matPair?.x0).toBe(400);
   });
 });

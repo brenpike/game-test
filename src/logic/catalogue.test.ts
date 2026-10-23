@@ -3,11 +3,13 @@ import {
   ALL_TREASURES,
   CANAL_DREAM_COLOURS,
   CANAL_TREASURES,
+  CHINAMPA_2_TREASURES,
   CHINAMPA_TREASURES,
   DREAM_COLOURS,
   FIREFLY_GOLD,
   LILY_GREEN,
   PERK_VALUES,
+  PLUM,
   POND_2_TREASURES,
   POND_TREASURES,
   POPPY_RED,
@@ -487,23 +489,120 @@ describe('CHINAMPA_TREASURES', () => {
   });
 });
 
+describe('CHINAMPA_2_TREASURES', () => {
+  it('holds exactly the chinampa gardens Area 5 treasures, in order (issue #103)', () => {
+    expect(CHINAMPA_2_TREASURES).toEqual([
+      { id: 'chinampa/watering-can', name: 'Watering can', rarity: 'common', category: 'decoration' },
+      {
+        id: 'chinampa/floating-gourd',
+        name: 'Floating gourd',
+        rarity: 'common',
+        category: 'decoration',
+        placement: 'floating',
+      },
+      {
+        id: 'chinampa/bee-headband',
+        name: 'Bee headband',
+        rarity: 'common',
+        category: 'wearable',
+        slot: 'head',
+        perk: { type: 'snackMagnet', value: 30 },
+      },
+      {
+        id: 'chinampa/bandana',
+        name: 'Bandana',
+        rarity: 'common',
+        category: 'wearable',
+        slot: 'neck',
+        perk: { type: 'speed', value: 4 },
+      },
+      { id: 'chinampa/pinata', name: 'Piñata', rarity: 'rare', category: 'decoration', placement: 'hanging' },
+      {
+        id: 'chinampa/sunflower-sunglasses',
+        name: 'Sunflower sunglasses',
+        rarity: 'rare',
+        category: 'wearable',
+        slot: 'face',
+        perk: { type: 'treasureSense', value: 25 },
+      },
+      {
+        id: 'chinampa/embroidered-shirt',
+        name: 'Embroidered shirt',
+        rarity: 'rare',
+        category: 'wearable',
+        slot: 'shirt',
+        perk: { type: 'regrowth', value: 15 },
+      },
+      {
+        id: 'chinampa/paint-shell-plum',
+        name: 'Plum Paint shell',
+        rarity: 'rare',
+        category: 'paintShell',
+        dreamColour: 'plum',
+      },
+      { id: 'chinampa/talavera-fountain', name: 'Talavera fountain', rarity: 'epic', category: 'decoration' },
+      {
+        id: 'chinampa/hummingbird-tail-ribbon',
+        name: 'Hummingbird tail ribbon',
+        rarity: 'epic',
+        category: 'wearable',
+        slot: 'tail',
+        perk: { type: 'speed', value: 8 },
+      },
+      { id: 'chinampa/alebrije-statue', name: 'Alebrije statue', rarity: 'legendary', category: 'decoration' },
+      {
+        id: 'chinampa/rainbow-serape-cape',
+        name: 'Rainbow serape cape',
+        rarity: 'legendary',
+        category: 'wearable',
+        slot: 'back',
+        perk: { type: 'shell', value: 1 },
+      },
+    ]);
+    expect(Object.isFrozen(CHINAMPA_2_TREASURES)).toBe(true);
+  });
+
+  it('gives every chinampa Area 5 Wearable its PERK_VALUES value and no set', () => {
+    for (const wearable of CHINAMPA_2_TREASURES.filter(isWearable)) {
+      expect(wearable.perk.value, wearable.id).toBe(PERK_VALUES[wearable.perk.type][wearable.rarity]);
+      expect(wearable.setId, wearable.id).toBeUndefined();
+    }
+  });
+
+  it('has 5 Decorations, 6 Wearables and the Plum Paint shell', () => {
+    expect(CHINAMPA_2_TREASURES).toHaveLength(12);
+    expect(CHINAMPA_2_TREASURES.filter(isDecoration)).toHaveLength(5);
+    expect(CHINAMPA_2_TREASURES.filter(isWearable)).toHaveLength(6);
+    expect(CHINAMPA_2_TREASURES.filter(isPaintShell).map((shell) => shell.id)).toEqual(['chinampa/paint-shell-plum']);
+  });
+
+  it('keeps the canal, pond, pond Area 3 and chinampa Area 4 lists unchanged ahead of it', () => {
+    expect(CANAL_TREASURES).toHaveLength(24);
+    expect(POND_TREASURES).toHaveLength(12);
+    expect(POND_2_TREASURES).toHaveLength(12);
+    expect(CHINAMPA_TREASURES).toHaveLength(12);
+    expect(CHINAMPA_TREASURES.at(-1)?.id).toBe('chinampa/monarch-wings');
+  });
+});
+
 describe('ALL_TREASURES', () => {
-  it('is the canal, pond, pond Area 3 and chinampa Area 4 treasures, in that order', () => {
+  it('is the canal, pond, pond Area 3, chinampa Area 4 and chinampa Area 5 treasures, in that order', () => {
     expect(ALL_TREASURES).toEqual([
       ...CANAL_TREASURES,
       ...POND_TREASURES,
       ...POND_2_TREASURES,
       ...CHINAMPA_TREASURES,
+      ...CHINAMPA_2_TREASURES,
     ]);
     expect(Object.isFrozen(ALL_TREASURES)).toBe(true);
     expect(Object.isFrozen(POND_TREASURES)).toBe(true);
   });
 
-  it('has 60 treasures: 20 Decorations, 25 Wearables and 15 Paint shells', () => {
-    expect(ALL_TREASURES).toHaveLength(60);
-    expect(ALL_DECORATIONS).toHaveLength(20);
-    expect(ALL_WEARABLES).toHaveLength(25);
-    expect(ALL_TREASURES.filter(isPaintShell)).toHaveLength(15);
+  it('has 72 treasures: 25 Decorations, 31 Wearables and 16 Paint shells', () => {
+    expect(ALL_TREASURES).toHaveLength(72);
+    expect(ALL_DECORATIONS).toHaveLength(25);
+    expect(ALL_WEARABLES).toHaveLength(31);
+    expect(ALL_TREASURES.filter(isPaintShell)).toHaveLength(16);
   });
 
   it('puts Shell perks only on Epic or Legendary Wearables', () => {
@@ -512,6 +611,7 @@ describe('ALL_TREASURES', () => {
       'canal/golden-bow',
       'pond/ladybug-backpack',
       'pond/pearl-tail-charm',
+      'chinampa/rainbow-serape-cape',
     ]);
     for (const wearable of shellWearables) {
       expect(['epic', 'legendary'], wearable.id).toContain(wearable.rarity);
@@ -566,10 +666,10 @@ describe('ALL_TREASURES', () => {
 });
 
 describe('Dream colours', () => {
-  it('lists the 12 canal colours, then Lily green, then Firefly gold, then Poppy red', () => {
+  it('lists the 12 canal colours, then Lily green, then Firefly gold, then Poppy red, then Plum', () => {
     expect(CANAL_DREAM_COLOURS).toHaveLength(12);
-    expect(DREAM_COLOURS).toEqual([...CANAL_DREAM_COLOURS, LILY_GREEN, FIREFLY_GOLD, POPPY_RED]);
-    expect(DREAM_COLOURS).toHaveLength(15);
+    expect(DREAM_COLOURS).toEqual([...CANAL_DREAM_COLOURS, LILY_GREEN, FIREFLY_GOLD, POPPY_RED, PLUM]);
+    expect(DREAM_COLOURS).toHaveLength(16);
     expect(Object.isFrozen(DREAM_COLOURS)).toBe(true);
   });
 
@@ -591,6 +691,7 @@ describe('Dream colours', () => {
       'lily-green',
       'firefly-gold',
       'poppy-red',
+      'plum',
     ]);
     for (const colour of solids) {
       expect(['common', 'rare'], colour.id).toContain(colour.rarity);
@@ -601,6 +702,14 @@ describe('Dream colours', () => {
     expect(POPPY_RED).toEqual({ id: 'poppy-red', name: 'Poppy red', rarity: 'rare', kind: 'solid' });
     expect(Object.isFrozen(POPPY_RED)).toBe(true);
     expect(dreamColourById('poppy-red')).toBe(POPPY_RED);
+    const names = DREAM_COLOURS.map((colour) => colour.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('makes Plum a rare solid with a name no other Dream colour has (issue #103)', () => {
+    expect(PLUM).toEqual({ id: 'plum', name: 'Plum', rarity: 'rare', kind: 'solid' });
+    expect(Object.isFrozen(PLUM)).toBe(true);
+    expect(dreamColourById('plum')).toBe(PLUM);
     const names = DREAM_COLOURS.map((colour) => colour.name);
     expect(new Set(names).size).toBe(names.length);
   });
@@ -658,6 +767,15 @@ describe('lookups', () => {
   it('treasureById finds chinampa Area 4 ids', () => {
     expect(treasureById('chinampa/scarecrow')).toMatchObject({ name: 'Scarecrow', category: 'decoration', rarity: 'rare' });
     expect(treasureById('chinampa/paint-shell-poppy-red')).toMatchObject({ dreamColour: 'poppy-red', rarity: 'rare' });
+  });
+
+  it('treasureById finds chinampa Area 5 ids', () => {
+    expect(treasureById('chinampa/pinata')).toMatchObject({ name: 'Piñata', category: 'decoration', rarity: 'rare' });
+    expect(treasureById('chinampa/paint-shell-plum')).toMatchObject({
+      name: 'Plum Paint shell',
+      dreamColour: 'plum',
+      rarity: 'rare',
+    });
   });
 
   it('treasureSlug returns the text after the first slash', () => {
@@ -724,6 +842,21 @@ describe('Decoration placement kinds', () => {
     ]);
   });
 
+  it('places the chinampa Area 5 Decorations, every one with the standard width (issue #103)', () => {
+    const kinds = CHINAMPA_2_TREASURES.filter(isDecoration).map((decoration) => [
+      decoration.id,
+      placementKind(decoration),
+      decoration.width,
+    ]);
+    expect(kinds).toEqual([
+      ['chinampa/watering-can', 'floor', undefined],
+      ['chinampa/floating-gourd', 'floating', undefined],
+      ['chinampa/pinata', 'hanging', undefined],
+      ['chinampa/talavera-fountain', 'floor', undefined],
+      ['chinampa/alebrije-statue', 'floor', undefined],
+    ]);
+  });
+
   it('makes every canal Decoration a Floor item with the standard width (issue #95)', () => {
     expect(DECORATIONS.map((decoration) => decoration.name)).toEqual([
       'Pond plant',
@@ -786,5 +919,10 @@ describe('ownedDreamColours', () => {
   it('owns Poppy red from the chinampa Area 4 Paint shell, after Firefly gold', () => {
     const banked = ['chinampa/paint-shell-poppy-red', 'chinampa/scarecrow', 'pond/paint-shell-firefly-gold'];
     expect(ownedDreamColours(banked)).toEqual(['firefly-gold', 'poppy-red']);
+  });
+
+  it('owns Plum from the chinampa Area 5 Paint shell, after Poppy red', () => {
+    const banked = ['chinampa/paint-shell-plum', 'chinampa/pinata', 'chinampa/paint-shell-poppy-red'];
+    expect(ownedDreamColours(banked)).toEqual(['poppy-red', 'plum']);
   });
 });

@@ -122,7 +122,7 @@ interface PlacedFacts {
 
 function placedFacts(zone: ZoneLayout, placed: PlacedFind): PlacedFacts {
   const rarity = rarityOf(placed.id);
-  const deep = inCave(placed, zone.cave) || pastCurrent(placed, zone.currents, zone.homeSpot);
+  const deep = inCave(placed, zone.cave) || pastCurrent(placed, zone.currents);
   return {
     id: placed.id,
     at: { x: placed.x, y: placed.y, container: placed.container },

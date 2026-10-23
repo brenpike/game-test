@@ -320,6 +320,33 @@ describe('stepSnackDarts', () => {
       expect(stepSnackDarts(items, head, STILL, state, REDUCED, clear, 0.016)).not.toBeNull();
     });
 
+    it('when the landed snack could overlap a mat sweep, edges included', () => {
+      const landing: Point = { x: 540, y: 200 };
+      const touching: SnackDartAvoid = {
+        ...AVOID,
+        mats: [{ kind: 'rect', x0: landing.x, x1: landing.x + 60, y0: 80, y1: 318 }],
+      };
+      expectNoDart(snack, head, touching);
+      const bobbedInto: SnackDartAvoid = {
+        ...AVOID,
+        mats: [{ kind: 'rect', x0: 500, x1: 600, y0: 80, y1: landing.y - SNACK_BOB_PX }],
+      };
+      expectNoDart(snack, head, bobbedInto);
+    });
+
+    it('darts beside a mat sweep, and as before when mats are absent or empty', () => {
+      const landing: Point = { x: 540, y: 200 };
+      const beside: SnackDartAvoid = {
+        ...AVOID,
+        mats: [{ kind: 'rect', x0: landing.x + 0.5, x1: landing.x + 60, y0: 80, y1: 318 }],
+      };
+      const { items, state } = oneDarter(snack);
+      const expected = stepOrFail(items, head, state, REDUCED, 0.016);
+      expect(expected.items[0].x).toBeCloseTo(landing.x, 9);
+      expect(stepOrFail(items, head, state, REDUCED, 0.016, beside)).toEqual(expected);
+      expect(stepOrFail(items, head, state, REDUCED, 0.016, { ...AVOID, mats: [] })).toEqual(expected);
+    });
+
     it('keeps a blocked darter waiting, so it darts later when the hop is clear', () => {
       const { items, state } = oneDarter({ x: BOUNDS.maxX - 30, y: 200 });
       expect(stepSnackDarts(items, { x: BOUNDS.maxX - 60, y: 200 }, STILL, state, REDUCED, AVOID, 0.016)).toBeNull();

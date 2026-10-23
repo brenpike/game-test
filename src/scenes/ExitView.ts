@@ -3,9 +3,11 @@ import { GATE_H, SIGN_SIZE } from '../art/drawArea';
 import { DEPTH } from '../art/layers';
 import type { TexInfo } from '../art/textures';
 import type { AreaExit } from '../logic/areas';
+import type { ExitArrowSide } from '../logic/exitArrow';
 import type { MotionProfile } from '../logic/motion';
 import type { Vec2 } from '../logic/vec';
 import type { GameAssets } from './BootScene';
+import { faceSprite } from './spriteFacing';
 
 const TAU = Math.PI * 2;
 /** Clear water between the gate's keystone top and the sign's lower edge. */
@@ -39,7 +41,8 @@ function showBaked(image: Phaser.GameObjects.Image, info: TexInfo): void {
 /**
  * Draws the area exit: the gate standing on the bed (at `bedTop`) under the exit centre and the
  * round sign above it, both closed (slats, padlock) or open (clear opening, arrow), and a twinkle
- * burst around the sign when it opens. Visual only: the burst is driven by the frame `dt`, so it freezes with the
+ * burst around the sign when it opens. The open sign's arrow points to `arrowSide`: the baked art
+ * points right, so 'left' mirrors the open sign; the closed sign is never mirrored. Visual only: the burst is driven by the frame `dt`, so it freezes with the
  * scene, and nothing here changes game state. An exit already open when the view is built shows
  * open with no burst.
  */
@@ -48,13 +51,22 @@ export class ExitView {
   private readonly gate: Phaser.GameObjects.Image;
   private readonly sign: Phaser.GameObjects.Image;
   private readonly signCentre: Vec2;
+  private readonly arrowSide: ExitArrowSide;
   private readonly twinkles: Twinkle[];
   private open: boolean;
   private burstAge = BURST_LIFE_S;
 
-  constructor(scene: Phaser.Scene, assets: GameAssets, exit: AreaExit, bedTop: number, open: boolean) {
+  constructor(
+    scene: Phaser.Scene,
+    assets: GameAssets,
+    exit: AreaExit,
+    bedTop: number,
+    open: boolean,
+    arrowSide: ExitArrowSide,
+  ) {
     this.assets = assets;
     this.open = open;
+    this.arrowSide = arrowSide;
     const art = assets.area.exit;
     this.gate = bakedImage(scene, open ? art.gateOpen : art.gateClosed, exit.x, bedTop, DEPTH.homeSpot);
     this.signCentre = { x: exit.x, y: bedTop - GATE_H - SIGN_GAP_PX - SIGN_SIZE / 2 };
@@ -65,6 +77,7 @@ export class ExitView {
       this.signCentre.y,
       DEPTH.homeRing,
     );
+    this.faceSign(open);
     this.twinkles = Array.from({ length: BURST_COUNT }, (_, k) => {
       const angle = (k / BURST_COUNT) * TAU - Math.PI / 2;
       return {
@@ -85,7 +98,15 @@ export class ExitView {
     const art = this.assets.area.exit;
     showBaked(this.gate, open ? art.gateOpen : art.gateClosed);
     showBaked(this.sign, open ? art.signOpen : art.signClosed);
+    this.faceSign(open);
     this.burstAge = open ? 0 : BURST_LIFE_S;
+  }
+
+  /** Mirrors the open sign when its arrow points left; the closed sign keeps its baked facing. */
+  private faceSign(open: boolean): void {
+    const info = open ? this.assets.area.exit.signOpen : this.assets.area.exit.signClosed;
+    const facing = open && this.arrowSide === 'left' ? -1 : 1;
+    faceSprite(this.sign, facing, 1 / info.scale);
   }
 
   /**

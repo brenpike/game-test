@@ -24,6 +24,7 @@ import {
 } from '../logic/collectibles';
 import { TURN_SQUASH, bodyPoint, drawnAxolotl, type DrawnAxolotl } from '../logic/drawnAxolotl';
 import { currentAt, reedDragAt, reedsNear } from '../logic/environment';
+import { exitArrowSide } from '../logic/exitArrow';
 import {
   GAME_EVENTS,
   REGISTRY_KEYS,
@@ -38,12 +39,14 @@ import {
   type SteerPayload,
 } from '../logic/gameEvents';
 import { isSnagged, snagSwimTuning } from '../logic/ghostNets';
+import { elementSweep, type HazardRect } from '../logic/hazards';
 import { hintSparkleRadius } from '../logic/hints';
+import { blockExplorer, type MatAvoid } from '../logic/hyacinthMats';
 import { legSwimTuning } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { outfitPerks, perkTripContext, perkTuning, type PerkTuning } from '../logic/perks';
 import { isQueasy, queasySwimTuning, type SpitAvoid } from '../logic/plasticWorms';
-import { HERON_SPECIES } from '../logic/predators';
+import { GARTER_SNAKE_SPECIES, HERON_SPECIES } from '../logic/predators';
 import { mulberry32 } from '../logic/rng';
 import { tripStranding } from '../logic/rescue';
 import { explorerAxolotl, restoreSnacks, tripStart } from '../logic/session';
@@ -88,10 +91,12 @@ import {
 } from './BootScene';
 import { ExitView } from './ExitView';
 import { FireflyView } from './FireflyView';
+import { GarterSnakeView } from './GarterSnakeView';
 import { GhostNetView } from './GhostNetView';
 import { HeronView } from './HeronView';
 import { HomeSpotView } from './HomeSpotView';
 import { HUD_EVENTS, type FactCardSeenPayload } from './HudScene';
+import { HyacinthMatView } from './HyacinthMatView';
 import { addMotionTween, settleMotionTweens } from './motionTweens';
 import { PlasticWormView } from './PlasticWormView';
 import { PredatorView } from './PredatorView';
@@ -210,6 +215,10 @@ export class SwimScene extends Phaser.Scene {
   private snackDarts: SnackDartState | null = null;
   /** Where a darted snack must not land; built again only when the plastic worms move. */
   private snackDartAvoid: SnackDartAvoid | null = null;
+  /** Each water hyacinth mat pair's whole sweep (elementSweep), or null in an area with no mats. Fixed for the trip. */
+  private matSweeps: HazardRect[] | null = null;
+  /** Where a mat may never push the explorer, or null in an area with no mats. Fixed for the trip. */
+  private matAvoid: MatAvoid | null = null;
   /** Swim tuning for `tunedLegs` legs, `tunedQueasy` and `tunedSnagged`, worked out again only when one changes. */
   private tuned: SwimTuning = SWIM;
   private tunedLegs = -1;
@@ -240,6 +249,10 @@ export class SwimScene extends Phaser.Scene {
   private predatorView!: PredatorView;
   /** The wading herons, or null in an area with no heron. */
   private heronView: HeronView | null = null;
+  /** The garter snakes, or null in an area with no garter snake. */
+  private garterSnakeView: GarterSnakeView | null = null;
+  /** The water hyacinth mats, or null in an area with no mats. */
+  private hyacinthMatView: HyacinthMatView | null = null;
   /** The dusk fireflies, or null in an area whose look has none. */
   private fireflyView: FireflyView | null = null;
   /** The ghost nets and the snag cue, or null in an area with no ghost nets. */
@@ -315,7 +328,11 @@ export class SwimScene extends Phaser.Scene {
     this.queasyCheeks = null;
     this.snackDarts = null;
     this.snackDartAvoid = null;
+    this.matSweeps = null;
+    this.matAvoid = null;
     this.heronView = null;
+    this.garterSnakeView = null;
+    this.hyacinthMatView = null;
     this.fireflyView = null;
     this.ghostNetView = null;
     this.swimPhase = (TAU * T_STATIC) / 1.2;
@@ -363,6 +380,7 @@ export class SwimScene extends Phaser.Scene {
       returnedFinds: start.returnedFinds,
       area,
     });
+    this.setUpMats();
     this.dashKeyLatched = true;
     this.tripCtx = perkTripContext(this.perks, this.bounds);
     this.registry.set(REGISTRY_KEYS.total, this.items.length);
@@ -424,6 +442,14 @@ export class SwimScene extends Phaser.Scene {
    * reuses its sprites and takes the axolotl's swim state as its position, so it allocates only its
    * render argument object, the bounded cover check (inSightCover) and, during a full-motion stab,
    * one stab tip (stabTip) per heron per frame: the same bounded class as the residual below.
+   * Garter snake and water hyacinth mats (#103): made once per trip, and only in an area with a
+   * garter snake or with mat elements; Areas 1 to 4 build neither view and call nothing new, and
+   * their snack dart avoid object is unchanged (no `mats` field). GarterSnakeView reuses its sprites
+   * and allocates only its render argument object. The mat sweeps and the mats' avoid object are
+   * worked out once per trip. Where there are mats, each swimming frame blockExplorer builds the
+   * grown mats (two per pair) and its result point, and a blocked step builds one new swim state;
+   * HyacinthMatView takes a render argument object and builds matRects' result for each pair: the
+   * same bounded class as the residual below, bounded by the area's mat pair count.
    * Recorded residual, inherited from main: stepSwim and stepTrip return new immutable state and
    * event lists each frame, syncSnapshot builds a trip snapshot to compare, the views take a render
    * argument object, and the reeds-near Set, bubble views and surface x list are rebuilt each frame.
@@ -465,7 +491,7 @@ export class SwimScene extends Phaser.Scene {
     const zone = this.zone;
     const pos = { x: this.swim.x, y: this.swim.y };
     this.dashingThisFrame = this.dash.phase === 'dashing';
-    this.swim = stepSwim(
+    const swum = stepSwim(
       this.swim,
       steer,
       {
@@ -477,6 +503,7 @@ export class SwimScene extends Phaser.Scene {
       dt,
       this.swimTuning(),
     );
+    this.swim = this.blockAtMats(pos, swum, dt);
     const previousPhase = this.dash.phase;
     this.dash = updateDash(this.dash, dt, this.perks.swim);
     if (this.dash.phase !== previousPhase || this.dash.phase === 'cooldown') {
@@ -504,7 +531,43 @@ export class SwimScene extends Phaser.Scene {
     return this.tuned;
   }
 
+  /**
+   * Water hyacinth mats (issue #103, PRD ND-6 to ND-9): the swim step from `prev` to `swum` stopped
+   * at the mats (blockExplorer), with the velocity zeroed on each axis the mats changed. Called only
+   * while swimming, so the carry home and a following stranded axolotl are never blocked. An area
+   * with no mats returns `swum` itself and calls nothing.
+   *
+   * Element time: the mats are placed at `trip.elementTime + dt`, the element time stepTrip reaches
+   * in this frame's advanceTrip (it adds the same capped `dt` on a swimming step, and nothing on a
+   * 0 step). That is the time renderFrame draws the mats at this frame, so the explorer ends the
+   * frame outside the mats as drawn, and a mat closing during the step pushes it out at once.
+   */
+  private blockAtMats(prev: Vec2, swum: SwimState, dt: number): SwimState {
+    const avoid = this.matAvoid;
+    if (avoid === null) return swum;
+    const blocked = blockExplorer(prev, swum, this.trip.elements, this.trip.elementTime + dt, avoid);
+    if (blocked.x === swum.x && blocked.y === swum.y) return swum;
+    return {
+      ...swum,
+      x: blocked.x,
+      y: blocked.y,
+      vx: blocked.x === swum.x ? swum.vx : 0,
+      vy: blocked.y === swum.y ? swum.vy : 0,
+    };
+  }
+
   // ---- setup ---------------------------------------------------------------
+
+  /**
+   * Works out the trip's mat sweeps and the mats' avoid object (the swim bounds, the trip's ghost
+   * nets and the currents) once per trip; both stay null in an area with no mat elements.
+   */
+  private setUpMats(): void {
+    const sweeps = this.trip.elements.flatMap((element) => elementSweep(element) ?? []);
+    if (sweeps.length === 0) return;
+    this.matSweeps = sweeps;
+    this.matAvoid = { bounds: this.bounds, nets: this.trip.ghostNets.nets, currents: this.zone.currents };
+  }
 
   private buildWorld(): void {
     const { zone, scenery } = this;
@@ -523,7 +586,14 @@ export class SwimScene extends Phaser.Scene {
     this.streaks = zone.currents.flatMap((current) => this.buildStreaks(current));
 
     this.homeSpotView = new HomeSpotView(this, this.assets, this.trip.homeSpot, zone.bedTop);
-    this.exitView = new ExitView(this, this.assets, this.area.exit, zone.bedTop, exitOpen(this.snackTally.left));
+    this.exitView = new ExitView(
+      this,
+      this.assets,
+      this.area.exit,
+      zone.bedTop,
+      exitOpen(this.snackTally.left),
+      exitArrowSide(this.area.exit, zone.width),
+    );
     this.treasureView = new TreasureView(
       this,
       this.assets,
@@ -564,6 +634,10 @@ export class SwimScene extends Phaser.Scene {
     this.heronView = predators.some((predator) => predator.species === HERON_SPECIES.id)
       ? new HeronView(this, this.assets, predators)
       : null;
+    this.garterSnakeView = predators.some((predator) => predator.species === GARTER_SNAKE_SPECIES.id)
+      ? new GarterSnakeView(this, this.assets, predators)
+      : null;
+    this.hyacinthMatView = this.matSweeps !== null ? new HyacinthMatView(this, this.assets, this.trip.elements) : null;
     this.fireflyView = this.look.firefliesPerScreen > 0 ? new FireflyView(this, this.assets, this.look, zone) : null;
 
     this.bubbleImages = Array.from({ length: BUBBLE_MAX_ALIVE }, () =>
@@ -745,18 +819,24 @@ export class SwimScene extends Phaser.Scene {
     this.setItems(step.items);
   }
 
-  /** Where a darted snack must not land, built again only when the plastic worm positions change. */
+  /**
+   * Where a darted snack must not land, built again only when the plastic worm positions change. In
+   * an area with mats it also keeps darted snacks out of each mat pair's whole sweep; elsewhere it
+   * has no `mats` field.
+   */
   private dartAvoid(): SnackDartAvoid {
     const worms = this.trip.plasticWorms.worms;
     if (this.snackDartAvoid === null || this.snackDartAvoid.worms !== worms) {
       const zone = this.zone;
-      this.snackDartAvoid = {
+      const avoid: SnackDartAvoid = {
         bounds: this.bounds,
         homeSpot: zone.homeSpot,
         safeArea: zone.safeArea,
         currents: zone.currents,
         worms,
       };
+      if (this.matSweeps !== null) avoid.mats = this.matSweeps;
+      this.snackDartAvoid = avoid;
     }
     return this.snackDartAvoid;
   }
@@ -1035,6 +1115,8 @@ export class SwimScene extends Phaser.Scene {
     this.events.off(Phaser.Scenes.Events.RESUME, this.handleResume, this);
     this.strandedView.destroy();
     this.heronView?.destroy();
+    this.garterSnakeView?.destroy();
+    this.hyacinthMatView?.destroy();
     this.axolotlView.destroy();
   }
 
@@ -1062,6 +1144,8 @@ export class SwimScene extends Phaser.Scene {
       phase: this.trip.phase,
     });
     this.heronView?.render({ encounter: this.trip.encounter, axolotl: this.swim, motion: this.motion, dt });
+    this.garterSnakeView?.render({ encounter: this.trip.encounter, axolotl: this.swim, motion: this.motion, dt });
+    this.hyacinthMatView?.render({ elementTime: this.trip.elementTime, motion: this.motion, time: this.clock });
     this.fireflyView?.render(this.motion, this.clock);
     this.renderReeds(dt, t);
     this.renderSnacks();

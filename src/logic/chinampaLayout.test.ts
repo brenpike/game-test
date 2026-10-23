@@ -16,8 +16,9 @@ import {
   turnDistance,
   zoneThreats,
 } from './hiding';
+import { NET_CURRENT_CLEARANCE, SAFE_PASSING_WIDTH, gapsOf, loopSamples, narrowestPathGap } from './layoutGaps';
 import { legSwimTuning } from './legs';
-import { PERK_CAPS, SNACK_MAGNET_PULL_SPEED } from './perks';
+import { SNACK_MAGNET_PULL_SPEED } from './perks';
 import { placeTreasures } from './placement';
 import { POND_2_LAYOUT } from './pond2Layout';
 import { RESCUE } from './rescue';
@@ -49,19 +50,6 @@ const SNACK_SEEDS = [...ALL_SEEDS, ...Array.from({ length: 51 }, (_, i) => (i + 
 const TRIP_SEEDS = Array.from({ length: 200 }, (_, i) => i * 104729 + 17);
 const STRIKE = CHINAMPA_TILAPIA.lungeRange;
 const STRANDING_ROUTE_CLEARANCE = 80;
-/**
- * Least px from a ghost net to every current: the farthest a snagged axolotl at the speed perk cap
- * swims before snag time ends, plus the net's reach, from the rect edge to the body centre, where a
- * snag starts. A snagged one-leg axolotl cannot beat the current, so it is never snagged inside it.
- */
-const NET_CURRENT_CLEARANCE =
-  GHOST_NETS.snagTime * SWIM.maxSpeed * (1 + PERK_CAPS.speed / 100) * GHOST_NETS.speedFactor + GHOST_NET.reach;
-/**
- * The safe passing width: the least clear width of a gap, between the places the body centre must
- * stay out of. One body height (twice the net reach, the body's half height) of room, so the
- * axolotl may stray half a body either way off the middle of a gap and still pass clear.
- */
-const SAFE_PASSING_WIDTH = 2 * GHOST_NET.reach;
 /** Least px from a hiding spot to every net: a grab from the pickup radius never comes within the net reach. */
 const SPOT_NET_CLEARANCE = GHOST_NET.reach + FINDS.pickupRadius;
 /** Least px from a stranding place to every net: the rescue reach plus the net reach. */
@@ -70,7 +58,6 @@ const FRAME = 1 / 60;
 const BEAT_MAX_SECONDS = 180;
 const WAYPOINT_REACH = 8;
 const DART_ANGLES = 72;
-const SAMPLE_STEP = 1;
 
 const zone = buildZone(CHINAMPA_LAYOUT, DEFAULT_ZONE_SEED);
 const pond2 = buildZone(POND_2_LAYOUT, DEFAULT_ZONE_SEED);
@@ -79,44 +66,14 @@ function chinampa(seed: number): ZoneLayout {
   return buildZone(CHINAMPA_LAYOUT, seed);
 }
 
-function distanceToSegment(point: Point, a: Point, b: Point): number {
-  const closest = closestOnSegment(point, a, b);
-  return Math.hypot(point.x - closest.x, point.y - closest.y);
-}
-
-function closestOnSegment(point: Point, a: Point, b: Point): Point {
-  const abx = b.x - a.x;
-  const aby = b.y - a.y;
-  const lengthSq = abx * abx + aby * aby;
-  const along = lengthSq === 0 ? 0 : ((point.x - a.x) * abx + (point.y - a.y) * aby) / lengthSq;
-  const clamped = Math.min(1, Math.max(0, along));
-  return { x: a.x + clamped * abx, y: a.y + clamped * aby };
-}
-
-function loopSegments(waypoints: readonly Point[]): [Point, Point][] {
-  return waypoints.map((point, i): [Point, Point] => [point, waypoints[(i + 1) % waypoints.length]]);
-}
-
-/** Least distance between two closed loops that do not cross: the endpoint distances suffice. */
+/** Least distance between two closed loops that do not cross: the waypoint distances suffice. */
 function routeGap(first: TilapiaRoute, second: TilapiaRoute): number {
-  let gap = Infinity;
-  for (const [a, b] of loopSegments(first.waypoints)) {
-    for (const [c, d] of loopSegments(second.waypoints)) {
-      gap = Math.min(gap, distanceToSegment(a, c, d), distanceToSegment(b, c, d), distanceToSegment(c, a, b), distanceToSegment(d, a, b));
-    }
-  }
-  return gap;
+  const fromFirst = first.waypoints.map((point) => routeDistance(point, [second]));
+  const fromSecond = second.waypoints.map((point) => routeDistance(point, [first]));
+  return Math.min(...fromFirst, ...fromSecond);
 }
 
-/** Points along a closed loop, every SAMPLE_STEP px. */
-function loopSamples(waypoints: readonly Point[]): Point[] {
-  return loopSegments(waypoints).flatMap(([a, b]) => {
-    const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / SAMPLE_STEP));
-    return Array.from({ length: steps }, (_, i) => ({ x: a.x + ((b.x - a.x) * i) / steps, y: a.y + ((b.y - a.y) * i) / steps }));
-  });
-}
-
-/** Least distance from a hazard shape to a closed loop, sampled every SAMPLE_STEP px along the loop. */
+/** Least distance from a hazard shape to a closed loop, sampled along the loop. */
 function shapeRouteDistance(shape: HazardShape, waypoints: readonly Point[]): number {
   return Math.min(...loopSamples(waypoints).map((point) => shapeDistance(point, shape)));
 }
@@ -140,130 +97,6 @@ function inBounds(point: Point, layout: ZoneLayout): boolean {
 
 function netShapes(layout: ZoneLayout): HazardShape[] {
   return layout.hazards.map((hazard) => hazard.shape);
-}
-
-/**
- * One obstacle of the gap measure: a hazard shape, kept out of by its touch reach from the shape
- * edge, or a predator route, kept out of by its strike range from the loop (zoneThreats). Both
- * measure to the axolotl's body centre, except a plastic worm, which measures to the head.
- */
-type Obstacle =
-  | { id: string; kind: 'shape'; shape: HazardShape; keepOut: number }
-  | { id: string; kind: 'route'; waypoints: readonly Point[]; keepOut: number };
-
-/** One gap: the clear stretch between two obstacles' keep-out edges, along the shortest line between them. */
-interface Gap {
-  between: string;
-  width: number;
-  from: Point;
-  to: Point;
-  /** Whether a hazard is on one side: a gap between two routes is a timing passage, not a hazard gap. */
-  hazard: boolean;
-}
-
-function obstaclesOf(layout: ZoneLayout): Obstacle[] {
-  const hazards = layout.hazards.map((hazard): Obstacle => ({ id: hazard.id, kind: 'shape', shape: hazard.shape, keepOut: hazard.type.reach }));
-  const routes = zoneThreats(layout).flatMap((threat): Obstacle[] =>
-    threat.kind === 'route' ? [{ id: threat.route.id, kind: 'route', waypoints: threat.route.waypoints, keepOut: threat.strike }] : [],
-  );
-  return [...hazards, ...routes];
-}
-
-/** The point of a hazard shape nearest to `point`. */
-function closestOnShape(point: Point, shape: HazardShape): Point {
-  if (shape.kind === 'rect') {
-    return { x: Math.min(shape.x1, Math.max(shape.x0, point.x)), y: Math.min(shape.y1, Math.max(shape.y0, point.y)) };
-  }
-  const away = Math.hypot(point.x - shape.x, point.y - shape.y);
-  if (away <= shape.r) return { x: point.x, y: point.y };
-  return { x: shape.x + ((point.x - shape.x) * shape.r) / away, y: shape.y + ((point.y - shape.y) * shape.r) / away };
-}
-
-function closestOnLoop(point: Point, waypoints: readonly Point[]): Point {
-  let best = waypoints[0];
-  let bestDistance = Infinity;
-  for (const [a, b] of loopSegments(waypoints)) {
-    const candidate = closestOnSegment(point, a, b);
-    const distance = Math.hypot(point.x - candidate.x, point.y - candidate.y);
-    if (distance < bestDistance) [best, bestDistance] = [candidate, distance];
-  }
-  return best;
-}
-
-function closestOn(point: Point, obstacle: Obstacle): Point {
-  return obstacle.kind === 'shape' ? closestOnShape(point, obstacle.shape) : closestOnLoop(point, obstacle.waypoints);
-}
-
-/**
- * Points to try as the near end on an obstacle: for a rect facing another rect, the one point facing
- * it; for any other rect, its outline samples; a circle's centre; a loop's samples.
- */
-function nearEndCandidates(obstacle: Obstacle, other: Obstacle): Point[] {
-  if (obstacle.kind === 'route') return loopSamples(obstacle.waypoints);
-  if (obstacle.shape.kind === 'circle') return [{ x: obstacle.shape.x, y: obstacle.shape.y }];
-  if (other.kind === 'shape' && other.shape.kind === 'rect') return [rectFacingPoint(obstacle.shape, other.shape)];
-  const { x0, x1, y0, y1 } = obstacle.shape;
-  return loopSamples([{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }]);
-}
-
-/** The point of `rect` facing `other`: on each axis the middle of their overlap, else the nearer edge. */
-function rectFacingPoint(rect: HazardShape & { kind: 'rect' }, other: HazardShape & { kind: 'rect' }): Point {
-  return { x: facingCoordinate(rect.x0, rect.x1, other.x0, other.x1), y: facingCoordinate(rect.y0, rect.y1, other.y0, other.y1) };
-}
-
-function facingCoordinate(low: number, high: number, otherLow: number, otherHigh: number): number {
-  if (otherHigh < low) return low;
-  if (otherLow > high) return high;
-  return (Math.max(low, otherLow) + Math.min(high, otherHigh)) / 2;
-}
-
-/** The gap between two obstacles: the shortest line between them, less each keep-out at its end. */
-function gapBetween(first: Obstacle, second: Obstacle): Gap {
-  let best = { from: { x: 0, y: 0 }, to: { x: 0, y: 0 }, distance: Infinity };
-  for (const from of nearEndCandidates(first, second)) {
-    const to = closestOn(from, second);
-    const distance = Math.hypot(to.x - from.x, to.y - from.y);
-    if (distance < best.distance) best = { from, to, distance };
-  }
-  const share = (keepOut: number) => (best.distance === 0 ? 0 : keepOut / best.distance);
-  const along = (point: Point, toward: Point, part: number): Point => ({ x: point.x + (toward.x - point.x) * part, y: point.y + (toward.y - point.y) * part });
-  return {
-    between: `${first.id} and ${second.id}`,
-    width: best.distance - first.keepOut - second.keepOut,
-    from: along(best.from, best.to, share(first.keepOut)),
-    to: along(best.to, best.from, share(second.keepOut)),
-    hazard: first.kind === 'shape' || second.kind === 'shape',
-  };
-}
-
-/** Every gap between two obstacles of a zone. */
-function gapsOf(layout: ZoneLayout): Gap[] {
-  const obstacles = obstaclesOf(layout);
-  return obstacles.flatMap((first, i) => obstacles.slice(i + 1).map((second) => gapBetween(first, second)));
-}
-
-function cross(origin: Point, a: Point, b: Point): number {
-  return (a.x - origin.x) * (b.y - origin.y) - (a.y - origin.y) * (b.x - origin.x);
-}
-
-function segmentsMeet(a: Point, b: Point, c: Point, d: Point): boolean {
-  const [d1, d2, d3, d4] = [cross(c, d, a), cross(c, d, b), cross(a, b, c), cross(a, b, d)];
-  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
-}
-
-/** Whether the main path swims through a gap's clear stretch. */
-function onMainPath(gap: Gap, path: readonly Point[]): boolean {
-  return path.slice(1).some((point, i) => segmentsMeet(gap.from, gap.to, path[i], point));
-}
-
-/**
- * The narrowest open hazard gap the main path swims through: beside a hazard and wider than 0, so
- * its keep-outs leave room.
- */
-function narrowestPathGap(layout: ZoneLayout): Gap {
-  const open = gapsOf(layout).filter((gap) => gap.hazard && gap.width > 0 && onMainPath(gap, layout.mainPath));
-  if (open.length === 0) throw new Error(`narrowestPathGap: the main path of ${layout.areaId} swims through no gap`);
-  return open.reduce((narrowest, gap) => (gap.width < narrowest.width ? gap : narrowest));
 }
 
 /** One frame of a one-leg swim steered at `target`, with the area's currents and reed drag. */

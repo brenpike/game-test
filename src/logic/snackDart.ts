@@ -1,4 +1,5 @@
 import { SNACK_BOB_PX, drawnSnackX, drawnSnackY, type Collectible, type SnackFrame } from './collectibles';
+import type { HazardRect } from './hazards';
 import {
   SNACK_HAZARD_CLEARANCE,
   SURF,
@@ -45,6 +46,8 @@ export interface SnackDartAvoid {
   currents: readonly CurrentZone[];
   /** Where each plastic worm is now; a darted snack stays SNACK_HAZARD_CLEARANCE px from each. */
   worms: readonly Readonly<Point>[];
+  /** Each mat pair's whole sweep (elementSweep); a darted snack stays out of each. Absent means none. */
+  mats?: readonly Readonly<HazardRect>[];
 }
 
 /** A hop under way: the darter's id and the base x/y displacement it has still to glide. */
@@ -134,8 +137,9 @@ function boxesOverlap(
 
 /**
  * Whether a snack with base (x, y) stays clear wherever it is drawn: the box its drift and bob can
- * reach sits inside the bounds, below the surface, outside the Home Spot ring, the safe area and
- * every current (edges count as inside), and SNACK_HAZARD_CLEARANCE px or more from every worm.
+ * reach sits inside the bounds, below the surface, outside the Home Spot ring, the safe area, every
+ * current and every mat sweep (edges count as inside), and SNACK_HAZARD_CLEARANCE px or more from
+ * every worm.
  * The bob counts even when snacks do not bob, so a reduced-motion change cannot move it out.
  */
 function hopTargetClear(x: number, y: number, frame: SnackFrame, avoid: SnackDartAvoid): boolean {
@@ -154,6 +158,9 @@ function hopTargetClear(x: number, y: number, frame: SnackFrame, avoid: SnackDar
   }
   for (const worm of avoid.worms) {
     if (gapToBox(worm.x, worm.y, left, top, right, bottom) < SNACK_HAZARD_CLEARANCE) return false;
+  }
+  for (const mat of avoid.mats ?? []) {
+    if (boxesOverlap(left, top, right, bottom, mat)) return false;
   }
   return true;
 }
@@ -247,7 +254,7 @@ function startDarts(
  * straight away from the head, moving its stored base x/y as pullSnacksToward does toward it, so
  * its drift and bob follow. It darts only when the box its drift and bob can carry it through at
  * the hop target sits inside `avoid.bounds` and below the surface, clear of the Home Spot ring, the
- * safe area and every current, and SNACK_HAZARD_CLEARANCE px or more from every worm; otherwise it does not dart this frame and stays waiting. A darter darts
+ * safe area, every current and every mat sweep in `avoid.mats`, and SNACK_HAZARD_CLEARANCE px or more from every worm; otherwise it does not dart this frame and stays waiting. A darter darts
  * at most once per state, so once per trip, and stays catchable, so the exit (H2) can always open.
  *
  * Each hop under way glides `rule.hopSpeed` x `dt` px a frame until it lands; under `reduced`

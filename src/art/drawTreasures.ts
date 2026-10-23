@@ -1,8 +1,8 @@
 /**
  * Treasure icon painters (guide 6i rarity ladder, 7e, 8): the twelve canal
  * Decorations and Wearables, the eleven pond ones (issue #75), the eleven pond
- * Area 3 ones (issue #98), the eleven chinampa Area 4 ones (issue #76), and one Paint shell per Dream
- * colour.
+ * Area 3 ones (issue #98), the eleven chinampa Area 4 ones (issue #76), the eleven chinampa Area 5 ones
+ * (issue #103), and one Paint shell per Dream colour.
  *
  * Each icon is authored in a 28-unit box centred on (0, 0) and scaled
  * uniformly, so the longest side is `size` with the ink included. A Decoration
@@ -165,10 +165,75 @@ export const GOLDEN_CORN_ROW = '#e0a830';
 export const MONARCH_SPOT = '#fff3d6';
 
 // ---------------------------------------------------------------------------
+// Chinampa Area 5 fills (issue #103)
+// ---------------------------------------------------------------------------
+//
+// Outer silhouette fills of the eleven Area 5 icons, each 9:1 or more with ink (relative luminance 0.607 or
+// more) and none a rarity badge fill. Like the Area 4 fills they live here, next to the painters; the worn
+// looks of the six Area 5 Wearables import these same names, never the hex. Ratios are fill against ink
+// #2b2350. Aliases of a shipped colour say so. Details inside the silhouette (patterns, embroidery, stripes,
+// dots, lenses) are free and carry no ratio.
+
+/** Watering can tin and rose, a pale sky tin (the true tin grey fails 9:1). 10.27:1. */
+export const WATERING_CAN_FILL = '#a8e2ff';
+/** Floating gourd, a pale bottle-gourd green. 11.71:1. */
+export const GOURD_FILL = '#e2f08e';
+/** Floating gourd anchor weight, pebble A. Alias of FIREFLY_HOOK. 9.50:1. */
+export const GOURD_WEIGHT = FIREFLY_HOOK;
+/** Bee headband band, antennae and bobbles, a bee yellow. 11.41:1. */
+export const BEE_HEADBAND_FILL = '#ffe566';
+/** Bandana, a pale orchid, neither red nor a rarity colour. 9.93:1. */
+export const BANDANA_FILL = '#f2c8ff';
+/** Bandana dots, a cream white; internal. Alias of MONARCH_SPOT. */
+export const BANDANA_DOT = MONARCH_SPOT;
+/** Pinata star wedges, the lotus lantern pink. Alias of LOTUS_PETAL. 9.90:1. */
+export const PINATA_PINK = LOTUS_PETAL;
+/** Pinata star wedges, a pale sky blue. 10.72:1. */
+export const PINATA_SKY = '#bfe3ff';
+/** Pinata star wedges, the raincoat's pale apricot. Alias of RAINCOAT_FILL. 9.52:1. */
+export const PINATA_APRICOT = RAINCOAT_FILL;
+/** Pinata hook ring, pebble A. Alias of FIREFLY_HOOK. 9.50:1. */
+export const PINATA_HOOK = FIREFLY_HOOK;
+/** Sunflower sunglasses frame and sunflower petals, a pale sunflower yellow. 12.10:1. */
+export const SUNFLOWER_FRAME = '#ffed7a';
+/** The sunflower's centre, a seed brown: an internal detail inside the sunflower's own ink, so free. */
+export const SUNFLOWER_CENTRE = '#a8682a';
+/** Embroidered shirt, a warm cream blouse. 13.18:1. */
+export const EMBROIDERED_SHIRT_FILL = '#fff4dc';
+/** The embroidered hem band (the Rare trim band), a teal thread. 9.17:1. */
+export const EMBROIDERY_BAND = '#7ee0c8';
+/** The five petal threads of the chest flower: pink, orange, yellow, sky and lilac; internal, so free. */
+export const EMBROIDERY_PETALS: readonly string[] = ['#ff8fc0', '#ffb347', '#ffe14a', '#7fc4ff', '#a99cff'];
+/** Talavera fountain tile white, a pale blue-white glaze. 13.56:1. */
+export const TALAVERA_TILE = '#f6f8ff';
+/** Talavera fountain water, a pale aqua. 11.51:1. */
+export const TALAVERA_WATER = '#c4ecff';
+/** Talavera fountain tile blue, a cobalt glaze; internal, so free. */
+export const TALAVERA_COBALT = '#3f63c8';
+/** Hummingbird tail ribbon, an iridescent mint-teal. 10.57:1. */
+export const HUMMINGBIRD_RIBBON_FILL = '#9eecd6';
+/** Alebrije statue body and legs, a pale carved-wood orange. 9.35:1. */
+export const ALEBRIJE_BODY = '#ffc58f';
+/** Alebrije statue wing, a pale turquoise. 10.98:1. */
+export const ALEBRIJE_WING = '#9ff0e0';
+/** Alebrije statue head, snout and horns, a pale lemon. 12.39:1. */
+export const ALEBRIJE_HEAD = '#fff08a';
+/** Alebrije statue tail, a pale magenta. 9.74:1. */
+export const ALEBRIJE_TAIL = '#ffc2ee';
+/** Alebrije statue plinth, pebble C. Alias of GOLDEN_CORN_BASE. 10.70:1. */
+export const ALEBRIJE_BASE = GOLDEN_CORN_BASE;
+/** Alebrije statue dots and wing lines: magenta, blue, green and violet; internal, so free. */
+export const ALEBRIJE_MARKS: readonly string[] = ['#e8359a', '#2f6fe0', '#2fb870', '#8a4fd8'];
+/** Rainbow serape cape, a pale sand. 12.77:1. */
+export const SERAPE_FILL = '#fff0d0';
+/** The Rainbow serape cape's six stripes, left to right: pink, orange, yellow, green, blue and violet, none red; internal, so free. */
+export const SERAPE_STRIPES: readonly string[] = ['#ffc6e4', '#ffc487', '#ffe14a', '#a2f58c', '#9fd8ff', '#d8caff'];
+
+// ---------------------------------------------------------------------------
 // Ids
 // ---------------------------------------------------------------------------
 
-/** The fifteen Dream swatches in guide 3f order (Poppy red, issue #76, last). */
+/** The sixteen Dream swatches in guide 3f order (Poppy red, issue #76, then Plum, issue #103, last). */
 export const DREAM_SWATCH_IDS: readonly DreamSwatchId[] = [
   'mint',
   'sky-blue',
@@ -185,12 +250,13 @@ export const DREAM_SWATCH_IDS: readonly DreamSwatchId[] = [
   'lily-green',
   'firefly-gold',
   'poppy-red',
+  'plum',
 ];
 
 /**
  * The Decoration and Wearable slugs: the twelve canal ones (the text after `canal/`), then the
  * eleven pond ones and the eleven pond Area 3 ones (the text after `pond/`), then the eleven chinampa
- * Area 4 ones (the text after `chinampa/`), in catalogue order.
+ * Area 4 ones and the eleven chinampa Area 5 ones (the text after `chinampa/`), in catalogue order.
  */
 export type TreasureItemSlug =
   | 'pond-plant'
@@ -237,7 +303,18 @@ export type TreasureItemSlug =
   | 'willow-swing'
   | 'monarch-hair-clip'
   | 'golden-corn'
-  | 'monarch-wings';
+  | 'monarch-wings'
+  | 'watering-can'
+  | 'floating-gourd'
+  | 'bee-headband'
+  | 'bandana'
+  | 'pinata'
+  | 'sunflower-sunglasses'
+  | 'embroidered-shirt'
+  | 'talavera-fountain'
+  | 'hummingbird-tail-ribbon'
+  | 'alebrije-statue'
+  | 'rainbow-serape-cape';
 
 export type TreasureIconSlug = TreasureItemSlug | `paint-shell-${DreamSwatchId}`;
 
@@ -287,11 +364,23 @@ const ITEM_SLUGS: readonly TreasureItemSlug[] = [
   'monarch-hair-clip',
   'golden-corn',
   'monarch-wings',
+  'watering-can',
+  'floating-gourd',
+  'bee-headband',
+  'bandana',
+  'pinata',
+  'sunflower-sunglasses',
+  'embroidered-shirt',
+  'talavera-fountain',
+  'hummingbird-tail-ribbon',
+  'alebrije-statue',
+  'rainbow-serape-cape',
 ];
 
 /**
- * All sixty icon slugs: the twelve canal items, the eleven pond items, the eleven pond Area 3
- * items, the eleven chinampa Area 4 items, then the fifteen Paint shells in Dream order.
+ * All seventy-two icon slugs: the twelve canal items, the eleven pond items, the eleven pond Area 3
+ * items, the eleven chinampa Area 4 items, the eleven chinampa Area 5 items, then the sixteen Paint shells
+ * in Dream order.
  */
 export const TREASURE_ICON_SLUGS: readonly TreasureIconSlug[] = [
   ...ITEM_SLUGS,
@@ -363,6 +452,9 @@ export function treasureIconTextureSize(size: number): TexSize {
  * The six chinampa Area 4 Decorations (issue #76) end on the same 12.6 edge: the flat foot of the Clay
  * flowerpot, the Corn husk doll skirt, the Scarecrow post and the Golden corn plinth (Floor items), and the
  * middle flag of the Papel picado banner and the Willow swing seat (Hanging items, so the box edge again).
+ * The five chinampa Area 5 Decorations (issue #103) end on the same 12.6 edge: the foot of the Watering can, the
+ * Talavera fountain plinth and the Alebrije statue plinth (Floor items), the weight of the Floating gourd (a
+ * Floating item, so the box edge) and the lower tips of the Pinata star (a Hanging item).
  */
 const DECORATION_FILL_BOTTOM: Readonly<Partial<Record<TreasureIconSlug, number>>> = {
   'pond-plant': 12.3,
@@ -385,6 +477,11 @@ const DECORATION_FILL_BOTTOM: Readonly<Partial<Record<TreasureIconSlug, number>>
   'papel-picado-banner': 12.6,
   'willow-swing': 12.6,
   'golden-corn': 12.6,
+  'watering-can': 12.6,
+  'floating-gourd': 12.6,
+  pinata: 12.6,
+  'talavera-fountain': 12.6,
+  'alebrije-statue': 12.6,
 };
 
 /** How far the outer ink reaches past the fill, for the Decorations whose painter is not a plain `shape`. */
@@ -2024,6 +2121,442 @@ function paintMonarchWings(pen: Pen): void {
 }
 
 // ---------------------------------------------------------------------------
+// Chinampa Area 5 items (issue #103)
+// ---------------------------------------------------------------------------
+//
+// The same ladder and ink as the earlier icons. Every outer fill is one of the Area 5 fills above (9:1 or more
+// with ink); the six Wearables' worn looks import the same names. Shape carries the meaning: a can with a
+// sprinkler rose, a bottle gourd lying on the water, antennae on a band, a knotted triangle, a hanging star, a
+// pair of flower lenses, a blouse with flared sleeves, a tiled fountain, a forked ribbon, a winged friendly
+// creature on a plinth, and a fringed striped cape.
+
+/** Degrees to radians. */
+function rad(deg: number): number {
+  return (deg * Math.PI) / 180;
+}
+
+/** A closed polygon path with straight corners. */
+function polygonPath(...xy: number[]): Path2D {
+  return roundedPolygon(pts(...xy), 0);
+}
+
+/**
+ * Common, Floor: a pale sky-blue watering can: a tapering body with an open top, a wide arched handle on the
+ * right and a spout rising to the left with a round sprinkler rose, three ink holes in the rose. One colour and
+ * one shine. The flat foot of the body is the lowest fill edge.
+ */
+function paintWateringCan(pen: Pen): void {
+  const { ctx, k } = pen;
+  const handle = new Path2D();
+  handle.ellipse(4.8, 4.6, 7.8, 7.8, 0, rad(-100), rad(72));
+  handle.ellipse(4.8, 4.6, 4, 4, 0, rad(72), rad(-100), true);
+  handle.closePath();
+  outerShape(pen, place(handle, k), WATERING_CAN_FILL, ITEM_LW);
+  const spout = roundedPolygon(pts(-6.8, 10.8, -11.8, -6.2, -8.6, -7, -6.8, 4.8), [1, 1, 1, 1]);
+  outerShape(pen, place(spout, k), WATERING_CAN_FILL, ITEM_LW);
+  outerShape(pen, place(ellipse(-9.8, -8.3, 2.6, 1.9, -0.26), k), WATERING_CAN_FILL, ITEM_LW);
+  const body = roundedPolygon(pts(-6.8, -2.4, 5.6, -2.4, 6.4, 12.6, -7.6, 12.6), [1.4, 1.4, 2.2, 2.2]);
+  outerShape(pen, place(body, k), WATERING_CAN_FILL, ITEM_LW);
+  outerShape(pen, place(ellipse(-0.6, -2.4, 6.2, 1.7), k), WATERING_CAN_FILL, ITEM_LW);
+  detail(pen, () => {
+    ctx.fillStyle = INK;
+    ctx.globalAlpha = 0.3;
+    ctx.fill(place(ellipse(-0.6, -2.3, 4.4, 0.9), k));
+    ctx.globalAlpha = 1;
+    for (const [x, y] of [
+      [-10.8, -8.5],
+      [-9.4, -9],
+      [-8.6, -7.9],
+    ]) {
+      ctx.fill(place(ellipse(x, y, 0.55, 0.55), k));
+    }
+  });
+  shine(pen, -4.2, 5.4, 0.9, 2.8, 0.08);
+}
+
+/**
+ * Common, Floating: a bottle gourd lying on the water, a big round lobe and a small one joined at a waist, a
+ * curled stem on the small end, a bold ink crease at the waist and a thin ink cord down to a pebble weight. One
+ * green and one shine. The body sits across the waterline, 20 below the top of the 80 box; the weight is the
+ * lowest fill edge, the box edge.
+ */
+function paintFloatingGourd(pen: Pen): void {
+  const { ctx, k } = pen;
+  const cy = waterlineY(INK_OUT_SHAPE) + 2.4;
+  const weightR = 1.7;
+  const weightY = AREA3_FOOT_Y - weightR;
+  const cord = new Path2D();
+  cord.moveTo(-4.8, cy + 5.4);
+  cord.bezierCurveTo(-8.4, cy + 8, -1.4, cy + 10, -4.8, weightY - weightR);
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = DETAIL_LW;
+  ctx.stroke(place(cord, k));
+  outerShape(pen, place(ellipse(-4.8, weightY, weightR, weightR), k), GOURD_WEIGHT, ITEM_LW);
+  outerShape(pen, place(ellipse(10.3, cy - 3.6, 1.5, 3.2, 0.55), k), GOURD_FILL, ITEM_LW);
+  const gourd = new Path2D();
+  gourd.moveTo(-12.4, cy);
+  gourd.bezierCurveTo(-12.4, cy - 5.8, -8.4, cy - 6.2, -4.8, cy - 6.2);
+  gourd.bezierCurveTo(-1.6, cy - 6.2, 0.4, cy - 3.4, 2.4, cy - 3.2);
+  gourd.bezierCurveTo(4.2, cy - 3, 5, cy - 4.8, 7.4, cy - 4.8);
+  gourd.bezierCurveTo(10.6, cy - 4.8, 11.6, cy - 2.4, 11.6, cy);
+  gourd.bezierCurveTo(11.6, cy + 2.4, 10.6, cy + 4.8, 7.4, cy + 4.8);
+  gourd.bezierCurveTo(5, cy + 4.8, 4.2, cy + 3, 2.4, cy + 3.2);
+  gourd.bezierCurveTo(0.4, cy + 3.4, -1.6, cy + 6.2, -4.8, cy + 6.2);
+  gourd.bezierCurveTo(-8.4, cy + 6.2, -12.4, cy + 5.8, -12.4, cy);
+  gourd.closePath();
+  silhouette(pen, place(gourd, k), GOURD_FILL, ITEM_LW, () => {
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = DETAIL_LW;
+    ctx.stroke(place(line(2.4, cy - 3.4, 2.4, cy + 3.4), k));
+  });
+  shine(pen, -8.2, cy - 2.8, 0.9, 2.4, 0.5);
+}
+
+/** Vertices of a star with `n` points centred on (cx, cy): outer radius `outer`, inner `inner`, one tip straight up. */
+function starVertices(cx: number, cy: number, outer: number, inner: number, n: number): Pt[] {
+  const out: Pt[] = [];
+  for (let i = 0; i < 2 * n; i++) {
+    const r = i % 2 === 0 ? outer : inner;
+    const a = -Math.PI / 2 + (i * Math.PI) / n;
+    out.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+  }
+  return out;
+}
+
+/** Wedge colours of the Pinata star, one per tip, clockwise from the top. */
+const PINATA_WEDGES = [PINATA_PINK, PINATA_SKY, PINATA_APRICOT, PINATA_PINK, PINATA_SKY] as const;
+
+/**
+ * Rare, Hanging: a star pinata hanging from a pebble A hook ring on its top tip: five rounded tips, each wedge a
+ * pale pink, sky blue or apricot paper, with one yellow sash across the middle (the one trim). Gentle and festive:
+ * nothing to hit. One shine. The two lower tips are the lowest fill edge.
+ */
+function paintPinata(pen: Pen): void {
+  const { ctx, k } = pen;
+  const cy = 2.16;
+  const verts = starVertices(0, cy, 14, 6.6, 5);
+  const body = roundedPolygon(verts, verts.map((_, i) => (i % 2 === 0 ? 0.9 : 0.7)));
+  silhouette(pen, place(body, k), PINATA_PINK, ITEM_LW, () => {
+    for (let i = 0; i < 5; i++) {
+      const before = verts[(2 * i + 9) % 10];
+      const tip = verts[2 * i];
+      const after = verts[2 * i + 1];
+      ctx.fillStyle = PINATA_WEDGES[i];
+      ctx.fill(place(polygonPath(0, cy, before.x, before.y, tip.x, tip.y, after.x, after.y), k));
+    }
+    trimBand(pen, 0.2, 3.2, BOAT_TRIM);
+  });
+  shape(ctx, place(ellipse(0, -11.3, 1.3, 1.3), k), outerFill(pen, PINATA_HOOK), DETAIL_LW);
+  shine(pen, -5.2, -1.6, 0.8, 2, 0.6);
+}
+
+/**
+ * Epic, Floor: a tiered fountain of blue-and-white tile: a wide bowl on a plinth, a pillar, a small upper bowl
+ * and three jets of water (a tall one and two arcing out and down, outlined thinner at 1.6), the bowl rims
+ * showing water. A cobalt rim and a row of cobalt diamonds are painted
+ * on the white glaze; one aqua gem on the lower bowl. One shine. The plinth is the lowest fill edge.
+ */
+function paintTalaveraFountain(pen: Pen): void {
+  const { ctx, k } = pen;
+  const plinth = roundedPolygon(pts(-10.6, 9.4, 10.6, 9.4, 10.6, 12.6, -10.6, 12.6), 1.4);
+  outerShape(pen, place(plinth, k), TALAVERA_TILE, ITEM_LW);
+  const lower = new Path2D();
+  lower.moveTo(-12.2, 3.4);
+  lower.lineTo(12.2, 3.4);
+  lower.bezierCurveTo(12.2, 8.4, 7.6, 9.8, 3.6, 9.8);
+  lower.lineTo(-3.6, 9.8);
+  lower.bezierCurveTo(-7.6, 9.8, -12.2, 8.4, -12.2, 3.4);
+  lower.closePath();
+  silhouette(pen, place(lower, k), TALAVERA_TILE, ITEM_LW, () => {
+    ctx.fillStyle = TALAVERA_COBALT;
+    ctx.fillRect(-13 * k, 3.4 * k, 26 * k, 1.8 * k);
+    for (const x of [-8.8, -5.2, 5.2, 8.8]) {
+      ctx.fill(place(polygonPath(x, 5.6, x + 1.5, 7.2, x, 8.8, x - 1.5, 7.2), k));
+    }
+  });
+  outerShape(pen, place(ellipse(0, 3.4, 12.2, 2), k), TALAVERA_WATER, ITEM_LW);
+  const pillar = roundedPolygon(pts(-2.4, -1.4, 2.4, -1.4, 3.2, 3.6, -3.2, 3.6), [1, 1, 1, 1]);
+  outerShape(pen, place(pillar, k), TALAVERA_TILE, ITEM_LW);
+  const upper = new Path2D();
+  upper.moveTo(-7, -2.8);
+  upper.lineTo(7, -2.8);
+  upper.bezierCurveTo(7, 0.4, 4, 1.4, 0, 1.4);
+  upper.bezierCurveTo(-4, 1.4, -7, 0.4, -7, -2.8);
+  upper.closePath();
+  silhouette(pen, place(upper, k), TALAVERA_TILE, ITEM_LW, () => {
+    ctx.fillStyle = TALAVERA_COBALT;
+    ctx.fillRect(-8 * k, -2.8 * k, 16 * k, 1.4 * k);
+  });
+  outerShape(pen, place(ellipse(0, -2.8, 7, 1.4), k), TALAVERA_WATER, ITEM_LW);
+  const jet = (path: Path2D): void => shape(ctx, place(path, k), outerFill(pen, TALAVERA_WATER), DETAIL_LW);
+  for (const side of [-1, 1]) jet(rootRibbon(side * 0.8, -10.4, side * 5, -12.6, side * 7, -4, 2.6, 3));
+  jet(rootRibbon(0, -2.6, 0, -7, 0, -11.4, 3.2, 2.2));
+  gem(pen, 0, 6.8, CASTLE_GEM);
+  shine(pen, -8.6, 5.4, 0.8, 2, 0.1);
+}
+
+/**
+ * Legendary, Floor: a friendly alebrije: a carved wooden creature with a round orange body, a lemon head with
+ * two horns and a smile, a turquoise wing, a curling pink tail and four short legs, standing on a stone plinth
+ * with one gold band. Bright dots and feather lines in four colours; one pink gem on the shoulder and one
+ * 4-point star above. One shine. The plinth is the lowest fill edge.
+ */
+function paintAlebrijeStatue(pen: Pen): void {
+  const { ctx, k } = pen;
+  const [pink, blue, green, violet] = ALEBRIJE_MARKS;
+  silhouette(pen, place(pointedPetal(-1.4, -0.4, -24, 12.6, 5.2), k), ALEBRIJE_WING, ITEM_LW, () => {
+    ctx.strokeStyle = violet;
+    ctx.lineWidth = BAND_LW;
+    for (const deg of [-14, -26, -38]) {
+      const a = rad(deg);
+      ctx.stroke(place(line(-1.4, -0.4, -1.4 + 10.6 * Math.sin(a), -0.4 - 10.6 * Math.cos(a)), k));
+    }
+    ctx.fillStyle = pink;
+    ctx.fill(place(ellipse(-4.4, -6, 0.9, 0.9), k));
+    ctx.fillStyle = blue;
+    ctx.fill(place(ellipse(-5.8, -9, 0.9, 0.9), k));
+  });
+  silhouette(pen, place(pointedPetal(-6.8, 2, -52, 7.2, 3.4), k), ALEBRIJE_TAIL, ITEM_LW, () => {
+    ctx.fillStyle = blue;
+    ctx.fill(place(ellipse(-10.2, -0.8, 0.9, 0.9), k));
+  });
+  for (const x of [-4.6, 3.4]) {
+    const leg = roundedPolygon(pts(x - 1.6, 3.6, x + 1.6, 3.6, x + 1.6, 9, x - 1.6, 9), 0.8);
+    silhouette(pen, place(leg, k), ALEBRIJE_BODY, ITEM_LW, () => {
+      ctx.fillStyle = green;
+      ctx.fillRect((x - 2) * k, 6.6 * k, 4 * k, 1.2 * k);
+    });
+  }
+  const plinth = roundedPolygon(pts(-9.4, 12.6, -8.4, 8.2, 8.4, 8.2, 9.4, 12.6), [1.8, 1.4, 1.4, 1.8]);
+  silhouette(pen, place(plinth, k), ALEBRIJE_BASE, ITEM_LW, () => trimBand(pen, 9.6, 11.4, GOLD_TRIM));
+  silhouette(pen, place(ellipse(-0.6, 1.6, 8.2, 4.6), k), ALEBRIJE_BODY, ITEM_LW, () => {
+    const dots = [
+      [-5.4, 0.6, pink],
+      [-2.6, 3.4, blue],
+      [-1.4, -0.6, green],
+      [1.8, 3.6, violet],
+      [-6, 3.2, green],
+      [4.4, 0.4, blue],
+    ] as const;
+    for (const [x, y, colour] of dots) {
+      ctx.fillStyle = colour;
+      ctx.fill(place(ellipse(x, y, 0.95, 0.95), k));
+    }
+  });
+  for (const [deg, len, x] of [
+    [-14, 6, 5],
+    [16, 5.4, 8.2],
+  ] as const) {
+    outerShape(pen, place(pointedPetal(x, -5.8, deg, len, 2.6), k), ALEBRIJE_HEAD, ITEM_LW);
+  }
+  outerShape(pen, place(ellipse(6.4, -3.4, 4.4, 3.7), k), ALEBRIJE_HEAD, ITEM_LW);
+  outerShape(pen, place(ellipse(9.5, -2.1, 2.9, 2.1), k), ALEBRIJE_HEAD, ITEM_LW);
+  detail(pen, () => {
+    ctx.fillStyle = INK;
+    ctx.fill(place(ellipse(7.2, -4.6, 0.8, 0.8), k));
+    ctx.fillStyle = pink;
+    ctx.fill(place(ellipse(6.2, -1.6, 1.1, 0.8), k));
+    const smile = new Path2D();
+    smile.moveTo(9.2, -1);
+    smile.quadraticCurveTo(10.4, -0.3, 11.6, -1.3);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = BAND_LW;
+    ctx.stroke(place(smile, k));
+  });
+  gem(pen, 1.4, 1.8, PYRAMID_GEM);
+  shine(pen, -4.8, 5, 0.8, 1.4, 0.4);
+  legendStar(pen, -1, -10.2);
+}
+
+/**
+ * Common: a bee-yellow headband arching over the head, two short antennae each ending in a round bobble, and
+ * three bee stripes (ink at alpha 0.30, clipped) across the band and a stripe on each bobble. One shine.
+ */
+function paintBeeHeadband(pen: Pen): void {
+  const { ctx, k } = pen;
+  const band = new Path2D();
+  band.ellipse(0, 9.4, 12.6, 12.6, 0, rad(-180), rad(0));
+  band.ellipse(0, 9.4, 9.2, 9.2, 0, rad(0), rad(-180), true);
+  band.closePath();
+  for (const s of [-1, 1]) {
+    const stem = roundedPolygon(pts(s * 3.6 - 1, -2.4, s * 3.6 + 1, -2.4, s * 6.8 + 1, -9.4, s * 6.8 - 1, -9.4), 0.8);
+    outerShape(pen, place(stem, k), BEE_HEADBAND_FILL, ITEM_LW);
+  }
+  silhouette(pen, place(band, k), BEE_HEADBAND_FILL, ITEM_LW, () => {
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = INK;
+    for (const x of [-10.4, -1.2, 8]) ctx.fillRect(x * k, -8 * k, 2.4 * k, 20 * k);
+    ctx.globalAlpha = 1;
+  });
+  for (const s of [-1, 1]) {
+    silhouette(pen, place(ellipse(s * 7.2, -9.6, 3, 3), k), BEE_HEADBAND_FILL, ITEM_LW, () => {
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = INK;
+      ctx.fillRect((s * 7.2 - 0.7) * k, -13 * k, 1.4 * k, 7 * k);
+      ctx.globalAlpha = 1;
+    });
+  }
+  shine(pen, -9, 3.6, 0.8, 2.2, 0.7);
+}
+
+/**
+ * Common: a triangular bandana in pale orchid, knotted at the top with a small square knot and two short ends,
+ * dotted with cream dots. One shine.
+ */
+function paintBandana(pen: Pen): void {
+  const { ctx, k } = pen;
+  const cloth = new Path2D();
+  cloth.moveTo(-12, -8.6);
+  cloth.bezierCurveTo(-5, -6.4, 5, -6.4, 12, -8.6);
+  cloth.lineTo(1.8, 11.2);
+  cloth.quadraticCurveTo(0, 14, -1.8, 11.2);
+  cloth.closePath();
+  silhouette(pen, place(cloth, k), BANDANA_FILL, ITEM_LW, () => {
+    ctx.fillStyle = BANDANA_DOT;
+    for (const [x, y] of [
+      [-7.6, -4.6],
+      [-2.6, -3.6],
+      [3, -3.6],
+      [7.6, -4.6],
+      [-4.2, 1.6],
+      [0.6, 0.6],
+      [4.4, 1.8],
+      [-1.2, 6],
+      [1.8, 7.2],
+    ]) {
+      ctx.fill(place(ellipse(x, y, 1.15, 1.15), k));
+    }
+  });
+  for (const s of [-1, 1]) {
+    const tail = roundedPolygon(pts(s * 1.6, -10.4, s * 6.4, -12.4, s * 5.2, -7.8), [0.8, 1, 0.8]);
+    outerShape(pen, place(tail, k), BANDANA_FILL, ITEM_LW);
+  }
+  const knot = roundedPolygon(pts(-3, -12.2, 3, -12.2, 3, -6.8, -3, -6.8), 1.6);
+  outerShape(pen, place(knot, k), BANDANA_FILL, ITEM_LW);
+  shine(pen, -7, 0.2, 0.8, 2, 0.3);
+}
+
+/** A sunflower of `petals` pointed petals centred on (cx, cy): one `shape` outline, outer radius `r`. */
+function sunflowerPath(cx: number, cy: number, r: number, petals: number): Path2D {
+  return roundedPolygon(
+    starVertices(cx, cy, r, r * 0.74, petals),
+    Array.from({ length: 2 * petals }, (_, i) => (i % 2 === 0 ? 0.7 : 0.5)),
+  );
+}
+
+/**
+ * Rare: round glasses in a sunflower-yellow frame (two lenses with a clear tint, never dark, joined by a bridge)
+ * with a sunflower perched on the bridge: eight yellow petals round a seed-brown centre. The sunflower is the one
+ * Rare detail, so there is no trim band. One shine on the left lens.
+ */
+function paintSunflowerSunglasses(pen: Pen): void {
+  const { ctx, k } = pen;
+  const left = place(ellipse(-6.9, 2.6, 5.35, 4.6), k);
+  const right = place(ellipse(6.9, 2.6, 5.35, 4.6), k);
+  const bridge = new Path2D();
+  bridge.moveTo(-1.7, 1.6);
+  bridge.quadraticCurveTo(0, -0.6, 1.7, 1.6);
+  detail(pen, () => {
+    ctx.fillStyle = GLASSES_LENS;
+    ctx.fill(left);
+    ctx.fill(right);
+  });
+  inkMany(ctx, [
+    outerSeg(pen, left, GLASSES_W, SUNFLOWER_FRAME, GLASSES_OL),
+    outerSeg(pen, right, GLASSES_W, SUNFLOWER_FRAME, GLASSES_OL),
+    outerSeg(pen, place(bridge, k), 2.6, SUNFLOWER_FRAME, GLASSES_OL),
+  ]);
+  outerShape(pen, place(sunflowerPath(0, -6.4, 4.8, 8), k), SUNFLOWER_FRAME, ITEM_LW);
+  detail(pen, () => shape(ctx, place(ellipse(0, -6.4, 2, 2), k), SUNFLOWER_CENTRE, BAND_LW));
+  shine(pen, -9, 0.2, 0.8, 1.6, 0.5);
+}
+
+/**
+ * Rare: a flared-sleeve blouse in warm cream with a square neckline, one chest flower of five coloured thread
+ * petals round a yellow heart, and one teal hem band (the one trim band) with a row of ink stitches. One shine.
+ */
+function paintEmbroideredShirt(pen: Pen): void {
+  const { ctx, k } = pen;
+  const shirt = roundedPolygon(
+    pts(-5.2, -12.6, 5.2, -12.6, 12.6, -9.6, 12.6, -2.4, 8.2, -3.4, 9.8, 12.6, -9.8, 12.6, -8.2, -3.4, -12.6, -2.4, -12.6, -9.6),
+    [1.4, 1.4, 2, 2, 1, 2, 2, 1, 2, 2],
+  );
+  silhouette(pen, place(shirt, k), EMBROIDERED_SHIRT_FILL, ITEM_LW, () => {
+    trimBand(pen, 8.4, 11.2, EMBROIDERY_BAND);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = DETAIL_LW;
+    ctx.stroke(place(polygonPath(-4.6, -12.8, -4.6, -9.4, 4.6, -9.4, 4.6, -12.8), k));
+    ctx.fillStyle = INK;
+    ctx.globalAlpha = 0.3;
+    for (const x of [-6, -2, 2, 6]) ctx.fill(place(ellipse(x, 9.8, 0.55, 0.55), k));
+    ctx.globalAlpha = 1;
+    EMBROIDERY_PETALS.forEach((colour, i) => {
+      const a = -Math.PI / 2 + (i * TAU) / EMBROIDERY_PETALS.length;
+      shape(ctx, place(ellipse(2.9 * Math.cos(a), 0.4 + 2.9 * Math.sin(a), 2.2, 2.2), k), colour, BAND_LW);
+    });
+    shape(ctx, place(ellipse(0, 0.4, 1.5, 1.5), k), BOAT_TRIM, BAND_LW);
+  });
+  shine(pen, -7.4, -6.8, 0.8, 2, 0.15);
+}
+
+/**
+ * Epic: a hummingbird tail ribbon in mint-teal: two loops, two forked tails hanging down (each end notched like
+ * a hummingbird's tail), a knot, and one pink gem on the knot. One shine on a loop.
+ */
+function paintHummingbirdTailRibbon(pen: Pen): void {
+  const { ctx, k } = pen;
+  const tails: readonly (readonly number[])[] = [
+    [-0.6, -3, 2.2, -2, -4.8, 12.6, -6.8, 8.4, -11.6, 10.6],
+    [0.6, -3, 11.4, 8.6, 7.4, 12.6, 6.2, 8.2, -2.2, -2],
+  ];
+  for (const xy of tails) outerShape(pen, place(roundedPolygon(pts(...xy), 1), k), HUMMINGBIRD_RIBBON_FILL, ITEM_LW);
+  for (const deg of [-80, 80]) {
+    silhouette(pen, place(pointedPetal(0, -4.6, deg, 12.6, 5.4), k), HUMMINGBIRD_RIBBON_FILL, ITEM_LW, () => {
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = BAND_LW;
+      const a = rad(deg);
+      ctx.stroke(place(line(0, -4.6, 10 * Math.sin(a), -4.6 - 10 * Math.cos(a)), k));
+    });
+  }
+  outerShape(pen, place(ellipse(0, -4.6, 4.2, 3.9), k), HUMMINGBIRD_RIBBON_FILL, ITEM_LW);
+  gem(pen, 0, -4.6, BOW_GEM);
+  shine(pen, -7.4, -7.4, 0.8, 1.8, -0.5);
+}
+
+/**
+ * Legendary: a serape cape of six upright rainbow stripes (pink to violet, none red) on pale sand, narrow at
+ * the neck and wide at the hem, a gold band above the hem, five fringe tassels along the bottom, one pink gem at
+ * the clasp and one 4-point star. One shine.
+ */
+function paintRainbowSerapeCape(pen: Pen): void {
+  const { ctx, k } = pen;
+  const hemY = 7.6;
+  for (let i = 0; i < 5; i++) {
+    const x = -10.4 + i * 5.2;
+    const tassel = roundedPolygon(pts(x - 1.7, hemY - 1, x + 1.7, hemY - 1, x + 1.7, 12.6, x - 1.7, 12.6), [0.4, 0.4, 1.2, 1.2]);
+    outerShape(pen, place(tassel, k), SERAPE_FILL, ITEM_LW);
+  }
+  const cape = new Path2D();
+  cape.moveTo(-7.4, -11.8);
+  cape.quadraticCurveTo(0, -7.6, 7.4, -11.8);
+  cape.bezierCurveTo(10.4, -6, 12.4, 1, 12.4, hemY);
+  cape.lineTo(-12.4, hemY);
+  cape.bezierCurveTo(-12.4, 1, -10.4, -6, -7.4, -11.8);
+  cape.closePath();
+  silhouette(pen, place(cape, k), SERAPE_FILL, ITEM_LW, () => {
+    const w = 25 / SERAPE_STRIPES.length;
+    SERAPE_STRIPES.forEach((colour, i) => {
+      ctx.fillStyle = colour;
+      ctx.fill(place(polygonPath(-12.5 + i * w, -13, -12.5 + (i + 1) * w + 0.3, -13, -12.5 + (i + 1) * w + 0.3, hemY, -12.5 + i * w, hemY), k));
+    });
+    trimBand(pen, hemY - 2.4, hemY, GOLD_TRIM);
+  });
+  gem(pen, 0, -7.4, PYRAMID_GEM);
+  shine(pen, -7.4, -5.6, 0.8, 2.2, 0.2);
+  legendStar(pen, 9.8, -9.8);
+}
+
+// ---------------------------------------------------------------------------
 // Paint shell and the Dream blob
 // ---------------------------------------------------------------------------
 
@@ -2560,6 +3093,39 @@ function paintIcon(ctx: CanvasRenderingContext2D, slug: TreasureIconSlug, size: 
       break;
     case 'monarch-wings':
       paintMonarchWings({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'watering-can':
+      paintWateringCan({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'floating-gourd':
+      paintFloatingGourd({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'bee-headband':
+      paintBeeHeadband({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'bandana':
+      paintBandana({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'pinata':
+      paintPinata({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'sunflower-sunglasses':
+      paintSunflowerSunglasses({ ctx, k: fitScale(size, INK_OUT_GLASSES), flat });
+      break;
+    case 'embroidered-shirt':
+      paintEmbroideredShirt({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'talavera-fountain':
+      paintTalaveraFountain({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'hummingbird-tail-ribbon':
+      paintHummingbirdTailRibbon({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'alebrije-statue':
+      paintAlebrijeStatue({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'rainbow-serape-cape':
+      paintRainbowSerapeCape({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
       break;
   }
 }

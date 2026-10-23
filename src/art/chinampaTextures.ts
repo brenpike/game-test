@@ -1,6 +1,7 @@
 /**
  * Phaser glue for the chinampa props (issue #76): bakes the root tangle back and front, the
- * overhang under a bank, the two gap edges, the ghost nets and the snag cue into CanvasTextures.
+ * overhang under a bank, the two gap edges, the ghost nets, the snag cue and the two water hyacinth
+ * mats (issue #103) into CanvasTextures.
  * Visual only. No game state, no input, no physics.
  *
  * Same rules as textures.ts: every texture is drawn at `bakeScale` through the
@@ -11,6 +12,7 @@ import * as Phaser from 'phaser';
 import {
   GAP_EDGE_BOTTOM_TEX,
   GAP_EDGE_TOP_TEX,
+  HYACINTH_MAT_TEX,
   OVERHANG_TEX,
   ROOT_TANGLE_TEX,
   SNAG_CUE_TEX,
@@ -18,6 +20,7 @@ import {
   paintBankOverhang,
   paintGapEdge,
   paintGhostNet,
+  paintHyacinthMat,
   paintRootTangleBack,
   paintRootTangleFront,
   paintSnagCue,
@@ -33,6 +36,8 @@ export const CHINAMPA_TEX = {
   gapEdgeTop: 'chinampa-gap-edge-top',
   gapEdgeBottom: 'chinampa-gap-edge-bottom',
   snagCue: 'chinampa-snag-cue',
+  hyacinthMatUpper: 'chinampa-hyacinth-mat-upper',
+  hyacinthMatLower: 'chinampa-hyacinth-mat-lower',
 } as const;
 
 /** Key of the ghost net texture for a net rect `w` x `h` logical px. */
@@ -52,6 +57,14 @@ export interface GapEdgeTextures {
   readonly top: TexInfo;
   /** The edge below the current: its body sits below the anchor, its streaming roots reach above it. */
   readonly bottom: TexInfo;
+}
+
+/** The two water hyacinth mats either side of a channel: the same frame, HYACINTH_MAT_TEX (100 x 120 to the rect edge, padding 4). */
+export interface HyacinthMatTextures {
+  /** The mat above the channel: its bottom edge faces down to the channel. Anchor is the top-left corner of the mat's rect. */
+  readonly upper: TexInfo;
+  /** The mat below the channel: its top edge faces up to the channel. Anchor is the top-left corner of the mat's rect. */
+  readonly lower: TexInfo;
 }
 
 export interface ChinampaTextures {
@@ -76,6 +89,12 @@ export interface ChinampaTextures {
    * object, so show it at full alpha and above the haze.
    */
   readonly snagCue: TexInfo;
+  /**
+   * The water hyacinth mats (scenery that blocks the explorer; the scene places and sways them). Fixed-size
+   * textures to stretch to each mat's rect, placed at the rect's top-left corner like the overhang, so they
+   * need no bake option: they bake with the rest here. Still frames; the sway is the scene's.
+   */
+  readonly hyacinthMats: HyacinthMatTextures;
 }
 
 /** Optional extras for {@link bakeChinampaTextures}. */
@@ -108,6 +127,10 @@ export function bakeChinampaTextures(
     },
     ghostNets,
     snagCue: bake(scene, CHINAMPA_TEX.snagCue, SNAG_CUE_TEX, bakeScale, paintSnagCue),
+    hyacinthMats: {
+      upper: bake(scene, CHINAMPA_TEX.hyacinthMatUpper, HYACINTH_MAT_TEX, bakeScale, (ctx) => paintHyacinthMat(ctx, 'upper')),
+      lower: bake(scene, CHINAMPA_TEX.hyacinthMatLower, HYACINTH_MAT_TEX, bakeScale, (ctx) => paintHyacinthMat(ctx, 'lower')),
+    },
   };
 }
 

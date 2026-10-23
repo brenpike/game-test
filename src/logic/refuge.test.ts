@@ -3,6 +3,7 @@ import {
   AREAS,
   CANAL_AREA,
   CANAL_HABITAT,
+  CHINAMPA_2_AREA,
   CHINAMPA_AREA,
   CHINAMPA_HABITAT,
   HABITATS,
@@ -115,7 +116,10 @@ describe('refugeSections', () => {
       { areaId: POND_AREA.id, areaNumber: 2, cleared: false },
       { areaId: POND_2_AREA.id, areaNumber: 3, cleared: false },
     ]);
-    expect(chinampa.batches).toEqual([{ areaId: CHINAMPA_AREA.id, areaNumber: 4, cleared: false }]);
+    expect(chinampa.batches).toEqual([
+      { areaId: CHINAMPA_AREA.id, areaNumber: 4, cleared: false },
+      { areaId: CHINAMPA_2_AREA.id, areaNumber: 5, cleared: false },
+    ]);
   });
 
   it('hides every section on a fresh save', () => {
@@ -151,6 +155,18 @@ describe('refugeSections', () => {
   it('cleans a section when every area in it is beaten', () => {
     const pond = refugeSections(beaten(POND_AREA.id, POND_2_AREA.id))[1];
     expect(pond.state).toBe('clean');
+  });
+
+  it('keeps the chinampa section dirty until both Area 4 and Area 5 are beaten (ND-22)', () => {
+    const area4Only = refugeSections(beaten(CHINAMPA_AREA.id))[2];
+    expect(area4Only.state).toBe('dirty');
+    expect(area4Only.batches.map((batch) => batch.cleared)).toEqual([true, false]);
+    const area5Only = refugeSections(beaten(CHINAMPA_2_AREA.id))[2];
+    expect(area5Only.state).toBe('dirty');
+    expect(area5Only.batches.map((batch) => batch.cleared)).toEqual([false, true]);
+    const both = refugeSections(beaten(CHINAMPA_AREA.id, CHINAMPA_2_AREA.id))[2];
+    expect(both.state).toBe('clean');
+    expect(both.batches.map((batch) => batch.cleared)).toEqual([true, true]);
   });
 
   it('never counts a dev area', () => {
@@ -229,8 +245,12 @@ describe('newlyCleanHabitatIds', () => {
     ]);
   });
 
-  it('lists the chinampa gardens when Area 4 is beaten', () => {
-    expect(newlyCleanHabitatIds({}, beaten(CHINAMPA_AREA.id))).toEqual([CHINAMPA_HABITAT.id]);
+  it('lists the chinampa gardens only when Area 4 and Area 5 are both beaten (ND-22)', () => {
+    const area4 = beaten(CHINAMPA_AREA.id);
+    expect(newlyCleanHabitatIds({}, area4)).toEqual([]);
+    expect(newlyCleanHabitatIds(area4, { ...area4, ...beaten(CHINAMPA_2_AREA.id) })).toEqual([CHINAMPA_HABITAT.id]);
+    expect(newlyCleanHabitatIds({}, beaten(CHINAMPA_2_AREA.id))).toEqual([]);
+    expect(newlyCleanHabitatIds({}, beaten(CHINAMPA_2_AREA.id, CHINAMPA_AREA.id))).toEqual([CHINAMPA_HABITAT.id]);
   });
 
   it('lists a future habitat with no code change', () => {

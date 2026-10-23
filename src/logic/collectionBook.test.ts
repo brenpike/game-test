@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SMALLEST_CANVAS, isSupportedCanvas } from './cardFit';
 import { DREAM_COLOURS } from './catalogue';
 import * as collectionBook from './collectionBook';
@@ -21,16 +21,46 @@ import {
   BOY_OR_GIRL_FACT,
   CANAL_CLEAN_UPS_FACT,
   FACT_CARD_UNFOUND_HINT,
+  GARTER_SNAKE_FACT,
   GHOST_NET_FACT,
   HERON_FACT,
   PLASTIC_WORM_FACT,
   TILAPIA_FACT,
+  WATER_HYACINTH_FACT,
   type FactCard,
 } from './factCards';
+import type { ElementType } from './hazards';
 import type { HudView, Rect, Size } from './hudLayout';
 import { MORPH_UNFOUND_HINT, MORPH_UNFOUND_NAME, REAL_MORPHS, type RealMorphId } from './morphs';
 import { CHEST_BUTTON, UI, chestLayout, rowsPerPage, type ChestLayout, type ChestMeasure } from './tankUi';
 import { DREAM_COLOUR_LABEL, pageText } from './treasureChest';
+
+/** A synthetic mat pair element type with a fact card, found only in the test area added to AREAS. */
+const { TEST_MATS, TEST_MATS_FACT } = vi.hoisted(() => {
+  const fact: FactCard = { id: 'test-mats', name: 'Test mats', title: 'Meet the test mats', body: 'Test mats for tests.' };
+  const mats: ElementType = {
+    id: 'test-mats',
+    name: 'Test mats',
+    kind: 'cycle',
+    period: 8,
+    activeFor: 4,
+    meetRange: 60,
+    fact,
+  };
+  return { TEST_MATS: mats, TEST_MATS_FACT: fact };
+});
+
+vi.mock('./areas', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./areas')>();
+  const matPair = { x0: 600, x1: 700, rowTop: 100, rowBottom: 300, channelY: 200, openHeight: 60 };
+  const layout = {
+    ...actual.CANAL_AREA.layout,
+    tilapiaRoutes: [],
+    elements: [{ id: 'mats-0', type: TEST_MATS, offset: 0, matPair }],
+  };
+  const elementArea = { ...actual.CANAL_AREA, id: 'test-element-area', number: 99, habitatId: actual.POND_HABITAT.id, layout };
+  return { ...actual, AREAS: [...actual.AREAS, elementArea] };
+});
 
 const BANNED = ['die', 'dead', 'death', 'killed', 'game over', 'level', 'fish tank'];
 
@@ -61,10 +91,10 @@ const CANVAS_HEIGHTS: readonly number[] = [
 const ALL_MORPHS: readonly RealMorphId[] = REAL_MORPHS.map((morph) => morph.id);
 
 /**
- * Every hazard met that has an area fact card: the canal's tilapia, the pond's plastic worm, Area 3's
- * heron and Area 4's ghost net.
+ * Every hazard, predator and element met that has an area fact card: the canal's tilapia, the pond's
+ * plastic worm, Area 3's heron, Area 4's ghost net, and Area 5's garter snake and water hyacinth.
  */
-const ALL_AREA_MET: readonly string[] = ['tilapia', 'plastic-worm', 'heron', 'ghost-net'];
+const ALL_AREA_MET: readonly string[] = ['tilapia', 'plastic-worm', 'heron', 'ghost-net', 'garter-snake', 'water-hyacinth'];
 
 /** Every fact card found by playing: the area cards, then the two refuge cards. */
 const ALL_MET: readonly string[] = [...ALL_AREA_MET, 'axolotl-refuges', 'canal-clean-ups'];
@@ -253,17 +283,17 @@ describe('bookListing', () => {
     expect(sections.map((section) => section.heading)).toEqual([
       'Morphs: 0 of 8 found',
       'Dream colours',
-      'Fact cards: 1 of 7 found',
+      'Fact cards: 1 of 9 found',
     ]);
   });
 
   it('counts found morphs and fact cards in the headings', () => {
     const [morphs, , factCards] = bookListing(['wild', 'melanoid', 'wild'], ['tilapia']);
     expect(morphs.heading).toBe('Morphs: 2 of 8 found');
-    expect(factCards.heading).toBe('Fact cards: 2 of 7 found');
-    expect(bookListing([], ALL_AREA_MET)[2].heading).toBe('Fact cards: 5 of 7 found');
-    expect(bookListing([], ['axolotl-refuges'])[2].heading).toBe('Fact cards: 2 of 7 found');
-    expect(bookListing([], ALL_MET)[2].heading).toBe('Fact cards: 7 of 7 found');
+    expect(factCards.heading).toBe('Fact cards: 2 of 9 found');
+    expect(bookListing([], ALL_AREA_MET)[2].heading).toBe('Fact cards: 7 of 9 found');
+    expect(bookListing([], ['axolotl-refuges'])[2].heading).toBe('Fact cards: 2 of 9 found');
+    expect(bookListing([], ALL_MET)[2].heading).toBe('Fact cards: 9 of 9 found');
     expect(bookListing(ALL_MORPHS, ['tilapia'])[0].heading).toBe('Morphs: 8 of 8 found');
   });
 
@@ -415,6 +445,19 @@ describe('bookListing', () => {
     });
   });
 
+  it('holds the garter snake and water hyacinth cards only once met, never with a picture (C14)', () => {
+    const [, , met] = bookListing([], ALL_MET);
+    expect(met.entries.slice(4, 6)).toEqual([
+      { id: 'garter-snake', found: true, name: 'Garter snake', text: GARTER_SNAKE_FACT.body, hasPicture: false },
+      { id: 'water-hyacinth', found: true, name: 'Water hyacinth', text: WATER_HYACINTH_FACT.body, hasPicture: false },
+    ]);
+    const [, , notMet] = bookListing(ALL_MORPHS, ['tilapia', 'plastic-worm', 'heron', 'ghost-net']);
+    expect(notMet.entries.slice(4, 6)).toEqual([
+      { id: 'garter-snake', found: false, name: '???', text: 'Explore the chinampa gardens to find this card.', hasPicture: false },
+      { id: 'water-hyacinth', found: false, name: '???', text: 'Explore the chinampa gardens to find this card.', hasPicture: false },
+    ]);
+  });
+
   it('hints each unfound area card with the habitat of the first area that has it', () => {
     const [, , factCards] = bookListing([], []);
     const hints = factCards.entries.filter((entry) => !entry.found).map((entry) => [entry.id, entry.text]);
@@ -423,6 +466,8 @@ describe('bookListing', () => {
       ['plastic-worm', 'Explore the lily pad pond to find this card.'],
       ['heron', 'Explore the lily pad pond to find this card.'],
       ['ghost-net', 'Explore the chinampa gardens to find this card.'],
+      ['garter-snake', 'Explore the chinampa gardens to find this card.'],
+      ['water-hyacinth', 'Explore the chinampa gardens to find this card.'],
       ['axolotl-refuges', 'Visit the refuge to find this card.'],
       ['canal-clean-ups', 'Beat an area, then visit the refuge to find this card.'],
     ]);
@@ -431,19 +476,24 @@ describe('bookListing', () => {
 
   it('holds the refuge cards after the area cards, found once found, with their own hint and never a picture (C14)', () => {
     const [, , found] = bookListing([], ALL_MET);
-    expect(found.entries.slice(4, 6)).toEqual([
+    expect(found.entries.slice(6, 8)).toEqual([
       { id: 'axolotl-refuges', found: true, name: 'Axolotl refuges', text: AXOLOTL_REFUGES_FACT.body, hasPicture: false },
       { id: 'canal-clean-ups', found: true, name: 'Canal clean-ups', text: CANAL_CLEAN_UPS_FACT.body, hasPicture: false },
     ]);
     const [, , refugeOnly] = bookListing([], ['axolotl-refuges']);
-    expect(refugeOnly.entries[4].found).toBe(true);
-    expect(refugeOnly.entries[5]).toEqual({
+    expect(refugeOnly.entries[6].found).toBe(true);
+    expect(refugeOnly.entries[7]).toEqual({
       id: 'canal-clean-ups',
       found: false,
       name: '???',
       text: 'Beat an area, then visit the refuge to find this card.',
       hasPicture: false,
     });
+  });
+
+  it('hints an unfound element card with the habitat of the first area whose elements have it', () => {
+    const [, , factCards] = bookListing([], [], [TEST_MATS_FACT]);
+    expect(factCards.entries[0].text).toBe('Explore the lily pad pond to find this card.');
   });
 
   it('uses a card\'s own unfound hint before the habitat rule', () => {
@@ -467,11 +517,13 @@ describe('bookListing', () => {
         'plastic-worm',
         'heron',
         'ghost-net',
+        'garter-snake',
+        'water-hyacinth',
         'axolotl-refuges',
         'canal-clean-ups',
         'boyOrGirl',
       ]);
-      expect(factCards.entries[6]).toEqual(boyOrGirl);
+      expect(factCards.entries[8]).toEqual(boyOrGirl);
     }
   });
 
@@ -497,6 +549,9 @@ describe('bookPages', () => {
       ['dreamColour', 5],
       ['dreamColour', 5],
       ['dreamColour', 5],
+      ['dreamColour', 1],
+      ['factCard', 1],
+      ['factCard', 1],
       ['factCard', 1],
       ['factCard', 1],
       ['factCard', 1],
@@ -511,8 +566,8 @@ describe('bookPages', () => {
   });
 
   it('puts every Dream colour on its own page at one row per page', () => {
-    expect(DREAM_COLOURS).toHaveLength(15);
-    expect(bookPages(bookListing([], []), 1)).toHaveLength(REAL_MORPHS.length + 15 + 7);
+    expect(DREAM_COLOURS).toHaveLength(16);
+    expect(bookPages(bookListing([], []), 1)).toHaveLength(REAL_MORPHS.length + 16 + 9);
   });
 
   it('gives an empty section one page', () => {
@@ -789,7 +844,7 @@ describe('collection book fit', () => {
     },
   );
 
-  it('hides the title only for the found plastic worm and heron pages, and only below 520 x 360', () => {
+  it('hides the title only for the found plastic worm, heron and water hyacinth pages, and only below 520 x 360', () => {
     const hidden = supportedCanvases().flatMap((view) =>
       featuredEntries()
         .filter((entry) => !featurePageOf(view, entry).page.showsTitle)
@@ -798,13 +853,18 @@ describe('collection book fit', () => {
     expect(hidden).toEqual([
       '320x440 plastic-worm found=true',
       '320x440 heron found=true',
+      '320x440 water-hyacinth found=true',
       '340x440 heron found=true',
       '460x320 plastic-worm found=true',
       '460x320 heron found=true',
+      '460x320 water-hyacinth found=true',
       '460x340 plastic-worm found=true',
       '460x340 heron found=true',
+      '460x340 water-hyacinth found=true',
       '480x320 heron found=true',
+      '480x320 water-hyacinth found=true',
       '480x340 heron found=true',
+      '480x340 water-hyacinth found=true',
     ]);
   });
 

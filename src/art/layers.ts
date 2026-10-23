@@ -30,8 +30,12 @@
  * (the stab head and its neck piece) sits between the tilapia and the halo, so it is in front
  * of the tilapia and behind the halo and the axolotl. Neither equals `queasyTint` or
  * `treasureGlow`.
+ * `hyacinthMat` (the water hyacinth mats, issue #103) sits just above the haze and below
+ * `heronBody`: what is drawn is what blocks, so the mats are never hazed, and every cue object
+ * (the garter snake, snacks, treasures, the axolotl) draws in front of them. The garter snake
+ * reuses `tilapia` and its ripple rings use `fx`.
  * Full order: bg < caveBack < hiddenTreasure < reeds < caveFront = currentMarker
- * < haze < heronBody < homeSpot < homeRing < treasureGlow < treasure
+ * < haze < hyacinthMat < heronBody < homeSpot < homeRing < treasureGlow < treasure
  * < collectibles < tilapia < heronStab < halo < friend < axolotl < queasyTint
  * < bubbles < surface < pads < fireflies < hint < fx < ui.
  */
@@ -47,6 +51,8 @@ export const DEPTH = {
   /** Provisional. Past-the-current carved stone marker (hazed scenery). */
   currentMarker: 12,
   haze: 20,
+  /** Provisional. Water hyacinth mats: above the haze, below the heron body and every cue object. */
+  hyacinthMat: 22,
   /** Provisional. Wading heron body, legs, and rest, watch and warn head and neck: above the haze, below every cue object. */
   heronBody: 23,
   /** Provisional. Home Spot burrow and marker flag. */
