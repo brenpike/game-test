@@ -21,7 +21,7 @@ The rest of ADR 0016 (its stable ids other than the retired element type, never-
 
 Constraints:
 
-- The canal and Area 2 must play exactly as before. The canal and pond golden tests pin their zone projections and the pond golden's encounter and trip traces, and these stay byte-identical.
+- The heron changes must leave the canal and Area 2 playing exactly as before. The canal and pond golden tests pin their zone projections and the pond golden's encounter and trip traces, and these stay byte-identical. Issue #111's two other locked decisions are separate rule changes for every area, not heron changes: the one-step treasure fallback (PRD B4) and the 40% stranding chance (PRD C2). The fallback changes which treasures some trips place once treasures are banked or returned, so the pond golden's two placement snapshots with banked and with returned treasures were saved again for it ([PRD](../prds/axolotl-mvp.md), Testing Decisions).
 - Ids are saved (ADR 0012), so the `'heron'` species and fact card ids stay as they are.
 - Game rules stay pure, in `src/logic/` ([ADR 0006](0006-testing-strategy.md)).
 - Every strike is warned first (A2), and only one predator warns or strikes at a time (A1). The heron never grabs, holds or lifts the axolotl (ADR 0007).
@@ -107,7 +107,7 @@ The generic timing-element data stays for later areas: the `'cycle'` element kin
 
 - A new sight hunter, a stabbing species or a species that stands still in its cooldown opts into `PredatorRules` with no new rule code. Its warning, strike, leg cost, fact card and B10 reach work as for the tilapia.
 - No species has a timer-started warning. A later timed predator needs a new rule and a new ADR.
-- The tilapia, the canal and Area 2 play as before, which the canal and pond golden tests show.
+- The heron changes leave the tilapia, the canal and Area 2 playing as before, which the canal and pond golden tests show. The one-step treasure fallback (B4) and the 40% stranding chance (C2) from issue #111 do reach them: some trips place different treasures once treasures are banked or returned, and stranded axolotls turn up more often.
 - New ids load under ADR 0012's additive rule; no `SAVE_VERSION` bump.
 - Hiding in cover now protects the axolotl from the heron but not from the tilapia.
 
