@@ -59,6 +59,13 @@ const DUCK = 'pond/wooden-duck-decoy';
 const STRING_LIGHTS = 'pond/firefly-string-lights';
 const JAR = 'pond/firefly-jar';
 const THRONE = 'pond/golden-lotus-throne';
+const FLOWERPOT = 'chinampa/clay-flowerpot';
+const CORN_DOLL = 'chinampa/corn-husk-doll';
+const SCARECROW = 'chinampa/scarecrow';
+const PAPEL_PICADO = 'chinampa/papel-picado-banner';
+const SWING = 'chinampa/willow-swing';
+const GOLDEN_CORN = 'chinampa/golden-corn';
+const WIDE_SHIPPED = [STRING_LIGHTS, PAPEL_PICADO];
 const SHIPPED_FLOOR = SHIPPED_DECORATIONS.filter((decoration) => placementKind(decoration) === 'floor');
 const SHIPPED_FLOATING = SHIPPED_DECORATIONS.filter((decoration) => placementKind(decoration) === 'floating');
 const SHIPPED_HANGING = SHIPPED_DECORATIONS.filter((decoration) => placementKind(decoration) === 'hanging');
@@ -388,7 +395,7 @@ describe('tankFrame', () => {
 });
 
 describe('placement kinds geometry (issue #95)', () => {
-  it('ships the canal, pond and Area 3 Decorations, in catalogue order, at the standard width but the wide string lights', () => {
+  it('ships every area Decoration, in catalogue order, at the standard width but the wide string lights and banner', () => {
     expect(SHIPPED_DECORATIONS).toEqual(ALL_TREASURES.filter(isDecoration));
     expect(Object.isFrozen(SHIPPED_DECORATIONS)).toBe(true);
     expect(SHIPPED_DECORATIONS.map((decoration) => [decoration.id, placementKind(decoration)])).toEqual([
@@ -406,9 +413,17 @@ describe('placement kinds geometry (issue #95)', () => {
       [STRING_LIGHTS, 'hanging'],
       [JAR, 'hanging'],
       [THRONE, 'floor'],
+      [FLOWERPOT, 'floor'],
+      [CORN_DOLL, 'floor'],
+      [SCARECROW, 'floor'],
+      [PAPEL_PICADO, 'hanging'],
+      [SWING, 'hanging'],
+      [GOLDEN_CORN, 'floor'],
     ]);
     for (const decoration of SHIPPED_DECORATIONS) {
-      expect(decorationWidth(decoration)).toBe(decoration.id === STRING_LIGHTS ? 144 : TANK.decorationPx);
+      expect(decorationWidth(decoration), decoration.id).toBe(
+        WIDE_SHIPPED.includes(decoration.id) ? 144 : TANK.decorationPx,
+      );
     }
     expect(decorationById(LILY)).toBeUndefined();
     expect(decorationById(LILY, TEST_CATALOGUE)).toBe(LILY_PAD);
@@ -440,6 +455,8 @@ describe('placement kinds geometry (issue #95)', () => {
     expect(decorationWidth(WIDE_BANNER)).toBe(144);
     expect(placementXRangeFor(shipped(STRING_LIGHTS))).toEqual({ x0: 96, x1: 384 });
     expect(placementXRangeFor(shipped(JAR))).toEqual(X_RANGE);
+    expect(placementXRangeFor(shipped(PAPEL_PICADO))).toEqual({ x0: 96, x1: 384 });
+    expect(placementXRangeFor(shipped(SWING))).toEqual(X_RANGE);
   });
 
   it('sizes the footprint by the item width, 80 high', () => {
@@ -466,6 +483,10 @@ describe('isValidPlacementFor', () => {
       FROG,
       REEDS,
       THRONE,
+      FLOWERPOT,
+      CORN_DOLL,
+      SCARECROW,
+      GOLDEN_CORN,
     ]);
     for (const decoration of SHIPPED_FLOOR) {
       for (const pos of points) expect(isValidPlacementFor(decoration, pos)).toBe(isValidPlacement(pos));
@@ -474,7 +495,7 @@ describe('isValidPlacementFor', () => {
 
   it('accepts Floating and Hanging only at the fixed base y within the x range', () => {
     expect(SHIPPED_FLOATING.map((decoration) => decoration.id)).toEqual([POND_LILY, LOTUS, FEATHER, DUCK]);
-    expect(SHIPPED_HANGING.map((decoration) => decoration.id)).toEqual([STRING_LIGHTS, JAR]);
+    expect(SHIPPED_HANGING.map((decoration) => decoration.id)).toEqual([STRING_LIGHTS, JAR, PAPEL_PICADO, SWING]);
     for (const decoration of [...SHIPPED_FLOATING, ...SHIPPED_HANGING, LILY_PAD, PAPER_LANTERN, WIDE_BANNER]) {
       const range = placementXRangeFor(decoration);
       expect(isValidPlacementFor(decoration, { x: range.x0, y: TOP_BASE_Y })).toBe(true);
@@ -492,7 +513,7 @@ describe('isValidPlacementFor', () => {
   });
 
   it('keeps a wide item between x 96 and 384', () => {
-    for (const wide of [WIDE_BANNER, shipped(STRING_LIGHTS)]) {
+    for (const wide of [WIDE_BANNER, ...WIDE_SHIPPED.map(shipped)]) {
       expect(isValidPlacementFor(wide, { x: 96, y: TOP_BASE_Y })).toBe(true);
       expect(isValidPlacementFor(wide, { x: 384, y: TOP_BASE_Y })).toBe(true);
       expect(isValidPlacementFor(wide, { x: 80, y: TOP_BASE_Y })).toBe(false);
@@ -527,6 +548,16 @@ describe('decorationsOverlap', () => {
     expect(decorationsOverlap(lights, at(240), shipped(JAR), at(351.5))).toBe(true);
     expect(decorationsOverlap(shipped(FEATHER), at(128), lights, at(240))).toBe(false);
     expect(decorationsOverlap(shipped(DUCK), at(128.5), lights, at(240))).toBe(true);
+  });
+
+  it('uses the full width of the shipped Papel picado banner against the other top items', () => {
+    const at = (x: number): Point => ({ x, y: TOP_BASE_Y });
+    const banner = shipped(PAPEL_PICADO);
+    expect(decorationsOverlap(banner, at(240), shipped(SWING), at(352))).toBe(false);
+    expect(decorationsOverlap(banner, at(240), shipped(SWING), at(351.5))).toBe(true);
+    expect(decorationsOverlap(banner, at(96), shipped(STRING_LIGHTS), at(240))).toBe(false);
+    expect(decorationsOverlap(banner, at(97), shipped(STRING_LIGHTS), at(240))).toBe(true);
+    expect(decorationsOverlap(banner, TOP_MIDDLE, shipped(SCARECROW), { x: 240, y: TANK.floorBand.y0 })).toBe(false);
   });
 });
 
@@ -669,6 +700,16 @@ describe('tank changes with an injected catalogue', () => {
     expect(suggestSpot(lightsAtMiddle, REEDS)).toEqual(MIDDLE);
     for (const id of [JAR, FEATHER, DUCK]) {
       expect(isValidPlacementFor(shipped(id), suggestSpot(lightsAtMiddle, id))).toBe(true);
+    }
+  });
+
+  it('suggests shipped top spots past the wide Papel picado banner', () => {
+    const bannerAtMiddle: TankLayout = { placed: [{ id: PAPEL_PICADO, ...TOP_MIDDLE }] };
+    expect(suggestSpot(createTankLayout(), PAPEL_PICADO)).toEqual(TOP_MIDDLE);
+    expect(suggestSpot(bannerAtMiddle, SWING)).toEqual({ x: 96, y: TOP_BASE_Y });
+    expect(suggestSpot(bannerAtMiddle, SCARECROW)).toEqual(MIDDLE);
+    for (const id of [SWING, STRING_LIGHTS, JAR]) {
+      expect(isValidPlacementFor(shipped(id), suggestSpot(bannerAtMiddle, id))).toBe(true);
     }
   });
 

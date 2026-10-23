@@ -3,12 +3,14 @@ import {
   ALL_TREASURES,
   CANAL_DREAM_COLOURS,
   CANAL_TREASURES,
+  CHINAMPA_TREASURES,
   DREAM_COLOURS,
   FIREFLY_GOLD,
   LILY_GREEN,
   PERK_VALUES,
   POND_2_TREASURES,
   POND_TREASURES,
+  POPPY_RED,
   RARITIES,
   TREASURE_CATEGORIES,
   WEARABLE_SLOTS,
@@ -382,18 +384,126 @@ describe('POND_2_TREASURES', () => {
   });
 });
 
+describe('CHINAMPA_TREASURES', () => {
+  it('holds exactly the chinampa gardens Area 4 treasures, in order (issue #76)', () => {
+    expect(CHINAMPA_TREASURES).toEqual([
+      { id: 'chinampa/clay-flowerpot', name: 'Clay flowerpot', rarity: 'common', category: 'decoration' },
+      { id: 'chinampa/corn-husk-doll', name: 'Corn husk doll', rarity: 'common', category: 'decoration' },
+      {
+        id: 'chinampa/straw-sun-hat',
+        name: 'Straw sun hat',
+        rarity: 'common',
+        category: 'wearable',
+        slot: 'head',
+        perk: { type: 'treasureSense', value: 15 },
+      },
+      {
+        id: 'chinampa/marigold-necklace',
+        name: 'Marigold necklace',
+        rarity: 'common',
+        category: 'wearable',
+        slot: 'neck',
+        perk: { type: 'regrowth', value: 10 },
+      },
+      { id: 'chinampa/scarecrow', name: 'Scarecrow', rarity: 'rare', category: 'decoration' },
+      {
+        id: 'chinampa/papel-picado-banner',
+        name: 'Papel picado banner',
+        rarity: 'rare',
+        category: 'decoration',
+        placement: 'hanging',
+        width: 144,
+      },
+      {
+        id: 'chinampa/garden-overalls',
+        name: 'Garden overalls',
+        rarity: 'rare',
+        category: 'wearable',
+        slot: 'shirt',
+        perk: { type: 'snackMagnet', value: 40 },
+      },
+      {
+        id: 'chinampa/paint-shell-poppy-red',
+        name: 'Poppy red Paint shell',
+        rarity: 'rare',
+        category: 'paintShell',
+        dreamColour: 'poppy-red',
+      },
+      {
+        id: 'chinampa/willow-swing',
+        name: 'Willow swing',
+        rarity: 'epic',
+        category: 'decoration',
+        placement: 'hanging',
+      },
+      {
+        id: 'chinampa/monarch-hair-clip',
+        name: 'Monarch hair clip',
+        rarity: 'epic',
+        category: 'wearable',
+        slot: 'head',
+        perk: { type: 'dash', value: 20 },
+      },
+      { id: 'chinampa/golden-corn', name: 'Golden corn', rarity: 'legendary', category: 'decoration' },
+      {
+        id: 'chinampa/monarch-wings',
+        name: 'Monarch wings',
+        rarity: 'legendary',
+        category: 'wearable',
+        slot: 'back',
+        perk: { type: 'speed', value: 10 },
+      },
+    ]);
+    expect(Object.isFrozen(CHINAMPA_TREASURES)).toBe(true);
+  });
+
+  it('gives every chinampa Wearable its PERK_VALUES value and no set', () => {
+    for (const wearable of CHINAMPA_TREASURES.filter(isWearable)) {
+      expect(wearable.perk.value, wearable.id).toBe(PERK_VALUES[wearable.perk.type][wearable.rarity]);
+      expect(wearable.setId, wearable.id).toBeUndefined();
+    }
+  });
+
+  it('has 6 Decorations, 5 Wearables and the Poppy red Paint shell', () => {
+    expect(CHINAMPA_TREASURES).toHaveLength(12);
+    expect(CHINAMPA_TREASURES.filter(isDecoration)).toHaveLength(6);
+    expect(CHINAMPA_TREASURES.filter(isWearable)).toHaveLength(5);
+    expect(CHINAMPA_TREASURES.filter(isPaintShell).map((shell) => shell.id)).toEqual([
+      'chinampa/paint-shell-poppy-red',
+    ]);
+  });
+
+  it('keeps the canal, pond and pond Area 3 lists unchanged ahead of it', () => {
+    expect(CANAL_TREASURES).toHaveLength(24);
+    expect(POND_TREASURES).toHaveLength(12);
+    expect(POND_2_TREASURES).toHaveLength(12);
+    expect(POND_2_TREASURES.at(-1)?.id).toBe('pond/paint-shell-firefly-gold');
+  });
+
+  it('gives the straw sun hat its own slug, apart from the canal sun hat', () => {
+    expect(treasureSlug('chinampa/straw-sun-hat')).toBe('straw-sun-hat');
+    expect(treasureById('canal/sun-hat')?.name).toBe('Sun hat');
+    expect(treasureById('chinampa/sun-hat')).toBeUndefined();
+  });
+});
+
 describe('ALL_TREASURES', () => {
-  it('is the canal treasures, then the pond treasures, then the pond Area 3 treasures', () => {
-    expect(ALL_TREASURES).toEqual([...CANAL_TREASURES, ...POND_TREASURES, ...POND_2_TREASURES]);
+  it('is the canal, pond, pond Area 3 and chinampa Area 4 treasures, in that order', () => {
+    expect(ALL_TREASURES).toEqual([
+      ...CANAL_TREASURES,
+      ...POND_TREASURES,
+      ...POND_2_TREASURES,
+      ...CHINAMPA_TREASURES,
+    ]);
     expect(Object.isFrozen(ALL_TREASURES)).toBe(true);
     expect(Object.isFrozen(POND_TREASURES)).toBe(true);
   });
 
-  it('has 48 treasures: 14 Decorations, 20 Wearables and 14 Paint shells', () => {
-    expect(ALL_TREASURES).toHaveLength(48);
-    expect(ALL_DECORATIONS).toHaveLength(14);
-    expect(ALL_WEARABLES).toHaveLength(20);
-    expect(ALL_TREASURES.filter(isPaintShell)).toHaveLength(14);
+  it('has 60 treasures: 20 Decorations, 25 Wearables and 15 Paint shells', () => {
+    expect(ALL_TREASURES).toHaveLength(60);
+    expect(ALL_DECORATIONS).toHaveLength(20);
+    expect(ALL_WEARABLES).toHaveLength(25);
+    expect(ALL_TREASURES.filter(isPaintShell)).toHaveLength(15);
   });
 
   it('puts Shell perks only on Epic or Legendary Wearables', () => {
@@ -419,7 +529,7 @@ describe('ALL_TREASURES', () => {
     const ids = ALL_TREASURES.map((treasure) => treasure.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const id of ids) {
-      expect(id).toMatch(/^(canal|pond)\/[a-z0-9-]+$/);
+      expect(id).toMatch(/^(canal|pond|chinampa)\/[a-z0-9-]+$/);
     }
     const names = ALL_TREASURES.map((treasure) => treasure.name);
     expect(new Set(names).size).toBe(names.length);
@@ -456,10 +566,10 @@ describe('ALL_TREASURES', () => {
 });
 
 describe('Dream colours', () => {
-  it('lists the 12 canal colours, then Lily green, then Firefly gold', () => {
+  it('lists the 12 canal colours, then Lily green, then Firefly gold, then Poppy red', () => {
     expect(CANAL_DREAM_COLOURS).toHaveLength(12);
-    expect(DREAM_COLOURS).toEqual([...CANAL_DREAM_COLOURS, LILY_GREEN, FIREFLY_GOLD]);
-    expect(DREAM_COLOURS).toHaveLength(14);
+    expect(DREAM_COLOURS).toEqual([...CANAL_DREAM_COLOURS, LILY_GREEN, FIREFLY_GOLD, POPPY_RED]);
+    expect(DREAM_COLOURS).toHaveLength(15);
     expect(Object.isFrozen(DREAM_COLOURS)).toBe(true);
   });
 
@@ -480,10 +590,19 @@ describe('Dream colours', () => {
       'midnight-blue',
       'lily-green',
       'firefly-gold',
+      'poppy-red',
     ]);
     for (const colour of solids) {
       expect(['common', 'rare'], colour.id).toContain(colour.rarity);
     }
+  });
+
+  it('makes Poppy red a rare solid with a name no other Dream colour has', () => {
+    expect(POPPY_RED).toEqual({ id: 'poppy-red', name: 'Poppy red', rarity: 'rare', kind: 'solid' });
+    expect(Object.isFrozen(POPPY_RED)).toBe(true);
+    expect(dreamColourById('poppy-red')).toBe(POPPY_RED);
+    const names = DREAM_COLOURS.map((colour) => colour.name);
+    expect(new Set(names).size).toBe(names.length);
   });
 
   it('makes Lily green a rare solid', () => {
@@ -536,6 +655,11 @@ describe('lookups', () => {
     });
   });
 
+  it('treasureById finds chinampa Area 4 ids', () => {
+    expect(treasureById('chinampa/scarecrow')).toMatchObject({ name: 'Scarecrow', category: 'decoration', rarity: 'rare' });
+    expect(treasureById('chinampa/paint-shell-poppy-red')).toMatchObject({ dreamColour: 'poppy-red', rarity: 'rare' });
+  });
+
   it('treasureSlug returns the text after the first slash', () => {
     expect(treasureSlug('canal/sun-hat')).toBe('sun-hat');
     expect(treasureSlug('canal/paint-shell-tie-dye')).toBe('paint-shell-tie-dye');
@@ -581,6 +705,22 @@ describe('Decoration placement kinds', () => {
       ['pond/firefly-string-lights', 'hanging', 144],
       ['pond/firefly-jar', 'hanging', undefined],
       ['pond/golden-lotus-throne', 'floor', undefined],
+    ]);
+  });
+
+  it('places the chinampa Area 4 Decorations and gives only the Papel picado banner a wide footprint (issue #76)', () => {
+    const kinds = CHINAMPA_TREASURES.filter(isDecoration).map((decoration) => [
+      decoration.id,
+      placementKind(decoration),
+      decoration.width,
+    ]);
+    expect(kinds).toEqual([
+      ['chinampa/clay-flowerpot', 'floor', undefined],
+      ['chinampa/corn-husk-doll', 'floor', undefined],
+      ['chinampa/scarecrow', 'floor', undefined],
+      ['chinampa/papel-picado-banner', 'hanging', 144],
+      ['chinampa/willow-swing', 'hanging', undefined],
+      ['chinampa/golden-corn', 'floor', undefined],
     ]);
   });
 
@@ -641,5 +781,10 @@ describe('ownedDreamColours', () => {
   it('owns Firefly gold from the pond Area 3 Paint shell, after Lily green', () => {
     const banked = ['pond/paint-shell-firefly-gold', 'pond/paint-shell-lily-green', 'pond/firefly-cape'];
     expect(ownedDreamColours(banked)).toEqual(['lily-green', 'firefly-gold']);
+  });
+
+  it('owns Poppy red from the chinampa Area 4 Paint shell, after Firefly gold', () => {
+    const banked = ['chinampa/paint-shell-poppy-red', 'chinampa/scarecrow', 'pond/paint-shell-firefly-gold'];
+    expect(ownedDreamColours(banked)).toEqual(['firefly-gold', 'poppy-red']);
   });
 });

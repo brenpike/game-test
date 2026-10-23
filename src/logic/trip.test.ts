@@ -3,6 +3,7 @@ import type { DrawnBody } from './collectibles';
 import { createEncounter, createEncounterContext, predatorSpecies } from './encounter';
 import { zoneThreats } from './hiding';
 import { meetsTilapia, type FactCard } from './factCards';
+import { GHOST_NET, createGhostNets, isSnagged } from './ghostNets';
 import type { HazardSpawn, HazardType } from './hazards';
 import {
   HERON_SPECIES,
@@ -49,7 +50,18 @@ import { PLASTIC_WORM, isQueasy, spitLanding, type SpitAvoid } from './plasticWo
 import { RESCUE, pickStranding, type Stranding } from './rescue';
 import { TRIP_EVENTS, TRIP_REGISTRY_KEYS, type TripSnapshot } from './tripEvents';
 import { withStars } from './stars';
-import { CARRY, FINDS, HERON, LEGS, PLASTIC_WORMS, SNACK_REACH, SWIM, TILAPIA, tripTreasureTuning } from './tuning';
+import {
+  CARRY,
+  FINDS,
+  GHOST_NETS,
+  HERON,
+  LEGS,
+  PLASTIC_WORMS,
+  SNACK_REACH,
+  SWIM,
+  TILAPIA,
+  tripTreasureTuning,
+} from './tuning';
 import { buildCanalZone, swimBounds, type HidingSpot, type Point } from './zone';
 
 const DT = 1 / 60;
@@ -2137,6 +2149,212 @@ describe('plastic worms in the trip (#75)', () => {
     const eaten = eatenAt(onWorm, WORM_A);
     expect(eaten.state.rescue).toBe(onWorm.rescue);
     expect(eaten.state.holdings).toBe(onWorm.holdings);
+  });
+});
+
+describe('ghost nets in the trip', () => {
+  const netAt = (id: string, x0: number): HazardSpawn => ({
+    id,
+    type: GHOST_NET,
+    shape: { kind: 'rect', x0, x1: x0 + 100, y0: 150, y1: 250 },
+  });
+  const nets = [netAt('test/net-a', 900), netAt('test/net-b', 1300)];
+  const netZone: TripSource = { ...findZone, hazards: nets };
+  const carryNetZone: TripSource = { ...zone, hazards: [...(zone.hazards ?? []), ...nets] };
+  const shellCtx = createTripContext({
+    encounter: createEncounterContext({ legs: { ...LEGS, regrowTime: 1e9 }, shell: true }),
+  });
+  const calm: Point = { x: 700, y: 120 };
+  const atEdgeA: Point = { x: 900 - GHOST_NETS.reach, y: 200 };
+  const pastEdgeA: Point = { x: 900 - GHOST_NETS.reach - 1, y: 200 };
+  const insideA: Point = { x: 950, y: 200 };
+  const insideB: Point = { x: 1350, y: 200 };
+  const snagEvent = (id: string, at: Point): TripEvent => ({ type: 'snagged', id, at: { x: at.x, y: at.y } });
+
+  function snaggedFor(state: TripState, seconds: number): TripState {
+    return { ...state, ghostNets: { ...state.ghostNets, snagLeft: seconds } };
+  }
+
+  function swimUntilFree(state: TripState, pos: Point, stepCtx = ctx): TripState {
+    let current = state;
+    for (let i = 0; i < 1000 && isSnagged(current.ghostNets); i++) {
+      current = stepTrip(current, { axolotlPos: pos, reduced: false, dashing: false }, SWIM.dtMax, stepCtx).state;
+    }
+    if (isSnagged(current.ghostNets)) throw new Error('expected snag time to run out');
+    return current;
+  }
+
+  it("starts with the source's ghost nets, in data order, not snagged", () => {
+    expect(createTrip(netZone).ghostNets).toEqual(createGhostNets(nets));
+    expect(createTrip(netZone).ghostNets).toEqual({ nets, snagLeft: 0, inReach: [] });
+  });
+
+  it('gives a trip with no nets an empty state, the same placements, and never changes it', () => {
+    const canal = createTrip(zone);
+    expect(canal.ghostNets).toEqual({ nets: [], snagLeft: 0, inReach: [] });
+    for (const seed of [1, 7, 42, DEFAULT_TRIP_SEED]) {
+      expect(createTrip(carryNetZone, LEGS, [], seed).placed).toEqual(createTrip(zone, LEGS, [], seed).placed);
+    }
+    const plain = createTrip(findZone);
+    const walked = walk(plain, [calm, insideA, atEdgeA, insideB]);
+    expect(walked.state.ghostNets).toBe(plain.ghostNets);
+    expect(countOf(walked.events, 'snagged')).toBe(0);
+    const stepped = stepAt(canal, insideA).state;
+    expect(stepped.ghostNets).toBe(canal.ghostNets);
+  });
+
+  it('snags the explorer centre at the net reach from the rect edge, emitting snagged once', () => {
+    expect(stepAt(createTrip(netZone), pastEdgeA).events).toEqual([]);
+    expect(stepAt(createTrip(netZone), pastEdgeA).state.ghostNets.snagLeft).toBe(0);
+    const result = stepAt(createTrip(netZone), atEdgeA);
+    expect(result.events).toEqual([snagEvent('test/net-a', atEdgeA)]);
+    expect(result.state.ghostNets).toEqual({ nets, snagLeft: GHOST_NETS.snagTime, inReach: ['test/net-a'] });
+    expect(result.impulse).toBeUndefined();
+    const inside = walk(result.state, [insideA, insideA, atEdgeA]);
+    expect(countOf(inside.events, 'snagged')).toBe(0);
+  });
+
+  it('snags only on entering: staying inside after the snag ends never snags again', () => {
+    const snagged = stepAt(createTrip(netZone), insideA).state;
+    const freeInside = swimUntilFree(snagged, insideA);
+    expect(freeInside.ghostNets.inReach).toEqual(['test/net-a']);
+    const still = stepAt(freeInside, insideA);
+    expect(still.events).toEqual([]);
+    expect(still.state.ghostNets).toBe(freeInside.ghostNets);
+    const left = stepAt(freeInside, calm).state;
+    expect(stepAt(left, insideA).events).toEqual([snagEvent('test/net-a', insideA)]);
+  });
+
+  it('never stacks: entering another net while snagged does nothing, and snags once free', () => {
+    const snagged = stepAt(createTrip(netZone), insideA).state;
+    const away = stepAt(snagged, calm).state;
+    const other = stepAt(away, insideB);
+    expect(other.events).toEqual([]);
+    expect(other.state.ghostNets.snagLeft).toBeCloseTo(GHOST_NETS.snagTime - 2 * DT, 12);
+    expect(other.state.ghostNets.inReach).toEqual(['test/net-b']);
+    const free = swimUntilFree(stepAt(other.state, calm).state, calm);
+    const again = stepAt(free, insideB);
+    expect(again.events).toEqual([snagEvent('test/net-b', insideB)]);
+    expect(again.state.ghostNets.snagLeft).toBe(GHOST_NETS.snagTime);
+  });
+
+  it('counts snag time down by the capped step while swimming, and never on a paused step', () => {
+    const snagged = stepAt(createTrip(netZone), insideA).state;
+    expect(stepAt(snagged, calm).state.ghostNets.snagLeft).toBeCloseTo(GHOST_NETS.snagTime - DT, 12);
+    const long = stepTrip(snagged, { axolotlPos: calm, reduced: false, dashing: false }, 1, ctx).state;
+    expect(long.ghostNets.snagLeft).toBeCloseTo(GHOST_NETS.snagTime - SWIM.dtMax, 12);
+    expect(long.ghostNets.nets).toBe(snagged.ghostNets.nets);
+    for (const dt of PAUSE_DTS) {
+      expect(stepTrip(snagged, { axolotlPos: calm, reduced: false, dashing: false }, dt, ctx).state).toBe(snagged);
+    }
+    const free = swimUntilFree(snagged, calm);
+    expect(free.ghostNets.snagLeft).toBe(0);
+    expect(stepAt(free, calm).state.ghostNets).toBe(free.ghostNets);
+  });
+
+  it('holds snag time on the banking card and resumes it after keepExploring', () => {
+    const picked = walk(createTrip(netZone), [spotA]).state;
+    const snagged = stepAt(picked, insideA).state;
+    const bankedTrip = walk(snagged, [outside, home]).state;
+    expect(bankedTrip.phase).toBe('banked');
+    const held = bankedTrip.ghostNets.snagLeft;
+    expect(held).toBeCloseTo(GHOST_NETS.snagTime - 2 * DT, 12);
+    expect(stepAt(bankedTrip, insideB).state).toBe(bankedTrip);
+    const exploring = keepExploring(bankedTrip);
+    expect(exploring.ghostNets).toBe(bankedTrip.ghostNets);
+    expect(stepAt(exploring, calm).state.ghostNets.snagLeft).toBeCloseTo(held - DT, 12);
+  });
+
+  it('ends snag time when the carry starts, and never steps while carrying or ended', () => {
+    const snagged = snaggedFor(stepAt(createTrip(carryNetZone), insideA).state, 1e6);
+    const carry = drive(snagged, { axolotlPos: inRange, reduced: false, dashing: false }, 'carryStart');
+    expect(carry.state.phase).toBe('carrying');
+    expect(carry.state.ghostNets.snagLeft).toBe(0);
+    expect(carry.state.ghostNets.nets).toBe(snagged.ghostNets.nets);
+    const carryStep = stepAt(carry.state, insideB);
+    expect(carryStep.state.ghostNets).toBe(carry.state.ghostNets);
+    expect(countOf(carryStep.events, 'snagged')).toBe(0);
+    const done = drive(carry.state, { axolotlPos: insideB, reduced: false, dashing: false }, 'arrivedHome');
+    expect(done.state.phase).toBe('ended');
+    expect(done.state.ghostNets).toBe(carry.state.ghostNets);
+    expect(countOf(done.events, 'snagged')).toBe(0);
+    expect(stepAt(done.state, insideB).state).toBe(done.state);
+  });
+
+  it('ends snag time when the trip ends at the Home Spot or the exit, keeping the nets and their reach', () => {
+    const snagged = stepAt(createTrip(netZone), insideA).state;
+    const atHome = snaggedFor({ ...snagged, inHomeSpot: true }, 1);
+    const wentHome = goHome(atHome).state;
+    expect(wentHome.phase).toBe('ended');
+    expect(wentHome.ghostNets).toEqual({ nets, snagLeft: 0, inReach: ['test/net-a'] });
+    const beaten = beatArea(snagged, { specialTreasureId: PLANT }).state;
+    expect(beaten.phase).toBe('ended');
+    expect(beaten.ghostNets).toEqual({ nets, snagLeft: 0, inReach: ['test/net-a'] });
+    expect(beaten.ending?.stars).toEqual(beatArea(createTrip(netZone), { specialTreasureId: PLANT }).state.ending?.stars);
+    expect(stepAt(beaten, insideB).state).toBe(beaten);
+  });
+
+  it('starts the next trip with the same nets and no snag time', () => {
+    const snagged = stepAt(createTrip(netZone), insideA).state;
+    const fresh = newTrip(beatArea(snagged, { specialTreasureId: PLANT }).state);
+    expect(fresh.ghostNets).toEqual(createTrip(netZone).ghostNets);
+    const carried = drive(
+      snaggedFor(stepAt(createTrip(carryNetZone), insideA).state, 1e6),
+      { axolotlPos: inRange, reduced: false, dashing: false },
+      'arrivedHome',
+    ).state;
+    expect(newTrip(carried).ghostNets).toEqual(createTrip(carryNetZone).ghostNets);
+  });
+
+  it('never touches legs, regrowth, protected time, finds or the bag', () => {
+    const fresh = createTrip(netZone);
+    const regrowing: TripState = { ...fresh, encounter: { ...fresh.encounter, legs: regrowingLegs(0.4) } };
+    const plainFresh = createTrip(findZone);
+    const plain: TripState = { ...plainFresh, encounter: { ...plainFresh.encounter, legs: regrowingLegs(0.4) } };
+    const path = [insideA, insideA, calm, insideB];
+    const snagWalk = walk(regrowing, path);
+    const plainWalk = walk(plain, path);
+    expect(countOf(snagWalk.events, 'snagged')).toBe(1);
+    expect(snagWalk.events.filter((event) => event.type !== 'snagged')).toEqual(plainWalk.events);
+    expect(snagWalk.state.encounter.legs).toEqual(plainWalk.state.encounter.legs);
+    expect(isProtected(snagWalk.state.encounter.legs)).toBe(isProtected(plainWalk.state.encounter.legs));
+    expect(snagWalk.state.legsLost).toBe(0);
+    expect(snagWalk.state.placed).toEqual(plainWalk.state.placed);
+    expect(snagWalk.state.holdings).toEqual(plainWalk.state.holdings);
+    expect(snagWalk.state.found).toEqual(plainWalk.state.found);
+    expect(snagWalk.state.phase).toBe('swimming');
+  });
+
+  it('is not stopped by the Shell perk, which stays unused', () => {
+    const shellStep = stepTrip(createTrip(netZone), { axolotlPos: insideA, reduced: false, dashing: false }, DT, shellCtx);
+    expect(shellStep.events).toEqual([snagEvent('test/net-a', insideA)]);
+    expect(shellStep.state.ghostNets).toEqual(stepAt(createTrip(netZone), insideA).state.ghostNets);
+    expect(shellStep.state.encounter.shellUsed).toBe(false);
+    const free = swimUntilFree(shellStep.state, calm, shellCtx);
+    expect(free.encounter.shellUsed).toBe(false);
+    expect(isProtected(free.encounter.legs)).toBe(false);
+  });
+
+  it('meets the ghost net at its meet range from the rect edge, making its card due', () => {
+    const atMeet: Point = { x: 900 - GHOST_NETS.meetRange, y: 200 };
+    const pastMeet: Point = { x: 900 - GHOST_NETS.meetRange - 0.5, y: 200 };
+    expect(stepAt(createTrip(netZone), pastMeet).state.met).toEqual([]);
+    const met = stepAt(createTrip(netZone), atMeet).state;
+    expect(met.met).toEqual([GHOST_NET.id]);
+    expect(met.ghostNets.snagLeft).toBe(0);
+    expect(tripSnapshot(met).factCardDue).toBe(GHOST_NET.id);
+    expect(walk(met, [insideA, insideB]).state.met).toEqual([GHOST_NET.id]);
+  });
+
+  it('never snags a following stranded axolotl, only the explorer', () => {
+    const following = walk(rescueTrip(netZone), [strandPlace]).state;
+    expect(tripSnapshot(following).rescue?.status).toBe('following');
+    const rescue = following.rescue as NonNullable<TripState['rescue']>;
+    const onNet: TripState = { ...following, rescue: { ...rescue, pos: { ...insideA } } };
+    const explorer: Point = { x: 600, y: 120 };
+    const stepped = stepAt(onNet, explorer);
+    expect(countOf(stepped.events, 'snagged')).toBe(0);
+    expect(stepped.state.ghostNets).toBe(onNet.ghostNets);
   });
 });
 

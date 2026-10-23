@@ -10,11 +10,12 @@ import {
   drawnAxolotl,
   type DrawnAxolotlInput,
 } from './drawnAxolotl';
+import { snagWriggle } from './ghostNets';
 import { legWobble } from './legs';
 import { motionProfile } from './motion';
 import { queasyWobble } from './plasticWorms';
 import type { SwimState } from './swimPhysics';
-import { LEGS, PLASTIC_WORMS, SNACK_REACH, SWIM, TILAPIA } from './tuning';
+import { GHOST_NETS, LEGS, PLASTIC_WORMS, SNACK_REACH, SWIM, TILAPIA } from './tuning';
 import type { Vec2 } from './vec';
 
 const TAU = Math.PI * 2;
@@ -170,6 +171,46 @@ describe('drawnAxolotl', () => {
         const reduced = reducedInput(swim, clock, legsPresent);
         expect(drawnAxolotl({ ...reduced, queasy: true })).toEqual(drawnAxolotl(reduced));
         expect(drawnAxolotl({ ...reduced, queasy: true }).rotation).toBeCloseTo(0, 12);
+      }
+    }
+  });
+
+  it('adds the snag wriggle to the rotation while snagged and swimming, in both facings', () => {
+    for (const facing of [1, -1] as const) {
+      for (const clock of [0.05, 0.1, 0.25, 1.3]) {
+        for (let legsPresent = 1; legsPresent <= LEGS.count; legsPresent++) {
+          const swim = swimAt(facing, 30, -20);
+          const plain = drawnAxolotl(inputFor(swim, { clock, legsPresent }));
+          const snagged = drawnAxolotl(inputFor(swim, { clock, legsPresent, snagged: true }));
+          expect(snagged.rotation - plain.rotation).toBeCloseTo(snagWriggle(clock, true, false), 12);
+          expect({ ...snagged, rotation: 0 }).toEqual({ ...plain, rotation: 0 });
+        }
+      }
+    }
+    expect(Math.abs(snagWriggle(GHOST_NETS.wrigglePeriod / 4, true, false))).toBeCloseTo(GHOST_NETS.wriggleAmp, 12);
+  });
+
+  it('adds the snag wriggle on top of the queasy wobble when both are on', () => {
+    const swim = swimAt(1, 30, -20);
+    for (const clock of [0.05, 0.3, 1.3]) {
+      const queasy = drawnAxolotl(inputFor(swim, { clock, queasy: true }));
+      const both = drawnAxolotl(inputFor(swim, { clock, queasy: true, snagged: true }));
+      expect(both.rotation - queasy.rotation).toBeCloseTo(snagWriggle(clock, true, false), 12);
+    }
+  });
+
+  it('has no snag wriggle when not snagged or absent, when not swimming, or under reduced motion', () => {
+    for (const clock of [0.05, 0.3, 2.05]) {
+      const swim = swimAt(1, 0, 0);
+      const absent = drawnAxolotl(inputFor(swim, { clock }));
+      expect(snagWriggle(clock, true, false)).not.toBe(0);
+      expect(drawnAxolotl(inputFor(swim, { clock, snagged: false }))).toEqual(absent);
+      const still = inputFor(swim, { clock, swimming: false });
+      expect(drawnAxolotl({ ...still, snagged: true })).toEqual(drawnAxolotl(still));
+      for (let legsPresent = 0; legsPresent <= LEGS.count; legsPresent++) {
+        const reduced = reducedInput(swim, clock, legsPresent);
+        expect(drawnAxolotl({ ...reduced, snagged: true })).toEqual(drawnAxolotl(reduced));
+        expect(drawnAxolotl({ ...reduced, snagged: true }).rotation).toBeCloseTo(0, 12);
       }
     }
   });
