@@ -690,3 +690,25 @@ function portraitChest(panel: Rect, inner: Rect, measure: ChestMeasure): ChestLa
   const content = chestContent(inner, inner.w, pageTop - UI.gap, measure);
   return { panel, ...content, pageText, close, back, next };
 }
+
+/**
+ * Whether the Treasure Chest title shows: only when an entry row `rowH` tall fits the list height
+ * the title leaves (`listH`). False when either is not finite.
+ */
+export function chestShowsTitle(listH: number, rowH: number): boolean {
+  return Number.isFinite(listH) && Number.isFinite(rowH) && rowH <= listH;
+}
+
+/**
+ * `chest` with its title hidden (PRD C11, as the Collection Book does in C14): the heading moves up
+ * to `chest.title.y` (same x, width and height) and the list grows upward by
+ * `chest.heading.y - chest.title.y`. Everything else is unchanged.
+ */
+export function hideChestTitle(chest: ChestLayout): ChestLayout {
+  const lift = chest.heading.y - chest.title.y;
+  return {
+    ...chest,
+    heading: { ...chest.heading, y: chest.title.y },
+    list: { ...chest.list, y: chest.list.y - lift, h: chest.list.h + lift },
+  };
+}

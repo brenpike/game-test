@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-10-22
+
+### Changed
+
+- Treasures you have not found yet in the Treasure Chest now say which area they are in, like "Area 2, Lily pad pond: look off the main path!", even for areas you have not unlocked yet (#106).
+- On the smallest screens the "Treasure Chest" title hides so a whole treasure still fits on each page (#106).
+
 ## [0.28.0] - 2026-10-22
 
 ### Added

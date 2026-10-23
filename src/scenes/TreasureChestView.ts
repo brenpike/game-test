@@ -24,6 +24,8 @@ import {
   CHEST_BUTTON,
   UI,
   chestLayout,
+  chestShowsTitle,
+  hideChestTitle,
   nextFocusIndex,
   rowsPerPage,
   type ChestLayout,
@@ -263,10 +265,11 @@ function arrangeRow(parts: RowParts, rowW: number): number {
 
 /**
  * Treasure Chest over the Home Tank: an opaque Home Tank wall backdrop that takes every press, a
- * white panel with the title, the section heading with its found count, the section line under it
- * (the short lines when the full ones leave no room for a whole row), one page of entry rows for
- * every treasure, found or not, the page text, and the Close, Back and Next buttons. Pages come from
- * chestPages() at as many rows as fit the list; paging wraps. Appears and leaves at once.
+ * white panel with the title (hidden when even the short lines leave no room for a whole row), the
+ * section heading with its found count, the section line under it (the short lines when the full
+ * ones leave no room for a whole row), one page of entry rows for every treasure, found or not, the
+ * page text, and the Close, Back and Next buttons. Pages come from chestPages() at as many rows as
+ * fit the list; paging wraps. Appears and leaves at once.
  * Keys: left and right page, next and previous move focus over Back, Close and Next, confirm
  * presses the focused button, cancel closes. Closing by button or key calls `onClose`.
  */
@@ -364,9 +367,10 @@ export class TreasureChestView {
 
   /**
    * Lays the chest out for `view` with chestLayout() and the full section lines, measures the tallest
-   * entry row at the list width, lays it out again with the short lines when no whole row fits, and
-   * pages the listing at as many rows as fit, staying in the current section. Safe to call while
-   * closed; the next open() uses `view`.
+   * entry row at the list width, lays it out again with the short lines when no whole row fits, hides
+   * the title (hideChestTitle) when a whole row still does not fit, and pages the listing at as many
+   * rows as fit, staying in the current section. Safe to call while closed; the next open() uses
+   * `view`.
    */
   layout(view: SceneView): void {
     this.view = view;
@@ -377,13 +381,16 @@ export class TreasureChestView {
     const full = chestLayout(view, this.chestMeasure('full'));
     this.rowH = this.measureRowHeight(full.list.w);
     this.lineLength = sectionLineLength(full.list.h, this.rowH);
-    const chest = this.lineLength === 'full' ? full : chestLayout(view, this.chestMeasure('short'));
+    const lined = this.lineLength === 'full' ? full : chestLayout(view, this.chestMeasure('short'));
+    const showsTitle = chestShowsTitle(lined.list.h, this.rowH);
+    const chest = showsTitle ? lined : hideChestTitle(lined);
     this.chest = chest;
     this.perPage = rowsPerPage(chest.list.h, this.rowH, UI.gap);
     this.pages = chestPages(this.sections, this.perPage);
     this.pageIndex = this.pageIndexFor(category, firstEntry);
     drawPanel(this.panel, chest.panel.x, chest.panel.y, chest.panel.w, chest.panel.h, UI_PANEL);
     this.title.setPosition(chest.title.x, chest.title.y);
+    this.title.setVisible(showsTitle);
     this.heading.setPosition(chest.heading.x, chest.heading.y);
     this.buttons[BACK_INDEX].container.setPosition(chest.back.x, chest.back.y);
     this.buttons[CLOSE_INDEX].container.setPosition(chest.close.x, chest.close.y);

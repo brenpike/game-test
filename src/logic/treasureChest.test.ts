@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AREAS, CANAL_AREA, POND_2_AREA, POND_AREA, unlockedAreaIds, type AreaData } from './areas';
 import { isSupportedCanvas } from './cardFit';
 import {
   ALL_TREASURES,
@@ -8,13 +9,15 @@ import {
   WEARABLE_SLOTS,
   type PaintShell,
   type PerkType,
+  type Rarity,
   type Treasure,
   type Wearable,
 } from './catalogue';
 import { badgeShape, rarityName } from './hints';
 import type { HudView, Size } from './hudLayout';
 import { REAL_MORPHS, axolotlFindId } from './morphs';
-import { CHEST_BUTTON, chestLayout, type ChestLayout, type ChestMeasure } from './tankUi';
+import type { AreaStarsRecord } from './stars';
+import { CHEST_BUTTON, chestLayout, chestShowsTitle, hideChestTitle, type ChestLayout, type ChestMeasure } from './tankUi';
 import * as treasureChest from './treasureChest';
 import {
   CHEST_CATEGORIES,
@@ -24,14 +27,17 @@ import {
   SHORT_SECTION_LINES,
   UNFOUND_HINTS,
   UNFOUND_NAME,
+  areaHint,
   chestListing,
   chestPages,
+  dreamColourAreaOf,
   foundCountText,
   pageText,
   perkText,
   sectionLine,
   sectionLineLength,
   slotName,
+  treasureAreaOf,
   unfoundHint,
   wearableDetailText,
   type ChestEntry,
@@ -76,6 +82,24 @@ const WEARABLES = ALL_TREASURES.filter(isWearable);
 const PAINT_SHELLS = ALL_TREASURES.filter(isPaintShell);
 const ALL_IDS = ALL_TREASURES.map((treasure) => treasure.id);
 const PERK_TYPES = Object.keys(PERK_VALUES) as PerkType[];
+const ALL_BEATEN: AreaStarsRecord = Object.fromEntries(
+  AREAS.map((area) => [area.id, { exit: true, special: true, legsOrRescue: true }]),
+);
+
+/** The area an entry's hint names: its Paint shell's area for a Dream colour, else its treasure's. */
+function entryAreaOf(section: ChestSection, entry: ChestEntry, areas: readonly AreaData[] = AREAS): AreaData | undefined {
+  return section.category === 'dreamColour' ? dreamColourAreaOf(entry.id, areas) : treasureAreaOf(entry.id, areas);
+}
+
+/** Every entry of `sections` with its id, found flag and hint. */
+function entryHints(sections: readonly ChestSection[]): [string, boolean, string][] {
+  return sections.flatMap((section) => section.entries.map((entry): [string, boolean, string] => [entry.id, entry.found, entry.hint]));
+}
+
+/** The hint of the entry with this id in `sections`. */
+function hintOf(sections: readonly ChestSection[], id: string): string | undefined {
+  return sections.flatMap((section): readonly ChestEntry[] => section.entries).find((entry) => entry.id === id)?.hint;
+}
 
 /** The Wearable detail text or Dream colour label of `entry`; none for a Decoration. */
 function entryDetailTexts(entry: ChestEntry): string[] {
@@ -104,6 +128,7 @@ function collectHelperOutputs(): string[] {
   for (const wearable of WEARABLES) outputs.push(wearableDetailText(wearable.slot, wearable.perk));
   for (const type of PERK_TYPES) outputs.push(perkText({ type, value: 2 }), perkText({ type, value: 1 }));
   for (const rarity of RARITIES) outputs.push(unfoundHint(rarity));
+  for (const area of AREAS) for (const rarity of RARITIES) outputs.push(areaHint(area, rarity));
   for (const category of CHEST_CATEGORIES) outputs.push(sectionLine(category, 'full'), sectionLine(category, 'short'));
   return outputs;
 }
@@ -228,16 +253,18 @@ describe('chestListing', () => {
     ]);
   });
 
-  it('names unfound entries ??? with their rarity hint, and found entries by name with no hint', () => {
-    const banked = ['canal/sun-hat', 'canal/paint-shell-hearts'];
+  it('names unfound entries ??? with their area hint, and found entries by name with no hint', () => {
+    const banked = ['canal/sun-hat', 'canal/paint-shell-hearts', 'pond/frog-statue', 'pond/paint-shell-firefly-gold'];
     for (const section of chestListing(banked)) {
       for (const entry of section.entries) {
+        const area = entryAreaOf(section, entry);
+        expect(area).toBeDefined();
         if (entry.found) {
           expect(entry.name).not.toBe(UNFOUND_NAME);
           expect(entry.hint).toBe('');
-        } else {
+        } else if (area !== undefined) {
           expect(entry.name).toBe(UNFOUND_NAME);
-          expect(entry.hint).toBe(UNFOUND_HINTS[entry.rarity]);
+          expect(entry.hint).toBe(areaHint(area, entry.rarity));
         }
         expect(entry.rarityName).toBe(rarityName(entry.rarity));
         expect(entry.badge).toBe(badgeShape(entry.rarity));
@@ -245,12 +272,22 @@ describe('chestListing', () => {
     }
   });
 
-  it('gives an unfound entry of every rarity its hint', () => {
-    const hinted = new Map<string, string>();
+  it('gives an unfound entry of every rarity its area and rarity hint', () => {
+    const hinted = new Map<Rarity, Set<string>>();
     for (const section of chestListing([])) {
-      for (const entry of section.entries) hinted.set(entry.rarity, entry.hint);
+      for (const entry of section.entries) {
+        const hints = hinted.get(entry.rarity) ?? new Set<string>();
+        hinted.set(entry.rarity, hints.add(entry.hint));
+      }
     }
-    expect(Object.fromEntries(hinted)).toEqual(UNFOUND_HINTS);
+    expect([...hinted.keys()].sort()).toEqual([...RARITIES].sort());
+    for (const [rarity, hints] of hinted) {
+      const rarityHint = UNFOUND_HINTS[rarity];
+      for (const hint of hints) {
+        expect(hint).toMatch(/^Area \d+, (Canal|Lily pad pond): /);
+        expect(hint.endsWith(`: ${rarityHint.charAt(0).toLowerCase()}${rarityHint.slice(1)}`)).toBe(true);
+      }
+    }
   });
 
   it('shows an unfound Wearable with its slot and no perk', () => {
@@ -263,7 +300,7 @@ describe('chestListing', () => {
       rarityName: 'Common',
       badge: 'circle',
       found: false,
-      hint: 'Look near the main swim path!',
+      hint: 'Area 1, Canal: look near the main swim path!',
       slot: 'head',
       slotName: 'Head',
       perk: null,
@@ -405,7 +442,7 @@ describe('chestListing', () => {
     expect(decorations.countText).toBe('1 of 14 found');
   });
 
-  it('shows Lily green as ??? with the rare hint until the pond Paint shell is banked', () => {
+  it('shows Lily green as ??? with the Area 2 rare hint until the pond Paint shell is banked', () => {
     const canalShells = ALL_TREASURES.filter(isPaintShell)
       .filter((shell) => shell.id.startsWith('canal/'))
       .map((shell) => shell.id);
@@ -415,7 +452,7 @@ describe('chestListing', () => {
       name: UNFOUND_NAME,
       rarity: 'rare',
       found: false,
-      hint: 'Look off the main path!',
+      hint: 'Area 2, Lily pad pond: look off the main path!',
       label: DREAM_COLOUR_LABEL,
     });
     expect(chestListing(canalShells)[2].countText).toBe('12 of 14 found');
@@ -431,6 +468,121 @@ describe('chestListing', () => {
       expect(entry.name).toBe(colour.name);
       expect(entry.patterned).toBe(colour.kind !== 'solid');
       expect(entry.label).toBe(DREAM_COLOUR_LABEL);
+    }
+  });
+});
+
+describe('area hints', () => {
+  it('finds every catalogue treasure in exactly one area, the one treasureAreaOf gives', () => {
+    for (const treasure of ALL_TREASURES) {
+      const holders = AREAS.filter((area) => area.layout.treasures.some((held) => held.id === treasure.id));
+      expect(holders.map((area) => area.id), treasure.id).toHaveLength(1);
+      expect(treasureAreaOf(treasure.id)).toBe(holders[0]);
+    }
+  });
+
+  it('finds every Dream colour\'s Paint shell in exactly one area, the one dreamColourAreaOf gives', () => {
+    for (const colour of DREAM_COLOURS) {
+      const holders = AREAS.filter((area) =>
+        area.layout.treasures.some((held) => held.category === 'paintShell' && held.dreamColour === colour.id),
+      );
+      expect(holders.map((area) => area.id), colour.id).toHaveLength(1);
+      expect(dreamColourAreaOf(colour.id)).toBe(holders[0]);
+    }
+  });
+
+  it('gives no real entry the plain fallback hint', () => {
+    const plainHints = new Set(Object.values(UNFOUND_HINTS));
+    for (const [id, , hint] of entryHints(chestListing([]))) expect(plainHints.has(hint), id).toBe(false);
+  });
+
+  it('finds an area by its layout, never by the id prefix', () => {
+    expect(treasureAreaOf('canal/toy-boat')).toBe(CANAL_AREA);
+    expect(treasureAreaOf('pond/frog-statue')).toBe(POND_AREA);
+    expect(treasureAreaOf('pond/reed-bundle')).toBe(POND_2_AREA);
+    expect(treasureAreaOf('pond/paint-shell-firefly-gold')).toBe(POND_2_AREA);
+    expect(treasureAreaOf('pond/not-a-treasure')).toBeUndefined();
+    expect(treasureAreaOf('mint')).toBeUndefined();
+    expect(dreamColourAreaOf('lily-green')).toBe(POND_AREA);
+    expect(dreamColourAreaOf('firefly-gold')).toBe(POND_2_AREA);
+    expect(dreamColourAreaOf('canal/paint-shell-mint')).toBeUndefined();
+    expect(dreamColourAreaOf('not-a-colour')).toBeUndefined();
+  });
+
+  it('takes the first area that holds the treasure', () => {
+    const copy: AreaData = { ...POND_2_AREA, id: 'copy', number: 9 };
+    expect(treasureAreaOf('pond/reed-bundle', [copy, POND_2_AREA])).toBe(copy);
+    expect(dreamColourAreaOf('firefly-gold', [POND_2_AREA, copy])).toBe(POND_2_AREA);
+    expect(treasureAreaOf('pond/reed-bundle', [])).toBeUndefined();
+  });
+
+  it.each<[string, string]>([
+    ['canal/pond-plant', 'Area 1, Canal: look near the main swim path!'],
+    ['canal/toy-boat', 'Area 1, Canal: look off the main path!'],
+    ['canal/castle-tower', 'Area 1, Canal: look in a cave or log, or past the current!'],
+    ['canal/sun-pyramid', 'Area 1, Canal: break a Dash pot with Tail Dash!'],
+    ['canal/sun-hat', 'Area 1, Canal: look near the main swim path!'],
+    ['mint', 'Area 1, Canal: look near the main swim path!'],
+    ['galaxy', 'Area 1, Canal: break a Dash pot with Tail Dash!'],
+    ['pond/lily-pad', 'Area 2, Lily pad pond: look near the main swim path!'],
+    ['pond/frog-statue', 'Area 2, Lily pad pond: look off the main path!'],
+    ['pond/lotus-lantern', 'Area 2, Lily pad pond: look in a cave or log, or past the current!'],
+    ['pond/rainbow-dragonfly-wings', 'Area 2, Lily pad pond: break a Dash pot with Tail Dash!'],
+    ['lily-green', 'Area 2, Lily pad pond: look off the main path!'],
+    ['pond/reed-bundle', 'Area 3, Lily pad pond: look near the main swim path!'],
+    ['pond/wooden-duck-decoy', 'Area 3, Lily pad pond: look off the main path!'],
+    ['pond/firefly-jar', 'Area 3, Lily pad pond: look in a cave or log, or past the current!'],
+    ['pond/golden-lotus-throne', 'Area 3, Lily pad pond: break a Dash pot with Tail Dash!'],
+    ['pond/firefly-cape', 'Area 3, Lily pad pond: break a Dash pot with Tail Dash!'],
+    ['firefly-gold', 'Area 3, Lily pad pond: look off the main path!'],
+  ])('hints at an unfound %s with "%s"', (id, expected) => {
+    expect(hintOf(chestListing([]), id)).toBe(expected);
+  });
+
+  it('builds every area and rarity hint from the area label, habitat name and rarity hint', () => {
+    expect(RARITIES.map((rarity) => areaHint(POND_2_AREA, rarity))).toEqual([
+      'Area 3, Lily pad pond: look near the main swim path!',
+      'Area 3, Lily pad pond: look off the main path!',
+      'Area 3, Lily pad pond: look in a cave or log, or past the current!',
+      'Area 3, Lily pad pond: break a Dash pot with Tail Dash!',
+    ]);
+    expect(areaHint({ ...CANAL_AREA, number: 7 }, 'rare')).toBe('Area 7, Canal: look off the main path!');
+  });
+
+  it('gives an area of an unknown habitat the plain rarity hint', () => {
+    const lost: AreaData = { ...POND_2_AREA, habitatId: 'not-a-habitat' };
+    for (const rarity of RARITIES) expect(areaHint(lost, rarity)).toBe(unfoundHint(rarity));
+    expect(hintOf(chestListing([], [lost]), 'pond/reed-bundle')).toBe(UNFOUND_HINTS.common);
+  });
+
+  it('hints at every area, locked or not, the same with no stars and with every area beaten', () => {
+    expect(unlockedAreaIds({})).toEqual([CANAL_AREA.id]);
+    expect(unlockedAreaIds(ALL_BEATEN)).toEqual(AREAS.map((area) => area.id));
+    const noStars = chestListing([]);
+    expect(hintOf(noStars, 'pond/reed-bundle')).toBe('Area 3, Lily pad pond: look near the main swim path!');
+    expect(hintOf(noStars, 'firefly-gold')).toBe('Area 3, Lily pad pond: look off the main path!');
+    expect(entryHints(chestListing([]))).toEqual(entryHints(noStars));
+  });
+
+  it('gives found entries an empty hint with any areas table', () => {
+    for (const areas of [AREAS, [POND_2_AREA], []]) {
+      for (const [id, found, hint] of entryHints(chestListing(ALL_IDS, areas))) {
+        expect(found, id).toBe(true);
+        expect(hint, id).toBe('');
+      }
+    }
+  });
+
+  it('hints from a custom areas table, and the plain rarity hint for an entry no area holds', () => {
+    const onlyArea3 = chestListing([], [POND_2_AREA]);
+    expect(hintOf(onlyArea3, 'pond/reed-bundle')).toBe('Area 3, Lily pad pond: look near the main swim path!');
+    expect(hintOf(onlyArea3, 'firefly-gold')).toBe('Area 3, Lily pad pond: look off the main path!');
+    expect(hintOf(onlyArea3, 'canal/toy-boat')).toBe('Look off the main path!');
+    expect(hintOf(onlyArea3, 'lily-green')).toBe('Look off the main path!');
+    const renumbered = chestListing([], [{ ...CANAL_AREA, number: 4 }]);
+    expect(hintOf(renumbered, 'canal/pond-plant')).toBe('Area 4, Canal: look near the main swim path!');
+    for (const section of chestListing([], [])) {
+      for (const entry of section.entries) expect(entry.hint, entry.id).toBe(UNFOUND_HINTS[entry.rarity]);
     }
   });
 });
@@ -671,9 +823,13 @@ function tallestRowHeight(rowW: number): number {
   return Math.max(...entries.map((entry) => estimateRowHeight(entry, rowW)));
 }
 
-/** The chest as the view lays it out on `view`: full lines, then short lines when a row does not fit. */
+/**
+ * The chest as the view lays it out on `view`: full lines with the title, then short lines with the
+ * title when a row does not fit, then short lines without the title when a row still does not fit.
+ */
 interface ChestFit {
   readonly length: SectionLineLength;
+  readonly showsTitle: boolean;
   readonly layout: ChestLayout;
   readonly fullListH: number;
   readonly rowH: number;
@@ -683,8 +839,10 @@ function fitChest(view: HudView): ChestFit {
   const full = chestLayout(view, chestMeasure('full'));
   const fullRowH = tallestRowHeight(full.list.w);
   const length = sectionLineLength(full.list.h, fullRowH);
-  const layout = length === 'full' ? full : chestLayout(view, chestMeasure('short'));
-  return { length, layout, fullListH: full.list.h, rowH: tallestRowHeight(layout.list.w) };
+  const lined = length === 'full' ? full : chestLayout(view, chestMeasure('short'));
+  const showsTitle = chestShowsTitle(lined.list.h, fullRowH);
+  const layout = showsTitle ? lined : hideChestTitle(lined);
+  return { length, showsTitle, layout, fullListH: full.list.h, rowH: tallestRowHeight(layout.list.w) };
 }
 
 /** Supported canvases from the width and height grid (art guide 1). */
@@ -705,12 +863,31 @@ describe('Treasure Chest fit with every treasure listed', () => {
     expect(problems).toEqual([]);
   });
 
-  it.each<[number, number, SectionLineLength]>([
-    [460, 320, 'short'],
-    [320, 440, 'short'],
-    [800, 600, 'full'],
-    [1024, 768, 'full'],
-  ])('uses the %s x %s %s section lines', (cssW, cssH, expected) => {
-    expect(fitChest({ cssW, cssH }).length).toBe(expected);
+  it.each<[number, number, SectionLineLength, boolean]>([
+    [460, 320, 'short', false],
+    [320, 440, 'short', false],
+    [340, 440, 'short', false],
+    [360, 440, 'short', false],
+    [320, 480, 'short', true],
+    [375, 440, 'short', true],
+    [460, 340, 'short', true],
+    [460, 375, 'short', true],
+    [800, 600, 'full', true],
+    [1024, 768, 'full', true],
+  ])('uses the %s x %s %s section lines, title shown: %s', (cssW, cssH, expected, showsTitle) => {
+    const fit = fitChest({ cssW, cssH });
+    expect(fit.length).toBe(expected);
+    expect(fit.showsTitle).toBe(showsTitle);
+  });
+
+  it('hides the title only on 320x440, 340x440, 360x440 and 460x320, where the short lines still leave no room for a row', () => {
+    const hidden = supportedCanvases().filter((view) => !fitChest(view).showsTitle);
+    expect(hidden.map((view) => `${view.cssW}x${view.cssH}`)).toEqual(['320x440', '340x440', '360x440', '460x320']);
+    for (const view of hidden) {
+      const fit = fitChest(view);
+      expect(fit.length).toBe('short');
+      expect(fit.rowH).toBeGreaterThan(chestLayout(view, chestMeasure('short')).list.h);
+      expect(fit.layout).toEqual(hideChestTitle(chestLayout(view, chestMeasure('short'))));
+    }
   });
 });

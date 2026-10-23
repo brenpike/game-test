@@ -16,10 +16,12 @@ import {
   UI,
   WIDE_BUTTON,
   chestLayout,
+  chestShowsTitle,
   decorateLayout,
   hubButtonCompactLook,
   hubButtonLook,
   hubCaptionRect,
+  hideChestTitle,
   hubLayout,
   labelButtonWidth,
   nextFocusIndex,
@@ -930,5 +932,45 @@ describe('chestLayout', () => {
     expect(portrait.back.x).toBeLessThan(portrait.next.x);
     expect(portrait.next.x).toBeLessThan(portrait.close.x);
     expect(portrait.close.y).toBeGreaterThan(bottomOf(portrait.list));
+  });
+});
+
+describe('chestShowsTitle', () => {
+  it.each<[number, number, boolean]>([
+    [100, 80, true],
+    [80, 80, true],
+    [79, 80, false],
+    [0, 32, false],
+    [Number.NaN, 32, false],
+    [100, Number.NaN, false],
+    [Infinity, 32, false],
+    [100, Infinity, false],
+  ])('gives %s list px and a %s px row a shown title: %s', (listH, rowH, expected) => {
+    expect(chestShowsTitle(listH, rowH)).toBe(expected);
+  });
+});
+
+describe('hideChestTitle', () => {
+  it.each([
+    { cssW: 460, cssH: 320 },
+    { cssW: 320, cssH: 440 },
+    { cssW: 1024, cssH: 768 },
+  ])('moves the heading to the title top and grows the list up by the same lift at $cssW x $cssH', (view) => {
+    const chest = chestLayout(view, CHEST_MEASURE);
+    const lift = chest.heading.y - chest.title.y;
+    const hidden = hideChestTitle(chest);
+    expect(lift).toBeGreaterThan(0);
+    expect(hidden.heading).toEqual({ ...chest.heading, y: chest.title.y });
+    expect(hidden.list).toEqual({ ...chest.list, y: chest.list.y - lift, h: chest.list.h + lift });
+    expect(bottomOf(hidden.list)).toBe(bottomOf(chest.list));
+    expect(hidden.list.y - bottomOf(hidden.heading)).toBe(chest.list.y - bottomOf(chest.heading));
+    expect(hidden).toEqual({ ...chest, heading: hidden.heading, list: hidden.list });
+  });
+
+  it('leaves the chest it is given unchanged', () => {
+    const chest = chestLayout({ cssW: 460, cssH: 320 }, CHEST_MEASURE);
+    const copy = structuredClone(chest);
+    hideChestTitle(chest);
+    expect(chest).toEqual(copy);
   });
 });
