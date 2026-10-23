@@ -1,7 +1,7 @@
 import { CHINAMPA_AREA_ID, CHINAMPA_LAYOUT } from './chinampaLayout';
 import type { SnackDrift } from './collectibles';
 import { REFUGE_FACT_CARDS, TILAPIA_FACT, type FactCard } from './factCards';
-import type { HazardSpawn } from './hazards';
+import type { ElementSpawn, HazardSpawn } from './hazards';
 import type { PredatorRoute } from './predators';
 import { POND_2_AREA_ID, POND_2_LAYOUT } from './pond2Layout';
 import { POND_AREA_ID, POND_LAYOUT } from './pondLayout';
@@ -217,6 +217,39 @@ function listThreats(source: ThreatSource): Threat[] {
   return uniqueThreats([...tilapia, ...predators, ...hazards]);
 }
 
+/** The parts of area data or a zone layout that name its fact cards: its threats and its elements. */
+export interface FactCardSource extends ThreatSource {
+  readonly elements: readonly Readonly<ElementSpawn>[];
+}
+
+/** An area's fact card ids and cards, in the same order. */
+export interface SourceFactCards {
+  ids: string[];
+  cards: Readonly<FactCard>[];
+}
+
+/** Each element type that carries a fact card, in element order. */
+function listElementCards(elements: readonly Readonly<ElementSpawn>[]): Threat[] {
+  return elements.flatMap((element): Threat[] => {
+    const { fact } = element.type;
+    return fact === undefined ? [] : [{ id: element.type.id, fact }];
+  });
+}
+
+/** The threats (listThreats order), then the element types that carry a fact card, each id once. */
+function listFactCards(source: FactCardSource): Threat[] {
+  return uniqueThreats([...listThreats(source), ...listElementCards(source.elements)]);
+}
+
+/**
+ * An area's fact card ids and cards: its hazard and predator cards in threatIds order, then the
+ * card of each element type that carries one, in element order, each id once.
+ */
+export function sourceFactCards(source: FactCardSource): SourceFactCards {
+  const cards = listFactCards(source);
+  return { ids: cards.map((card) => card.id), cards: cards.map((card) => card.fact) };
+}
+
 /**
  * Ids of every hazard and predator in an area, each once: 'tilapia' when it has tilapia routes,
  * then predator species ids, then hazard type ids (leg-costing and slow-only alike).
@@ -230,14 +263,17 @@ export function threatFactCards(source: ThreatSource): Readonly<FactCard>[] {
   return listThreats(source).map((threat) => threat.fact);
 }
 
-/** Every hazard and predator fact card of these areas, in area-table order, each once. */
+/**
+ * Every fact card of these areas, in area-table order, each once: per area its hazard and predator
+ * cards, then its element cards (sourceFactCards order).
+ */
 export function areaFactCards(areas: readonly Readonly<AreaData>[] = AREAS): Readonly<FactCard>[] {
-  return uniqueThreats(areas.flatMap((area) => listThreats(area.layout))).map((threat) => threat.fact);
+  return uniqueThreats(areas.flatMap((area) => listFactCards(area.layout))).map((threat) => threat.fact);
 }
 
 /**
- * Every fact card found by playing, in Collection Book order: these areas' hazard and predator
- * cards (areaFactCards order), then the refuge cards (REFUGE_FACT_CARDS order).
+ * Every fact card found by playing, in Collection Book order: these areas' hazard, predator and
+ * element cards (areaFactCards order), then the refuge cards (REFUGE_FACT_CARDS order).
  */
 export function bookFactCards(areas: readonly Readonly<AreaData>[] = AREAS): Readonly<FactCard>[] {
   return [...areaFactCards(areas), ...REFUGE_FACT_CARDS];

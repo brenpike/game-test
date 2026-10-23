@@ -22,6 +22,7 @@ import {
   newThingsByArea,
   newestUnlockedAreaId,
   resolveAreaId,
+  sourceFactCards,
   threatFactCards,
   threatIds,
   unlockedAreaIds,
@@ -86,6 +87,8 @@ const TEST_GLASS: HazardType = { id: 'test-glass', name: 'Test glass', costsLeg:
 const TEST_MUD: HazardType = { id: 'test-mud', name: 'Test mud', costsLeg: false, reach: 0, meetRange: 60, fact: testFact('test-mud') };
 const TEST_GATE: ElementType = { id: 'test-gate', name: 'Test gate', kind: 'cycle', period: 4, activeFor: 2 };
 const TEST_TIDE: ElementType = { id: 'test-tide', name: 'Test tide', kind: 'cycle', period: 6, activeFor: 3 };
+const TEST_MATS: ElementType = { ...TEST_GATE, id: 'test-mats', name: 'Test mats', meetRange: 60, fact: testFact('test-mats') };
+const TEST_LOCK: ElementType = { ...TEST_TIDE, id: 'test-lock', name: 'Test lock', fact: testFact('test-lock') };
 
 /** Canal layout data with these threats and elements in place of the canal's. */
 function layoutWith(
@@ -104,6 +107,10 @@ function pikeRoute(id: string) {
 
 function glassAt(id: string, type: HazardType = TEST_GLASS) {
   return { id, type, shape: { kind: 'circle' as const, x: 900, y: 290, r: 10 } };
+}
+
+function elementOf(id: string, type: ElementType) {
+  return { id, type, offset: 0 };
 }
 
 /** Fastest snack drift any area may have, in px/s: half the Snack magnet pull, 20 (PRD H4, Tuning values). */
@@ -345,6 +352,63 @@ describe('threats', () => {
       areaWith('two', 2, layoutWith({ tilapiaRoutes: [], predatorRoutes: [pikeRoute('pike-0')], hazards: [glassAt('glass-0')] })),
     ];
     expect(areaFactCards(areas)).toEqual([TILAPIA_FACT, TEST_GLASS.fact, TEST_PIKE.fact]);
+  });
+});
+
+describe('sourceFactCards', () => {
+  it('gives the threat cards, then each element type that carries a card, each id once', () => {
+    const layout = layoutWith({
+      predatorRoutes: [pikeRoute('pike-0')],
+      hazards: [glassAt('glass-0')],
+      elements: [
+        elementOf('gate-0', TEST_GATE),
+        elementOf('mats-0', TEST_MATS),
+        elementOf('lock-0', TEST_LOCK),
+        elementOf('mats-1', TEST_MATS),
+      ],
+    });
+    expect(sourceFactCards(layout)).toEqual({
+      ids: ['tilapia', 'test-pike', 'test-glass', 'test-mats', 'test-lock'],
+      cards: [TILAPIA_FACT, TEST_PIKE.fact, TEST_GLASS.fact, TEST_MATS.fact, TEST_LOCK.fact],
+    });
+  });
+
+  it('keeps an element card out when a threat has its id', () => {
+    const shadow: ElementType = { ...TEST_MATS, id: 'test-glass', fact: testFact('shadow-glass') };
+    const layout = layoutWith({ hazards: [glassAt('glass-0')], elements: [elementOf('shadow-0', shadow)] });
+    expect(sourceFactCards(layout)).toEqual({ ids: ['tilapia', 'test-glass'], cards: [TILAPIA_FACT, TEST_GLASS.fact] });
+  });
+
+  it('gives no element card for elements with none', () => {
+    const layout = layoutWith({ tilapiaRoutes: [], elements: [elementOf('gate-0', TEST_GATE)] });
+    expect(sourceFactCards(layout)).toEqual({ ids: [], cards: [] });
+  });
+
+  it.each(AREAS.map((area) => [area.id, area] as const))('gives the threat cards alone for %s, from its data or its zone', (_id, area) => {
+    const expected = { ids: threatIds(area.layout), cards: threatFactCards(area.layout) };
+    expect(sourceFactCards(area.layout)).toEqual(expected);
+    expect(sourceFactCards(buildZone(area.layout, DEFAULT_ZONE_SEED))).toEqual(expected);
+  });
+
+  it('puts each area\'s element cards after its threat cards, in area-table order, each once', () => {
+    const areas = [
+      areaWith('one', 1, layoutWith({ elements: [elementOf('mats-0', TEST_MATS)] })),
+      areaWith('two', 2, layoutWith({ hazards: [glassAt('glass-0')], elements: [elementOf('lock-0', TEST_LOCK), elementOf('mats-0', TEST_MATS)] })),
+    ];
+    expect(areaFactCards(areas)).toEqual([TILAPIA_FACT, TEST_MATS.fact, TEST_GLASS.fact, TEST_LOCK.fact]);
+    expect(bookFactCards(areas)).toEqual([
+      TILAPIA_FACT,
+      TEST_MATS.fact,
+      TEST_GLASS.fact,
+      TEST_LOCK.fact,
+      AXOLOTL_REFUGES_FACT,
+      CANAL_CLEAN_UPS_FACT,
+    ]);
+  });
+
+  it('leaves newThingsByArea counting threats and elements apart', () => {
+    const areas = [areaWith('one', 1, layoutWith({ elements: [elementOf('mats-0', TEST_MATS)] }))];
+    expect(newThingsByArea(areas)).toEqual([{ areaId: 'one', threats: ['tilapia'], elements: ['test-mats'] }]);
   });
 });
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SMALLEST_CANVAS, isSupportedCanvas } from './cardFit';
 import { DREAM_COLOURS } from './catalogue';
 import * as collectionBook from './collectionBook';
@@ -27,10 +27,38 @@ import {
   TILAPIA_FACT,
   type FactCard,
 } from './factCards';
+import type { ElementType } from './hazards';
 import type { HudView, Rect, Size } from './hudLayout';
 import { MORPH_UNFOUND_HINT, MORPH_UNFOUND_NAME, REAL_MORPHS, type RealMorphId } from './morphs';
 import { CHEST_BUTTON, UI, chestLayout, rowsPerPage, type ChestLayout, type ChestMeasure } from './tankUi';
 import { DREAM_COLOUR_LABEL, pageText } from './treasureChest';
+
+/** A synthetic mat pair element type with a fact card, found only in the test area added to AREAS. */
+const { TEST_MATS, TEST_MATS_FACT } = vi.hoisted(() => {
+  const fact: FactCard = { id: 'test-mats', name: 'Test mats', title: 'Meet the test mats', body: 'Test mats for tests.' };
+  const mats: ElementType = {
+    id: 'test-mats',
+    name: 'Test mats',
+    kind: 'cycle',
+    period: 8,
+    activeFor: 4,
+    meetRange: 60,
+    fact,
+  };
+  return { TEST_MATS: mats, TEST_MATS_FACT: fact };
+});
+
+vi.mock('./areas', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./areas')>();
+  const matPair = { x0: 600, x1: 700, rowTop: 100, rowBottom: 300, channelY: 200, openHeight: 60 };
+  const layout = {
+    ...actual.CANAL_AREA.layout,
+    tilapiaRoutes: [],
+    elements: [{ id: 'mats-0', type: TEST_MATS, offset: 0, matPair }],
+  };
+  const elementArea = { ...actual.CANAL_AREA, id: 'test-element-area', number: 99, habitatId: actual.POND_HABITAT.id, layout };
+  return { ...actual, AREAS: [...actual.AREAS, elementArea] };
+});
 
 const BANNED = ['die', 'dead', 'death', 'killed', 'game over', 'level', 'fish tank'];
 
@@ -444,6 +472,11 @@ describe('bookListing', () => {
       text: 'Beat an area, then visit the refuge to find this card.',
       hasPicture: false,
     });
+  });
+
+  it('hints an unfound element card with the habitat of the first area whose elements have it', () => {
+    const [, , factCards] = bookListing([], [], [TEST_MATS_FACT]);
+    expect(factCards.entries[0].text).toBe('Explore the lily pad pond to find this card.');
   });
 
   it('uses a card\'s own unfound hint before the habitat rule', () => {
