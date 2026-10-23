@@ -103,7 +103,7 @@ export const GHOST_NET_FACT: Readonly<FactCard> = Object.freeze({
 export const GARTER_SNAKE_FACT: Readonly<FactCard> = Object.freeze({
   id: 'garter-snake',
   name: 'Garter snake',
-  title: 'Meet the garter snake',
+  title: 'Meet garter snakes',
   body: 'Garter snakes live near water in Mexico and are good swimmers. They hunt small animals near the surface. Axolotls are safer down deep.',
 });
 

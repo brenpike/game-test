@@ -179,7 +179,7 @@ describe('garter snake fact card copy', () => {
     expect(GARTER_SNAKE_FACT).toEqual({
       id: 'garter-snake',
       name: 'Garter snake',
-      title: 'Meet the garter snake',
+      title: 'Meet garter snakes',
       body: 'Garter snakes live near water in Mexico and are good swimmers. They hunt small animals near the surface. Axolotls are safer down deep.',
     });
     expect(GARTER_SNAKE_FACT.unfoundHint).toBeUndefined();

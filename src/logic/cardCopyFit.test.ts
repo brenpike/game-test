@@ -381,9 +381,9 @@ describe('card copy fit', () => {
     expect(SORTED_AXOLOTL_NAMES[0]).toBe('Golden albino axolotl');
   });
 
-  it('brings home at most the 24 canal treasures on one trip, of the 60 in the catalogue', () => {
+  it('brings home at most the 24 canal treasures on one trip, of the 72 in the catalogue', () => {
     expect(MAX_TRIP_FINDS).toBe(24);
-    expect(SORTED_NAMES).toHaveLength(60);
+    expect(SORTED_NAMES).toHaveLength(72);
   });
 
   it.each(CANVAS_WIDTHS)(
@@ -432,8 +432,15 @@ describe('card copy fit', () => {
 });
 
 describe('area fact card copy fit', () => {
-  it('checks every area fact card: the tilapia, the plastic worm, the heron and the ghost net', () => {
-    expect(AREA_FACT_CARDS.map((card) => card.id)).toEqual(['tilapia', 'plastic-worm', 'heron', 'ghost-net']);
+  it('checks every area fact card: the tilapia, the plastic worm, the heron, the ghost net, the garter snake and the water hyacinth', () => {
+    expect(AREA_FACT_CARDS.map((card) => card.id)).toEqual([
+      'tilapia',
+      'plastic-worm',
+      'heron',
+      'ghost-net',
+      'garter-snake',
+      'water-hyacinth',
+    ]);
   });
 
   it('keeps the plastic worm title one line at 460 wide, which the body width would wrap', () => {
@@ -469,19 +476,19 @@ describe('area fact card copy fit', () => {
     },
   );
 
-  it('wraps every fact card body at the body width, except the heron at 320 x 440, which uses the tight width', () => {
+  it('wraps every fact card body at the body width, except the heron and the water hyacinth at 320 x 440, which use the tight width', () => {
     const tightBodies = supportedCanvases().flatMap((canvas) =>
       AREA_FACT_CARDS.flatMap((card) => {
         const combination = factCardCombination(card, canvas);
         return fitCard(combination.availH, combination.sections).bodyVariant === 0 ? [] : [combination.label];
       }),
     );
-    expect(tightBodies).toEqual(['heron fact 320x440']);
+    expect(tightBodies).toEqual(['heron fact 320x440', 'water-hyacinth fact 320x440']);
   });
 
-  it('fits the heron body at 320 x 440 only at the tight width', () => {
-    const card = AREA_FACT_CARDS.find((candidate) => candidate.id === 'heron');
-    if (card === undefined) throw new Error('no heron fact card');
+  it.each(['heron', 'water-hyacinth'])('fits the %s body at 320 x 440 only at the tight width', (id) => {
+    const card = AREA_FACT_CARDS.find((candidate) => candidate.id === id);
+    if (card === undefined) throw new Error(`no ${id} fact card`);
     const canvas = SMALLEST_CANVAS.portrait;
     const availH = canvas.cssH - 2 * CARD.margin;
     const [bodyW, tightW] = factCardBodyWrapWidths(canvas.cssW);
@@ -689,6 +696,7 @@ describe('area beaten card copy fit (H5, H8)', () => {
       'Frog statue',
       'Wooden duck decoy',
       'Scarecrow',
+      'Piñata',
     ]);
   });
 
