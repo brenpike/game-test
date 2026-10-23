@@ -1,4 +1,6 @@
 import * as Phaser from 'phaser';
+import type { ChinampaTextures } from '../art/chinampaTextures';
+import { GAP_EDGE_FLARE, GAP_EDGE_W, OVERHANG_H, OVERHANG_W } from '../art/drawChinampa';
 import { ROOT_ARCH_ANCHOR_Y } from '../art/drawPond';
 import type { CaveKind, HabitatLook } from '../art/habitatLook';
 import { DEPTH } from '../art/layers';
@@ -15,8 +17,11 @@ import { isHeld, type FindId, type Holdings } from '../logic/tripBag';
 import type { Vec2 } from '../logic/vec';
 import type { CurrentZone, Point, ZoneLayout } from '../logic/zone';
 import type { GameAssets } from './BootScene';
+import { faceSprite } from './spriteFacing';
 
 const TAU = Math.PI * 2;
+/** The gap edges sit this far from the current's rect, px: the stake tips and streaming roots reach into it. */
+const GAP_EDGE_GAP_PX = 2;
 /**
  * Cave and marker base below the bed top, like the Home Spot burrow, so both sit in the drawn bed
  * edge (y 321 to 326 under them).
@@ -177,6 +182,53 @@ function caveAnchorY(look: HabitatLook, zone: ZoneLayout): number {
   return look.cave.anchor === 'bank' ? ROOT_ARCH_ANCHOR_Y : zone.bedTop + BED_SINK_PX;
 }
 
+/** The baked chinampa props. Throws when they were not baked. */
+function chinampaTexturesFor(assets: GameAssets, what: string): ChinampaTextures {
+  if (assets.chinampa === null) {
+    throw new Error(`TreasureView: ${what} needs the baked chinampa textures`);
+  }
+  return assets.chinampa;
+}
+
+/**
+ * One overhang sprite at each of the zone's bank overhang rects, stretched to the rect and drawn at
+ * the cave front's depth: above the hidden treasure icons (DEPTH.hiddenTreasure) and under the haze,
+ * so what is under the bank reads as hidden and tinted, like what is under the reeds. Placed from zone
+ * data only; a zone with no overhangs places none.
+ */
+function placeBankOverhangs(scene: Phaser.Scene, assets: GameAssets, zone: ZoneLayout): void {
+  const overhangs = zone.bankOverhangs;
+  if (overhangs === undefined || overhangs.length === 0) return;
+  const info = chinampaTexturesFor(assets, 'a bank overhang').overhang;
+  for (const rect of overhangs) {
+    scene.add
+      .image(rect.x0, rect.y0, info.key)
+      .setOrigin(info.originNormX, info.originNormY)
+      .setScale((rect.x1 - rect.x0) / OVERHANG_W / info.scale, (rect.y1 - rect.y0) / OVERHANG_H / info.scale)
+      .setDepth(DEPTH.caveFront);
+  }
+}
+
+/**
+ * The chinampa edges either side of a current, the gap between two chinampas: one above the current's
+ * rect and one below it, centred on it and flared past its ends. Their roots stream to the left, so a
+ * current that flows right faces them the other way (the mirror is about the anchor, the centre of the
+ * edge). Placed from the current's rect only.
+ */
+function placeGapEdges(scene: Phaser.Scene, assets: GameAssets, current: CurrentZone): void {
+  const art = chinampaTexturesFor(assets, 'the gap between two chinampas').gapEdges;
+  const x = (current.x0 + current.x1) / 2;
+  const stretch = (current.x1 - current.x0 + 2 * GAP_EDGE_FLARE) / GAP_EDGE_W;
+  const facing = current.force.x > 0 ? -1 : 1;
+  for (const [info, y] of [
+    [art.top, current.y0 - GAP_EDGE_GAP_PX],
+    [art.bottom, current.y1 + GAP_EDGE_GAP_PX],
+  ] as const) {
+    const image = scene.add.image(x, y, info.key).setOrigin(info.originNormX, info.originNormY).setDepth(DEPTH.reeds);
+    faceSprite(image, facing, stretch / info.scale, 1 / info.scale);
+  }
+}
+
 function rarityOf(id: FindId): Rarity {
   const treasure = treasureById(id);
   if (!treasure) {
@@ -187,8 +239,9 @@ function rarityOf(id: FindId): Rarity {
 
 /**
  * Draws the hidden treasures and their hiding places: the cave (the canal's small cave of rocks or
- * the pond's hollow log on the bed, or the dusk pond's root arch under the bank; interior and
- * front), the
+ * the pond's hollow log on the bed, the dusk pond's root arch under the bank, or the chinampa's root
+ * tangle; interior and front), the overhang under each of the zone's overhanging banks, the chinampa
+ * edges either side of a current of a look with a gap (`HabitatLook.currentGap`), the
  * past-the-current marker, one treasure icon per catalogue find (hidden under cover, or revealed by
  * a crumble), the Dash pots, the hint stars, the dash-needed bubble and pot wobble, the crumble and
  * the pickup pop. Visual only: every timer here is driven by the frame `dt` and the scene clock, so
@@ -225,6 +278,8 @@ export class TreasureView {
     const cave = caveTextures(assets, look);
     bakedImage(scene, cave.back, caveX, caveY, DEPTH.caveBack);
     bakedImage(scene, cave.front, caveX, caveY, DEPTH.caveFront);
+    placeBankOverhangs(scene, assets, zone);
+    if (look.currentGap) for (const gap of zone.currents) placeGapEdges(scene, assets, gap);
     const current = zone.currents[0];
     if (!current) {
       throw new Error('TreasureView: the zone has no current for the past-the-current marker');

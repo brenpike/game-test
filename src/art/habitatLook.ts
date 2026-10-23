@@ -18,6 +18,12 @@
  * bottom row of Area 4 is the darker one (the deep stop and the bed bottom), and it
  * is also held above the floor. Ink is then 3:1 or better on all of it.
  *
+ * Chinampa bank, gap and props (issue #76): a look also says how its banks are drawn (`bank`:
+ * the canal's willow bank, or the chinampa's garden plots with crops above the surface and ahuejote
+ * roots in the water), whether the gap between two chinampas gets its edges (`currentGap`) and
+ * whether the chinampa props are baked for it (`chinampaProps`). The canal, pond and dusk pond say
+ * 'willows', false and false, so their bakes are unchanged.
+ *
  * Area looks (issue #98): an area may use a variant of its habitat's look, such as
  * the pond at dusk ('pond-dusk', Area 3). A variant is a whole palette baked into the
  * background, haze and surface, never an overlay over gameplay depths. The dusk pond
@@ -63,6 +69,12 @@ export interface SkyLook {
 export type CaveKind = 'rocks' | 'log' | 'rootArch' | 'rootTangle';
 /** Where a cave hangs: base centre on the bed, or top centre under the bank at the waterline. */
 export type CaveAnchor = 'bed' | 'bank';
+
+/**
+ * How the banks of the top row are drawn (guide 7a, 7b): the canal's soil block with a grass cap under
+ * willows, or the chinampa's garden plots (crops above the surface, ahuejote roots in the water).
+ */
+export type BankStyle = 'willows' | 'plots';
 
 export interface CaveLook {
   readonly kind: CaveKind;
@@ -131,6 +143,12 @@ export interface HabitatLook {
   readonly pondProps: boolean;
   /** Fireflies hovering above the water, per screen of area width. 0 shows none. */
   readonly firefliesPerScreen: number;
+  /** How the banks (the chunks in `bankChunks`, top row) are drawn. */
+  readonly bank: BankStyle;
+  /** Draw a chinampa edge on each side of the area's currents (the gap between two chinampas; chinampaTextures.ts). */
+  readonly currentGap: boolean;
+  /** The area needs the chinampa props (bank overhangs, gap edges, ghost nets, snag cue; chinampaTextures.ts). */
+  readonly chinampaProps: boolean;
 }
 
 /** Sky of the daytime looks: the prototype sky (guide 7a). */
@@ -168,6 +186,9 @@ const CANAL_LOOK: HabitatLook = Object.freeze({
   cave: Object.freeze({ kind: 'rocks', anchor: 'bed' }),
   pondProps: false,
   firefliesPerScreen: 0,
+  bank: 'willows',
+  currentGap: false,
+  chinampaProps: false,
 });
 
 /**
@@ -239,6 +260,9 @@ const POND_LOOK: HabitatLook = Object.freeze({
   cave: Object.freeze({ kind: 'log', anchor: 'bed' }),
   pondProps: true,
   firefliesPerScreen: 0,
+  bank: 'willows',
+  currentGap: false,
+  chinampaProps: false,
 });
 
 /**
@@ -327,6 +351,9 @@ const POND_DUSK_LOOK: HabitatLook = Object.freeze({
   cave: Object.freeze({ kind: 'rootArch', anchor: 'bank' }),
   pondProps: true,
   firefliesPerScreen: DUSK_FIREFLIES_PER_SCREEN,
+  bank: 'willows',
+  currentGap: false,
+  chinampaProps: false,
 });
 
 /**
@@ -388,6 +415,11 @@ const CHINAMPA_LOOK: HabitatLook = Object.freeze({
   cave: Object.freeze({ kind: 'rootTangle', anchor: 'bed' }),
   pondProps: false,
   firefliesPerScreen: 0,
+  // Garden plots with crops and ahuejote roots, not the canal's willow bank; the gap between two
+  // chinampas gets its edges; the overhangs, gap edges, ghost nets and snag cue are baked for it.
+  bank: 'plots',
+  currentGap: true,
+  chinampaProps: true,
 });
 
 const LOOKS: Readonly<Record<AreaLookId, HabitatLook>> = {

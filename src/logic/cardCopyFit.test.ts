@@ -381,9 +381,9 @@ describe('card copy fit', () => {
     expect(SORTED_AXOLOTL_NAMES[0]).toBe('Golden albino axolotl');
   });
 
-  it('brings home at most the 24 canal treasures on one trip, of the 48 in the catalogue', () => {
+  it('brings home at most the 24 canal treasures on one trip, of the 60 in the catalogue', () => {
     expect(MAX_TRIP_FINDS).toBe(24);
-    expect(SORTED_NAMES).toHaveLength(48);
+    expect(SORTED_NAMES).toHaveLength(60);
   });
 
   it.each(CANVAS_WIDTHS)(
@@ -432,8 +432,8 @@ describe('card copy fit', () => {
 });
 
 describe('area fact card copy fit', () => {
-  it('checks every area fact card: the tilapia, the plastic worm and the heron', () => {
-    expect(AREA_FACT_CARDS.map((card) => card.id)).toEqual(['tilapia', 'plastic-worm', 'heron']);
+  it('checks every area fact card: the tilapia, the plastic worm, the heron and the ghost net', () => {
+    expect(AREA_FACT_CARDS.map((card) => card.id)).toEqual(['tilapia', 'plastic-worm', 'heron', 'ghost-net']);
   });
 
   it('keeps the plastic worm title one line at 460 wide, which the body width would wrap', () => {
@@ -543,8 +543,12 @@ const LONGEST_AXOLOTL_NAME = 'W'.repeat(NAME_MAX);
 /** The longest habitat name in HABITATS. */
 const LONGEST_HABITAT_NAME = [...HABITATS].sort((left, right) => right.name.length - left.name.length)[0].name;
 
-/** A long habitat name not in HABITATS yet; a forward check that a later habitat's name still fits. */
-const FORWARD_HABITAT_NAME = 'Chinampa gardens';
+/**
+ * A habitat name longer than any in HABITATS; a forward check that a later habitat's name still fits.
+ * The planned later habitats (Spring cave, Deep canal) are shorter than Chinampa gardens, so this is a
+ * made-up longer name, to keep the check ahead of the longest real name.
+ */
+const FORWARD_HABITAT_NAME = 'Floating garden canals';
 
 /** Habitat names the milestone card is checked with: the longest today, then the forward check. */
 const MILESTONE_HABITAT_NAMES: readonly string[] = [LONGEST_HABITAT_NAME, FORWARD_HABITAT_NAME];
@@ -579,8 +583,8 @@ function milestoneProblems(habitatName: string, canvas: Canvas): string[] {
 }
 
 describe('refuge milestone card copy fit (N2)', () => {
-  it('checks the longest habitat name, Lily pad pond, of all the habitats', () => {
-    expect(LONGEST_HABITAT_NAME).toBe('Lily pad pond');
+  it('checks the longest habitat name, Chinampa gardens, of all the habitats', () => {
+    expect(LONGEST_HABITAT_NAME).toBe('Chinampa gardens');
     expect(FORWARD_HABITAT_NAME.length).toBeGreaterThan(LONGEST_HABITAT_NAME.length);
   });
 
@@ -680,7 +684,12 @@ describe('first-find card copy fit (C15)', () => {
 
 describe('area beaten card copy fit (H5, H8)', () => {
   it('names each area special treasure from the catalogue', () => {
-    expect(AREAS.map((area) => worstStars(area).specialName)).toEqual(['Toy boat', 'Frog statue', 'Wooden duck decoy']);
+    expect(AREAS.map((area) => worstStars(area).specialName)).toEqual([
+      'Toy boat',
+      'Frog statue',
+      'Wooden duck decoy',
+      'Scarecrow',
+    ]);
   });
 
   it.each(AREAS.map((area) => [area.id, area] as const))(

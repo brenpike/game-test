@@ -1,14 +1,60 @@
 /**
- * Chinampa look and root tangle art (issue #76; guide 3c, 7a, 7e, 10), headless. The
- * painters run against a recording context and a stub Path2D, and the Phaser bake runs
- * against a fake scene whose canvases record. No Phaser is loaded.
+ * Chinampa look, root tangle, garden plot bank, overhang, gap edge, ghost net and snag cue art
+ * (issue #76; guide 3c, 3g, 7a, 7b, 7e, 10), headless. The painters run against a recording context
+ * and a stub Path2D, and the Phaser bake runs against a fake scene whose canvases record. No Phaser
+ * is loaded.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CHINAMPA_TEX,
   bakeChinampaTextures,
+  ghostNetKey,
+  ghostNetTexture,
 } from './chinampaTextures';
 import {
+  AHUEJOTE_FOLIAGE,
+  AHUEJOTE_STRAND,
+  CHINAMPA_BANK_CAP_INSET,
+  CHINAMPA_PLOT_TOP,
+  CHINAMPA_SOIL,
+  CHINAMPA_SOIL_RIDGE,
+  CHINAMPA_STAKE,
+  CHINAMPA_WEAVE,
+  CORN_COB,
+  CORN_LEAF,
+  CORN_STALK,
+  CORN_TASSEL,
+  GAP_EDGE_BOTTOM_TEX,
+  GAP_EDGE_FLARE,
+  GAP_EDGE_FRINGE,
+  GAP_EDGE_H,
+  GAP_EDGE_TOP_TEX,
+  GAP_EDGE_W,
+  GHOST_NET_CELL,
+  GHOST_NET_FLOAT,
+  GHOST_NET_KNOT,
+  GHOST_NET_MESH,
+  GHOST_NET_PAD,
+  GHOST_NET_ROPE,
+  LETTUCE_INNER,
+  LETTUCE_OUTER,
+  MARIGOLD_CENTRE,
+  MARIGOLD_PETAL,
+  OVERHANG_H,
+  OVERHANG_SHADE_RGB,
+  OVERHANG_SHADE_STOPS,
+  OVERHANG_TEX,
+  OVERHANG_W,
+  SNAG_CUE_TEX,
+  chinampaBankExtent,
+  chinampaTreeXs,
+  ghostNetTextureSize,
+  paintBankOverhang,
+  paintChinampaBank,
+  paintChinampaBankRoots,
+  paintGapEdge,
+  paintGhostNet,
+  paintSnagCue,
   ROOT_TANGLE_BARK,
   ROOT_TANGLE_BARK_LIGHT,
   ROOT_TANGLE_GRAIN,
@@ -27,6 +73,11 @@ import {
 } from './drawChinampa';
 import { CAVE_H, CAVE_TEX, CAVE_W } from './drawFinds';
 import { paintLogFront, paintRootArchFront } from './drawPond';
+import { paintBackgroundChunk } from './drawScenery';
+import { CHINAMPA_LAYOUT } from '../logic/chinampaLayout';
+import { mulberry32 } from '../logic/rng';
+import type { TexSize } from './canvasKit';
+import { homeSpotInBottomRow } from '../scenes/HomeSpotView';
 import {
   CHINAMPA_BED_BOTTOM,
   CHINAMPA_BED_LIP,
@@ -45,7 +96,9 @@ import {
 } from './habitatLook';
 import {
   AXANTHIC,
+  BANK_SOIL,
   COPPER,
+  GRASS,
   GOLDEN_ALBINO,
   INK,
   LEUCISTIC,
@@ -54,7 +107,11 @@ import {
   PIEBALD,
   SKY_HORIZON,
   SKY_TOP,
+  SOIL_DETAIL,
   SUN,
+  SURF,
+  VIEW_H,
+  VIEW_W,
   TILAPIA_BELLY,
   TILAPIA_BODY,
   TILAPIA_FIN,
@@ -157,30 +214,77 @@ class LogPath {
   }
 }
 
+/** A linear gradient that remembers its stops. Its string form lists them, so a painted style tells gradients apart. */
+class GradientStub {
+  readonly stops: [number, string][] = [];
+  addColorStop(t: number, colour: string): void {
+    this.stops.push([t, colour]);
+  }
+  toString(): string {
+    return `gradient(${this.stops.map(([t, c]) => `${t}:${c}`).join(',')})`;
+  }
+}
+
 interface Painted {
   readonly op: 'fill' | 'stroke';
   readonly cmds: Cmd[];
   readonly style: string;
   readonly lineWidth: number;
+  /** The gradient the fill was painted with, or null for a plain colour. */
+  readonly gradient: GradientStub | null;
+  /** The paint was made under a clip, so it may run past the texture frame on purpose. */
+  readonly clipped: boolean;
 }
+
+/** A call on the context that changes state without painting, with its arguments (scale, clip, translate). */
+interface StateCall {
+  readonly name: string;
+  readonly args: unknown[];
+}
+
+let stateCalls: StateCall[] = [];
 
 /** Run `paint` against a recording context and return every fill and stroke with the style it was made under. */
 function record(paint: (ctx: CanvasRenderingContext2D) => void): Painted[] {
   vi.stubGlobal('Path2D', LogPath);
   const out: Painted[] = [];
+  stateCalls = [];
+  /** Clips set at each save level: a paint under any of them is clipped. */
+  const levels: number[] = [0];
+  const clipped = (): boolean => levels.some((n) => n > 0);
   const state: Record<string, unknown> = { fillStyle: '', strokeStyle: '', lineWidth: 1 };
+  const styleOf = (target: Record<string, unknown>, name: string): { style: string; gradient: GradientStub | null } => {
+    const value = name === 'fill' || name === 'fillRect' ? target.fillStyle : target.strokeStyle;
+    return { style: String(value), gradient: value instanceof GradientStub ? value : null };
+  };
   const ctx = new Proxy(state, {
     get: (target, key) => {
       const name = String(key);
       if (name in target) return target[name];
-      return (path?: LogPath) => {
+      if (name === 'createLinearGradient') return () => new GradientStub();
+      return (...args: unknown[]) => {
+        const path = args[0] as LogPath | undefined;
         if ((name === 'fill' || name === 'stroke') && path !== undefined) {
           out.push({
             op: name,
             cmds: path.cmds,
-            style: String(name === 'fill' ? target.fillStyle : target.strokeStyle),
+            ...styleOf(target, name),
             lineWidth: target.lineWidth as number,
+            clipped: clipped(),
           });
+        } else if (name === 'fillRect') {
+          out.push({
+            op: 'fill',
+            cmds: [['fillRect', ...(args as number[])]],
+            ...styleOf(target, name),
+            lineWidth: target.lineWidth as number,
+            clipped: clipped(),
+          });
+        } else {
+          if (name === 'save') levels.push(0);
+          if (name === 'restore' && levels.length > 1) levels.pop();
+          if (name === 'clip') levels[levels.length - 1]++;
+          stateCalls.push({ name, args });
         }
       };
     },
@@ -209,7 +313,10 @@ function fakeScene(created: { key: string; w: number; h: number }[]): never {
       createCanvas: (key: string, w: number, h: number) => {
         created.push({ key, w, h });
         return {
-          context: new Proxy({}, { get: () => () => undefined, set: () => true }),
+          context: new Proxy(
+            {},
+            { get: (_target, key) => (key === 'createLinearGradient' ? () => new GradientStub() : () => undefined), set: () => true },
+          ),
           refresh: () => undefined,
         };
       },
@@ -268,6 +375,18 @@ describe('chinampa look (guide 3c, 7a)', () => {
     expect(look.airWash).toBeNull();
     expect(look.rayAlphaScale).toBe(1);
     expect(look.sky).toEqual({ top: SKY_TOP, horizon: SKY_HORIZON });
+    expect(look.bank).toBe('plots');
+    expect(look.currentGap).toBe(true);
+    expect(look.chinampaProps).toBe(true);
+  });
+
+  it('leaves the canal, the pond and the dusk pond with willow banks, no gap edges and no chinampa props', () => {
+    for (const id of ['canal', 'pond', 'pond-dusk'] as const) {
+      const other = habitatLook(id);
+      expect(other.bank, id).toBe('willows');
+      expect(other.currentGap, id).toBe(false);
+      expect(other.chinampaProps, id).toBe(false);
+    }
   });
 
   it('is a clear green-teal, cooler than the pond and greener than the canal, stop by stop', () => {
@@ -570,15 +689,620 @@ describe('root tangle greyscale cue', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Helpers for the new painters
+// ---------------------------------------------------------------------------
+
+const seeded = (seed: number): (() => number) => mulberry32(seed);
+
+/** The (x, y) points a recorded path visits; an ellipse counts as the two corners of its bounding box. */
+function pointsOf(cmds: readonly Cmd[]): { x: number; y: number }[] {
+  const pts: { x: number; y: number }[] = [];
+  for (const [name, ...a] of cmds) {
+    if (name === 'moveTo' || name === 'lineTo') pts.push({ x: a[0], y: a[1] });
+    else if (name === 'quadraticCurveTo') pts.push({ x: a[2], y: a[3] });
+    else if (name === 'bezierCurveTo') pts.push({ x: a[4], y: a[5] });
+    else if (name === 'ellipse') {
+      const [cx, cy, rx, ry, rot] = a;
+      const hx = Math.hypot(rx * Math.cos(rot), ry * Math.sin(rot));
+      const hy = Math.hypot(rx * Math.sin(rot), ry * Math.cos(rot));
+      pts.push({ x: cx - hx, y: cy - hy }, { x: cx + hx, y: cy + hy });
+    }
+  }
+  return pts;
+}
+
+/**
+ * Every unclipped paint of `painted` keeps its path and half its stroke inside `tex`, so no ink is cut by the
+ * texture edge. `flipY` mirrors y first, for a painter that scales the context by (1, -1).
+ */
+function expectInsideFrame(painted: readonly Painted[], tex: TexSize, flipY = false): void {
+  const left = -tex.originX;
+  const right = tex.w - tex.originX;
+  const top = -tex.originY;
+  const bottom = tex.h - tex.originY;
+  for (const p of painted) {
+    if (p.clipped) continue;
+    const half = p.op === 'stroke' ? p.lineWidth / 2 : 0;
+    for (const pt of pointsOf(p.cmds)) {
+      const y = flipY ? -pt.y : pt.y;
+      const label = `${p.op} ${p.style} ${JSON.stringify(pt)}`;
+      expect(pt.x - half, label).toBeGreaterThanOrEqual(left);
+      expect(pt.x + half, label).toBeLessThanOrEqual(right);
+      expect(y - half, label).toBeGreaterThanOrEqual(top);
+      expect(y + half, label).toBeLessThanOrEqual(bottom);
+    }
+  }
+}
+
+const styleSet = (painted: readonly Painted[]): Set<string> => new Set(painted.map((p) => p.style));
+
+/** Every colour and luminance the new scenery and props add, by name. All are held to the luminance floor where they meet ink. */
+const NEW_FILLS: readonly (readonly [string, string, number])[] = [
+  ['garden soil', CHINAMPA_SOIL, 0.1957],
+  ['soil ridge', CHINAMPA_SOIL_RIDGE, 0.2523],
+  ['wattle stake', CHINAMPA_STAKE, 0.5861],
+  ['wattle weave', CHINAMPA_WEAVE, 0.3535],
+  ['corn stalk', CORN_STALK, 0.4043],
+  ['corn leaf', CORN_LEAF, 0.5042],
+  ['corn cob', CORN_COB, 0.6771],
+  ['corn tassel', CORN_TASSEL, 0.5578],
+  ['marigold petal', MARIGOLD_PETAL, 0.4614],
+  ['marigold centre', MARIGOLD_CENTRE, 0.2143],
+  ['lettuce outer', LETTUCE_OUTER, 0.686],
+  ['lettuce heart', LETTUCE_INNER, 0.5366],
+  ['ahuejote foliage', AHUEJOTE_FOLIAGE, 0.4051],
+  ['ahuejote strand', AHUEJOTE_STRAND, 0.2978],
+  ['net mesh', GHOST_NET_MESH, 0.4908],
+  ['net rope', GHOST_NET_ROPE, 0.2413],
+  ['net knot', GHOST_NET_KNOT, 0.5765],
+  ['net float', GHOST_NET_FLOAT, 0.7261],
+];
+
+// ---------------------------------------------------------------------------
+// Garden plot bank and ahuejote roots (guide 7a, 7b)
+// ---------------------------------------------------------------------------
+
+describe('chinampa colours (guide 3g, 10)', () => {
+  it.each(NEW_FILLS)('%s is at the luminance floor or more, so its ink outline is 3:1 or better', (_name, hex, lum) => {
+    expect(luminance(hex).toFixed(4)).toBe(lum.toFixed(4));
+    expect(luminance(hex)).toBeGreaterThanOrEqual(LUMINANCE_FLOOR);
+    expect(contrast(INK, hex)).toBeGreaterThanOrEqual(PAIR_FLOOR);
+  });
+
+  it('keeps the canal bank soil under the floor out of the chinampa: the garden soil is lighter', () => {
+    expect(luminance(BANK_SOIL)).toBeLessThan(LUMINANCE_FLOOR);
+    expect(luminance(CHINAMPA_SOIL)).toBeGreaterThanOrEqual(LUMINANCE_FLOOR);
+  });
+});
+
+describe('chinampa bank (guide 7a)', () => {
+  const rec = (index: number, capLeft: boolean, capRight: boolean, seed = 5): Painted[] =>
+    record((ctx) => paintChinampaBank(ctx, { index, capLeft, capRight, rand: seeded(seed) }));
+  const bank = rec(1, true, true);
+
+  it('rounds a capped end in 20 px from the chunk edge, like the overhang rects, and runs an open end past the edge', () => {
+    expect(chinampaBankExtent({ capLeft: true, capRight: true })).toEqual({ x0: 20, x1: 460 });
+    expect(chinampaBankExtent({ capLeft: false, capRight: false })).toEqual({ x0: -10, x1: VIEW_W + 10 });
+    expect(CHINAMPA_BANK_CAP_INSET).toBe(20);
+  });
+
+  it('is the garden: soil, wattle stakes, and corn, marigolds and lettuce on top, with no canal soil, strata or grass cap', () => {
+    const styles = styleSet(bank);
+    for (const colour of [CHINAMPA_SOIL, CHINAMPA_STAKE, CHINAMPA_WEAVE, CORN_COB, CORN_LEAF, MARIGOLD_PETAL, MARIGOLD_CENTRE, LETTUCE_OUTER]) {
+      expect(styles.has(colour), colour).toBe(true);
+    }
+    for (const colour of [BANK_SOIL, GRASS, SOIL_DETAIL]) expect(styles.has(colour), colour).toBe(false);
+  });
+
+  it('stands the crops on the plot top: every corn, marigold and lettuce is painted above the soil line plus its own height', () => {
+    const cobs = bank.filter((p) => p.op === 'fill' && p.style === CORN_COB);
+    const petals = bank.filter((p) => p.op === 'fill' && p.style === MARIGOLD_PETAL);
+    const lettuce = bank.filter((p) => p.op === 'fill' && p.style === LETTUCE_OUTER);
+    expect(cobs.length).toBeGreaterThanOrEqual(3);
+    expect(petals.length).toBeGreaterThanOrEqual(3);
+    expect(lettuce.length).toBeGreaterThanOrEqual(3);
+    for (const p of [...cobs, ...petals, ...lettuce]) {
+      for (const pt of pointsOf(p.cmds)) expect(pt.y).toBeLessThan(CHINAMPA_PLOT_TOP + 8);
+    }
+    // Corn is the tallest crop: its cobs sit higher than a lettuce does.
+    const topOf = (ps: Painted[]): number => Math.min(...ps.flatMap((p) => pointsOf(p.cmds).map((pt) => pt.y)));
+    expect(topOf(cobs)).toBeLessThan(topOf(lettuce));
+  });
+
+  it('keeps the crops inside the chunk, clear of the end of a capped plot', () => {
+    const { x0, x1 } = chinampaBankExtent({ capLeft: true, capRight: true });
+    for (const p of bank.filter((q) => q.op === 'fill' && [CORN_COB, MARIGOLD_PETAL, LETTUCE_OUTER].includes(q.style))) {
+      for (const pt of pointsOf(p.cmds)) {
+        expect(pt.x).toBeGreaterThan(x0);
+        expect(pt.x).toBeLessThan(x1);
+      }
+    }
+  });
+
+  it('joins neighbouring plots: an open end paints the stakes on the same 16 px grid at the chunk seams', () => {
+    const open = rec(2, false, false);
+    const stakes = open.find((p) => p.op === 'stroke' && p.style === CHINAMPA_STAKE);
+    expect(stakes).toBeDefined();
+    const xs = stakes!.cmds.filter((c) => c[0] === 'moveTo').map((c) => c[1]);
+    expect(xs[0]).toBe(8);
+    expect(xs[xs.length - 1]).toBe(472);
+    for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBe(16);
+    // 472 and the next chunk's first stake, 8 + 480, are 16 apart.
+    expect(8 + VIEW_W - 472).toBe(16);
+  });
+
+  it('has two slim ahuejote trees, a tall narrow column unlike the canal willow crown, kept in from the ends', () => {
+    expect(chinampaTreeXs({ capLeft: true, capRight: true })).toEqual([100, 380]);
+    expect(chinampaTreeXs({ capLeft: false, capRight: false })).toEqual([100, 380]);
+    const foliage = bank.find((p) => p.op === 'fill' && p.style === AHUEJOTE_FOLIAGE);
+    expect(foliage).toBeDefined();
+    const pts = pointsOf(foliage!.cmds);
+    const xs = pts.map((pt) => pt.x);
+    const ys = pts.map((pt) => pt.y);
+    // Two columns, each narrower than 20 px and taller than 40 px.
+    const first = pts.filter((pt) => pt.x < 240);
+    expect(Math.max(...first.map((pt) => pt.x)) - Math.min(...first.map((pt) => pt.x))).toBeLessThan(20);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(40);
+    expect(Math.min(...xs)).toBeGreaterThan(0);
+  });
+
+  it('draws only the crops from the random source, and a different chunk or seed grows a different garden', () => {
+    expect(signature(rec(1, true, true))).toBe(signature(bank));
+    expect(signature(rec(2, true, true))).not.toBe(signature(bank));
+    expect(signature(rec(1, true, true, 6))).not.toBe(signature(bank));
+    let draws = 0;
+    record((ctx) =>
+      paintChinampaBank(ctx, {
+        index: 1,
+        capLeft: true,
+        capRight: true,
+        rand: () => {
+          draws++;
+          return 0.5;
+        },
+      }),
+    );
+    // 7 specks of 3 draws each, then 3 per crop: a crop every 28 px between 46 and 434.
+    const crops = Math.floor((434 - 46) / 28) + 1;
+    expect(draws).toBe(7 * 3 + 3 * crops);
+  });
+});
+
+describe('chinampa bank roots (guide 7a)', () => {
+  const roots = record((ctx) => paintChinampaBankRoots(ctx, { capLeft: true, capRight: true }));
+
+  it('hangs five roots under each of the two trees, thick red-brown tubes with pale rootlets, all reaching down', () => {
+    const bark = strokes(roots).filter((p) => p.style === ROOT_TANGLE_BARK);
+    expect(bark).toHaveLength(10);
+    expect(strokes(roots).filter((p) => p.style === ROOT_TANGLE_ROOTLET)).toHaveLength(10);
+    for (const p of strokes(roots)) {
+      for (const pt of pointsOf(p.cmds)) expect(pt.y).toBeGreaterThanOrEqual(0);
+    }
+    expect(fills(roots)).toHaveLength(0);
+  });
+
+  it('is still, and the root painter reads no random source', () => {
+    expect(signature(record((ctx) => paintChinampaBankRoots(ctx, { capLeft: true, capRight: true })))).toBe(signature(roots));
+  });
+});
+
+describe('chinampa chunks (guide 7a)', () => {
+  const chunk = (look: 'canal' | 'chinampa', row: 'top' | 'middle' | 'bottom', hasBank = true): Painted[] =>
+    record((ctx) =>
+      paintBackgroundChunk(ctx, {
+        row,
+        index: 1,
+        hasSun: false,
+        hasBank,
+        bankCapLeft: true,
+        bankCapRight: true,
+        look,
+        rand: seeded(3),
+      }),
+    );
+  const water = (rec: Painted[]): number => rec.findIndex((p) => p.gradient !== null && p.gradient.stops.length === 3);
+
+  it('paints the chinampa top row as garden plots and the canal top row as before: soil, grass and willows', () => {
+    const garden = styleSet(chunk('chinampa', 'top'));
+    const canal = styleSet(chunk('canal', 'top'));
+    expect(garden.has(CHINAMPA_SOIL)).toBe(true);
+    expect(garden.has(BANK_SOIL)).toBe(false);
+    expect(garden.has(GRASS)).toBe(false);
+    expect(canal.has(BANK_SOIL)).toBe(true);
+    expect(canal.has(GRASS)).toBe(true);
+    expect(canal.has(CHINAMPA_SOIL)).toBe(false);
+  });
+
+  it('puts the roots in the water: painted after the water and the rays, ten of them under the two trees', () => {
+    const rec = chunk('chinampa', 'top');
+    const at = water(rec);
+    expect(at).toBeGreaterThan(-1);
+    const after = rec.slice(at).filter((p) => p.op === 'stroke' && p.style === ROOT_TANGLE_BARK);
+    expect(after).toHaveLength(10);
+    // The trunks are painted before the water, with the bank.
+    const before = rec.slice(0, at).filter((p) => p.op === 'stroke' && p.style === ROOT_TANGLE_BARK);
+    expect(before.length).toBeGreaterThan(0);
+  });
+
+  it('paints no bank and no roots on a chunk without one', () => {
+    const styles = styleSet(chunk('chinampa', 'top', false));
+    for (const colour of [CHINAMPA_SOIL, CHINAMPA_STAKE, ROOT_TANGLE_BARK, CORN_COB]) expect(styles.has(colour), colour).toBe(false);
+  });
+
+  it('has a darker bottom row with no seam: the top row ends on the deep stop, and the middle and bottom rows start on it', () => {
+    const look = habitatLook('chinampa');
+    const top = chunk('chinampa', 'top');
+    const stops = top[water(top)].gradient!.stops;
+    expect(stops[stops.length - 1]).toEqual([1, look.water.deep]);
+    expect(WATER_GRADIENT_END_Y).toBeLessThanOrEqual(VIEW_H);
+    for (const row of ['middle', 'bottom'] as const) {
+      const rec = chunk('chinampa', row);
+      expect(rec[0].cmds[0][0]).toBe('fillRect');
+      expect(rec[0].style).toBe(look.water.deep);
+    }
+    expect(luminance(look.water.deep)).toBeLessThan(luminance(look.water.mid));
+    expect(luminance(look.water.deep)).toBeGreaterThanOrEqual(LUMINANCE_FLOOR);
+    expect(luminance(look.bed.bottom)).toBeLessThan(luminance(look.bed.top));
+    expect(luminance(look.bed.bottom)).toBeGreaterThanOrEqual(LUMINANCE_FLOOR);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The overhang under a bank (guide 7e)
+// ---------------------------------------------------------------------------
+
+/** The shade's alpha at local y (0 to OVERHANG_H), interpolated between its stops. */
+function shadeAlphaAt(y: number): number {
+  const t = y / OVERHANG_H;
+  for (let k = 0; k < OVERHANG_SHADE_STOPS.length - 1; k++) {
+    const [t0, a0] = OVERHANG_SHADE_STOPS[k];
+    const [t1, a1] = OVERHANG_SHADE_STOPS[k + 1];
+    if (t <= t1) return a0 + ((a1 - a0) * (t - t0)) / (t1 - t0);
+  }
+  return OVERHANG_SHADE_STOPS[OVERHANG_SHADE_STOPS.length - 1][1];
+}
+
+/** The clean chinampa water at world y, before haze. */
+function waterAt(worldY: number): string {
+  const { water } = habitatLook('chinampa');
+  const t = Math.min(1, Math.max(0, (worldY - SURF) / (water.gradientEndY - SURF)));
+  return sampleGradient(
+    [
+      [0, water.shallow],
+      [water.stopMid, water.mid],
+      [1, water.deep],
+    ],
+    1000,
+  )[Math.round(t * 1000)];
+}
+
+describe('bank overhang (guide 7e)', () => {
+  const art = record(paintBankOverhang);
+
+  it('is the size of the zone rects: 440 x 60, anchored at the top-left corner', () => {
+    for (const rect of CHINAMPA_LAYOUT.bankOverhangs ?? []) {
+      expect(rect.x1 - rect.x0).toBe(OVERHANG_W);
+      expect(rect.y1 - rect.y0).toBe(OVERHANG_H);
+      expect(rect.x0 % VIEW_W).toBe(CHINAMPA_BANK_CAP_INSET);
+      expect(rect.y0).toBe(SURF);
+    }
+    expect(OVERHANG_TEX.originX).toBe(4);
+    expect(OVERHANG_TEX.originY).toBe(4);
+    expect(OVERHANG_TEX.w).toBe(OVERHANG_W + 8);
+    expect(OVERHANG_TEX.h).toBe(OVERHANG_H + 8);
+  });
+
+  it('keeps its ink inside the frame', () => {
+    expectInsideFrame(art, OVERHANG_TEX);
+  });
+
+  it('shades the water first, then hangs the roots, then lays the soil lip over them: shade, curtain, rootlets, lip', () => {
+    expect(art[0].gradient).not.toBeNull();
+    expect(art[0].gradient!.stops).toEqual(
+      OVERHANG_SHADE_STOPS.map(([t, a]) => [t, `rgba(${OVERHANG_SHADE_RGB.join(',')},${a})`]),
+    );
+    expect(strokes(art).filter((p) => p.style === ROOT_TANGLE_BARK)).toHaveLength(11);
+    expect(strokes(art).filter((p) => p.style === ROOT_TANGLE_ROOTLET)).toHaveLength(11);
+    const lip = fills(art).filter((p) => p.style === CHINAMPA_SOIL);
+    expect(lip).toHaveLength(1);
+    expect(art.indexOf(lip[0])).toBeGreaterThan(art.findIndex((p) => p.style === ROOT_TANGLE_ROOTLET));
+    const last = art[art.length - 1];
+    expect(last.op).toBe('stroke');
+    expect(last.style).toBe(INK);
+    // The edge is scalloped: quadratic curves along the lower edge.
+    expect(last.cmds.filter((c) => c[0] === 'quadraticCurveTo').length).toBeGreaterThanOrEqual(10);
+  });
+
+  it('hides what is under the bank: nearly solid over the spots (y 16 to 44 of the rect), fading to nothing at the bottom', () => {
+    for (let y = 16; y <= 44; y++) expect(shadeAlphaAt(y), `y ${y}`).toBeGreaterThanOrEqual(0.75);
+    expect(shadeAlphaAt(0)).toBeGreaterThanOrEqual(0.85);
+    expect(shadeAlphaAt(OVERHANG_H)).toBe(0);
+    // Monotone down: a shade that only fades, so the bottom edge shows no band.
+    for (let y = 1; y <= OVERHANG_H; y++) expect(shadeAlphaAt(y)).toBeLessThanOrEqual(shadeAlphaAt(y - 1));
+  });
+
+  it('is the deep chinampa water colour, so the shade never takes a background under the floor', () => {
+    expect(toHex(OVERHANG_SHADE_RGB as unknown as Rgb)).toBe(CHINAMPA_WATER_DEEP);
+    const haze = habitatLook('chinampa').haze;
+    for (let y = 0; y <= OVERHANG_H; y++) {
+      const bg = overlay(waterAt(SURF + y), `rgba(${OVERHANG_SHADE_RGB.join(',')},${shadeAlphaAt(y)})`);
+      expect(luminance(bg), `shade y ${y}`).toBeGreaterThanOrEqual(LUMINANCE_FLOOR);
+      expect(luminance(overlay(bg, haze)), `shade and haze y ${y}`).toBeGreaterThanOrEqual(LUMINANCE_FLOOR);
+      expect(contrast(INK, bg), `ink y ${y}`).toBeGreaterThanOrEqual(PAIR_FLOOR);
+    }
+  });
+
+  it('reads as a dark band by value alone, 3:1 or better against the open water below it at the hidden spots', () => {
+    const under = overlay(waterAt(SURF + 30), `rgba(${OVERHANG_SHADE_RGB.join(',')},${shadeAlphaAt(30)})`);
+    expect(contrast(waterAt(SURF + 60), under)).toBeGreaterThanOrEqual(1.15);
+    expect(luminance(under)).toBeLessThan(luminance(waterAt(SURF + 60)));
+    expect(contrast(CHINAMPA_SOIL, INK)).toBeGreaterThanOrEqual(PAIR_FLOOR);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The gap between two chinampas (guide 7b)
+// ---------------------------------------------------------------------------
+
+describe('gap edges (guide 7b)', () => {
+  const bottom = record((ctx) => paintGapEdge(ctx, 'bottom'));
+  const bottomCalls = [...stateCalls];
+  const top = record((ctx) => paintGapEdge(ctx, 'top'));
+  const topCalls = [...stateCalls];
+
+  it('is sized from the current rect: its width plus a 40 px flare each side', () => {
+    const current = CHINAMPA_LAYOUT.currents[0];
+    expect(current.x1 - current.x0 + 2 * GAP_EDGE_FLARE).toBe(GAP_EDGE_W);
+  });
+
+  it('mirrors the top edge: it scales the context by (1, -1), the bottom edge does not', () => {
+    expect(topCalls.some((c) => c.name === 'scale' && c.args[0] === 1 && c.args[1] === -1)).toBe(true);
+    expect(bottomCalls.some((c) => c.name === 'scale')).toBe(false);
+    expect(signature(top)).toBe(signature(bottom));
+  });
+
+  it('anchors both on the face line: the top body hangs above it, the bottom body sits below it, roots reach into the gap', () => {
+    expect(GAP_EDGE_TOP_TEX.originY).toBe(GAP_EDGE_H + 4);
+    expect(GAP_EDGE_BOTTOM_TEX.originY).toBe(GAP_EDGE_FRINGE + 4);
+    expect(GAP_EDGE_TOP_TEX.w).toBe(GAP_EDGE_W + 8);
+    expect(GAP_EDGE_BOTTOM_TEX.w).toBe(GAP_EDGE_W + 8);
+    expect(GAP_EDGE_TOP_TEX.originX).toBe(GAP_EDGE_W / 2 + 4);
+    expect(GAP_EDGE_TOP_TEX.h).toBe(GAP_EDGE_BOTTOM_TEX.h);
+  });
+
+  it('keeps its ink inside the frame, the bottom edge as painted and the top edge mirrored', () => {
+    expectInsideFrame(bottom, GAP_EDGE_BOTTOM_TEX);
+    expectInsideFrame(top, GAP_EDGE_TOP_TEX, true);
+  });
+
+  it('is a chinampa edge, not a log or a rock: garden soil, wattle stakes with a woven band, and streaming roots', () => {
+    const styles = styleSet(bottom);
+    for (const colour of [CHINAMPA_SOIL, CHINAMPA_SOIL_RIDGE, CHINAMPA_STAKE, CHINAMPA_WEAVE, ROOT_TANGLE_BARK]) {
+      expect(styles.has(colour), colour).toBe(true);
+    }
+    expect(fills(bottom).filter((p) => p.style === CHINAMPA_SOIL)).toHaveLength(1);
+  });
+
+  it('streams its roots to the left, the way the current flows: every root ends left of where it starts', () => {
+    const streamers = strokes(bottom).filter((p) => p.style === ROOT_TANGLE_BARK);
+    expect(streamers).toHaveLength(5);
+    for (const p of streamers) {
+      const [move, curve] = p.cmds;
+      expect(curve[3]).toBeLessThan(move[1]);
+      // Reaching into the gap: above the face line for the bottom edge.
+      expect(curve[4]).toBeLessThan(0);
+      expect(-curve[4]).toBeLessThanOrEqual(GAP_EDGE_FRINGE);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The ghost net (guide 3g, 10)
+// ---------------------------------------------------------------------------
+
+describe('ghost net (guide 3g, 10)', () => {
+  const NET_SIZES: readonly (readonly [number, number])[] = [
+    [60, 70],
+    [50, 100],
+    [60, 76],
+  ];
+  const nets = new Map(NET_SIZES.map(([w, h]) => [`${w}x${h}`, record((ctx) => paintGhostNet(ctx, w, h))]));
+  const net = nets.get('60x70')!;
+  const netCalls = (() => {
+    record((ctx) => paintGhostNet(ctx, 60, 70));
+    return [...stateCalls];
+  })();
+
+  it('is torn grey-green mesh: a diamond lattice of strands in two directions, ringed in ink', () => {
+    const strands = strokes(net).slice(0, 4);
+    expect(strands.map((p) => p.style)).toEqual([INK, INK, GHOST_NET_MESH, GHOST_NET_MESH]);
+    for (const p of strands) expect(p.clipped).toBe(true);
+    const [down, up] = strands.slice(2);
+    for (const group of [down, up]) {
+      expect(group.cmds.filter((c) => c[0] === 'moveTo').length).toBeGreaterThanOrEqual(6);
+    }
+    // One direction runs down and right, the other down and left.
+    const dx = (group: Painted): number[] => {
+      const moves = group.cmds.filter((c) => c[0] === 'moveTo');
+      const lines = group.cmds.filter((c) => c[0] === 'lineTo');
+      return lines.map((l, i) => l[1] - moves[i][1]);
+    };
+    expect(dx(down).every((v) => v > 0)).toBe(true);
+    expect(dx(up).every((v) => v < 0)).toBe(true);
+  });
+
+  it('is cut off at a ragged edge with a rip through it: two outlines under an even-odd clip', () => {
+    const clip = netCalls.find((c) => c.name === 'clip');
+    expect(clip).toBeDefined();
+    expect(clip!.args[1]).toBe('evenodd');
+    const shape = clip!.args[0] as { cmds: Cmd[] };
+    expect(shape.cmds.filter((c) => c[0] === 'closePath')).toHaveLength(2);
+    expect(shape.cmds.filter((c) => c[0] === 'moveTo')).toHaveLength(2);
+  });
+
+  it('has knotted edges: a rope along the top and both sides, knots along it, and strands dangling from the tears', () => {
+    const rope = strokes(net).filter((p) => p.style === GHOST_NET_ROPE);
+    expect(rope).toHaveLength(3);
+    const knots = fills(net).find((p) => p.style === GHOST_NET_KNOT && p.cmds.filter((c) => c[0] === 'ellipse').length >= 10);
+    expect(knots).toBeDefined();
+    const dangling = strokes(net).find((p) => p.style === GHOST_NET_MESH && !p.clipped);
+    expect(dangling).toBeDefined();
+    expect(dangling!.cmds.filter((c) => c[0] === 'quadraticCurveTo').length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('floats on two floats from the top rope, so it hangs old and loose, anchored in place', () => {
+    const floats = fills(net).find((p) => p.style === GHOST_NET_FLOAT);
+    expect(floats).toBeDefined();
+    expect(floats!.cmds.filter((c) => c[0] === 'ellipse')).toHaveLength(2);
+  });
+
+  it('paints only net colours and ink: no face, no body, nothing caught in it, never a trap (ADR 0007)', () => {
+    const allowed = new Set([INK, GHOST_NET_MESH, GHOST_NET_ROPE, GHOST_NET_KNOT, GHOST_NET_FLOAT]);
+    for (const [size, rec] of nets) {
+      for (const style of styleSet(rec)) expect(allowed.has(style), `${size} ${style}`).toBe(true);
+    }
+  });
+
+  it('leaves a rip wider than the mesh holes, so the net reads torn and loose', () => {
+    const clip = netCalls.find((c) => c.name === 'clip')!.args[0] as { cmds: Cmd[] };
+    const [, rip] = (() => {
+      const moves = clip.cmds.map((c, i) => [c[0], i] as const).filter(([n]) => n === 'moveTo');
+      return [clip.cmds.slice(moves[0][1], moves[1][1]), clip.cmds.slice(moves[1][1])];
+    })();
+    const pts = pointsOf(rip);
+    const width = Math.max(...pts.map((p) => p.x)) - Math.min(...pts.map((p) => p.x));
+    const height = Math.max(...pts.map((p) => p.y)) - Math.min(...pts.map((p) => p.y));
+    const hole = GHOST_NET_CELL / Math.SQRT2;
+    expect(width).toBeGreaterThan(hole * 1.5);
+    expect(height).toBeGreaterThan(hole * 1.2);
+  });
+
+  it('draws each size differently and still, with no random source', () => {
+    const sigs = new Set([...nets.values()].map(signature));
+    expect(sigs.size).toBe(NET_SIZES.length);
+    expect(signature(record((ctx) => paintGhostNet(ctx, 60, 70)))).toBe(signature(net));
+  });
+
+  it('keeps its ink inside the frame of its size, anchored at the rect centre', () => {
+    for (const [w, h] of NET_SIZES) {
+      const tex = ghostNetTextureSize(w, h);
+      expectInsideFrame(nets.get(`${w}x${h}`)!, tex);
+      expect(tex.originX).toBe(Math.ceil(w / 2 + GHOST_NET_PAD + 4));
+      expect(tex.w - tex.originX).toBeGreaterThanOrEqual(w / 2 + GHOST_NET_PAD);
+    }
+  });
+});
+
+describe('ghost net greyscale cue (guide 10)', () => {
+  const backgrounds = chinampaBackgrounds();
+
+  it('reads the mesh by value: the strand is light (7:1 or more with ink) between dark ink lines, 3:1 or better against every chinampa background', () => {
+    expect(contrast(GHOST_NET_MESH, INK)).toBeGreaterThanOrEqual(7);
+    for (const { name, hex } of backgrounds) expect(contrast(INK, hex), name).toBeGreaterThanOrEqual(PAIR_FLOOR);
+  });
+
+  it('holds the lattice open: the hole between strands is wider than the ink-ringed strand', () => {
+    const strand = 3 + 2 * 1.2;
+    const hole = GHOST_NET_CELL / Math.SQRT2 - strand;
+    expect(hole).toBeGreaterThanOrEqual(6);
+    expect(strand).toBeGreaterThanOrEqual(5);
+  });
+
+  it('tells the rope, the mesh and the knots apart by value, not hue: each step is 1.5:1 or more', () => {
+    expect(contrast(GHOST_NET_MESH, GHOST_NET_ROPE)).toBeGreaterThanOrEqual(1.5);
+    expect(contrast(GHOST_NET_KNOT, GHOST_NET_ROPE)).toBeGreaterThanOrEqual(1.5);
+    expect(luminance(GHOST_NET_ROPE)).toBeLessThan(luminance(GHOST_NET_MESH));
+    expect(luminance(GHOST_NET_MESH)).toBeLessThan(luminance(GHOST_NET_KNOT));
+    expect(luminance(GHOST_NET_KNOT)).toBeLessThan(luminance(GHOST_NET_FLOAT));
+  });
+
+  it('is grey-green: low saturation, a green-leaning hue between the water and grey', () => {
+    for (const hex of [GHOST_NET_MESH, GHOST_NET_ROPE, GHOST_NET_KNOT, GHOST_NET_FLOAT]) {
+      const [r, g, b] = channelsOf(hex);
+      expect(g, hex).toBeGreaterThanOrEqual(r);
+      expect(g, hex).toBeGreaterThanOrEqual(b);
+      expect(Math.max(r, g, b) - Math.min(r, g, b), hex).toBeLessThanOrEqual(40);
+      expect(hueOf(hex), hex).toBeGreaterThan(90);
+      expect(hueOf(hex), hex).toBeLessThan(150);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The snag cue (guide 3g, 10)
+// ---------------------------------------------------------------------------
+
+describe('snag cue (guide 3g, 10)', () => {
+  const cue = record(paintSnagCue);
+
+  it('is a 40 x 46 texture (about 33 x 39 to the ink edge), anchored on the bottom dot', () => {
+    expect(SNAG_CUE_TEX.w).toBe(40);
+    expect(SNAG_CUE_TEX.h).toBe(46);
+    expect(SNAG_CUE_TEX.originX).toBe(20);
+    expect(SNAG_CUE_TEX.originY).toBe(42);
+    expect(SNAG_CUE_TEX.h - SNAG_CUE_TEX.originY).toBe(4);
+  });
+
+  it('keeps its ink inside the frame', () => {
+    expectInsideFrame(cue, SNAG_CUE_TEX);
+  });
+
+  it('is a white thought bubble with two trailing dots, inked, holding a scrap of the net mesh and a knot', () => {
+    expect(fills(cue).filter((p) => p.style === WHITE)).toHaveLength(3);
+    for (const p of cue.filter((q) => q.op === 'stroke' && q.style === INK && !q.clipped)) {
+      expect(p.lineWidth).toBeGreaterThanOrEqual(1.4);
+    }
+    const mesh = strokes(cue).filter((p) => p.style === GHOST_NET_MESH);
+    expect(mesh).toHaveLength(2);
+    for (const p of mesh) expect(p.clipped).toBe(true);
+    expect(fills(cue).some((p) => p.style === GHOST_NET_KNOT)).toBe(true);
+  });
+
+  it('is a cue object that keeps 3:1 on every chinampa background: white and ink are 9:1 or more as a pair', () => {
+    expect(contrast(WHITE, INK)).toBeGreaterThanOrEqual(9);
+    for (const { name, hex } of chinampaBackgrounds()) {
+      expect(Math.max(contrast(INK, hex), contrast(WHITE, hex)), name).toBeGreaterThanOrEqual(PAIR_FLOOR);
+    }
+  });
+
+  it('is still and uses no random source', () => {
+    expect(signature(record(paintSnagCue))).toBe(signature(cue));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Home Spot row
+// ---------------------------------------------------------------------------
+
+describe('Home Spot burrow row', () => {
+  it('puts a one-row area Home Spot, and a bottom-row Home Spot of a tall area, on the bed as before', () => {
+    expect(homeSpotInBottomRow({ y: 200 }, 318)).toBe(true);
+    expect(homeSpotInBottomRow({ y: 0 }, 318)).toBe(true);
+    expect(homeSpotInBottomRow({ y: 400 }, 678)).toBe(true);
+    expect(homeSpotInBottomRow({ y: 360 }, 678)).toBe(true);
+  });
+
+  it('puts the Home Spot of Area 4, top left in the top row, off the bed', () => {
+    expect(homeSpotInBottomRow({ y: CHINAMPA_LAYOUT.start.y }, 678)).toBe(false);
+    expect(homeSpotInBottomRow({ y: 359 }, 678)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Bake
 // ---------------------------------------------------------------------------
 
 describe('bakeChinampaTextures', () => {
-  it('bakes the root tangle back and front under their own keys, in the cave frame', () => {
+  const bake = (scale: number, ghostNetSizes?: readonly { w: number; h: number }[]) => {
     const created: { key: string; w: number; h: number }[] = [];
     vi.stubGlobal('Path2D', LogPath);
-    const art = bakeChinampaTextures(fakeScene(created), 2);
-    expect(created.map((c) => c.key).sort()).toEqual([CHINAMPA_TEX.rootTangleBack, CHINAMPA_TEX.rootTangleFront].sort());
+    const art = bakeChinampaTextures(fakeScene(created), scale, ghostNetSizes === undefined ? {} : { ghostNetSizes });
+    return { art, created };
+  };
+
+  it('bakes the root tangle back and front under their own keys, in the cave frame', () => {
+    const { art, created } = bake(2);
+    expect(created.map((c) => c.key)).toEqual(expect.arrayContaining([CHINAMPA_TEX.rootTangleBack, CHINAMPA_TEX.rootTangleFront]));
     expect(new Set(created.map((c) => c.key)).size).toBe(created.length);
     for (const info of [art.rootTangle.back, art.rootTangle.front]) {
       expect(info.scale).toBe(2);
@@ -592,5 +1316,55 @@ describe('bakeChinampaTextures', () => {
     }
     expect(art.rootTangle.back.pxW).toBe(art.rootTangle.front.pxW);
     expect(art.rootTangle.back.pxH).toBe(art.rootTangle.front.pxH);
+  });
+
+  it('bakes the overhang, the two gap edges and the snag cue under fixed keys, and no ghost net unless asked', () => {
+    const { art, created } = bake(2);
+    expect(created.map((c) => c.key).sort()).toEqual(Object.values(CHINAMPA_TEX).sort());
+    expect(art.ghostNets).toEqual({});
+    const sizes = [
+      [art.overhang, OVERHANG_TEX],
+      [art.gapEdges.top, GAP_EDGE_TOP_TEX],
+      [art.gapEdges.bottom, GAP_EDGE_BOTTOM_TEX],
+      [art.snagCue, SNAG_CUE_TEX],
+    ] as const;
+    for (const [info, tex] of sizes) {
+      expect(info.scale).toBe(2);
+      expect(info.w).toBe(tex.w);
+      expect(info.h).toBe(tex.h);
+      expect(info.originX).toBe(tex.originX);
+      expect(info.originY).toBe(tex.originY);
+    }
+    // The overhang's anchor is the top-left corner of the rect; the snag cue's is its bottom dot.
+    expect(art.overhang.originNormX).toBeCloseTo(4 / OVERHANG_TEX.w, 6);
+    expect(art.overhang.originNormY).toBeCloseTo(4 / OVERHANG_TEX.h, 6);
+    expect(art.snagCue.originNormX).toBeCloseTo(0.5, 6);
+  });
+
+  it('bakes one ghost net per distinct rect size, keyed by size, anchored at the rect centre', () => {
+    const asked = [
+      { w: 60, h: 70 },
+      { w: 60, h: 70 },
+      { w: 50, h: 100 },
+    ];
+    const { art, created } = bake(2, asked);
+    expect(created.filter((c) => c.key.startsWith('chinampa-ghost-net-')).map((c) => c.key).sort()).toEqual([
+      ghostNetKey(50, 100),
+      ghostNetKey(60, 70),
+    ]);
+    expect(ghostNetKey(60, 70)).toBe('chinampa-ghost-net-60x70');
+    expect(Object.keys(art.ghostNets).sort()).toEqual([ghostNetKey(50, 100), ghostNetKey(60, 70)]);
+    for (const { w, h } of asked) {
+      const info = ghostNetTexture(art, w, h);
+      const tex = ghostNetTextureSize(w, h);
+      expect(info.w).toBe(tex.w);
+      expect(info.h).toBe(tex.h);
+      expect(info.originX).toBe(tex.originX);
+      expect(info.originY).toBe(tex.originY);
+      // Centred across: the rect is symmetrical about the anchor.
+      expect(tex.originX).toBe(tex.w - tex.originX);
+      expect(info.originNormX).toBeCloseTo(0.5, 6);
+    }
+    expect(() => ghostNetTexture(art, 10, 10)).toThrow(/no ghost net baked/);
   });
 });

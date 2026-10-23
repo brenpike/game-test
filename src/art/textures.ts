@@ -424,7 +424,9 @@ export interface AreaSceneryOptions {
    * Area look of the chunks (habitatLook.ts). Default 'canal', which bakes exactly
    * what it did before. 'pond' bakes the warmer water, the mud bed and the edge reeds
    * on the first and last column of every row that has a bed. 'pond-dusk' bakes the
-   * same pond in the dusk palette.
+   * same pond in the dusk palette. 'chinampa' bakes the green-teal water and silt bed, and on
+   * the top row garden plot banks with ahuejote roots in place of the willow banks; its
+   * darker bottom row is the flat deep water the top row already ends on, so no seam shows.
    */
   readonly look?: AreaLookId;
   /** Bake the stream flowing in at `streamColumn`'s right edge, top row. Default false. Pass the look's `stream`. */

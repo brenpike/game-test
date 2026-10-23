@@ -21,6 +21,7 @@ import {
   BOY_OR_GIRL_FACT,
   CANAL_CLEAN_UPS_FACT,
   FACT_CARD_UNFOUND_HINT,
+  GHOST_NET_FACT,
   HERON_FACT,
   PLASTIC_WORM_FACT,
   TILAPIA_FACT,
@@ -59,8 +60,11 @@ const CANVAS_HEIGHTS: readonly number[] = [
 
 const ALL_MORPHS: readonly RealMorphId[] = REAL_MORPHS.map((morph) => morph.id);
 
-/** Every hazard met that has an area fact card: the canal's tilapia, the pond's plastic worm and Area 3's heron. */
-const ALL_AREA_MET: readonly string[] = ['tilapia', 'plastic-worm', 'heron'];
+/**
+ * Every hazard met that has an area fact card: the canal's tilapia, the pond's plastic worm, Area 3's
+ * heron and Area 4's ghost net.
+ */
+const ALL_AREA_MET: readonly string[] = ['tilapia', 'plastic-worm', 'heron', 'ghost-net'];
 
 /** Every fact card found by playing: the area cards, then the two refuge cards. */
 const ALL_MET: readonly string[] = [...ALL_AREA_MET, 'axolotl-refuges', 'canal-clean-ups'];
@@ -249,17 +253,17 @@ describe('bookListing', () => {
     expect(sections.map((section) => section.heading)).toEqual([
       'Morphs: 0 of 8 found',
       'Dream colours',
-      'Fact cards: 1 of 6 found',
+      'Fact cards: 1 of 7 found',
     ]);
   });
 
   it('counts found morphs and fact cards in the headings', () => {
     const [morphs, , factCards] = bookListing(['wild', 'melanoid', 'wild'], ['tilapia']);
     expect(morphs.heading).toBe('Morphs: 2 of 8 found');
-    expect(factCards.heading).toBe('Fact cards: 2 of 6 found');
-    expect(bookListing([], ALL_AREA_MET)[2].heading).toBe('Fact cards: 4 of 6 found');
-    expect(bookListing([], ['axolotl-refuges'])[2].heading).toBe('Fact cards: 2 of 6 found');
-    expect(bookListing([], ALL_MET)[2].heading).toBe('Fact cards: 6 of 6 found');
+    expect(factCards.heading).toBe('Fact cards: 2 of 7 found');
+    expect(bookListing([], ALL_AREA_MET)[2].heading).toBe('Fact cards: 5 of 7 found');
+    expect(bookListing([], ['axolotl-refuges'])[2].heading).toBe('Fact cards: 2 of 7 found');
+    expect(bookListing([], ALL_MET)[2].heading).toBe('Fact cards: 7 of 7 found');
     expect(bookListing(ALL_MORPHS, ['tilapia'])[0].heading).toBe('Morphs: 8 of 8 found');
   });
 
@@ -392,6 +396,25 @@ describe('bookListing', () => {
     });
   });
 
+  it('holds the ghost net card only once the ghost net is met, never with a picture (C14)', () => {
+    const [, , met] = bookListing([], ALL_MET);
+    expect(met.entries[3]).toEqual({
+      id: 'ghost-net',
+      found: true,
+      name: 'Ghost net',
+      text: GHOST_NET_FACT.body,
+      hasPicture: false,
+    });
+    const [, , notMet] = bookListing(ALL_MORPHS, ['tilapia', 'plastic-worm', 'heron']);
+    expect(notMet.entries[3]).toEqual({
+      id: 'ghost-net',
+      found: false,
+      name: '???',
+      text: 'Explore the chinampa gardens to find this card.',
+      hasPicture: false,
+    });
+  });
+
   it('hints each unfound area card with the habitat of the first area that has it', () => {
     const [, , factCards] = bookListing([], []);
     const hints = factCards.entries.filter((entry) => !entry.found).map((entry) => [entry.id, entry.text]);
@@ -399,6 +422,7 @@ describe('bookListing', () => {
       ['tilapia', 'Explore the canal to find this card.'],
       ['plastic-worm', 'Explore the lily pad pond to find this card.'],
       ['heron', 'Explore the lily pad pond to find this card.'],
+      ['ghost-net', 'Explore the chinampa gardens to find this card.'],
       ['axolotl-refuges', 'Visit the refuge to find this card.'],
       ['canal-clean-ups', 'Beat an area, then visit the refuge to find this card.'],
     ]);
@@ -407,13 +431,13 @@ describe('bookListing', () => {
 
   it('holds the refuge cards after the area cards, found once found, with their own hint and never a picture (C14)', () => {
     const [, , found] = bookListing([], ALL_MET);
-    expect(found.entries.slice(3, 5)).toEqual([
+    expect(found.entries.slice(4, 6)).toEqual([
       { id: 'axolotl-refuges', found: true, name: 'Axolotl refuges', text: AXOLOTL_REFUGES_FACT.body, hasPicture: false },
       { id: 'canal-clean-ups', found: true, name: 'Canal clean-ups', text: CANAL_CLEAN_UPS_FACT.body, hasPicture: false },
     ]);
     const [, , refugeOnly] = bookListing([], ['axolotl-refuges']);
-    expect(refugeOnly.entries[3].found).toBe(true);
-    expect(refugeOnly.entries[4]).toEqual({
+    expect(refugeOnly.entries[4].found).toBe(true);
+    expect(refugeOnly.entries[5]).toEqual({
       id: 'canal-clean-ups',
       found: false,
       name: '???',
@@ -442,11 +466,12 @@ describe('bookListing', () => {
         'tilapia',
         'plastic-worm',
         'heron',
+        'ghost-net',
         'axolotl-refuges',
         'canal-clean-ups',
         'boyOrGirl',
       ]);
-      expect(factCards.entries[5]).toEqual(boyOrGirl);
+      expect(factCards.entries[6]).toEqual(boyOrGirl);
     }
   });
 
@@ -471,7 +496,8 @@ describe('bookPages', () => {
       ...REAL_MORPHS.map(() => ['morph', 1]),
       ['dreamColour', 5],
       ['dreamColour', 5],
-      ['dreamColour', 4],
+      ['dreamColour', 5],
+      ['factCard', 1],
       ['factCard', 1],
       ['factCard', 1],
       ['factCard', 1],
@@ -485,8 +511,8 @@ describe('bookPages', () => {
   });
 
   it('puts every Dream colour on its own page at one row per page', () => {
-    expect(DREAM_COLOURS).toHaveLength(14);
-    expect(bookPages(bookListing([], []), 1)).toHaveLength(REAL_MORPHS.length + 14 + 6);
+    expect(DREAM_COLOURS).toHaveLength(15);
+    expect(bookPages(bookListing([], []), 1)).toHaveLength(REAL_MORPHS.length + 15 + 7);
   });
 
   it('gives an empty section one page', () => {
@@ -705,13 +731,15 @@ describe('collection book fit', () => {
   });
 
   it.each([SMALLEST_CANVAS.landscape, SMALLEST_CANVAS.portrait])(
-    'keeps the title for the tilapia, the unfound plastic worm and heron, and Boy or girl at $cssW x $cssH',
+    'keeps the title for the tilapia, the unfound plastic worm and heron, the ghost net, and Boy or girl at $cssW x $cssH',
     (view) => {
       const entries = [
         featuredEntry('tilapia', true),
         featuredEntry('tilapia', false),
         featuredEntry('plastic-worm', false),
         featuredEntry('heron', false),
+        featuredEntry('ghost-net', true),
+        featuredEntry('ghost-net', false),
         featuredEntry('boyOrGirl', true),
       ];
       for (const entry of entries) {
