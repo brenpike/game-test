@@ -107,7 +107,7 @@ It is kept out of the production build: `main.ts` loads it with a dynamic import
 Follow-ups:
 
 - Bake on demand: bake an area's scenery when its trip starts, not at boot.
-- The real areas, issues #75 to #78, each checked by the one-new-thing test.
+- The real areas, issues #75 to #78, each checked by the one-new-thing test. Area 4, issue #76, is built in [ADR 0018](0018-chinampa-gardens-ghost-nets-and-predator-ladder.md).
 - The refuge, issue #74: built in [ADR 0017](0017-xochimilco-refuge-and-habitat-milestones.md).
 - The owner measures the dev area's frame time ([ADR 0013](0013-axolotl-rig-and-frame-budget.md), fourth case).
 - The owner confirms the items marked above (PRD open questions 111 onward).

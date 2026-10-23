@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AREAS, CANAL_AREA, POND_2_AREA, POND_AREA, unlockedAreaIds, type AreaData } from './areas';
+import { AREAS, CANAL_AREA, HABITATS, POND_2_AREA, POND_AREA, unlockedAreaIds, type AreaData } from './areas';
 import { isSupportedCanvas } from './cardFit';
 import {
   ALL_TREASURES,
@@ -284,7 +284,7 @@ describe('chestListing', () => {
     for (const [rarity, hints] of hinted) {
       const rarityHint = UNFOUND_HINTS[rarity];
       for (const hint of hints) {
-        expect(hint).toMatch(/^Area \d+, (Canal|Lily pad pond): /);
+        expect(hint).toMatch(new RegExp(`^Area \\d+, (${HABITATS.map((habitat) => habitat.name).join('|')}): `));
         expect(hint.endsWith(`: ${rarityHint.charAt(0).toLowerCase()}${rarityHint.slice(1)}`)).toBe(true);
       }
     }
@@ -546,8 +546,16 @@ describe('area hints', () => {
     ['pond/golden-lotus-throne', 'Area 3, Lily pad pond: break a Dash pot with Tail Dash!'],
     ['pond/firefly-cape', 'Area 3, Lily pad pond: break a Dash pot with Tail Dash!'],
     ['firefly-gold', 'Area 3, Lily pad pond: look off the main path!'],
+    ['chinampa/scarecrow', 'Area 4, Chinampa gardens: look off the main path!'],
+    ['poppy-red', 'Area 4, Chinampa gardens: look off the main path!'],
   ])('hints at an unfound %s with "%s"', (id, expected) => {
     expect(hintOf(chestListing([]), id)).toBe(expected);
+  });
+
+  it('names Area 4 and the chinampa gardens in the hint of every unfound chinampa treasure and Poppy red', () => {
+    const chinampaIds = [...ALL_TREASURES.map((treasure) => treasure.id).filter((id) => id.startsWith('chinampa/') && !id.includes('paint-shell')), 'poppy-red'];
+    expect(chinampaIds.length).toBeGreaterThan(1);
+    for (const id of chinampaIds) expect(hintOf(chestListing([]), id), id).toMatch(/^Area 4, Chinampa gardens: /);
   });
 
   it('builds every area and rarity hint from the area label, habitat name and rarity hint', () => {
