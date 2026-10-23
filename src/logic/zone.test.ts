@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CANAL_TREASURES, RARITIES, treasureById, type Rarity } from './catalogue';
-import { shapeDistance, type HazardSpawn, type HazardType } from './hazards';
+import { elementSweep, shapeDistance, type ElementSpawn, type ElementType, type HazardSpawn, type HazardType } from './hazards';
 import { coversAt, inReeds, isDeep, routeDistance, spotMatchesLabels, turnDistance } from './hiding';
 import { POND_2_LAYOUT } from './pond2Layout';
 import { POND_LAYOUT } from './pondLayout';
@@ -745,6 +745,86 @@ describe('snack hazard clearance', () => {
     expect(CANAL_LAYOUT.hazards).toEqual([]);
     expect(CANAL_LAYOUT.fixedPads).toBeUndefined();
     expect(buildZone(CANAL_LAYOUT, 0xa70107)).toEqual(buildCanalZone());
+  });
+});
+
+const TEST_MAT_TYPE: ElementType = {
+  id: 'test-mats',
+  name: 'Test mats',
+  kind: 'cycle',
+  period: 8,
+  activeFor: 3,
+  fact: { id: 'test-mats', name: 'Test mats', title: 'Meet the test mats', body: 'Test mats for tests.' },
+  meetRange: 180,
+  openFor: 3,
+  openingFor: 1,
+  closingFor: 1,
+  closedFor: 4,
+};
+/** Mat pairs in the canal's upper water only, so every snack stripe keeps clear water below them. */
+const MATS: readonly ElementSpawn[] = [
+  { id: 'mats-0', type: TEST_MAT_TYPE, offset: 0, matPair: { x0: 700, x1: 760, rowTop: SURF, rowBottom: 150, channelY: 115, openHeight: 40 } },
+  { id: 'mats-1', type: TEST_MAT_TYPE, offset: 4, matPair: { x0: 1500, x1: 1560, rowTop: SURF, rowBottom: 150, channelY: 115, openHeight: 40 } },
+];
+const PULSE: ElementSpawn = {
+  id: 'pulse-0',
+  type: { id: 'test-pulse', name: 'Test pulse', kind: 'cycle', period: 10, activeFor: 3 },
+  offset: 2,
+};
+
+function sweepOf(element: ElementSpawn) {
+  const sweep = elementSweep(element);
+  if (!sweep) throw new Error(`expected a sweep on ${element.id}`);
+  return sweep;
+}
+
+describe('elements', () => {
+  it('copies every element, its type, fact card and mat pair, sharing no object with the data', () => {
+    const zone = buildZone(canalWith({ elements: MATS }), 3);
+    expect(zone.elements).toEqual(MATS);
+    zone.elements.forEach((element, index) => {
+      expect(element).not.toBe(MATS[index]);
+      expect(element.type).not.toBe(MATS[index].type);
+      expect(element.type.fact).not.toBe(MATS[index].type.fact);
+      expect(element.matPair).not.toBe(MATS[index].matPair);
+    });
+  });
+
+  it('adds no fact or mat pair key to an element that has none', () => {
+    const [element] = buildZone(canalWith({ elements: [PULSE] }), 3).elements;
+    expect(element).toStrictEqual(PULSE);
+    expect(element).not.toHaveProperty('matPair');
+    expect(element.type).not.toHaveProperty('fact');
+  });
+
+  it.each(ALL_SEEDS)('keeps every snack start at least SNACK_HAZARD_CLEARANCE from every mat sweep for seed %i', (seed) => {
+    const zone = buildZone(canalWith({ elements: MATS }), seed);
+    expect(zone.collectibles).toHaveLength(16);
+    for (const snack of zone.collectibles) {
+      for (const element of zone.elements) {
+        const distance = shapeDistance(snack, sweepOf(element));
+        expect(distance, `${snack.id} is ${distance.toFixed(1)} px from ${element.id}`).toBeGreaterThanOrEqual(SNACK_HAZARD_CLEARANCE);
+      }
+    }
+  });
+
+  it('tests mat sweeps that sit where the canal would put snacks', () => {
+    const tooClose = ALL_SEEDS.filter((seed) =>
+      buildCanalZone(seed).collectibles.some((snack) => MATS.some((element) => shapeDistance(snack, sweepOf(element)) < SNACK_HAZARD_CLEARANCE)),
+    );
+    expect(tooClose.length).toBeGreaterThan(0);
+  });
+
+  it.each(ALL_SEEDS)('makes no extra rand() draws when no element has a sweep for seed %i', (seed) => {
+    expect(buildZone(canalWith({ elements: [PULSE] }), seed)).toStrictEqual({ ...buildCanalZone(seed), elements: [PULSE] });
+  });
+
+  it.each(ALL_SEEDS)('makes the same draws and snacks as the canal when no mat sweep is near for seed %i', (seed) => {
+    const far: ElementSpawn[] = [{ ...MATS[0], matPair: { x0: -1000, x1: -940, rowTop: -400, rowBottom: -200, channelY: -300, openHeight: 72 } }];
+    const canal = buildCanalZone(seed);
+    const zone = buildZone(canalWith({ elements: far }), seed);
+    expect(zone.collectibles).toEqual(canal.collectibles);
+    expect(zone.pads).toEqual(canal.pads);
   });
 });
 

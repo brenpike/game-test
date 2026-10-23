@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RARITIES } from './catalogue';
+import { CHINAMPA_LAYOUT } from './chinampaLayout';
 import type { FactCard } from './factCards';
 import type { HazardSpawn, HazardType } from './hazards';
 import {
@@ -17,6 +18,7 @@ import {
   meetsRiskRule,
   meetsThreatRiskRule,
   pastCurrent,
+  pastCurrentBand,
   riskBands,
   riskDistance,
   routeDistance,
@@ -27,8 +29,11 @@ import {
   withinLungeRange,
   zoneThreats,
   type HidingGeometry,
+  type PastCurrentBand,
   type Threat,
 } from './hiding';
+import { POND_2_LAYOUT } from './pond2Layout';
+import { POND_LAYOUT } from './pondLayout';
 import {
   HERON_SPECIES,
   TILAPIA_SPECIES,
@@ -40,9 +45,13 @@ import {
   type PredatorSpecies,
 } from './predators';
 import { HERON, RISK, TILAPIA } from './tuning';
-import { BED_TOP, SURF, inSafeArea, type CurrentZone, type HidingSpot, type Point, type TilapiaRoute } from './zone';
+import { BED_TOP, CANAL_LAYOUT, SURF, inSafeArea, type CurrentZone, type HidingSpot, type Point, type TilapiaRoute } from './zone';
 
 const CURRENT: CurrentZone = { id: 'current-0', x0: 400, x1: 600, y0: 120, y1: 280, force: { x: -70, y: 0 } };
+/** CURRENT with its flow reversed, coming from the left. */
+const RIGHT_FLOW: CurrentZone = { ...CURRENT, force: { x: 70, y: 0 } };
+/** CURRENT with its flow straight down, no sideways part. */
+const NO_SIDEWAYS_FLOW: CurrentZone = { ...CURRENT, force: { x: 0, y: 70 } };
 
 const GEO: HidingGeometry = {
   reedPatches: [{ x0: 100, x1: 160, y0: SURF, y1: 318, dragMul: 2.5 }],
@@ -69,6 +78,16 @@ const SQUARE_ROUTE: TilapiaRoute = {
 
 /** A one-point route far down the canal, so the risk ladder can be probed along a line above it. */
 const PROBE_ROUTE: TilapiaRoute = { id: 'probe', waypoints: [{ x: 5000, y: 0 }] };
+
+/**
+ * The past band the rule gave before #103: beyond the current's edge farther from home, none when
+ * home is within the current's x range.
+ */
+function homeBasedBand(current: Pick<CurrentZone, 'x0' | 'x1'>, home: Point): PastCurrentBand | null {
+  if (home.x < current.x0) return { edgeX: current.x1, farX: current.x1 + PAST_CURRENT_DEPTH };
+  if (home.x > current.x1) return { edgeX: current.x0, farX: current.x0 - PAST_CURRENT_DEPTH };
+  return null;
+}
 
 function spotAt(x: number, y: number, overrides: Partial<Omit<HidingSpot, 'id'>> = {}): Omit<HidingSpot, 'id'> {
   return { cover: 'reeds', rarity: 'common', container: false, x, y, ...overrides };
@@ -129,40 +148,67 @@ describe('inCave', () => {
   });
 });
 
+describe('pastCurrentBand', () => {
+  it('puts the band beyond the right edge when the flow comes from the right', () => {
+    expect(pastCurrentBand(CURRENT)).toEqual({ edgeX: 600, farX: 600 + PAST_CURRENT_DEPTH });
+  });
+
+  it('puts the band beyond the left edge when the flow comes from the left', () => {
+    expect(pastCurrentBand(RIGHT_FLOW)).toEqual({ edgeX: 400, farX: 400 - PAST_CURRENT_DEPTH });
+  });
+
+  it('gives no band when the current has no sideways flow', () => {
+    expect(pastCurrentBand(NO_SIDEWAYS_FLOW)).toBeNull();
+  });
+
+  it('gives every shipped current the band the old home-based rule gave', () => {
+    const layouts = [CANAL_LAYOUT, POND_LAYOUT, POND_2_LAYOUT, CHINAMPA_LAYOUT];
+    for (const layout of layouts) {
+      expect(layout.currents.length, layout.id).toBeGreaterThan(0);
+      for (const current of layout.currents) {
+        expect(pastCurrentBand(current), `${layout.id} ${current.id}`).toEqual(homeBasedBand(current, layout.start));
+      }
+    }
+  });
+});
+
 describe('pastCurrent', () => {
-  const currents = [CURRENT];
-
-  it('with home on the left, covers the band beyond the right edge, edge excluded', () => {
-    const home = { x: 0, y: 200 };
-    expect(pastCurrent({ x: 600, y: 200 }, currents, home)).toBe(false);
-    expect(pastCurrent({ x: 600.001, y: 200 }, currents, home)).toBe(true);
-    expect(pastCurrent({ x: 600 + PAST_CURRENT_DEPTH, y: 200 }, currents, home)).toBe(true);
-    expect(pastCurrent({ x: 600 + PAST_CURRENT_DEPTH + 0.001, y: 200 }, currents, home)).toBe(false);
-    expect(pastCurrent({ x: 399, y: 200 }, currents, home)).toBe(false);
-    expect(pastCurrent({ x: 500, y: 200 }, currents, home)).toBe(false);
+  it('with flow to the left, covers the band beyond the right edge, edge excluded', () => {
+    const currents = [CURRENT];
+    expect(pastCurrent({ x: 600, y: 200 }, currents)).toBe(false);
+    expect(pastCurrent({ x: 600.001, y: 200 }, currents)).toBe(true);
+    expect(pastCurrent({ x: 600 + PAST_CURRENT_DEPTH, y: 200 }, currents)).toBe(true);
+    expect(pastCurrent({ x: 600 + PAST_CURRENT_DEPTH + 0.001, y: 200 }, currents)).toBe(false);
+    expect(pastCurrent({ x: 399, y: 200 }, currents)).toBe(false);
+    expect(pastCurrent({ x: 500, y: 200 }, currents)).toBe(false);
   });
 
-  it('with home on the right, mirrors the band beyond the left edge', () => {
-    const home = { x: 1200, y: 200 };
-    expect(pastCurrent({ x: 400, y: 200 }, currents, home)).toBe(false);
-    expect(pastCurrent({ x: 399.999, y: 200 }, currents, home)).toBe(true);
-    expect(pastCurrent({ x: 400 - PAST_CURRENT_DEPTH, y: 200 }, currents, home)).toBe(true);
-    expect(pastCurrent({ x: 400 - PAST_CURRENT_DEPTH - 0.001, y: 200 }, currents, home)).toBe(false);
-    expect(pastCurrent({ x: 601, y: 200 }, currents, home)).toBe(false);
+  it('with flow to the right, mirrors the band beyond the left edge', () => {
+    const currents = [RIGHT_FLOW];
+    expect(pastCurrent({ x: 400, y: 200 }, currents)).toBe(false);
+    expect(pastCurrent({ x: 399.999, y: 200 }, currents)).toBe(true);
+    expect(pastCurrent({ x: 400 - PAST_CURRENT_DEPTH, y: 200 }, currents)).toBe(true);
+    expect(pastCurrent({ x: 400 - PAST_CURRENT_DEPTH - 0.001, y: 200 }, currents)).toBe(false);
+    expect(pastCurrent({ x: 500, y: 200 }, currents)).toBe(false);
+    expect(pastCurrent({ x: 601, y: 200 }, currents)).toBe(false);
   });
 
-  it('keeps to the current y range, inclusive', () => {
-    const home = { x: 0, y: 200 };
-    expect(pastCurrent({ x: 650, y: 120 }, currents, home)).toBe(true);
-    expect(pastCurrent({ x: 650, y: 280 }, currents, home)).toBe(true);
-    expect(pastCurrent({ x: 650, y: 119.999 }, currents, home)).toBe(false);
-    expect(pastCurrent({ x: 650, y: 280.001 }, currents, home)).toBe(false);
+  it('keeps to the current y range, inclusive, for either flow', () => {
+    for (const [current, x] of [
+      [CURRENT, 650],
+      [RIGHT_FLOW, 350],
+    ] as const) {
+      expect(pastCurrent({ x, y: 120 }, [current])).toBe(true);
+      expect(pastCurrent({ x, y: 280 }, [current])).toBe(true);
+      expect(pastCurrent({ x, y: 119.999 }, [current])).toBe(false);
+      expect(pastCurrent({ x, y: 280.001 }, [current])).toBe(false);
+    }
   });
 
-  it('has no far side when home is within the current x range', () => {
-    const home = { x: 500, y: 200 };
-    expect(pastCurrent({ x: 650, y: 200 }, currents, home)).toBe(false);
-    expect(pastCurrent({ x: 350, y: 200 }, currents, home)).toBe(false);
+  it('has no band on either side when the current has no sideways flow', () => {
+    const currents = [NO_SIDEWAYS_FLOW];
+    expect(pastCurrent({ x: 650, y: 200 }, currents)).toBe(false);
+    expect(pastCurrent({ x: 350, y: 200 }, currents)).toBe(false);
   });
 });
 

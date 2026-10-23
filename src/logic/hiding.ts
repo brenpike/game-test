@@ -25,7 +25,7 @@ import {
 export const MAIN_PATH_REACH = 48;
 /** How far below the surface a lily pad hides things. */
 export const PAD_COVER_DEPTH = 30;
-/** How far beyond a current's far edge the past-current band reaches. */
+/** How far beyond a current's upstream edge the past-current band reaches. */
 export const PAST_CURRENT_DEPTH = 140;
 
 /** How far past a threat's strike range the Common band starts, in px. */
@@ -69,26 +69,47 @@ export function inCave(pos: Point, cave: CaveArea): boolean {
   return pos.x >= cave.x0 && pos.x <= cave.x1 && pos.y >= cave.y0 && pos.y <= cave.y1;
 }
 
-function isPastOneCurrent(pos: Point, current: CurrentZone, home: Point): boolean {
-  if (pos.y < current.y0 || pos.y > current.y1) {
-    return false;
-  }
-  if (home.x < current.x0) {
-    return pos.x > current.x1 && pos.x <= current.x1 + PAST_CURRENT_DEPTH;
-  }
-  if (home.x > current.x1) {
-    return pos.x < current.x0 && pos.x >= current.x0 - PAST_CURRENT_DEPTH;
-  }
-  return false;
+/**
+ * A current's past band along x: from `edgeX`, the current's upstream edge (excluded), to `farX`,
+ * PAST_CURRENT_DEPTH beyond it (included). It spans the current's y range.
+ */
+export interface PastCurrentBand {
+  readonly edgeX: number;
+  readonly farX: number;
 }
 
 /**
- * Whether a point is just beyond a current's edge farther from home: within PAST_CURRENT_DEPTH
- * of that edge (the edge itself excluded) and within the current's y range. A current that spans
- * home's x has no far side.
+ * A current's past band, from its own flow: the PAST_CURRENT_DEPTH beyond the upstream edge, the
+ * edge its flow comes from. Flow to the left (force.x < 0) gives (x1, x1 + PAST_CURRENT_DEPTH];
+ * flow to the right gives [x0 - PAST_CURRENT_DEPTH, x0). No sideways flow gives null.
  */
-export function pastCurrent(pos: Point, currents: readonly CurrentZone[], home: Point): boolean {
-  return currents.some((current) => isPastOneCurrent(pos, current, home));
+export function pastCurrentBand(current: Pick<CurrentZone, 'x0' | 'x1' | 'force'>): PastCurrentBand | null {
+  if (current.force.x < 0) return { edgeX: current.x1, farX: current.x1 + PAST_CURRENT_DEPTH };
+  if (current.force.x > 0) return { edgeX: current.x0, farX: current.x0 - PAST_CURRENT_DEPTH };
+  return null;
+}
+
+function isPastOneCurrent(pos: Point, current: CurrentZone): boolean {
+  if (pos.y < current.y0 || pos.y > current.y1) {
+    return false;
+  }
+  const band = pastCurrentBand(current);
+  if (band === null) {
+    return false;
+  }
+  if (band.farX > band.edgeX) {
+    return pos.x > band.edgeX && pos.x <= band.farX;
+  }
+  return pos.x < band.edgeX && pos.x >= band.farX;
+}
+
+/**
+ * Whether a point is in any current's past band (pastCurrentBand): within PAST_CURRENT_DEPTH
+ * beyond the current's upstream edge (the edge itself excluded) and within the current's y range.
+ * A current with no sideways flow has no past band.
+ */
+export function pastCurrent(pos: Point, currents: readonly CurrentZone[]): boolean {
+  return currents.some((current) => isPastOneCurrent(pos, current));
 }
 
 /** Whether a point is under any overhanging bank rectangle (inclusive edges). */
@@ -117,7 +138,7 @@ export function coversAt(pos: Point, geo: HidingGeometry): HidingCover[] {
   if (inReeds(pos, geo.reedPatches)) covers.push('reeds');
   if (underPad(pos, geo.pads)) covers.push('pad');
   if (inCave(pos, geo.cave)) covers.push('cave');
-  if (pastCurrent(pos, geo.currents, geo.homeSpot)) covers.push('pastCurrent');
+  if (pastCurrent(pos, geo.currents)) covers.push('pastCurrent');
   if (underBank(pos, geo.bankOverhangs ?? [])) covers.push('bank');
   return covers;
 }
@@ -148,7 +169,7 @@ export function distanceToPath(pos: Point, path: readonly Point[]): number {
 
 /** Whether a point is deep: in the cave or past a current. */
 export function isDeep(pos: Point, geo: HidingGeometry): boolean {
-  return inCave(pos, geo.cave) || pastCurrent(pos, geo.currents, geo.homeSpot);
+  return inCave(pos, geo.cave) || pastCurrent(pos, geo.currents);
 }
 
 /**

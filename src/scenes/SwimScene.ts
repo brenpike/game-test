@@ -24,6 +24,7 @@ import {
 } from '../logic/collectibles';
 import { TURN_SQUASH, bodyPoint, drawnAxolotl, type DrawnAxolotl } from '../logic/drawnAxolotl';
 import { currentAt, reedDragAt, reedsNear } from '../logic/environment';
+import { exitArrowSide } from '../logic/exitArrow';
 import {
   GAME_EVENTS,
   REGISTRY_KEYS,
@@ -523,7 +524,14 @@ export class SwimScene extends Phaser.Scene {
     this.streaks = zone.currents.flatMap((current) => this.buildStreaks(current));
 
     this.homeSpotView = new HomeSpotView(this, this.assets, this.trip.homeSpot, zone.bedTop);
-    this.exitView = new ExitView(this, this.assets, this.area.exit, zone.bedTop, exitOpen(this.snackTally.left));
+    this.exitView = new ExitView(
+      this,
+      this.assets,
+      this.area.exit,
+      zone.bedTop,
+      exitOpen(this.snackTally.left),
+      exitArrowSide(this.area.exit, zone.width),
+    );
     this.treasureView = new TreasureView(
       this,
       this.assets,

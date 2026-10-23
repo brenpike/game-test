@@ -1,5 +1,12 @@
 import { CANAL_TREASURES, type Rarity, type Treasure } from './catalogue';
-import { shapeDistance, type ElementSpawn, type HazardSpawn } from './hazards';
+import {
+  elementSweep,
+  shapeDistance,
+  type ElementSpawn,
+  type ElementType,
+  type HazardRect,
+  type HazardSpawn,
+} from './hazards';
 import type { PredatorRoute } from './predators';
 import { mulberry32 } from './rng';
 import { FINDS, type TilapiaTuning } from './tuning';
@@ -30,7 +37,7 @@ const REED_BASE_Y = 326;
 const SNACK_MIN_SPACING = 40;
 const SNACK_START_CLEARANCE = 90;
 const SNACK_MAX_ATTEMPTS = 400;
-/** Minimum distance in px from every snack to every hazard shape's edge. */
+/** Minimum distance in px from every snack to every hazard shape's edge and every element sweep. */
 export const SNACK_HAZARD_CLEARANCE = 80;
 const SPOT_HOME_CLEARANCE = FINDS.pickupRadius + 8;
 
@@ -505,6 +512,7 @@ function isSnackSpotClear(
   placed: Point[],
   start: Point,
   hazards: readonly Readonly<HazardSpawn>[],
+  sweeps: readonly HazardRect[],
 ): boolean {
   if (Math.hypot(candidate.x - start.x, candidate.y - start.y) < SNACK_START_CLEARANCE) {
     return false;
@@ -512,7 +520,11 @@ function isSnackSpotClear(
   const spaced = placed.every(
     (other) => Math.hypot(candidate.x - other.x, candidate.y - other.y) >= SNACK_MIN_SPACING,
   );
-  return spaced && hazards.every((hazard) => shapeDistance(candidate, hazard.shape) >= SNACK_HAZARD_CLEARANCE);
+  return (
+    spaced &&
+    hazards.every((hazard) => shapeDistance(candidate, hazard.shape) >= SNACK_HAZARD_CLEARANCE) &&
+    sweeps.every((sweep) => shapeDistance(candidate, sweep) >= SNACK_HAZARD_CLEARANCE)
+  );
 }
 
 function pickSnackSpot(
@@ -520,13 +532,14 @@ function pickSnackSpot(
   area: SwimBounds,
   placed: Point[],
   data: AreaLayoutData,
+  sweeps: readonly HazardRect[],
 ): Point {
   for (let attempt = 0; attempt < SNACK_MAX_ATTEMPTS; attempt++) {
     const candidate = {
       x: area.minX + rand() * (area.maxX - area.minX),
       y: area.minY + rand() * (area.maxY - area.minY),
     };
-    if (isSnackSpotClear(candidate, placed, data.start, data.hazards)) {
+    if (isSnackSpotClear(candidate, placed, data.start, data.hazards, sweeps)) {
       return candidate;
     }
   }
@@ -560,6 +573,18 @@ function snackAreas(data: AreaLayoutData, current: CurrentZone | undefined, boun
   return [...inCurrent, ...strata];
 }
 
+/** The sweep of every element that has geometry, in data order. */
+function elementSweeps(elements: readonly Readonly<ElementSpawn>[]): HazardRect[] {
+  return elements.flatMap((element) => {
+    const sweep = elementSweep(element);
+    return sweep ? [sweep] : [];
+  });
+}
+
+/**
+ * Snack starts, each SNACK_HAZARD_CLEARANCE px or more from every hazard shape and element sweep.
+ * Only candidates near a hazard or sweep are redrawn, so an area with neither makes the same draws.
+ */
 function buildSnacks(
   rand: () => number,
   data: AreaLayoutData,
@@ -567,9 +592,10 @@ function buildSnacks(
   bounds: SwimBounds,
 ): CollectibleSpawn[] {
   const kinds = shuffleKinds(rand, data);
+  const sweeps = elementSweeps(data.elements);
   const placed: Point[] = [];
   for (const area of snackAreas(data, current, bounds)) {
-    placed.push(pickSnackSpot(rand, area, placed, data));
+    placed.push(pickSnackSpot(rand, area, placed, data, sweeps));
   }
   return placed
     .sort((a, b) => a.x - b.x)
@@ -714,6 +740,19 @@ function buildFinds(treasures: readonly Treasure[], spots: HidingSpot[]): FindSp
   }));
 }
 
+function copyElementType(type: Readonly<ElementType>): ElementType {
+  return { ...type, ...(type.fact ? { fact: { ...type.fact } } : {}) };
+}
+
+/** A copy of the element sharing no object with the data; optional parts copied only when set. */
+function copyElement(element: Readonly<ElementSpawn>): ElementSpawn {
+  return {
+    ...element,
+    type: copyElementType(element.type),
+    ...(element.matPair ? { matPair: { ...element.matPair } } : {}),
+  };
+}
+
 /** The layout's optional fields, each copied only when its data is set. */
 function optionalLayoutParts(data: Readonly<AreaLayoutData>): Pick<ZoneLayout, 'tilapia' | 'bankOverhangs'> {
   return {
@@ -771,7 +810,7 @@ export function buildZone(data: Readonly<AreaLayoutData>, seed: number): ZoneLay
     tilapiaRoutes: buildTilapiaRoutes(data.tilapiaRoutes),
     predatorRoutes: data.predatorRoutes.map(copyPredatorRoute),
     hazards: data.hazards.map((hazard) => ({ ...hazard, shape: { ...hazard.shape } })),
-    elements: data.elements.map((element) => ({ ...element })),
+    elements: data.elements.map(copyElement),
     homeSpot,
     finds: buildFinds(data.treasures, spots),
     spots,
