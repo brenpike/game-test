@@ -1,17 +1,25 @@
 /**
- * Area map marker art (issue #75; guide 8 "Area map", 10). The Lily pad pond marker
- * is a notched lily pad in the disc's frame. Headless: the painters run against a
+ * Area map marker art (issue #75, #76; guide 8 "Area map", 10). The Lily pad pond marker
+ * is a notched lily pad in the disc's frame, and the Chinampa gardens marker is a garden
+ * plot with hanging roots. Headless: the painters run against a
  * recording context and a stub Path2D, and the Phaser bake runs against a fake scene.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  MAP_BADGE_OFFSET,
+  MAP_BADGE_R,
+  MAP_CHINAMPA_PLOT,
+  MAP_CHINAMPA_PLOT_FILL,
+  MAP_FOCUS_WHITE_R,
+  MAP_FOCUS_LW,
   MAP_MARKER_D,
   MAP_MARKER_TEX,
   MAP_POND_PAD_FILL,
   MAP_POND_PAD_NOTCH,
   paintMapMarker,
 } from './drawAreaMap';
-import { areaMapMarkerKey, areaMapPondMarkerKey, bakeAreaMapTextures } from './areaMapTextures';
+import { areaMapChinampaMarkerKey, areaMapMarkerKey, areaMapPondMarkerKey, bakeAreaMapTextures } from './areaMapTextures';
+import { HABITAT_LOOK_IDS, type HabitatLookId } from './habitatLook';
 import { INK, LW, UI_PRIMARY, WHITE } from './palette';
 
 vi.mock('phaser', () => ({}));
@@ -60,7 +68,7 @@ interface Painted {
 }
 
 /** Paint a marker and return every fill and stroke with the style it was made under. */
-function paintMarker(locked: boolean, look?: 'canal' | 'pond'): Painted[] {
+function paintMarker(locked: boolean, look?: HabitatLookId): Painted[] {
   vi.stubGlobal('Path2D', LogPath);
   const out: Painted[] = [];
   const state: Record<string, unknown> = { fillStyle: '', strokeStyle: '', lineWidth: 1 };
@@ -104,6 +112,18 @@ function polygonOf(cmds: Cmd[]): Pt[] {
   const pts: Pt[] = [];
   for (const [name, ...a] of cmds) {
     if (name === 'moveTo' || name === 'lineTo') pts.push([a[0], a[1]]);
+    if (name === 'bezierCurveTo') {
+      const [x0, y0] = pts[pts.length - 1];
+      const [c1x, c1y, c2x, c2y, x1, y1] = a;
+      for (let i = 1; i <= 24; i++) {
+        const t = i / 24;
+        const u = 1 - t;
+        pts.push([
+          u * u * u * x0 + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * x1,
+          u * u * u * y0 + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * y1,
+        ]);
+      }
+    }
     if (name === 'arc') {
       const [cx, cy, r, from, to] = a;
       const steps = Math.max(2, Math.ceil(Math.abs(to - from) / 0.01));
@@ -212,15 +232,18 @@ describe('pond marker frame', () => {
     };
     vi.stubGlobal('Path2D', LogPath);
     const art = bakeAreaMapTextures(scene as never, 2);
-    const { canal, pond } = art.markersByLook;
+    const { canal, pond, chinampa } = art.markersByLook;
     expect(canal.unlocked).toBe(art.markerUnlocked);
     expect(canal.locked).toBe(art.markerLocked);
     expect(canal.unlocked.key).toBe(areaMapMarkerKey(false));
     expect(canal.locked.key).toBe(areaMapMarkerKey(true));
     expect(pond.unlocked.key).toBe(areaMapPondMarkerKey(false));
     expect(pond.locked.key).toBe(areaMapPondMarkerKey(true));
+    expect(chinampa.unlocked.key).toBe(areaMapChinampaMarkerKey(false));
+    expect(chinampa.locked.key).toBe(areaMapChinampaMarkerKey(true));
+    expect(Object.keys(art.markersByLook).sort()).toEqual([...HABITAT_LOOK_IDS].sort());
     expect(new Set(baked.map((b) => b.key)).size).toBe(baked.length);
-    for (const info of [pond.unlocked, pond.locked, canal.locked]) {
+    for (const info of [pond.unlocked, pond.locked, canal.locked, chinampa.unlocked, chinampa.locked]) {
       expect(info.w).toBe(canal.unlocked.w);
       expect(info.h).toBe(canal.unlocked.h);
       expect(info.pxW).toBe(canal.unlocked.pxW);
@@ -313,5 +336,138 @@ describe('pond marker notch (greyscale shape cue)', () => {
     const { centreAngle } = MAP_POND_PAD_NOTCH;
     // Straight down is the angle PI / 2; the badge sits at -45 degrees and the pill at -90.
     expect(Math.sin(centreAngle)).toBeGreaterThan(0.9);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Chinampa gardens marker (issue #76)
+// ---------------------------------------------------------------------------
+
+describe('chinampa marker look', () => {
+  it('paints the garden plot in marigold orange unlocked and white locked, with ink 3.5', () => {
+    const unlocked = paintMarker(false, 'chinampa');
+    const locked = paintMarker(true, 'chinampa');
+    expect(fillOf(unlocked).style).toBe(MAP_CHINAMPA_PLOT_FILL);
+    expect(fillOf(locked).style).toBe(WHITE);
+    for (const painted of [unlocked, locked]) {
+      expect(strokeOf(painted).style).toBe(INK);
+      expect(strokeOf(painted).lineWidth).toBe(LW);
+      expect(strokeOf(painted).cmds).toEqual(fillOf(painted).cmds);
+    }
+  });
+
+  it('is its own marker: not the canal disc and not the lily pad, for every look', () => {
+    const sigs = HABITAT_LOOK_IDS.map((look) => JSON.stringify(fillOf(paintMarker(false, look)).cmds));
+    expect(new Set(sigs).size).toBe(HABITAT_LOOK_IDS.length);
+    const chinampa = fillOf(paintMarker(false, 'chinampa')).cmds;
+    // No ellipse (the disc) and no full-radius arc round the centre (the pad): straight edges, corner arcs and root curves.
+    expect(chinampa.some((c) => c[0] === 'ellipse')).toBe(false);
+    expect(chinampa.filter((c) => c[0] === 'arc').every((c) => c[3] === MAP_CHINAMPA_PLOT.corner)).toBe(true);
+    expect(chinampa.filter((c) => c[0] === 'bezierCurveTo')).toHaveLength(MAP_CHINAMPA_PLOT.rootXs.length);
+    // Every look has a marker painter: an unknown look throws and never falls back to the canal.
+    expect(() => paintMarker(false, 'volcano' as HabitatLookId)).toThrow(RangeError);
+  });
+
+  it('keeps the plot orange, not the disc yellow or the pad green', () => {
+    expect(MAP_CHINAMPA_PLOT_FILL).not.toBe(UI_PRIMARY);
+    expect(MAP_CHINAMPA_PLOT_FILL).not.toBe(MAP_POND_PAD_FILL);
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(MAP_CHINAMPA_PLOT_FILL.slice(i, i + 2), 16) / 255);
+    const max = Math.max(r, g, b);
+    const d = max - Math.min(r, g, b);
+    expect(max).toBe(r);
+    const hue = (((g - b) / d) * 60 + 360) % 360;
+    expect(hue).toBeGreaterThan(20);
+    expect(hue).toBeLessThan(45);
+  });
+});
+
+describe('chinampa marker contrast (guide 10)', () => {
+  it('keeps the bold ink number at 4.5:1 or more on both fills', () => {
+    expect(contrast(INK, MAP_CHINAMPA_PLOT_FILL)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(INK, WHITE)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(INK, MAP_CHINAMPA_PLOT_FILL).toFixed(2)).toBe('7.80');
+  });
+
+  it('passes 3:1 against the backdrop by its fill, as the other markers do', () => {
+    expect(contrast(MAP_CHINAMPA_PLOT_FILL, BACKDROP)).toBeGreaterThanOrEqual(3);
+    expect(contrast(MAP_CHINAMPA_PLOT_FILL, BACKDROP).toFixed(2)).toBe('3.29');
+    expect(contrast(WHITE, BACKDROP)).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('chinampa marker frame and silhouette (greyscale shape cue)', () => {
+  const plot = fillOf(paintMarker(false, 'chinampa')).cmds;
+  const poly = polygonOf(plot);
+  const { halfW, halfH, rootXs, rootHalfW } = MAP_CHINAMPA_PLOT;
+  const discArea = Math.PI * RIM_R * RIM_R;
+
+  it('fits the 64 px frame: ink edges 60 wide and 48 tall, roots about 31 below the centre', () => {
+    expect(halfW + LW / 2).toBe(30);
+    expect(halfH + LW / 2).toBe(24);
+    const xs = poly.map(([x]) => x);
+    const ys = poly.map(([, y]) => y);
+    expect(Math.max(...xs) + LW / 2).toBeCloseTo(30, 6);
+    expect(Math.min(...xs) - LW / 2).toBeCloseTo(-30, 6);
+    expect(Math.min(...ys) - LW / 2).toBeCloseTo(-24, 6);
+    expect(Math.max(...ys) + LW / 2).toBeGreaterThan(30);
+    expect(Math.max(...ys) + LW / 2).toBeLessThanOrEqual(MAP_MARKER_D / 2);
+    // Every point of the inked outline sits inside the frame the disc uses.
+    expect(MAP_MARKER_TEX.originX).toBeGreaterThanOrEqual(MAP_MARKER_D / 2);
+    expect(MAP_MARKER_TEX.originY).toBeGreaterThanOrEqual(MAP_MARKER_D / 2);
+  });
+
+  it('stays clear of the focus ring: every outline point and its ink is inside the ring white line', () => {
+    const ringInner = MAP_FOCUS_WHITE_R - MAP_FOCUS_LW / 2;
+    const farthest = Math.max(...poly.map(([x, y]) => Math.hypot(x, y))) + LW / 2;
+    expect(farthest).toBeLessThanOrEqual(ringInner);
+  });
+
+  it('is clear of the padlock badge where it matters: the badge covers the upper right corner as it does the disc', () => {
+    // The corner point of the plot's top right is inside the badge disc, like the disc's 45 degree point.
+    const corner = { x: halfW, y: -halfH };
+    const d = Math.hypot(corner.x - MAP_BADGE_OFFSET.x, corner.y - MAP_BADGE_OFFSET.y);
+    expect(d).toBeLessThanOrEqual(MAP_BADGE_R + LW / 2 + 2);
+  });
+
+  it('is a clearly different silhouette from the disc: straight sides, corners and roots, in area and extent', () => {
+    // Wider than tall in its body, which a disc never is.
+    expect(2 * halfW).toBeGreaterThan(2 * halfH);
+    const area = areaOf(poly);
+    expect(area).toBeLessThan(0.9 * discArea);
+    expect(area).toBeGreaterThan(0.6 * discArea);
+    // The rim of the disc is at the full radius all round; the plot's top edge is one flat line, 8 px or more inside it at the middle.
+    expect(poly[0][1]).toBe(-halfH);
+    expect(poly[1][1]).toBe(-halfH);
+    expect(poly[1][0] - poly[0][0]).toBeGreaterThan(30);
+    expect(RIM_R - halfH).toBeGreaterThanOrEqual(6);
+  });
+
+  it('hangs three roots below the bottom edge, each wide enough to see after the ink strokes either side', () => {
+    expect(rootXs).toHaveLength(3);
+    for (const x of rootXs) {
+      const rootBottom = Math.max(...poly.filter(([px]) => Math.abs(px - x) < 0.5).map(([, y]) => y));
+      expect(rootBottom - halfH).toBeGreaterThanOrEqual(6);
+      expect(2 * rootHalfW).toBeGreaterThanOrEqual(LW + 4);
+      expect(inside(poly, x, halfH + 2)).toBe(true);
+    }
+    // Between two roots the outline stays on the bottom edge.
+    expect(inside(poly, (rootXs[0] + rootXs[1]) / 2, halfH + 2)).toBe(false);
+    // The roots stay clear of the plot's corner arcs.
+    for (const x of rootXs) expect(Math.abs(x) + rootHalfW).toBeLessThanOrEqual(halfW - MAP_CHINAMPA_PLOT.corner);
+  });
+
+  it('leaves the number box (a two-digit number, 34 x 28, centred) wholly on the fill, inked edge included', () => {
+    for (const [x, y] of [
+      [-17, -14],
+      [17, -14],
+      [-17, 14],
+      [17, 14],
+      [0, 0],
+    ] as const) {
+      expect(inside(poly, x, y)).toBe(true);
+    }
+    // The inked top and bottom edges are 3.5 / 2 inside the outline; the box is 14 from the centre.
+    expect(halfH - LW / 2).toBeGreaterThan(14);
+    expect(halfW - LW / 2).toBeGreaterThan(17);
   });
 });

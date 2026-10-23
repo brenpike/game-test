@@ -42,6 +42,7 @@ import {
   WILLOW_STRAND,
   WILLOW_TRUNK,
 } from './palette';
+import { paintChinampaBank, paintChinampaBankRoots } from './drawChinampa';
 import { habitatLook, type AreaLookId, type EdgeReedLook, type HabitatLook } from './habitatLook';
 
 /** Background chunk size in logical units (the 480 x 360 reference viewport). */
@@ -76,7 +77,7 @@ export interface ChunkOptions {
   readonly index: number;
   /** Paint the sun (one chunk only). */
   readonly hasSun: boolean;
-  /** Paint chinampa bank and willows. */
+  /** Paint chinampa bank and willows. A look whose `bank` is 'plots' paints garden plots with ahuejote roots instead. */
   readonly hasBank: boolean;
   /** Round off the bank at its left end (neighbour chunk has no bank). Default false. */
   readonly bankCapLeft?: boolean;
@@ -89,7 +90,8 @@ export interface ChunkOptions {
    * the sky, sun, clouds, bank and willows, dimmer rays, and dusk water, bed and
    * reeds. Random draws are the same for the canal as before; pond-only draws come
    * after the canal's draws of the same step, and the dusk pond draws exactly what
-   * the pond draws.
+   * the pond draws. 'chinampa' paints its banks as garden plots (its own crop draws,
+   * after the clouds' draws of the same step) and its ahuejote roots in the water.
    */
   readonly look?: AreaLookId;
   /**
@@ -342,6 +344,11 @@ function paintBank(ctx: CanvasRenderingContext2D, o: ChunkOptions): void {
   for (let x = capL ? gl + 18 : 40; x + 66 < shineEnd; x += 160) {
     ctx.stroke(line(x, 38, x + 66, 38));
   }
+}
+
+/** What the garden plot painters need of a chunk: its index, its rounded ends and the random source. */
+function plotBankOf(o: ChunkOptions): { index: number; capLeft: boolean; capRight: boolean; rand: () => number } {
+  return { index: o.index, capLeft: o.bankCapLeft === true, capRight: o.bankCapRight === true, rand: o.rand };
 }
 
 function paintWater(ctx: CanvasRenderingContext2D, look: HabitatLook): void {
@@ -649,10 +656,15 @@ export function paintBackgroundChunk(ctx: CanvasRenderingContext2D, opts: ChunkO
     paintSky(ctx, look);
     if (opts.hasSun) paintSun(ctx);
     paintClouds(ctx, rand, opts.hasSun ? 16 : 120);
-    if (opts.hasBank) paintBank(ctx, opts);
+    if (opts.hasBank) {
+      if (look.bank === 'plots') paintChinampaBank(ctx, plotBankOf(opts));
+      else paintBank(ctx, opts);
+    }
     if (look.airWash !== null) paintAirWash(ctx, look.airWash);
     paintWater(ctx, look);
     paintRays(ctx, rand, look.rayAlphaScale);
+    // Roots reach into the water, so they go over it, after the rays.
+    if (opts.hasBank && look.bank === 'plots') paintChinampaBankRoots(ctx, plotBankOf(opts));
     if (opts.stream === true) paintStream(ctx, opts.streamClosed === true);
     if (opts.streamSpill === true) paintStreamSpill(ctx);
   } else {

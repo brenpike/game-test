@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CANAL_AREA } from './areas';
 import {
   ALL_TREASURES,
+  CHINAMPA_TREASURES,
   PERK_VALUES,
   POND_2_TREASURES,
   WEARABLE_SLOTS,
@@ -84,6 +85,9 @@ const CATALOGUE_WEARABLES = ALL_TREASURES.filter((treasure): treasure is Wearabl
 const AREA_3_WEARABLE_IDS: readonly string[] = POND_2_TREASURES.filter((treasure) => treasure.category === 'wearable').map(
   (treasure) => treasure.id,
 );
+const AREA_4_WEARABLE_IDS: readonly string[] = CHINAMPA_TREASURES.filter((treasure) => treasure.category === 'wearable').map(
+  (treasure) => treasure.id,
+);
 
 describe('outfitPerks', () => {
   it('gives nothing for an empty outfit', () => {
@@ -119,10 +123,11 @@ describe('outfitPerks', () => {
 });
 
 describe('catalogue Wearable perks (F9)', () => {
-  it('covers the pond Wearables', () => {
+  it('covers the pond and chinampa Wearables', () => {
     const ids = CATALOGUE_WEARABLES.map((wearable) => wearable.id);
     expect(ids.some((id) => id.startsWith('canal/'))).toBe(true);
     expect(ids.some((id) => id.startsWith('pond/'))).toBe(true);
+    expect(ids.some((id) => id.startsWith('chinampa/'))).toBe(true);
   });
 
   it('gives every Wearable one existing perk at its PERK_VALUES value', () => {
@@ -147,6 +152,21 @@ describe('catalogue Wearable perks (F9)', () => {
     );
     for (const wearable of area3) {
       expect(canalPerkTypes.has(wearable.perk.type), wearable.id).toBe(true);
+      expect(wearable.perk.value, wearable.id).toBe(PERK_VALUES[wearable.perk.type][wearable.rarity]);
+    }
+  });
+
+  it('gives the Area 4 Wearables existing perks at the PERK_VALUES value for their rarity (issue #76)', () => {
+    const area4 = CATALOGUE_WEARABLES.filter((wearable) => AREA_4_WEARABLE_IDS.includes(wearable.id));
+    expect(area4.map((wearable) => [wearable.id, wearable.rarity, wearable.slot, wearable.perk])).toEqual([
+      ['chinampa/straw-sun-hat', 'common', 'head', { type: 'treasureSense', value: 15 }],
+      ['chinampa/marigold-necklace', 'common', 'neck', { type: 'regrowth', value: 10 }],
+      ['chinampa/garden-overalls', 'rare', 'shirt', { type: 'snackMagnet', value: 40 }],
+      ['chinampa/monarch-hair-clip', 'epic', 'head', { type: 'dash', value: 20 }],
+      ['chinampa/monarch-wings', 'legendary', 'back', { type: 'speed', value: 10 }],
+    ]);
+    for (const wearable of area4) {
+      expect(PERK_ORDER, wearable.id).toContain(wearable.perk.type);
       expect(wearable.perk.value, wearable.id).toBe(PERK_VALUES[wearable.perk.type][wearable.rarity]);
     }
   });

@@ -1,11 +1,11 @@
 import * as Phaser from 'phaser';
-import { BURROW_FLAG_OFFSET, POST_H, RING_DOT_SPACING } from '../art/drawHomeSpot';
+import { BURROW_FLAG_OFFSET, BURROW_H, POST_H, RING_DOT_SPACING } from '../art/drawHomeSpot';
 import { DEPTH } from '../art/layers';
 import type { TexInfo } from '../art/textures';
 import type { MotionProfile } from '../logic/motion';
 import type { TripEvent } from '../logic/trip';
 import type { Vec2 } from '../logic/vec';
-import type { HomeSpot } from '../logic/zone';
+import { BED_DEPTH, WORLD_H, type HomeSpot } from '../logic/zone';
 import type { GameAssets } from './BootScene';
 
 const TAU = Math.PI * 2;
@@ -40,6 +40,23 @@ interface Twinkle {
   offset: Vec2;
 }
 
+/**
+ * Whether the Home Spot is in the bottom row of its area, the row that holds the bed: always true in a
+ * one-row area. The area's height is `bedTop` plus the bed depth, and a row is WORLD_H tall.
+ */
+export function homeSpotInBottomRow(homeSpot: Pick<HomeSpot, 'y'>, bedTop: number): boolean {
+  return homeSpot.y >= bedTop + BED_DEPTH - WORLD_H;
+}
+
+/**
+ * The y of the burrow's base centre: sunk into the bed at `bedTop` when the Home Spot is in the bottom
+ * row, else at the Home Spot itself (a tall area's top row has no bed), the arch centred on it and
+ * ringed by the safe-ring dots, so the burrow and flag show in view where the explorer banks.
+ */
+function burrowBaseY(homeSpot: HomeSpot, bedTop: number): number {
+  return homeSpotInBottomRow(homeSpot, bedTop) ? bedTop + BURROW_SINK_PX : homeSpot.y + BURROW_H / 2;
+}
+
 function bakedImage(scene: Phaser.Scene, info: TexInfo, x: number, y: number, depth: number): Phaser.GameObjects.Image {
   return scene.add
     .image(x, y, info.key)
@@ -49,8 +66,8 @@ function bakedImage(scene: Phaser.Scene, info: TexInfo, x: number, y: number, de
 }
 
 /**
- * Draws the Home Spot (burrow on the bed at `bedTop`, marker flag, safe-ring dots) and the flag
- * twinkle burst on banking.
+ * Draws the Home Spot (burrow on the bed at `bedTop`, or at the Home Spot when it is not in the
+ * bottom row of a tall area; marker flag, safe-ring dots) and the flag twinkle burst on banking.
  * Visual only: every timer here is driven by the frame `dt` and the scene clock, so it freezes with
  * the scene, and nothing here changes game state. Treasures are drawn by TreasureView.
  */
@@ -65,7 +82,7 @@ export class HomeSpotView {
   constructor(scene: Phaser.Scene, assets: GameAssets, homeSpot: HomeSpot, bedTop: number) {
     this.assets = assets;
     const art = assets.baked.homeSpot;
-    const burrowY = bedTop + BURROW_SINK_PX;
+    const burrowY = burrowBaseY(homeSpot, bedTop);
     bakedImage(scene, art.burrow, homeSpot.x, burrowY, DEPTH.homeSpot);
     this.flagBase = { x: homeSpot.x + BURROW_FLAG_OFFSET.x, y: burrowY + BURROW_FLAG_OFFSET.y };
     this.flag = bakedImage(scene, art.flag, this.flagBase.x, this.flagBase.y, DEPTH.homeSpot);

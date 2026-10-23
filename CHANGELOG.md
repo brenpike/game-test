@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-10-22
+
+### Added
+
+- Area 4, the Chinampa gardens, is open. It is a new habitat, with its own place on the area map. It is 6 screens wide and 2 tall, so it is the first area where the view scrolls up and down as well as sideways (#76).
+- Old ghost nets are caught in Area 4's water. If your axolotl swims into one, it gets snagged and swims slowly for a moment. No leg is lost (#76).
+- A new fact card: "Lost fishing nets" (#76).
+- Area 4's tilapia are a little quicker (#76).
+- 12 new treasures to find in Area 4, including the Scarecrow (the special treasure) and the Poppy red Dream colour (#76).
+- The refuge has a Chinampa gardens section. Beating Area 4 clears its trash, and the "All clean!" milestone shows when every area of the habitat is beaten (#76).
+- The area map shows the Chinampa gardens as its third habitat (#76).
+- The Collection Book has a 7th fact card (#76).
+
+### Changed
+
+- The Treasure Chest now lists 60 treasures, with 20 Decorations (#76).
+- An Outfit slot can now have up to 6 choices (#76).
+- There are now 15 Dream colours to choose from in Restyle (#76).
+
 ## [0.29.0] - 2026-10-22
 
 ### Changed

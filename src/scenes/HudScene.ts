@@ -48,6 +48,7 @@ import {
 import {
   ALL_SNACKS_BANNER,
   BANKING_HINT,
+  GHOST_NET_BANNER,
   GO_HOME_LABEL,
   LEGS_LABEL,
   PLASTIC_WORM_BANNER,
@@ -387,6 +388,7 @@ export class HudScene extends Phaser.Scene {
     this.game.events.on(GAME_EVENTS.ALL_COLLECTED, this.handleAllCollected, this);
     this.game.events.on(GAME_EVENTS.EXIT_CLOSED, this.handleExitClosed, this);
     this.game.events.on(GAME_EVENTS.PLASTIC_WORM_SPAT, this.handlePlasticWormSpat, this);
+    this.game.events.on(GAME_EVENTS.GHOST_NET_SNAGGED, this.handleGhostNetSnagged, this);
     this.game.events.on(GAME_EVENTS.DASH_STATE, this.handleDashState, this);
     this.game.events.on(GAME_EVENTS.REQUEST_PAUSE, this.pauseSwim, this);
     this.game.events.on(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);
@@ -1154,6 +1156,11 @@ export class HudScene extends Phaser.Scene {
     this.showSnackBanner(PLASTIC_WORM_BANNER);
   }
 
+  /** Shows the snag message in the snack banner when a ghost net snags the explorer (issue #76). */
+  private handleGhostNetSnagged(): void {
+    this.showSnackBanner(GHOST_NET_BANNER);
+  }
+
   /**
    * Shows `text` in the snack banner, fading in unless motion is reduced, for BANNER_MS on the HUD
    * clock. A new message replaces the one up and restarts the timer.
@@ -1377,6 +1384,7 @@ export class HudScene extends Phaser.Scene {
     this.game.events.off(GAME_EVENTS.ALL_COLLECTED, this.handleAllCollected, this);
     this.game.events.off(GAME_EVENTS.EXIT_CLOSED, this.handleExitClosed, this);
     this.game.events.off(GAME_EVENTS.PLASTIC_WORM_SPAT, this.handlePlasticWormSpat, this);
+    this.game.events.off(GAME_EVENTS.GHOST_NET_SNAGGED, this.handleGhostNetSnagged, this);
     this.game.events.off(GAME_EVENTS.DASH_STATE, this.handleDashState, this);
     this.game.events.off(GAME_EVENTS.REQUEST_PAUSE, this.pauseSwim, this);
     this.game.events.off(GAME_EVENTS.REDUCED_MOTION, this.handleReducedMotion, this);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CARD, SMALLEST_CANVAS, cardTightTextWidth, factCardBodyWrapWidths, isSupportedCanvas, type TextFit } from './cardFit';
 import type { HudView, Rect, Size } from './hudLayout';
+import { refugeSections } from './refuge';
 import {
   REFUGE_BACK_BUTTON,
   REFUGE_NEXT_LABEL,
@@ -119,8 +120,21 @@ function fiveSections(clean: number): RefugeEntry[] {
   return Object.keys(HABITAT_NAMES).map((id, index) => ({ id, seeAgain: index < clean }));
 }
 
+/** Today's sections, one per habitat in the area table; the first `clean` of them show "See it again". */
+function todaysSections(clean: number): RefugeEntry[] {
+  return refugeSections({}).map((section, index) => ({ id: section.habitatId, seeAgain: index < clean }));
+}
+
 const ONE_SECTION: readonly RefugeEntry[] = [{ id: 'canal', seeAgain: false }];
-const ENTRY_SETS: readonly (readonly RefugeEntry[])[] = [ONE_SECTION, fiveSections(0), fiveSections(2), fiveSections(5)];
+const ENTRY_SETS: readonly (readonly RefugeEntry[])[] = [
+  ONE_SECTION,
+  todaysSections(0),
+  todaysSections(1),
+  todaysSections(3),
+  fiveSections(0),
+  fiveSections(2),
+  fiveSections(5),
+];
 
 /** Room between two rects: the larger of the horizontal and vertical gaps (negative when they overlap). */
 function gapBetween(a: Rect, b: Rect): number {
@@ -340,6 +354,20 @@ describe('refugeLayout at the smallest canvases', () => {
     expect(sectionShows(layout, 0, 0)).toBe(true);
     expect(sectionShows(layout, 1, 0)).toBe(false);
   });
+
+  it.each([SMALL_LANDSCAPE, SMALL_PORTRAIT])(
+    "fits today's three sections at $cssW x $cssH, clean or not, and shows the last one whole two pans on",
+    (view) => {
+      for (const clean of [0, 1, 2, 3]) {
+        const entries = todaysSections(clean);
+        const layout = layoutOf(view, entries);
+        expect(layout.fits, `clean=${clean}`).toBe(true);
+        expect(layout.sections.map((section) => section.id)).toEqual(['canal', 'pond', 'chinampa']);
+        const twoPans = panRefugeScroll(layout, panRefugeScroll(layout, 0, 1), 1);
+        expect(sectionShows(layout, 2, twoPans), `clean=${clean}`).toBe(true);
+      }
+    },
+  );
 });
 
 describe('refugeFocusTarget', () => {

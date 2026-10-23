@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_LOOK, type AxolotlLook } from './axolotlLook';
 import { suggestedNamesFor } from './axolotlNames';
-import { POND_2_AREA, POND_AREA } from './areas';
+import { CHINAMPA_AREA, POND_2_AREA, POND_AREA } from './areas';
 import {
   ALL_TREASURES,
   CANAL_TREASURES,
@@ -75,6 +75,11 @@ const FIREFLY_JAR = 'pond/firefly-jar';
 const LOTUS_THRONE = 'pond/golden-lotus-throne';
 const FIREFLY_SHELL = 'pond/paint-shell-firefly-gold';
 const FIREFLY_CAPE = 'pond/firefly-cape';
+const CHINAMPA_ID = CHINAMPA_AREA.id;
+const SCARECROW = 'chinampa/scarecrow';
+const PAPEL_PICADO = 'chinampa/papel-picado-banner';
+const POPPY_SHELL = 'chinampa/paint-shell-poppy-red';
+const OVERALLS = 'chinampa/garden-overalls';
 
 /** A look with every field off the default, a girl. */
 const STYLED: AxolotlLook = {
@@ -1088,6 +1093,79 @@ describe('Area 3 progress in the save (#98, D2)', () => {
     expect(hub.stars[CANAL_AREA_ID]).toEqual(playedSession().hub.stars[CANAL_AREA_ID]);
     expect(hub.metHazards).toEqual(['tilapia', 'heron']);
     expect(hubWithFields({}).stars[POND_2_ID]).toBeUndefined();
+  });
+});
+
+/**
+ * `pond2Session` after a beaten Area 4 trip: Area 4 treasures banked (the Scarecrow, the Papel picado
+ * banner, the Poppy red Paint shell and the Garden overalls), the ghost net met, Area 4 stars and the
+ * wild axolotl wearing Poppy red.
+ */
+function chinampaSession(): Session {
+  const afterChinampa = recordTripEnd(pond2Session(), {
+    areaId: CHINAMPA_ID,
+    banked: [SCARECROW, PAPEL_PICADO, POPPY_SHELL, OVERALLS],
+    rescued: [],
+    eatenSnacks: [],
+    tripSeed: 101,
+    waitingStranded: null,
+    met: ['ghost-net'],
+    returnedFinds: [],
+    stars: { areaId: CHINAMPA_ID, earned: { exit: true, special: true, legsOrRescue: false } },
+  });
+  return setDreamColour(afterChinampa, WILD, 'poppy-red');
+}
+
+/** The hub `chinampaSession` saves and loads. */
+function chinampaRoundTrip(): { session: Session; hub: HubState } {
+  const session = chinampaSession();
+  return { session, hub: loadedHub(JSON.parse(encodeSave(session.hub))) };
+}
+
+describe('Area 4 progress in the save (#76, D2)', () => {
+  it('names real Area 4 treasures: the Scarecrow, a hanging banner, the Poppy red Paint shell and a Wearable', () => {
+    expect([SCARECROW, PAPEL_PICADO].map(decorationPlacement)).toEqual(['floor', 'hanging']);
+    expect(treasureById(POPPY_SHELL)?.category).toBe('paintShell');
+    expect(treasureById(OVERALLS)?.category).toBe('wearable');
+  });
+
+  it('keeps every banked Area 4 treasure id, in banked order', () => {
+    const { session, hub } = chinampaRoundTrip();
+    expect(session.hub.banked.slice(-4)).toEqual([SCARECROW, PAPEL_PICADO, POPPY_SHELL, OVERALLS]);
+    expect(hub.banked).toEqual(session.hub.banked);
+  });
+
+  it('keeps Poppy red owned and worn', () => {
+    const { hub } = chinampaRoundTrip();
+    expect(ownedDreamColours(hub.banked)).toContain('poppy-red');
+    expect(hub.axolotls.find((axolotl) => axolotl.id === WILD)?.dreamColour).toBe('poppy-red');
+  });
+
+  it('keeps the ghost net met, after the heron', () => {
+    const { hub } = chinampaRoundTrip();
+    expect(hub.metHazards).toEqual(['tilapia', 'plastic-worm', 'heron', 'ghost-net']);
+    const reordered = hubWithFields({ metHazards: ['ghost-net', 'net', 'heron', 'ghost-net'] });
+    expect(reordered.metHazards).toEqual(['tilapia', 'heron', 'ghost-net']);
+  });
+
+  it('keeps the Area 4 stars and resolves Area 4 as the last chosen area once Area 3 is beaten', () => {
+    const { session, hub } = chinampaRoundTrip();
+    expect(hub.stars[CHINAMPA_ID]).toEqual({ exit: true, special: true, legsOrRescue: false });
+    expect(hub.stars).toEqual(session.hub.stars);
+    const chosen = { ...session.hub, lastAreaId: CHINAMPA_ID };
+    expect(loadedHub(JSON.parse(encodeSave(chosen))).lastAreaId).toBe(CHINAMPA_ID);
+    expect(hubWithFields({ lastAreaId: CHINAMPA_ID }).lastAreaId).toBe(POND_ID);
+  });
+
+  it('loads Area 4 stars and the ghost net met into a version 1 save additively, with no version bump', () => {
+    expect(SAVE_VERSION).toBe(1);
+    const json = savedJson();
+    expect(json.version).toBe(1);
+    const stars = { ...(json.hub.stars as Record<string, unknown>), [CHINAMPA_ID]: { exit: true, special: false, legsOrRescue: true } };
+    const hub = loadedHub({ ...json, hub: { ...json.hub, stars, metHazards: ['tilapia', 'ghost-net'] } });
+    expect(hub.stars[CHINAMPA_ID]).toEqual({ exit: true, special: false, legsOrRescue: true });
+    expect(hub.metHazards).toEqual(['tilapia', 'ghost-net']);
+    expect(Object.keys(JSON.parse(encodeSave(chinampaSession().hub)).hub).sort()).toEqual(Object.keys(json.hub).sort());
   });
 });
 

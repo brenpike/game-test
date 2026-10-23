@@ -35,6 +35,16 @@
  * still marks locked. It stops short of the number (bold ink 28 px, centred), so
  * ink on the fill stays 7.49:1 unlocked and 14.39:1 locked.
  *
+ * The Chinampa gardens marker (issue #76) is a garden plot in place of the disc: a wide
+ * rounded rectangle with three roots hanging from its lower edge, same frame, anchor and
+ * ink (3.5). It reaches 60 wide and 48 tall to the ink edge, and the root tips about 31 below
+ * the centre, so it stays inside the 64 px frame and clear of the focus ring (its corners reach
+ * 33.7 from the centre, the ring's inner edge is 33.75) and the star row. Unlocked it is marigold orange {@link MAP_CHINAMPA_PLOT_FILL}
+ * (7.80:1 with ink, and 3.29:1 against the backdrop, so the edge passes 3:1 by its fill);
+ * locked it is white. The straight top and sides, the sharp corners and the hanging roots
+ * are the shape cue apart from the round disc and the notched pad (greyscale, guide 10);
+ * the padlock badge still marks locked.
+ *
  * Sizes are to the outer ink edge, as the guide gives them. Every value is
  * `derived (provisional)`. Presentational only: no Phaser, and no import from
  * src/logic.
@@ -246,19 +256,75 @@ function lilyPadPath(): Path2D {
 }
 
 /**
- * Paint a marker centred at local (0, 0), 64 px to the outer ink edge, ink 3.5.
- * The canal look (default) is a disc: #ffe14a unlocked, #ffffff locked. The pond
- * look is the notched lily pad: {@link MAP_POND_PAD_FILL} unlocked, #ffffff locked.
- * The number is scene text; the locked cue is the padlock badge, not the fill.
+ * Unlocked Chinampa gardens marker fill: marigold orange (cempasuchil), the flower of
+ * the gardens. Ink 2b2350 on it is 7.80:1, and against the #0c6a8c backdrop it is
+ * 3.29:1, so the marker edge passes 3:1 by its fill as the other markers do. Derived (provisional).
+ */
+export const MAP_CHINAMPA_PLOT_FILL = '#ffae42';
+
+/**
+ * The plot's outline, centreline, in marker units (derived, provisional): half width and half
+ * height of the rectangle to the ink centreline (ink edge 30 and 24), the corner radius, and the
+ * hanging roots, each `rootHalfW` either side of an `rootXs` centre and `rootDepth` deep at the
+ * control points (a round tip about three quarters of that).
+ */
+export const MAP_CHINAMPA_PLOT = {
+  halfW: 30 - MARKER_LW / 2,
+  halfH: 24 - MARKER_LW / 2,
+  corner: 10,
+  rootXs: [12, 0, -12],
+  rootHalfW: 4.5,
+  rootDepth: 9,
+} as const;
+
+/** The garden plot outline (centreline) as a closed path: top edge, right side, bottom edge with its roots, left side. */
+function gardenPlotPath(): Path2D {
+  const { halfW, halfH, corner, rootXs, rootHalfW, rootDepth } = MAP_CHINAMPA_PLOT;
+  const cx = halfW - corner;
+  const cy = halfH - corner;
+  const p = new Path2D();
+  p.moveTo(-cx, -halfH);
+  p.lineTo(cx, -halfH);
+  p.arc(cx, -cy, corner, -Math.PI / 2, 0);
+  p.lineTo(halfW, cy);
+  p.arc(cx, cy, corner, 0, Math.PI / 2);
+  // bottom edge, right to left: a rounded root tip hangs from it at each rootXs
+  for (const x of rootXs) {
+    p.lineTo(x + rootHalfW, halfH);
+    p.bezierCurveTo(x + rootHalfW, halfH + rootDepth, x - rootHalfW, halfH + rootDepth, x - rootHalfW, halfH);
+  }
+  p.lineTo(-cx, halfH);
+  p.arc(-cx, cy, corner, Math.PI / 2, Math.PI);
+  p.lineTo(-halfW, -cy);
+  p.arc(-cx, -cy, corner, Math.PI, (3 * Math.PI) / 2);
+  p.closePath();
+  return p;
+}
+
+type MarkerPainter = (ctx: CanvasRenderingContext2D, locked: boolean) => void;
+
+/** Every look's marker painter. A new `HabitatLookId` fails to compile until it has its own marker, so no look falls back to the canal's. */
+const MARKER_PAINTERS: Readonly<Record<HabitatLookId, MarkerPainter>> = {
+  canal: (ctx, locked) => {
+    const disc = new Path2D();
+    ell(disc, 0, 0, MARKER_LINE_R, MARKER_LINE_R);
+    shape(ctx, disc, locked ? WHITE : UI_PRIMARY, MARKER_LW);
+  },
+  pond: (ctx, locked) => shape(ctx, lilyPadPath(), locked ? WHITE : MAP_POND_PAD_FILL, MARKER_LW),
+  chinampa: (ctx, locked) => shape(ctx, gardenPlotPath(), locked ? WHITE : MAP_CHINAMPA_PLOT_FILL, MARKER_LW),
+};
+
+/**
+ * Paint a marker centred at local (0, 0), 64 px to the outer ink edge, ink 3.5 (the garden plot
+ * is 60 x 48, with roots to about 31 below the centre). The canal look (default) is a disc:
+ * #ffe14a unlocked, #ffffff locked. The pond look is the notched lily pad: {@link MAP_POND_PAD_FILL} unlocked, #ffffff
+ * locked. The chinampa look is the garden plot with hanging roots: {@link MAP_CHINAMPA_PLOT_FILL}
+ * unlocked, #ffffff locked. The number is scene text; the locked cue is the padlock badge, not
+ * the fill. An unknown look throws a RangeError, so none falls back to the canal.
  */
 export function paintMapMarker(ctx: CanvasRenderingContext2D, locked: boolean, look: HabitatLookId = 'canal'): void {
-  if (look === 'pond') {
-    shape(ctx, lilyPadPath(), locked ? WHITE : MAP_POND_PAD_FILL, MARKER_LW);
-    return;
-  }
-  const disc = new Path2D();
-  ell(disc, 0, 0, MARKER_LINE_R, MARKER_LINE_R);
-  shape(ctx, disc, locked ? WHITE : UI_PRIMARY, MARKER_LW);
+  if (!Object.hasOwn(MARKER_PAINTERS, look)) throw new RangeError(`unknown map marker look "${look}"`);
+  MARKER_PAINTERS[look](ctx, locked);
 }
 
 const FOCUS_HALF = MAP_FOCUS_INK_R + MAP_FOCUS_LW / 2;

@@ -576,7 +576,7 @@ describe('styler sizes', () => {
 });
 
 describe('stylerLayout', () => {
-  it.each(SMALLEST)('fits every step with 2, 3, 4, 5 and 8 options, Dream colour with 1 to 15 and the Name step in both modes on %j', (view) => {
+  it.each(SMALLEST)('fits every step with 2, 3, 4, 5 and 8 options, Dream colour with 1 to 16 and the Name step in both modes on %j', (view) => {
     expect(problemsOn([view])).toEqual([]);
   });
 
@@ -757,12 +757,12 @@ describe('stylerLayout', () => {
     expect(() => stylerLayout(view, { mode: 'restyle', step: 'eyes', optionCount: 3, tabPage: 0.5 }, measure)).toThrow(RangeError);
   });
 
-  it('rejects a Dream colour option count outside 1 to 15, and the Dream colour step in the creator', () => {
+  it('rejects a Dream colour option count outside 1 to 16, and the Dream colour step in the creator', () => {
     const view = { cssW: 844, cssH: 390 };
     const measure = measureFor('restyle', 'dream');
     const at = (mode: StylerMode, optionCount: number): StylerLayout =>
       stylerLayout(view, { mode, step: 'dream', optionCount, tabPage: null }, measure);
-    expect(MAX_DREAM_OPTIONS).toBe(15);
+    expect(MAX_DREAM_OPTIONS).toBe(16);
     expect(() => at('restyle', 0)).toThrow(RangeError);
     expect(() => at('restyle', MAX_DREAM_OPTIONS + 1)).toThrow(RangeError);
     expect(() => at('restyle', 2.5)).toThrow(RangeError);
@@ -788,7 +788,7 @@ describe('stylerLayout Dream colour step', () => {
     return dream.perPage;
   }
 
-  it('fits 1 to 15 options with labels always shown and no caption on every supported canvas', () => {
+  it('fits 1 to 16 options with labels always shown and no caption on every supported canvas', () => {
     expect(problemsOn(DREAM_VIEWS).filter((problem) => problem.includes(' dream '))).toEqual([]);
     for (const view of DREAM_VIEWS) {
       for (const count of DREAM_COUNTS) {
@@ -901,13 +901,14 @@ describe('stylerLayout Outfit step', () => {
     return inner.w - Math.max(SURPRISE_BUTTON.w, CANCEL_BUTTON.w, DONE_BUTTON.w) - UI.gap;
   }
 
-  it('derives its counts from the catalogue: eight slots, and None plus the most Wearables of one slot (Back: None and four)', () => {
+  it('derives its counts from the catalogue: eight slots, and None plus the most Wearables of one slot (Head and Back: None and five)', () => {
     expect(OUTFIT_SLOT_COUNT).toBe(WEARABLE_SLOTS.length);
     expect(OUTFIT_SLOT_COUNT).toBe(MAX_STEP_OPTIONS);
     const perSlot = WEARABLE_SLOTS.map((slot) => WEARABLES.filter((wearable) => wearable.slot === slot).length);
     expect(MAX_OUTFIT_CHOICES).toBe(1 + Math.max(...perSlot));
-    expect(WEARABLES.filter((wearable) => wearable.slot === 'back')).toHaveLength(4);
-    expect(MAX_OUTFIT_CHOICES).toBe(5);
+    expect(WEARABLES.filter((wearable) => wearable.slot === 'head')).toHaveLength(5);
+    expect(WEARABLES.filter((wearable) => wearable.slot === 'back')).toHaveLength(5);
+    expect(MAX_OUTFIT_CHOICES).toBe(6);
   });
 
   it.each(SMALLEST)('fits the slots view on %j', (view) => {

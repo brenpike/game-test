@@ -2,7 +2,7 @@ import { CANAL_TREASURES, type Rarity, type Treasure } from './catalogue';
 import { shapeDistance, type ElementSpawn, type HazardSpawn } from './hazards';
 import type { PredatorRoute } from './predators';
 import { mulberry32 } from './rng';
-import { FINDS } from './tuning';
+import { FINDS, type TilapiaTuning } from './tuning';
 
 /** Height of one screen in world px; the canal is one screen tall. */
 export const WORLD_H = 360;
@@ -153,7 +153,7 @@ export interface FindSpawn {
 }
 
 /** Declared cover label of a hiding spot. */
-export type HidingCover = 'reeds' | 'pad' | 'cave' | 'pastCurrent';
+export type HidingCover = 'reeds' | 'pad' | 'cave' | 'pastCurrent' | 'bank';
 
 /**
  * One place a treasure may be hidden. `cover` and `rarity` are declared labels; the hiding rules
@@ -172,6 +172,14 @@ export interface HidingSpot {
 /** Cave rectangle; inclusive edges. */
 export interface CaveArea {
   id: string;
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+
+/** An overhanging bank rectangle; what is under it is hidden. Inclusive edges. */
+export interface BankOverhang {
   x0: number;
   x1: number;
   y0: number;
@@ -220,6 +228,10 @@ export interface ZoneLayout {
   cave: CaveArea;
   mainPath: Point[];
   strandingPlaces: StrandingPlace[];
+  /** The area's own tilapia tuning; absent means TILAPIA. */
+  tilapia?: Readonly<TilapiaTuning>;
+  /** Overhanging bank rectangles, the bank cover; absent means none. */
+  bankOverhangs?: BankOverhang[];
 }
 
 /** An area's size in world px. */
@@ -268,6 +280,12 @@ export interface AreaLayoutData {
   readonly fixedPads?: readonly Readonly<FixedPadData>[];
   readonly bankChunks: readonly number[];
   readonly sunChunk: number;
+  /** The area's own tilapia tuning; absent means TILAPIA. */
+  readonly tilapia?: Readonly<TilapiaTuning>;
+  /** Overhanging bank rectangles, the bank cover; absent means none. Never derived from bankChunks. */
+  readonly bankOverhangs?: readonly Readonly<BankOverhang>[];
+  /** Fixed hiding spots under the overhanging bank, ids `spot-bank-<n>`, after the fixed pads; absent means none. */
+  readonly bankSpots?: readonly FixedSpotData[];
 }
 
 /** The canal cave. */
@@ -661,8 +679,9 @@ function isSpotClear(
 /**
  * Hiding spots: the fixed cave, past-current and reed spots (area data, never dropped), then the
  * spot under seeded pad `padSpotIndex` when it is not null, whose x comes from this seed's pads,
- * then the spots under the fixed pads (area data, never dropped). The seeded pad spot is dropped if
- * it is out of the water, in the safe area, near the ring or too close to an accepted spot.
+ * then the spots under the fixed pads, then the bank spots (both area data, never dropped). The
+ * seeded pad spot is dropped if it is out of the water, in the safe area, near the ring or too
+ * close to an accepted spot.
  */
 function buildSpots(
   data: AreaLayoutData,
@@ -683,6 +702,7 @@ function buildSpots(
     }
   }
   spots.push(...fixedPadSpots(data));
+  spots.push(...fixedSpots(data.id, data.bankSpots ?? [], 'bank', 'bank'));
   return spots;
 }
 
@@ -694,9 +714,18 @@ function buildFinds(treasures: readonly Treasure[], spots: HidingSpot[]): FindSp
   }));
 }
 
+/** The layout's optional fields, each copied only when its data is set. */
+function optionalLayoutParts(data: Readonly<AreaLayoutData>): Pick<ZoneLayout, 'tilapia' | 'bankOverhangs'> {
+  return {
+    ...(data.tilapia ? { tilapia: { ...data.tilapia } } : {}),
+    ...(data.bankOverhangs ? { bankOverhangs: data.bankOverhangs.map((overhang) => ({ ...overhang })) } : {}),
+  };
+}
+
 /**
  * Deterministically builds an area's zone layout from its data and a mulberry32 seed. The rules
- * read the layout's width, height and bedTop, never the canal constants.
+ * read the layout's width, height and bedTop, never the canal constants. The optional tilapia
+ * tuning, bank overhangs and bank spots make no rand() draws.
  */
 export function buildZone(data: Readonly<AreaLayoutData>, seed: number): ZoneLayout {
   const rand = mulberry32(seed);
@@ -749,6 +778,7 @@ export function buildZone(data: Readonly<AreaLayoutData>, seed: number): ZoneLay
     cave: { ...data.cave },
     mainPath: data.mainPath.map((point) => ({ ...point })),
     strandingPlaces: data.strandingPlaces.map((place) => ({ ...place })),
+    ...optionalLayoutParts(data),
   };
 }
 

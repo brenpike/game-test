@@ -13,8 +13,9 @@
  * the hint and "More to come" are scene text laid over or under these shapes.
  *
  * The pictures are keyed by {@link HabitatLookId} in `Record`s, so a new look cannot ship
- * without refuge art. Canal: stone banks. Pond: lily pads and cattails. Nothing for the
- * chinampa, the spring cave or the deep canal: later habitats add their own entries.
+ * without refuge art. Canal: stone banks. Pond: lily pads and cattails. Chinampa: garden
+ * plots with ahuejote willows and roots, bare when dirty, with corn, marigolds and lettuce
+ * when clean. Nothing for the spring cave or the deep canal: later habitats add their own entries.
  *
  * Contrast (guide 10): the picture is UI, not a cue object. Its ink frame (3.5) must read
  * on everything that meets it, so every colour that can touch the frame is held to 3:1
@@ -32,6 +33,7 @@
  */
 import { REFUGE_PICTURE } from '../logic/refugeUi';
 import { TAU, ell, frameFromBounds, inkMany, line, seg, shape, type Seg, type TexSize } from './canvasKit';
+import { ROOT_TANGLE_BARK } from './drawChinampa';
 import { paintLilyPad, paintReed, type ReedLook } from './drawScenery';
 import { habitatLook, type HabitatLook, type HabitatLookId } from './habitatLook';
 import {
@@ -48,6 +50,10 @@ import {
   UI_PRIMARY,
   UI_SUCCESS,
   WHITE,
+  WILLOW_FOLIAGE,
+  WILLOW_SHINE,
+  WILLOW_STRAND,
+  WILLOW_TRUNK,
 } from './palette';
 
 // ---------------------------------------------------------------------------
@@ -71,6 +77,20 @@ export const REFUGE_TRASH_BOTTLE = '#bfe9f0';
 export const REFUGE_TRASH_BOTTLE_CAP = UI_PRIMARY;
 export const REFUGE_TRASH_BAG = '#f3efe4';
 export const REFUGE_TRASH_BAG_FOLD = '#c9c2b0';
+/**
+ * Chinampa garden plot colours (derived, provisional). Each is 3:1 or more with ink, so the
+ * ink frame reads where a plot meets it: soil #b0794e is 3.90:1, the sunlit plot top #c99366
+ * 5.38:1, the willow trunk #a56a3b 3.24:1 and the willow roots #a0653f 3.03:1. The crops
+ * are all lighter (4.5:1 to 10:1).
+ */
+export const REFUGE_PLOT_SOIL = '#b0794e';
+export const REFUGE_PLOT_TOP = '#c99366';
+/** Soil layers on a plot's face. An internal detail line, never ink. */
+export const REFUGE_PLOT_STRATA = 'rgba(96,58,32,0.5)';
+export const REFUGE_CORN = '#8fd14f';
+export const REFUGE_COB = '#ffd24a';
+export const REFUGE_MARIGOLD = '#ff9a2e';
+export const REFUGE_LETTUCE = '#5fcf6a';
 /** Resting axolotl body (the Leucistic body, guide 3b). */
 export const REFUGE_AXOLOTL_BODY = LEUCISTIC.body;
 /** Nudge badge disc: the same pink as the "New!" pill. Ink on it is 6.30:1. */
@@ -213,14 +233,36 @@ export function refugeCleanWater(look: HabitatLookId): { readonly top: string; r
 const CANAL_STONES: readonly string[] = [PEBBLE_A, PEBBLE_B, PEBBLE_C];
 
 /**
+ * The structure colours of each look that can meet the ink frame: the canal's stones, nothing for
+ * the pond (its pads and cattails stand inside the picture), and the chinampa's plot soil, plot top,
+ * willow trunk, roots and crops. A new look fails to compile until it lists its own.
+ */
+const STRUCTURE_FRAME_COLOURS: Readonly<Record<HabitatLookId, readonly string[]>> = {
+  canal: CANAL_STONES,
+  pond: [],
+  chinampa: [
+    REFUGE_PLOT_SOIL,
+    REFUGE_PLOT_TOP,
+    WILLOW_TRUNK,
+    ROOT_TANGLE_BARK,
+    WILLOW_FOLIAGE,
+    WILLOW_STRAND,
+    REFUGE_CORN,
+    REFUGE_MARIGOLD,
+    REFUGE_LETTUCE,
+    REFUGE_DEAD_STALK,
+  ],
+};
+
+/**
  * Every opaque colour that can meet the ink frame of a picture of `look` in `state`: the
- * sky stops, the water stops, the bed, and the canal's stones. Each is held to 3:1 with ink
- * (guide 10), so the frame reads on all of them.
+ * sky stops, the water stops, the bed, and the look's structure colours (the canal's stones, the
+ * chinampa's plots). Each is held to 3:1 with ink (guide 10), so the frame reads on all of them.
  */
 export function refugeBackdropColours(look: HabitatLookId, state: RefugeArtState): string[] {
   const l = habitatLook(look);
   const water = state === 'dirty' ? refugeDirtyWater(look) : refugeCleanWater(look);
-  return [l.sky.top, l.sky.horizon, water.top, water.bottom, l.bed.top, ...(look === 'canal' ? CANAL_STONES : [])];
+  return [l.sky.top, l.sky.horizon, water.top, water.bottom, l.bed.top, ...STRUCTURE_FRAME_COLOURS[look]];
 }
 
 // ---------------------------------------------------------------------------
@@ -465,7 +507,169 @@ function paintPondStructure(ctx: CanvasRenderingContext2D, state: RefugeArtState
   }
 }
 
-const STRUCTURES: Readonly<Record<HabitatLookId, Structure>> = { canal: paintCanalStructure, pond: paintPondStructure };
+// -- Chinampa: garden plots with willows and roots ---------------------------
+
+/** Ink of a plot (the pebble width, guide 4b). */
+const PLOT_LW = STONE_LW;
+/** Plot top and the plot's width: the left plot spans x -2 to 40, the right mirrors it. */
+const PLOT_TOP_Y = SURF_Y;
+const PLOT_FACE_X = 40;
+/** Where the willow stands on a plot (x), and where its crown sits (y). */
+const PLOT_WILLOW_X = 34;
+const PLOT_CROWN_Y = 12;
+
+/** A tube of colour `c` and width `w`, with ink `ol` a side, along one quadratic. */
+function curveTube(x0: number, y0: number, cx: number, cy: number, x1: number, y1: number, w: number, c: string, ol: number): Seg {
+  const p = new Path2D();
+  p.moveTo(x0, y0);
+  p.quadraticCurveTo(cx, cy, x1, y1);
+  return seg(p, w, c, ol);
+}
+
+/** Willow roots reaching from a plot's face into the water: start inside the plot, so its body covers their roots. */
+const PLOT_ROOTS: readonly (readonly [number, number, number, number, number, number])[] = [
+  [38, 38, 46, 43, 45, 57],
+  [38, 52, 48, 57, 49, 70],
+  [38, 64, 45, 70, 43, 80],
+];
+
+/** Dead stalk stubs on a bare plot top: x, height. */
+const PLOT_STUBS: readonly (readonly [number, number])[] = [
+  [13, 7],
+  [21, 9],
+  [27, 6],
+];
+
+function plotBodyPath(): Path2D {
+  const p = new Path2D();
+  p.moveTo(-2, PLOT_TOP_Y);
+  p.lineTo(PLOT_FACE_X - 5, PLOT_TOP_Y);
+  p.quadraticCurveTo(PLOT_FACE_X, PLOT_TOP_Y, PLOT_FACE_X, PLOT_TOP_Y + 5);
+  p.lineTo(PLOT_FACE_X, BED_Y + 2);
+  p.lineTo(-2, BED_Y + 2);
+  p.closePath();
+  return p;
+}
+
+/** The three soil layers on a plot's face: internal detail lines. */
+function plotStrataPath(): Path2D {
+  const p = new Path2D();
+  for (const [y, dip] of [
+    [36, 2],
+    [50, -2],
+    [64, 2],
+  ] as const) {
+    p.moveTo(2, y);
+    p.quadraticCurveTo(20, y + dip, PLOT_FACE_X - 3, y);
+  }
+  return p;
+}
+
+function paintPlotWillow(ctx: CanvasRenderingContext2D, state: RefugeArtState): void {
+  const x = PLOT_WILLOW_X;
+  if (state === 'dirty') {
+    // a bare trunk with two leafless twigs
+    inkMany(ctx, [
+      curveTube(x, PLOT_TOP_Y + 1, x, 16, x, 11, 4.4, WILLOW_TRUNK, 2.2),
+      curveTube(x, 13, x - 3, 10, x - 7, 6, 2.4, WILLOW_TRUNK, 1.6),
+      curveTube(x, 13, x + 3, 10, x + 7, 6, 2.4, WILLOW_TRUNK, 1.6),
+    ]);
+    return;
+  }
+  // green strands hang from the crown over the plot and out toward the water
+  inkMany(ctx, [
+    curveTube(x, PLOT_TOP_Y + 1, x, 16, x, 11, 4.4, WILLOW_TRUNK, 2.2),
+    ...[
+      [-7, -10, 30],
+      [-3, -6, 38],
+      [3, 4, 34],
+      [7, 9, 28],
+    ].map(([from, drift, end]) => curveTube(x + from, PLOT_CROWN_Y + 3, x + drift, (PLOT_CROWN_Y + end) / 2, x + drift, end, 2, WILLOW_STRAND, 1.4)),
+  ]);
+  const crown = new Path2D();
+  ell(crown, x, PLOT_CROWN_Y, 8.5, 5);
+  shape(ctx, crown, WILLOW_FOLIAGE, 2.2);
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = WILLOW_SHINE;
+  ctx.stroke(line(x - 4, PLOT_CROWN_Y - 1.5, x + 1, PLOT_CROWN_Y - 2.5));
+}
+
+/** A lettuce rosette on a plot, base centre at (x, y): a round head of two overlapping leaf layers. */
+function paintLettuce(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+  const outer = new Path2D();
+  ell(outer, x, y - r * 0.7, r, r * 0.8);
+  shape(ctx, outer, REFUGE_LETTUCE, 1.8);
+  const inner = new Path2D();
+  ell(inner, x, y - r * 0.85, r * 0.55, r * 0.45);
+  ctx.fillStyle = WILLOW_SHINE;
+  ctx.fill(inner);
+}
+
+/** A corn stalk from (x, y) up `h`, with a leaf each side and a cob on the right, drawn as one inked group. */
+function paintCornStalk(ctx: CanvasRenderingContext2D, x: number, y: number, h: number): void {
+  const leafY = y - h * 0.45;
+  inkMany(ctx, [
+    curveTube(x, y, x + 0.5, y - h * 0.5, x, y - h, 2.8, REFUGE_CORN, 1.8),
+    curveTube(x, leafY, x - 4, leafY - 2, x - 7, leafY + 3, 2, REFUGE_CORN, 1.4),
+    curveTube(x, leafY - 3, x + 4, leafY - 5, x + 7, leafY, 2, REFUGE_CORN, 1.4),
+  ]);
+  const cob = new Path2D();
+  ell(cob, x + 2.6, y - h * 0.62, 1.8, 3.4, 0.2);
+  shape(ctx, cob, REFUGE_COB, 1.6);
+}
+
+/** A marigold on a stem from (x, y) up `h`: an orange head with a yellow heart. */
+function paintMarigold(ctx: CanvasRenderingContext2D, x: number, y: number, h: number): void {
+  inkMany(ctx, [curveTube(x, y, x + 0.4, y - h / 2, x, y - h, 1.8, REFUGE_CORN, 1.3)]);
+  const head = new Path2D();
+  ell(head, x, y - h - 1, 3.4, 3.4);
+  shape(ctx, head, REFUGE_MARIGOLD, 1.8);
+  const heart = new Path2D();
+  ell(heart, x, y - h - 1, 1.3, 1.3);
+  ctx.fillStyle = REFUGE_COB;
+  ctx.fill(heart);
+}
+
+function paintChinampaStructure(ctx: CanvasRenderingContext2D, state: RefugeArtState): void {
+  for (const mirror of [false, true]) {
+    ctx.save();
+    if (mirror) {
+      ctx.translate(PIC_W, 0);
+      ctx.scale(-1, 1);
+    }
+    inkMany(
+      ctx,
+      PLOT_ROOTS.map(([x0, y0, cx, cy, x1, y1]) => curveTube(x0, y0, cx, cy, x1, y1, 3.4, ROOT_TANGLE_BARK, 1.8)),
+    );
+    shape(ctx, plotBodyPath(), REFUGE_PLOT_SOIL, PLOT_LW);
+    // the sunlit top of the plot, inside the ink
+    ctx.fillStyle = REFUGE_PLOT_TOP;
+    ctx.fill(rectPath(-2, PLOT_TOP_Y + PLOT_LW / 2, PLOT_FACE_X - PLOT_LW / 2 + 2, 4));
+    ctx.lineWidth = 1.8;
+    ctx.strokeStyle = REFUGE_PLOT_STRATA;
+    ctx.stroke(plotStrataPath());
+    if (state === 'clean') {
+      paintLettuce(ctx, 6, PLOT_TOP_Y, 4.4);
+      paintCornStalk(ctx, 14, PLOT_TOP_Y, 13);
+      paintMarigold(ctx, 21, PLOT_TOP_Y, 7);
+      paintCornStalk(ctx, 27, PLOT_TOP_Y, 10);
+    } else {
+      // dead stubs: short, dull, no leaf and no head
+      inkMany(
+        ctx,
+        PLOT_STUBS.map(([x, h]) => curveTube(x, PLOT_TOP_Y, x + 0.4, PLOT_TOP_Y - h / 2, x + 1, PLOT_TOP_Y - h, 2.6, REFUGE_DEAD_STALK, 1.8)),
+      );
+    }
+    paintPlotWillow(ctx, state);
+    ctx.restore();
+  }
+}
+
+const STRUCTURES: Readonly<Record<HabitatLookId, Structure>> = {
+  canal: paintCanalStructure,
+  pond: paintPondStructure,
+  chinampa: paintChinampaStructure,
+};
 
 /** Where the small axolotls rest in a clean picture, on the bed between the banks. */
 const RESTERS: Readonly<Record<HabitatLookId, readonly { readonly x: number; readonly y: number; readonly flip: boolean }[]>> = {
@@ -476,6 +680,10 @@ const RESTERS: Readonly<Record<HabitatLookId, readonly { readonly x: number; rea
   pond: [
     { x: 70, y: 71, flip: false },
     { x: 124, y: 69, flip: true },
+  ],
+  chinampa: [
+    { x: 68, y: 70, flip: false },
+    { x: 132, y: 71, flip: true },
   ],
 };
 
@@ -597,6 +805,10 @@ export const REFUGE_SECTION_PAINTERS: Readonly<
     dirty: (ctx) => paintRefugeSection(ctx, 'pond', 'dirty'),
     clean: (ctx) => paintRefugeSection(ctx, 'pond', 'clean'),
   },
+  chinampa: {
+    dirty: (ctx) => paintRefugeSection(ctx, 'chinampa', 'dirty'),
+    clean: (ctx) => paintRefugeSection(ctx, 'chinampa', 'clean'),
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -642,10 +854,28 @@ function paintPondPlants(ctx: CanvasRenderingContext2D): void {
   paintGrassTuft(ctx, 0);
 }
 
+/**
+ * The chinampa's plants: a raised garden mound on the bed with two corn stalks, two marigolds and a
+ * lettuce at each end, growing up from the base. About 46 wide and 58 tall, narrow enough to stand
+ * between the two resting axolotls ({@link REFUGE_PLANTS_TEX} is 80 x 60).
+ */
+function paintChinampaPlants(ctx: CanvasRenderingContext2D): void {
+  const mound = new Path2D();
+  ell(mound, 0, -3, 21, 6);
+  shape(ctx, mound, REFUGE_PLOT_SOIL, 2.4);
+  paintLettuce(ctx, -17, -4, 4.8);
+  paintLettuce(ctx, 17, -4, 4.8);
+  paintCornStalk(ctx, -7, -6, 46);
+  paintCornStalk(ctx, 7, -6, 36);
+  paintMarigold(ctx, -1, -6, 22);
+  paintMarigold(ctx, 13, -6, 16);
+}
+
 /** Every look's plants painter. Local (0, 0) is the base of the plants, bottom-centre ({@link REFUGE_PLANTS_TEX}). */
 export const REFUGE_PLANTS_PAINTERS: Readonly<Record<HabitatLookId, PlantsPainter>> = {
   canal: paintCanalPlants,
   pond: paintPondPlants,
+  chinampa: paintChinampaPlants,
 };
 
 /** Paint the plants layer of `look` with its base at local (0, 0), growing up. */

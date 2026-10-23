@@ -1,7 +1,7 @@
 /**
  * The treasure catalogue: rarities, categories, wearable slots, perks, Dream colours and the
- * treasures of every area: the canal, the pond and the pond's Area 3 (PRD B1 to B3, F9). Pure data plus lookups; nothing here
- * applies perks.
+ * treasures of every area: the canal, the pond, the pond's Area 3 and the chinampa gardens' Area 4 (PRD B1 to B3, F9).
+ * Pure data plus lookups; nothing here applies perks.
  */
 
 /** Treasure rarity, from most to least common. */
@@ -84,7 +84,8 @@ export type DreamColourId =
   | 'galaxy'
   | 'tie-dye-galaxy'
   | 'lily-green'
-  | 'firefly-gold';
+  | 'firefly-gold'
+  | 'poppy-red';
 
 /** How a Dream colour is drawn. */
 export type DreamKind = 'solid' | 'patterned' | 'sheen';
@@ -129,11 +130,20 @@ export const FIREFLY_GOLD: DreamColour = Object.freeze({
   kind: 'solid',
 });
 
-/** Every Dream colour: the canal's 12, then Lily green, then Firefly gold. */
+/** The chinampa gardens' Area 4 Dream colour, held by that area's one Paint shell. */
+export const POPPY_RED: DreamColour = Object.freeze({
+  id: 'poppy-red',
+  name: 'Poppy red',
+  rarity: 'rare',
+  kind: 'solid',
+});
+
+/** Every Dream colour: the canal's 12, then Lily green, then Firefly gold, then Poppy red. */
 export const DREAM_COLOURS: readonly DreamColour[] = Object.freeze([
   ...CANAL_DREAM_COLOURS,
   LILY_GREEN,
   FIREFLY_GOLD,
+  POPPY_RED,
 ]);
 
 /** Fields every treasure has. `id` is stable forever, e.g. 'canal/sun-hat'. */
@@ -424,11 +434,83 @@ export const POND_2_TREASURES: readonly Treasure[] = Object.freeze([
   createPaintShell(FIREFLY_GOLD, 'pond'),
 ]);
 
-/** Every treasure of every area: the canal's, then the pond's, then the pond Area 3's. */
+/**
+ * The chinampa gardens' Area 4 treasures, with 'chinampa/' ids, by rarity: 6 Decorations, 5 Wearables
+ * and the Poppy red Paint shell. The Scarecrow is the area's special treasure. Every perk is the
+ * PERK_VALUES value for its type and rarity.
+ */
+export const CHINAMPA_TREASURES: readonly Treasure[] = Object.freeze([
+  { id: 'chinampa/clay-flowerpot', name: 'Clay flowerpot', rarity: 'common', category: 'decoration' },
+  { id: 'chinampa/corn-husk-doll', name: 'Corn husk doll', rarity: 'common', category: 'decoration' },
+  {
+    id: 'chinampa/straw-sun-hat',
+    name: 'Straw sun hat',
+    rarity: 'common',
+    category: 'wearable',
+    slot: 'head',
+    perk: { type: 'treasureSense', value: 15 },
+  },
+  {
+    id: 'chinampa/marigold-necklace',
+    name: 'Marigold necklace',
+    rarity: 'common',
+    category: 'wearable',
+    slot: 'neck',
+    perk: { type: 'regrowth', value: 10 },
+  },
+  { id: 'chinampa/scarecrow', name: 'Scarecrow', rarity: 'rare', category: 'decoration' },
+  {
+    id: 'chinampa/papel-picado-banner',
+    name: 'Papel picado banner',
+    rarity: 'rare',
+    category: 'decoration',
+    placement: 'hanging',
+    width: 144,
+  },
+  {
+    id: 'chinampa/garden-overalls',
+    name: 'Garden overalls',
+    rarity: 'rare',
+    category: 'wearable',
+    slot: 'shirt',
+    perk: { type: 'snackMagnet', value: 40 },
+  },
+  createPaintShell(POPPY_RED, 'chinampa'),
+  {
+    id: 'chinampa/willow-swing',
+    name: 'Willow swing',
+    rarity: 'epic',
+    category: 'decoration',
+    placement: 'hanging',
+  },
+  {
+    id: 'chinampa/monarch-hair-clip',
+    name: 'Monarch hair clip',
+    rarity: 'epic',
+    category: 'wearable',
+    slot: 'head',
+    perk: { type: 'dash', value: 20 },
+  },
+  { id: 'chinampa/golden-corn', name: 'Golden corn', rarity: 'legendary', category: 'decoration' },
+  {
+    id: 'chinampa/monarch-wings',
+    name: 'Monarch wings',
+    rarity: 'legendary',
+    category: 'wearable',
+    slot: 'back',
+    perk: { type: 'speed', value: 10 },
+  },
+]);
+
+/**
+ * Every treasure of every area: the canal's, then the pond's, then the pond Area 3's, then the
+ * chinampa gardens' Area 4's.
+ */
 export const ALL_TREASURES: readonly Treasure[] = Object.freeze([
   ...CANAL_TREASURES,
   ...POND_TREASURES,
   ...POND_2_TREASURES,
+  ...CHINAMPA_TREASURES,
 ]);
 
 const CATEGORY_NAMES: Readonly<Record<TreasureCategory, 'Decoration' | 'Wearable' | 'Paint shell'>> =

@@ -21,6 +21,7 @@ import {
   routeDistance,
   spotMatchesLabels,
   turnDistance,
+  underBank,
   underPad,
   withinLungeRange,
   zoneThreats,
@@ -728,5 +729,105 @@ describe('heron reach and strike zone', () => {
     expect(meetsThreatRiskRule(archMouth, 'legendary', threats)).toBe(true);
     expect(meetsThreatRiskRule(archMiddle, 'epic', threats)).toBe(true);
     expect(meetsThreatRiskRule(archMiddle, 'common', threats)).toBe(false);
+  });
+});
+
+/** Tilapia tuning of an area with its own values, a longer strike reach than TILAPIA's. */
+const AREA_TILAPIA = { ...TILAPIA, windup: 0.85, lungeSpeed: 400, lungeRange: 145, cooldown: 2.2, patrolSpeed: 50 };
+const BANK = { x0: 760, x1: 860, y0: SURF, y1: 280 };
+
+describe('underBank', () => {
+  it('is true inside an overhang rectangle, edges included', () => {
+    expect(underBank({ x: 800, y: 200 }, [BANK])).toBe(true);
+    expect(underBank({ x: 760, y: SURF }, [BANK])).toBe(true);
+    expect(underBank({ x: 860, y: 280 }, [BANK])).toBe(true);
+    expect(underBank({ x: 759.999, y: 200 }, [BANK])).toBe(false);
+    expect(underBank({ x: 800, y: 280.001 }, [BANK])).toBe(false);
+    expect(underBank({ x: 800, y: 200 }, [])).toBe(false);
+  });
+});
+
+describe('bank cover', () => {
+  const banked: HidingGeometry = { ...GEO, bankOverhangs: [BANK] };
+
+  it('lists the bank cover last in coversAt', () => {
+    const geo: HidingGeometry = {
+      ...GEO,
+      reedPatches: [{ x0: 640, x1: 700, y0: SURF, y1: 318, dragMul: 2.5 }],
+      pads: [{ x: 660, rx: 20, flower: false }],
+      cave: { id: 'canal/cave', x0: 640, x1: 700, y0: SURF, y1: 318 },
+      currents: [{ ...CURRENT, y0: SURF }],
+      bankOverhangs: [{ x0: 640, x1: 700, y0: SURF, y1: 318 }],
+    };
+    expect(coversAt({ x: 660, y: SURF + 20 }, geo)).toEqual(['reeds', 'pad', 'cave', 'pastCurrent', 'bank']);
+    expect(coversAt({ x: 800, y: 200 }, banked)).toEqual(['bank']);
+  });
+
+  it('gives no bank cover with absent or empty overhangs', () => {
+    expect(coversAt({ x: 800, y: 200 }, GEO)).toEqual([]);
+    expect(coversAt({ x: 800, y: 200 }, { ...GEO, bankOverhangs: [] })).toEqual([]);
+  });
+
+  it('is shallow cover: hides Common and Rare spots, never Epic or Legendary', () => {
+    expect(isDeep({ x: 800, y: 200 }, banked)).toBe(false);
+    expect(spotMatchesLabels(spotAt(800, 230, { cover: 'bank' }), banked)).toBe(true);
+    expect(spotMatchesLabels(spotAt(800, 260, { cover: 'bank', rarity: 'rare' }), banked)).toBe(true);
+    expect(spotMatchesLabels(spotAt(800, 260, { cover: 'bank', rarity: 'epic' }), banked)).toBe(false);
+    expect(spotMatchesLabels(spotAt(800, 260, { cover: 'bank', rarity: 'legendary', container: true }), banked)).toBe(false);
+    expect(spotMatchesLabels(spotAt(800, 230, { cover: 'bank' }), GEO)).toBe(false);
+  });
+});
+
+describe('per-area tilapia tuning in the risk ladder', () => {
+  const tuned = zoneThreats({ tilapiaRoutes: [LINE_ROUTE], tilapia: AREA_TILAPIA });
+  const shared = zoneThreats({ tilapiaRoutes: [LINE_ROUTE] });
+
+  it("gives a tuned geometry's tilapia routes the tuning's lunge range, marked tuned", () => {
+    expect(tuned).toEqual([{ kind: 'route', route: LINE_ROUTE, strike: 145, tilapia: true, tuned: true }]);
+    expect(shared).toEqual([{ kind: 'route', route: LINE_ROUTE, strike: TILAPIA.lungeRange, tilapia: true }]);
+    expect(shared[0]).not.toHaveProperty('tuned');
+  });
+
+  it('bands a tuned tilapia route by riskBands of its lunge range', () => {
+    expect(riskBands(AREA_TILAPIA.lungeRange)).toEqual({
+      common: { over: 205, upTo: Infinity },
+      rare: { over: 145, upTo: 205 },
+      epic: { over: 72.5, upTo: 145 },
+      legendary: { over: -Infinity, upTo: 72.5 },
+    });
+    const at = (distance: number): Point => ({ x: 5000, y: distance });
+    expect(meetsThreatRiskRule(at(142), 'rare', shared)).toBe(true);
+    expect(meetsThreatRiskRule(at(142), 'epic', tuned)).toBe(true);
+    expect(meetsThreatRiskRule(at(142), 'rare', tuned)).toBe(false);
+    expect(meetsThreatRiskRule(at(72), 'epic', shared)).toBe(true);
+    expect(meetsThreatRiskRule(at(72), 'legendary', tuned)).toBe(true);
+    expect(meetsThreatRiskRule(at(72), 'epic', tuned)).toBe(false);
+    expect(meetsThreatRiskRule(at(203), 'common', shared)).toBe(true);
+    expect(meetsThreatRiskRule(at(203), 'rare', tuned)).toBe(true);
+    expect(meetsThreatRiskRule(at(203), 'common', tuned)).toBe(false);
+  });
+
+  it("ignores the risk tuning's tilapia bands for a tuned route but keeps its turn clearance", () => {
+    const tight = { ...RISK, band: { ...RISK.band, legendary: { over: -Infinity, upTo: 10 } } };
+    expect(meetsThreatRiskRule({ x: 5000, y: 20 }, 'legendary', shared, tight)).toBe(false);
+    expect(meetsThreatRiskRule({ x: 5000, y: 20 }, 'legendary', tuned, tight)).toBe(true);
+    expect(meetsThreatRiskRule({ x: 0, y: RISK.turnClearance - 0.001 }, 'legendary', tuned)).toBe(false);
+  });
+
+  it("gives today's bands for a tuning with TILAPIA's lunge range", () => {
+    const same = zoneThreats({ tilapiaRoutes: [LINE_ROUTE], tilapia: { ...TILAPIA } });
+    for (const rarity of RARITIES) {
+      for (const distance of [0, 50, 70, 70.001, 100, 140, 140.001, 170, 200, 200.001, 400]) {
+        const pos = { x: 5000, y: distance };
+        expect(meetsThreatRiskRule(pos, rarity, same)).toBe(meetsThreatRiskRule(pos, rarity, shared));
+      }
+    }
+  });
+
+  it('reads the geometry tuning in meetsRarity', () => {
+    const route: TilapiaRoute = { id: 'over-cave', waypoints: [{ x: -10000, y: 250 - 142 }, { x: 10000, y: 250 - 142 }] };
+    const geo: HidingGeometry = { ...GEO, tilapiaRoutes: [route] };
+    expect(meetsRarity({ x: 950, y: 250, container: false }, 'epic', geo)).toBe(false);
+    expect(meetsRarity({ x: 950, y: 250, container: false }, 'epic', { ...geo, tilapia: AREA_TILAPIA })).toBe(true);
   });
 });

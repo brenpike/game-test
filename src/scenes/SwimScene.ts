@@ -31,11 +31,13 @@ import {
   type CollectedPayload,
   type DashStatePayload,
   type ExitClosedPayload,
+  type GhostNetSnaggedPayload,
   type PlasticWormSpatPayload,
   type ReducedMotionPayload,
   type SnackBoostPayload,
   type SteerPayload,
 } from '../logic/gameEvents';
+import { isSnagged, snagSwimTuning } from '../logic/ghostNets';
 import { hintSparkleRadius } from '../logic/hints';
 import { legSwimTuning } from '../logic/legs';
 import { motionProfile, type MotionProfile } from '../logic/motion';
@@ -86,6 +88,7 @@ import {
 } from './BootScene';
 import { ExitView } from './ExitView';
 import { FireflyView } from './FireflyView';
+import { GhostNetView } from './GhostNetView';
 import { HeronView } from './HeronView';
 import { HomeSpotView } from './HomeSpotView';
 import { HUD_EVENTS, type FactCardSeenPayload } from './HudScene';
@@ -207,10 +210,11 @@ export class SwimScene extends Phaser.Scene {
   private snackDarts: SnackDartState | null = null;
   /** Where a darted snack must not land; built again only when the plastic worms move. */
   private snackDartAvoid: SnackDartAvoid | null = null;
-  /** Swim tuning for `tunedLegs` legs and `tunedQueasy`, worked out again only when either changes. */
+  /** Swim tuning for `tunedLegs` legs, `tunedQueasy` and `tunedSnagged`, worked out again only when one changes. */
   private tuned: SwimTuning = SWIM;
   private tunedLegs = -1;
   private tunedQueasy = false;
+  private tunedSnagged = false;
   /** Snack drift time in seconds; advances only while swimming. */
   private driftClock = 0;
   /** Whether the axolotl centre was at the exit on the latest swimming step. */
@@ -238,6 +242,8 @@ export class SwimScene extends Phaser.Scene {
   private heronView: HeronView | null = null;
   /** The dusk fireflies, or null in an area whose look has none. */
   private fireflyView: FireflyView | null = null;
+  /** The ghost nets and the snag cue, or null in an area with no ghost nets. */
+  private ghostNetView: GhostNetView | null = null;
   private homeSpotView!: HomeSpotView;
   private treasureView!: TreasureView;
   private plasticWormView!: PlasticWormView;
@@ -305,11 +311,13 @@ export class SwimScene extends Phaser.Scene {
     this.tuned = SWIM;
     this.tunedLegs = -1;
     this.tunedQueasy = false;
+    this.tunedSnagged = false;
     this.queasyCheeks = null;
     this.snackDarts = null;
     this.snackDartAvoid = null;
     this.heronView = null;
     this.fireflyView = null;
+    this.ghostNetView = null;
     this.swimPhase = (TAU * T_STATIC) / 1.2;
     this.gillPhase = (TAU * T_STATIC) / 0.8;
   }
@@ -406,6 +414,11 @@ export class SwimScene extends Phaser.Scene {
    * moved snack and a new dart state, and setItems works the tally out again: bounded by the
    * darter count and only for the hop's third of a second. The avoid object is built again only
    * when the plastic worms move.
+   * Ghost nets (#76): swimTuning is worked out again only when the leg count, queasy or snagged
+   * changes, and the snagged flag is a field on the drawnAxolotl input; isSnagged reads one number
+   * and allocates nothing. The net sprites and the snag cue are made once per trip, and only in an
+   * area with ghost nets; there GhostNetView.render allocates nothing. The canal and the pond call
+   * no view here.
    * Heron and fireflies (#98): made once per trip, and only in an area with a heron or a look with
    * fireflies; the canal and Area 2 call nothing. FireflyView.render allocates nothing. HeronView
    * reads predatorCycleView, which returns two small objects (the view and its timing) per heron per
@@ -472,16 +485,20 @@ export class SwimScene extends Phaser.Scene {
   }
 
   /**
-   * Swim tuning for the legs present, slowed while queasy (Tail Dash never is). Worked out again
-   * only when the leg count or queasy changes, so a swimming frame allocates no tuning object.
+   * Swim tuning for the legs present, slowed while queasy and while snagged (Tail Dash never is).
+   * Worked out again only when the leg count, queasy or snagged changes, so a swimming frame
+   * allocates no tuning object.
    */
   private swimTuning(): SwimTuning {
     const legs = this.snapshot.legs.present;
     const queasy = isQueasy(this.trip.plasticWorms);
-    if (legs !== this.tunedLegs || queasy !== this.tunedQueasy) {
+    const snagged = isSnagged(this.trip.ghostNets);
+    if (legs !== this.tunedLegs || queasy !== this.tunedQueasy || snagged !== this.tunedSnagged) {
       this.tunedLegs = legs;
       this.tunedQueasy = queasy;
-      this.tuned = queasySwimTuning(legSwimTuning(legs, this.perks.swim), this.trip.plasticWorms);
+      this.tunedSnagged = snagged;
+      const legTuning = legSwimTuning(legs, this.perks.swim);
+      this.tuned = snagSwimTuning(queasySwimTuning(legTuning, this.trip.plasticWorms), this.trip.ghostNets);
     }
     return this.tuned;
   }
@@ -515,6 +532,8 @@ export class SwimScene extends Phaser.Scene {
       this.perks.hintMultiplier,
     );
     this.plasticWormView = new PlasticWormView(this, this.assets, this.trip.plasticWorms.worms);
+    const nets = this.trip.ghostNets.nets;
+    this.ghostNetView = nets.length > 0 ? new GhostNetView(this, this.assets, nets, this.axolotlSize()) : null;
 
     this.snacks.clear();
     for (const item of this.items) {
@@ -900,13 +919,17 @@ export class SwimScene extends Phaser.Scene {
 
   /**
    * Clears pad steering when the carry starts; a still (reduced-motion) arrival snaps the camera
-   * home; a spat plastic worm tells the HUD.
+   * home; a spat plastic worm and a new ghost net snag tell the HUD.
    */
   private handleTripEvents(events: readonly TripEvent[]): void {
     for (const event of events) {
       if (event.type === 'wormSpat') {
         const payload: PlasticWormSpatPayload = { id: event.id };
         this.game.events.emit(GAME_EVENTS.PLASTIC_WORM_SPAT, payload);
+      }
+      if (event.type === 'snagged') {
+        const payload: GhostNetSnaggedPayload = { id: event.id };
+        this.game.events.emit(GAME_EVENTS.GHOST_NET_SNAGGED, payload);
       }
       if (event.type === 'carryStart') {
         this.padSteer = { x: 0, y: 0 };
@@ -1087,6 +1110,7 @@ export class SwimScene extends Phaser.Scene {
       baseScale,
     );
     this.renderQueasyCheeks();
+    this.ghostNetView?.render(isSnagged(this.trip.ghostNets), body);
   }
 
   /**
@@ -1128,6 +1152,7 @@ export class SwimScene extends Phaser.Scene {
       legsPresent: this.snapshot.legs.present,
       swimming: this.trip.phase === 'swimming',
       queasy: isQueasy(this.trip.plasticWorms),
+      snagged: isSnagged(this.trip.ghostNets),
       squash: this.turn.squash,
     });
     this.snackView = this.snackFrame();

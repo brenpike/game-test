@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { AREAS, CANAL_AREA, CANAL_HABITAT, HABITATS, POND_2_AREA, POND_AREA, POND_HABITAT, type AreaData, type Habitat } from './areas';
+import {
+  AREAS,
+  CANAL_AREA,
+  CANAL_HABITAT,
+  CHINAMPA_AREA,
+  CHINAMPA_HABITAT,
+  HABITATS,
+  POND_2_AREA,
+  POND_AREA,
+  POND_HABITAT,
+  type AreaData,
+  type Habitat,
+} from './areas';
 import { DEV_AREAS } from './devAreas';
 import { REGISTRY_KEYS } from './gameEvents';
 import {
@@ -61,50 +73,53 @@ function specialOnly(...areaIds: string[]): AreaStarsRecord {
   return Object.fromEntries(areaIds.map((id) => [id, { ...NO_STARS, special: true }]));
 }
 
-const CHINAMPA_HABITAT: Readonly<Habitat> = { id: 'chinampa', name: 'Chinampa gardens', look: 'chinampa' };
+/** A test-only habitat no real table holds, so its ids never clash with a real habitat or area. */
+const MARSH_HABITAT: Readonly<Habitat> = { id: 'reed-marsh', name: 'Reed marsh', look: 'reed-marsh' };
 
-const CHINAMPA_AREA: Readonly<AreaData> = { ...POND_2_AREA, id: 'chinampa-1', number: 4, habitatId: CHINAMPA_HABITAT.id };
+const MARSH_AREA: Readonly<AreaData> = { ...CHINAMPA_AREA, id: 'reed-marsh-1', number: 5, habitatId: MARSH_HABITAT.id };
 
-const CHINAMPA_AREA_2: Readonly<AreaData> = { ...POND_2_AREA, id: 'chinampa-2', number: 5, habitatId: CHINAMPA_HABITAT.id };
+const MARSH_AREA_2: Readonly<AreaData> = { ...CHINAMPA_AREA, id: 'reed-marsh-2', number: 6, habitatId: MARSH_HABITAT.id };
 
-const FUTURE_AREAS: readonly Readonly<AreaData>[] = [...AREAS, CHINAMPA_AREA, CHINAMPA_AREA_2];
+const FUTURE_AREAS: readonly Readonly<AreaData>[] = [...AREAS, MARSH_AREA, MARSH_AREA_2];
 
-const FUTURE_HABITATS: readonly Readonly<Habitat>[] = [...HABITATS, CHINAMPA_HABITAT];
+const FUTURE_HABITATS: readonly Readonly<Habitat>[] = [...HABITATS, MARSH_HABITAT];
 
 describe('refugeSections', () => {
   it('has one section per habitat, in the order of each habitat first area', () => {
     const sections = refugeSections({});
-    expect(sections.map((section) => section.habitatId)).toEqual([CANAL_HABITAT.id, POND_HABITAT.id]);
-    expect(sections.map((section) => section.firstAreaNumber)).toEqual([1, 2]);
+    expect(sections.map((section) => section.habitatId)).toEqual([CANAL_HABITAT.id, POND_HABITAT.id, CHINAMPA_HABITAT.id]);
+    expect(sections.map((section) => section.firstAreaNumber)).toEqual([1, 2, 4]);
   });
 
   it('orders sections by area table, not habitat table', () => {
-    const sections = refugeSections({}, AREAS, [POND_HABITAT, CANAL_HABITAT]);
-    expect(sections.map((section) => section.habitatId)).toEqual([CANAL_HABITAT.id, POND_HABITAT.id]);
+    const sections = refugeSections({}, AREAS, [CHINAMPA_HABITAT, POND_HABITAT, CANAL_HABITAT]);
+    expect(sections.map((section) => section.habitatId)).toEqual([CANAL_HABITAT.id, POND_HABITAT.id, CHINAMPA_HABITAT.id]);
   });
 
   it('skips a habitat with no area', () => {
-    const sections = refugeSections({}, AREAS, [...HABITATS, CHINAMPA_HABITAT]);
-    expect(sections.map((section) => section.habitatId)).toEqual([CANAL_HABITAT.id, POND_HABITAT.id]);
+    const sections = refugeSections({}, AREAS, FUTURE_HABITATS);
+    expect(sections.map((section) => section.habitatId)).toEqual([CANAL_HABITAT.id, POND_HABITAT.id, CHINAMPA_HABITAT.id]);
   });
 
   it('copies the habitat name and look', () => {
-    const [canal, pond] = refugeSections({});
+    const [canal, pond, chinampa] = refugeSections({});
     expect(canal).toMatchObject({ habitatName: 'Canal', look: 'canal' });
     expect(pond).toMatchObject({ habitatName: 'Lily pad pond', look: 'pond' });
+    expect(chinampa).toMatchObject({ habitatName: 'Chinampa gardens', look: 'chinampa' });
   });
 
   it('has a batch per area of the habitat, in area order', () => {
-    const [canal, pond] = refugeSections({});
+    const [canal, pond, chinampa] = refugeSections({});
     expect(canal.batches).toEqual([{ areaId: CANAL_AREA.id, areaNumber: 1, cleared: false }]);
     expect(pond.batches).toEqual([
       { areaId: POND_AREA.id, areaNumber: 2, cleared: false },
       { areaId: POND_2_AREA.id, areaNumber: 3, cleared: false },
     ]);
+    expect(chinampa.batches).toEqual([{ areaId: CHINAMPA_AREA.id, areaNumber: 4, cleared: false }]);
   });
 
   it('hides every section on a fresh save', () => {
-    expect(refugeSections({}).map((section) => section.state)).toEqual(['hidden', 'hidden']);
+    expect(refugeSections({}).map((section) => section.state)).toEqual(['hidden', 'hidden', 'hidden']);
   });
 
   it('keeps a section hidden when its areas have stars but no exit star', () => {
@@ -140,22 +155,22 @@ describe('refugeSections', () => {
 
   it('never counts a dev area', () => {
     const devIds = DEV_AREAS.map((area) => area.id);
-    expect(refugeSections(beaten(...devIds)).map((section) => section.state)).toEqual(['hidden', 'hidden']);
+    expect(refugeSections(beaten(...devIds)).map((section) => section.state)).toEqual(['hidden', 'hidden', 'hidden']);
     expect(newlyBeatenAreaIds({}, beaten(...devIds))).toEqual([]);
   });
 
   it('adds a section for a future habitat with no code change', () => {
-    const sections = refugeSections(beaten(CHINAMPA_AREA.id), FUTURE_AREAS, FUTURE_HABITATS);
-    expect(sections.map((section) => section.habitatId)).toEqual(['canal', 'pond', 'chinampa']);
-    expect(sections[2]).toEqual({
-      habitatId: 'chinampa',
-      habitatName: 'Chinampa gardens',
-      look: 'chinampa',
-      firstAreaNumber: 4,
+    const sections = refugeSections(beaten(MARSH_AREA.id), FUTURE_AREAS, FUTURE_HABITATS);
+    expect(sections.map((section) => section.habitatId)).toEqual(['canal', 'pond', 'chinampa', 'reed-marsh']);
+    expect(sections[3]).toEqual({
+      habitatId: 'reed-marsh',
+      habitatName: 'Reed marsh',
+      look: 'reed-marsh',
+      firstAreaNumber: 5,
       state: 'dirty',
       batches: [
-        { areaId: 'chinampa-1', areaNumber: 4, cleared: true },
-        { areaId: 'chinampa-2', areaNumber: 5, cleared: false },
+        { areaId: 'reed-marsh-1', areaNumber: 5, cleared: true },
+        { areaId: 'reed-marsh-2', areaNumber: 6, cleared: false },
       ],
     });
   });
@@ -214,10 +229,14 @@ describe('newlyCleanHabitatIds', () => {
     ]);
   });
 
+  it('lists the chinampa gardens when Area 4 is beaten', () => {
+    expect(newlyCleanHabitatIds({}, beaten(CHINAMPA_AREA.id))).toEqual([CHINAMPA_HABITAT.id]);
+  });
+
   it('lists a future habitat with no code change', () => {
-    const before = beaten(CHINAMPA_AREA.id);
-    const after = { ...before, ...beaten(CHINAMPA_AREA_2.id) };
-    expect(newlyCleanHabitatIds(before, after, FUTURE_AREAS, FUTURE_HABITATS)).toEqual(['chinampa']);
+    const before = beaten(MARSH_AREA.id);
+    const after = { ...before, ...beaten(MARSH_AREA_2.id) };
+    expect(newlyCleanHabitatIds(before, after, FUTURE_AREAS, FUTURE_HABITATS)).toEqual(['reed-marsh']);
   });
 });
 
@@ -266,11 +285,11 @@ describe('refuge pending', () => {
     const pending = withTripResult(
       EMPTY_REFUGE_PENDING,
       {},
-      beaten(CHINAMPA_AREA.id, CHINAMPA_AREA_2.id),
+      beaten(MARSH_AREA.id, MARSH_AREA_2.id),
       FUTURE_AREAS,
       FUTURE_HABITATS,
     );
-    expect(pending).toEqual({ cleanUps: ['chinampa-1', 'chinampa-2'], milestones: ['chinampa'] });
+    expect(pending).toEqual({ cleanUps: ['reed-marsh-1', 'reed-marsh-2'], milestones: ['reed-marsh'] });
   });
 
   it('drops the clean-ups and keeps the milestones', () => {
@@ -301,12 +320,12 @@ describe('refugePendingFrom', () => {
 
   it('repairs junk: known ids only, each once, in table order', () => {
     const junk = {
-      cleanUps: [POND_2_AREA.id, 'nowhere', 3, CANAL_AREA.id, POND_2_AREA.id, null, DEV_AREAS[0].id],
-      milestones: [POND_HABITAT.id, {}, 'chinampa', CANAL_HABITAT.id, POND_HABITAT.id],
+      cleanUps: [CHINAMPA_AREA.id, POND_2_AREA.id, 'nowhere', 3, CANAL_AREA.id, POND_2_AREA.id, null, DEV_AREAS[0].id, MARSH_AREA.id],
+      milestones: [POND_HABITAT.id, {}, MARSH_HABITAT.id, CHINAMPA_HABITAT.id, CANAL_HABITAT.id, POND_HABITAT.id],
     };
     expect(refugePendingFrom(junk)).toEqual({
-      cleanUps: [CANAL_AREA.id, POND_2_AREA.id],
-      milestones: [CANAL_HABITAT.id, POND_HABITAT.id],
+      cleanUps: [CANAL_AREA.id, POND_2_AREA.id, CHINAMPA_AREA.id],
+      milestones: [CANAL_HABITAT.id, POND_HABITAT.id, CHINAMPA_HABITAT.id],
     });
   });
 
@@ -316,7 +335,7 @@ describe('refugePendingFrom', () => {
   });
 
   it('keeps future habitat ids when given the future tables', () => {
-    const stored = { cleanUps: ['chinampa-2'], milestones: ['chinampa'] };
+    const stored = { cleanUps: ['reed-marsh-2'], milestones: ['reed-marsh'] };
     expect(refugePendingFrom(stored, FUTURE_AREAS, FUTURE_HABITATS)).toEqual(stored);
   });
 });
@@ -340,12 +359,14 @@ describe('refuge copy', () => {
     expect(refugeSections({}).map((section) => refugeHiddenHint(section.firstAreaNumber))).toEqual([
       'Beat Area 1',
       'Beat Area 2',
+      'Beat Area 4',
     ]);
   });
 
   it('names a habitat as a place in lower case', () => {
     expect(habitatPlace('Canal')).toBe('the canal');
     expect(habitatPlace('Lily pad pond')).toBe('the lily pad pond');
+    expect(habitatPlace('Chinampa gardens')).toBe('the chinampa gardens');
   });
 
   it('thanks the axolotl and names the real work', () => {
@@ -354,6 +375,9 @@ describe('refuge copy', () => {
     );
     expect(milestoneBody('Pip', 'Lily pad pond')).toBe(
       'You and Pip cleaned up the lily pad pond! Real people in Xochimilco do this work too.',
+    );
+    expect(milestoneBody('Pip', 'Chinampa gardens')).toBe(
+      'You and Pip cleaned up the chinampa gardens! Real people in Xochimilco do this work too.',
     );
   });
 

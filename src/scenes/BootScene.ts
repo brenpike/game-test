@@ -2,6 +2,8 @@ import * as Phaser from 'phaser';
 import { bakeAreaMapTextures, type AreaMapTextures } from '../art/areaMapTextures';
 import { bakeAreaTextures, type AreaTextures } from '../art/areaTextures';
 import { createAxolotlRigBake, type AxolotlRigBake } from '../art/axolotlRig';
+import { bakeChinampaTextures, type ChinampaTextures } from '../art/chinampaTextures';
+import type { GhostNetSize } from '../art/drawChinampa';
 import { CAVE_H, CAVE_W } from '../art/drawFinds';
 import { streamColumnFor, type ReedLook } from '../art/drawScenery';
 import { habitatLook, type HabitatLook } from '../art/habitatLook';
@@ -30,6 +32,7 @@ import {
 import { BUTTON_PRESS_OFFSET, BUTTON_SQUARE, BUTTON_WIDE, ICON_SIZE, type IconKind } from '../art/drawUi';
 import { AREAS, habitatById, type AreaData } from '../logic/areas';
 import type { Decoration } from '../logic/catalogue';
+import { createGhostNets } from '../logic/ghostNets';
 import { createPlasticWorms } from '../logic/plasticWorms';
 import { mulberry32 } from '../logic/rng';
 import { TANK } from '../logic/tank';
@@ -85,7 +88,9 @@ export interface BakedDecorationPack {
  * Decoration pack baked at the tank Decoration size, or null when none was asked for. `pond` holds
  * the pond props (hollow log, plastic worms, queasy cheek tint), with the root arch and the firefly
  * when some area's look needs them, baked only when some area needs any of them, else null.
- * `refuge` holds the Xochimilco refuge art.
+ * `chinampa` holds the chinampa props (the root tangle cave, the bank overhang, the gap edges, the
+ * ghost nets of every size the areas' ghost nets have, and the snag cue), baked only when some area's
+ * look needs them or some area has ghost nets, else null. `refuge` holds the Xochimilco refuge art.
  */
 export interface GameAssets {
   areas: readonly Readonly<AreaData>[];
@@ -102,6 +107,7 @@ export interface GameAssets {
   areaMap: AreaMapTextures;
   devDecor: BakedDecorationPack | null;
   pond: PondTextures | null;
+  chinampa: ChinampaTextures | null;
   refuge: RefugeTextures;
 }
 
@@ -487,6 +493,37 @@ function bakePondProps(scene: Phaser.Scene, areas: readonly Readonly<AreaData>[]
   return bakePondTextures(scene, bakeScale, { caveW: CAVE_W, caveH: CAVE_H }, { rootArch, firefly });
 }
 
+/**
+ * The rect sizes of the ghost nets of every area, each size once: one ghost net texture is baked for
+ * each. A ghost net is a rect hazard; the texture is drawn to the rect's size.
+ */
+function ghostNetSizes(areas: readonly Readonly<AreaData>[]): GhostNetSize[] {
+  const sizes = new Map<string, GhostNetSize>();
+  for (const area of areas) {
+    for (const net of createGhostNets(area.layout.hazards).nets) {
+      if (net.shape.kind !== 'rect') continue;
+      const size = { w: net.shape.x1 - net.shape.x0, h: net.shape.y1 - net.shape.y0 };
+      sizes.set(`${size.w}x${size.h}`, size);
+    }
+  }
+  return [...sizes.values()];
+}
+
+/**
+ * The chinampa props, baked once for every area: when some area's look has the root tangle cave or
+ * says it needs the chinampa props, or some area has ghost nets (in any look). Null when no area
+ * needs them.
+ */
+function bakeChinampaProps(
+  scene: Phaser.Scene,
+  areas: readonly Readonly<AreaData>[],
+  bakeScale: number,
+): ChinampaTextures | null {
+  const sizes = ghostNetSizes(areas);
+  const needed = areas.map(areaLook).some((look) => look.cave.kind === 'rootTangle' || look.chinampaProps);
+  return needed || sizes.length > 0 ? bakeChinampaTextures(scene, bakeScale, { ghostNetSizes: sizes }) : null;
+}
+
 /** Builds every area's zone, bakes every texture at the fitted scale, then starts the title. */
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -530,6 +567,7 @@ export class BootScene extends Phaser.Scene {
         ? null
         : { decorations: devDecorPack.decorations, textures: devDecorPack.bake(this, bakeScale, TANK.decorationPx) };
     const pond = bakePondProps(this, areas, bakeScale);
+    const chinampa = bakeChinampaProps(this, areas, bakeScale);
     const assets: GameAssets = {
       areas,
       zones,
@@ -545,6 +583,7 @@ export class BootScene extends Phaser.Scene {
       areaMap,
       devDecor,
       pond,
+      chinampa,
       refuge,
     };
     this.scene.start(SCENE_KEYS.title, assets);

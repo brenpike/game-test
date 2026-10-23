@@ -50,6 +50,8 @@ import { bake, type TexInfo } from './textures';
 export const areaMapMarkerKey = (locked: boolean): string => `area-map-marker-${locked ? 'locked' : 'unlocked'}`;
 /** Key of a pond-look marker texture (the canal's keys stay {@link areaMapMarkerKey}). */
 export const areaMapPondMarkerKey = (locked: boolean): string => `area-map-marker-pond-${locked ? 'locked' : 'unlocked'}`;
+/** Key of a chinampa-look marker texture. */
+export const areaMapChinampaMarkerKey = (locked: boolean): string => `area-map-marker-chinampa-${locked ? 'locked' : 'unlocked'}`;
 export const AREA_MAP_FOCUS_KEY = 'area-map-focus-ring';
 export const AREA_MAP_BADGE_KEY = 'area-map-padlock-badge';
 export const AREA_MAP_PILL_KEY = 'area-map-new-pill';
@@ -78,8 +80,9 @@ export interface AreaMapTextures {
   readonly markerLocked: TexInfo;
   /**
    * Markers by habitat look. `canal` is the same textures as `markerUnlocked` and
-   * `markerLocked`; `pond` is the notched lily pad (green unlocked, white locked).
-   * All four share one frame and anchor (the marker centre), so they swap freely.
+   * `markerLocked`; `pond` is the notched lily pad (green unlocked, white locked);
+   * `chinampa` is the garden plot with hanging roots (orange unlocked, white locked).
+   * All six share one frame and anchor (the marker centre), so they swap freely.
    */
   readonly markersByLook: Readonly<Record<HabitatLookId, AreaMapMarkerPair>>;
   /** Double focus ring (white r 35.25, ink r 38.25). Anchor is the ring centre: put it on the marker centre. */
@@ -110,12 +113,19 @@ export function bakeAreaMapTextures(scene: Phaser.Scene, bakeScale: number): Are
   const pondLocked = bake(scene, areaMapPondMarkerKey(true), MAP_MARKER_TEX, bakeScale, (ctx) =>
     paintMapMarker(ctx, true, 'pond'),
   );
+  const chinampaUnlocked = bake(scene, areaMapChinampaMarkerKey(false), MAP_MARKER_TEX, bakeScale, (ctx) =>
+    paintMapMarker(ctx, false, 'chinampa'),
+  );
+  const chinampaLocked = bake(scene, areaMapChinampaMarkerKey(true), MAP_MARKER_TEX, bakeScale, (ctx) =>
+    paintMapMarker(ctx, true, 'chinampa'),
+  );
   return {
     markerUnlocked,
     markerLocked,
     markersByLook: {
       canal: { unlocked: markerUnlocked, locked: markerLocked },
       pond: { unlocked: pondUnlocked, locked: pondLocked },
+      chinampa: { unlocked: chinampaUnlocked, locked: chinampaLocked },
     },
     focusRing: bake(scene, AREA_MAP_FOCUS_KEY, MAP_FOCUS_TEX, bakeScale, paintMapFocusRing),
     padlockBadge: bake(scene, AREA_MAP_BADGE_KEY, MAP_BADGE_TEX, bakeScale, paintMapPadlockBadge),

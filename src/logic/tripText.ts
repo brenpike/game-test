@@ -41,6 +41,9 @@ export const ALL_SNACKS_BANNER = 'Yum! That was the last snack. The exit is open
 /** HUD banner shown when the explorer eats a plastic worm and spits it out (issue #75). */
 export const PLASTIC_WORM_BANNER = 'Bleh! That was plastic, not food.';
 
+/** HUD banner shown when a ghost net snags the explorer (issue #76). */
+export const GHOST_NET_BANNER = 'Snagged on an old net! Wriggle free.';
+
 /** Title of the card shown after choosing to go home. */
 export const WENT_HOME_TITLE = 'Welcome home!';
 

@@ -19,6 +19,7 @@ import {
   type AreaMapLayout,
   type AreaMapMeasure,
 } from './areaMap';
+import { AREAS, habitatById, type AreaData } from './areas';
 import type { HudView, Rect, Size } from './hudLayout';
 
 /** Text size estimate of art guide 8's arithmetic: 0.6 em per bold letter, lines 1.2 em (a 20 px label panel is 32 tall). */
@@ -101,7 +102,17 @@ const PRD_AREAS: readonly AreaMapEntry[] = [
   entry(10, 'deep', 'Deep canal', 4),
 ];
 
-const ENTRY_SETS: readonly (readonly AreaMapEntry[])[] = [ONE_AREA, tenAreas(), PRD_AREAS];
+/** The map entry for a real `area`, named for its habitat in the habitat table. Throws for an unknown habitat. */
+function todaysEntry(area: Readonly<AreaData>, unlocked: number): AreaMapEntry {
+  const habitat = habitatById(area.habitatId);
+  if (habitat === undefined) throw new Error(`no habitat ${area.habitatId}`);
+  return { ...entry(area.number, habitat.id, habitat.name, unlocked), id: area.id };
+}
+
+/** Today's areas from the area table, in their three habitats, Areas 1 to 3 unlocked. */
+const TODAYS_AREAS: readonly AreaMapEntry[] = AREAS.map((area) => todaysEntry(area, 3));
+
+const ENTRY_SETS: readonly (readonly AreaMapEntry[])[] = [ONE_AREA, TODAYS_AREAS, tenAreas(), PRD_AREAS];
 
 /** Room between two rects: the larger of the horizontal and vertical gaps (negative when they overlap). */
 function gapBetween(a: Rect, b: Rect): number {
@@ -273,6 +284,17 @@ describe('areaMapLayout', () => {
     layout.habitats.forEach((habitat, index) => expect(habitat.rect.x).toBe(firsts[index].x));
     const laneTop = Math.min(...layout.nodes.map((node) => node.cell.y));
     for (const habitat of layout.habitats) expect(habitat.rect.y + habitat.rect.h + GAP).toBeLessThanOrEqual(laneTop + EPS);
+  });
+
+  it.each(VIEWS)("labels today's three habitat runs once each, in area order, on $cssW x $cssH", (view) => {
+    const layout = areaMapLayout(view, TODAYS_AREAS, MEASURE);
+    expect(layout.fits).toBe(true);
+    expect(layout.nodes.map((node) => node.id)).toEqual(['canal', 'pond-1', 'pond-2', 'chinampa-1']);
+    expect(layout.habitats.map((habitat) => [habitat.id, habitat.name])).toEqual([
+      ['canal', 'Canal'],
+      ['pond', 'Lily pad pond'],
+      ['chinampa', 'Chinampa gardens'],
+    ]);
   });
 
   it('moves the labels along the axis, 12 px before each run and centred across the lane, when the band leaves no room', () => {

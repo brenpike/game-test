@@ -25,7 +25,15 @@ import {
   type Size,
 } from './hudLayout';
 import { REAL_MORPHS, RESCUE_POPUP_DETAIL } from './morphs';
-import { ALL_SNACKS_BANNER, BANKING_HINT, LEGS_LABEL, PLASTIC_WORM_BANNER, TRIP_BAG_LABEL, tripBagStatus } from './tripText';
+import {
+  ALL_SNACKS_BANNER,
+  BANKING_HINT,
+  GHOST_NET_BANNER,
+  LEGS_LABEL,
+  PLASTIC_WORM_BANNER,
+  TRIP_BAG_LABEL,
+  tripBagStatus,
+} from './tripText';
 import { LEGS } from './tuning';
 import { buildCanalZone } from './zone';
 
@@ -105,8 +113,13 @@ const COMBINATION_TOASTS: readonly ToastText[] = [...new Set([...SORTED_TOASTS.s
 const MOST_SNACKS_LEFT = 16;
 const EXIT_CLOSED_BANNER = exitClosedText(MOST_SNACKS_LEFT);
 
-/** Every message the snack banner shows: the closed exit, the last snack and the plastic worm. */
-const SNACK_BANNER_TEXTS: readonly string[] = [EXIT_CLOSED_BANNER, ALL_SNACKS_BANNER, PLASTIC_WORM_BANNER];
+/** Every message the snack banner shows: the closed exit, the last snack, the plastic worm and the ghost net. */
+const SNACK_BANNER_TEXTS: readonly string[] = [
+  EXIT_CLOSED_BANNER,
+  ALL_SNACKS_BANNER,
+  PLASTIC_WORM_BANNER,
+  GHOST_NET_BANNER,
+];
 
 /** The longest snack banner message: the worst case the fit runs. */
 const LONGEST_SNACK_BANNER = SNACK_BANNER_TEXTS.reduce((longest, text) => (text.length > longest.length ? text : longest));
@@ -424,9 +437,10 @@ describe('estimateLines', () => {
 });
 
 describe('HUD overlay fit', () => {
-  it('runs a find toast for every catalogue treasure and the longest snack banner, plastic worm included', () => {
+  it('runs a find toast for every catalogue treasure and the longest snack banner, plastic worm and ghost net included', () => {
     expect(TREASURE_TOASTS.map((toast) => toast.name)).toEqual(ALL_TREASURES.map((treasure) => treasure.name));
     expect(SNACK_BANNER_TEXTS).toContain(PLASTIC_WORM_BANNER);
+    expect(SNACK_BANNER_TEXTS).toContain(GHOST_NET_BANNER);
     for (const text of SNACK_BANNER_TEXTS) expect(BANNER_TEXTS.snackBanner.length).toBeGreaterThanOrEqual(text.length);
   });
 
