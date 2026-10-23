@@ -14,11 +14,13 @@ import {
   predatorCycleView,
   predatorVisible,
   routeLoopDistance,
+  stabTip,
   stepPredator,
   type PredatorContext,
   type PredatorCycleTiming,
   type PredatorEvent,
   type PredatorRoute,
+  type PredatorRules,
   type PredatorSpecies,
   type PredatorState,
   type PredatorTuning,
@@ -572,5 +574,202 @@ describe('tilapia without a cycle', () => {
       expect(predatorVisible(state, TEST_TUNING)).toBe(true);
     }
     expect([...seen].sort()).toEqual(['cooldown', 'lunge', 'telegraph']);
+  });
+});
+
+const STALKER_RULES: Readonly<PredatorRules> = Object.freeze({
+  sightCover: true,
+  fixedStrikeSpot: true,
+  stillCooldown: true,
+});
+
+/** Test-only species with every shared rule: it hunts by sight, stabs a fixed spot and stands still in cooldown. */
+const STALKER_SPECIES: Readonly<PredatorSpecies> = Object.freeze({
+  id: 'testStalker',
+  name: 'Test stalker',
+  tuning: TEST_TUNING,
+  meetRange: 150,
+  fact: { id: 'testStalker', name: 'Test stalker', title: 'Meet the test stalker', body: 'Test only.' },
+  rules: STALKER_RULES,
+});
+
+const STALKER_ROUTE: PredatorRoute = {
+  id: 'stalker-route',
+  waypoints: [
+    { x: 1000, y: 200 },
+    { x: 1200, y: 200 },
+  ],
+  species: STALKER_SPECIES,
+};
+
+const STALKER_CTX: PredatorContext = {
+  safeArea: CTX.safeArea,
+  bounds: CTX.bounds,
+  tuning: STALKER_SPECIES.tuning,
+  rules: STALKER_SPECIES.rules,
+};
+const STALKER_COVERED: PredatorContext = { ...STALKER_CTX, targetInCover: true };
+
+/** A binary fraction, so step times add up exactly. */
+const STALKER_DT = 1 / 64;
+const SPOT: Point = { x: 1060, y: 200 };
+
+interface StalkerRun {
+  state: PredatorState;
+  events: PredatorEvent[];
+  positions: Point[];
+}
+
+function spawnStalker(): PredatorState {
+  return createPredator(STALKER_ROUTE, STALKER_SPECIES.id);
+}
+
+/** Steps a predator for `seconds` in STALKER_DT steps, stopping after a step with an event of type `until`. */
+function runStalker(
+  start: PredatorState,
+  target: Point,
+  seconds: number,
+  ctx: PredatorContext = STALKER_CTX,
+  until?: PredatorEvent['type'],
+): StalkerRun {
+  let state = start;
+  const events: PredatorEvent[] = [];
+  const positions: Point[] = [];
+  for (let i = 0; i < Math.round(seconds / STALKER_DT); i++) {
+    const result = stepPredator(state, target, STALKER_DT, ctx);
+    state = result.state;
+    events.push(...result.events);
+    positions.push(state.pos);
+    if (until && result.events.some((event) => event.type === until)) break;
+  }
+  return { state, events, positions };
+}
+
+function stalkerWarning(target: Point = SPOT): PredatorState {
+  const result = stepPredator(spawnStalker(), target, STALKER_DT, STALKER_CTX);
+  expect(eventTypes(result.events)).toEqual(['telegraphStart']);
+  return result.state;
+}
+
+describe('shared rule: sight cover', () => {
+  it('does not warn at a target in cover, and a species without the rule ignores cover', () => {
+    const hidden = stepPredator(spawnStalker(), SPOT, STALKER_DT, STALKER_COVERED);
+    expect(hidden.events).toEqual([]);
+    expect(hidden.state.phase).toBe('patrol');
+    expect(eventTypes(stepPredator(spawnStalker(), SPOT, STALKER_DT, STALKER_CTX).events)).toEqual(['telegraphStart']);
+    const noRule = stepPredator(spawn(), IN_RANGE, 0.25, { ...CTX, targetInCover: true });
+    expect(eventTypes(noRule.events)).toEqual(['telegraphStart']);
+  });
+
+  it('cancels a warning whose target is in cover at the end-of-warning re-check', () => {
+    const cancelled = runStalker(stalkerWarning(), SPOT, WINDUP, STALKER_COVERED, 'telegraphCancel');
+    expect(eventTypes(cancelled.events)).toEqual(['telegraphCancel']);
+    expect(cancelled.state.phase).toBe('cooldown');
+    expect(cancelled.state.duration).toBe(TEST_TUNING.cooldown);
+    expect(Object.keys(cancelled.state)).not.toContain('strikeSpot');
+  });
+
+  it('only re-checks cover at the end of the warning', () => {
+    const half = runStalker(stalkerWarning(), SPOT, WINDUP / 2, STALKER_COVERED);
+    expect(half.events).toEqual([]);
+    const struck = runStalker(half.state, SPOT, WINDUP, STALKER_CTX, 'lungeStart');
+    expect(eventTypes(struck.events)).toEqual(['lungeStart']);
+  });
+
+  it('never connects a strike with a target in cover, even at the spot', () => {
+    const struck = runStalker(stalkerWarning(), SPOT, WINDUP, STALKER_CTX, 'lungeStart');
+    const stab = runStalker(struck.state, SPOT, TEST_TUNING.lungeDuration * 2, STALKER_COVERED, 'lungeEnd');
+    expect(stab.events).toEqual([{ type: 'lungeEnd', connected: false }]);
+    expect(stab.positions).toHaveLength(Math.round(TEST_TUNING.lungeDuration / STALKER_DT));
+  });
+});
+
+describe('shared rule: fixed strike spot and stab', () => {
+  it('fixes the strike spot at warning start and stabs it from where it stands, missing a target that moved', () => {
+    const warned = stalkerWarning();
+    expect(warned.strikeSpot).toEqual(SPOT);
+    expect(warned.pos).toEqual({ x: 1000, y: 200 });
+    const moved: Point = { x: 1040, y: 260 };
+    const struck = runStalker(warned, moved, WINDUP, STALKER_CTX, 'lungeStart');
+    expect(struck.events).toEqual([{ type: 'lungeStart', aim: { x: 1, y: 0 } }]);
+    expect(struck.state.strikeSpot).toEqual(SPOT);
+    const stab = runStalker(struck.state, moved, TEST_TUNING.lungeDuration * 2, STALKER_CTX, 'lungeEnd');
+    expect(stab.events).toEqual([{ type: 'lungeEnd', connected: false }]);
+    expect(stab.state.phase).toBe('cooldown');
+    expect(Object.keys(stab.state)).not.toContain('strikeSpot');
+    for (const pos of [...struck.positions, ...stab.positions]) expect(pos).toEqual({ x: 1000, y: 200 });
+  });
+
+  it('connects once the stab tip comes within hitRadius of a target that stayed at the spot', () => {
+    const struck = runStalker(stalkerWarning(), SPOT, WINDUP, STALKER_CTX, 'lungeStart');
+    let state = struck.state;
+    let events: PredatorEvent[] = [];
+    while (events.length === 0) {
+      const result = stepPredator(state, SPOT, STALKER_DT, STALKER_CTX);
+      events = result.events;
+      if (events.length === 0) {
+        expect(lungeConnects(result.state, SPOT, TEST_TUNING)).toBe(false);
+        state = result.state;
+      }
+    }
+    expect(events).toEqual([{ type: 'lungeEnd', connected: true }]);
+    const tipGap = Math.hypot(SPOT.x - 1000, SPOT.y - 200) * (1 - (state.elapsed + STALKER_DT) / TEST_TUNING.lungeDuration);
+    expect(tipGap).toBeLessThanOrEqual(TEST_TUNING.hitRadius);
+    expect(state.elapsed + STALKER_DT).toBeLessThan(TEST_TUNING.lungeDuration);
+  });
+
+  it('works out the stab tip from the state alone, in a straight line over the strike', () => {
+    const lunging: PredatorState = {
+      ...spawnStalker(),
+      phase: 'lunge',
+      elapsed: 0.25,
+      duration: 0.5,
+      aim: { x: 0.6, y: 0.8 },
+      strikeSpot: { x: 1060, y: 280 },
+    };
+    expect(stabTip(lunging)).toEqual({ x: 1030, y: 240 });
+    expect(stabTip({ ...lunging, elapsed: 0 })).toEqual({ x: 1000, y: 200 });
+    expect(stabTip({ ...lunging, elapsed: 0.5 })).toEqual({ x: 1060, y: 280 });
+    expect(stabTip({ ...lunging, elapsed: 0.75 })).toEqual({ x: 1060, y: 280 });
+    expect(stabTip({ ...lunging, elapsed: 0, duration: 0 })).toEqual({ x: 1060, y: 280 });
+    expect(stabTip({ ...lunging, phase: 'telegraph' })).toEqual({ x: 1000, y: 200 });
+    expect(stabTip(striking({ x: 1, y: 0 }))).toEqual({ x: 1000, y: 200 });
+    expect(lungeConnects({ ...lunging, elapsed: 0.5 }, { x: 1060, y: 280 }, TEST_TUNING)).toBe(true);
+    expect(lungeConnects(lunging, { x: 1060, y: 280 }, TEST_TUNING)).toBe(false);
+  });
+
+  it('never gives a predator without the rule a strike spot', () => {
+    let state = spawn();
+    const seen = new Set<string>();
+    for (let i = 0; i < 40; i++) {
+      state = stepPredator(state, IN_RANGE, 0.1, CTX).state;
+      seen.add(state.phase);
+      expect(Object.keys(state)).not.toContain('strikeSpot');
+    }
+    expect([...seen].sort()).toEqual(['cooldown', 'lunge', 'telegraph']);
+  });
+});
+
+describe('shared rule: still cooldown', () => {
+  const cooling: PredatorState = { ...spawnStalker(), phase: 'cooldown', elapsed: 0, duration: TEST_TUNING.cooldown };
+
+  it('stands still facing the target through the cooldown, then patrols again', () => {
+    const left: Point = { x: 900, y: 200 };
+    const partway = runStalker(cooling, left, TEST_TUNING.cooldown / 2);
+    expect(partway.events).toEqual([]);
+    expect(partway.state.facing).toBe(-1);
+    for (const pos of partway.positions) expect(pos).toEqual({ x: 1000, y: 200 });
+    const done = runStalker(partway.state, FAR, TEST_TUNING.cooldown, STALKER_CTX, 'cooldownEnd');
+    expect(eventTypes(done.events)).toEqual(['cooldownEnd']);
+    expect(done.state.facing).toBe(1);
+    const wading = runStalker(done.state, FAR, 0.5);
+    expect(wading.state.phase).toBe('patrol');
+    expect(wading.state.pos.x).toBeGreaterThan(1000);
+  });
+
+  it('swims its route through the cooldown without the rule', () => {
+    const swimming = runStalker(cooling, FAR, TEST_TUNING.cooldown / 2, { ...STALKER_CTX, rules: { fixedStrikeSpot: true } });
+    expect(swimming.state.phase).toBe('cooldown');
+    expect(swimming.state.pos.x).toBeGreaterThan(1000);
   });
 });

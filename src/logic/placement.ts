@@ -1,7 +1,8 @@
 /**
  * Per-trip treasure placement. A trip has a fixed number of treasure slots; the trip seed rolls a
  * rarity for each slot from the per-slot chances and fills it with an unbanked treasure of that
- * rarity, or of the nearest rarity that has one left (PRD B4). Lost treasures and the area's
+ * rarity, or else of a more common rarity, nearest first, or else of only the next rarer one; a
+ * slot with nothing left stays empty (PRD B4). Lost treasures and the area's
  * special treasure are always placed on top of the slots (B4, B9); banked treasures never are
  * (B9). Each placed treasure takes a free spot from its own pool, every one of which meets its
  * rarity rule (B6), with spots farther from the main swim path picked more often (B4) and spots
@@ -138,11 +139,12 @@ export function rollSlotRarities(tuning: Pick<TripTreasureTuning, 'slots' | 'cha
 
 /**
  * The rarities a slot of `rarity` falls back to when none of its own is left: the more common
- * rarities, nearest first, then the rarer ones, nearest first.
+ * rarities first, nearest first, then only the next rarer one (PRD B4). The rarest rarity has no
+ * rarer one.
  */
 export function fallbackOrder(rarity: Rarity): Rarity[] {
   const index = RARITIES.indexOf(rarity);
-  return [...RARITIES.slice(0, index).reverse(), ...RARITIES.slice(index + 1)];
+  return [...RARITIES.slice(0, index).reverse(), ...RARITIES.slice(index + 1, index + 2)];
 }
 
 function rarityOf(id: string): Rarity {
@@ -224,7 +226,8 @@ function poolGroups(unbanked: readonly FindSpawn[]): PoolGroups {
 
 /**
  * Fills each slot with an unchosen unbanked treasure of its rarity that has room, or of the first
- * rarity in its fallback order that has one, picked uniformly in catalogue order by `pickRng`. A
+ * rarity in its fallback order (more common first, then only one step rarer; PRD B4) that has
+ * one, picked uniformly in catalogue order by `pickRng`. A
  * treasure has room while its pool group (poolGroups) holds fewer chosen treasures, the extras
  * included, than spots; each pick takes one place in its group. A slot with nothing left stays
  * empty and draws nothing. Returns `extras` followed by the picks.
@@ -366,7 +369,8 @@ function drawWeighted(free: readonly string[], weights: ReadonlyMap<string, numb
  * Picks this trip's treasures and places each in catalogue order. Extras and must-place ids
  * (unbanked ones only, each once) are always placed, on top of the treasure slots. Each slot
  * (rollSlotRarities) then takes an unbanked treasure not yet picked whose pool still has room, of
- * the slot's rarity or else of the first rarity in its fallback order that has one; a slot with
+ * the slot's rarity or else of the first rarity in its fallback order (more common first, then
+ * only one step rarer; PRD B4) that has one; a slot with
  * nothing left stays empty. Banked, unknown and duplicate ids in the options are ignored. Each
  * placed treasure takes a weighted free spot from its pool (pool order, spots already used
  * skipped); a spot's weight is its hiddenness weight times its risk weight for the treasure's

@@ -23,9 +23,26 @@ export interface PredatorRuleHook {
 }
 
 /**
- * One predator species: its tuning, meet range in px, fact card and optional rule hook.
- * `neverTouches` true means the predator never touches or bumps the axolotl, whatever its
- * contactRadius; absent means it may.
+ * Shared rules a species may opt into; each absent or false keeps the tilapia's behaviour.
+ * `sightCover`: the predator hunts by sight and cannot see a target in cover (`targetInCover` in
+ * the context). It does not warn at it, cancels a warning whose target is in cover at the end of
+ * the warning, and its strike never connects with it.
+ * `fixedStrikeSpot`: the strike spot is the target's place at warning start, kept in
+ * `PredatorState.strikeSpot`. The predator holds its position through the warning and strike; the
+ * strike is a stab whose tip (`stabTip`) moves from the predator to that spot.
+ * `stillCooldown`: through the cooldown the predator stands still, facing the target, instead of
+ * swimming its route.
+ */
+export interface PredatorRules {
+  sightCover?: boolean;
+  fixedStrikeSpot?: boolean;
+  stillCooldown?: boolean;
+}
+
+/**
+ * One predator species: its tuning, meet range in px, fact card, optional rule hook and optional
+ * shared rules. `neverTouches` true means the predator never touches or bumps the axolotl, whatever
+ * its contactRadius; absent means it may.
  */
 export interface PredatorSpecies {
   id: string;
@@ -34,6 +51,7 @@ export interface PredatorSpecies {
   meetRange: number;
   fact: FactCard;
   hook?: PredatorRuleHook;
+  rules?: Readonly<PredatorRules>;
   neverTouches?: boolean;
 }
 
@@ -47,6 +65,9 @@ export type PredatorRoute = TilapiaRoute & { species: Readonly<PredatorSpecies> 
  * `aim` is the unit strike direction, locked at strike start; it is null outside the lunge phase.
  * `cycleTime` is for a timer species only: seconds into its warning cycle, in [0, period). It is
  * absent on a species without a cycle, and a timer predator not yet stepped reads it as 0.
+ * `strikeSpot` is for a species with the `fixedStrikeSpot` rule only: where its strike goes, fixed
+ * at warning start and kept through the warning and strike. It is absent in every other phase and
+ * on every other species.
  */
 export interface PredatorState {
   species: string;
@@ -60,6 +81,7 @@ export interface PredatorState {
   duration: number;
   aim: Point | null;
   cycleTime?: number;
+  strikeSpot?: Point;
 }
 
 /** Phase events emitted by `stepPredator`, in the order they happened within the step. */
@@ -82,6 +104,10 @@ export interface PredatorContext {
   telegraphBlocked?: boolean;
   /** Species rule hook; absent means no extra rule. */
   hook?: PredatorRuleHook;
+  /** Species shared rules; absent means none. */
+  rules?: Readonly<PredatorRules>;
+  /** Whether the target is in sight cover this step; read only with the `sightCover` rule. Absent means false. */
+  targetInCover?: boolean;
 }
 
 export interface PredatorStepResult {
@@ -177,13 +203,32 @@ export function inLungeRange(from: Point, target: Point, tuning: PredatorTuning 
   return distance(from, target) <= tuning.lungeRange;
 }
 
-/** Whether a strike connects: lunge phase only, centre distance within `hitRadius` (inclusive). */
+/**
+ * Whether a strike connects: lunge phase only, distance from the striking point (`stabTip`: the
+ * predator centre, or a stab's tip) to the target centre within `hitRadius` (inclusive).
+ */
 export function lungeConnects(
   state: PredatorState,
   target: Point,
   tuning: PredatorTuning = TILAPIA,
 ): boolean {
-  return state.phase === 'lunge' && distance(state.pos, target) <= tuning.hitRadius;
+  return state.phase === 'lunge' && distance(stabTip(state), target) <= tuning.hitRadius;
+}
+
+/**
+ * The striking point. During the strike of a predator with a fixed strike spot (a stab), the tip
+ * moves in a straight line from the predator's position to the spot over the strike: the share
+ * elapsed / duration of the way, all of it for a strike with no duration. In every other case it
+ * is the predator's position.
+ */
+export function stabTip(state: PredatorState): Point {
+  const spot = state.strikeSpot;
+  if (state.phase !== 'lunge' || !spot) return { x: state.pos.x, y: state.pos.y };
+  const share = state.duration > 0 ? Math.min(1, Math.max(0, state.elapsed / state.duration)) : 1;
+  return {
+    x: state.pos.x + (spot.x - state.pos.x) * share,
+    y: state.pos.y + (spot.y - state.pos.y) * share,
+  };
 }
 
 /**
@@ -303,6 +348,13 @@ export function phaseProgress(state: PredatorState): number {
  * target (or the nearest route point when the target cannot be warned) to arrive at the warn mark,
  * then glides to its last waypoint by the end of the shown part, and waits at its first waypoint
  * through the gap. A strike, a pass and a cancel all last one period.
+ *
+ * Shared rules (`ctx.rules`, see `PredatorRules`): with `sightCover`, a target in cover
+ * (`ctx.targetInCover`) counts as not exposed, so it gates the warning start, the end-of-warning
+ * re-check and every strike step. With `fixedStrikeSpot`, warning start stores the target's place
+ * as `strikeSpot`; the strike aims at that spot, the predator does not move, and the strike
+ * connects when its `stabTip` is within hitRadius of an exposed target, checked every step. Leaving
+ * the strike drops the spot. With `stillCooldown`, the cooldown holds position and faces the target.
  */
 export function stepPredator(
   state: PredatorState,
@@ -332,7 +384,7 @@ function stepPhase(state: PredatorState, target: Point, dt: number, ctx: Predato
     case 'lunge':
       return tickClock(stepLunge(state, target, dt, ctx), state, timing);
     case 'cooldown':
-      return tickClock(stepCooldown(state, dt, ctx, timing), state, timing);
+      return tickClock(stepCooldown(state, target, dt, ctx, timing), state, timing);
   }
 }
 
@@ -350,6 +402,7 @@ function stepPatrol(
       duration: warningTime(ctx.tuning),
       facing: faceToward(state.facing, target.x - state.pos.x),
     };
+    if (ctx.rules?.fixedStrikeSpot) telegraph.strikeSpot = { x: target.x, y: target.y };
     return { state: telegraph, used: 0, event: { type: 'telegraphStart' } };
   }
   return { state: swimRoute(state, dt, ctx), used: dt, event: null };
@@ -470,7 +523,7 @@ function stepTelegraph(
     const cancelled = enterCooldown({ ...state, facing }, ctx);
     return { state: cancelled, used, event: { type: 'telegraphCancel' } };
   }
-  const aim = lockAim(state.pos, target, facing);
+  const aim = lockAim(state.pos, state.strikeSpot ?? target, facing);
   const lunge: PredatorState = {
     ...state,
     phase: 'lunge',
@@ -484,8 +537,7 @@ function stepTelegraph(
 
 function stepLunge(state: PredatorState, target: Point, dt: number, ctx: PredatorContext): PhaseStep {
   const used = Math.min(dt, state.duration - state.elapsed);
-  const aim = state.aim ?? { x: state.facing, y: 0 };
-  const pos = moveClamped(state.pos, scale(aim, ctx.tuning.lungeSpeed * used), ctx);
+  const pos = state.strikeSpot ? state.pos : lungePosition(state, used, ctx);
   const moved: PredatorState = { ...state, pos, elapsed: state.elapsed + used };
   const connected = lungeConnects(moved, target, ctx.tuning) && targetExposed(target, ctx);
   if (connected || moved.elapsed >= moved.duration) {
@@ -494,14 +546,21 @@ function stepLunge(state: PredatorState, target: Point, dt: number, ctx: Predato
   return { state: moved, used, event: null };
 }
 
+/** Where a lunging predator gets to after `used` seconds along its locked aim at `lungeSpeed`. */
+function lungePosition(state: PredatorState, used: number, ctx: PredatorContext): Point {
+  const aim = state.aim ?? { x: state.facing, y: 0 };
+  return moveClamped(state.pos, scale(aim, ctx.tuning.lungeSpeed * used), ctx);
+}
+
 function stepCooldown(
   state: PredatorState,
+  target: Point,
   dt: number,
   ctx: PredatorContext,
   timing: PredatorCycleTiming | null,
 ): PhaseStep {
   const used = Math.min(dt, state.duration - state.elapsed);
-  const drifted = timing ? glideOff(state, used, timing) : swimRoute(state, used, ctx);
+  const drifted = cooldownMove(state, target, used, ctx, timing);
   const elapsed = state.elapsed + used;
   if (elapsed < state.duration) {
     return { state: { ...drifted, elapsed }, used, event: null };
@@ -510,8 +569,26 @@ function stepCooldown(
   return { state: patrol, used, event: { type: 'cooldownEnd' } };
 }
 
+/**
+ * Moves a cooling-down predator for `used` seconds: a timer species glides off, a species with
+ * the `stillCooldown` rule stands still facing the target, any other swims its route.
+ */
+function cooldownMove(
+  state: PredatorState,
+  target: Point,
+  used: number,
+  ctx: PredatorContext,
+  timing: PredatorCycleTiming | null,
+): PredatorState {
+  if (timing) return glideOff(state, used, timing);
+  if (ctx.rules?.stillCooldown) return { ...state, facing: faceToward(state.facing, target.x - state.pos.x) };
+  return swimRoute(state, used, ctx);
+}
+
 function enterCooldown(state: PredatorState, ctx: PredatorContext): PredatorState {
-  return { ...state, phase: 'cooldown', elapsed: 0, duration: ctx.tuning.cooldown, aim: null };
+  const cooldown: PredatorState = { ...state, phase: 'cooldown', elapsed: 0, duration: ctx.tuning.cooldown, aim: null };
+  delete cooldown.strikeSpot;
+  return cooldown;
 }
 
 /** Whether a warning may start or proceed: in range, target exposed and the hook allows it. */
@@ -529,9 +606,13 @@ function inRange(state: PredatorState, target: Point, tuning: PredatorTuning): b
   return inLungeRange(state.pos, target, tuning);
 }
 
-/** Whether the target can be attacked: outside the safe area, whose edges count as inside. */
+/**
+ * Whether the target can be attacked: outside the safe area, whose edges count as inside, and,
+ * for a species with the `sightCover` rule, not in cover.
+ */
 function targetExposed(target: Point, ctx: PredatorContext): boolean {
-  return !inSafeArea(target, ctx.safeArea);
+  const hidden = ctx.rules?.sightCover === true && ctx.targetInCover === true;
+  return !hidden && !inSafeArea(target, ctx.safeArea);
 }
 
 function lockAim(from: Point, target: Point, facing: -1 | 1): Point {

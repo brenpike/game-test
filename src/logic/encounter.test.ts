@@ -30,7 +30,19 @@ import { inSafeArea } from './tilapia';
 import { TRIP_EVENTS, TRIP_REGISTRY_KEYS } from './tripEvents';
 import { HERON, LEGS, SWIM, TILAPIA } from './tuning';
 import { normalize } from './vec';
-import { buildCanalZone, inHomeSpot, swimBounds, type Point, type SafeArea, type TilapiaRoute } from './zone';
+import {
+  BED_TOP,
+  SURF,
+  buildCanalZone,
+  inHomeSpot,
+  swimBounds,
+  type CaveArea,
+  type PadSpec,
+  type Point,
+  type ReedPatch,
+  type SafeArea,
+  type TilapiaRoute,
+} from './zone';
 
 const DT = 1 / 60;
 const zone = buildCanalZone();
@@ -884,5 +896,86 @@ describe('per-area tilapia tuning', () => {
     const heronRoute: PredatorRoute = { id: 'heron-0', waypoints: [{ x: 1600, y: 150 }], species: HERON_SPECIES };
     const state = createEncounter({ ...tunedSource, predatorRoutes: [heronRoute] });
     expect(predatorSpecies(state, state.predators[1])).toBe(HERON_SPECIES);
+  });
+});
+
+describe('sight cover and the shared predator rules in the encounter', () => {
+  const reeds: ReedPatch = { x0: 1040, x1: 1080, y0: SURF, y1: BED_TOP, dragMul: 2.5 };
+  const pad: PadSpec = { x: 960, rx: 20, flower: false };
+  const cave: CaveArea = { id: 'test/cave', x0: 1020, x1: 1060, y0: 200, y1: BED_TOP };
+  const stalker: PredatorSpecies = {
+    id: 'test-stalker',
+    name: 'Test stalker',
+    tuning: { ...TILAPIA, windup: 1.2, cooldown: 3, lungeRange: 110, lungeSpeed: 0, lungeDuration: 0.3, contactRadius: 0, bodyRadius: 0 },
+    meetRange: 150,
+    fact: TILAPIA_FACT,
+    rules: { sightCover: true, fixedStrikeSpot: true, stillCooldown: true },
+    neverTouches: true,
+  };
+  const standPoint: Point = { x: 1000, y: 120 };
+  const stalkerRoute: PredatorRoute = { id: 'stalker', waypoints: [standPoint], species: stalker };
+  const source: EncounterSource = {
+    ...zone,
+    tilapiaRoutes: [],
+    predatorRoutes: [stalkerRoute],
+    reedPatches: [reeds],
+    pads: [pad],
+    cave,
+  };
+  const covered: Record<string, Point> = {
+    reeds: { x: 1060, y: 180 },
+    pad: { x: 960, y: SURF + 10 },
+    cave: { x: 1030, y: 205 },
+  };
+  const open: Point = { x: 1000, y: 200 };
+
+  it('copies the cover geometry, which resetEncounter keeps, and leaves absent parts absent', () => {
+    const state = createEncounter(source);
+    expect(state.reedPatches).toEqual([reeds]);
+    expect(state.reedPatches?.[0]).not.toBe(reeds);
+    expect(state.pads).toEqual([pad]);
+    expect(state.pads?.[0]).not.toBe(pad);
+    expect(state.cave).toEqual(cave);
+    expect(state.cave).not.toBe(cave);
+    expect(resetEncounter(state)).toEqual(state);
+    const bare = createEncounter({ safeArea: zone.safeArea, tilapiaRoutes: zone.tilapiaRoutes });
+    expect(Object.keys(bare)).not.toContain('reedPatches');
+    expect(Object.keys(bare)).not.toContain('pads');
+    expect(Object.keys(bare)).not.toContain('cave');
+  });
+
+  it('never warns at an axolotl in reeds, under a pad or in the cave, but warns and stabs in open water', () => {
+    for (const [cover, pos] of Object.entries(covered)) {
+      const { events } = run(createEncounter(source), pos, 6, noRegrowCtx);
+      expect(typesOf(events, ['telegraph', 'lunge', 'hit']), cover).toEqual([]);
+    }
+    const { events } = run(createEncounter(source), open, 6, noRegrowCtx, 'hit');
+    expect(typesOf(events, ['telegraph', 'lunge', 'hit'])).toEqual(['telegraph', 'lunge', 'hit']);
+  });
+
+  it('lets the tilapia ignore cover', () => {
+    const tilapiaSource: EncounterSource = { ...source, tilapiaRoutes: [{ id: 'left', waypoints: [standPoint] }], predatorRoutes: [] };
+    const { events } = run(createEncounter(tilapiaSource), covered.reeds, 6, noRegrowCtx, 'hit');
+    expect(typesOf(events, ['telegraph', 'lunge', 'hit'])).toEqual(['telegraph', 'lunge', 'hit']);
+  });
+
+  it('cancels the warning into cooldown when the axolotl hides before it ends', () => {
+    const warned = run(createEncounter(source), open, 0.5, noRegrowCtx);
+    expect(typesOf(warned.events, ['telegraph'])).toEqual(['telegraph']);
+    const hidden = run(warned.state, covered.reeds, 1.5, noRegrowCtx);
+    expect(typesOf(hidden.events, ['telegraph', 'lunge', 'hit'])).toEqual([]);
+    expect(hidden.state.predators[0].phase).toBe('cooldown');
+    expect(Object.keys(hidden.state.predators[0])).not.toContain('strikeSpot');
+  });
+
+  it('stabs the spot fixed at warning start from where it stands: a hit when the axolotl stays, a miss when it moved', () => {
+    const stayed = run(createEncounter(source), open, 3, noRegrowCtx, 'hit');
+    expect(stayed.events.find((event) => event.type === 'hit')).toEqual({ type: 'hit', sourceId: 'stalker', leg: 0, from: standPoint });
+    const warned = run(createEncounter(source), open, 0.5, noRegrowCtx);
+    const moved = run(warned.state, { x: 940, y: 200 }, 2, noRegrowCtx);
+    expect(typesOf(moved.events, ['lunge', 'hit'])).toEqual(['lunge']);
+    expect(moved.events.find((event) => event.type === 'lunge')).toEqual({ type: 'lunge', sourceId: 'stalker', aim: { x: 0, y: 1 } });
+    expect(moved.state.predators[0].pos).toEqual(standPoint);
+    expect(presentCount(moved.state.legs)).toBe(LEGS.count);
   });
 });

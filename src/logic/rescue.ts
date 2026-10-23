@@ -76,8 +76,8 @@ export interface RescueState {
 /** Waiting at its place, following the player (in the Trip Bag), or banked for good. */
 export type RescueStatus = 'waiting' | 'following' | 'safe';
 
-/** Chance from 0 to 1 that a trip with nobody waiting has a stranded axolotl (PRD Tuning values). */
-export const STRANDING_CHANCE = 0.3;
+/** Chance from 0 to 1 that a trip with nobody waiting has a stranded axolotl: 40% (PRD C2, issue #111). */
+export const STRANDING_CHANCE = 0.4;
 
 const STRANDING_SEED_SALT = 0x5743a11d;
 const STRANDING_CHANCE_SALT = 0xc2b2ae35;

@@ -11,6 +11,7 @@ import {
   distanceToPath,
   inCave,
   inReeds,
+  inSightCover,
   isDeep,
   meetsRarity,
   meetsRiskRule,
@@ -181,6 +182,26 @@ describe('coversAt', () => {
     expect(coversAt({ x: 950, y: 250 }, GEO)).toEqual(['cave']);
     expect(coversAt({ x: 650, y: 200 }, GEO)).toEqual(['pastCurrent']);
     expect(coversAt({ x: 800, y: 200 }, GEO)).toEqual([]);
+  });
+});
+
+describe('inSightCover', () => {
+  it('is true in a reed patch, under a lily pad or in the cave', () => {
+    expect(inSightCover({ x: 130, y: 200 }, GEO)).toBe(true);
+    expect(inSightCover({ x: 300, y: SURF + 5 }, GEO)).toBe(true);
+    expect(inSightCover({ x: 950, y: 250 }, GEO)).toBe(true);
+  });
+
+  it('is false past a current, which is open water, and in other open water', () => {
+    expect(coversAt({ x: 650, y: 200 }, GEO)).toEqual(['pastCurrent']);
+    expect(inSightCover({ x: 650, y: 200 }, GEO)).toBe(false);
+    expect(inSightCover({ x: 800, y: 200 }, GEO)).toBe(false);
+  });
+
+  it('treats absent cover geometry as no such cover', () => {
+    expect(inSightCover({ x: 130, y: 200 }, {})).toBe(false);
+    expect(inSightCover({ x: 950, y: 250 }, { reedPatches: GEO.reedPatches, pads: GEO.pads })).toBe(false);
+    expect(inSightCover({ x: 950, y: 250 }, { cave: GEO.cave })).toBe(true);
   });
 });
 

@@ -96,6 +96,21 @@ export function underBank(pos: Point, overhangs: readonly Readonly<BankOverhang>
   return overhangs.some((bank) => pos.x >= bank.x0 && pos.x <= bank.x1 && pos.y >= bank.y0 && pos.y <= bank.y1);
 }
 
+/** The cover geometry a sight hunter cannot see into. Absent parts mean no such cover. */
+export type SightCoverGeometry = Partial<Pick<ZoneLayout, 'reedPatches' | 'pads' | 'cave'>>;
+
+/**
+ * Whether a point is hidden from a predator that hunts by sight: inside a reed patch, under a lily
+ * pad or in the cave. Past a current is open water, so it is not sight cover.
+ */
+export function inSightCover(pos: Point, geo: SightCoverGeometry): boolean {
+  return (
+    inReeds(pos, geo.reedPatches ?? []) ||
+    underPad(pos, geo.pads ?? []) ||
+    (geo.cave !== undefined && inCave(pos, geo.cave))
+  );
+}
+
 /** Every cover at a point, in the order reeds, pad, cave, pastCurrent, bank. */
 export function coversAt(pos: Point, geo: HidingGeometry): HidingCover[] {
   const covers: HidingCover[] = [];

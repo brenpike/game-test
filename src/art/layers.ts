@@ -27,10 +27,17 @@
  * treasures, the tilapia, the axolotl) draws over it. `heronBeak` (the beak dip) sits
  * between the tilapia and the halo, behind the axolotl. `fireflies` (the pond's dusk
  * fireflies above the water band) sit above pads, below hint.
+ * The wading heron (issue #111) adds two depths beside the old pair, which stay until a
+ * later step removes them. `heronBody` (the body, legs, and the rest, watch and warn head
+ * and neck) sits just above the haze and below `homeSpot`, so every cue object (Dash pots,
+ * treasures, snacks, plastic worms, the tilapia, the axolotl) draws over it; the surface and
+ * the pads draw over its legs at the water line. `heronStab` (the stab head and its neck
+ * piece) sits between the old beak dip and the halo, so it is in front of the tilapia and
+ * behind the halo and the axolotl. Neither equals `queasyTint` or `treasureGlow`.
  * Full order: bg < caveBack < hiddenTreasure < reeds < caveFront = currentMarker
- * < haze < heronShadow < homeSpot < homeRing < treasureGlow < treasure < collectibles
- * < tilapia < heronBeak < halo < friend < axolotl < queasyTint < bubbles < surface < pads
- * < fireflies < hint < fx < ui.
+ * < haze < heronShadow < heronBody < homeSpot < homeRing < treasureGlow < treasure
+ * < collectibles < tilapia < heronBeak < heronStab < halo < friend < axolotl < queasyTint
+ * < bubbles < surface < pads < fireflies < hint < fx < ui.
  */
 export const DEPTH = {
   bg: 0,
@@ -46,6 +53,8 @@ export const DEPTH = {
   haze: 20,
   /** Provisional. Heron shadow: above the haze, below every cue object. */
   heronShadow: 22,
+  /** Provisional. Wading heron body, legs, and rest, watch and warn head and neck: above the haze, below every cue object. */
+  heronBody: 23,
   /** Provisional. Home Spot burrow and marker flag. */
   homeSpot: 24,
   /** Provisional. Home Spot safe-ring dots. */
@@ -59,6 +68,8 @@ export const DEPTH = {
   tilapia: 35,
   /** Provisional. Heron beak dip: behind the axolotl, in front of the tilapia. */
   heronBeak: 36,
+  /** Provisional. Wading heron stab head and neck piece: in front of the tilapia, behind the halo and the axolotl. */
+  heronStab: 37,
   /** Provisional. Protected halo: behind the axolotl, in front of the tilapia. */
   halo: 38,
   /** Provisional. Stranded axolotl: behind the axolotl, in front of the halo. */
