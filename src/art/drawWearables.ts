@@ -1,10 +1,12 @@
 /**
- * Worn looks of the twenty Wearables (guide 6a, 6i, 6q; PRD C10, F9, F13): the
+ * Worn looks of the twenty-five Wearables (guide 6a, 6i, 6q; PRD C10, F9, F13): the
  * canal's Sun hat, Shell necklace, Heart glasses, Golden bow, Tank top, Diving
  * tank, Stripy socks and Flippers, the pond's Lily flower crown, Pond-weed
  * scarf, Dragonfly glasses, Raincoat, Ladybug backpack, Rainbow dragonfly wings
  * and Froggy boots, and the pond Area 3's Feather cap, Lily-pad socks,
- * Water-lily shirt, Pearl tail charm and Firefly cape, painted on the anchors
+ * Water-lily shirt, Pearl tail charm and Firefly cape, and the chinampa Area 4's
+ * Straw sun hat, Marigold necklace, Garden overalls, Monarch hair clip and Monarch
+ * wings, painted on the anchors
  * and footprints of drawAxolotlParts.ts. Each is the 7e catalogue icon's design re-fitted to its
  * footprint, with ink widths never scaled (guide 4b). Every worn silhouette
  * (`shape`, inkedShape and `blob`) uses the item ink ITEM_LW 2.0 (#88): thinner
@@ -31,6 +33,14 @@
  * the only colours of their own are internal details (ink at the stripe alpha,
  * the firefly glow). None of them moves on its own: a worn look is still, and
  * only the rig (the swim, the legs, the tail wave) moves it.
+ *
+ * The Area 4 looks (issue #76) keep to the same footprints too. Their outer fills are
+ * the icons' own colours, imported by name from drawTreasures.ts (STRAW_HAT_FILL,
+ * MARIGOLD_PETAL, GARDEN_OVERALLS_FILL, MONARCH_WING, MONARCH_BODY), so a worn look
+ * and its icon cannot drift. Their other colours are internal details: ink at the
+ * stripe alpha, the overalls' patch, the cream monarch spots and ink veins. The
+ * Monarch hair clip and the Monarch wings never use red, and no look has net-like
+ * lines, so no worn look reads as a wound or as a ghost net.
  */
 import { ell, inkMany, line, seg, shape } from './canvasKit';
 import { roundedPolygon, type Pt } from './drawBadges';
@@ -60,6 +70,7 @@ import {
   type WearableSlot,
 } from './drawAxolotlParts';
 import { INK, WHITE } from './palette';
+import { GARDEN_OVERALLS_FILL, MARIGOLD_PETAL, MONARCH_BODY, MONARCH_SPOT, MONARCH_WING, STRAW_HAT_FILL } from './drawTreasures';
 import {
   BOAT_TRIM,
   BOW_FILL,
@@ -104,10 +115,17 @@ import {
 } from './treasurePalette';
 
 // ---------------------------------------------------------------------------
+// Area 4 detail colours (issue #76)
+// ---------------------------------------------------------------------------
+
+/** Garden overalls pocket patch, a clay terracotta: an internal detail colour inside the silhouette, so free. */
+export const GARDEN_OVERALLS_PATCH = '#c8782c';
+
+// ---------------------------------------------------------------------------
 // The art-level outfit
 // ---------------------------------------------------------------------------
 
-/** The art slug of each Wearable: the catalogue id text after the area (`canal/` or `pond/`). */
+/** The art slug of each Wearable: the catalogue id text after the area (`canal/`, `pond/` or `chinampa/`). */
 export type WearableArtSlug =
   | 'sun-hat'
   | 'shell-necklace'
@@ -128,12 +146,17 @@ export type WearableArtSlug =
   | 'lily-pad-socks'
   | 'water-lily-shirt'
   | 'pearl-tail-charm'
-  | 'firefly-cape';
+  | 'firefly-cape'
+  | 'straw-sun-hat'
+  | 'marigold-necklace'
+  | 'garden-overalls'
+  | 'monarch-hair-clip'
+  | 'monarch-wings';
 
 /**
  * The slot each art slug is worn in (guide 6i). The canal's eight come first, the
- * pond's seven after them and the pond Area 3's five last, so WEARABLE_ART_SLUGS
- * finds each slot's canal slug first.
+ * pond's seven after them, the pond Area 3's five next and the chinampa Area 4's five
+ * last, so WEARABLE_ART_SLUGS finds each slot's canal slug first.
  */
 export const WEARABLE_ART_SLOT: Readonly<Record<WearableArtSlug, WearableSlot>> = {
   'sun-hat': 'head',
@@ -156,6 +179,11 @@ export const WEARABLE_ART_SLOT: Readonly<Record<WearableArtSlug, WearableSlot>> 
   'water-lily-shirt': 'shirt',
   'pearl-tail-charm': 'tail',
   'firefly-cape': 'back',
+  'straw-sun-hat': 'head',
+  'marigold-necklace': 'neck',
+  'garden-overalls': 'shirt',
+  'monarch-hair-clip': 'head',
+  'monarch-wings': 'back',
 };
 
 /** The canal's art slug of each slot, in slot order (PRD order): one per slot, though a slot can hold more than one slug. */
@@ -1645,6 +1673,398 @@ function paintFroggyBoots(ctx: CanvasRenderingContext2D, frame: LegSlotFrame, to
 }
 
 // ---------------------------------------------------------------------------
+// Head: Straw sun hat (Common)
+// ---------------------------------------------------------------------------
+
+/** The Straw sun hat's crown: its sides, its flat top and the radius of its two top corners. */
+const STRAW_CROWN = { x0: 24.4, x1: 37.6, yTop: -37.6, yBottom: -25.6, r: 4.4 } as const;
+/** The hat band round the crown: y edges. Ink at the stripe alpha, the same colour darkened, not a second colour. */
+const STRAW_BAND_Y0 = -30.6;
+const STRAW_BAND_Y1 = -27.6;
+
+/**
+ * Common (issue #76): a #f3dd96 straw hat, a wide brim (the Sun hat's brim ellipse,
+ * which tilts up toward the snout) under a tall flat-topped crown with square
+ * sides and two rounded top corners, so it reads as a garden hat beside the Sun
+ * hat's domed one. Brim and crown are one `blob` silhouette (ink 2.0 all outside);
+ * the hat band is ink at alpha 0.30 across the crown, clipped to it; one shine on
+ * the crown; no trim. Ink included it fills HEAD_FOOTPRINT: x 16 to 46, lowest ink
+ * y -19.5 on the head top, crown top y -39.6.
+ */
+function paintStrawSunHat(ctx: CanvasRenderingContext2D): void {
+  const { x0, x1, yTop, yBottom, r } = STRAW_CROWN;
+  const brim = ellipsePath(31, -25.18, 13, 3.6, -0.06);
+  const crown = new Path2D();
+  crown.moveTo(x0, yBottom);
+  crown.lineTo(x0, yTop + r);
+  crown.arcTo(x0, yTop, x0 + r, yTop, r);
+  crown.lineTo(x1 - r, yTop);
+  crown.arcTo(x1, yTop, x1, yTop + r, r);
+  crown.lineTo(x1, yBottom);
+  crown.closePath();
+  blobs(ctx, [brim, crown], STRAW_HAT_FILL);
+  ctx.save();
+  ctx.clip(crown);
+  ctx.globalAlpha = SOCK_STRIPE_ALPHA;
+  ctx.fillStyle = INK;
+  ctx.fill(rectPath(x0 - 1, STRAW_BAND_Y0, x1 + 1, STRAW_BAND_Y1));
+  ctx.restore();
+  shine(ctx, 27.8, -34.2, 1, 2.2, 0.1);
+}
+
+// ---------------------------------------------------------------------------
+// Neck: Marigold necklace (Common)
+// ---------------------------------------------------------------------------
+
+/** The garland: how many blossoms, the x of the first and last, and the largest blossom radius. */
+const MARIGOLD_COUNT = 8;
+const MARIGOLD_X0 = 6.8;
+const MARIGOLD_X1 = 37.6;
+const MARIGOLD_MAX_R = 4.2;
+/** The string the blossoms hang on: this share of the Pond-weed scarf's band height, so no gap shows between blossoms. */
+const MARIGOLD_STRING_SHARE = 0.8;
+/** A blossom is a core and seven petals, all inside its radius r: core radius, petal radius and petal distance, each a share of r. */
+const MARIGOLD_PETALS = 7;
+const MARIGOLD_CORE_R = 0.62;
+const MARIGOLD_PETAL_R = 0.4;
+const MARIGOLD_PETAL_OUT = 0.6;
+/** The dark blossom centre: ink at the stripe alpha, the same colour darkened; its radius as a share of r, and least radius. */
+const MARIGOLD_DOT_SHARE = 0.2;
+const MARIGOLD_DOT_MIN = 0.7;
+
+/** A marigold blossom: centre and radius. */
+interface Blossom {
+  readonly x: number;
+  readonly y: number;
+  readonly r: number;
+}
+
+/**
+ * The largest blossom, up to MARIGOLD_MAX_R, centred on the middle of the scarf's
+ * band at x whose circle stays inside the band (its upper edge dips under the
+ * cheek heart zone, its lower edge keeps LW / 2 inside the outline). The Pond-weed
+ * scarf's band is the footprint every Neck item keeps to, so the blossoms inherit
+ * its clearances.
+ */
+function marigoldBlossom(x: number): Blossom {
+  const y = (scarfUpperAt(x) + scarfLowerAt(x)) / 2;
+  for (let r = Math.min(MARIGOLD_MAX_R, (scarfLowerAt(x) - scarfUpperAt(x)) / 2); r > 0.5; r -= 0.05) {
+    let fits = true;
+    for (let k = 0; k < 24 && fits; k++) {
+      const a = (k * TAU) / 24;
+      const px = x + Math.cos(a) * r;
+      const py = y + Math.sin(a) * r;
+      fits = py >= scarfUpperAt(px) && py <= scarfLowerAt(px);
+    }
+    if (fits) return { x, y, r };
+  }
+  return { x, y, r: 0.5 };
+}
+
+/** The garland's string: a band MARIGOLD_STRING_SHARE of the scarf band's height, from the first blossom to the last. */
+function marigoldStringPath(): Path2D {
+  const inset = (1 - MARIGOLD_STRING_SHARE) / 2;
+  const upper = (x: number): number => scarfUpperAt(x) + inset * (scarfLowerAt(x) - scarfUpperAt(x));
+  const lower = (x: number): number => scarfLowerAt(x) - inset * (scarfLowerAt(x) - scarfUpperAt(x));
+  const steps = Math.round((MARIGOLD_X1 - MARIGOLD_X0) / 0.5);
+  const xs = Array.from({ length: steps + 1 }, (_, i) => MARIGOLD_X0 + ((MARIGOLD_X1 - MARIGOLD_X0) * i) / steps);
+  const band = new Path2D();
+  xs.forEach((x, i) => (i === 0 ? band.moveTo(x, upper(x)) : band.lineTo(x, upper(x))));
+  for (let i = steps; i >= 0; i--) band.lineTo(xs[i], lower(xs[i]));
+  band.closePath();
+  return band;
+}
+
+/**
+ * Common (issue #76): a garland of eight #ffd06a marigold blossoms (a core and
+ * seven petals each, the radius of each fitted to the Pond-weed scarf's band, 2.0
+ * to 4.2) strung round the neck on a string of the same colour, all one `blob`
+ * silhouette with ink 0.6 outside the fill (as the scarf: the Neck footprint is too
+ * shallow for 2.0). Each blossom has a dark centre (ink at alpha 0.30) and one shine
+ * sits on the largest; no trim. Everything lies inside the scarf's band, so it
+ * keeps the gill-root zone, the cheek heart zone and the silhouette outline's
+ * outer half as the scarf does; the mouth paints over its front.
+ */
+function paintMarigoldNecklace(ctx: CanvasRenderingContext2D): void {
+  const blossoms = Array.from({ length: MARIGOLD_COUNT }, (_, i) =>
+    marigoldBlossom(MARIGOLD_X0 + ((MARIGOLD_X1 - MARIGOLD_X0) * i) / (MARIGOLD_COUNT - 1)),
+  );
+  const parts: SilhouettePart[] = [{ path: marigoldStringPath(), fill: MARIGOLD_PETAL }];
+  for (const b of blossoms) {
+    parts.push({ path: ellipsePath(b.x, b.y, b.r * MARIGOLD_CORE_R, b.r * MARIGOLD_CORE_R), fill: MARIGOLD_PETAL });
+    for (let k = 0; k < MARIGOLD_PETALS; k++) {
+      const a = -Math.PI / 2 + (k * TAU) / MARIGOLD_PETALS;
+      parts.push({
+        path: ellipsePath(
+          b.x + Math.cos(a) * b.r * MARIGOLD_PETAL_OUT,
+          b.y + Math.sin(a) * b.r * MARIGOLD_PETAL_OUT,
+          b.r * MARIGOLD_PETAL_R,
+          b.r * MARIGOLD_PETAL_R,
+        ),
+        fill: MARIGOLD_PETAL,
+      });
+    }
+  }
+  silhouette(ctx, parts, SCARF_OL);
+  ctx.save();
+  ctx.globalAlpha = SOCK_STRIPE_ALPHA;
+  ctx.fillStyle = INK;
+  for (const b of blossoms) {
+    const r = Math.max(MARIGOLD_DOT_MIN, b.r * MARIGOLD_DOT_SHARE);
+    ctx.fill(ellipsePath(b.x, b.y, r, r));
+  }
+  ctx.restore();
+  const big = blossoms.reduce((a, b) => (b.r > a.r ? b : a));
+  const a = -2.3;
+  shine(ctx, big.x + Math.cos(a) * big.r * MARIGOLD_PETAL_OUT, big.y + Math.sin(a) * big.r * MARIGOLD_PETAL_OUT, big.r * 0.34, big.r * 0.17, -0.5);
+}
+
+// ---------------------------------------------------------------------------
+// Shirt: Garden overalls (Rare)
+// ---------------------------------------------------------------------------
+
+/**
+ * The overalls' strap: a band of the same colour darkened (ink at the stripe alpha), this wide, this far along the
+ * Shirt from the rear (share); it keeps this far clear of the pocket's ink and of the rear edge, and gets
+ * narrower rather than meet either (a Baby's Shirt is only 10.5 long). Under OVERALLS_STRAP_MIN wide it is left
+ * out, as the Slim and Regular Baby's: a sliver would only hide the denim the swim-view floor counts.
+ */
+const OVERALLS_STRAP_W = 2.4;
+const OVERALLS_STRAP_MIN = 1.6;
+const OVERALLS_STRAP_AT = 0.55;
+const OVERALLS_STRAP_GAP = 0.5;
+const OVERALLS_STRAP_REAR = 1.2;
+/**
+ * The bib pocket patch: width (or this share of the Shirt's length when that is less), height, corner radius and ink;
+ * the gap kept behind the neckline's ink, and below the top ink (the Tank top's shine, 4 x 1.3 at 2.2 below it, ends 4.5
+ * below the top path, so the pocket sits clear under it, also on a Chubby Baby's steep front).
+ */
+const OVERALLS_POCKET_W = 4.4;
+const OVERALLS_POCKET_SHARE = 0.34;
+const OVERALLS_POCKET_H = 4.4;
+const OVERALLS_POCKET_R = 1;
+const OVERALLS_POCKET_OL = 0.8;
+const OVERALLS_NECK_GAP = 0.8;
+const OVERALLS_TOP_GAP = 5;
+
+/**
+ * Rare (issue #76): the Tank top's silhouette (the whole Shirt footprint, `shape`
+ * 2.0, the neckline arc) in #bcd2ff pale denim, with one clay #c8782c patch pocket
+ * on the bib (the one trim, a rounded patch with 0.8 of ink, clipped inside the
+ * silhouette), one strap down the torso behind it (ink at alpha 0.30: the same
+ * colour darkened, not a second colour; none on the Slim and Regular Baby, whose Shirt is too short) and one shine placed as on the Tank top.
+ * The pocket sits behind the neckline's ink and under the shine, so it never
+ * reaches the torso edge band, the front line or the neckline; the strap clears
+ * the pocket. No sleeves: it never reaches a leg, the tail core or the head.
+ */
+function paintGardenOveralls(ctx: CanvasRenderingContext2D, look: AxolotlArtLook): void {
+  const outline = shirtOutline(look);
+  const shirt = shirtGeometry(look);
+  const e = shirt.inset;
+  const length = outline.xf - outline.xr;
+  inkedShape(ctx, outline.body, GARDEN_OVERALLS_FILL, () => {
+    const right = shirt.neckline.apexX - 2 * outline.half - OVERALLS_NECK_GAP - OVERALLS_POCKET_OL / 2;
+    const left = right - Math.min(OVERALLS_POCKET_W, OVERALLS_POCKET_SHARE * length);
+    const strapRight = Math.min(
+      outline.xr + length * OVERALLS_STRAP_AT + OVERALLS_STRAP_W / 2,
+      left - OVERALLS_POCKET_OL / 2 - OVERALLS_STRAP_GAP,
+    );
+    const strapLeft = Math.max(strapRight - OVERALLS_STRAP_W, outline.xr + OVERALLS_STRAP_REAR);
+    if (strapRight - strapLeft >= OVERALLS_STRAP_MIN) {
+      ctx.save();
+      ctx.globalAlpha = SOCK_STRIPE_ALPHA;
+      ctx.fillStyle = INK;
+      ctx.fill(rectPath(strapLeft, e.cy - e.ry - 1, strapRight, e.cy + e.ry + 1));
+      ctx.restore();
+    }
+    const top = Math.max(outline.topAt(left), outline.topAt(right)) + outline.half + OVERALLS_TOP_GAP;
+    const pocket = roundRectPath(left, top, right, top + OVERALLS_POCKET_H, OVERALLS_POCKET_R);
+    shape(ctx, pocket, GARDEN_OVERALLS_PATCH, OVERALLS_POCKET_OL);
+  });
+  shirtShine(ctx, outline);
+}
+
+// ---------------------------------------------------------------------------
+// Monarch wings, shared by the Monarch hair clip and the Monarch wings
+// ---------------------------------------------------------------------------
+
+/**
+ * Ink just inside the Monarch hair clip's wing edge (with the 2.0 outside it, a dark border); the Monarch wings have
+ * none, as their fill is what the swim-view floor counts and their outer 2.0 is the border. The vein width, and the cream border dots.
+ */
+const CLIP_BORDER = 1.2;
+const WINGS_BORDER = 0;
+const MONARCH_VEIN_LW = 0.8;
+const MONARCH_DOT_R = 0.85;
+/** How far in from the wing's edge the cream border dots sit, the least that clears the border ink. */
+const MONARCH_DOT_IN = 2.1;
+/** The dot places round the wing's outer end (ellipse angle from its outward axis): three on a long wing, two on a short one. Cream, not white. */
+const MONARCH_DOTS_LONG: readonly number[] = [-0.8, 0, 0.8];
+const MONARCH_DOTS_SHORT: readonly number[] = [-0.85, 0.85];
+/** The vein ends round the outer end of a long wing (one down its axis; a short wing has none), and how far along the wing they start and end (shares of rx). */
+const MONARCH_VEINS_LONG: readonly number[] = [0];
+const MONARCH_VEINS_SHORT: readonly number[] = [];
+const MONARCH_VEIN_ROOT = 0.6;
+const MONARCH_VEIN_REACH = 0.8;
+/** A long wing's dots and veins, and a short wing's. */
+const MONARCH_LONG = { dots: MONARCH_DOTS_LONG, veins: MONARCH_VEINS_LONG } as const;
+const MONARCH_SHORT = { dots: MONARCH_DOTS_SHORT, veins: MONARCH_VEINS_SHORT } as const;
+
+/** One monarch wing: an ellipse, the unit vector along its axis pointing away from the body, and where its dots go. */
+interface MonarchWing {
+  readonly path: Path2D;
+  readonly cx: number;
+  readonly cy: number;
+  readonly rx: number;
+  readonly ry: number;
+  readonly out: Pt;
+  readonly dots: readonly number[];
+  readonly veins: readonly number[];
+}
+
+/** A wing ellipse (rotation `rot`) whose outward axis points away from `body`. */
+function monarchWing(
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  rot: number,
+  body: Pt,
+  places: { readonly dots: readonly number[]; readonly veins: readonly number[] },
+): MonarchWing {
+  const ax = Math.cos(rot);
+  const ay = Math.sin(rot);
+  const sign = (cx - body.x) * ax + (cy - body.y) * ay >= 0 ? 1 : -1;
+  return { path: ellipsePath(cx, cy, rx, ry, rot), cx, cy, rx, ry, out: { x: sign * ax, y: sign * ay }, ...places };
+}
+
+/**
+ * A wing's details, clipped to the wing: the dark border just inside its edge (`border` wide, none when 0), two
+ * veins fanning from near the body, and the cream border dots (the repeat pattern).
+ * Red is never used, so a wing never reads as a wound.
+ */
+function paintMonarchWingDetail(ctx: CanvasRenderingContext2D, w: MonarchWing, border: number): void {
+  const nrm = { x: -w.out.y, y: w.out.x };
+  const at = (u: number, v: number): Pt => ({ x: w.cx + w.out.x * u + nrm.x * v, y: w.cy + w.out.y * u + nrm.y * v });
+  ctx.save();
+  ctx.clip(w.path);
+  if (border > 0) {
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2 * border;
+    ctx.stroke(w.path);
+  }
+  const root = at(-MONARCH_VEIN_ROOT * w.rx, 0);
+  ctx.lineWidth = MONARCH_VEIN_LW;
+  for (const phi of w.veins) {
+    const tip = at(MONARCH_VEIN_REACH * w.rx * Math.cos(phi), MONARCH_VEIN_REACH * w.ry * Math.sin(phi));
+    ctx.stroke(line(root.x, root.y, tip.x, tip.y));
+  }
+  ctx.fillStyle = MONARCH_SPOT;
+  for (const phi of w.dots) {
+    const d = at((w.rx - MONARCH_DOT_IN) * Math.cos(phi), (w.ry - MONARCH_DOT_IN) * Math.sin(phi));
+    ctx.fill(ellipsePath(d.x, d.y, MONARCH_DOT_R, MONARCH_DOT_R));
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// Head: Monarch hair clip (Epic)
+// ---------------------------------------------------------------------------
+
+/** The clip's body: centre and radii. Pebble A (MONARCH_BODY), as the icon's body. */
+const CLIP_BODY = { x: 31, y: -29.4, rx: 1.8, ry: 5.2 } as const;
+
+/**
+ * Epic (issue #76): a monarch butterfly clip on the head top. Two broad upper
+ * wings tilt up and out, two short lower wings lie back toward the head top, all in
+ * #ffc487 pale monarch orange with a dark border, two ink veins and cream dots round
+ * the edge (the small repeat pattern, the Epic detail: three on each upper wing, two
+ * on each lower wing), on a slim pebble A body. Wings and body are one `blob` silhouette
+ * (ink 2.0 all outside); one shine on the rear upper wing; no trim, no gem. It is a
+ * hair clip as big as the Head slot's minimums ask: ink included it fills
+ * HEAD_FOOTPRINT, x 16.4 to 45.6, lowest ink y -19.7 on the head top, top y -43.9.
+ * Symmetrical about x 31.
+ */
+function paintMonarchHairClip(ctx: CanvasRenderingContext2D): void {
+  const body: Pt = { x: CLIP_BODY.x, y: CLIP_BODY.y };
+  const wings = [
+    monarchWing(25.94, -34.6, 9, 5.4, 0.75, body, MONARCH_LONG),
+    monarchWing(36.06, -34.6, 9, 5.4, -0.75, body, MONARCH_LONG),
+    monarchWing(26.6, -26.1, 6.4, 3.9, -0.38, body, MONARCH_SHORT),
+    monarchWing(35.4, -26.1, 6.4, 3.9, 0.38, body, MONARCH_SHORT),
+  ];
+  silhouette(ctx, [
+    ...wings.map((w) => ({ path: w.path, fill: MONARCH_WING })),
+    { path: ellipsePath(CLIP_BODY.x, CLIP_BODY.y, CLIP_BODY.rx, CLIP_BODY.ry), fill: MONARCH_BODY },
+  ]);
+  for (const w of wings) paintMonarchWingDetail(ctx, w, CLIP_BORDER);
+  shine(ctx, 24.4, -35.8, 1.4, 0.7, -0.6);
+}
+
+// ---------------------------------------------------------------------------
+// Back: Monarch wings (Legendary)
+// ---------------------------------------------------------------------------
+
+/** The long pair rises steeply and the short, lower pair lies back; reach, top and angle as the Rainbow wings'. */
+const MONARCH_UPPER: WingSpec = { rx: 7.2, ry: 4.5, angle: 0.95, reach: 1, topV: -12 };
+const MONARCH_LOWER: WingSpec = { rx: 6.2, ry: 4, angle: 0.25, reach: 1, topV: -7.4 };
+/** The harness the wings join on, in pebble A: half width, its top (its bottom is the box's fill bottom) and corner radius. */
+const MONARCH_BODY_HALF = 3.4;
+const MONARCH_BODY_TOP = -3.8;
+const MONARCH_BODY_R = 1.4;
+/** The gold band across the harness (the Legendary trim): its y' edges, between two thin ink lines. */
+const MONARCH_BAND_Y0 = -1.8;
+const MONARCH_BAND_Y1 = 0.2;
+
+/**
+ * Legendary (issue #76): four monarch wings in #ffc487, two long ones rising and two
+ * short, lower ones lying back along the tail and snout, rooted on one pebble A
+ * harness with a #ffc12e band across it (the Legendary trim, between two 0.6 ink
+ * lines so it reads in greyscale), merged into one `blob` silhouette (ink 2.0 all outside) in the Back box
+ * of the look, ink included: the fills are ITEM_LW inside the box and the wings run
+ * the box's length. Each wing has two ink veins and cream border dots, its dark border the 2.0 of ink round it
+ * (three on a long wing, two on a short one), and one static 4-point star (R 3,
+ * outline 1.2) sits at the apex between the long pair. Painted in the Back frame, so
+ * its lower edge, y' +1, keeps off the Shirt.
+ */
+function paintMonarchWings(ctx: CanvasRenderingContext2D, box: BackFrameBox): void {
+  const top = box.minV + ITEM_LW;
+  const bottom = box.maxV - ITEM_LW;
+  const rear = box.minU + ITEM_LW;
+  const front = box.maxU - ITEM_LW;
+  const cx = (rear + front) / 2;
+  const half = (front - rear) / 2;
+  const root: Pt = { x: cx, y: bottom };
+  const pairs = [
+    { spec: MONARCH_UPPER, places: MONARCH_LONG },
+    { spec: MONARCH_LOWER, places: MONARCH_SHORT },
+  ] as const;
+  const wings = pairs.flatMap(({ spec: w, places }) =>
+    ([-1, 1] as const).map((side): MonarchWing => {
+      const c = Math.cos(w.angle);
+      const s = Math.sin(w.angle);
+      // The bounding box half extents of an ellipse of radii rx, ry whose axis is turned by `angle`.
+      const ex = Math.hypot(w.rx * c, w.ry * s);
+      const ey = Math.hypot(w.rx * s, w.ry * c);
+      return monarchWing(cx + side * (w.reach * half - ex), w.topV + ey, w.rx, w.ry, -side * w.angle, root, places);
+    }),
+  );
+  const bodyPath = roundRectPath(cx - MONARCH_BODY_HALF, MONARCH_BODY_TOP, cx + MONARCH_BODY_HALF, bottom, MONARCH_BODY_R);
+  silhouette(ctx, [...wings.map((w) => ({ path: w.path, fill: MONARCH_WING })), { path: bodyPath, fill: MONARCH_BODY }]);
+  for (const w of wings) paintMonarchWingDetail(ctx, w, WINGS_BORDER);
+  ctx.fillStyle = MONARCH_BODY;
+  ctx.fill(bodyPath);
+  ctx.save();
+  ctx.clip(bodyPath);
+  trimBand(ctx, { x0: cx - MONARCH_BODY_HALF - 1, y0: MONARCH_BAND_Y0, x1: cx + MONARCH_BODY_HALF + 1, y1: MONARCH_BAND_Y1 }, GOLD_TRIM, true, BOW_BAND_LW);
+  ctx.restore();
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = BAND_LW;
+  ctx.stroke(bodyPath);
+  legendStar(ctx, cx, top + STAR_R + BAND_LW / 2, BAND_LW);
+}
+
+// ---------------------------------------------------------------------------
 // Entry points
 // ---------------------------------------------------------------------------
 
@@ -1727,6 +2147,23 @@ export function paintBodyWearable(
     case 'firefly-cape': {
       const back = backFootprint(look);
       inFrame(ctx, back.frame, () => paintFireflyCape(ctx, back.box));
+      break;
+    }
+    case 'straw-sun-hat':
+      paintStrawSunHat(ctx);
+      break;
+    case 'marigold-necklace':
+      paintMarigoldNecklace(ctx);
+      break;
+    case 'garden-overalls':
+      paintGardenOveralls(ctx, look);
+      break;
+    case 'monarch-hair-clip':
+      paintMonarchHairClip(ctx);
+      break;
+    case 'monarch-wings': {
+      const back = backFootprint(look);
+      inFrame(ctx, back.frame, () => paintMonarchWings(ctx, back.box));
       break;
     }
     default:

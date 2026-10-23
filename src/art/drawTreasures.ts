@@ -1,7 +1,8 @@
 /**
  * Treasure icon painters (guide 6i rarity ladder, 7e, 8): the twelve canal
  * Decorations and Wearables, the eleven pond ones (issue #75), the eleven pond
- * Area 3 ones (issue #98), and one Paint shell per Dream colour.
+ * Area 3 ones (issue #98), the eleven chinampa Area 4 ones (issue #76), and one Paint shell per Dream
+ * colour.
  *
  * Each icon is authored in a 28-unit box centred on (0, 0) and scaled
  * uniformly, so the longest side is `size` with the ink included. A Decoration
@@ -108,10 +109,66 @@ import {
 export type { DreamSwatchId } from './treasurePalette';
 
 // ---------------------------------------------------------------------------
+// Chinampa Area 4 fills (issue #76)
+// ---------------------------------------------------------------------------
+//
+// Outer silhouette fills of the eleven chinampa icons, each 9:1 or more with ink (relative luminance 0.607
+// or more) and none a rarity badge fill. They live here, next to the painters, because treasurePalette.ts
+// is outside this step's file scope; the worn looks of the five chinampa Wearables import these same
+// names, never the hex, so icon and worn look cannot drift. Move them to treasurePalette.ts later if
+// wanted (the names and values stay). Ratios are fill against ink #2b2350. Aliases of a shipped colour
+// say so. Details inside the silhouette (kernel lines, spots) are free and carry no ratio.
+
+/** Clay flowerpot, pale terracotta (a light clay, since the true clay orange fails 9:1). 9.30:1. */
+export const CLAY_FLOWERPOT_FILL = '#ffc3a0';
+/** Clay flowerpot sprout, the reed leaf green. Alias of PLANT_LEAF. 9.25:1. */
+export const CLAY_FLOWERPOT_SPROUT = PLANT_LEAF;
+/** Corn husk doll, Scarecrow head and straw hands, a pale husk. 11.35:1. */
+export const CORN_HUSK_FILL = '#f6e3b4';
+/** Straw sun hat, a pale straw. 10.69:1. */
+export const STRAW_HAT_FILL = '#f3dd96';
+/** Marigold necklace blossoms, a pale marigold orange (the true marigold fails 9:1). 9.93:1. */
+export const MARIGOLD_PETAL = '#ffd06a';
+/** Scarecrow shirt, pale ladybug red. Alias of LADYBUG_SHELL. 9.05:1. */
+export const SCARECROW_SHIRT = LADYBUG_SHELL;
+/** Scarecrow post and arm bar, the decoy's pale carved wood. Alias of DECOY_BODY. 10.59:1. */
+export const SCARECROW_POST = DECOY_BODY;
+/** Scarecrow hat, sun yellow. Alias of HAT_FILL. 11.05:1. */
+export const SCARECROW_HAT = HAT_FILL;
+/** Papel picado banner, first and every other flag, the lotus lantern pink. Alias of LOTUS_PETAL. 9.90:1. */
+export const PAPEL_PICADO_PINK = LOTUS_PETAL;
+/** Papel picado banner, the flags between the pink ones, the raincoat's pale apricot. Alias of RAINCOAT_FILL. 9.52:1. */
+export const PAPEL_PICADO_APRICOT = RAINCOAT_FILL;
+/** Papel picado banner hook rings, pebble A. Alias of FIREFLY_HOOK. 9.50:1. */
+export const PAPEL_PICADO_HOOK = FIREFLY_HOOK;
+/** Garden overalls, a pale denim periwinkle. 9.46:1. */
+export const GARDEN_OVERALLS_FILL = '#bcd2ff';
+/** Willow swing fronds, the pond-weed spring green. Alias of POND_WEED_SCARF. 10.40:1. */
+export const WILLOW_FROND = POND_WEED_SCARF;
+/** Willow swing seat, the decoy's pale carved wood. Alias of DECOY_BODY. 10.59:1. */
+export const WILLOW_SEAT = DECOY_BODY;
+/** Willow swing hook ring, pebble A. Alias of FIREFLY_HOOK. 9.50:1. */
+export const WILLOW_HOOK = FIREFLY_HOOK;
+/** Monarch hair clip and Monarch wings, a pale monarch orange (the true monarch orange fails 9:1). 9.25:1. */
+export const MONARCH_WING = '#ffc487';
+/** Monarch hair clip body and clip bar, and the Monarch wings harness, pebble A. 9.50:1. */
+export const MONARCH_BODY = PEBBLE_A;
+/** Golden corn kernels, a pale corn gold. 10.53:1. */
+export const GOLDEN_CORN_KERNEL = '#ffd966';
+/** Golden corn husk leaves, the reed leaf green. Alias of PLANT_LEAF. 9.25:1. */
+export const GOLDEN_CORN_HUSK = PLANT_LEAF;
+/** Golden corn plinth, pebble C. Alias of GOLDEN_LOTUS_BASE. 10.70:1. */
+export const GOLDEN_CORN_BASE = GOLDEN_LOTUS_BASE;
+/** Golden corn kernel rows, a darker corn gold; an internal line inside the ear, not ink and not an outer fill. */
+export const GOLDEN_CORN_ROW = '#e0a830';
+/** Monarch wing spots, a cream white (not the pure white of a gem glint, so a spot is never counted as a gem); internal. */
+export const MONARCH_SPOT = '#fff3d6';
+
+// ---------------------------------------------------------------------------
 // Ids
 // ---------------------------------------------------------------------------
 
-/** The fourteen Dream swatches in guide 3f order. */
+/** The fifteen Dream swatches in guide 3f order (Poppy red, issue #76, last). */
 export const DREAM_SWATCH_IDS: readonly DreamSwatchId[] = [
   'mint',
   'sky-blue',
@@ -127,11 +184,13 @@ export const DREAM_SWATCH_IDS: readonly DreamSwatchId[] = [
   'tie-dye-galaxy',
   'lily-green',
   'firefly-gold',
+  'poppy-red',
 ];
 
 /**
  * The Decoration and Wearable slugs: the twelve canal ones (the text after `canal/`), then the
- * eleven pond ones and the eleven pond Area 3 ones (the text after `pond/`), in catalogue order.
+ * eleven pond ones and the eleven pond Area 3 ones (the text after `pond/`), then the eleven chinampa
+ * Area 4 ones (the text after `chinampa/`), in catalogue order.
  */
 export type TreasureItemSlug =
   | 'pond-plant'
@@ -167,7 +226,18 @@ export type TreasureItemSlug =
   | 'lily-pad-socks'
   | 'water-lily-shirt'
   | 'pearl-tail-charm'
-  | 'firefly-cape';
+  | 'firefly-cape'
+  | 'clay-flowerpot'
+  | 'corn-husk-doll'
+  | 'straw-sun-hat'
+  | 'marigold-necklace'
+  | 'scarecrow'
+  | 'papel-picado-banner'
+  | 'garden-overalls'
+  | 'willow-swing'
+  | 'monarch-hair-clip'
+  | 'golden-corn'
+  | 'monarch-wings';
 
 export type TreasureIconSlug = TreasureItemSlug | `paint-shell-${DreamSwatchId}`;
 
@@ -206,11 +276,22 @@ const ITEM_SLUGS: readonly TreasureItemSlug[] = [
   'water-lily-shirt',
   'pearl-tail-charm',
   'firefly-cape',
+  'clay-flowerpot',
+  'corn-husk-doll',
+  'straw-sun-hat',
+  'marigold-necklace',
+  'scarecrow',
+  'papel-picado-banner',
+  'garden-overalls',
+  'willow-swing',
+  'monarch-hair-clip',
+  'golden-corn',
+  'monarch-wings',
 ];
 
 /**
- * All forty-eight icon slugs: the twelve canal items, the eleven pond items, the eleven pond Area 3
- * items, then the fourteen Paint shells in Dream order.
+ * All sixty icon slugs: the twelve canal items, the eleven pond items, the eleven pond Area 3
+ * items, the eleven chinampa Area 4 items, then the fifteen Paint shells in Dream order.
  */
 export const TREASURE_ICON_SLUGS: readonly TreasureIconSlug[] = [
   ...ITEM_SLUGS,
@@ -279,6 +360,9 @@ export function treasureIconTextureSize(size: number): TexSize {
  * the Golden lotus throne base, the Firefly jar and the middle bulb of the Firefly string lights (so a
  * Hanging item's icon box edge is its lowest fill edge too), and the quill nib of the Drifting feather
  * and the anchor weight of the Wooden duck decoy (Floating items, so the box edge again).
+ * The six chinampa Area 4 Decorations (issue #76) end on the same 12.6 edge: the flat foot of the Clay
+ * flowerpot, the Corn husk doll skirt, the Scarecrow post and the Golden corn plinth (Floor items), and the
+ * middle flag of the Papel picado banner and the Willow swing seat (Hanging items, so the box edge again).
  */
 const DECORATION_FILL_BOTTOM: Readonly<Partial<Record<TreasureIconSlug, number>>> = {
   'pond-plant': 12.3,
@@ -295,6 +379,12 @@ const DECORATION_FILL_BOTTOM: Readonly<Partial<Record<TreasureIconSlug, number>>
   'firefly-string-lights': 12.6,
   'firefly-jar': 12.6,
   'golden-lotus-throne': 12.6,
+  'clay-flowerpot': 12.6,
+  'corn-husk-doll': 12.6,
+  scarecrow: 12.6,
+  'papel-picado-banner': 12.6,
+  'willow-swing': 12.6,
+  'golden-corn': 12.6,
 };
 
 /** How far the outer ink reaches past the fill, for the Decorations whose painter is not a plain `shape`. */
@@ -395,17 +485,21 @@ function silhouette(pen: Pen, body: Path2D, fill: string, lw: number, inner?: ()
   ctx.stroke(body);
 }
 
-/** One trim band: a coloured strip between two thin ink lines, y0 to y1 in design units. Clipped by the caller. */
-function trimBand(pen: Pen, y0: number, y1: number, colour: string): void {
+/**
+ * One trim band: a coloured strip between two thin ink lines, y0 to y1 in design units. Clipped by the
+ * caller. `half` is how far the strip reaches either side of x = 0 (the icon box by default; a wide tank
+ * sprite passes its own half width).
+ */
+function trimBand(pen: Pen, y0: number, y1: number, colour: string, half: number = ICON_BOX): void {
   const { ctx, k } = pen;
   ctx.fillStyle = colour;
-  ctx.fillRect(-ICON_BOX * k, y0 * k, 2 * ICON_BOX * k, (y1 - y0) * k);
+  ctx.fillRect(-half * k, y0 * k, 2 * half * k, (y1 - y0) * k);
   ctx.strokeStyle = INK;
   ctx.lineWidth = BAND_LW;
   for (const y of [y0, y1]) {
     ctx.beginPath();
-    ctx.moveTo(-ICON_BOX * k, y * k);
-    ctx.lineTo(ICON_BOX * k, y * k);
+    ctx.moveTo(-half * k, y * k);
+    ctx.lineTo(half * k, y * k);
     ctx.stroke();
   }
 }
@@ -1561,6 +1655,375 @@ function paintFireflyCape(pen: Pen): void {
 }
 
 // ---------------------------------------------------------------------------
+// Chinampa Area 4 items (issue #76)
+// ---------------------------------------------------------------------------
+//
+// The same ladder and ink as the earlier icons. Every outer fill is one of the chinampa fills above (9:1 or
+// more with ink); the five Wearables' worn looks import the same names. Shape carries the meaning: a pot
+// with a sprout, a faceless husk doll with an arm bar, a post figure in a hat, bunting with a zigzag hem, a
+// swing under willow fronds, an ear of corn on a plinth, a flat-crowned straw hat, a loop of blossoms,
+// overalls with a bib and two legs, a butterfly on a clip, and a pair of butterfly wings.
+
+/** Mirror a flat [x, y, ...] list across x = 0. */
+function mirrorX(xy: readonly number[]): number[] {
+  return xy.map((v, i) => (i % 2 === 0 ? -v : v));
+}
+
+/**
+ * Common, Floor: a pale terracotta pot (a tapering body under a wider rim) with a green sprout of three
+ * leaves. Two colours, one shine. The pot foot is the lowest fill edge.
+ */
+function paintClayFlowerpot(pen: Pen): void {
+  const { k } = pen;
+  for (const [lean, len] of [
+    [0.8, 10.2],
+    [-0.8, 10.2],
+    [0, 11.2],
+  ] as const) {
+    outerShape(pen, place(leafPath(0, -1.2, len, 5.6, lean), k), CLAY_FLOWERPOT_SPROUT, ITEM_LW);
+  }
+  const body = roundedPolygon(pts(-8.6, 2, 8.6, 2, 6.2, 12.6, -6.2, 12.6), [0, 0, 2.4, 2.4]);
+  outerShape(pen, place(body, k), CLAY_FLOWERPOT_FILL, ITEM_LW);
+  const rim = roundedPolygon(pts(-10.2, -1.4, 10.2, -1.4, 10.2, 3.4, -10.2, 3.4), 1.6);
+  outerShape(pen, place(rim, k), CLAY_FLOWERPOT_FILL, ITEM_LW);
+  shine(pen, -4.6, 7.8, 0.9, 2.4, 0.15);
+}
+
+/**
+ * Common, Floor: a faceless corn husk doll in one pale husk colour: a round head over a small bodice with
+ * two slanted arms, a waist tie and a flared bell skirt with a flat hem. One shine. The skirt hem is the
+ * lowest fill edge.
+ */
+function paintCornHuskDoll(pen: Pen): void {
+  const { k } = pen;
+  const skirt = roundedPolygon(pts(-3.6, 1.2, 3.6, 1.2, 10.4, 12.6, -10.4, 12.6), [1.2, 1.2, 2.2, 2.2]);
+  outerShape(pen, place(skirt, k), CORN_HUSK_FILL, ITEM_LW);
+  for (const s of [-1, 1]) {
+    outerShape(pen, place(ellipse(s * 6.6, -2.6, 5.4, 2, s * 0.62), k), CORN_HUSK_FILL, ITEM_LW);
+  }
+  const bodice = roundedPolygon(pts(-3.8, -6.2, 3.8, -6.2, 3.2, 2, -3.2, 2), 1.2);
+  outerShape(pen, place(bodice, k), CORN_HUSK_FILL, ITEM_LW);
+  const tie = roundedPolygon(pts(-4.4, 0.4, 4.4, 0.4, 4.4, 3.2, -4.4, 3.2), 1.2);
+  outerShape(pen, place(tie, k), CORN_HUSK_FILL, ITEM_LW);
+  outerShape(pen, place(ellipse(0, -9, 3.6, 3.6), k), CORN_HUSK_FILL, ITEM_LW);
+  shine(pen, -5, 8, 0.8, 2.4, 0.22);
+}
+
+/**
+ * Rare, Floor: a scarecrow on a post: a wooden post and arm bar with a straw tuft at each hand, a pale red
+ * shirt with one yellow band, a husk head with two ink eyes and a stitched smile under a yellow straw hat.
+ * One shine. The post foot is the lowest fill edge.
+ */
+function paintScarecrow(pen: Pen): void {
+  const { ctx, k } = pen;
+  const post = roundedPolygon(pts(-1.8, -4, 1.8, -4, 1.8, 12.6, -1.8, 12.6), [0.8, 0.8, 1, 1]);
+  outerShape(pen, place(post, k), SCARECROW_POST, ITEM_LW);
+  const arms = roundedPolygon(pts(-9.2, -3.8, 9.2, -3.8, 9.2, -0.6, -9.2, -0.6), 1.4);
+  outerShape(pen, place(arms, k), SCARECROW_POST, ITEM_LW);
+  for (const s of [-1, 1]) {
+    for (const deg of [74, 106]) {
+      outerShape(pen, place(pointedPetal(s * 8.2, -2.2, s * deg, 4.4, 3.2), k), CORN_HUSK_FILL, ITEM_LW);
+    }
+  }
+  const shirt = roundedPolygon(pts(-5.4, -4.4, 5.4, -4.4, 7, 7.4, -7, 7.4), [1.8, 1.8, 1.4, 1.4]);
+  silhouette(pen, place(shirt, k), SCARECROW_SHIRT, ITEM_LW, () => trimBand(pen, 2.4, 4.8, BOAT_TRIM));
+  outerShape(pen, place(ellipse(0, -6.4, 3.5, 3.5), k), CORN_HUSK_FILL, ITEM_LW);
+  detail(pen, () => {
+    ctx.fillStyle = INK;
+    for (const x of [-1.4, 1.4]) ctx.fill(place(ellipse(x, -6.6, 0.6, 0.6), k));
+    const smile = new Path2D();
+    smile.moveTo(-1.6, -4.7);
+    smile.quadraticCurveTo(0, -3.7, 1.6, -4.7);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = BAND_LW;
+    ctx.stroke(place(smile, k));
+  });
+  outerShape(pen, place(ellipse(0, -9.4, 7, 1.9), k), SCARECROW_HAT, ITEM_LW);
+  const crown = roundedPolygon(pts(-3.8, -9.2, -3.2, -12.6, 3.2, -12.6, 3.8, -9.2), [0.6, 1.6, 1.6, 0.6]);
+  outerShape(pen, place(crown, k), SCARECROW_HAT, ITEM_LW);
+  shine(pen, -3.6, 0.2, 0.7, 1.6, 0.12);
+}
+
+/** Papel picado flag colours, left to right: pink, apricot, pink, apricot. */
+const PAPEL_FLAG_FILLS = [PAPEL_PICADO_PINK, PAPEL_PICADO_APRICOT] as const;
+
+/**
+ * A paper flag hanging from its top edge at (cx, top): `w` wide and `len` long, the hem cut into `teeth`
+ * zigzag teeth `toothH` deep. The lowest point is `top + len`.
+ */
+function paperFlagPath(cx: number, top: number, w: number, len: number, teeth: number, toothH: number): Path2D {
+  const half = w / 2;
+  const bottom = top + len;
+  const step = w / (2 * teeth);
+  const points: Pt[] = [
+    { x: cx - half, y: top },
+    { x: cx + half, y: top },
+  ];
+  const radii: number[] = [0.6, 0.6];
+  for (let i = 0; i <= 2 * teeth; i++) {
+    points.push({ x: cx + half - i * step, y: i % 2 === 0 ? bottom : bottom - toothH });
+    radii.push(i % 2 === 0 ? 0.7 : 0.5);
+  }
+  return roundedPolygon(points, radii);
+}
+
+/** Paper flag width and length in the 28 box, and its hem. */
+const PAPEL_FLAG_W = 6.2;
+const PAPEL_FLAG_LEN = 9.4;
+
+/**
+ * Rare, Hanging: a thin ink wire swagged between two hook rings (pebble A) with three paper flags hanging
+ * from it, each a pale pink or apricot with a zigzag hem and one yellow band just under the wire (the one
+ * trim, at the same offset on every flag). One shine on the left flag. The middle flag is the lowest fill
+ * edge. Authored in the 28 box for the icon; the 144 wide tank sprite is a wider swag of the same parts.
+ */
+function paintPapelPicadoBanner(pen: Pen): void {
+  const { ctx, k } = pen;
+  const endX = 10.8;
+  const endY = -10.2;
+  const ctrlX = 7.2;
+  const ctrlY = 7.667;
+  const at = (t: number): { x: number; y: number } => {
+    const u = 1 - t;
+    return { x: -endX * (u ** 3 - t ** 3) + 3 * u * t * (t - u) * ctrlX, y: (u ** 3 + t ** 3) * endY + 3 * u * t * ctrlY };
+  };
+  const wire = new Path2D();
+  wire.moveTo(-endX, endY);
+  wire.bezierCurveTo(-ctrlX, ctrlY, ctrlX, ctrlY, endX, endY);
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = DETAIL_LW;
+  ctx.stroke(place(wire, k));
+  for (const x of [-endX, endX]) {
+    shape(ctx, place(ellipse(x, endY, 1.8, 1.8), k), outerFill(pen, PAPEL_PICADO_HOOK), DETAIL_LW);
+  }
+  [0.2, 0.5, 0.8].forEach((t, i) => {
+    const { x, y } = at(t);
+    const flag = place(paperFlagPath(x, y, PAPEL_FLAG_W, PAPEL_FLAG_LEN, 2, 2.2), k);
+    silhouette(pen, flag, PAPEL_FLAG_FILLS[i % 2], ITEM_LW, () => trimBand(pen, y + 1.4, y + 3.2, BOAT_TRIM));
+  });
+  const left = at(0.2);
+  shine(pen, left.x - 1.2, left.y + 5.2, 0.6, 1.4, 0.1);
+}
+
+/**
+ * Epic, Hanging: a swing under a weeping willow: a pebble A hook ring on top, five pale willow fronds hanging
+ * from it like a skirt, two thin ink ropes to a pale wood seat, one aqua gem on the seat. One shine on the
+ * seat. The seat is the lowest fill edge.
+ */
+function paintWillowSwing(pen: Pen): void {
+  const { ctx, k } = pen;
+  const ropes = new Path2D();
+  for (const s of [-1, 1]) {
+    ropes.moveTo(s * 1.4, -9.2);
+    ropes.lineTo(s * 6.4, 7.6);
+  }
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = DETAIL_LW;
+  ctx.stroke(place(ropes, k));
+  for (const [deg, len, wid] of [
+    [-116, 9.6, 4],
+    [116, 9.6, 4],
+    [-154, 16.4, 4],
+    [154, 16.4, 4],
+  ] as const) {
+    outerShape(pen, place(pointedPetal(0, -9.2, deg, len, wid), k), WILLOW_FROND, ITEM_LW);
+  }
+  shape(ctx, place(ellipse(0, -11.3, 1.3, 1.3), k), outerFill(pen, WILLOW_HOOK), DETAIL_LW);
+  const seat = roundedPolygon(pts(-9.6, 7, 9.6, 7, 9.6, 12.6, -9.6, 12.6), 2);
+  outerShape(pen, place(seat, k), WILLOW_SEAT, ITEM_LW);
+  gem(pen, 0, 9.8, CASTLE_GEM);
+  shine(pen, -5.8, 8.8, 1.6, 0.6, 0);
+}
+
+/** An ear of corn standing at the origin: a spindle from the tip at (0, -12.6) to the base at (0, 8.6). */
+function cornEarPath(): Path2D {
+  const p = new Path2D();
+  p.moveTo(0, -12.6);
+  p.bezierCurveTo(3.6, -11.6, 5.7, -7.2, 5.6, -2);
+  p.bezierCurveTo(5.5, 3, 4.6, 6.4, 0, 8.6);
+  p.bezierCurveTo(-4.6, 6.4, -5.5, 3, -5.6, -2);
+  p.bezierCurveTo(-5.7, -7.2, -3.6, -11.6, 0, -12.6);
+  p.closePath();
+  return p;
+}
+
+/**
+ * Legendary, Floor: an ear of golden corn (a pale gold spindle with kernel rows) between two green husk
+ * leaves, standing on a stone plinth with one gold band, one pink gem on the ear and one 4-point star. One
+ * shine. The plinth is the lowest fill edge.
+ */
+function paintGoldenCorn(pen: Pen): void {
+  const { ctx, k } = pen;
+  silhouette(pen, place(cornEarPath(), k), GOLDEN_CORN_KERNEL, ITEM_LW, () => {
+    const rows = new Path2D();
+    for (const x of [-2.8, 0, 2.8]) {
+      rows.moveTo(x, -13);
+      rows.lineTo(x, 9);
+    }
+    for (const y of [-9, -6, -3, 0, 3, 6]) {
+      rows.moveTo(-7, y);
+      rows.lineTo(7, y);
+    }
+    ctx.strokeStyle = GOLDEN_CORN_ROW;
+    ctx.lineWidth = 1;
+    ctx.stroke(place(rows, k));
+  });
+  for (const deg of [-18, 18]) {
+    outerShape(pen, place(pointedPetal(0, 7.8, deg, 11.6, 4.2), k), GOLDEN_CORN_HUSK, ITEM_LW);
+  }
+  const plinth = roundedPolygon(pts(-8.4, 12.6, -7, 8, 7, 8, 8.4, 12.6), [1.8, 1.4, 1.4, 1.8]);
+  silhouette(pen, place(plinth, k), GOLDEN_CORN_BASE, ITEM_LW, () => trimBand(pen, 9.4, 11.4, GOLD_TRIM));
+  gem(pen, 0, -5.4, PYRAMID_GEM);
+  shine(pen, -2.6, -9, 0.8, 1.8, 0.15);
+  legendStar(pen, 9.8, -9.8);
+}
+
+/**
+ * Common: a straw sombrero in one pale straw colour: a wide brim with upturned edges under a tall tapering
+ * crown. Two woven bands across the crown (ink at alpha 0.30, clipped to it: the same colour darkened, not a
+ * second colour). One shine.
+ */
+function paintStrawSunHat(pen: Pen): void {
+  const { ctx, k } = pen;
+  const brim = new Path2D();
+  brim.moveTo(-12.6, 2.2);
+  brim.quadraticCurveTo(0, 8.6, 12.6, 2.2);
+  brim.quadraticCurveTo(0, 15.6, -12.6, 2.2);
+  brim.closePath();
+  outerShape(pen, place(brim, k), STRAW_HAT_FILL, ITEM_LW);
+  const crown = roundedPolygon(pts(-6.8, 5.6, -3.8, -9.8, 3.8, -9.8, 6.8, 5.6), [1.2, 3.2, 3.2, 1.2]);
+  silhouette(pen, place(crown, k), STRAW_HAT_FILL, ITEM_LW, () => {
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = INK;
+    for (const y of [-5, -0.8]) ctx.fillRect(-9 * k, (y - 1.1) * k, 18 * k, 2.2 * k);
+    ctx.globalAlpha = 1;
+  });
+  shine(pen, -3, -6, 0.8, 2.2, 0.2);
+}
+
+/**
+ * Common: a lei of seven pale marigold blossoms (five round petals each, `shape` 2.8) strung in an open
+ * loop that hangs from the top, each overlapping the next. One shine on a lower blossom.
+ */
+function paintMarigoldNecklace(pen: Pen): void {
+  const { k } = pen;
+  const ringR = 8;
+  // Degrees clockwise from the top: both ends first, the bottom blossom last so it lies over its neighbours.
+  for (const deg of [315, 45, 270, 90, 225, 135, 180]) {
+    const a = (deg * Math.PI) / 180;
+    outerShape(pen, place(blossomPath(ringR * Math.sin(a), -ringR * Math.cos(a), 4.6), k), MARIGOLD_PETAL, ITEM_LW);
+  }
+  const a = (225 * Math.PI) / 180;
+  shine(pen, ringR * Math.sin(a) - 1.2, -ringR * Math.cos(a) - 1.4, 0.7, 1.5, 0.5);
+}
+
+/**
+ * Rare: bib overalls in pale denim: two straps, a bib with a pocket outline and two ink buttons, a hip and
+ * two legs apart. One yellow cuff band across both legs. One shine.
+ */
+function paintGardenOveralls(pen: Pen): void {
+  const { ctx, k } = pen;
+  const overalls = roundedPolygon(
+    pts(
+      -7, -12.6, -3.8, -12.6, -3.6, -5.6, 3.6, -5.6, 3.8, -12.6, 7, -12.6, 7.4, -5.8, 8.6, -1, 8.6, 12.6,
+      1.1, 12.6, 1.1, 5.4, -1.1, 5.4, -1.1, 12.6, -8.6, 12.6, -8.6, -1, -7.4, -5.8,
+    ),
+    [1.4, 1.4, 1.2, 1.2, 1.4, 1.4, 1.2, 2, 1.6, 0.8, 0.8, 0.8, 0.8, 1.6, 2, 1.2],
+  );
+  silhouette(pen, place(overalls, k), GARDEN_OVERALLS_FILL, ITEM_LW, () => trimBand(pen, 8.6, 10.8, BOAT_TRIM));
+  detail(pen, () => {
+    const pocket = roundedPolygon(pts(-2.6, -3.4, 2.6, -3.4, 2.6, 0.8, -2.6, 0.8), 0.8);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = DETAIL_LW;
+    ctx.stroke(place(pocket, k));
+    ctx.fillStyle = INK;
+    for (const x of [-3, 3]) ctx.fill(place(ellipse(x, -4.6, 0.8, 0.8), k));
+  });
+  shine(pen, -5.8, 2.6, 0.8, 2.2, 0.1);
+}
+
+/** Right-hand corners of a monarch's upper and lower wing as [x, y, ...] and their corner radii, design units. */
+const MONARCH_CLIP_UPPER = [1.6, -1.4, 4.4, -11.4, 10.8, -12.4, 12.6, -6.4, 8.4, 0.2] as const;
+const MONARCH_CLIP_UPPER_RADII = [1, 3.4, 3.6, 3.6, 2.6] as const;
+const MONARCH_CLIP_LOWER = [1.6, 1, 9.4, 1.6, 10, 6.4, 6.2, 9.8, 2.8, 8.2] as const;
+const MONARCH_CLIP_LOWER_RADII = [1, 2.6, 3, 3, 1.6] as const;
+const MONARCH_WINGS_UPPER = [2.6, -1.2, 6.2, -10.6, 11.6, -11.8, 12.6, -5.4, 8.8, 0.6] as const;
+const MONARCH_WINGS_UPPER_RADII = [1.2, 3.4, 3.6, 3.4, 2.6] as const;
+const MONARCH_WINGS_LOWER = [2.6, 1.6, 9.4, 2.2, 10.8, 7.4, 6.6, 11.6, 3.2, 8.6] as const;
+const MONARCH_WINGS_LOWER_RADII = [1.2, 2.8, 3.2, 3.2, 1.8] as const;
+
+/**
+ * One monarch wing on side `s` (1 right, -1 left): a rounded pale orange panel in `shape` 2.8 with thin ink
+ * veins fanning from the wing root and cream spots near its edge. Veins and spots sit inside the silhouette.
+ */
+function monarchWing(
+  pen: Pen,
+  s: 1 | -1,
+  corners: readonly number[],
+  radii: readonly number[],
+  root: readonly [number, number],
+  veins: readonly (readonly [number, number])[],
+  spots: readonly (readonly [number, number])[],
+): void {
+  const { ctx, k } = pen;
+  const xy = s === 1 ? [...corners] : mirrorX(corners);
+  silhouette(pen, place(roundedPolygon(pts(...xy), radii), k), MONARCH_WING, ITEM_LW, () => {
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = BAND_LW;
+    for (const [x, y] of veins) ctx.stroke(place(line(s * root[0], root[1], s * x, y), k));
+    ctx.fillStyle = MONARCH_SPOT;
+    for (const [x, y] of spots) ctx.fill(place(ellipse(s * x, y, 0.8, 0.8), k));
+  });
+}
+
+/**
+ * Epic: a monarch butterfly hair clip: a pebble A clip bar under two pairs of pale orange wings (thin ink
+ * veins, cream spots) round a slim body with two antennae, one aqua gem on the thorax. One shine.
+ */
+function paintMonarchHairClip(pen: Pen): void {
+  const { ctx, k } = pen;
+  const bar = roundedPolygon(pts(-10.6, 8.4, 10.6, 8.4, 10.6, 12.4, -10.6, 12.4), 1.8);
+  outerShape(pen, place(bar, k), MONARCH_BODY, ITEM_LW);
+  for (const s of [-1, 1] as const) {
+    monarchWing(pen, s, MONARCH_CLIP_LOWER, MONARCH_CLIP_LOWER_RADII, [1.8, 0.6], [[7.6, 5.4], [4.6, 8.2]], [[7.8, 3.8]]);
+  }
+  for (const s of [-1, 1] as const) {
+    monarchWing(pen, s, MONARCH_CLIP_UPPER, MONARCH_CLIP_UPPER_RADII, [1.8, -0.6], [[9.4, -9.4], [11, -4.6]], [[10.2, -7.6], [7.6, -10.4]]);
+  }
+  const body = roundedPolygon(pts(-1.9, -8.6, 1.9, -8.6, 1.9, 9.4, -1.9, 9.4), 1.9);
+  outerShape(pen, place(body, k), MONARCH_BODY, ITEM_LW);
+  const feelers = new Path2D();
+  for (const s of [-1, 1]) {
+    feelers.moveTo(s * 0.9, -8.2);
+    feelers.quadraticCurveTo(s * 1.8, -11.4, s * 4.2, -12.2);
+  }
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = DETAIL_LW;
+  ctx.stroke(place(feelers, k));
+  gem(pen, 0, -0.4, CASTLE_GEM);
+  shine(pen, -7.4, -7.6, 0.8, 2.2, -0.5);
+}
+
+/**
+ * Legendary: a pair of monarch wings (an upper and a lower on each side, `shape` 2.8) in pale orange with thin
+ * ink veins and cream spots, swept out from a small pebble A harness. One gold band on the harness, one pink
+ * gem where the wings meet, one 4-point star above, one shine.
+ */
+function paintMonarchWings(pen: Pen): void {
+  for (const s of [-1, 1] as const) {
+    monarchWing(pen, s, MONARCH_WINGS_LOWER, MONARCH_WINGS_LOWER_RADII, [2.6, 1.2], [[8.6, 6], [5.4, 9.4]], [[9, 4.6], [6.4, 8.8]]);
+  }
+  for (const s of [-1, 1] as const) {
+    monarchWing(pen, s, MONARCH_WINGS_UPPER, MONARCH_WINGS_UPPER_RADII, [2.6, -0.4], [[9.8, -9.2], [11.8, -5]], [[10.4, -7.4], [8.2, -10]]);
+  }
+  const harness = roundedPolygon(pts(-2.8, -5, 2.8, -5, 2.8, 6.8, -2.8, 6.8), 2.4);
+  silhouette(pen, place(harness, pen.k), MONARCH_BODY, ITEM_LW, () => trimBand(pen, 2.6, 4.8, GOLD_TRIM));
+  gem(pen, 0, -1.4, PYRAMID_GEM);
+  shine(pen, -8.4, -6.6, 0.8, 2.2, -0.5);
+  legendStar(pen, 0, -10.2);
+}
+
+// ---------------------------------------------------------------------------
 // Paint shell and the Dream blob
 // ---------------------------------------------------------------------------
 
@@ -1865,9 +2328,59 @@ function paintWideFireflyStringLights(pen: Pen): void {
   shine(pen, mid.x - 3.4, mid.y + socketH + WIDE_LIGHTS_MID_R - 2.8, 1.8, 3.4, 0.2);
 }
 
+/** Flag size of the wide Papel picado banner, tank units: 16 wide, 25 long, a three-tooth hem 4 deep. */
+const WIDE_BANNER_FLAG_W = 16;
+const WIDE_BANNER_FLAG_LEN = 25;
+const WIDE_BANNER_TEETH = 3;
+const WIDE_BANNER_TOOTH_H = 4;
+/** Wire y at the middle of each swag: the middle flag hangs from it, its hem ink ending on the box bottom. */
+const WIDE_BANNER_MID_Y = FLOAT_BOX_PX / 2 - ITEM_LW / 2 - WIDE_BANNER_FLAG_LEN;
+/** Cubic control y of each swag that puts its middle at WIDE_BANNER_MID_Y (the middle is 1/4 end and 3/4 control). */
+const WIDE_BANNER_SAG_Y = (WIDE_BANNER_MID_Y - WIDE_LIGHTS_HOOK_Y / 4) / (3 / 4);
+/** Half width the yellow band of a flag reaches either side of x = 0: the whole 144 box. */
+const WIDE_BANNER_BAND_HALF = 72;
+
+/**
+ * Rare, Hanging, 144 wide: the icon's parts on a wider swag. A thin ink wire in two swags strung from three
+ * hook rings on the box top (the ends and the centre hook), three paper flags hanging from each swag (pink and
+ * apricot in turn, a zigzag hem of three teeth), each with one yellow band just under the wire. One shine, on
+ * the left middle flag. The two middle flags are the lowest fill edge, their ink on the box bottom.
+ */
+function paintWidePapelPicadoBanner(pen: Pen): void {
+  const { ctx, k } = pen;
+  const hookY = WIDE_LIGHTS_HOOK_Y;
+  const swags = [
+    [-WIDE_LIGHTS_END_X, 0],
+    [0, WIDE_LIGHTS_END_X],
+  ] as const;
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = DETAIL_LW;
+  for (const [x0, x1] of swags) ctx.stroke(place(swagPath(x0, x1, hookY, WIDE_BANNER_SAG_Y), k));
+  for (const x of [-WIDE_LIGHTS_END_X, 0, WIDE_LIGHTS_END_X]) {
+    shape(ctx, place(ellipse(x, hookY, 3.2, 3.2), k), outerFill(pen, PAPEL_PICADO_HOOK), DETAIL_LW);
+  }
+  let index = 0;
+  for (const [x0, x1] of swags) {
+    for (const t of [0.2, 0.5, 0.8]) {
+      const { x, y } = swagPointAt(t, x0, x1, hookY, WIDE_BANNER_SAG_Y);
+      const flag = place(
+        paperFlagPath(x, y, WIDE_BANNER_FLAG_W, WIDE_BANNER_FLAG_LEN, WIDE_BANNER_TEETH, WIDE_BANNER_TOOTH_H),
+        k,
+      );
+      silhouette(pen, flag, PAPEL_FLAG_FILLS[index % 2], ITEM_LW, () =>
+        trimBand(pen, y + 4, y + 8, BOAT_TRIM, WIDE_BANNER_BAND_HALF),
+      );
+      index += 1;
+    }
+  }
+  const mid = swagPointAt(0.5, -WIDE_LIGHTS_END_X, 0, hookY, WIDE_BANNER_SAG_Y);
+  shine(pen, mid.x - 3.4, mid.y + 12, 1.6, 3.4, 0.1);
+}
+
 /** The wide tank sprites by slug: the catalogue width in tank units each is authored at, and its painter. */
 const WIDE_DECORATIONS: Readonly<Partial<Record<TreasureIconSlug, { readonly width: number; readonly paint: (pen: Pen) => void }>>> = {
   'firefly-string-lights': { width: 144, paint: paintWideFireflyStringLights },
+  'papel-picado-banner': { width: 144, paint: paintWidePapelPicadoBanner },
 };
 
 /**
@@ -2014,6 +2527,39 @@ function paintIcon(ctx: CanvasRenderingContext2D, slug: TreasureIconSlug, size: 
       break;
     case 'firefly-cape':
       paintFireflyCape({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'clay-flowerpot':
+      paintClayFlowerpot({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'corn-husk-doll':
+      paintCornHuskDoll({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'straw-sun-hat':
+      paintStrawSunHat({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'marigold-necklace':
+      paintMarigoldNecklace({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'scarecrow':
+      paintScarecrow({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'papel-picado-banner':
+      paintPapelPicadoBanner({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'garden-overalls':
+      paintGardenOveralls({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'willow-swing':
+      paintWillowSwing({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'monarch-hair-clip':
+      paintMonarchHairClip({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'golden-corn':
+      paintGoldenCorn({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
+      break;
+    case 'monarch-wings':
+      paintMonarchWings({ ctx, k: fitScale(size, INK_OUT_SHAPE), flat });
       break;
   }
 }

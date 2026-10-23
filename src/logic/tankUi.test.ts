@@ -63,7 +63,7 @@ const CHEST_ROW_H = 3 * LINE_HEIGHT_EM * BODY_PX;
 const HUB_TITLE = 'Home Tank';
 const DECORATE_CAPTION = 'Pick a Decoration to place it. Drag it or use the arrow keys to move it.';
 const CHEST_TITLE = 'Treasure Chest';
-const CHEST_HEADING = 'Dream colours: 14 of 14 found';
+const CHEST_HEADING = 'Dream colours: 15 of 15 found';
 const CHEST_PAGE = 'Page 9 of 9';
 
 const CANVAS_WIDTHS: readonly number[] = [
@@ -733,7 +733,7 @@ describe('decorateLayout', () => {
   });
 
   it('fits every tray up to the shipped Decorations on every supported canvas, more than 4 by the tray rule', () => {
-    expect(SHIPPED_DECORATIONS).toHaveLength(14);
+    expect(SHIPPED_DECORATIONS).toHaveLength(20);
     const maxCounts = Array.from({ length: SHIPPED_DECORATIONS.length + 1 }, (_, count) => count);
     const problems = supportedCanvases().flatMap((view) =>
       maxCounts.flatMap((maxTrayCount) =>
@@ -814,10 +814,10 @@ describe('decorateLayout', () => {
     expect(layout.caption?.y).toBe(284);
   });
 
-  it('lays out the 14 shipped Decorations compact in three rows over the floor band, no room for the caption, at 460 x 320', () => {
+  it('lays out a tray of 14 Decorations compact in three rows over the floor band, no room for the caption, at 460 x 320', () => {
     const view = { cssW: 460, cssH: 320 };
     const frame = tankFrame(view.cssW, view.cssH);
-    const layout = decorateLayout(view, frame, SHIPPED_DECORATIONS.length, decorateSizes(view), SHIPPED_DECORATIONS.length);
+    const layout = decorateLayout(view, frame, 14, decorateSizes(view), 14);
     const rowXs = [26, 86, 146, 206, 266, 326, 386];
     expect(layout.compact).toBe(true);
     expect(layout.tray).toEqual([
@@ -832,10 +832,10 @@ describe('decorateLayout', () => {
     expect(layout.caption).toBeNull();
   });
 
-  it('lays out the 14 shipped Decorations compact in three rows on the wall, Done in the water and no room for the caption, at 320 x 440', () => {
+  it('lays out a tray of 14 Decorations compact in three rows on the wall, Done in the water and no room for the caption, at 320 x 440', () => {
     const view = { cssW: 320, cssH: 440 };
     const frame = tankFrame(view.cssW, view.cssH);
-    const layout = decorateLayout(view, frame, SHIPPED_DECORATIONS.length, decorateSizes(view), SHIPPED_DECORATIONS.length);
+    const layout = decorateLayout(view, frame, 14, decorateSizes(view), 14);
     const rowXs = [16, 76, 136, 196, 256];
     expect(layout.compact).toBe(true);
     expect(layout.tray).toEqual([

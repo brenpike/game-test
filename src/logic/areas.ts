@@ -1,3 +1,4 @@
+import { CHINAMPA_AREA_ID, CHINAMPA_LAYOUT } from './chinampaLayout';
 import type { SnackDrift } from './collectibles';
 import { REFUGE_FACT_CARDS, TILAPIA_FACT, type FactCard } from './factCards';
 import type { HazardSpawn } from './hazards';
@@ -22,8 +23,11 @@ export const CANAL_HABITAT: Readonly<Habitat> = Object.freeze({ id: 'canal', nam
 /** The lily pad pond habitat, home of Area 2. */
 export const POND_HABITAT: Readonly<Habitat> = Object.freeze({ id: 'pond', name: 'Lily pad pond', look: 'pond' });
 
+/** The chinampa gardens habitat, home of Area 4. */
+export const CHINAMPA_HABITAT: Readonly<Habitat> = Object.freeze({ id: 'chinampa', name: 'Chinampa gardens', look: 'chinampa' });
+
 /** Every habitat. */
-export const HABITATS: readonly Readonly<Habitat>[] = Object.freeze([CANAL_HABITAT, POND_HABITAT]);
+export const HABITATS: readonly Readonly<Habitat>[] = Object.freeze([CANAL_HABITAT, POND_HABITAT, CHINAMPA_HABITAT]);
 
 /** The habitat with this id, or undefined when there is none. */
 export function habitatById(id: string): Readonly<Habitat> | undefined {
@@ -128,8 +132,30 @@ export const POND_2_AREA: Readonly<AreaData> = Object.freeze({
   snackDart: SNACK_DART,
 });
 
+/** Area 4, the chinampa gardens, the first area two screens tall. */
+export const CHINAMPA_AREA: Readonly<AreaData> = Object.freeze({
+  id: CHINAMPA_AREA_ID,
+  number: 4,
+  habitatId: CHINAMPA_HABITAT.id,
+  layout: CHINAMPA_LAYOUT,
+  /**
+   * Provisional exit deep in the bottom right, at the end of the main path's lane along the bed,
+   * inside the swim bounds, out of the last tilapia's reach, clear of every ghost net and clear of
+   * every hiding spot by more than the exit radius plus the find pickup radius.
+   */
+  exit: Object.freeze({ x: 2780, y: 625, radius: 40 }),
+  specialTreasureId: 'chinampa/scarecrow',
+  /**
+   * Provisional drift, a little faster than Area 3 (PRD H4): the same amplitudes with shorter
+   * periods, peak speed about 15.6 px/s. That is below the 18 px/s a one-leg axolotl makes against
+   * the gap current and at most half the 40 px/s Snack magnet pull.
+   */
+  snackDrift: Object.freeze({ amplitudeX: 16, amplitudeY: 8, periodX: 7.6, periodY: 6.08 }),
+  snackDart: SNACK_DART,
+});
+
 /** Every area, in area-number order. */
-export const AREAS: readonly Readonly<AreaData>[] = Object.freeze([CANAL_AREA, POND_AREA, POND_2_AREA]);
+export const AREAS: readonly Readonly<AreaData>[] = Object.freeze([CANAL_AREA, POND_AREA, POND_2_AREA, CHINAMPA_AREA]);
 
 /** The area with this id, or undefined when there is none. */
 export function areaById(id: string): Readonly<AreaData> | undefined {

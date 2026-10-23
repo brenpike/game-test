@@ -1124,6 +1124,8 @@ describe('Outfit step', () => {
       { id: 'canal/sun-hat', label: 'Sun hat', wornOnMark: 'On Milo' },
       { id: 'pond/lily-flower-crown', label: 'Lily flower crown' },
       { id: 'pond/feather-cap', label: 'Feather cap' },
+      { id: 'chinampa/straw-sun-hat', label: 'Straw sun hat' },
+      { id: 'chinampa/monarch-hair-clip', label: 'Monarch hair clip' },
     ]);
     expect(chosenIndex(head)).toBe(0);
     expect(head.focus).toEqual({ kind: 'option', index: 0 });
