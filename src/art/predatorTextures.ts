@@ -1,6 +1,6 @@
 /**
- * Phaser glue for the predators and leg loss (issues #7 and #98): bakes the
- * tilapia, heron, effect and leg icon painters into CanvasTextures.
+ * Phaser glue for the predators and leg loss (issues #7, #98 and #103): bakes the
+ * tilapia, heron, garter snake, effect and leg icon painters into CanvasTextures.
  * Visual only. No game state, no input, no physics.
  *
  * Same rules as textures.ts: every texture is drawn at `bakeScale`, so a
@@ -16,6 +16,14 @@ import {
   paintPoof,
   paintProtectedHalo,
 } from './drawEffects';
+import {
+  GARTER_RIPPLE_TEX,
+  GARTER_SNAKE_FRAMES,
+  GARTER_SNAKE_TEX,
+  paintGarterRipple,
+  paintGarterSnake,
+  type GarterSnakeFrame,
+} from './drawGarterSnake';
 import {
   HERON_BODY_TEX,
   HERON_HEAD_TEX,
@@ -65,7 +73,24 @@ export const PREDATOR_TEX = {
   heronHeadWarn: 'heron-head-warn',
   heronStabHead: 'heron-stab-head',
   heronStabNeck: 'heron-stab-neck',
+  garterSnakeSwimA: 'garter-snake-swim-a',
+  garterSnakeSwimB: 'garter-snake-swim-b',
+  garterSnakeSwimC: 'garter-snake-swim-c',
+  garterSnakeSwimD: 'garter-snake-swim-d',
+  garterSnakeHold: 'garter-snake-hold',
+  garterSnakeDart: 'garter-snake-dart',
+  garterRipple: 'garter-snake-ripple',
 } as const;
+
+/** Fixed key of each garter snake frame. */
+const GARTER_SNAKE_KEYS: Readonly<Record<GarterSnakeFrame, string>> = {
+  swimA: PREDATOR_TEX.garterSnakeSwimA,
+  swimB: PREDATOR_TEX.garterSnakeSwimB,
+  swimC: PREDATOR_TEX.garterSnakeSwimC,
+  swimD: PREDATOR_TEX.garterSnakeSwimD,
+  hold: PREDATOR_TEX.garterSnakeHold,
+  dart: PREDATOR_TEX.garterSnakeDart,
+};
 
 /** Fixed key of each wading heron body frame. */
 const HERON_BODY_KEYS: Readonly<Record<HeronBodyFrame, string>> = {
@@ -126,9 +151,17 @@ export interface PredatorTextures {
   readonly heronStabHead: TexInfo;
   /** Stab neck piece (HERON_STAB_NECK_TEX), stretched along x by the scene. Anchor is the rear end centre. */
   readonly heronStabNeck: TexInfo;
+  /**
+   * Garter snake, one still frame each (GARTER_SNAKE_TEX), facing right: `swimA` to `swimD` (the
+   * gentle S-wiggle, cycled in that order), `hold` (the one held S pose for reduced motion) and
+   * `dart`. Anchor is the head centre, the snake's logic point; the body trails toward -x.
+   */
+  readonly garterSnake: Readonly<Record<GarterSnakeFrame, TexInfo>>;
+  /** One ripple ring (GARTER_RIPPLE_TEX), the garter snake's warning cue. Anchor is the ring centre. */
+  readonly garterRipple: TexInfo;
 }
 
-/** Bake the tilapia, heron, effect and leg icon textures into the scene's texture manager. */
+/** Bake the tilapia, heron, garter snake, effect and leg icon textures into the scene's texture manager. */
 export function bakePredatorTextures(scene: Phaser.Scene, bakeScale: number): PredatorTextures {
   const info: Record<string, TexInfo> = {};
   const add = (t: TexInfo): TexInfo => {
@@ -174,6 +207,13 @@ export function bakePredatorTextures(scene: Phaser.Scene, bakeScale: number): Pr
   const heronStabNeck = add(
     bake(scene, PREDATOR_TEX.heronStabNeck, HERON_STAB_NECK_TEX, bakeScale, paintHeronStabNeck),
   );
+  const garterSnake = {} as Record<GarterSnakeFrame, TexInfo>;
+  for (const frame of GARTER_SNAKE_FRAMES) {
+    garterSnake[frame] = add(
+      bake(scene, GARTER_SNAKE_KEYS[frame], GARTER_SNAKE_TEX, bakeScale, (ctx) => paintGarterSnake(ctx, frame)),
+    );
+  }
+  const garterRipple = add(bake(scene, PREDATOR_TEX.garterRipple, GARTER_RIPPLE_TEX, bakeScale, paintGarterRipple));
 
   return {
     info,
@@ -189,5 +229,7 @@ export function bakePredatorTextures(scene: Phaser.Scene, bakeScale: number): Pr
     heronHead,
     heronStabHead,
     heronStabNeck,
+    garterSnake,
+    garterRipple,
   };
 }

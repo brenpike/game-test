@@ -55,6 +55,7 @@ const SOLID_IDS: readonly DreamLookId[] = [
   'lily-green',
   'firefly-gold',
   'poppy-red',
+  'plum',
 ];
 const DARK_IDS: readonly DreamLookId[] = ['midnight-blue', 'galaxy', 'tie-dye-galaxy'];
 const RIM_IDS: readonly DreamLookId[] = ['midnight-blue', 'rainbow', 'galaxy', 'tie-dye-galaxy'];
@@ -134,9 +135,9 @@ function everyPair(): [string, DreamLookId, MorphPalette][] {
 }
 
 describe('Dream colour slots (guide 3f)', () => {
-  it('has the fifteen Dream colours with the swatch body colours', () => {
-    expect(DREAM_IDS).toHaveLength(15);
-    expect(DREAM_IDS.slice(-3)).toEqual(['lily-green', 'firefly-gold', 'poppy-red']);
+  it('has the sixteen Dream colours with the swatch body colours', () => {
+    expect(DREAM_IDS).toHaveLength(16);
+    expect(DREAM_IDS.slice(-4)).toEqual(['lily-green', 'firefly-gold', 'poppy-red', 'plum']);
     expect(DREAM_IDS).toEqual(Object.keys(DREAM_SWATCH));
     for (const id of DREAM_IDS) expect(DREAM_SLOTS[id].body, id).toBe(DREAM_SWATCH[id].body);
   });
@@ -210,6 +211,7 @@ describe('Dream colour slots (guide 3f)', () => {
       'tie-dye-galaxy': [7.93, 0.598],
       'lily-green': [1.15, 0.079],
       'poppy-red': [2.84, 0.333],
+      plum: [1.52, 0.323],
     });
     for (const [id, [grey, colour]] of Object.entries(separation)) {
       expect(grey, `${id} greyscale`).toBeGreaterThanOrEqual(1.05);
@@ -263,12 +265,71 @@ describe('Dream colour slots (guide 3f)', () => {
       'tie-dye-galaxy': [2.79, 0.37],
       'lily-green': [3.27, 0.393],
       'firefly-gold': [2.84, 0.333],
+      plum: [1.88, 0.251],
     });
     for (const [id, [grey, colour]] of Object.entries(separation)) {
       expect(grey, `${id} greyscale`).toBeGreaterThanOrEqual(1.05);
       expect(colour, `${id} OKLab`).toBeGreaterThanOrEqual(0.075);
     }
     // Rainbow is the closest pair, and Rainbow also carries its bands and rim light.
+    const closest = Object.entries(separation).sort(([, a], [, b]) => a[0] - b[0])[0][0];
+    expect(closest).toBe('rainbow');
+  });
+
+  it('gives Plum the 3f mixes of its two picks, a body over the 0.2 spot line, 3:1 ink cue and a plain swatch (issue #103)', () => {
+    const s = DREAM_SLOTS.plum;
+    expect([s.body, s.gillNearStem]).toEqual(['#f68aec', '#b24fb0']);
+    expectNear(s.farSide, mixChannels(s.body, INK, 0.12), 'far side');
+    expectNear(s.fin, mixChannels(s.body, WHITE, 0.4), 'fin');
+    expectNear(s.belly, mixChannels(s.body, WHITE, 0.55), 'belly');
+    expectNear(s.gillNearFilament, mixChannels(s.gillNearStem, WHITE, 0.22), 'near filament');
+    expectNear(s.gillFarStem, mixChannels(s.gillNearStem, INK, 0.1), 'far stem');
+    expectNear(s.gillFarFilament, mixChannels(s.gillNearFilament, INK, 0.08), 'far filament');
+    // Guide 10 cue floor: the ink reaches 3:1 or more against the body; the white edge does not.
+    expect(contrastRatio(s.body, INK)).toBeCloseTo(6.69, 2);
+    expect(contrastRatio(s.body, INK)).toBeGreaterThanOrEqual(CUE_RATIO);
+    expect(Math.sqrt(contrastRatio(s.body, INK))).toBeCloseTo(2.59, 2);
+    expect(contrastRatio(s.body, WHITE)).toBeCloseTo(2.15, 2);
+    expect(contrastRatio(s.body, MORPH_PALETTES.leucistic.eye)).toBeCloseTo(8.1, 2);
+    expect(contrastRatio(s.body, s.gillNearStem)).toBeCloseTo(2.11, 2);
+    expect(relativeLuminance(s.body)).toBeCloseTo(0.44, 2);
+    expect(DREAM_SWATCH.plum).toEqual({ body: '#f68aec', pattern: 'plain', marks: [], dark: false });
+    expect(dreamPalette(MORPH_PALETTES.leucistic, 'plum').extras).toEqual({ spot: 'rgba(43,35,80,0.30)' });
+  });
+
+  it('keeps Plum apart from every other Dream colour in greyscale and in colour, Lavender and Poppy red most of all (PRD F15)', () => {
+    const body = DREAM_SLOTS.plum.body;
+    const separation = Object.fromEntries(
+      DREAM_IDS.filter((id) => id !== 'plum').map((id) => [
+        id,
+        [
+          Number(contrastRatio(body, DREAM_SLOTS[id].body).toFixed(2)),
+          Number(oklabDifference(body, DREAM_SLOTS[id].body).toFixed(3)),
+        ],
+      ]),
+    );
+    expect(separation).toEqual({
+      mint: [1.64, 0.285],
+      'sky-blue': [1.41, 0.21],
+      lavender: [1.36, 0.138],
+      'sunset-orange': [1.36, 0.214],
+      bubblegum: [1.36, 0.118],
+      'midnight-blue': [4.6, 0.42],
+      hearts: [1.88, 0.288],
+      'tie-dye': [1.79, 0.28],
+      iridescent: [1.43, 0.154],
+      rainbow: [1.29, 0.173],
+      galaxy: [5.45, 0.456],
+      'tie-dye-galaxy': [5.23, 0.438],
+      'lily-green': [1.74, 0.345],
+      'firefly-gold': [1.52, 0.323],
+      'poppy-red': [1.88, 0.251],
+    });
+    for (const [id, [grey, colour]] of Object.entries(separation)) {
+      expect(grey, `${id} greyscale`).toBeGreaterThanOrEqual(1.05);
+      expect(colour, `${id} OKLab`).toBeGreaterThanOrEqual(0.075);
+    }
+    // Plum sits between Rainbow and the light solids in value, so Rainbow is the closest in greyscale.
     const closest = Object.entries(separation).sort(([, a], [, b]) => a[0] - b[0])[0][0];
     expect(closest).toBe('rainbow');
   });
@@ -626,7 +687,7 @@ describe('Dream marker (guide 4e, 6p)', () => {
 });
 
 describe('Dream greyscale cues (PRD F15, guide 6p)', () => {
-  it('leaves exactly the nine solids plain', () => {
+  it('leaves exactly the ten solids plain', () => {
     const plain = DREAM_IDS.filter((id) => DREAM_SWATCH[id].pattern === 'plain');
     expect(plain).toEqual(SOLID_IDS);
   });

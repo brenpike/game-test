@@ -1,5 +1,5 @@
 /**
- * Tilapia, heron, protected ring and leg icon colour rules (guide 3g, 6q, 10), headless.
+ * Tilapia, heron, garter snake, protected ring and leg icon colour rules (guide 3g, 6q, 10), headless.
  * The painters run against a recording context and a stub Path2D (the same approach as
  * treasureArt.test.ts): every fill and stroke is kept with the style, width and alpha it
  * was painted under, and every context call is logged.
@@ -30,6 +30,21 @@ import {
   type HeronBodyFrame,
   type HeronHeadPose,
 } from './drawHeron';
+import {
+  GARTER_BODY,
+  GARTER_NOSE_TIP,
+  GARTER_RIPPLE_RX,
+  GARTER_RIPPLE_RY,
+  GARTER_RIPPLE_TEX,
+  GARTER_SHINE,
+  GARTER_SNAKE_FRAMES,
+  GARTER_SNAKE_TEX,
+  GARTER_STRIPE,
+  GARTER_SWIM_FRAMES,
+  paintGarterRipple,
+  paintGarterSnake,
+  type GarterSnakeFrame,
+} from './drawGarterSnake';
 import { DEPTH } from './layers';
 import { paintLegIcon } from './drawLegIcons';
 import { paintTilapia, type TilapiaPose } from './drawTilapia';
@@ -120,6 +135,9 @@ const DOCUMENTED_COLOURS: readonly (readonly [string, string, string])[] = [
   ['PROTECTED_RING_OUTER', PROTECTED_RING_OUTER, '#2b2350'],
   ['PROTECTED_RING_INNER', PROTECTED_RING_INNER, '#ffffff'],
   ['PROTECTED_RING_GLINT', PROTECTED_RING_GLINT, '#ffffff'],
+  ['GARTER_BODY', GARTER_BODY, '#6f9a45'],
+  ['GARTER_STRIPE', GARTER_STRIPE, '#efe49a'],
+  ['GARTER_SHINE', GARTER_SHINE, 'rgba(255,255,255,0.55)'],
   ['BUBBLE_FILL (carried-home bubble)', BUBBLE_FILL, 'rgba(255,255,255,0.38)'],
   ['CARRY_RIM', CARRY_RIM, 'rgba(255,255,255,0.9)'],
   ['BUBBLE_STROKE (carried-home bubble)', BUBBLE_STROKE, 'rgba(43,35,80,0.85)'],
@@ -138,6 +156,9 @@ const DOCUMENTED_RATIOS: readonly (readonly [string, string, string, number])[] 
   ['POOF_PUFF vs INK', POOF_PUFF, INK, 14.39],
   ['POOF_SPARKLE vs INK', POOF_SPARKLE, INK, 11.05],
   ['PROTECTED_RING_INNER vs PROTECTED_RING_OUTER', PROTECTED_RING_INNER, PROTECTED_RING_OUTER, 14.39],
+  ['GARTER_BODY vs INK', GARTER_BODY, INK, 4.38],
+  ['GARTER_STRIPE vs INK', GARTER_STRIPE, INK, 11.13],
+  ['GARTER_STRIPE vs GARTER_BODY', GARTER_STRIPE, GARTER_BODY, 2.54],
 ];
 
 /**
@@ -149,6 +170,7 @@ const DOCUMENTED_WORST_CASE: readonly (readonly [string, string, string, number]
   ['TILAPIA_BELLY or INK', TILAPIA_BELLY, INK, 3.42],
   ['ALERT_FILL or INK', ALERT_FILL, INK, 3.32],
   ['protected ring, PROTECTED_RING_INNER or PROTECTED_RING_OUTER', PROTECTED_RING_INNER, PROTECTED_RING_OUTER, 3.79],
+  ['garter snake ripple ring, WHITE or INK', WHITE, INK, 3.79],
 ];
 
 // ---------------------------------------------------------------------------
@@ -1048,6 +1070,341 @@ describe('wading heron depths (src/art/layers.ts)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Garter snake (issue #103; art guide 7k)
+// ---------------------------------------------------------------------------
+
+/** The chinampa luminance floor (guide 3c, 10): ink is 3:1 or better on any background at or above it. */
+const CHINAMPA_FLOOR = 0.1687;
+/** Body tube geometry written out (guide 7k): 18 round-capped segments, then the head capsule. */
+const SNAKE_SEGMENTS = 18;
+const SNAKE_HEAD_R = 10;
+const SNAKE_STRIPE_W = 2.4;
+/** The least the stripes must be lighter than the body: the greyscale cue (guide 7k, 10). */
+const SNAKE_STRIPE_RATIO = 2.5;
+/** A recorded point of a tube path. */
+type SnakePt = readonly [number, number];
+
+/** Every snake frame; a missing one is a type error. */
+const SNAKE_FRAME_LIST = Object.keys({
+  swimA: 0,
+  swimB: 0,
+  swimC: 0,
+  swimD: 0,
+  hold: 0,
+  dart: 0,
+} satisfies Record<GarterSnakeFrame, 0>) as GarterSnakeFrame[];
+
+/** The recorded segments of a painted snake: the body tubes in order from the head to the tail tip, and the head capsule. */
+function snakeParts(frame: GarterSnakeFrame): {
+  ops: Op[];
+  body: { ink: Op; colour: Op; from: SnakePt; to: SnakePt }[];
+  head: { ink: Op; colour: Op };
+  stripes: Op[];
+} {
+  const { ops } = record((ctx) => paintGarterSnake(ctx, frame));
+  const tubes = tubePairs(ops);
+  expect(tubes).toHaveLength(SNAKE_SEGMENTS + 1);
+  const body = tubes.slice(0, SNAKE_SEGMENTS).map(({ ink, colour }) => {
+    const [move, lineTo] = cmdsOf(colour);
+    return { ink, colour, from: [move[1], move[2]] as SnakePt, to: [lineTo[1], lineTo[2]] as SnakePt };
+  });
+  const stripes = ops.filter((op) => isStroke(op) && op.strokeStyle === GARTER_STRIPE);
+  return { ops, body, head: tubes[SNAKE_SEGMENTS], stripes };
+}
+
+/** The centreline of a snake frame, head first: the start of each body tube, then the tail tip. */
+function centrelineOf(frame: GarterSnakeFrame): SnakePt[] {
+  const { body } = snakeParts(frame);
+  return [...body.map((t) => t.from), body[body.length - 1].to];
+}
+
+describe('garter snake colours (guide 3g, 10)', () => {
+  it('the stripes are not lighter than the hero belly, and reach the outer edge at 9:1 or more against INK', () => {
+    expect(relativeLuminance(GARTER_STRIPE)).toBeGreaterThanOrEqual(TILAPIA_MIN_LUMINANCE);
+    expect(contrastRatio(GARTER_STRIPE, INK)).toBeGreaterThanOrEqual(TILAPIA_INK_RATIO);
+    expect(relativeLuminance(GARTER_STRIPE)).toBeLessThan(relativeLuminance(HERO_BELLY));
+  });
+
+  it('the body is at the chinampa luminance floor or more, so its ink is held by the floor like the ghost net, and it is no lighter than the hero', () => {
+    expect(relativeLuminance(GARTER_BODY)).toBeGreaterThanOrEqual(CHINAMPA_FLOOR);
+    expect(contrastRatio(GARTER_BODY, INK)).toBeGreaterThanOrEqual(INK_EDGE_RATIO);
+    expect(relativeLuminance(GARTER_BODY)).toBeLessThan(relativeLuminance(HERO_BELLY));
+  });
+
+  it('tells the stripes from the body by value alone: 2.5:1 or more, the stripes lighter (the greyscale cue)', () => {
+    expect(contrastRatio(GARTER_STRIPE, GARTER_BODY)).toBeGreaterThanOrEqual(SNAKE_STRIPE_RATIO);
+    expect(relativeLuminance(GARTER_STRIPE)).toBeGreaterThan(relativeLuminance(GARTER_BODY));
+  });
+
+  it('is a green, nowhere near red: no part of the snake is the hero\'s warm pink or a mouth red', () => {
+    const [r, g, b] = channelsOf(GARTER_BODY);
+    expect(g).toBeGreaterThan(r);
+    expect(g).toBeGreaterThan(b);
+    for (const frame of SNAKE_FRAME_LIST) {
+      const { ops } = snakeParts(frame);
+      for (const op of ops) {
+        for (const colour of [op.fillStyle, op.strokeStyle]) {
+          expect(colour).not.toBe(TILAPIA_MOUTH);
+          expect(colour).not.toBe(LEGS_FILL);
+        }
+      }
+    }
+  });
+
+  it('the head shine is a see-through white', () => {
+    const [r, g, b, a] = rgbaOf(GARTER_SHINE);
+    expect([r, g, b]).toEqual([255, 255, 255]);
+    expect(a).toBeLessThan(1);
+  });
+});
+
+describe('garter snake anchors and sizes', () => {
+  it('shares one integer frame between every frame, with the anchor inside it', () => {
+    expect(Number.isInteger(GARTER_SNAKE_TEX.w) && Number.isInteger(GARTER_SNAKE_TEX.h)).toBe(true);
+    expect(GARTER_SNAKE_TEX.originX).toBeGreaterThan(0);
+    expect(GARTER_SNAKE_TEX.originX).toBeLessThan(GARTER_SNAKE_TEX.w);
+    expect(GARTER_SNAKE_TEX.originY).toBeGreaterThan(0);
+    expect(GARTER_SNAKE_TEX.originY).toBeLessThan(GARTER_SNAKE_TEX.h);
+    // the head is at the front of the frame and the body trails to -x: far more frame behind the anchor than ahead of it
+    expect(GARTER_SNAKE_TEX.originX).toBeGreaterThan(GARTER_SNAKE_TEX.w - GARTER_SNAKE_TEX.originX);
+  });
+
+  it('lists six frames: four swim frames, the held pose and the dart', () => {
+    expect([...GARTER_SNAKE_FRAMES].sort()).toEqual([...SNAKE_FRAME_LIST].sort());
+    expect([...GARTER_SWIM_FRAMES]).toEqual(['swimA', 'swimB', 'swimC', 'swimD']);
+  });
+
+  it.each(SNAKE_FRAME_LIST)('%s: the head capsule is centred on the anchor and the nose tip is GARTER_NOSE_TIP', (frame) => {
+    const { head } = snakeParts(frame);
+    const [move, lineTo] = cmdsOf(head.colour) as unknown as [string, number, number][];
+    expect([move[1], move[2]]).toEqual([-3, 0]);
+    expect([lineTo[1], lineTo[2]]).toEqual([4, 0]);
+    expect(head.colour.lineWidth).toBe(2 * SNAKE_HEAD_R);
+    expect(head.ink.lineWidth).toBe(2 * SNAKE_HEAD_R + 2 * LW);
+    expect(GARTER_NOSE_TIP).toEqual({ x: 4 + SNAKE_HEAD_R, y: 0 });
+  });
+
+  it.each(SNAKE_FRAME_LIST)('%s: the body starts under the head and trails to -x, and the head never leaves the anchor', (frame) => {
+    const points = centrelineOf(frame);
+    expect(points).toHaveLength(SNAKE_SEGMENTS + 1);
+    expect(points[0][0]).toBeCloseTo(0, 9);
+    expect(points[0][1]).toBeCloseTo(0, 9);
+    for (let i = 1; i < points.length; i++) expect(points[i][0]).toBeLessThan(points[i - 1][0]);
+    // the wave grows from nothing, so the neck leaves the head level
+    expect(Math.abs(points[1][1])).toBeLessThan(0.6);
+  });
+
+  it.each(SNAKE_FRAME_LIST)('%s: every part fits GARTER_SNAKE_TEX with its ink and at least 4 px of padding', (frame) => {
+    expectPadded(snakeParts(frame).ops, GARTER_SNAKE_TEX);
+  });
+});
+
+describe('garter snake body (still frames)', () => {
+  it.each(SNAKE_FRAME_LIST)('%s: round-capped GARTER_BODY tubes inked LW a side, merged in one group, then the head capsule', (frame) => {
+    const { ops, body, head } = snakeParts(frame);
+    expect(ops.every((op) => op.globalAlpha === 1)).toBe(true);
+    for (const { ink, colour } of [...body, head]) {
+      expect(colour.strokeStyle).toBe(GARTER_BODY);
+      expect(ink.strokeStyle).toBe(INK);
+      expect(ink.lineWidth).toBeCloseTo(colour.lineWidth + 2 * LW, 9);
+    }
+    // every ink stroke comes before every colour stroke, so the joints share no line
+    const firstColour = Math.min(...[...body, head].map(({ colour }) => ops.indexOf(colour)));
+    const lastInk = Math.max(...[...body, head].map(({ ink }) => ops.indexOf(ink)));
+    expect(lastInk).toBeLessThan(firstColour);
+  });
+
+  it.each(SNAKE_FRAME_LIST)('%s: the body is thick and friendly and tapers to a thin tail, with a neck narrower than the head', (frame) => {
+    const { body, head } = snakeParts(frame);
+    const widths = body.map(({ colour }) => colour.lineWidth);
+    expect(Math.max(...widths)).toBeGreaterThan(10);
+    expect(widths[0]).toBeLessThan(head.colour.lineWidth);
+    expect(widths[widths.length - 1]).toBeLessThan(Math.max(...widths) / 2);
+    // never widening toward the tail once past the neck
+    const peak = widths.indexOf(Math.max(...widths));
+    for (let i = peak + 1; i < widths.length; i++) expect(widths[i]).toBeLessThanOrEqual(widths[i - 1] + 1e-9);
+  });
+
+  it('the four swim frames are one gentle S-wiggle a quarter wave apart: swimA and swimC mirror each other, so do swimB and swimD', () => {
+    const [a, b, c, d] = GARTER_SWIM_FRAMES.map(centrelineOf);
+    for (let i = 0; i <= SNAKE_SEGMENTS; i++) {
+      expect(a[i][1]).toBeCloseTo(-c[i][1], 9);
+      expect(b[i][1]).toBeCloseTo(-d[i][1], 9);
+      expect(a[i][0]).toBeCloseTo(c[i][0], 9);
+    }
+    expect(JSON.stringify(a)).not.toBe(JSON.stringify(b));
+    expect(JSON.stringify(a)).not.toBe(JSON.stringify(c));
+    expect(JSON.stringify(b)).not.toBe(JSON.stringify(d));
+  });
+
+  it('the wiggle is gentle: no part of a swim frame bends away from the head line by more than 6 px, and no segment is steeper than 0.7', () => {
+    for (const frame of GARTER_SWIM_FRAMES) {
+      const points = centrelineOf(frame);
+      expect(Math.max(...points.map((p) => Math.abs(p[1])))).toBeLessThanOrEqual(6);
+      for (let i = 1; i < points.length; i++) {
+        const slope = Math.abs(points[i][1] - points[i - 1][1]) / Math.abs(points[i][0] - points[i - 1][0]);
+        expect(slope).toBeLessThan(0.7);
+      }
+    }
+  });
+
+  it('the held pose is one clear S, a deeper curve than any swim frame, with both a crest and a trough', () => {
+    const swimDepth = Math.max(...GARTER_SWIM_FRAMES.flatMap(centrelineOf).map((p) => Math.abs(p[1])));
+    const held = centrelineOf('hold');
+    expect(Math.max(...held.map((p) => Math.abs(p[1])))).toBeGreaterThan(swimDepth);
+    expect(Math.min(...held.map((p) => p[1]))).toBeLessThan(-2);
+    expect(Math.max(...held.map((p) => p[1]))).toBeGreaterThan(2);
+    for (const frame of GARTER_SWIM_FRAMES) expect(JSON.stringify(centrelineOf(frame))).not.toBe(JSON.stringify(held));
+  });
+
+  it('the dart is longer, thinner and nearly straight, mouth still closed', () => {
+    const dart = centrelineOf('dart');
+    const swim = centrelineOf('swimA');
+    expect(-dart[dart.length - 1][0]).toBeGreaterThan(-swim[swim.length - 1][0] + 15);
+    expect(Math.max(...dart.map((p) => Math.abs(p[1])))).toBeLessThan(1);
+    const dartWidth = Math.max(...snakeParts('dart').body.map(({ colour }) => colour.lineWidth));
+    const swimWidth = Math.max(...snakeParts('swimA').body.map(({ colour }) => colour.lineWidth));
+    expect(dartWidth).toBeLessThan(swimWidth);
+    expect(seamsOf(snakeParts('dart').ops)).toHaveLength(1);
+  });
+
+  it('every frame is a different painting', () => {
+    const signatures = SNAKE_FRAME_LIST.map((frame) => JSON.stringify(snakeParts(frame).ops.map((op) => op.args)));
+    expect(new Set(signatures).size).toBe(SNAKE_FRAME_LIST.length);
+  });
+});
+
+describe('garter snake stripes (the greyscale cue)', () => {
+  it.each(SNAKE_FRAME_LIST)('%s: two pale GARTER_STRIPE lines run along the body over the tubes, no ink, at full alpha', (frame) => {
+    const { ops, stripes, head } = snakeParts(frame);
+    expect(stripes).toHaveLength(2);
+    const girth = frame === 'dart' ? 0.86 : 1;
+    for (const stripe of stripes) {
+      expect(stripe.lineWidth).toBeCloseTo(SNAKE_STRIPE_W * girth, 9);
+      expect(stripe.globalAlpha).toBe(1);
+      expect(ops.indexOf(stripe)).toBeGreaterThan(ops.indexOf(head.colour));
+      // one polyline: a move, then lines
+      expect(new Set(cmdsOf(stripe).map(([name]) => name))).toEqual(new Set(['moveTo', 'lineTo']));
+    }
+  });
+
+  it.each(SNAKE_FRAME_LIST)('%s: the stripes stay inside the body, clear of the edge, and never cross: the back stripe is above the side stripe', (frame) => {
+    const { body, stripes } = snakeParts(frame);
+    const points = centrelineOf(frame);
+    const [back, side] = stripes.map((stripe) => cmdsOf(stripe).map(([, x, y]) => [x, y] as unknown as SnakePt));
+    expect(back).toHaveLength(side.length);
+    back.forEach((p, k) => {
+      const i = k + 2;
+      const q = side[k];
+      const halfBody = Math.min(body[i - 1].colour.lineWidth, body[i].colour.lineWidth) / 2;
+      const offBack = Math.hypot(p[0] - points[i][0], p[1] - points[i][1]);
+      const offSide = Math.hypot(q[0] - points[i][0], q[1] - points[i][1]);
+      expect(offBack + SNAKE_STRIPE_W / 2).toBeLessThan(halfBody + 0.5);
+      expect(offSide + SNAKE_STRIPE_W / 2).toBeLessThan(halfBody + 0.5);
+      // the two stripes are separate lines with a gap between them
+      expect(Math.hypot(p[0] - q[0], p[1] - q[1])).toBeGreaterThan(SNAKE_STRIPE_W * (frame === 'dart' ? 0.86 : 1) + 0.5);
+      // the back stripe rides above the side stripe
+      expect(p[1]).toBeLessThan(q[1]);
+    });
+  });
+
+  it.each(SNAKE_FRAME_LIST)('%s: the stripes start at the back of the head, clear of the face, and stop short of the tail tip', (frame) => {
+    const { stripes } = snakeParts(frame);
+    const points = centrelineOf(frame);
+    for (const stripe of stripes) {
+      const cmds = cmdsOf(stripe) as unknown as [string, number, number][];
+      // behind the eye and the smile, which sit ahead of x 3: they start on the back of the head capsule
+      expect(cmds[0][1]).toBeLessThan(-8);
+      expect(cmds[cmds.length - 1][1]).toBeGreaterThan(points[points.length - 1][0]);
+    }
+  });
+});
+
+describe('garter snake face (never scary, never biting)', () => {
+  it.each(SNAKE_FRAME_LIST)('%s: a round head with one shine, one closed ink smile and one bead eye with two glints', (frame) => {
+    const { ops } = snakeParts(frame);
+    // fills: the shine, the bead, the glints; the tubes are strokes
+    expect(ops.filter(isFill).map((op) => op.fillStyle)).toEqual([GARTER_SHINE, EYE, WHITE]);
+    const smile = seamsOf(ops);
+    expect(smile).toHaveLength(1);
+    expect(cmdsOf(smile[0]).map(([name]) => name)).toEqual(['moveTo', 'quadraticCurveTo']);
+    const bead = ops.find((op) => isFill(op) && op.fillStyle === EYE)!;
+    const [, , r] = cmdsOf(bead).find((cmd) => cmd[0] === 'ellipse')!.slice(1) as number[];
+    expect(r).toBeGreaterThan(3);
+    expect(ops.filter(isFill).find((op) => op.fillStyle === WHITE)!.args[0]).toHaveLength(4);
+  });
+
+  it.each(SNAKE_FRAME_LIST)('%s: the smile is inside the head, below the eye, and it is a line, not an open mouth', (frame) => {
+    const { ops } = snakeParts(frame);
+    const smile = cmdsOf(seamsOf(ops)[0]) as unknown as [string, ...number[]][];
+    const pts: SnakePt[] = [
+      [smile[0][1], smile[0][2]],
+      [smile[1][3], smile[1][4]],
+    ];
+    const bead = cmdsOf(ops.find((op) => isFill(op) && op.fillStyle === EYE)!).find((cmd) => cmd[0] === 'ellipse')!.slice(1) as number[];
+    for (const [x, y] of pts) {
+      // inside the head capsule: within the head radius of its centre line
+      const nearest = Math.min(4, Math.max(-3, x));
+      expect(Math.hypot(x - nearest, y)).toBeLessThan(SNAKE_HEAD_R);
+      expect(y).toBeGreaterThan(bead[1]);
+    }
+    // the only fills are the shine, the eye and its glints: no mouth interior, no tongue, no fang, no tooth
+    expect(styleOfFills(ops)).toEqual(new Set([GARTER_SHINE, EYE, WHITE]));
+  });
+
+  it.each(SNAKE_FRAME_LIST)('%s: paints only snake colours, ink, the eye and white glints', (frame) => {
+    const { ops } = snakeParts(frame);
+    const styles = new Set(ops.flatMap((op) => (isFill(op) ? [op.fillStyle] : [op.strokeStyle])));
+    expect(styles).toEqual(new Set([INK, GARTER_BODY, GARTER_STRIPE, GARTER_SHINE, EYE, WHITE]));
+  });
+});
+
+/** The set of fill styles of a painting. */
+function styleOfFills(ops: readonly Op[]): Set<unknown> {
+  return new Set(ops.filter(isFill).map((op) => op.fillStyle));
+}
+
+describe('garter snake ripple ring (the warning cue; guide 7k)', () => {
+  const { ops } = record(paintGarterRipple);
+
+  it('is one flat white line with an ink line each side, a single inked tube', () => {
+    const tubes = tubePairs(ops);
+    expect(ops).toHaveLength(2);
+    expect(tubes).toHaveLength(1);
+    expect(tubes[0].colour.strokeStyle).toBe(WHITE);
+    expect(tubes[0].colour.lineWidth).toBe(3);
+    expect(tubes[0].ink.strokeStyle).toBe(INK);
+    expect(tubes[0].ink.lineWidth).toBeCloseTo(3 + 2 * 1.4, 9);
+    expect(ops.every((op) => op.globalAlpha === 1)).toBe(true);
+  });
+
+  it('is a wide, flat ellipse centred on the anchor, much flatter than the protected ring\'s double line round the axolotl', () => {
+    const [cx, cy, rx, ry] = ellipseOf(tubePairs(ops)[0].colour);
+    expect([cx, cy]).toEqual([0, 0]);
+    expect([rx, ry]).toEqual([GARTER_RIPPLE_RX, GARTER_RIPPLE_RY]);
+    expect(rx / ry).toBeGreaterThan(2);
+    expect(rx / ry).toBeGreaterThan(RING_RX / RING_RY);
+    // one line, not the protected ring's two
+    expect(ops.filter((op) => isStroke(op) && op.strokeStyle === WHITE)).toHaveLength(1);
+  });
+
+  it('has no "!" bubble and no glint: the ring is the cue, as the heron\'s S-neck is', () => {
+    expect(ops.filter(isFill)).toEqual([]);
+    expect(new Set(ops.map((op) => op.strokeStyle))).toEqual(new Set([INK, WHITE]));
+  });
+
+  it('fits GARTER_RIPPLE_TEX with its ink and at least 4 px of padding, anchored at the centre', () => {
+    expectPadded(ops, GARTER_RIPPLE_TEX);
+    expect(GARTER_RIPPLE_TEX.originX).toBe(GARTER_RIPPLE_TEX.w - GARTER_RIPPLE_TEX.originX);
+    expect(GARTER_RIPPLE_TEX.originY).toBe(GARTER_RIPPLE_TEX.h - GARTER_RIPPLE_TEX.originY);
+  });
+
+  it('keeps 3:1 on any background: white and ink are 9:1 or more as a pair', () => {
+    expect(contrastRatio(WHITE, INK)).toBeGreaterThanOrEqual(TILAPIA_INK_RATIO);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Bake
 // ---------------------------------------------------------------------------
 
@@ -1095,9 +1452,20 @@ describe('bakePredatorTextures', () => {
     'heron-stab-neck',
   ];
 
-  it('keeps every tilapia, effect and leg texture, and bakes only the wading heron under fixed keys', () => {
+  /** The garter snake (issue #103): six frames and one ripple ring. */
+  const GARTER_SNAKE = [
+    'garter-snake-swim-a',
+    'garter-snake-swim-b',
+    'garter-snake-swim-c',
+    'garter-snake-swim-d',
+    'garter-snake-hold',
+    'garter-snake-dart',
+    'garter-snake-ripple',
+  ];
+
+  it('keeps every tilapia, effect and leg texture, and bakes only the wading heron and the garter snake under fixed keys', () => {
     const { baked, made } = withFakeScene((scene, made) => ({ baked: bakePredatorTextures(scene, 2), made }));
-    const all = [...UNCHANGED, ...WADING_HERON].sort();
+    const all = [...UNCHANGED, ...WADING_HERON, ...GARTER_SNAKE].sort();
     expect([...made.keys()].sort()).toEqual(all);
     expect(Object.keys(baked.info).sort()).toEqual(all);
     for (const retired of ['heron-shadow', 'heron-shadow-warning', 'heron-beak-dip']) {
@@ -1165,5 +1533,67 @@ describe('bakePredatorTextures', () => {
     const argsOf = (key: string): string => JSON.stringify((made.get(key) as Recording).ops.map((op) => op.args));
     expect(argsOf(PREDATOR_TEX.heronHeadRest)).not.toBe(argsOf(PREDATOR_TEX.heronHeadWarn));
     expect(argsOf(PREDATOR_TEX.heronBodyStand)).not.toBe(argsOf(PREDATOR_TEX.heronBodyStepA));
+  });
+
+  it('bakes each garter snake frame under its own key at its own size, and the ripple ring at the ring size', () => {
+    const baked = withFakeScene((scene) => bakePredatorTextures(scene, 2));
+    expect(PREDATOR_TEX.garterSnakeSwimA).toBe('garter-snake-swim-a');
+    expect(PREDATOR_TEX.garterSnakeSwimB).toBe('garter-snake-swim-b');
+    expect(PREDATOR_TEX.garterSnakeSwimC).toBe('garter-snake-swim-c');
+    expect(PREDATOR_TEX.garterSnakeSwimD).toBe('garter-snake-swim-d');
+    expect(PREDATOR_TEX.garterSnakeHold).toBe('garter-snake-hold');
+    expect(PREDATOR_TEX.garterSnakeDart).toBe('garter-snake-dart');
+    expect(PREDATOR_TEX.garterRipple).toBe('garter-snake-ripple');
+    expect(baked.garterSnake.swimA.key).toBe('garter-snake-swim-a');
+    expect(baked.garterSnake.swimB.key).toBe('garter-snake-swim-b');
+    expect(baked.garterSnake.swimC.key).toBe('garter-snake-swim-c');
+    expect(baked.garterSnake.swimD.key).toBe('garter-snake-swim-d');
+    expect(baked.garterSnake.hold.key).toBe('garter-snake-hold');
+    expect(baked.garterSnake.dart.key).toBe('garter-snake-dart');
+    expect(baked.garterRipple.key).toBe('garter-snake-ripple');
+    for (const frame of SNAKE_FRAME_LIST) {
+      const info = baked.garterSnake[frame];
+      expect(info.scale).toBe(2);
+      expect([info.w, info.h, info.originX, info.originY]).toEqual([
+        GARTER_SNAKE_TEX.w,
+        GARTER_SNAKE_TEX.h,
+        GARTER_SNAKE_TEX.originX,
+        GARTER_SNAKE_TEX.originY,
+      ]);
+    }
+    expect(baked.garterRipple.scale).toBe(2);
+    expect([baked.garterRipple.w, baked.garterRipple.h, baked.garterRipple.originX, baked.garterRipple.originY]).toEqual([
+      GARTER_RIPPLE_TEX.w,
+      GARTER_RIPPLE_TEX.h,
+      GARTER_RIPPLE_TEX.originX,
+      GARTER_RIPPLE_TEX.originY,
+    ]);
+  });
+
+  it('paints each garter snake texture with its own painter and tone', () => {
+    const made = withFakeScene((scene, made) => {
+      bakePredatorTextures(scene, 1);
+      return made;
+    });
+    const keys = [
+      PREDATOR_TEX.garterSnakeSwimA,
+      PREDATOR_TEX.garterSnakeSwimB,
+      PREDATOR_TEX.garterSnakeSwimC,
+      PREDATOR_TEX.garterSnakeSwimD,
+      PREDATOR_TEX.garterSnakeHold,
+      PREDATOR_TEX.garterSnakeDart,
+    ];
+    for (const key of keys) {
+      const ops = (made.get(key) as Recording).ops;
+      expect(ops.some((op) => isStroke(op) && op.strokeStyle === GARTER_BODY)).toBe(true);
+      expect(ops.some((op) => isStroke(op) && op.strokeStyle === GARTER_STRIPE)).toBe(true);
+      expect(ops.some((op) => isFill(op) && op.fillStyle === EYE)).toBe(true);
+    }
+    // the ripple is only a white tube: no fill, one white stroke
+    const ring = (made.get(PREDATOR_TEX.garterRipple) as Recording).ops;
+    expect(ring.filter(isFill)).toEqual([]);
+    expect(ring.some((op) => isStroke(op) && op.strokeStyle === WHITE)).toBe(true);
+    const argsOf = (key: string): string => JSON.stringify((made.get(key) as Recording).ops.map((op) => op.args));
+    expect(new Set(keys.map(argsOf)).size).toBe(keys.length);
   });
 });

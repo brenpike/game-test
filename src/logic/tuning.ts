@@ -197,6 +197,33 @@ export interface GhostNetTuning {
   wrigglePeriod: number;
 }
 
+/**
+ * Water hyacinth mat tuning: pairs of mats that drift together to close a channel and apart to open
+ * it, on a fixed cycle (ElementType and MatPair in src/logic/hazards.ts).
+ */
+export interface HyacinthMatTuning {
+  /** Length of one full mat cycle in seconds; openFor, closingFor and closedFor fill it. */
+  period: number;
+  /** Seconds from the start of each cycle the channel is open; openingFor is part of it. */
+  openFor: number;
+  /** Seconds at the start of the open window over which the mats drift apart; part of openFor. */
+  openingFor: number;
+  /** Seconds after the open window over which the mats drift together (the warning). */
+  closingFor: number;
+  /** Seconds after closing for which the channel stays closed. */
+  closedFor: number;
+  /** Clear height in px at or above which the channel counts as open: the safe passing width. */
+  passableHeight: number;
+  /** Least clear height in px of a fully open channel; each pair's MatPair.openHeight is at least this. */
+  openHeight: number;
+  /** Distance in px each mat is grown by; the explorer's body centre stays out of the grown mat. */
+  bodyGrow: number;
+  /** Range in px from a pair's sweep within which the axolotl meets the mats, unlocking their fact card. */
+  meetRange: number;
+  /** Seconds into the cycle at which each pair's open window starts, in pair order. */
+  offsets: readonly number[];
+}
+
 /** Treasure hint sparkle tuning. */
 export interface HintTuning {
   /** Distance in px within which a treasure's hint sparkle shows; strictly shorter for rarer. */
@@ -316,6 +343,28 @@ export const HERON: Readonly<TilapiaTuning> = Object.freeze({
   bumpCooldown: 0.6,
 });
 
+/**
+ * Provisional garter snake values (issue #103); tune in play. The snake swims its stretch at the
+ * surface at patrolSpeed, warns with ripple rings for 0.8 s (the PRD's 0.8 s floor) when the
+ * axolotl is within lungeRange of its head, then darts lungeSpeed x lungeDuration = 126 px and rests
+ * for the 2 s cooldown. Hit, touch and body reach, and the gentle bump, are the tilapia's, so they
+ * match a Medium axolotl at every size (PRD F4).
+ */
+export const GARTER_SNAKE: Readonly<TilapiaTuning> = Object.freeze({
+  minWindup: 0.8,
+  windup: 0.8,
+  cooldown: 2,
+  lungeRange: 110,
+  lungeSpeed: 360,
+  lungeDuration: 0.35,
+  hitRadius: TILAPIA.hitRadius,
+  contactRadius: TILAPIA.contactRadius,
+  bodyRadius: TILAPIA.bodyRadius,
+  patrolSpeed: 55,
+  bumpSpeed: TILAPIA.bumpSpeed,
+  bumpCooldown: TILAPIA.bumpCooldown,
+});
+
 /** Provisional carried-home values; a gentle float of 1.5 to 5 s, or a 1.5 s still bubble. */
 export const CARRY: Readonly<CarryTuning> = Object.freeze({
   speed: 300,
@@ -345,14 +394,15 @@ export const TRIP_TREASURES: Readonly<TripTreasureTuning> = Object.freeze({
 /**
  * Per-area changes to TRIP_TREASURES, keyed by area id. An area with no entry uses the default (PRD B4).
  * The keys are the literal area ids because this file cannot import zone.ts or pondLayout.ts.
- * The pond, Area 2, has 7 slots, the pond at dusk, Area 3, has 8, and the chinampa gardens, Area 4,
- * have 9.
+ * The pond, Area 2, has 7 slots, the pond at dusk, Area 3, has 8, the chinampa gardens, Area 4,
+ * have 9, and the chinampa gardens' Area 5 has 10.
  */
 export const TRIP_TREASURES_BY_AREA: Readonly<Record<string, Readonly<TripTreasureOverride>>> = Object.freeze({
   canal: Object.freeze({ slots: 6 }),
   'pond-1': Object.freeze({ slots: 7 }),
   'pond-2': Object.freeze({ slots: 8 }),
   'chinampa-1': Object.freeze({ slots: 9 }),
+  'chinampa-2': Object.freeze({ slots: 10 }),
 });
 
 /**
@@ -429,6 +479,29 @@ export const GHOST_NETS: Readonly<GhostNetTuning> = Object.freeze({
   meetRange: 100,
   wriggleAmp: 0.1,
   wrigglePeriod: 0.4,
+});
+
+/**
+ * Provisional water hyacinth mat values (issue #103); tune in play. Each pair runs an 8 s cycle
+ * from its offset: 3 s open, of which the first 1 s is the mats drifting apart, then 1 s drifting
+ * together (the warning), then 4 s closed. The channel counts as open once its clear height is at
+ * least 36 px, the safe passing width, and a fully open channel is at least 72 px tall, two safe
+ * passing widths. bodyGrow is the ghost net reach, the Medium body's half height, so a body centre
+ * kept that far out of a mat keeps the inked body out of it. The axolotl meets the mats within
+ * 180 px of a pair's sweep, as it meets a tilapia or a heron. Pair 1 starts its cycle at 0 s and
+ * pair 2 at 4 s, so the two pairs are out of step.
+ */
+export const HYACINTH_MATS: Readonly<HyacinthMatTuning> = Object.freeze({
+  period: 8,
+  openFor: 3,
+  openingFor: 1,
+  closingFor: 1,
+  closedFor: 4,
+  passableHeight: 36,
+  openHeight: 72,
+  bodyGrow: GHOST_NETS.reach,
+  meetRange: 180,
+  offsets: Object.freeze([0, 4]),
 });
 
 /** Provisional hint values; rarer treasures get a subtler, shorter-range hint (PRD B7). */

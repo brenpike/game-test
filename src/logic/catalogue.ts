@@ -1,6 +1,7 @@
 /**
  * The treasure catalogue: rarities, categories, wearable slots, perks, Dream colours and the
- * treasures of every area: the canal, the pond, the pond's Area 3 and the chinampa gardens' Area 4 (PRD B1 to B3, F9).
+ * treasures of every area: the canal, the pond, the pond's Area 3 and the chinampa gardens' Areas 4 and 5 (PRD B1 to B3,
+ * F9).
  * Pure data plus lookups; nothing here applies perks.
  */
 
@@ -85,7 +86,8 @@ export type DreamColourId =
   | 'tie-dye-galaxy'
   | 'lily-green'
   | 'firefly-gold'
-  | 'poppy-red';
+  | 'poppy-red'
+  | 'plum';
 
 /** How a Dream colour is drawn. */
 export type DreamKind = 'solid' | 'patterned' | 'sheen';
@@ -138,12 +140,21 @@ export const POPPY_RED: DreamColour = Object.freeze({
   kind: 'solid',
 });
 
-/** Every Dream colour: the canal's 12, then Lily green, then Firefly gold, then Poppy red. */
+/** The chinampa gardens' Area 5 Dream colour, held by that area's one Paint shell. */
+export const PLUM: DreamColour = Object.freeze({
+  id: 'plum',
+  name: 'Plum',
+  rarity: 'rare',
+  kind: 'solid',
+});
+
+/** Every Dream colour: the canal's 12, then Lily green, then Firefly gold, then Poppy red, then Plum. */
 export const DREAM_COLOURS: readonly DreamColour[] = Object.freeze([
   ...CANAL_DREAM_COLOURS,
   LILY_GREEN,
   FIREFLY_GOLD,
   POPPY_RED,
+  PLUM,
 ]);
 
 /** Fields every treasure has. `id` is stable forever, e.g. 'canal/sun-hat'. */
@@ -195,6 +206,15 @@ function createPaintShell(colour: DreamColour, prefix: string): PaintShell {
     category: 'paintShell',
     dreamColour: colour.id,
   };
+}
+
+/** The perk of `type` at its PERK_VALUES value for `rarity`; throws when that rarity has no value for the type. */
+function createPerk(type: PerkType, rarity: Rarity): Perk {
+  const value = PERK_VALUES[type][rarity];
+  if (value === undefined) {
+    throw new Error(`No ${type} perk value at ${rarity} rarity`);
+  }
+  return { type, value };
 }
 
 /**
@@ -503,14 +523,89 @@ export const CHINAMPA_TREASURES: readonly Treasure[] = Object.freeze([
 ]);
 
 /**
+ * The chinampa gardens' Area 5 treasures, with 'chinampa/' ids, by rarity: 5 Decorations, 6 Wearables
+ * and the Plum Paint shell. The Piñata is the area's special treasure. Every perk comes from
+ * PERK_VALUES for its type and rarity.
+ */
+export const CHINAMPA_2_TREASURES: readonly Treasure[] = Object.freeze([
+  { id: 'chinampa/watering-can', name: 'Watering can', rarity: 'common', category: 'decoration' },
+  {
+    id: 'chinampa/floating-gourd',
+    name: 'Floating gourd',
+    rarity: 'common',
+    category: 'decoration',
+    placement: 'floating',
+  },
+  {
+    id: 'chinampa/bee-headband',
+    name: 'Bee headband',
+    rarity: 'common',
+    category: 'wearable',
+    slot: 'head',
+    perk: createPerk('snackMagnet', 'common'),
+  },
+  {
+    id: 'chinampa/bandana',
+    name: 'Bandana',
+    rarity: 'common',
+    category: 'wearable',
+    slot: 'neck',
+    perk: createPerk('speed', 'common'),
+  },
+  {
+    id: 'chinampa/pinata',
+    name: 'Piñata',
+    rarity: 'rare',
+    category: 'decoration',
+    placement: 'hanging',
+  },
+  {
+    id: 'chinampa/sunflower-sunglasses',
+    name: 'Sunflower sunglasses',
+    rarity: 'rare',
+    category: 'wearable',
+    slot: 'face',
+    perk: createPerk('treasureSense', 'rare'),
+  },
+  {
+    id: 'chinampa/embroidered-shirt',
+    name: 'Embroidered shirt',
+    rarity: 'rare',
+    category: 'wearable',
+    slot: 'shirt',
+    perk: createPerk('regrowth', 'rare'),
+  },
+  createPaintShell(PLUM, 'chinampa'),
+  { id: 'chinampa/talavera-fountain', name: 'Talavera fountain', rarity: 'epic', category: 'decoration' },
+  {
+    id: 'chinampa/hummingbird-tail-ribbon',
+    name: 'Hummingbird tail ribbon',
+    rarity: 'epic',
+    category: 'wearable',
+    slot: 'tail',
+    perk: createPerk('speed', 'epic'),
+  },
+  { id: 'chinampa/alebrije-statue', name: 'Alebrije statue', rarity: 'legendary', category: 'decoration' },
+  {
+    id: 'chinampa/rainbow-serape-cape',
+    name: 'Rainbow serape cape',
+    rarity: 'legendary',
+    category: 'wearable',
+    slot: 'back',
+    perk: createPerk('shell', 'legendary'),
+  },
+]);
+
+/**
  * Every treasure of every area: the canal's, then the pond's, then the pond Area 3's, then the
- * chinampa gardens' Area 4's.
+ * chinampa gardens' Area 4's, then the chinampa gardens' Area 5's.
  */
 export const ALL_TREASURES: readonly Treasure[] = Object.freeze([
   ...CANAL_TREASURES,
   ...POND_TREASURES,
   ...POND_2_TREASURES,
   ...CHINAMPA_TREASURES,
+  ...CHINAMPA_2_TREASURES,
 ]);
 
 const CATEGORY_NAMES: Readonly<Record<TreasureCategory, 'Decoration' | 'Wearable' | 'Paint shell'>> =

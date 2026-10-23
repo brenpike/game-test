@@ -79,6 +79,65 @@ export const GHOST_NET_FACT: Readonly<FactCard> = Object.freeze({
 });
 
 /**
+ * The garter snake fact card, shown the first time the axolotl meets a garter snake (PRD C13).
+ * Sources, checked 2026-10-23 (web research only; the game fetches nothing):
+ * Manjarrez, Pacheco-Tinoco and Venegas-Barrera, "Intraspecific variation in the diet of the
+ * Mexican garter snake Thamnophis eques", PeerJ 5:e4036 (2017), https://doi.org/10.7717/peerj.4036
+ * (read as https://www.ebi.ac.uk/europepmc/webservices/rest/PMC5691781/fullTextXML; snakes sampled
+ * at 23 sites on the Mexican Plateau; "This snake forages in vegetative cover along the shore";
+ * "an attack may include a sudden lunge across the surface toward prey"; prey mostly fish, then
+ * leeches, earthworms, frogs and tadpoles);
+ * Manjarrez, Rivas-Gonzalez, Venegas-Barrera and Moyaho, "Visual Detection of Speckles in the Fish
+ * Xenotoca variata by the Predatory Snake Thamnophis melanogaster in Water of Different Turbidity",
+ * PLoS ONE 10(6):e0129429 (2015), https://doi.org/10.1371/journal.pone.0129429 (read as
+ * https://www.ebi.ac.uk/europepmc/webservices/rest/PMC4465328/fullTextXML; T. melanogaster is
+ * "endemic to the highlands of central Mexico" and "a specialist aquatic species in its diet and
+ * foraging technique underwater");
+ * The Reptile Database, Thamnophis melanogaster,
+ * https://reptile-database.reptarium.cz/species?genus=Thamnophis&species=melanogaster (distribution
+ * lists Distrito Federal, now Mexico City).
+ * Owner to verify: "good swimmers" (the sources say they forage underwater, not how well they
+ * swim); "Axolotls are safer down deep" is the game's rule (the snake strikes from the surface),
+ * not checked against a source; garter snakes in Xochimilco itself, not checked.
+ */
+export const GARTER_SNAKE_FACT: Readonly<FactCard> = Object.freeze({
+  id: 'garter-snake',
+  name: 'Garter snake',
+  title: 'Meet the garter snake',
+  body: 'Garter snakes live near water in Mexico and are good swimmers. They hunt small animals near the surface. Axolotls are safer down deep.',
+});
+
+/**
+ * The water hyacinth fact card, shown the first time the axolotl meets the hyacinth mats (PRD C13).
+ * Sources, checked 2026-10-23 (web research only; the game fetches nothing):
+ * Carrion, Ponce-de Leon, Cram, Sommer, Hernandez and Vanegas (UNAM), "Aprovechamiento potencial
+ * del lirio acuatico (Eichhornia crassipes) en Xochimilco para fitorremediacion de metales",
+ * Agrociencia 46(6), 2012,
+ * https://www.scielo.org.mx/scielo.php?script=sci_arttext&pid=S1405-31952012000600007 (a pest "in
+ * the canals of the Xochimilco Protected Natural Area"; it "se extiende rapidamente y forma tapetes
+ * o esteras"; it "disminuye la entrada de luz y merma el oxigeno disuelto en el agua");
+ * IUCN SSC Invasive Species Specialist Group, Global Invasive Species Database, Eichhornia crassipes,
+ * https://www.iucngisd.org/gisd/species.php?sc=70 (populations "known to double in as little as 12
+ * days"; "These mats shade out native submersed plant species");
+ * Excelsior, "Arranca limpieza de canales en Xochimilco", 2020-08-31,
+ * https://www.excelsior.com.mx/comunidad/arranca-limpieza-de-canales-en-xochimilco/1403028
+ * (Xochimilco borough crews clear aquatic weeds from the canals by hand, with harvesters where the
+ * water hyacinth is thickest);
+ * LOS40 Mexico, "Con hechos, la Alcaldia Xochimilco recupera sus canales y genera empleos temporales
+ * para la comunidad", 2025-06-27,
+ * https://los40.com.mx/2025/06/27/con-hechos-la-alcaldia-xochimilco-recupera-sus-canales-y-genera-empleos-temporales-para-la-comunidad/
+ * (the borough removed more than 200 cubic metres; in the rainy season it grows unchecked, blocks
+ * the water and harms its oxygen).
+ * Owner to verify: the clearing sources are news reports, not a CONABIO or borough page.
+ */
+export const WATER_HYACINTH_FACT: Readonly<FactCard> = Object.freeze({
+  id: 'water-hyacinth',
+  name: 'Water hyacinth',
+  title: 'Water hyacinth',
+  body: 'Water hyacinth is a floating plant that grows very fast. In Xochimilco it can cover the canals and block the light. People clear it out to keep the water healthy.',
+});
+
+/**
  * The axolotl refuges fact card, found on a visit to the refuge (PRD C14).
  * Sources (owner to verify): Tec Science (Tec de Monterrey), "How to Save the mexican Axolotl? Start
  * by Restoring Their Home", 2025-01-31, https://tecscience.tec.mx/en/biotechnology/how-to-save-the-axolotl ;
@@ -146,6 +205,13 @@ export const TILAPIA_MEET_RANGE = 180;
  * tilapia's, and larger than the heron's 110 px reach so the card can show before the first strike.
  */
 export const HERON_MEET_RANGE = 180;
+
+/**
+ * Centre distance in px from the garter snake's head within which the axolotl meets a garter snake.
+ * Provisional; tune in play. The same as the tilapia's and the heron's, and larger than the snake's
+ * 110 px lunge range so the card can show before the first dart.
+ */
+export const GARTER_SNAKE_MEET_RANGE = 180;
 
 /**
  * Whether the axolotl at `pos` meets a tilapia: `pos` is outside the safe area (edges count as

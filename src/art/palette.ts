@@ -458,7 +458,7 @@ export const MORPH_PALETTES: Record<MorphLookId, MorphPalette> = {
 // body and gill slots; the real morph keeps its eye and mouth. Every value in
 // this section is derived (provisional).
 
-/** Look ids of the fifteen Dream colours, in the guide 3f order. Must match the logic layer's Dream colour ids. */
+/** Look ids of the sixteen Dream colours, in the guide 3f order. Must match the logic layer's Dream colour ids. */
 export type DreamLookId =
   | 'mint'
   | 'sky-blue'
@@ -474,7 +474,8 @@ export type DreamLookId =
   | 'tie-dye-galaxy'
   | 'lily-green'
   | 'firefly-gold'
-  | 'poppy-red';
+  | 'poppy-red'
+  | 'plum';
 
 /** The body and gill role slots a Dream colour swaps (guide 3f). */
 export type DreamSlots = Pick<
@@ -539,6 +540,8 @@ export const DREAM_SLOTS: Readonly<Record<DreamLookId, DreamSlots>> = {
   'firefly-gold': dreamSlots('#ffd52a', '#e6c02f', '#ffe67f', '#ffec9f', ['#e08214', '#e79e48'], ['#ce781a', '#d89449']),
   // Chinampa Area 4 Dream colour (issue #76). Body #e8402f (hue 5, relative luminance 0.210) is 3.57:1 with ink and 4.03:1 with white, so both clear the 3:1 cue floor.
   'poppy-red': dreamSlots('#e8402f', '#d13d33', '#f18c82', '#f5a9a1', ['#ffb02e', '#ffc15c'], ['#eaa231', '#eeb45b']),
+  // Chinampa Area 5 Dream colour (issue #103). Body #f68aec (red-purple, relative luminance 0.438) is 6.69:1 with ink, so 2.59:1 worst case; ink clears the 3:1 cue floor.
+  plum: dreamSlots('#f68aec', '#de7ed9', '#fab9f4', '#fbcaf6', ['#b24fb0', '#c376c1'], ['#a54ba6', '#b76fb8']),
 };
 
 /** Marks a palette as a Dream colour over a real morph; drawAxolotl paints the layer 6.5 overlay from it. */
