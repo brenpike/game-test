@@ -55,6 +55,25 @@ export const HERON_FACT: Readonly<FactCard> = Object.freeze({
 });
 
 /**
+ * The ghost net fact card, shown the first time the axolotl meets a ghost net (PRD C13).
+ * Sources (owner to verify): NOAA Marine Debris Program, "Increasing the Efficiency of Locating and
+ * Removing Ghost Nets in the Upper Great Lakes",
+ * https://marinedebris.noaa.gov/removal/increasing-efficiency-locating-and-removing-ghost-nets-upper-great-lakes
+ * (ghost nets "can continue to entrap fish, other marine life, and even waterfowl"; a ghost net
+ * removal program in Lake Superior) ; NOAA Marine Debris Program, "Removing and Preventing Derelict
+ * Fishing Gear and Large Debris Nationwide",
+ * https://marinedebris.noaa.gov/removal/removing-and-preventing-derelict-fishing-gear-and-large-debris-nationwide
+ * (derelict gear "continues to entangle, trap, and kill marine animals after it is lost in the
+ * environment"; removal from "our ocean and waterways"). Neither page names canals.
+ */
+export const GHOST_NET_FACT: Readonly<FactCard> = Object.freeze({
+  id: 'ghost-net',
+  name: 'Ghost net',
+  title: 'Lost fishing nets',
+  body: 'Old fishing nets that get lost in the water can tangle up animals. People pull them out of canals and lakes to keep animals safe.',
+});
+
+/**
  * The axolotl refuges fact card, found on a visit to the refuge (PRD C14).
  * Sources (owner to verify): Tec Science (Tec de Monterrey), "How to Save the mexican Axolotl? Start
  * by Restoring Their Home", 2025-01-31, https://tecscience.tec.mx/en/biotechnology/how-to-save-the-axolotl ;

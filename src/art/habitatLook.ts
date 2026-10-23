@@ -12,6 +12,12 @@
  * The canal cannot promise this: its deep water and bed bottom sit in the band where
  * both ink and a light fill fall under 3:1 (the recorded Leucistic residual).
  *
+ * Chinampa contrast rule (issue #76): the chinampa look keeps the same rule. Every
+ * chinampa background colour, water stops, bed stops, mud dots, the bed lip and the
+ * haze-lightened deep water included, has relative luminance 0.1687 or more. The
+ * bottom row of Area 4 is the darker one (the deep stop and the bed bottom), and it
+ * is also held above the floor. Ink is then 3:1 or better on all of it.
+ *
  * Area looks (issue #98): an area may use a variant of its habitat's look, such as
  * the pond at dusk ('pond-dusk', Area 3). A variant is a whole palette baked into the
  * background, haze and surface, never an overlay over gameplay depths. The dusk pond
@@ -39,7 +45,7 @@ import {
 } from './palette';
 
 /** Look ids shipped so far. Must match the logic layer's Habitat.look values. */
-export type HabitatLookId = 'canal' | 'pond';
+export type HabitatLookId = 'canal' | 'pond' | 'chinampa';
 
 /** Every look an area can use: a habitat's own look, or a variant of it for one area (the pond at dusk, Area 3). */
 export type AreaLookId = HabitatLookId | 'pond-dusk';
@@ -50,8 +56,11 @@ export interface SkyLook {
   readonly horizon: string;
 }
 
-/** The hiding place an area's cave is drawn as (guide 7e): the canal's rocks, the pond's hollow log, or the dusk pond's root arch. */
-export type CaveKind = 'rocks' | 'log' | 'rootArch';
+/**
+ * The hiding place an area's cave is drawn as (guide 7e): the canal's rocks, the pond's hollow log,
+ * the dusk pond's root arch, or the chinampa's tangle of ahuejote roots.
+ */
+export type CaveKind = 'rocks' | 'log' | 'rootArch' | 'rootTangle';
 /** Where a cave hangs: base centre on the bed, or top centre under the bank at the waterline. */
 export type CaveAnchor = 'bed' | 'bank';
 
@@ -320,10 +329,76 @@ const POND_DUSK_LOOK: HabitatLook = Object.freeze({
   firefliesPerScreen: DUSK_FIREFLIES_PER_SCREEN,
 });
 
-const LOOKS: Readonly<Record<AreaLookId, HabitatLook>> = { canal: CANAL_LOOK, pond: POND_LOOK, 'pond-dusk': POND_DUSK_LOOK };
+/**
+ * Chinampa water (guide 3c, derived, provisional): a clear green-teal, cooler than the
+ * pond's yellow-green and still greener than the canal's aqua and blue (hue 153 / 165 /
+ * 171 against the pond's 96 / 130 / 146 and the canal's 175 / 187 / 207). Luminance
+ * 0.6561, 0.4072 and 0.1863. Deep #1e8676, the darker bottom row's water, is 3.24:1
+ * with ink, shallow #7ee8b8 is 9.68:1.
+ */
+export const CHINAMPA_WATER_SHALLOW = '#7ee8b8';
+export const CHINAMPA_WATER_MID = '#3dbf9e';
+export const CHINAMPA_WATER_DEEP = '#1e8676';
+/** Chinampa haze: a cool sea green. Lightens the mid and deep stops (deep to luminance 0.2113); over shallow it dims 0.6561 to about 0.63, far above the floor. */
+export const CHINAMPA_HAZE = 'rgba(70,200,160,0.12)';
+/** Chinampa surface line: the canal line cooled toward a pale mint. */
+export const CHINAMPA_SURFACE_LINE = 'rgba(232,255,244,0.95)';
+/**
+ * Chinampa silt bed (guide 7a, derived, provisional): dark garden silt in a mossy olive,
+ * greener than the pond's tan mud. Top #9aa268 (luminance 0.3371, 5.31:1 with ink),
+ * bottom #7d8a54 (0.2318, 3.86:1), lip #c9cf8e (0.5900). Mud dots #687642 at 0.45 over
+ * the bottom stop blend to #74814c, luminance 0.1994 (3.4:1 or better with ink, 0.2216
+ * under the haze).
+ */
+export const CHINAMPA_BED_TOP = '#9aa268';
+export const CHINAMPA_BED_BOTTOM = '#7d8a54';
+export const CHINAMPA_BED_LIP = '#c9cf8e';
+export const CHINAMPA_MUD = 'rgba(104,118,66,0.45)';
+
+const CHINAMPA_LOOK: HabitatLook = Object.freeze({
+  id: 'chinampa',
+  sky: DAY_SKY,
+  airWash: null,
+  rayAlphaScale: 1,
+  water: Object.freeze({
+    shallow: CHINAMPA_WATER_SHALLOW,
+    mid: CHINAMPA_WATER_MID,
+    deep: CHINAMPA_WATER_DEEP,
+    stopMid: WATER_STOP_MID,
+    gradientEndY: WATER_GRADIENT_END_Y,
+  }),
+  haze: CHINAMPA_HAZE,
+  surfaceFill: CHINAMPA_WATER_SHALLOW,
+  surfaceLine: CHINAMPA_SURFACE_LINE,
+  surfaceLineWidth: SURFACE_LINE_WIDTH,
+  bed: Object.freeze({
+    top: CHINAMPA_BED_TOP,
+    bottom: CHINAMPA_BED_BOTTOM,
+    lip: CHINAMPA_BED_LIP,
+    mud: CHINAMPA_MUD,
+    // Rich garden silt: many dots, few pebbles.
+    mudCount: 20,
+    pebbles: PEBBLE_COLOURS,
+    pebbleShine: PEBBLE_SHINE,
+    pebbleCount: 4,
+  }),
+  // No reeds at the edges: the chinampa banks, crops and willow roots carry the edges.
+  edgeReeds: null,
+  stream: false,
+  cave: Object.freeze({ kind: 'rootTangle', anchor: 'bed' }),
+  pondProps: false,
+  firefliesPerScreen: 0,
+});
+
+const LOOKS: Readonly<Record<AreaLookId, HabitatLook>> = {
+  canal: CANAL_LOOK,
+  pond: POND_LOOK,
+  chinampa: CHINAMPA_LOOK,
+  'pond-dusk': POND_DUSK_LOOK,
+};
 
 /** Every shipped habitat look id, in habitat order. Area-map markers are keyed by these. */
-export const HABITAT_LOOK_IDS: readonly HabitatLookId[] = ['canal', 'pond'];
+export const HABITAT_LOOK_IDS: readonly HabitatLookId[] = ['canal', 'pond', 'chinampa'];
 
 /** Every shipped area look id: the habitat looks, then the per-area variants. */
 export const AREA_LOOK_IDS: readonly AreaLookId[] = [...HABITAT_LOOK_IDS, 'pond-dusk'];

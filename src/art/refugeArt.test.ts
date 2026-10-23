@@ -7,13 +7,20 @@ import { HABITATS } from '../logic/areas';
 import { REFUGE_PICTURE } from '../logic/refugeUi';
 import {
   REFUGE_ART_STATES,
+  REFUGE_COB,
+  REFUGE_CORN,
   REFUGE_HIDDEN_FILL,
+  REFUGE_LETTUCE,
+  REFUGE_MARIGOLD,
+  REFUGE_MURK,
   REFUGE_NUDGE_FILL,
   REFUGE_NUDGE_INSET,
   REFUGE_NUDGE_SIZE,
   REFUGE_NUDGE_TEX,
   REFUGE_PICTURE_TEX,
   REFUGE_PLANTS_BASE,
+  REFUGE_PLOT_SOIL,
+  REFUGE_PLOT_TOP,
   REFUGE_PLANTS_PAINTERS,
   REFUGE_SECTION_PAINTERS,
   REFUGE_TRASH_TEX,
@@ -46,7 +53,8 @@ import {
 } from './refugeTextures';
 import { paintIcon, type IconKind } from './drawUi';
 import { HABITAT_LOOK_IDS, isHabitatLookId, type HabitatLookId } from './habitatLook';
-import { INK, LW, UI_ACCENT, WHITE } from './palette';
+import { ROOT_TANGLE_BARK } from './drawChinampa';
+import { EYE, INK, LW, UI_ACCENT, WHITE, WILLOW_FOLIAGE, WILLOW_STRAND, WILLOW_TRUNK } from './palette';
 import texturesSource from './textures.ts?raw';
 
 vi.mock('phaser', () => ({}));
@@ -193,6 +201,7 @@ describe('section pictures', () => {
     for (const paint of [
       (ctx: CanvasRenderingContext2D) => paintRefugeSection(ctx, 'canal', 'clean'),
       (ctx: CanvasRenderingContext2D) => paintRefugeSection(ctx, 'pond', 'dirty'),
+      (ctx: CanvasRenderingContext2D) => paintRefugeSection(ctx, 'chinampa', 'clean'),
       paintRefugeHidden,
       paintRefugeTeaser,
     ]) {
@@ -225,8 +234,37 @@ describe('section pictures', () => {
     for (const state of REFUGE_ART_STATES) {
       const canal = record((ctx) => paintRefugeSection(ctx, 'canal', state));
       const pond = record((ctx) => paintRefugeSection(ctx, 'pond', state));
+      const chinampa = record((ctx) => paintRefugeSection(ctx, 'chinampa', state));
       expect(signature(canal)).not.toBe(signature(pond));
+      expect(signature(chinampa)).not.toBe(signature(canal));
+      expect(signature(chinampa)).not.toBe(signature(pond));
     }
+  });
+
+  it('paints the chinampa as garden plots: bare when dirty, corn, marigolds and lettuce when clean', () => {
+    const colours = (state: RefugeArtState): string[] =>
+      fills(record((ctx) => paintRefugeSection(ctx, 'chinampa', state))).map((f) => f.style);
+    const strokesOf = (state: RefugeArtState): string[] =>
+      strokes(record((ctx) => paintRefugeSection(ctx, 'chinampa', state))).map((s) => s.style);
+    for (const state of REFUGE_ART_STATES) {
+      // Two plots (left and its mirror), each a soil body and a sunlit top, in both states.
+      expect(colours(state).filter((c) => c === REFUGE_PLOT_SOIL)).toHaveLength(2);
+      expect(colours(state).filter((c) => c === REFUGE_PLOT_TOP)).toHaveLength(2);
+      // Willow roots reach into the water in both states.
+      expect(strokesOf(state)).toContain(ROOT_TANGLE_BARK);
+      expect(strokesOf(state)).toContain(WILLOW_TRUNK);
+    }
+    const crops = [REFUGE_CORN, REFUGE_COB, REFUGE_MARIGOLD, REFUGE_LETTUCE, WILLOW_FOLIAGE];
+    const cropStyles = (state: RefugeArtState): string[] => [...colours(state), ...strokesOf(state)];
+    for (const c of crops) {
+      expect(cropStyles('dirty'), `dirty ${c}`).not.toContain(c);
+      expect(cropStyles('clean'), `clean ${c}`).toContain(c);
+    }
+    expect(strokesOf('clean')).toContain(WILLOW_STRAND);
+    expect(strokesOf('dirty')).not.toContain(WILLOW_STRAND);
+    // The plots own no canal stone and no lily pad.
+    expect(colours('clean')).not.toContain('#47ce5a');
+    expect(colours('dirty').some((c) => ['#d4cfe6', '#a9bfd6', '#efdcba'].includes(c))).toBe(false);
   });
 
   it('paints the canal with stone banks and the pond with lily pads and cattails', () => {
@@ -260,6 +298,31 @@ describe('section contrast (guide 10)', () => {
           expect(isHex(c)).toBe(true);
           expect(contrast(INK, c), `${look} ${state} ${c}`).toBeGreaterThanOrEqual(3);
         }
+      }
+    }
+  });
+
+  it('lists the chinampa plot colours as frame colours, each 3:1 or more with ink in both states', () => {
+    for (const state of REFUGE_ART_STATES) {
+      const colours = refugeBackdropColours('chinampa', state);
+      for (const c of [REFUGE_PLOT_SOIL, REFUGE_PLOT_TOP, WILLOW_TRUNK, ROOT_TANGLE_BARK, WILLOW_FOLIAGE]) {
+        expect(colours).toContain(c);
+      }
+    }
+    // Printed in the soil comment: soil 3.90, plot top 5.38, trunk 3.24, roots 3.03.
+    expect(contrast(INK, REFUGE_PLOT_SOIL).toFixed(2)).toBe('3.90');
+    expect(contrast(INK, REFUGE_PLOT_TOP).toFixed(2)).toBe('5.38');
+    expect(contrast(INK, WILLOW_TRUNK).toFixed(2)).toBe('3.24');
+    expect(contrast(INK, ROOT_TANGLE_BARK).toFixed(2)).toBe('3.03');
+  });
+
+  it('keeps every colour a chinampa picture paints at 3:1 or more with ink, the murk blotches apart', () => {
+    for (const state of REFUGE_ART_STATES) {
+      const painted = record((ctx) => paintRefugeSection(ctx, 'chinampa', state));
+      // The murk blotches stay inside the water, 14 px or more from the frame (as in every look),
+      // and the bead eyes of the resting axolotls are dark by design.
+      for (const f of fills(painted).filter((p) => isHex(p.style) && p.style !== REFUGE_MURK && p.style !== EYE)) {
+        expect(contrast(INK, f.style), `${state} ${f.style}`).toBeGreaterThanOrEqual(3);
       }
     }
   });
@@ -435,6 +498,8 @@ describe('hidden silhouette, teaser and sparkle', () => {
     paintRefugeHidden(plain);
     paintRefugeSection(plain, 'canal', 'dirty');
     paintRefugeSection(plain, 'pond', 'clean');
+    paintRefugeSection(plain, 'chinampa', 'dirty');
+    paintRefugeSection(plain, 'chinampa', 'clean');
     expect(dashed).toEqual([]);
   });
 

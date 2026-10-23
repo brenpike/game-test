@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DrawnBody } from './collectibles';
-import { createEncounter, createEncounterContext } from './encounter';
+import { createEncounter, createEncounterContext, predatorSpecies } from './encounter';
+import { zoneThreats } from './hiding';
 import { meetsTilapia, type FactCard } from './factCards';
 import type { HazardSpawn, HazardType } from './hazards';
 import {
@@ -2136,5 +2137,54 @@ describe('plastic worms in the trip (#75)', () => {
     const eaten = eatenAt(onWorm, WORM_A);
     expect(eaten.state.rescue).toBe(onWorm.rescue);
     expect(eaten.state.holdings).toBe(onWorm.holdings);
+  });
+});
+
+describe('per-area tilapia tuning', () => {
+  const AREA_TILAPIA = { ...TILAPIA, windup: 0.85, lungeSpeed: 400, lungeRange: 145, cooldown: 2.2, patrolSpeed: 50 };
+  const tunedZone: TripSource = { ...zone, tilapia: AREA_TILAPIA };
+  const SEEDS = Array.from({ length: 50 }, (_, i) => i + 1);
+
+  function endedFrom(start: TripState): TripState {
+    return { ...start, phase: 'ended', ending: { reason: 'carriedHome', returned: [], bankedThisTrip: [] } };
+  }
+
+  function tunedPlacement(seed: number): PlacedFind[] {
+    return placeTreasures(tunedZone.finds, tunedZone.spots, [], seed, {
+      mustPlace: [],
+      extras: [CANAL_AREA.specialTreasureId],
+      tuning: tripTreasureTuning(tunedZone.areaId),
+      mainPath: tunedZone.mainPath,
+      tilapiaRoutes: tunedZone.tilapiaRoutes,
+      lungeRange: AREA_TILAPIA.lungeRange,
+      threats: zoneThreats(tunedZone),
+    });
+  }
+
+  it('carries no tuning of its own for a zone with none', () => {
+    expect(createTrip(zone).encounter).not.toHaveProperty('tilapia');
+  });
+
+  it("plays the source's tuning in the trip's encounter", () => {
+    const trip = createTrip(tunedZone);
+    expect(trip.encounter.tilapia).toEqual(AREA_TILAPIA);
+    expect(predatorSpecies(trip.encounter, trip.encounter.predators[0], ctx.encounter).tuning).toBe(trip.encounter.tilapia);
+  });
+
+  it("places treasures with the tuned threats and the tuning's lunge range", () => {
+    for (const seed of SEEDS) {
+      expect(createTrip(tunedZone, LEGS, [], seed).placed).toEqual(tunedPlacement(seed));
+    }
+  });
+
+  it('keeps the tuning when newTrip starts the next trip', () => {
+    const done = endedFrom(createTrip(tunedZone, LEGS, [], DEFAULT_TRIP_SEED));
+    for (const seed of SEEDS.slice(0, 10)) {
+      const next = newTrip(done, seed);
+      expect(next.encounter.tilapia).toEqual(AREA_TILAPIA);
+      expect(next.encounter).toEqual(createEncounter(tunedZone));
+      expect(next.placed).toEqual(tunedPlacement(seed));
+    }
+    expect(newTrip(endedFrom(createTrip(zone)))).not.toHaveProperty('encounter.tilapia');
   });
 });

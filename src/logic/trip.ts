@@ -241,8 +241,9 @@ function tripArea(areaId: string, area: Readonly<AreaData> | undefined): Readonl
  * pot sealed (PRD B4). `options.returnedFinds`, the treasures lost on the last trip, are always
  * placed; the area's special treasure is always placed while unbanked, on top of the treasure
  * slots (B9, H6). The area is `options.area` when given, else the AREAS entry for the source's
- * area id. Spots on the rarity's risky side of the area's threats are picked more often (issue #70).
- * `options.stranding` sets this trip's stranded axolotl, waiting at its place; it never changes the
+ * area id. Spots on the rarity's risky side of the area's threats are picked more often (issue #70);
+ * the source's own tilapia tuning, when set, sets its tilapia threats' lunge range and is played by
+ * the encounter. `options.stranding` sets this trip's stranded axolotl, waiting at its place; it never changes the
  * placement. A plastic worm waits at the centre of each plastic worm hazard of the source, and the
  * axolotl starts not queasy; worms never change the placement. Throws when a pool cannot be placed
  * or `options.area` is not the source's area.
@@ -262,7 +263,7 @@ export function createTrip(
     tuning: tripTreasureTuning(source.areaId),
     mainPath: source.mainPath,
     tilapiaRoutes: source.tilapiaRoutes,
-    lungeRange: TILAPIA.lungeRange,
+    lungeRange: source.tilapia?.lungeRange ?? TILAPIA.lungeRange,
     threats: zoneThreats(source),
   });
   return {
@@ -294,10 +295,10 @@ export function createTrip(
 }
 
 /**
- * Starts the next trip from an ended one, with the same area, Home Spot, routes, finds, spots, main
- * swim path, leg count and banked finds, an empty Trip Bag and nothing found. `tripSeed` (default:
- * the seed after this trip's) picks this trip's treasures afresh, and every Dash pot is sealed
- * again. The treasures returned when carried home (`ending.returned`) come back this trip, always
+ * Starts the next trip from an ended one, with the same area, Home Spot, routes, tilapia tuning,
+ * finds, spots, main swim path, leg count and banked finds, an empty Trip Bag and nothing found.
+ * `tripSeed` (default: the seed after this trip's) picks this trip's treasures afresh, and every
+ * Dash pot is sealed again. The treasures returned when carried home (`ending.returned`) come back this trip, always
  * placed, and the area's special treasure is always placed while unbanked, on top of the treasure
  * slots. Every plastic worm is back at its spawn and the axolotl is not queasy. It passes no other
  * trip options, so the new trip has no stranded axolotl and every fact card counts as unseen. Any

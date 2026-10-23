@@ -142,7 +142,7 @@ function pondTexturesFor(assets: GameAssets, kind: CaveKind): PondTextures {
 
 /**
  * The back and front of the cave for `look`'s cave kind: the canal's small cave of rocks, the
- * pond's hollow log, or the dusk pond's root arch.
+ * pond's hollow log, the dusk pond's root arch, or the chinampa's root tangle.
  */
 function caveTextures(assets: GameAssets, look: HabitatLook): { back: TexInfo; front: TexInfo } {
   const kind = look.cave.kind;
@@ -159,6 +159,12 @@ function caveTextures(assets: GameAssets, look: HabitatLook): { back: TexInfo; f
         throw new Error('TreasureView: a "rootArch" cave needs the baked root arch');
       }
       return rootArch;
+    }
+    case 'rootTangle': {
+      if (assets.chinampa === null) {
+        throw new Error('TreasureView: a "rootTangle" cave needs the baked chinampa textures');
+      }
+      return assets.chinampa.rootTangle;
     }
   }
 }

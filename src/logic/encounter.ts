@@ -24,9 +24,9 @@ import {
 
 /**
  * The zone parts an encounter is built from. An `EncounterState` is one too, so it can be reset.
- * Absent `predatorRoutes` or `hazards` mean none.
+ * Absent `predatorRoutes` or `hazards` mean none. Absent `tilapia` means the context's tilapia tuning.
  */
-export type EncounterSource = Pick<ZoneLayout, 'safeArea' | 'tilapiaRoutes'> & {
+export type EncounterSource = Pick<ZoneLayout, 'safeArea' | 'tilapiaRoutes' | 'tilapia'> & {
   predatorRoutes?: readonly PredatorRoute[];
   hazards?: readonly HazardSpawn[];
 };
@@ -35,11 +35,13 @@ export type EncounterSource = Pick<ZoneLayout, 'safeArea' | 'tilapiaRoutes'> & {
  * Legs plus every predator for one trip. Immutable: `stepEncounter` returns a new object.
  * `predators` holds one tilapia per `tilapiaRoutes` entry, in order, then one predator per
  * `predatorRoutes` entry, in order. `tripOver` is true after the fourth leg is lost;
- * every later step is a no-op until the encounter is reset.
+ * every later step is a no-op until the encounter is reset. `tilapia`, when set, is the area's own
+ * tilapia tuning, played in place of the context's.
  */
 export interface EncounterState {
   safeArea: SafeArea;
   tilapiaRoutes: TilapiaRoute[];
+  tilapia?: Readonly<TilapiaTuning>;
   predatorRoutes: PredatorRoute[];
   hazards: HazardSpawn[];
   legs: LegsState;
@@ -55,7 +57,7 @@ export interface EncounterState {
 export interface EncounterContext {
   bounds: SwimBounds;
   legs: LegTuning;
-  /** Tilapia tuning; other species use their own. */
+  /** Tilapia tuning when the encounter has none of its own; other species use their own. */
   tilapia: TilapiaTuning;
   /** Whether the outfit has a Shell perk. One flag, so Shell blocks at most one hit per trip (PRD F11). */
   shell: boolean;
@@ -105,8 +107,26 @@ export function createEncounterContext(overrides: Partial<EncounterContext> = {}
 }
 
 /**
+ * The tilapia species played with each tuning other than TILAPIA_SPECIES.tuning, built once per
+ * tuning object. An encounter copies its own tuning, so its species is built once per encounter.
+ */
+const tunedTilapiaSpecies = new WeakMap<Readonly<TilapiaTuning>, Readonly<PredatorSpecies>>();
+
+/** TILAPIA_SPECIES played with `tuning`: the species itself for its own tuning, else one built once per tuning. */
+function tilapiaSpeciesFor(tuning: Readonly<TilapiaTuning>): Readonly<PredatorSpecies> {
+  if (tuning === TILAPIA_SPECIES.tuning) return TILAPIA_SPECIES;
+  let species = tunedTilapiaSpecies.get(tuning);
+  if (!species) {
+    species = Object.freeze({ ...TILAPIA_SPECIES, tuning });
+    tunedTilapiaSpecies.set(tuning, species);
+  }
+  return species;
+}
+
+/**
  * Starts a trip: every leg present, no protection, Shell unused, each predator at the start of
- * its route. Routes and hazards are copied; species and hazard types are shared.
+ * its route. Routes, hazards and the source's own tilapia tuning (only when set) are copied;
+ * species and hazard types are shared.
  */
 export function createEncounter(
   source: EncounterSource,
@@ -125,6 +145,7 @@ export function createEncounter(
   return {
     safeArea: { ...source.safeArea },
     tilapiaRoutes,
+    ...(source.tilapia ? { tilapia: { ...source.tilapia } } : {}),
     predatorRoutes,
     hazards,
     legs: createLegs(legTuning),
@@ -139,19 +160,16 @@ export function createEncounter(
 }
 
 /**
- * The species of `predator` as this encounter plays it: `TILAPIA_SPECIES` with `ctx.tilapia`
- * tuning for a tilapia, else the species of its route in `state.predatorRoutes`.
- * Throws when a non-tilapia predator has no matching route.
+ * The species of `predator` as this encounter plays it: `TILAPIA_SPECIES` with the encounter's own
+ * tilapia tuning when it has one, else `ctx.tilapia`, for a tilapia; else the species of its route
+ * in `state.predatorRoutes`. Throws when a non-tilapia predator has no matching route.
  */
 export function predatorSpecies(
   state: EncounterState,
   predator: PredatorState,
   ctx: EncounterContext = createEncounterContext(),
 ): Readonly<PredatorSpecies> {
-  if (predator.species === TILAPIA_SPECIES.id) {
-    if (ctx.tilapia === TILAPIA_SPECIES.tuning) return TILAPIA_SPECIES;
-    return { ...TILAPIA_SPECIES, tuning: ctx.tilapia };
-  }
+  if (predator.species === TILAPIA_SPECIES.id) return tilapiaSpeciesFor(state.tilapia ?? ctx.tilapia);
   const route = state.predatorRoutes.find(
     (candidate) => candidate.id === predator.routeId && candidate.species.id === predator.species,
   );
@@ -179,8 +197,8 @@ export function resetEncounter(
  * `predators` order, then one hazard check, then one bump check. So a leg that finishes
  * regrowing in the same step as a hit emits `regrown` before `hit`.
  *
- * Tuning: a tilapia uses `ctx.tilapia`; every other species uses its own tuning and rule hook
- * (see `predatorSpecies`).
+ * Tuning: a tilapia uses the encounter's own tilapia tuning when set, else `ctx.tilapia`; every
+ * other species uses its own tuning and rule hook (see `predatorSpecies`).
  *
  * Stagger (PRD A1): only one predator attacks at a time, whatever its species. A predator may
  * start a telegraph only while no other predator is telegraphing or lunging (judged on the

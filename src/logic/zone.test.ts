@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { CANAL_TREASURES, RARITIES, treasureById, type Rarity } from './catalogue';
 import { shapeDistance, type HazardSpawn, type HazardType } from './hazards';
 import { coversAt, inReeds, isDeep, routeDistance, spotMatchesLabels, turnDistance } from './hiding';
+import { POND_2_LAYOUT } from './pond2Layout';
+import { POND_LAYOUT } from './pondLayout';
 import { inSafeArea } from './tilapia';
 import { createTrip } from './trip';
 import { FINDS, LEGS, RISK, TILAPIA } from './tuning';
@@ -23,7 +25,9 @@ import {
   swimBounds,
   waveY,
   type AreaLayoutData,
+  type BankOverhang,
   type FixedPadData,
+  type FixedSpotData,
   type HidingSpot,
   type Point,
   type SafeArea,
@@ -741,5 +745,81 @@ describe('snack hazard clearance', () => {
     expect(CANAL_LAYOUT.hazards).toEqual([]);
     expect(CANAL_LAYOUT.fixedPads).toBeUndefined();
     expect(buildZone(CANAL_LAYOUT, 0xa70107)).toEqual(buildCanalZone());
+  });
+});
+
+const BANK_OVERHANGS: readonly BankOverhang[] = [{ x0: 1760, x1: 1880, y0: SURF, y1: 140 }];
+const BANK_SPOTS: readonly FixedSpotData[] = [
+  [1790, 110, 'rare', false],
+  [1850, 130, 'common', false],
+];
+const AREA_TILAPIA = { ...TILAPIA, windup: 0.85, lungeSpeed: 400, lungeRange: 145, cooldown: 2.2, patrolSpeed: 50 };
+
+describe('bank cover', () => {
+  it.each(ALL_SEEDS)('appends the never-dropped bank spots last, after the fixed pads, for seed %i', (seed) => {
+    const withPads = buildZone(canalWith({ fixedPads: FIXED_PADS }), seed);
+    const zone = buildZone(canalWith({ fixedPads: FIXED_PADS, bankOverhangs: BANK_OVERHANGS, bankSpots: BANK_SPOTS }), seed);
+    expect(zone.spots).toEqual([
+      ...withPads.spots,
+      { id: 'canal/spot-bank-1', cover: 'bank', rarity: 'rare', container: false, x: 1790, y: 110 },
+      { id: 'canal/spot-bank-2', cover: 'bank', rarity: 'common', container: false, x: 1850, y: 130 },
+    ]);
+    expect(zone.collectibles).toEqual(withPads.collectibles);
+    expect(zone.reeds).toEqual(withPads.reeds);
+    expect(zone.pads).toEqual(withPads.pads);
+  });
+
+  it('copies the bank overhangs, and puts every bank spot under the bank cover and in shallow water', () => {
+    const zone = buildZone(canalWith({ bankOverhangs: BANK_OVERHANGS, bankSpots: BANK_SPOTS }), 3);
+    expect(zone.bankOverhangs).toEqual(BANK_OVERHANGS);
+    expect(zone.bankOverhangs?.[0]).not.toBe(BANK_OVERHANGS[0]);
+    const bankSpots = zone.spots.filter((spot) => spot.cover === 'bank');
+    expect(bankSpots).toHaveLength(BANK_SPOTS.length);
+    for (const spot of bankSpots) {
+      expect(coversAt(spot, zone)).toContain('bank');
+      expect(isDeep(spot, zone)).toBe(false);
+    }
+  });
+
+  it('builds no bank cover from bankChunks', () => {
+    const canal = buildCanalZone();
+    expect(canal.bankChunks).toEqual([1, 3]);
+    expect(canal).not.toHaveProperty('bankOverhangs');
+    expect(canal.spots.some((spot) => spot.cover === 'bank')).toBe(false);
+    expect(canal.spots.some((spot) => coversAt(spot, canal).includes('bank'))).toBe(false);
+  });
+
+  it('treats an empty bankSpots list like an absent one', () => {
+    expect(buildZone(canalWith({ bankSpots: [] }), 7)).toStrictEqual(buildCanalZone(7));
+  });
+});
+
+describe('per-area tilapia tuning', () => {
+  it.each(ALL_SEEDS)('copies the tuning onto the layout with no rand() draws for seed %i', (seed) => {
+    const canal = buildCanalZone(seed);
+    const zone = buildZone(canalWith({ tilapia: AREA_TILAPIA }), seed);
+    expect(zone.tilapia).toEqual(AREA_TILAPIA);
+    expect(zone.tilapia).not.toBe(AREA_TILAPIA);
+    const { tilapia, ...rest } = zone;
+    expect(tilapia).toBeDefined();
+    expect(rest).toStrictEqual(canal);
+  });
+});
+
+describe('existing layouts', () => {
+  it.each([
+    ['canal', CANAL_LAYOUT],
+    ['pond-1', POND_LAYOUT],
+    ['pond-2', POND_2_LAYOUT],
+  ] as const)('%s has no tilapia tuning, bank overhangs or bank spots, so its zone has none', (_, layout) => {
+    expect(layout.tilapia).toBeUndefined();
+    expect(layout.bankOverhangs).toBeUndefined();
+    expect(layout.bankSpots).toBeUndefined();
+    for (const seed of ALL_SEEDS) {
+      const zone = buildZone(layout, seed);
+      expect(zone).not.toHaveProperty('tilapia');
+      expect(zone).not.toHaveProperty('bankOverhangs');
+      expect(zone.spots.some((spot) => spot.cover === 'bank')).toBe(false);
+    }
   });
 });

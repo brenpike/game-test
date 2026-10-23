@@ -198,6 +198,22 @@ export interface PlasticWormTuning {
   wobblePeriod: number;
 }
 
+/** Ghost net tuning: a slow-only hazard that snags the axolotl, which wriggles free. */
+export interface GhostNetTuning {
+  /** Top speed multiplier while snagged; acceleration and Tail Dash are unchanged. */
+  speedFactor: number;
+  /** Seconds the axolotl stays snagged after swimming into a net's reach. */
+  snagTime: number;
+  /** Distance in px from a net's edge within which the body centre is snagged (inclusive). */
+  reach: number;
+  /** Range in px from a net's edge within which the axolotl meets it, unlocking its fact card. */
+  meetRange: number;
+  /** Peak snag wriggle angle in radians. */
+  wriggleAmp: number;
+  /** Snag wriggle cycle length in seconds. */
+  wrigglePeriod: number;
+}
+
 /** Treasure hint sparkle tuning. */
 export interface HintTuning {
   /** Distance in px within which a treasure's hint sparkle shows; strictly shorter for rarer. */
@@ -406,6 +422,29 @@ export const PLASTIC_WORMS: Readonly<PlasticWormTuning> = Object.freeze({
   meetRange: 100,
   wobbleAmp: 0.08,
   wobblePeriod: 0.6,
+});
+
+/**
+ * Provisional ghost net values (issue #76); tune in play. While snagged the axolotl swims at 0.5
+ * of its top speed for 2 s and wriggles free with a quick, small wriggle. The axolotl meets a ghost
+ * net within 100 px of its edge, as it meets a plastic worm.
+ *
+ * `reach` mirrors the drawn body because src/logic cannot import src/art (ESLint): the Regular
+ * torso's y radius 19 (BODY_BUILDS in src/art/drawAxolotlParts.ts) plus its LW 3.5 ink outline
+ * (src/art/palette.ts, stroked at 2 x LW under the fill), times AXO_SCENE_SCALE 0.95
+ * (src/art/drawAxolotl.ts) and AXO_SIZE_SCALE.medium 0.85 (src/art/drawAxolotlParts.ts):
+ * (19 + 3.5) x 0.95 x 0.85 = 18.2, rounded to 18. So a snag starts when the inked top or bottom of
+ * a Medium body reaches the net, and a head or tail swimming in end-on pokes into the loose mesh
+ * first. One reach for every size and age: size is for looks only (PRD F4), as the tilapia's
+ * reach matches a Medium axolotl.
+ */
+export const GHOST_NETS: Readonly<GhostNetTuning> = Object.freeze({
+  speedFactor: 0.5,
+  snagTime: 2,
+  reach: 18,
+  meetRange: 100,
+  wriggleAmp: 0.1,
+  wrigglePeriod: 0.4,
 });
 
 /** Provisional hint values; rarer treasures get a subtler, shorter-range hint (PRD B7). */

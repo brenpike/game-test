@@ -6,9 +6,10 @@
 import type { Rarity } from './catalogue';
 import { shapeDistance, type HazardShape, type HazardSpawn } from './hazards';
 import { routeLoopDistance, type PredatorRoute } from './predators';
-import { RISK, TILAPIA, type RiskTuning } from './tuning';
+import { RISK, TILAPIA, type RiskTuning, type TilapiaTuning } from './tuning';
 import {
   SURF,
+  type BankOverhang,
   type CaveArea,
   type CurrentZone,
   type HidingCover,
@@ -32,11 +33,12 @@ export const RISK_COMMON_MARGIN = 60;
 
 /**
  * The zone geometry the hiding rules read. Absent predator routes or hazards mean none; together
- * with the tilapia routes they are the zone's threats.
+ * with the tilapia routes they are the zone's threats. Absent `tilapia` means the TILAPIA tuning;
+ * absent `bankOverhangs` means no bank cover.
  */
 export type HidingGeometry = Pick<
   ZoneLayout,
-  'reedPatches' | 'pads' | 'cave' | 'currents' | 'homeSpot' | 'mainPath' | 'tilapiaRoutes'
+  'reedPatches' | 'pads' | 'cave' | 'currents' | 'homeSpot' | 'mainPath' | 'tilapiaRoutes' | 'tilapia' | 'bankOverhangs'
 > & {
   predatorRoutes?: readonly Readonly<PredatorRoute>[];
   hazards?: readonly Readonly<HazardSpawn>[];
@@ -44,11 +46,12 @@ export type HidingGeometry = Pick<
 
 /**
  * One thing a hiding spot's risk is measured against, with its strike range in px. A route threat is
- * a predator's patrol loop; `tilapia` marks a tilapia route, whose bands come from the risk tuning.
+ * a predator's patrol loop; `tilapia` marks a tilapia route, whose bands come from the risk tuning
+ * unless `tuned` marks it as played with its area's own tuning, banded by riskBands(strike).
  * A shape threat is a leg-costing hazard, its strike range being the hazard's reach from the shape edge.
  */
 export type Threat =
-  | { kind: 'route'; route: Readonly<TilapiaRoute>; strike: number; tilapia: boolean }
+  | { kind: 'route'; route: Readonly<TilapiaRoute>; strike: number; tilapia: boolean; tuned?: true }
   | { kind: 'shape'; shape: HazardShape; strike: number };
 
 /** Whether a point is inside any reed patch rectangle (inclusive edges). */
@@ -88,13 +91,19 @@ export function pastCurrent(pos: Point, currents: readonly CurrentZone[], home: 
   return currents.some((current) => isPastOneCurrent(pos, current, home));
 }
 
-/** Every cover at a point, in the order reeds, pad, cave, pastCurrent. */
+/** Whether a point is under any overhanging bank rectangle (inclusive edges). */
+export function underBank(pos: Point, overhangs: readonly Readonly<BankOverhang>[]): boolean {
+  return overhangs.some((bank) => pos.x >= bank.x0 && pos.x <= bank.x1 && pos.y >= bank.y0 && pos.y <= bank.y1);
+}
+
+/** Every cover at a point, in the order reeds, pad, cave, pastCurrent, bank. */
 export function coversAt(pos: Point, geo: HidingGeometry): HidingCover[] {
   const covers: HidingCover[] = [];
   if (inReeds(pos, geo.reedPatches)) covers.push('reeds');
   if (underPad(pos, geo.pads)) covers.push('pad');
   if (inCave(pos, geo.cave)) covers.push('cave');
   if (pastCurrent(pos, geo.currents, geo.homeSpot)) covers.push('pastCurrent');
+  if (underBank(pos, geo.bankOverhangs ?? [])) covers.push('bank');
   return covers;
 }
 
@@ -171,11 +180,12 @@ export function meetsRiskRule(pos: Point, rarity: Rarity, routes: readonly Tilap
 
 /**
  * Every threat in a zone: each tilapia route with the tilapia lunge range, each other predator route
- * with its species' lunge range, then each leg-costing hazard with its reach. Slow-only hazards are
- * not threats.
+ * with its species' lunge range, then each leg-costing hazard with its reach. A geometry with its
+ * own tilapia tuning gives its tilapia routes that tuning's lunge range, marked `tuned`; without one
+ * they get TILAPIA's. Slow-only hazards are not threats.
  */
-export function zoneThreats(geo: Pick<HidingGeometry, 'tilapiaRoutes' | 'predatorRoutes' | 'hazards'>): Threat[] {
-  const threats: Threat[] = geo.tilapiaRoutes.map((route) => ({ kind: 'route', route, strike: TILAPIA.lungeRange, tilapia: true }));
+export function zoneThreats(geo: Pick<HidingGeometry, 'tilapiaRoutes' | 'tilapia' | 'predatorRoutes' | 'hazards'>): Threat[] {
+  const threats: Threat[] = geo.tilapiaRoutes.map((route) => tilapiaThreat(route, geo.tilapia));
   for (const route of geo.predatorRoutes ?? []) {
     threats.push({ kind: 'route', route, strike: route.species.tuning.lungeRange, tilapia: false });
   }
@@ -183,6 +193,12 @@ export function zoneThreats(geo: Pick<HidingGeometry, 'tilapiaRoutes' | 'predato
     if (hazard.type.costsLeg) threats.push({ kind: 'shape', shape: hazard.shape, strike: hazard.type.reach });
   }
   return threats;
+}
+
+/** One tilapia route threat: with `tuning`, its lunge range and the `tuned` mark; else TILAPIA's lunge range. */
+function tilapiaThreat(route: Readonly<TilapiaRoute>, tuning: Readonly<TilapiaTuning> | undefined): Threat {
+  if (tuning) return { kind: 'route', route, strike: tuning.lungeRange, tilapia: true, tuned: true };
+  return { kind: 'route', route, strike: TILAPIA.lungeRange, tilapia: true };
 }
 
 /**
@@ -221,11 +237,11 @@ export function riskDistance(pos: Point, threats: readonly Threat[]): number {
 /**
  * The risk ladder over every threat: whether a point's riskiest band equals the rarity, and the
  * point keeps the turn clearance from every predator route waypoint. Each threat puts the point in a
- * band of its own: a tilapia route by `risk.band`, any other threat by riskBands(strike). The
- * riskiest band any threat gives is the point's band, so a spot inside a tilapia's lunge range never
- * ranks Rare because a weaker threat with a shorter strike is nearer. With bands ordered nearer for
- * rarer, the point is in the rarity's band for some threat and farther than its lower edge from
- * every threat. With one shared strike range this equals the band of the shortest distance, as in
+ * band of its own: a tilapia route by `risk.band`, a `tuned` tilapia route or any other threat by
+ * riskBands(strike). The riskiest band any threat gives is the point's band, so a spot inside a
+ * tilapia's lunge range never ranks Rare because a weaker threat with a shorter strike is nearer.
+ * With bands ordered nearer for rarer, the point is in the rarity's band for some threat and
+ * farther than its lower edge from every threat. With one shared strike range this equals the band of the shortest distance, as in
  * meetsRiskRule. A threat with no waypoints is ignored; always true with no threats left.
  */
 export function meetsThreatRiskRule(pos: Point, rarity: Rarity, threats: readonly Threat[], risk: RiskTuning = RISK): boolean {
@@ -235,7 +251,8 @@ export function meetsThreatRiskRule(pos: Point, rarity: Rarity, threats: readonl
     const distance = threatDistance(pos, threat);
     if (distance === Infinity) continue;
     measured = true;
-    const band = threat.kind === 'route' && threat.tilapia ? risk.band[rarity] : riskBands(threat.strike)[rarity];
+    const shared = threat.kind === 'route' && threat.tilapia && !threat.tuned;
+    const band = shared ? risk.band[rarity] : riskBands(threat.strike)[rarity];
     if (distance <= band.over) return false;
     if (distance <= band.upTo) inBand = true;
   }

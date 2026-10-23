@@ -798,3 +798,91 @@ describe('the heron in the encounter (#98)', () => {
     }
   });
 });
+
+describe('per-area tilapia tuning', () => {
+  const AREA_TILAPIA = { ...TILAPIA, windup: 0.85, lungeSpeed: 400, lungeRange: 145, cooldown: 2.2, patrolSpeed: 50 };
+  const still: TilapiaRoute = { id: 'still', waypoints: [{ x: 1000, y: 200 }] };
+  const stillSource: EncounterSource = { safeArea: zone.safeArea, tilapiaRoutes: [still] };
+  const tunedSource: EncounterSource = { ...stillSource, tilapia: AREA_TILAPIA };
+  const at143: Point = { x: 1143, y: 200 };
+
+  /** Steps until the first event of `type`; returns the state after that step, or null when none came in `seconds`. */
+  function stepUntil(state: EncounterState, pos: Point, type: EncounterEvent['type'], seconds: number): EncounterState | null {
+    let current = state;
+    for (let i = 0; i < Math.round(seconds / DT); i++) {
+      const result = stepEncounter(current, pos, DT, noRegrowCtx);
+      current = result.state;
+      if (result.events.some((event) => event.type === type)) return current;
+    }
+    return null;
+  }
+
+  it('carries no tuning of its own when the source has none and plays TILAPIA_SPECIES', () => {
+    const state = createEncounter(zone);
+    expect(state).not.toHaveProperty('tilapia');
+    expect(predatorSpecies(state, state.predators[0])).toBe(TILAPIA_SPECIES);
+  });
+
+  it('copies the source tuning and plays it in place of the context tuning, one species per encounter', () => {
+    const state = createEncounter(tunedSource);
+    expect(state.tilapia).toEqual(AREA_TILAPIA);
+    expect(state.tilapia).not.toBe(AREA_TILAPIA);
+    const species = predatorSpecies(state, state.predators[0]);
+    expect(species.tuning).toBe(state.tilapia);
+    expect({ ...species, tuning: TILAPIA }).toEqual(TILAPIA_SPECIES);
+    const otherCtx = createEncounterContext({ tilapia: { ...TILAPIA, windup: 5 } });
+    expect(predatorSpecies(state, state.predators[0], otherCtx)).toBe(species);
+    const stepped = stepEncounter(state, { x: 100, y: 200 }, DT).state;
+    expect(predatorSpecies(stepped, stepped.predators[0])).toBe(species);
+    expect(predatorSpecies(createEncounter(tunedSource), state.predators[0]).tuning).toEqual(AREA_TILAPIA);
+  });
+
+  it('keeps the tuning on reset', () => {
+    const state = createEncounter(tunedSource);
+    expect(resetEncounter(state).tilapia).toEqual(AREA_TILAPIA);
+    expect(resetEncounter(state)).toEqual(state);
+  });
+
+  it("starts a warning within the tuning's lunge range only", () => {
+    expect(stepUntil(createEncounter(stillSource), at143, 'telegraph', 3)).toBeNull();
+    const warning = stepUntil(createEncounter(tunedSource), at143, 'telegraph', 3);
+    expect(warning?.predators[0].phase).toBe('telegraph');
+  });
+
+  it("warns for the tuning's windup", () => {
+    const shared = stepUntil(createEncounter(stillSource), { x: 1100, y: 200 }, 'telegraph', 3);
+    const tuned = stepUntil(createEncounter(tunedSource), { x: 1100, y: 200 }, 'telegraph', 3);
+    expect(shared?.predators[0].duration).toBe(TILAPIA.windup);
+    expect(tuned?.predators[0].duration).toBe(AREA_TILAPIA.windup);
+  });
+
+  it("strikes at the tuning's lunge speed and cools down for its cooldown", () => {
+    const lunging = stepUntil(createEncounter(tunedSource), at143, 'lunge', 3);
+    if (!lunging) throw new Error('no lunge');
+    const next = stepEncounter(lunging, at143, DT, noRegrowCtx).state;
+    expect(next.predators[0].phase).toBe('lunge');
+    expect(next.predators[0].pos.x - lunging.predators[0].pos.x).toBeCloseTo(AREA_TILAPIA.lungeSpeed * DT, 9);
+    const cooling = stepUntil(next, at143, 'hit', 3);
+    expect(cooling?.predators[0].phase).toBe('cooldown');
+    expect(cooling?.predators[0].duration).toBe(AREA_TILAPIA.cooldown);
+  });
+
+  it("patrols at the tuning's patrol speed", () => {
+    const long: TilapiaRoute = { id: 'long', waypoints: [{ x: 1000, y: 200 }, { x: 1400, y: 200 }] };
+    const sheltered: Point = { x: 100, y: 200 };
+    let shared = createEncounter({ ...stillSource, tilapiaRoutes: [long] });
+    let tuned = createEncounter({ ...tunedSource, tilapiaRoutes: [long] });
+    for (let i = 0; i < 60; i++) {
+      shared = stepEncounter(shared, sheltered, DT, noRegrowCtx).state;
+      tuned = stepEncounter(tuned, sheltered, DT, noRegrowCtx).state;
+    }
+    expect(shared.predators[0].pos.x - 1000).toBeCloseTo(TILAPIA.patrolSpeed, 6);
+    expect(tuned.predators[0].pos.x - 1000).toBeCloseTo(AREA_TILAPIA.patrolSpeed, 6);
+  });
+
+  it('leaves every other species on its own tuning', () => {
+    const heronRoute: PredatorRoute = { id: 'heron-0', waypoints: [{ x: 1600, y: 150 }], species: HERON_SPECIES };
+    const state = createEncounter({ ...tunedSource, predatorRoutes: [heronRoute] });
+    expect(predatorSpecies(state, state.predators[1])).toBe(HERON_SPECIES);
+  });
+});

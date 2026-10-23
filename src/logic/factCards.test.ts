@@ -5,6 +5,7 @@ import {
   CANAL_CLEAN_UPS_FACT,
   FACT_CARD_OK_LABEL,
   FACT_CARD_UNFOUND_HINT,
+  GHOST_NET_FACT,
   HERON_FACT,
   HERON_MEET_RANGE,
   PLASTIC_WORM_FACT,
@@ -17,7 +18,7 @@ import {
   unfoundFactCardHint,
   type ThreatSighting,
 } from './factCards';
-import { HERON, TILAPIA } from './tuning';
+import { GHOST_NETS, HERON, TILAPIA } from './tuning';
 import type { SafeArea } from './zone';
 
 const BANNED = [
@@ -130,6 +131,43 @@ describe('heron fact card copy', () => {
 
   it('uses a meet range larger than the heron reach band', () => {
     expect(HERON_MEET_RANGE).toBeGreaterThan(HERON.lungeRange);
+  });
+});
+
+describe('ghost net fact card copy', () => {
+  it('has the ghost-net id, name, title and body, and no hint of its own', () => {
+    expect(GHOST_NET_FACT).toEqual({
+      id: 'ghost-net',
+      name: 'Ghost net',
+      title: 'Lost fishing nets',
+      body: 'Old fishing nets that get lost in the water can tangle up animals. People pull them out of canals and lakes to keep animals safe.',
+    });
+    expect(GHOST_NET_FACT.unfoundHint).toBeUndefined();
+  });
+
+  it('has an id apart from the other cards', () => {
+    const others = [
+      TILAPIA_FACT.id,
+      BOY_OR_GIRL_FACT.id,
+      PLASTIC_WORM_FACT.id,
+      HERON_FACT.id,
+      ...REFUGE_FACT_CARDS.map((card) => card.id),
+    ];
+    expect(others).not.toContain(GHOST_NET_FACT.id);
+  });
+
+  it.each([GHOST_NET_FACT.name, GHOST_NET_FACT.title, GHOST_NET_FACT.body])('"%s" avoids banned words', (text) => {
+    expect(findBannedWords(text)).toEqual([]);
+  });
+
+  it('never says an animal is trapped or hurt', () => {
+    const lower = GHOST_NET_FACT.body.toLowerCase();
+    expect(lower).not.toContain('trap');
+    expect(lower).not.toContain('hurt');
+  });
+
+  it('uses a meet range larger than the snag reach', () => {
+    expect(GHOST_NETS.meetRange).toBeGreaterThan(GHOST_NETS.reach);
   });
 });
 

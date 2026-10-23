@@ -7,6 +7,7 @@ import {
   ALL_SNACKS_BANNER,
   ARRIVAL_OK_LABEL,
   BANKING_HINT,
+  GHOST_NET_BANNER,
   PLASTIC_WORM_BANNER,
   TRIP_END_BODY,
   bankedBody,
@@ -195,6 +196,7 @@ describe('trip text', () => {
       'ARRIVAL_OK_LABEL',
       'BANKED_TITLE',
       'BANKING_HINT',
+      'GHOST_NET_BANNER',
       'GO_HOME_LABEL',
       'KEEP_EXPLORING_LABEL',
       'LEGS_LABEL',
@@ -823,6 +825,24 @@ describe('PLASTIC_WORM_BANNER (issue #75)', () => {
 
   it('is no longer than the all-snacks banner, so it fits wherever that banner fits (X10)', () => {
     expect(PLASTIC_WORM_BANNER.length).toBeLessThanOrEqual(ALL_SNACKS_BANNER.length);
+  });
+});
+
+describe('GHOST_NET_BANNER (issue #76)', () => {
+  it('kindly says an old net snagged the axolotl, which wriggles free', () => {
+    expect(GHOST_NET_BANNER).toBe('Snagged on an old net! Wriggle free.');
+    const lower = GHOST_NET_BANNER.toLowerCase();
+    expect(lower).toContain('net');
+    expect(lower).toContain('wriggle free');
+  });
+
+  it('never says trapped or hurt, and names no area', () => {
+    const lower = GHOST_NET_BANNER.toLowerCase();
+    for (const word of ['trap', 'hurt', 'stuck', 'pond', 'canal', 'chinampa']) expect(lower).not.toContain(word);
+  });
+
+  it('is no longer than the all-snacks banner, so it fits wherever that banner fits (X10)', () => {
+    expect(GHOST_NET_BANNER.length).toBeLessThanOrEqual(ALL_SNACKS_BANNER.length);
   });
 });
 
