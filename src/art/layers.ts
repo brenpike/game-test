@@ -22,15 +22,18 @@
  * the axolotl so it tints the cheeks and is never hidden by the hero, and under
  * bubbles. It is a soft see-through fill, not a cue object, so it never covers an
  * outline the pair rule relies on.
- * The heron (issue #98): `heronShadow` (its see-through shadow on the water) sits just
- * above the haze and below `homeSpot`, so every cue object (snacks, plastic worms,
- * treasures, the tilapia, the axolotl) draws over it. `heronBeak` (the beak dip) sits
- * between the tilapia and the halo, behind the axolotl. `fireflies` (the pond's dusk
- * fireflies above the water band) sit above pads, below hint.
+ * `fireflies` (the pond's dusk fireflies above the water band) sit above pads, below hint.
+ * The wading heron (issues #98 and #111) has two depths. `heronBody` (the body, legs, and
+ * the rest, watch and warn head and neck) sits just above the haze and below `homeSpot`, so
+ * every cue object (Dash pots, treasures, snacks, plastic worms, the tilapia, the axolotl)
+ * draws over it; the surface and the pads draw over its legs at the water line. `heronStab`
+ * (the stab head and its neck piece) sits between the tilapia and the halo, so it is in front
+ * of the tilapia and behind the halo and the axolotl. Neither equals `queasyTint` or
+ * `treasureGlow`.
  * Full order: bg < caveBack < hiddenTreasure < reeds < caveFront = currentMarker
- * < haze < heronShadow < homeSpot < homeRing < treasureGlow < treasure < collectibles
- * < tilapia < heronBeak < halo < friend < axolotl < queasyTint < bubbles < surface < pads
- * < fireflies < hint < fx < ui.
+ * < haze < heronBody < homeSpot < homeRing < treasureGlow < treasure
+ * < collectibles < tilapia < heronStab < halo < friend < axolotl < queasyTint
+ * < bubbles < surface < pads < fireflies < hint < fx < ui.
  */
 export const DEPTH = {
   bg: 0,
@@ -44,8 +47,8 @@ export const DEPTH = {
   /** Provisional. Past-the-current carved stone marker (hazed scenery). */
   currentMarker: 12,
   haze: 20,
-  /** Provisional. Heron shadow: above the haze, below every cue object. */
-  heronShadow: 22,
+  /** Provisional. Wading heron body, legs, and rest, watch and warn head and neck: above the haze, below every cue object. */
+  heronBody: 23,
   /** Provisional. Home Spot burrow and marker flag. */
   homeSpot: 24,
   /** Provisional. Home Spot safe-ring dots. */
@@ -57,8 +60,8 @@ export const DEPTH = {
   collectibles: 30,
   /** Provisional. Predator: behind the axolotl, in front of collectibles. */
   tilapia: 35,
-  /** Provisional. Heron beak dip: behind the axolotl, in front of the tilapia. */
-  heronBeak: 36,
+  /** Provisional. Wading heron stab head and neck piece: in front of the tilapia, behind the halo and the axolotl. */
+  heronStab: 37,
   /** Provisional. Protected halo: behind the axolotl, in front of the tilapia. */
   halo: 38,
   /** Provisional. Stranded axolotl: behind the axolotl, in front of the halo. */

@@ -42,10 +42,15 @@ export const PLASTIC_WORM_FACT: Readonly<FactCard> = Object.freeze({
 
 /**
  * The heron fact card, shown the first time the axolotl meets a heron (PRD C13).
- * Source (owner to verify): National Audubon Society, Guide to North American Birds, Great Egret,
+ * Sources, checked 2026-10-22 (web research only; the game fetches nothing):
+ * National Audubon Society, Guide to North American Birds, Great Egret,
  * https://www.audubon.org/field-guide/bird/great-egret ("Forages mostly by standing or walking in
- * shallow water ... waiting for fish to come near"). Herons around Xochimilco's canals: owner to
- * verify against a Xochimilco bird list (for example CONABIO or the Parque Ecologico de Xochimilco).
+ * shallow water, waiting for fish to come near, then catching them with rapid thrust of bill");
+ * National Audubon Society, Guide to North American Birds, Great Blue Heron,
+ * https://www.audubon.org/field-guide/bird/great-blue-heron ("Forages mostly by standing still or
+ * walking very slowly in shallow water, waiting for fish to swim near, then striking with a rapid
+ * thrust of the bill."). Herons around Xochimilco's canals: owner to verify against a Xochimilco
+ * bird list (for example CONABIO or the Parque Ecologico de Xochimilco); not checked.
  */
 export const HERON_FACT: Readonly<FactCard> = Object.freeze({
   id: 'heron',
@@ -136,9 +141,9 @@ export const FACT_CARD_UNFOUND_HINT = unfoundFactCardHint('the canal');
 export const TILAPIA_MEET_RANGE = 180;
 
 /**
- * Centre distance in px from the heron's shadow within which the axolotl meets a heron, while the
- * heron is shown. Provisional; tune in play. The same as the tilapia's, and larger than the heron's
- * 60 px reach band so the card can show before the first dip.
+ * Centre distance in px from the heron's position within which the axolotl meets a heron. The heron
+ * is always shown (no shadow cycle any more, issue #111). Provisional; tune in play. The same as the
+ * tilapia's, and larger than the heron's 110 px reach so the card can show before the first strike.
  */
 export const HERON_MEET_RANGE = 180;
 

@@ -17,11 +17,16 @@ import {
   paintProtectedHalo,
 } from './drawEffects';
 import {
-  HERON_BEAK_TEX,
-  HERON_SHADOW_TEX,
-  paintHeronBeakDip,
-  paintHeronShadow,
-  type HeronShadowTone,
+  HERON_BODY_TEX,
+  HERON_HEAD_TEX,
+  HERON_STAB_HEAD_TEX,
+  HERON_STAB_NECK_TEX,
+  paintHeronBody,
+  paintHeronHead,
+  paintHeronStabHead,
+  paintHeronStabNeck,
+  type HeronBodyFrame,
+  type HeronHeadPose,
 } from './drawHeron';
 import {
   LEG_ICON_SIZE,
@@ -53,19 +58,31 @@ export const PREDATOR_TEX = {
   halo: 'fx-halo',
   carryBubble: 'fx-carry-bubble',
   regrowMark: 'leg-regrow-mark',
-  heronShadow: 'heron-shadow',
-  heronShadowWarning: 'heron-shadow-warning',
-  heronBeakDip: 'heron-beak-dip',
+  heronBodyStand: 'heron-body-stand',
+  heronBodyStepA: 'heron-body-step-a',
+  heronBodyStepB: 'heron-body-step-b',
+  heronHeadRest: 'heron-head-rest',
+  heronHeadWarn: 'heron-head-warn',
+  heronStabHead: 'heron-stab-head',
+  heronStabNeck: 'heron-stab-neck',
 } as const;
 
-/** Fixed key of each heron shadow tone. */
-const HERON_SHADOW_KEYS: Readonly<Record<HeronShadowTone, string>> = {
-  glide: PREDATOR_TEX.heronShadow,
-  warning: PREDATOR_TEX.heronShadowWarning,
+/** Fixed key of each wading heron body frame. */
+const HERON_BODY_KEYS: Readonly<Record<HeronBodyFrame, string>> = {
+  stand: PREDATOR_TEX.heronBodyStand,
+  stepA: PREDATOR_TEX.heronBodyStepA,
+  stepB: PREDATOR_TEX.heronBodyStepB,
+};
+
+/** Fixed key of each wading heron head and neck pose. */
+const HERON_HEAD_KEYS: Readonly<Record<HeronHeadPose, string>> = {
+  rest: PREDATOR_TEX.heronHeadRest,
+  warn: PREDATOR_TEX.heronHeadWarn,
 };
 
 const TILAPIA_POSES: readonly TilapiaPose[] = ['swim', 'windup', 'lunge', 'rest'];
-const HERON_SHADOW_TONES: readonly HeronShadowTone[] = ['glide', 'warning'];
+const HERON_BODY_FRAMES: readonly HeronBodyFrame[] = ['stand', 'stepA', 'stepB'];
+const HERON_HEAD_POSES: readonly HeronHeadPose[] = ['rest', 'warn'];
 const LEG_ICON_KINDS: readonly LegIconKind[] = ['present', 'outline'];
 
 export const tilapiaKey = (pose: TilapiaPose): string => `tilapia-${pose}`;
@@ -95,12 +112,20 @@ export interface PredatorTextures {
   /** Regrow sparkle. Anchor is the top-left of the REGROW_MARK_SIZE box. */
   readonly regrowMark: TexInfo;
   /**
-   * Heron shadow, one still frame per tone (HERON_SHADOW_TEX), facing right. The
-   * warning tone is the same shape, darker. Anchor is the body centre.
+   * Wading heron body and legs, one still frame each (HERON_BODY_TEX), facing right.
+   * Anchor is on the art water line (HERON_WATER_LINE_Y) directly under the resting beak tip,
+   * the heron's logic point; the body trails toward -x. Under reduced motion hold `stand`.
    */
-  readonly heronShadow: Readonly<Record<HeronShadowTone, TexInfo>>;
-  /** Heron beak dip (HERON_BEAK_TEX). Anchor is the beak tip; the neck runs off the top edge. */
-  readonly heronBeakDip: TexInfo;
+  readonly heronBody: Readonly<Record<HeronBodyFrame, TexInfo>>;
+  /**
+   * Wading heron head and neck, `rest` (also the watch pose) and `warn` (the S-neck)
+   * (HERON_HEAD_TEX), facing right. Anchor is the neck base (HERON_NECK_BASE on the body).
+   */
+  readonly heronHead: Readonly<Record<HeronHeadPose, TexInfo>>;
+  /** Stab head (HERON_STAB_HEAD_TEX): a closed beak pointing +x. Anchor is the beak tip. */
+  readonly heronStabHead: TexInfo;
+  /** Stab neck piece (HERON_STAB_NECK_TEX), stretched along x by the scene. Anchor is the rear end centre. */
+  readonly heronStabNeck: TexInfo;
 }
 
 /** Bake the tilapia, heron, effect and leg icon textures into the scene's texture manager. */
@@ -131,13 +156,38 @@ export function bakePredatorTextures(scene: Phaser.Scene, bakeScale: number): Pr
   const regrowSize: TexSize = { w: REGROW_MARK_SIZE, h: REGROW_MARK_SIZE, originX: 0, originY: 0 };
   const regrowMark = add(bake(scene, PREDATOR_TEX.regrowMark, regrowSize, bakeScale, paintRegrowMark));
 
-  const heronShadow = {} as Record<HeronShadowTone, TexInfo>;
-  for (const tone of HERON_SHADOW_TONES) {
-    heronShadow[tone] = add(
-      bake(scene, HERON_SHADOW_KEYS[tone], HERON_SHADOW_TEX, bakeScale, (ctx) => paintHeronShadow(ctx, tone)),
+  const heronBody = {} as Record<HeronBodyFrame, TexInfo>;
+  for (const frame of HERON_BODY_FRAMES) {
+    heronBody[frame] = add(
+      bake(scene, HERON_BODY_KEYS[frame], HERON_BODY_TEX, bakeScale, (ctx) => paintHeronBody(ctx, frame)),
     );
   }
-  const heronBeakDip = add(bake(scene, PREDATOR_TEX.heronBeakDip, HERON_BEAK_TEX, bakeScale, paintHeronBeakDip));
+  const heronHead = {} as Record<HeronHeadPose, TexInfo>;
+  for (const pose of HERON_HEAD_POSES) {
+    heronHead[pose] = add(
+      bake(scene, HERON_HEAD_KEYS[pose], HERON_HEAD_TEX, bakeScale, (ctx) => paintHeronHead(ctx, pose)),
+    );
+  }
+  const heronStabHead = add(
+    bake(scene, PREDATOR_TEX.heronStabHead, HERON_STAB_HEAD_TEX, bakeScale, paintHeronStabHead),
+  );
+  const heronStabNeck = add(
+    bake(scene, PREDATOR_TEX.heronStabNeck, HERON_STAB_NECK_TEX, bakeScale, paintHeronStabNeck),
+  );
 
-  return { info, tilapia, alert, glint, poof, halo, carryBubble, legIcons, regrowMark, heronShadow, heronBeakDip };
+  return {
+    info,
+    tilapia,
+    alert,
+    glint,
+    poof,
+    halo,
+    carryBubble,
+    legIcons,
+    regrowMark,
+    heronBody,
+    heronHead,
+    heronStabHead,
+    heronStabNeck,
+  };
 }

@@ -1,20 +1,22 @@
 /**
  * The lily pad pond at dusk, Area 3 (issue #98), as area data: 6 screens across, 1 down. The
  * stream flowing in past the last tilapia is the current, with spots past it, and a root arch under
- * the bank beyond them is the cave. The heron hunts one stretch near the surface over the spots past
- * the stream and the root arch, so the Epic and Legendary spots there sit where it can strike.
+ * the bank beyond them is the cave. Two herons wade short stretches near the surface at the far end
+ * (issue #111): `heron-0` over the spots past the stream and `heron-1` over the root arch, so the Epic
+ * and Legendary spots there sit where a heron can strike. The water below their reach stays open.
  */
 import { POND_2_TREASURES } from './catalogue';
-import type { ElementSpawn, HazardSpawn } from './hazards';
+import type { HazardSpawn } from './hazards';
 import { PLASTIC_WORM } from './plasticWorms';
-import { HERON_SHADOW_CYCLE, HERON_SPECIES, type PredatorRoute } from './predators';
+import { HERON_SPECIES, type PredatorRoute } from './predators';
 import { BED_TOP, SURF, type AreaLayoutData, type Point } from './zone';
 
 export const POND_2_AREA_ID = 'pond-2';
 
 /**
- * y of the heron's stretch. The heron reaches 60 px from it, so its band runs from the surface down
- * to y 180, above the lowest beak dip (y 200); deeper water is out of its reach.
+ * y of each heron's stretch, the line of its beak's rest point. A heron reaches HERON.lungeRange
+ * (110 px) from where it stands on it, so it warns no deeper than y 230, and its stab hits no axolotl
+ * centred below about y 256 (HERON.hitRadius past y 230); deeper water is out of its reach.
  */
 export const HERON_STRETCH_Y = 120;
 
@@ -27,7 +29,7 @@ function plasticWormAt(index: number, x: number, y: number): Readonly<HazardSpaw
   });
 }
 
-/** The heron's route: a straight stretch from `x0` to `x1` at HERON_STRETCH_Y, two waypoints. */
+/** One heron's route: a straight stretch from `x0` to `x1` at HERON_STRETCH_Y, two waypoints. */
 function heronStretch(id: string, x0: number, x1: number): Readonly<PredatorRoute> {
   const waypoints: Point[] = [
     Object.freeze({ x: x0, y: HERON_STRETCH_Y }),
@@ -35,9 +37,6 @@ function heronStretch(id: string, x0: number, x1: number): Readonly<PredatorRout
   ];
   return Object.freeze({ id, waypoints: Object.freeze(waypoints) as Point[], species: HERON_SPECIES });
 }
-
-/** The heron's shadow cycle, starting with the trip (offset 0). */
-const HERON_SHADOW: Readonly<ElementSpawn> = Object.freeze({ id: 'heron-shadow-0', type: HERON_SHADOW_CYCLE, offset: 0 });
 
 /** The pond at dusk, Area 3, as area data: 6 screens across, 1 down. */
 export const POND_2_LAYOUT: Readonly<AreaLayoutData> = Object.freeze({
@@ -64,21 +63,27 @@ export const POND_2_LAYOUT: Readonly<AreaLayoutData> = Object.freeze({
       rows: Object.freeze([Object.freeze({ y: 292, rarity: 'rare', tag: 'deep' })]),
     }),
   ]),
-  /** In the root arch, under the heron's stretch: Legendary pots near the top, Epic spots lower down. */
+  /**
+   * In the root arch, under `heron-1`'s stretch: Legendary pots near the top, within half its reach,
+   * and Epic spots at the bottom of the arch, between half its reach and its reach. Each is at least
+   * the turn clearance from both ends of the stretch.
+   */
   caveSpots: Object.freeze([
-    Object.freeze([2444, 116, 'legendary', true] as const),
-    Object.freeze([2500, 116, 'legendary', true] as const),
-    Object.freeze([2556, 116, 'legendary', true] as const),
-    Object.freeze([2444, 174, 'epic', false] as const),
-    Object.freeze([2500, 174, 'epic', false] as const),
-    Object.freeze([2556, 174, 'epic', false] as const),
+    Object.freeze([2500, 112, 'legendary', true] as const),
+    Object.freeze([2556, 112, 'legendary', true] as const),
+    Object.freeze([2470, 196, 'epic', false] as const),
+    Object.freeze([2540, 196, 'epic', false] as const),
   ]),
-  /** Just past the stream, under the heron's stretch: Legendary pots at the top of the stream, Epic spots lower. */
+  /**
+   * Just past the stream, under `heron-0`'s stretch: Legendary pots at the top of the stream, within
+   * half its reach, and Epic spots lower, between half its reach and its reach. Each is at least the
+   * turn clearance from both ends of the stretch.
+   */
   currentSpots: Object.freeze([
-    Object.freeze([2280, 120, 'legendary', true] as const),
-    Object.freeze([2340, 120, 'legendary', true] as const),
-    Object.freeze([2280, 178, 'epic', false] as const),
-    Object.freeze([2340, 178, 'epic', false] as const),
+    Object.freeze([2252, 120, 'legendary', true] as const),
+    Object.freeze([2308, 120, 'legendary', true] as const),
+    Object.freeze([2260, 190, 'epic', false] as const),
+    Object.freeze([2330, 196, 'epic', false] as const),
   ]),
   /**
    * The stream, in the art's stream band (y 120 to 280), flowing left a little faster than Area 2's.
@@ -91,7 +96,7 @@ export const POND_2_LAYOUT: Readonly<AreaLayoutData> = Object.freeze({
   /** The root arch under the bank: its hollow, from just under the surface. */
   cave: Object.freeze({ id: `${POND_2_AREA_ID}/cave`, x0: 2432, x1: 2568, y0: 96, y1: 200 }),
   /**
-   * Four fixed patrol loops, left to right along the pond, all before the heron's stretch. The
+   * Four fixed patrol loops, left to right along the pond, all before the herons' stretches. The
    * closest two, `tilapia-0` and `tilapia-1`, are 290 px apart, more than twice the lunge range of
    * 140 px.
    */
@@ -121,9 +126,13 @@ export const POND_2_LAYOUT: Readonly<AreaLayoutData> = Object.freeze({
       Object.freeze([1800, 296] as const),
     ]),
   ]),
-  /** The heron's stretch near the surface, from the end of the stream over the spots past it and the root arch. */
-  predatorRoutes: Object.freeze([heronStretch('heron-0', 2200, 2620)]),
-  /** Five plastic worms, left to right, each far from the tilapia, the heron and the stream. */
+  /**
+   * Two herons wading near the surface at the far end, each on a 180 px stretch: `heron-0` from the
+   * end of the stream over the spots past it, and `heron-1` over the root arch. `heron-0` stops short
+   * of the bank on the last column.
+   */
+  predatorRoutes: Object.freeze([heronStretch('heron-0', 2190, 2370), heronStretch('heron-1', 2440, 2620)]),
+  /** Five plastic worms, left to right, each far from the tilapia, the herons and the stream. */
   hazards: Object.freeze([
     plasticWormAt(1, 420, 120),
     plasticWormAt(2, 540, 290),
@@ -131,10 +140,11 @@ export const POND_2_LAYOUT: Readonly<AreaLayoutData> = Object.freeze({
     plasticWormAt(4, 1300, 270),
     plasticWormAt(5, 2740, 270),
   ]),
-  elements: Object.freeze([HERON_SHADOW]),
+  elements: Object.freeze([]),
   /**
    * Along the middle, up over the first tilapia and the Common pad, then on through the stream and
-   * under the heron's stretch, below its reach, to the exit.
+   * under the herons' stretches to the exit. Under the stretches it is inside their reach; the water
+   * below y 230 is not.
    */
   mainPath: Object.freeze([
     Object.freeze({ x: 120, y: 200 }),
@@ -148,7 +158,7 @@ export const POND_2_LAYOUT: Readonly<AreaLayoutData> = Object.freeze({
    * Fixed stranding places (PRD C2), left to right: above the first reeds, on the bed between the
    * first two tilapia, in the open water before the deep reeds, near the surface before the last
    * tilapia, on the bed under the root arch, and near the surface before the exit. Every place is
-   * at least 80 px from every tilapia route and the heron's stretch.
+   * at least 80 px from every tilapia route and heron stretch, and out of every heron's reach.
    */
   strandingPlaces: Object.freeze([
     Object.freeze({ id: `${POND_2_AREA_ID}/strand-1`, x: 320, y: 110 }),
@@ -166,8 +176,8 @@ export const POND_2_LAYOUT: Readonly<AreaLayoutData> = Object.freeze({
   padSpotIndex: null,
   padSpotY: 100,
   /**
-   * The Common pad over the main path and the Rare pad above it, both far from the heron's
-   * stretch, then pads that only decorate. No pad sits above a plastic worm.
+   * The Common pad over the main path and the Rare pad above it, both far from the herons'
+   * stretches, then pads that only decorate. No pad sits above a plastic worm.
    */
   fixedPads: Object.freeze([
     Object.freeze({ x: 915, rx: 24, flower: true, spot: Object.freeze({ y: 100, rarity: 'common', tag: 'a' }) }),

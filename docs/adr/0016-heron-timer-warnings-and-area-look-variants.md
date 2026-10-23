@@ -1,6 +1,6 @@
 # ADR 0016: Heron timer warnings and area look variants
 
-- Status: Accepted
+- Status: Accepted. Partly superseded by [ADR 0019](0019-heron-wading-stalker.md) (issue #111): "Timer-started warnings", "Visibility", "One reach rule", the timer-only consequences and the heron residuals.
 - Date: 2026-10-22
 - Related: [ADR 0007](0007-kid-safety-and-privacy.md) (the heron stays gentle), [ADR 0008](0008-gentle-fail-state.md) (a heron hit costs a leg, nothing more), [ADR 0012](0012-save-on-device.md) (new ids under its additive rule), [ADR 0013](0013-axolotl-rig-and-frame-budget.md) (frame time with the dusk pond), [ADR 0014](0014-area-framework.md) (the framework this builds on), [ADR 0015](0015-multi-area-catalogue-and-slow-only-hazards.md) (the pond habitat, its catalogue and its hazards)
 

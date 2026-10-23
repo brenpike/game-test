@@ -65,16 +65,16 @@ A worm or bug the axolotl eats by touching it with its head; not a trip find, it
 A stretch of flowing water in an area that pushes the axolotl, and that rarer treasures hide past. In Area 4 it is the water flowing sideways through the gap between two chinampas in the bottom row.
 
 **Timing element**:
-Something in an area that runs on a clock; Area 3's one new timing element is the **Heron**'s shadow cycle (`'heron-shadow-cycle'` in code), one pass every 8 seconds.
+Something in an area that runs on a clock. No area has one now: Area 3's was the **Heron**'s shadow cycle, and #111 removed it when the **Heron** became a sight-based wading stalker.
 
 **Tail Dash**:
 The axolotl's first power, a short burst of speed that works with any number of legs and is the only way to break a Dash pot.
 
 **Hiding spot**:
-A place in an area where a treasure can hide, picked fresh each trip for each treasure picked for that trip, from that treasure's pool. Each rarity's spots sit in their own risk band, nearer a threat (a predator's patrol route or a leg-costing hazard) the rarer the treasure (B10). An area's cave holds hiding spots of its own; Area 2's cave is a hollow log, and Area 3's is a root arch under the bank (B6's "a cave or other hollow"). The root arch gives no protection from the **Heron**: only depth does. Area 4's cave is a tangle of ahuejote roots on the bed of the bottom row, and its Common and Rare spots sit under the overhanging chinampa banks (the bank cover, `'bank'` in code). Each Lily pad pond area also has two fixed spots under lily pads, one Common and one Rare, that are area data, so every trip there has them.
+A place in an area where a treasure can hide, picked fresh each trip for each treasure picked for that trip, from that treasure's pool. Each rarity's spots sit in their own risk band, nearer a threat (a predator's patrol route or a leg-costing hazard) the rarer the treasure (B10). An area's cave holds hiding spots of its own; Area 2's cave is a hollow log, and Area 3's is a root arch under the bank (B6's "a cave or other hollow"). The **Heron** cannot see an axolotl in cover: inside a reed patch, under a lily pad, or in the root arch (N3). Area 4's cave is a tangle of ahuejote roots on the bed of the bottom row, and its Common and Rare spots sit under the overhanging chinampa banks (the bank cover, `'bank'` in code). Each Lily pad pond area also has two fixed spots under lily pads, one Common and one Rare, that are area data, so every trip there has them.
 
 **Treasure slot**:
-One of an area's set number of places for a treasure on each trip (6 in the canal, 7 in Area 2, 8 in Area 3, 9 in Area 4), with its rarity picked by chance from the trip seed; lost treasures and the **Special treasure** are extras on top of the slots (B4).
+One of an area's set number of places for a treasure on each trip (6 in the canal, 7 in Area 2, 8 in Area 3, 9 in Area 4), with its rarity picked by chance from the trip seed; lost treasures and the **Special treasure** are extras on top of the slots (B4). If a rarity has no treasure left to fill a slot, the slot falls back to a more common rarity first, then to only one step rarer; otherwise it stays empty (B4).
 _Avoid_: Slot alone (that means a Wearable **Slot**)
 
 **Dash pot**:
@@ -90,7 +90,7 @@ _Avoid_: hint star
 Something in an area, defined as data with its own rules, that may cost the axolotl a leg or only slow it, such as a predator. A slow-only hazard, such as the **Plastic worm**, never costs a leg, never starts **Protected time**, and is not a threat for hiding spots (B10).
 
 **Predator**:
-A kind of **Hazard**: an animal that hunts, with a visible warning before every strike; every predator follows the same shared rules, and each species is data. A species' warning starts either by distance, when the axolotl comes near (the **Tilapia**), or on a timer (the **Heron**).
+A kind of **Hazard**: an animal that hunts, with a visible warning before every strike; every predator follows the same shared rules, and each species is data. A species' warning starts by distance, when the axolotl comes near (the **Tilapia**), or on sight, when the axolotl is within the predator's reach and not in cover (the **Heron**).
 _Avoid_: monster
 
 **Tilapia**:
@@ -98,7 +98,7 @@ The invasive fish that patrol the canal, the first **Predator**. From Area 4 on,
 _Avoid_: monster
 
 **Heron**:
-The bird that hunts in Area 3, the first **Predator** whose warning starts on a timer. It hunts one stretch near the surface and reaches only 60 px from it, so deep water and the safe area are out of its reach ("stay deep"). Each pass, its shadow glides in for about 2 seconds; if the axolotl is in reach, the shadow darkens for 1.2 seconds over the spot where the axolotl was when the warning started, then the beak dips there, so swimming away dodges it. The shadow then glides off, and the heron is away for about 4 seconds. It never bumps the axolotl.
+The wading bird that hunts in Area 3 (N3), the first **Predator** whose warning starts on sight. Two herons stand in the back half with legs in the water, head and neck above it, and wade slowly (20 px/s) along short stretches. A heron's head turns to follow the axolotl when it is near and not in cover. Within 110 px of where it stands (down to about y 230) it sees the axolotl, freezes, and pulls its neck into an S for 1.2 seconds, then stabs in 0.3 seconds at the spot where the axolotl was when the warning started, so swimming away dodges it. After a stab it waits 3 seconds, then wades again. It cannot see an axolotl in cover (a reed patch, a lily pad, the root arch); past the current is open water, and the bottom band below its reach is safe ("stay deep"). The **Tilapia** ignores cover. It never grabs, holds or lifts the axolotl.
 _Avoid_: monster, bird alone
 
 **Plastic worm**:
@@ -118,10 +118,10 @@ How the **Explorer** is for 2 seconds after swimming into a **Ghost net**: it wr
 _Avoid_: trapped, caught, stuck, damage
 
 **Telegraph**:
-A predator's visible warning before a lunge; the tilapia's is a glint and a wind-up pose, and the heron's is its shadow darkening over one spot.
+A predator's visible warning before a lunge; the tilapia's is a glint and a wind-up pose, and the heron's is freezing and pulling its neck into an S.
 
 **Lunge**:
-A predator's strike; the tilapia's is a quick dash at the axolotl, and the heron's is a beak dip at the spot its shadow darkened.
+A predator's strike; the tilapia's is a quick dash at the axolotl, and the heron's is a stab with its beak at the spot where the axolotl was when its S-neck began.
 
 **Hit**:
 A predator's strike, or a **Hazard** that costs a leg, that connects.
@@ -207,7 +207,7 @@ The look option for how grown-up an axolotl looks: Baby, Young, or Grown-up; it 
 How big an axolotl is drawn: Small, Medium, or Large; looks only, with the same hit area and speed at every size.
 
 **Stranded axolotl**:
-A lost axolotl in the canal waiting to be rescued, on about 3 trips in 10; one left waiting always comes back on the next trip in that area.
+A lost axolotl in the canal waiting to be rescued, on about 4 trips in 10 (C2); one left waiting always comes back on the next trip in that area.
 
 **Rescue**:
 Leading a stranded axolotl home and banking it.
@@ -290,7 +290,7 @@ A themed group of Wearables, named by a Wearable's optional set ID, that unlocks
 - Each **Trip** fills its **Area**'s **Treasure slots** with unbanked **Treasures**, each slot's **Rarity** picked by chance, plus any lost **Treasures** and the unbanked **Special treasure** on top, and one **Hiding spot** per **Treasure** picked for that **Trip**, from that **Treasure**'s pool; no two **Treasures** share a spot in one **Trip**
 - A Legendary **Treasure** always hides in a **Dash pot**, which only **Tail Dash** can break
 - A **Hint sparkle** marks a hidden **Treasure** when the axolotl is near, and each of the last 3 **Snacks**
-- A **Predator** is a **Hazard**, and a **Tilapia** and a **Heron** are **Predators**; a **Predator**'s **Telegraph** always comes before its **Lunge**, whether its warning starts by distance or on a timer, and only one **Predator** in an **Area** warns or lunges at a time, a **Heron** and a **Tilapia** included
+- A **Predator** is a **Hazard**, and a **Tilapia** and a **Heron** are **Predators**; a **Predator**'s **Telegraph** always comes before its **Lunge**, whether its warning starts by distance or on sight, and only one **Predator** in an **Area** warns or lunges at a time, a **Heron** and a **Tilapia** included
 - A **Hit** is a **Lunge** that connects, or a touch on a **Hazard** that costs a leg; it starts **Protected time** and causes exactly one **Leg loss**, except a hit blocked by a Shell **Perk** (at most one per trip), which costs no leg; a **Hazard** that only slows never hits
 - Eating a **Plastic worm** makes the **Explorer** **Queasy**; it is not a **Hit**, so the Shell **Perk** plays no part, and it costs no leg
 - Swimming into a **Ghost net** makes the **Explorer** **Snagged**, never a following **Stranded axolotl**; it is not a **Hit**, so the Shell **Perk** plays no part, it starts no **Protected time**, and it costs no leg
@@ -308,7 +308,7 @@ A themed group of Wearables, named by a Wearable's optional set ID, that unlocks
 - Each axolotl has exactly one **Boy or girl**, fixed after creation; text about one axolotl says he or she, never they or it
 - **Restyle** can change **Tail**, **Body**, **Age**, **Size**, face, gills, spots, and name, can put on or take off the applied **Dream colour**, and can change the **Outfit** on the Outfit tab, but never the **Real morph** or **Boy or girl**; none of these looks changes the hit area or speed, and only the **Perks** of the **Explorer**'s **Outfit** change play, on a **Trip**
 - The starter axolotl's **Real morph**, chosen in the **Character creator**, decides which seven **Real morphs** can be **Stranded axolotls**
-- Each **Trip** has at most one **Stranded axolotl**, on about 3 trips in 10, or always when one is left waiting from the last **Trip** in that **Area**; a **Rescue** moves it into the **Home Tank** and unlocks its **Morph** in the **Collection Book**
+- Each **Trip** has at most one **Stranded axolotl**, on about 4 trips in 10, or always when one is left waiting from the last **Trip** in that **Area**; a **Rescue** moves it into the **Home Tank** and unlocks its **Morph** in the **Collection Book**
 - The **Treasure Chest** lists every catalogue **Decoration**, **Wearable**, and **Dream colour**: owned ones in full with their **Rarity** glow, unfound ones as silhouettes with "???" and an **Area** and **Rarity** hint, and a line per section saying what its items are for; placed **Decorations** live in the **Home Tank**
 - The **Collection Book** holds one entry per **Real morph**, each with a **Fun-fact card**, and lists **Dream colours** separately as not found in nature
 - The **Refuge** has one **Refuge section** per **Habitat** that holds an **Area**, and each **Refuge section** has one **Trash batch** per **Area** in it; beating an **Area** (its exit **Star**) clears its **Trash batch**

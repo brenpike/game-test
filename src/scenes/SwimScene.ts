@@ -238,7 +238,7 @@ export class SwimScene extends Phaser.Scene {
   private axolotlView!: AxolotlRigView;
   private axolotl!: Phaser.GameObjects.Container;
   private predatorView!: PredatorView;
-  /** The herons' shadows and beak dips, or null in an area with no heron. */
+  /** The wading herons, or null in an area with no heron. */
   private heronView: HeronView | null = null;
   /** The dusk fireflies, or null in an area whose look has none. */
   private fireflyView: FireflyView | null = null;
@@ -421,8 +421,9 @@ export class SwimScene extends Phaser.Scene {
    * no view here.
    * Heron and fireflies (#98): made once per trip, and only in an area with a heron or a look with
    * fireflies; the canal and Area 2 call nothing. FireflyView.render allocates nothing. HeronView
-   * reads predatorCycleView, which returns two small objects (the view and its timing) per heron per
-   * frame, plus its render argument object: the same bounded class as the residual below.
+   * reuses its sprites and takes the axolotl's swim state as its position, so it allocates only its
+   * render argument object, the bounded cover check (inSightCover) and, during a full-motion stab,
+   * one stab tip (stabTip) per heron per frame: the same bounded class as the residual below.
    * Recorded residual, inherited from main: stepSwim and stepTrip return new immutable state and
    * event lists each frame, syncSnapshot builds a trip snapshot to compare, the views take a render
    * argument object, and the reeds-near Set, bubble views and surface x list are rebuilt each frame.
@@ -902,7 +903,6 @@ export class SwimScene extends Phaser.Scene {
   private dispatchTripEvents(events: readonly TripEvent[]): void {
     this.handleTripEvents(events);
     this.predatorView.handleEvents(events);
-    this.heronView?.handleEvents(events);
     this.homeSpotView.handleEvents(events);
     this.treasureView.handleEvents(events);
     this.plasticWormView.handleEvents(events);
@@ -1061,7 +1061,7 @@ export class SwimScene extends Phaser.Scene {
       dt,
       phase: this.trip.phase,
     });
-    this.heronView?.render({ encounter: this.trip.encounter, motion: this.motion, dt });
+    this.heronView?.render({ encounter: this.trip.encounter, axolotl: this.swim, motion: this.motion, dt });
     this.fireflyView?.render(this.motion, this.clock);
     this.renderReeds(dt, t);
     this.renderSnacks();

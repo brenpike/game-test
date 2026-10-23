@@ -260,8 +260,8 @@ describe('tripStranding and strandingRoll', () => {
     vi.restoreAllMocks();
   });
 
-  it('strands an axolotl on about 30% of trips with nobody waiting, over seeds 0..9999', () => {
-    expect(STRANDING_CHANCE).toBe(0.3);
+  it('strands an axolotl on about 40% of trips with nobody waiting, over seeds 0..9999', () => {
+    expect(STRANDING_CHANCE).toBe(0.4);
     const stranded = SEEDS_10000.filter((seed) => tripStranding(owned, null, STRANDING_PLACES, seed) !== null).length;
     expect(Math.abs(stranded / SEEDS_10000.length - STRANDING_CHANCE)).toBeLessThanOrEqual(0.02);
   });

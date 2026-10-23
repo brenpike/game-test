@@ -43,7 +43,7 @@ import {
 } from './factCards';
 import type { ElementType, HazardType } from './hazards';
 import { SNACK_MAGNET_PULL_SPEED } from './perks';
-import { HERON_SHADOW_CYCLE, TILAPIA_SPECIES, type PredatorSpecies } from './predators';
+import { TILAPIA_SPECIES, type PredatorSpecies } from './predators';
 import { POND_2_AREA_ID, POND_2_LAYOUT } from './pond2Layout';
 import { POND_AREA_ID, POND_LAYOUT } from './pondLayout';
 import { SNACK_DART } from './snackDart';
@@ -373,14 +373,13 @@ describe('newThingsByArea', () => {
     expect(areasOverNewLimit(AREAS)).toEqual([]);
   });
 
-  it('counts the canal tilapia as new in Area 1, the plastic worm in Area 2, the heron and its shadow cycle in Area 3, and the ghost net in Area 4', () => {
+  it('counts the canal tilapia as new in Area 1, the plastic worm in Area 2, the heron in Area 3, with no timing element (#111), and the ghost net in Area 4', () => {
     expect(newThingsByArea()).toEqual([
       { areaId: 'canal', threats: ['tilapia'], elements: [] },
       { areaId: 'pond-1', threats: ['plastic-worm'], elements: [] },
-      { areaId: 'pond-2', threats: ['heron'], elements: [HERON_SHADOW_CYCLE.id] },
+      { areaId: 'pond-2', threats: ['heron'], elements: [] },
       { areaId: 'chinampa-1', threats: ['ghost-net'], elements: [] },
     ]);
-    expect(HERON_SHADOW_CYCLE.id).toBe('heron-shadow-cycle');
   });
 
   it('does not count carried-forward threats and elements as new', () => {

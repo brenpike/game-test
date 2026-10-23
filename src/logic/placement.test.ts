@@ -264,13 +264,35 @@ describe('rollSlotRarities', () => {
 
 describe('fallbackOrder', () => {
   it.each<[Rarity, Rarity[]]>([
-    ['common', ['rare', 'epic', 'legendary']],
-    ['rare', ['common', 'epic', 'legendary']],
+    ['common', ['rare']],
+    ['rare', ['common', 'epic']],
     ['epic', ['rare', 'common', 'legendary']],
     ['legendary', ['epic', 'rare', 'common']],
-  ])('falls back from %s to more common rarities nearest first, then rarer ones', (rarity, order) => {
+  ])('falls back from %s to more common rarities nearest first, then only one step rarer (B4)', (rarity, order) => {
     expect(fallbackOrder(rarity)).toEqual(order);
   });
+});
+
+describe('placeTreasures with every Common, Rare and Epic of an area banked (B4)', () => {
+  it.each(AREAS.map((area) => [area.id, area] as const))(
+    'leaves Common and Rare slots empty and fills Legendaries only from Epic and Legendary rolls in %s',
+    (_areaId, area) => {
+      const areaZone = buildZone(area.layout, DEFAULT_TRIP_SEED);
+      const tuning = tripTreasureTuning(area.id);
+      const banked = areaZone.finds.map((find) => find.id).filter((id) => rarityOf(id) !== 'legendary');
+      expect(areaZone.finds.some((find) => rarityOf(find.id) === 'legendary')).toBe(true);
+      for (const seed of SEEDS_1000) {
+        const rolls = rollSlotRarities(tuning, seed);
+        const legendarySlots = rolls.filter((rarity) => rarity === 'epic' || rarity === 'legendary').length;
+        const placements = placeTreasures(areaZone.finds, areaZone.spots, banked, seed, { tuning });
+        expect(placements.every((placed) => rarityOf(placed.id) === 'legendary'), `seed ${seed}`).toBe(true);
+        expect(placements.length, `seed ${seed}`).toBeLessThanOrEqual(legendarySlots);
+        if (placements.length === tuning.slots) {
+          expect(legendarySlots, `seed ${seed}`).toBe(tuning.slots);
+        }
+      }
+    },
+  );
 });
 
 describe('placeTreasures', () => {
@@ -474,9 +496,10 @@ describe('placeTreasures', () => {
     expect(placeAll(zone, 1, CANAL_TREASURES.map((treasure) => treasure.id))).toEqual([]);
   });
 
-  it('places every unbanked treasure when there are enough slots for all of them', () => {
+  it('places every unbanked Common and Rare when there are enough slots for all of them, whatever rarity each slot rolled', () => {
+    const reachable = zone.finds.filter((find) => ['common', 'rare'].includes(rarityOf(find.id)));
     for (const count of [PER_TRIP - 1, PER_TRIP]) {
-      const left = zone.finds.slice(0, count).map((find) => find.id);
+      const left = reachable.slice(0, count).map((find) => find.id);
       const banked = zone.finds.map((find) => find.id).filter((id) => !left.includes(id));
       for (const tripSeed of TRIP_SEEDS) {
         expect(placeAll(zone, tripSeed, banked).map((placed) => placed.id)).toEqual(left);

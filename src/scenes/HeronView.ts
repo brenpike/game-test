@@ -1,37 +1,30 @@
 import type * as Phaser from 'phaser';
-import { HERON_BEAK_NECK } from '../art/drawHeron';
+import {
+  HERON_BEAK_REST_TIP,
+  HERON_NECK_BASE,
+  HERON_STAB_HEAD_BACK,
+  HERON_STAB_NECK_LEN,
+  HERON_WATER_LINE_Y,
+  type HeronBodyFrame,
+} from '../art/drawHeron';
 import { DEPTH } from '../art/layers';
 import type { TexInfo } from '../art/textures';
-import {
-  HERON_SPECIES,
-  predatorCycleView,
-  type PredatorCyclePhase,
-  type PredatorCycleView,
-  type PredatorState,
-} from '../logic/predators';
-import type { TripEvent } from '../logic/trip';
-import { SURF } from '../logic/zone';
+import { inSightCover } from '../logic/hiding';
+import { HERON_SPECIES, phaseProgress, type PredatorState } from '../logic/predators';
+import type { Point } from '../logic/zone';
 import type { GameAssets } from './BootScene';
 import type { PredatorFrame } from './PredatorView';
 import { faceSprite } from './spriteFacing';
 
-/**
- * Reduced motion: the shadow fades in over the last FADE_S of its glide-in and fades out over FADE_S.
- * Full motion: it fades in over the first FADE_S of its glide-in and out over the last FADE_S of its
- * glide-off, so it never pops in or out at the ends of its route.
- */
-const FADE_S = 0.4;
-/** Full motion: the shadow crossfades from the glide tone to the warning tone, and back, over DARKEN_S. */
-const DARKEN_S = 0.4;
-/** Full motion: the beak tip starts and ends the dip this far above the strike spot. */
-const DIP_RISE_PX = 24;
-/** The beak dip shows for the strike: the heron's lunge duration. */
-const DIP_LIFE_S = HERON_SPECIES.tuning.lungeDuration;
-/** Lowest beak tip, so the top of the beak dip frame (the cut end of the neck) is at or above the surface. */
-const BEAK_TIP_MAX_Y = SURF + HERON_BEAK_NECK;
+/** Full motion: seconds each wading leg frame shows while the heron moves. */
+const STEP_FRAME_S = 0.25;
+/** Full motion: the wading leg cycle, one frame per STEP_FRAME_S. */
+const WADE_FRAMES: readonly HeronBodyFrame[] = ['stepA', 'stand', 'stepB', 'stand'];
 
-/** One frame of heron rendering input: the PredatorView frame without the axolotl and trip phase. */
-export type HeronFrame = Pick<PredatorFrame, 'encounter' | 'motion' | 'dt'>;
+/** One frame of heron rendering input: the encounter, motion and dt, and the axolotl's logic position. */
+export type HeronFrame = Pick<PredatorFrame, 'encounter' | 'motion' | 'dt'> & {
+  axolotl: Readonly<Point>;
+};
 
 /** The encounter predator a heron is drawn from: its species and route id. */
 export type HeronSource = Pick<PredatorState, 'species' | 'routeId'>;
@@ -40,24 +33,18 @@ export type HeronSource = Pick<PredatorState, 'species' | 'routeId'>;
 interface HeronDrawing {
   /** Index of the heron in the encounter's `predators`. */
   index: number;
-  routeId: string;
-  glide: Phaser.GameObjects.Image;
-  warning: Phaser.GameObjects.Image;
-  beak: Phaser.GameObjects.Image;
-  /** Shadow opacity, 0 to 1. Under full motion, set by the cycle clock (fullFade). */
-  fade: number;
-  /** Share of the warning tone in the shadow crossfade, 0 to 1. */
-  darken: number;
-  /** Where the shadow was last drawn and the way it faced. */
-  shownX: number;
-  shownY: number;
-  shownFacing: -1 | 1;
-  /** The fixed strike spot and facing, taken while the heron warns or strikes. */
-  spotX: number;
-  spotY: number;
-  spotFacing: -1 | 1;
-  /** Seconds the beak dip has shown; DIP_LIFE_S when it is not showing. */
-  dipAge: number;
+  /** Rest, watch and warn head and neck, anchored at the neck base. Added before `body`, so the body ink covers the neck base. */
+  head: Phaser.GameObjects.Image;
+  /** Body and legs, anchored on the art water line under the resting beak tip. */
+  body: Phaser.GameObjects.Image;
+  /** Stab neck piece, anchored at its rear end on the neck base. */
+  stabNeck: Phaser.GameObjects.Image;
+  /** Stab head, anchored at the beak tip. Added after `stabNeck`, so it draws over the neck's front end. */
+  stabHead: Phaser.GameObjects.Image;
+  /** Seconds the heron has waded under full motion; picks the leg frame. */
+  wadeTime: number;
+  /** The logic x last drawn, to tell whether it moved this frame. */
+  lastX: number;
 }
 
 function bakedImage(scene: Phaser.Scene, info: TexInfo, depth: number): Phaser.GameObjects.Image {
@@ -69,184 +56,165 @@ function bakedImage(scene: Phaser.Scene, info: TexInfo, depth: number): Phaser.G
     .setVisible(false);
 }
 
-/** Moves `value` toward `goal` by at most `step`. */
-function stepToward(value: number, goal: number, step: number): number {
-  if (value < goal) return Math.min(goal, value + step);
-  return Math.max(goal, value - step);
+/** The sign of `dx` as a facing, or `fallback` when it is 0. */
+function facingOf(dx: number, fallback: -1 | 1): -1 | 1 {
+  if (dx > 0) return 1;
+  if (dx < 0) return -1;
+  return fallback;
 }
 
 /**
- * Reduced-motion shadow opacity goal: shown while warning or striking and over the last FADE_S of
- * the glide-in, so it is fully in by the warn mark; gone while gliding off.
- */
-function reducedFadeGoal(view: PredatorCycleView): number {
-  if (view.phase === 'warn' || view.phase === 'dip') return 1;
-  if (view.phase === 'glideIn') return view.cycleTime >= view.timing.warnAt - FADE_S ? 1 : 0;
-  return 0;
-}
-
-/**
- * Full-motion shadow opacity: 0 to 1 over the first FADE_S of the glide-in, 1 to 0 over the last
- * FADE_S of the glide-off (up to the gap), and 1 while warning or striking.
- */
-function fullFade(view: PredatorCycleView): number {
-  if (view.phase === 'glideIn') return Math.max(0, Math.min(1, view.cycleTime / FADE_S));
-  if (view.phase === 'glideOff') return Math.max(0, Math.min(1, (view.timing.visibleFor - view.cycleTime) / FADE_S));
-  return 1;
-}
-
-function striking(phase: PredatorCyclePhase): boolean {
-  return phase === 'warn' || phase === 'dip';
-}
-
-/**
- * Draws each heron (issue #98): its shadow on the water and its beak dip. Visual only: it reads the
- * encounter state and the trip events, every timer here is driven by the frame `dt`, so it freezes
- * with the scene, and nothing here changes game state.
+ * Draws each wading heron (PRD N3, issue #111) from its encounter state: legs in the water, body,
+ * neck and head above it. Visual only: it reads the encounter, the axolotl's position and the
+ * motion setting each frame, the leg cycle is driven by the frame `dt`, so it freezes with the
+ * scene, and nothing here changes game state. It allocates nothing per frame: the drawn stab tip
+ * is a reused scratch point.
  *
- * The shadow is shown whenever the heron is not in its gap. Under full motion it is drawn where the
- * encounter puts it, so it glides in and off, fading in over the first FADE_S of the glide-in and out
- * over the last FADE_S of the glide-off, so it never pops in or out. Under reduced motion it does not glide: it stays where
- * it was when it became visible, fades in over the last FADE_S of the glide-in, moves only onto the
- * fixed strike spot when the warning starts, and fades out over FADE_S where it was. While the
- * heron warns or strikes, the shadow darkens: a DARKEN_S crossfade to the warning tone under full
- * motion, at once under reduced motion. The motion setting is read every frame.
+ * Mapping (art guide 7h): the body anchor is at the logic point's x (`state.pos.x`) on the art
+ * water line (HERON_WATER_LINE_Y), so the resting beak tip is over the logic point and the planted
+ * feet are on it. The body faces `state.facing`: the wading direction while wading, toward the
+ * axolotl while the heron warns or cools down, toward the spot while it stabs. The head and neck
+ * sit at the neck base (HERON_NECK_BASE, mirrored with the body) and look toward the axolotl only
+ * while it is within the heron's meet range and not in sight cover; otherwise along the body.
  *
- * The beak dip starts on the heron's lunge event and shows for DIP_LIFE_S at the fixed strike spot,
- * behind the axolotl: a closed beak that dips DIP_RISE_PX down to the spot and back under full
- * motion, and holds still at the spot under reduced motion. No telegraph bubble, and the heron is
- * never shown grabbing, lifting or eating: a hit shows only PredatorView's shared leg-loss poof.
+ * Phases: wading and cooldown show the rest head; the warning shows the S-neck warn head; the
+ * strike hides the head and shows the stab neck and stab head from the neck base to the beak tip.
+ * Under full motion the drawn stab runs in a straight line from the drawn resting beak tip
+ * (HERON_BEAK_REST_TIP, over the logic point) to the logic spot (`strikeSpot`), over the same
+ * share of the strike as the logic stab tip (`stabTip`), which the hit test uses; the two tips
+ * meet at the spot. Under reduced motion the stab is one pose with the beak on the fixed strike
+ * spot, and the legs do not step (the heron still wades). No "!" bubble and no glint, and the beak is always closed: the heron is never shown
+ * grabbing, holding or lifting the axolotl. A hit shows only PredatorView's shared leg-loss poof.
  */
 export class HeronView {
   private readonly herons: HeronDrawing[] = [];
-  private readonly shadowInfo: Readonly<Record<'glide' | 'warning', TexInfo>>;
-  private readonly beakInfo: TexInfo;
+  private readonly assets: GameAssets;
+  /** Reused for the drawn stab tip each frame. */
+  private readonly stabTipPoint: Point = { x: 0, y: 0 };
 
   /** `predators` holds every encounter predator, in `predators` order; only the herons are drawn. */
   constructor(scene: Phaser.Scene, assets: GameAssets, predators: readonly HeronSource[]) {
-    this.shadowInfo = assets.predator.heronShadow;
-    this.beakInfo = assets.predator.heronBeakDip;
+    this.assets = assets;
     predators.forEach((predator, index) => {
-      if (predator.species === HERON_SPECIES.id) this.herons.push(this.createHeron(scene, index, predator.routeId));
+      if (predator.species === HERON_SPECIES.id) this.herons.push(this.createHeron(scene, index));
     });
-  }
-
-  /** Starts the beak dip of each heron that strikes this step. */
-  handleEvents(events: readonly TripEvent[]): void {
-    for (const event of events) {
-      if (event.type !== 'lunge') continue;
-      const heron = this.heronOnRoute(event.sourceId);
-      if (heron) heron.dipAge = 0;
-    }
   }
 
   /** Draws one frame. */
   render(frame: HeronFrame): void {
+    const axolotlSeen = !inSightCover(frame.axolotl, frame.encounter);
     for (const heron of this.herons) {
       const state = frame.encounter.predators[heron.index];
       if (!state || state.species !== HERON_SPECIES.id) {
         throw new Error(`HeronView: encounter predator ${heron.index} is not a heron`);
       }
-      const view = predatorCycleView(state, HERON_SPECIES.tuning);
-      if (!view) {
-        throw new Error('HeronView: the heron tuning has no cycle');
+      this.renderBody(heron, state, frame);
+      if (state.phase === 'lunge') {
+        heron.head.setVisible(false);
+        this.renderStab(heron, state, frame);
+      } else {
+        heron.stabNeck.setVisible(false);
+        heron.stabHead.setVisible(false);
+        this.renderHead(heron, state, frame, axolotlSeen);
       }
-      this.renderShadow(heron, state, view, frame);
-      this.renderBeak(heron, frame);
-    }
-  }
-
-  /** Hides every heron and ends any beak dip (new trip). */
-  reset(): void {
-    for (const heron of this.herons) {
-      heron.fade = 0;
-      heron.darken = 0;
-      heron.dipAge = DIP_LIFE_S;
-      heron.glide.setVisible(false);
-      heron.warning.setVisible(false);
-      heron.beak.setVisible(false);
     }
   }
 
   destroy(): void {
     for (const heron of this.herons) {
-      heron.glide.destroy();
-      heron.warning.destroy();
-      heron.beak.destroy();
+      heron.head.destroy();
+      heron.body.destroy();
+      heron.stabNeck.destroy();
+      heron.stabHead.destroy();
     }
   }
 
-  private createHeron(scene: Phaser.Scene, index: number, routeId: string): HeronDrawing {
-    return {
-      index,
-      routeId,
-      glide: bakedImage(scene, this.shadowInfo.glide, DEPTH.heronShadow),
-      warning: bakedImage(scene, this.shadowInfo.warning, DEPTH.heronShadow),
-      beak: bakedImage(scene, this.beakInfo, DEPTH.heronBeak),
-      fade: 0,
-      darken: 0,
-      shownX: 0,
-      shownY: 0,
-      shownFacing: 1,
-      spotX: 0,
-      spotY: 0,
-      spotFacing: 1,
-      dipAge: DIP_LIFE_S,
-    };
+  private createHeron(scene: Phaser.Scene, index: number): HeronDrawing {
+    const art = this.assets.predator;
+    const head = bakedImage(scene, art.heronHead.rest, DEPTH.heronBody);
+    const body = bakedImage(scene, art.heronBody.stand, DEPTH.heronBody);
+    const stabNeck = bakedImage(scene, art.heronStabNeck, DEPTH.heronStab);
+    const stabHead = bakedImage(scene, art.heronStabHead, DEPTH.heronStab);
+    return { index, head, body, stabNeck, stabHead, wadeTime: 0, lastX: Number.NaN };
   }
 
-  private heronOnRoute(routeId: string): HeronDrawing | undefined {
-    for (const heron of this.herons) {
-      if (heron.routeId === routeId) return heron;
-    }
-    return undefined;
+  /** Under full motion the legs step while the heron wades; otherwise it stands. */
+  private renderBody(heron: HeronDrawing, state: PredatorState, frame: HeronFrame): void {
+    const wading = frame.motion.ambient && state.phase === 'patrol' && state.pos.x !== heron.lastX;
+    heron.lastX = state.pos.x;
+    heron.wadeTime = wading ? heron.wadeTime + frame.dt : 0;
+    const legFrame = wading ? WADE_FRAMES[Math.floor(heron.wadeTime / STEP_FRAME_S) % WADE_FRAMES.length] : 'stand';
+    const info = this.assets.predator.heronBody[legFrame];
+    heron.body.setTexture(info.key).setVisible(true).setPosition(state.pos.x, HERON_WATER_LINE_Y);
+    faceSprite(heron.body, state.facing, 1 / info.scale);
+  }
+
+  /** The rest head (wading, cooldown) or the S-neck warn head (warning), at the neck base. */
+  private renderHead(heron: HeronDrawing, state: PredatorState, frame: HeronFrame, axolotlSeen: boolean): void {
+    const info = this.assets.predator.heronHead[state.phase === 'telegraph' ? 'warn' : 'rest'];
+    const watching = axolotlSeen && this.withinMeetRange(state, frame.axolotl);
+    const look = watching ? facingOf(frame.axolotl.x - state.pos.x, state.facing) : state.facing;
+    heron.head.setTexture(info.key).setVisible(true).setPosition(this.neckBaseX(state), this.neckBaseY());
+    faceSprite(heron.head, look, 1 / info.scale);
   }
 
   /**
-   * The shadow follows the encounter position under full motion, while warning or striking (a fixed
-   * spot), and under reduced motion while it is fully faded out; otherwise it stays where it was.
+   * The stab: the neck piece runs straight from the neck base to the stab head centre, and the
+   * closed beak's tip is on the fixed strike spot (reduced motion) or moves from the drawn resting
+   * beak tip to the strike spot (full motion). The stab head is mirrored when the tip is to the left, so its eye stays on top.
    */
-  private renderShadow(heron: HeronDrawing, state: PredatorState, view: PredatorCycleView, frame: HeronFrame): void {
-    if (view.phase === 'gap') {
-      heron.fade = 0;
-      heron.darken = 0;
-      heron.glide.setVisible(false);
-      heron.warning.setVisible(false);
-      return;
-    }
-    const ambient = frame.motion.ambient;
-    const atSpot = striking(view.phase);
-    if (atSpot) {
-      heron.spotX = state.pos.x;
-      heron.spotY = state.pos.y;
-      heron.spotFacing = state.facing;
-    }
-    if (ambient || atSpot || heron.fade === 0) {
-      heron.shownX = state.pos.x;
-      heron.shownY = state.pos.y;
-      heron.shownFacing = state.facing;
-    }
-    heron.fade = ambient ? fullFade(view) : stepToward(heron.fade, reducedFadeGoal(view), frame.dt / FADE_S);
-    const darkGoal = atSpot ? 1 : 0;
-    heron.darken = ambient ? stepToward(heron.darken, darkGoal, frame.dt / DARKEN_S) : darkGoal;
-    this.placeShadow(heron.glide, this.shadowInfo.glide, heron, heron.fade * (1 - heron.darken));
-    this.placeShadow(heron.warning, this.shadowInfo.warning, heron, heron.fade * heron.darken);
+  private renderStab(heron: HeronDrawing, state: PredatorState, frame: HeronFrame): void {
+    const tip = frame.motion.ambient ? this.drawnStabTip(state) : (state.strikeSpot ?? state.pos);
+    const baseX = this.neckBaseX(state);
+    const baseY = this.neckBaseY();
+    const dx = tip.x - baseX;
+    const dy = tip.y - baseY;
+    const reach = Math.hypot(dx, dy);
+    const unitX = reach > 0 ? dx / reach : state.facing;
+    const unitY = reach > 0 ? dy / reach : 0;
+    const neckLen = Math.max(0, reach - HERON_STAB_HEAD_BACK);
+
+    const neckInfo = this.assets.predator.heronStabNeck;
+    heron.stabNeck
+      .setVisible(neckLen > 0)
+      .setPosition(baseX, baseY)
+      .setRotation(Math.atan2(unitY, unitX));
+    faceSprite(heron.stabNeck, 1, neckLen / HERON_STAB_NECK_LEN / neckInfo.scale, 1 / neckInfo.scale);
+
+    const headInfo = this.assets.predator.heronStabHead;
+    const mirror = facingOf(unitX, state.facing);
+    heron.stabHead
+      .setVisible(true)
+      .setPosition(tip.x, tip.y)
+      .setRotation(Math.atan2(mirror * unitY, mirror * unitX));
+    faceSprite(heron.stabHead, mirror, 1 / headInfo.scale);
   }
 
-  private placeShadow(image: Phaser.GameObjects.Image, info: TexInfo, heron: HeronDrawing, alpha: number): void {
-    image.setVisible(alpha > 0).setAlpha(alpha).setPosition(heron.shownX, heron.shownY);
-    faceSprite(image, heron.shownFacing, 1 / info.scale);
+  /**
+   * The full-motion stab tip: a straight line from the drawn resting beak tip to the strike spot,
+   * the share `stabTip` uses (all of it for a strike with no duration). Without a spot it rests.
+   */
+  private drawnStabTip(state: PredatorState): Point {
+    const restX = state.pos.x + state.facing * HERON_BEAK_REST_TIP.x;
+    const restY = HERON_WATER_LINE_Y + HERON_BEAK_REST_TIP.y;
+    const spot = state.strikeSpot;
+    const share = state.duration > 0 ? phaseProgress(state) : 1;
+    this.stabTipPoint.x = spot ? restX + (spot.x - restX) * share : restX;
+    this.stabTipPoint.y = spot ? restY + (spot.y - restY) * share : restY;
+    return this.stabTipPoint;
   }
 
-  /** The beak tip never goes below BEAK_TIP_MAX_Y, so the cut end of the neck stays at or above the surface. */
-  private renderBeak(heron: HeronDrawing, frame: HeronFrame): void {
-    heron.dipAge = Math.min(heron.dipAge + frame.dt, DIP_LIFE_S);
-    if (heron.dipAge >= DIP_LIFE_S) {
-      heron.beak.setVisible(false);
-      return;
-    }
-    const lift = frame.motion.ambient ? DIP_RISE_PX * (1 - Math.sin((Math.PI * heron.dipAge) / DIP_LIFE_S)) : 0;
-    heron.beak.setVisible(true).setPosition(heron.spotX, Math.min(heron.spotY - lift, BEAK_TIP_MAX_Y));
-    faceSprite(heron.beak, heron.spotFacing, 1 / this.beakInfo.scale);
+  private withinMeetRange(state: PredatorState, axolotl: Readonly<Point>): boolean {
+    return Math.hypot(axolotl.x - state.pos.x, axolotl.y - state.pos.y) <= HERON_SPECIES.meetRange;
+  }
+
+  /** World x of the neck base: HERON_NECK_BASE mirrored with the body. */
+  private neckBaseX(state: PredatorState): number {
+    return state.pos.x + state.facing * HERON_NECK_BASE.x;
+  }
+
+  /** World y of the neck base. */
+  private neckBaseY(): number {
+    return HERON_WATER_LINE_Y + HERON_NECK_BASE.y;
   }
 }

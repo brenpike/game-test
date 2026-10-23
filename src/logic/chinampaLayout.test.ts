@@ -469,14 +469,17 @@ describe('Area 4 hiding spots', () => {
     }
   });
 
-  it('places every trip without throwing: the 9 slots, the treasures lost last trip and the Scarecrow', () => {
+  it('places every trip without throwing: the 9 slots (one left empty only once every Common and Rare is placed), the treasures lost last trip and the Scarecrow', () => {
     const all = CHINAMPA_TREASURES.map((treasure) => treasure.id);
+    const commonAndRare = CHINAMPA_TREASURES.filter((treasure) => treasure.rarity === 'common' || treasure.rarity === 'rare').map((treasure) => treasure.id);
     const tuning = tripTreasureTuning(CHINAMPA_AREA_ID);
     const options = { extras: [CHINAMPA_AREA.specialTreasureId], tuning, mainPath: zone.mainPath, threats: zoneThreats(zone) };
     for (const tripSeed of TRIP_SEEDS) {
       const fresh = placeTreasures(zone.finds, zone.spots, [], tripSeed, options);
-      expect(fresh.length).toBeGreaterThanOrEqual(tuning.slots);
-      expect(fresh.map((find) => find.id)).toContain(CHINAMPA_AREA.specialTreasureId);
+      const freshIds = fresh.map((find) => find.id);
+      const everySlotFilled = fresh.length === tuning.slots + 1;
+      expect(everySlotFilled || commonAndRare.every((id) => freshIds.includes(id)), `trip seed ${tripSeed}`).toBe(true);
+      expect(freshIds).toContain(CHINAMPA_AREA.specialTreasureId);
       const lost = placeTreasures(zone.finds, zone.spots, [], tripSeed, { ...options, mustPlace: all });
       expect(lost).toHaveLength(all.length);
       expect(new Set(lost.map((find) => find.spotId)).size).toBe(all.length);
@@ -675,9 +678,10 @@ describe('Area 4 gaps (the level layout ladder)', () => {
     }
   });
 
-  it('measures Area 3 the same way: its narrowest hazard gap on the main path is between its last plastic worm and the heron', () => {
-    expect(pond2Narrowest.between).toBe('pond-2/plastic-worm-5 and heron-0');
-    expect(pond2Narrowest.width).toBeCloseTo(Math.hypot(2740 - 2620, 270 - 120) - 36 - 60, 5);
+  it('measures Area 3 the same way: its narrowest hazard gap on the main path is between its first two plastic worms, as it swims under the herons inside their reach', () => {
+    expect(pond2Narrowest.between).toBe('pond-2/plastic-worm-1 and pond-2/plastic-worm-2');
+    expect(pond2Narrowest.width).toBeCloseTo(Math.hypot(540 - 420, 290 - 120) - 36 - 36, 5);
+    expect(pond2Narrowest.width).toBeCloseTo(136.09, 2);
   });
 
   it('swims the main path through a gap between two nets tighter than Area 3 narrowest, and never under the safe passing width', () => {

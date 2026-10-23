@@ -96,6 +96,21 @@ export function underBank(pos: Point, overhangs: readonly Readonly<BankOverhang>
   return overhangs.some((bank) => pos.x >= bank.x0 && pos.x <= bank.x1 && pos.y >= bank.y0 && pos.y <= bank.y1);
 }
 
+/** The cover geometry a sight hunter cannot see into. Absent parts mean no such cover. */
+export type SightCoverGeometry = Partial<Pick<ZoneLayout, 'reedPatches' | 'pads' | 'cave'>>;
+
+/**
+ * Whether a point is hidden from a predator that hunts by sight: inside a reed patch, under a lily
+ * pad or in the cave. Past a current is open water, so it is not sight cover.
+ */
+export function inSightCover(pos: Point, geo: SightCoverGeometry): boolean {
+  return (
+    inReeds(pos, geo.reedPatches ?? []) ||
+    underPad(pos, geo.pads ?? []) ||
+    (geo.cave !== undefined && inCave(pos, geo.cave))
+  );
+}
+
 /** Every cover at a point, in the order reeds, pad, cave, pastCurrent, bank. */
 export function coversAt(pos: Point, geo: HidingGeometry): HidingCover[] {
   const covers: HidingCover[] = [];
@@ -217,9 +232,10 @@ export function riskBands(strike: number): RiskTuning['band'] {
 
 /**
  * Distance from a point to one threat: to its closed patrol loop, or to its shape edge (0 inside).
- * A route is measured with routeLoopDistance, the measure a timer species warns by, so a heron's
- * warning reach outside the safe area and its strike zone (riskDistance within its strike) are one
- * rule. No cover (reeds, pad, cave) shortens or blocks it.
+ * A route is measured with routeLoopDistance. A predator warns from where it is on its route, so
+ * every point it can warn at is within its strike of the route. No cover (reeds, pad, cave)
+ * shortens or blocks the distance: a covered spot still counts as near a sight hunter such as the
+ * heron, because getting in and out of it crosses the hunter's reach.
  */
 function threatDistance(pos: Point, threat: Threat): number {
   return threat.kind === 'route' ? routeLoopDistance(pos, threat.route.waypoints) : shapeDistance(pos, threat.shape);

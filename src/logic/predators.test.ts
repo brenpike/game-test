@@ -1,24 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { HERON_FACT, HERON_MEET_RANGE, TILAPIA_FACT, TILAPIA_MEET_RANGE } from './factCards';
-import { elementActive, type ElementSpawn } from './hazards';
 import { routeDistance } from './hiding';
 import {
-  HERON_SHADOW_CYCLE,
   HERON_SPECIES,
   PREDATOR_SPECIES,
   TILAPIA_SPECIES,
   createPredator,
   lungeConnects,
   phaseProgress,
-  predatorCycleTiming,
-  predatorCycleView,
-  predatorVisible,
   routeLoopDistance,
+  stabTip,
   stepPredator,
   type PredatorContext,
-  type PredatorCycleTiming,
   type PredatorEvent,
   type PredatorRoute,
+  type PredatorRules,
   type PredatorSpecies,
   type PredatorState,
   type PredatorTuning,
@@ -213,22 +209,31 @@ describe('predator cooldown', () => {
   });
 });
 
-/** The heron's stretch: a line along the top of its near-surface band. */
+/** The heron's stretch: the line of its beak's rest point, which it wades back and forth along. */
 const STRETCH_Y = 100;
 const HERON_ROUTE: PredatorRoute = {
   id: 'heron-test',
   waypoints: [
     { x: 600, y: STRETCH_Y },
-    { x: 1400, y: STRETCH_Y },
+    { x: 800, y: STRETCH_Y },
   ],
   species: HERON_SPECIES,
 };
-const HERON_CTX: PredatorContext = { safeArea: CTX.safeArea, bounds: CTX.bounds, tuning: HERON_SPECIES.tuning };
+const HERON_CTX: PredatorContext = {
+  safeArea: CTX.safeArea,
+  bounds: CTX.bounds,
+  tuning: HERON_SPECIES.tuning,
+  rules: HERON_SPECIES.rules,
+};
+const HERON_COVERED: PredatorContext = { ...HERON_CTX, targetInCover: true };
 
 /** A binary fraction, so step times add up exactly. */
-const HERON_DT = 1 / 16;
-const IN_BAND: Point = { x: 1000, y: STRETCH_Y + 30 };
-const BELOW_BAND: Point = { x: 1000, y: STRETCH_Y + HERON.lungeRange + 1 };
+const HERON_DT = 1 / 64;
+const HERON_START: Point = HERON_ROUTE.waypoints[0];
+/** About 71 px from where the heron starts: in its reach. */
+const IN_REACH: Point = { x: 650, y: STRETCH_Y + 50 };
+/** Below the deepest point the heron can reach from anywhere on its stretch. */
+const BELOW_REACH: Point = { x: 700, y: STRETCH_Y + HERON.lungeRange + 1 };
 
 interface TimedEvent {
   time: number;
@@ -238,13 +243,7 @@ interface TimedEvent {
 interface HeronRun {
   state: PredatorState;
   events: TimedEvent[];
-  visible: boolean[];
-}
-
-function heronTiming(): PredatorCycleTiming {
-  const timing = predatorCycleTiming(HERON);
-  if (!timing) throw new Error('HERON has no cycle');
-  return timing;
+  positions: Point[];
 }
 
 function spawnHeron(route: PredatorRoute = HERON_ROUTE): PredatorState {
@@ -252,96 +251,94 @@ function spawnHeron(route: PredatorRoute = HERON_ROUTE): PredatorState {
 }
 
 /**
- * Steps a heron for `seconds` in HERON_DT steps. `targetAt` and `ctxAt` get the time at the start
- * of each step; each event is stamped with that time. `visible` holds predatorVisible after each step.
+ * Steps a heron for `seconds` in HERON_DT steps, stopping after a step with an event of type
+ * `until`. `targetAt` gets the time at the start of each step; each event is stamped with that time.
  */
 function runHeron(
   start: PredatorState,
   targetAt: (time: number) => Point,
   seconds: number,
-  ctxAt: (time: number) => PredatorContext = () => HERON_CTX,
+  ctx: PredatorContext = HERON_CTX,
+  until?: PredatorEvent['type'],
 ): HeronRun {
   let state = start;
   const events: TimedEvent[] = [];
-  const visible: boolean[] = [];
+  const positions: Point[] = [];
   for (let i = 0; i < Math.round(seconds / HERON_DT); i++) {
     const time = i * HERON_DT;
-    const result = stepPredator(state, targetAt(time), HERON_DT, ctxAt(time));
+    const result = stepPredator(state, targetAt(time), HERON_DT, ctx);
     state = result.state;
+    positions.push(state.pos);
     for (const event of result.events) events.push({ time, event });
-    visible.push(predatorVisible(state, HERON));
+    if (until && result.events.some((event) => event.type === until)) break;
   }
-  return { state, events, visible };
+  return { state, events, positions };
 }
 
-function timesOf(run: HeronRun, type: PredatorEvent['type']): number[] {
-  return run.events.filter((entry) => entry.event.type === type).map((entry) => entry.time);
+function heronEvents(run: HeronRun): PredatorEvent[] {
+  return run.events.map((entry) => entry.event);
 }
 
-function expectTimesNear(actual: number[], expected: number[]): void {
-  expect(actual).toHaveLength(expected.length);
-  actual.forEach((time, index) => expect(Math.abs(time - expected[index])).toBeLessThanOrEqual(HERON_DT));
+/** A heron at its start whose warning at `target` has just started. */
+function heronWarning(target: Point = IN_REACH): PredatorState {
+  const result = stepPredator(spawnHeron(), target, HERON_DT, HERON_CTX);
+  expect(eventTypes(result.events)).toEqual(['telegraphStart']);
+  return result.state;
 }
 
-/** Steps a heron in place until its warning starts, then returns the warning state. */
-function heronWarning(target: Point): PredatorState {
-  const run = runHeron(spawnHeron(), () => target, heronTiming().warnAt + HERON_DT);
-  expect(run.state.phase).toBe('telegraph');
+/** A heron whose stab at `target`'s place has just started, with the axolotl still there. */
+function heronStab(target: Point = IN_REACH): PredatorState {
+  const run = runHeron(heronWarning(target), () => target, HERON.windup + HERON_DT, HERON_CTX, 'lungeStart');
+  expect(run.state.phase).toBe('lunge');
   return run.state;
 }
 
 describe('heron species', () => {
-  it('describes the heron as the second species, which never touches or bumps', () => {
+  it('describes the heron as the second species: a sight hunter that stabs a fixed spot, stands still to cool down and never bumps', () => {
     expect(HERON_SPECIES).toEqual({
       id: 'heron',
       name: 'Heron',
       tuning: HERON,
       meetRange: HERON_MEET_RANGE,
       fact: HERON_FACT,
+      rules: { sightCover: true, fixedStrikeSpot: true, stillCooldown: true },
       neverTouches: true,
     });
     expect(HERON_SPECIES.tuning).toBe(HERON);
     expect(HERON_SPECIES.fact).toBe(HERON_FACT);
+    expect(HERON_SPECIES.hook).toBeUndefined();
     expect(Object.isFrozen(HERON_SPECIES)).toBe(true);
+    expect(Object.isFrozen(HERON_SPECIES.rules)).toBe(true);
   });
 
-  it('warns for 1.2 s, above the floor and longer than the tilapia, and dips in place at a Medium reach', () => {
-    expect(HERON.windup).toBe(1.2);
+  it('warns for 1.2 s above the floor, stabs 110 px in 0.3 s at a Medium reach, cools down for 3 s and wades slowly', () => {
+    expect(HERON).toEqual({
+      minWindup: 0.8,
+      windup: 1.2,
+      cooldown: 3,
+      lungeRange: 110,
+      lungeSpeed: 110 / 0.3,
+      lungeDuration: 0.3,
+      hitRadius: 26,
+      contactRadius: 0,
+      bodyRadius: 0,
+      patrolSpeed: 20,
+      bumpSpeed: 0,
+      bumpCooldown: 0.6,
+    });
     expect(HERON.windup).toBeGreaterThanOrEqual(HERON.minWindup);
     expect(HERON.windup).toBeGreaterThan(Math.max(TILAPIA.windup, TILAPIA.minWindup));
-    expect(HERON.lungeSpeed).toBe(0);
     expect(HERON.hitRadius).toBe(TILAPIA.hitRadius);
+    expect(HERON.patrolSpeed).toBeLessThan(TILAPIA.patrolSpeed);
+    expect(HERON.lungeSpeed * HERON.lungeDuration).toBeCloseTo(HERON.lungeRange, 9);
+    expect(Object.isFrozen(HERON)).toBe(true);
   });
 
-  it('has an 8 s cycle: a 2 s glide-in, a shown part of 4 s and a 4 s gap', () => {
-    const timing = heronTiming();
-    expect(timing.warnAt).toBe(2);
-    expect(timing.visibleFor).toBeCloseTo(4, 9);
-    expect(timing.period).toBeCloseTo(8, 9);
-    expect(timing.period - timing.visibleFor).toBeCloseTo(HERON.cycle.gap, 9);
-    expect(predatorCycleTiming(TILAPIA)).toBeNull();
-  });
-
-  it('builds the shadow cycle element from the heron tuning', () => {
-    const timing = heronTiming();
-    expect(HERON_SHADOW_CYCLE).toEqual({
-      id: 'heron-shadow-cycle',
-      name: 'Heron shadow',
-      kind: 'cycle',
-      period: timing.period,
-      activeFor: timing.visibleFor,
-    });
-    expect(Object.isFrozen(HERON_SHADOW_CYCLE)).toBe(true);
-  });
-
-  it('is shown exactly when its shadow cycle element is active, on a pass and on a strike', () => {
-    const spawn: ElementSpawn = { id: 'heron-shadow', type: HERON_SHADOW_CYCLE, offset: 0 };
-    const seconds = 3 * heronTiming().period;
-    const active = Array.from({ length: Math.round(seconds / HERON_DT) }, (_, i) =>
-      elementActive(spawn, (i + 1) * HERON_DT),
+  it('runs only the shared sight-based phase events', () => {
+    const run = runHeron(spawnHeron(), () => IN_REACH, 12);
+    expect(new Set(run.events.map((entry) => entry.event.type))).toEqual(
+      new Set(['telegraphStart', 'lungeStart', 'lungeEnd', 'cooldownEnd']),
     );
-    expect(runHeron(spawnHeron(), () => BELOW_BAND, seconds).visible).toEqual(active);
-    expect(runHeron(spawnHeron(), () => IN_BAND, seconds).visible).toEqual(active);
   });
 });
 
@@ -376,201 +373,401 @@ describe('route loop distance', () => {
   });
 });
 
-describe('heron warning on a timer', () => {
-  it('starts only at the warn mark, even with the axolotl in reach from the start', () => {
-    const run = runHeron(spawnHeron(), () => IN_BAND, heronTiming().warnAt + HERON_DT);
-    expect(timesOf(run, 'telegraphStart')).toEqual([heronTiming().warnAt]);
-    expect(run.state.phase).toBe('telegraph');
-    expect(run.state.cycleTime).toBe(heronTiming().warnAt + run.state.elapsed);
+describe('heron wading', () => {
+  it('wades its stretch back and forth at patrolSpeed while the axolotl is out of reach', () => {
+    const first = runHeron(spawnHeron(), () => BELOW_REACH, 1);
+    expect(first.events).toEqual([]);
+    expect(first.state.pos.x).toBeCloseTo(HERON_START.x + HERON.patrolSpeed, 6);
+    expect(first.state.pos.y).toBe(STRETCH_Y);
+    expect(first.state.facing).toBe(1);
+    const stretch = HERON_ROUTE.waypoints[1].x - HERON_START.x;
+    const back = runHeron(first.state, () => BELOW_REACH, stretch / HERON.patrolSpeed);
+    expect(back.events).toEqual([]);
+    expect(back.state.pos.x).toBeCloseTo(HERON_ROUTE.waypoints[1].x - HERON.patrolSpeed, 6);
+    expect(back.state.facing).toBe(-1);
+    for (const pos of [...first.positions, ...back.positions]) {
+      expect(pos.x).toBeGreaterThanOrEqual(HERON_START.x);
+      expect(pos.x).toBeLessThanOrEqual(HERON_ROUTE.waypoints[1].x);
+    }
+  });
+});
+
+describe('heron warning on sight', () => {
+  it('starts on the first step the axolotl is within reach of where the heron stands (inclusive)', () => {
+    const edge: Point = { x: HERON_START.x, y: STRETCH_Y + HERON.lungeRange };
+    expect(eventTypes(stepPredator(spawnHeron(), edge, HERON_DT, HERON_CTX).events)).toEqual(['telegraphStart']);
+    const beyond = stepPredator(spawnHeron(), { x: edge.x, y: edge.y + 0.5 }, HERON_DT, HERON_CTX);
+    expect(beyond.events).toEqual([]);
+    expect(beyond.state.phase).toBe('patrol');
   });
 
-  it('fixes the strike spot at the target and holds there', () => {
-    const warned = heronWarning(IN_BAND);
-    expect(warned.pos).toEqual(IN_BAND);
-    expect(warned.duration).toBe(HERON.windup);
-    const held = stepPredator(warned, { x: IN_BAND.x + 50, y: IN_BAND.y }, 0.5, HERON_CTX);
-    expect(held.state.pos).toEqual(IN_BAND);
+  it('measures its reach from where it stands, not from its stretch, so it warns once it wades near enough', () => {
+    const ahead: Point = { x: 780, y: STRETCH_Y + 60 };
+    expect(routeLoopDistance(ahead, HERON_ROUTE.waypoints)).toBeLessThanOrEqual(HERON.lungeRange);
+    const run = runHeron(spawnHeron(), () => ahead, 10, HERON_CTX, 'telegraphStart');
+    expect(heronEvents(run)).toEqual([{ type: 'telegraphStart' }]);
+    const reachAt = (pos: Point): number => Math.hypot(ahead.x - pos.x, ahead.y - pos.y);
+    const [beforeWarning, atWarning] = run.positions.slice(-3, -1);
+    expect(run.state.pos).toEqual(atWarning);
+    expect(reachAt(atWarning)).toBeLessThanOrEqual(HERON.lungeRange);
+    expect(reachAt(beforeWarning)).toBeGreaterThan(HERON.lungeRange);
+    expect(run.events[0].time).toBeGreaterThan(1);
   });
 
-  it('does not start when the axolotl comes into reach after the mark, but waits for the next mark', () => {
-    const timing = heronTiming();
-    const run = runHeron(spawnHeron(), (time) => (time < timing.warnAt + 0.5 ? BELOW_BAND : IN_BAND), timing.period + 3);
-    expectTimesNear(timesOf(run, 'telegraphStart'), [timing.period + timing.warnAt]);
-  });
-
-  it('passes with no strike when the axolotl is out of reach at the mark', () => {
-    const run = runHeron(spawnHeron(), () => BELOW_BAND, 3 * heronTiming().period);
-    expect(run.events).toEqual([]);
-    expect(run.state.phase).toBe('patrol');
-  });
-
-  it('passes with no strike when another predator is warning or striking at the mark', () => {
-    const timing = heronTiming();
-    const blockedNearMark = (time: number): PredatorContext => ({
-      ...HERON_CTX,
-      telegraphBlocked: time >= timing.warnAt - 0.5 && time <= timing.warnAt + 0.5,
-    });
-    const run = runHeron(spawnHeron(), () => IN_BAND, timing.period + 3, blockedNearMark);
-    expectTimesNear(timesOf(run, 'telegraphStart'), [timing.period + timing.warnAt]);
-  });
-
-  it('never warns in deep water below the band', () => {
-    const deep: Point[] = [BELOW_BAND, { x: 1000, y: 250 }, { x: 600, y: STRETCH_Y + HERON.lungeRange + 0.5 }];
+  it('never warns at an axolotl below its reach', () => {
+    const deep: Point[] = [BELOW_REACH, { x: 700, y: 250 }, { x: 600, y: STRETCH_Y + HERON.lungeRange + 0.5 }];
     for (const target of deep) {
-      expect(runHeron(spawnHeron(), () => target, 2 * heronTiming().period).events).toEqual([]);
+      expect(runHeron(spawnHeron(), () => target, 30).events, `${target.x},${target.y}`).toEqual([]);
     }
   });
 
   it('never warns at an axolotl in the safe area, edges included', () => {
-    const route: PredatorRoute = {
-      id: 'heron-home',
-      waypoints: [
-        { x: 150, y: STRETCH_Y },
-        { x: 700, y: STRETCH_Y },
-      ],
-      species: HERON_SPECIES,
-    };
+    const route: PredatorRoute = { ...HERON_ROUTE, waypoints: [{ x: 250, y: STRETCH_Y }, { x: 450, y: STRETCH_Y }] };
     const sheltered: Point = { x: CTX.safeArea.x1, y: STRETCH_Y + 20 };
-    expect(runHeron(spawnHeron(route), () => sheltered, 2 * heronTiming().period).events).toEqual([]);
+    expect(runHeron(spawnHeron(route), () => sheltered, 30).events).toEqual([]);
     const exposed: Point = { x: CTX.safeArea.x1 + 1, y: STRETCH_Y + 20 };
-    expect(timesOf(runHeron(spawnHeron(route), () => exposed, 3), 'telegraphStart')).toEqual([heronTiming().warnAt]);
+    expect(eventTypes(stepPredator(spawnHeron(route), exposed, HERON_DT, HERON_CTX).events)).toEqual(['telegraphStart']);
+  });
+
+  it('never warns at an axolotl in cover, and wades on instead', () => {
+    const run = runHeron(spawnHeron(), () => IN_REACH, 5, HERON_COVERED);
+    expect(run.events).toEqual([]);
+    expect(run.state.phase).toBe('patrol');
+    expect(run.state.pos.x).toBeGreaterThan(HERON_START.x);
+  });
+
+  it('does not start while another predator is warning or striking (A1)', () => {
+    const blocked = runHeron(spawnHeron(), () => IN_REACH, 1, { ...HERON_CTX, telegraphBlocked: true });
+    expect(blocked.events).toEqual([]);
+    expect(blocked.state.phase).toBe('patrol');
+  });
+
+  it('stands still for max(windup, minWindup) with its facing following the axolotl, and fixes the strike spot at the start', () => {
+    const warned = heronWarning();
+    expect(warned.phase).toBe('telegraph');
+    expect(warned.duration).toBe(Math.max(HERON.windup, HERON.minWindup));
+    expect(warned.strikeSpot).toEqual(IN_REACH);
+    expect(warned.pos).toEqual(HERON_START);
+    const behind: Point = { x: HERON_START.x - 40, y: IN_REACH.y };
+    const held = runHeron(warned, () => behind, 1);
+    expect(held.events).toEqual([]);
+    expect(held.state.phase).toBe('telegraph');
+    expect(held.state.facing).toBe(-1);
+    expect(held.state.strikeSpot).toEqual(IN_REACH);
+    for (const pos of held.positions) expect(pos).toEqual(HERON_START);
   });
 });
 
-describe('heron strike at the fixed spot', () => {
-  it('hits an axolotl that stays at the spot', () => {
-    const struck = runHeron(heronWarning(IN_BAND), () => IN_BAND, HERON.windup + HERON_DT * 2);
-    expect(struck.events.map((entry) => entry.event)).toEqual([
-      { type: 'lungeStart', aim: { x: 1, y: 0 } },
+describe('heron stab', () => {
+  it('stabs the fixed spot from where it stands and hits an axolotl that stayed, once the tip is within hitRadius', () => {
+    const warned = heronWarning();
+    const stab = runHeron(warned, () => IN_REACH, HERON.windup + HERON.lungeDuration + HERON_DT, HERON_CTX, 'lungeEnd');
+    const diagonal = expect.closeTo(Math.SQRT1_2, 9);
+    expect(heronEvents(stab)).toEqual([
+      { type: 'lungeStart', aim: { x: diagonal, y: diagonal } },
       { type: 'lungeEnd', connected: true },
     ]);
-    expect(struck.state.phase).toBe('cooldown');
+    const [start, end] = stab.events.map((entry) => entry.time);
+    expect(end - start).toBeLessThan(HERON.lungeDuration);
+    expect(stab.state.phase).toBe('cooldown');
+    expect(Object.keys(stab.state)).not.toContain('strikeSpot');
+    for (const pos of stab.positions) expect(pos).toEqual(HERON_START);
   });
 
-  it('misses an axolotl that swims sideways along the band, dipping at the spot', () => {
-    const sideways: Point = { x: IN_BAND.x + 80, y: IN_BAND.y };
-    const warned = heronWarning(IN_BAND);
-    const started = runHeron(warned, () => sideways, HERON.windup);
-    expect(started.state.phase).toBe('lunge');
-    expect(started.state.pos).toEqual(IN_BAND);
-    const ended = runHeron(started.state, () => sideways, HERON.lungeDuration + HERON_DT);
-    expect(ended.events.map((entry) => entry.event)).toEqual([{ type: 'lungeEnd', connected: false }]);
+  it('works out the stab tip in a straight line from where it stands to the spot over 0.3 s', () => {
+    const stabbing = heronStab();
+    expect(stabbing.duration).toBe(HERON.lungeDuration);
+    const halfway = { ...stabbing, elapsed: HERON.lungeDuration / 2 };
+    expect(stabTip(halfway).x).toBeCloseTo((HERON_START.x + IN_REACH.x) / 2, 9);
+    expect(stabTip(halfway).y).toBeCloseTo((HERON_START.y + IN_REACH.y) / 2, 9);
+    expect(stabTip({ ...stabbing, elapsed: HERON.lungeDuration })).toEqual(IN_REACH);
+    const tipGap = (elapsed: number): number => {
+      const tip = stabTip({ ...stabbing, elapsed });
+      return Math.hypot(tip.x - IN_REACH.x, tip.y - IN_REACH.y);
+    };
+    expect(lungeConnects({ ...stabbing, elapsed: 0 }, IN_REACH, HERON)).toBe(tipGap(0) <= HERON.hitRadius);
+    expect(lungeConnects(halfway, IN_REACH, HERON)).toBe(tipGap(HERON.lungeDuration / 2) <= HERON.hitRadius);
   });
 
-  it('cancels when the axolotl dives out of the band during the warning', () => {
-    const run = runHeron(heronWarning(IN_BAND), () => BELOW_BAND, HERON.windup + HERON_DT);
-    expect(run.events.map((entry) => entry.event.type)).toEqual(['telegraphCancel']);
+  it('misses an axolotl that moved away from the spot during the warning but stayed in reach', () => {
+    const moved: Point = { x: HERON_START.x, y: STRETCH_Y + 90 };
+    const run = runHeron(heronWarning(), () => moved, HERON.windup + HERON.lungeDuration + HERON_DT, HERON_CTX, 'lungeEnd');
+    expect(heronEvents(run).map((event) => event.type)).toEqual(['lungeStart', 'lungeEnd']);
+    expect(heronEvents(run)[1]).toEqual({ type: 'lungeEnd', connected: false });
     expect(run.state.phase).toBe('cooldown');
   });
 
-  it('misses an axolotl that reaches the safe area during the dip', () => {
-    const route: PredatorRoute = { ...HERON_ROUTE, waypoints: [{ x: 150, y: STRETCH_Y }, { x: 700, y: STRETCH_Y }] };
+  it('never connects with an axolotl in cover, even at the spot', () => {
+    const run = runHeron(heronStab(), () => IN_REACH, HERON.lungeDuration + HERON_DT, HERON_COVERED, 'lungeEnd');
+    expect(heronEvents(run)).toEqual([{ type: 'lungeEnd', connected: false }]);
+  });
+
+  it('never connects with an axolotl that reached the safe area', () => {
+    const route: PredatorRoute = { ...HERON_ROUTE, waypoints: [{ x: 250, y: STRETCH_Y }, { x: 450, y: STRETCH_Y }] };
     const spot: Point = { x: CTX.safeArea.x1 + 1, y: STRETCH_Y + 20 };
-    const warned = runHeron(spawnHeron(route), () => spot, heronTiming().warnAt + HERON_DT).state;
-    const started = stepPredator(warned, spot, warned.duration - warned.elapsed, HERON_CTX);
-    expect(started.events.map((event) => event.type)).toEqual(['lungeStart']);
+    const warned = stepPredator(spawnHeron(route), spot, HERON_DT, HERON_CTX).state;
+    const started = runHeron(warned, () => spot, HERON.windup + HERON_DT, HERON_CTX, 'lungeStart');
+    expect(started.state.phase).toBe('lunge');
     const home: Point = { x: CTX.safeArea.x1, y: spot.y };
-    const ended = runHeron(started.state, () => home, HERON.lungeDuration + HERON_DT);
-    expect(ended.events.map((entry) => entry.event)).toEqual([{ type: 'lungeEnd', connected: false }]);
+    const ended = runHeron(started.state, () => home, HERON.lungeDuration + HERON_DT, HERON_CTX, 'lungeEnd');
+    expect(heronEvents(ended)).toEqual([{ type: 'lungeEnd', connected: false }]);
   });
 });
 
-describe('heron cycle', () => {
-  it('keeps a steady period when it strikes every cycle', () => {
-    const timing = heronTiming();
-    const run = runHeron(spawnHeron(), () => IN_BAND, 3 * timing.period);
-    const starts = [0, 1, 2].map((cycle) => cycle * timing.period + timing.warnAt);
-    expectTimesNear(timesOf(run, 'telegraphStart'), starts);
-    expect(run.events.filter((entry) => entry.event.type === 'lungeEnd')).toHaveLength(3);
+describe('heron cancelled warning and cooldown', () => {
+  it('cancels into the 3 s cooldown when the axolotl hides in cover before the warning ends', () => {
+    const run = runHeron(heronWarning(), () => IN_REACH, HERON.windup + HERON_DT, HERON_COVERED, 'telegraphCancel');
+    expect(heronEvents(run)).toEqual([{ type: 'telegraphCancel' }]);
+    expect(run.state.phase).toBe('cooldown');
+    expect(run.state.duration).toBe(HERON.cooldown);
+    expect(Object.keys(run.state)).not.toContain('strikeSpot');
   });
 
-  it('keeps a steady period when it misses or cancels', () => {
-    const timing = heronTiming();
-    const starts = [0, 1, 2].map((cycle) => cycle * timing.period + timing.warnAt);
-    const dodge = (time: number): Point => {
-      const inCycle = time % timing.period;
-      return inCycle > timing.warnAt && inCycle < timing.visibleFor ? { x: IN_BAND.x + 80, y: IN_BAND.y } : IN_BAND;
-    };
-    const missed = runHeron(spawnHeron(), dodge, 3 * timing.period);
-    expectTimesNear(timesOf(missed, 'telegraphStart'), starts);
-    expect(missed.events.filter((entry) => entry.event.type === 'lungeEnd').map((entry) => entry.event)).toEqual(
-      Array(3).fill({ type: 'lungeEnd', connected: false }),
-    );
-    const dive = (time: number): Point => {
-      const inCycle = time % timing.period;
-      return inCycle > timing.warnAt && inCycle < timing.visibleFor ? BELOW_BAND : IN_BAND;
-    };
-    const cancelled = runHeron(spawnHeron(), dive, 3 * timing.period);
-    expectTimesNear(timesOf(cancelled, 'telegraphStart'), starts);
-    expect(timesOf(cancelled, 'telegraphCancel')).toHaveLength(3);
+  it('cancels into the 3 s cooldown when the axolotl swims out of reach before the warning ends', () => {
+    const run = runHeron(heronWarning(), () => BELOW_REACH, HERON.windup + HERON_DT, HERON_CTX, 'telegraphCancel');
+    expect(heronEvents(run)).toEqual([{ type: 'telegraphCancel' }]);
+    expect(run.state.phase).toBe('cooldown');
+    expect(run.state.duration).toBe(HERON.cooldown);
   });
 
-  it('is shown on the same windows whether it strikes or passes', () => {
-    const seconds = 3 * heronTiming().period;
-    const struck = runHeron(spawnHeron(), () => IN_BAND, seconds);
-    const passed = runHeron(spawnHeron(), () => BELOW_BAND, seconds);
-    expect(struck.visible).toEqual(passed.visible);
-    expect(passed.visible.filter((shown) => shown)).toHaveLength(3 * Math.round(heronTiming().visibleFor / HERON_DT));
+  it('stands still facing the axolotl for the 3 s cooldown, then wades on', () => {
+    const cancelled = runHeron(heronWarning(), () => BELOW_REACH, HERON.windup + HERON_DT, HERON_CTX, 'telegraphCancel').state;
+    const behind: Point = { x: HERON_START.x - 300, y: 300 };
+    const cooling = runHeron(cancelled, () => behind, HERON.cooldown - 0.25);
+    expect(cooling.events).toEqual([]);
+    expect(cooling.state.phase).toBe('cooldown');
+    expect(cooling.state.facing).toBe(-1);
+    for (const pos of cooling.positions) expect(pos).toEqual(HERON_START);
+    const done = runHeron(cooling.state, () => behind, 0.5, HERON_CTX, 'cooldownEnd');
+    expect(heronEvents(done)).toEqual([{ type: 'cooldownEnd' }]);
+    expect(done.state.phase).toBe('patrol');
+    const wading = runHeron(done.state, () => behind, 1);
+    expect(wading.events).toEqual([]);
+    expect(wading.state.pos.x).toBeGreaterThan(HERON_START.x);
   });
 
-  it('freezes on zero, negative or non-finite dt', () => {
-    const partway = runHeron(spawnHeron(), () => IN_BAND, 1).state;
-    for (const dt of [0, -0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
-      const frozen = stepPredator(partway, IN_BAND, dt, HERON_CTX);
-      expect(frozen.state).toBe(partway);
-      expect(frozen.events).toEqual([]);
+  it('cools down for 3 s after a stab, hit or miss, before it can warn again', () => {
+    const run = runHeron(spawnHeron(), () => IN_REACH, 8);
+    const ends = run.events.filter((entry) => entry.event.type === 'lungeEnd').map((entry) => entry.time);
+    const starts = run.events.filter((entry) => entry.event.type === 'telegraphStart').map((entry) => entry.time);
+    expect(starts.length).toBeGreaterThanOrEqual(2);
+    expect(starts[1] - ends[0]).toBeGreaterThanOrEqual(HERON.cooldown - HERON_DT);
+    expect(starts[1] - ends[0]).toBeLessThanOrEqual(HERON.cooldown + HERON_DT);
+  });
+});
+
+describe('heron pause', () => {
+  it('freezes in every phase on zero, negative or non-finite dt', () => {
+    const states: PredatorState[] = [
+      runHeron(spawnHeron(), () => BELOW_REACH, 1).state,
+      heronWarning(),
+      heronStab(),
+      runHeron(heronWarning(), () => BELOW_REACH, HERON.windup + HERON_DT, HERON_CTX, 'telegraphCancel').state,
+    ];
+    expect(states.map((state) => state.phase)).toEqual(['patrol', 'telegraph', 'lunge', 'cooldown']);
+    for (const state of states) {
+      for (const dt of [0, -0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+        const frozen = stepPredator(state, IN_REACH, dt, HERON_CTX);
+        expect(frozen.state).toBe(state);
+        expect(frozen.events).toEqual([]);
+      }
     }
-    expect(partway.cycleTime).toBe(1);
-  });
-
-  it('glides its shadow over the axolotl in reach, and along the stretch on a pass', () => {
-    const timing = heronTiming();
-    const [first, last] = HERON_ROUTE.waypoints;
-    expect(spawnHeron().pos).toEqual(first);
-    const overAxolotl = runHeron(spawnHeron(), () => IN_BAND, timing.warnAt).state;
-    expect(overAxolotl.pos).toEqual(IN_BAND);
-    const deep: Point = { x: 1000, y: 250 };
-    expect(runHeron(spawnHeron(), () => deep, timing.warnAt).state.pos).toEqual({ x: 1000, y: STRETCH_Y });
-    expect(runHeron(spawnHeron(), () => deep, timing.visibleFor).state.pos).toEqual(last);
-    expect(runHeron(spawnHeron(), () => deep, timing.visibleFor + 1).state.pos).toEqual(first);
-  });
-
-  it('glides off to the last waypoint after a strike', () => {
-    const run = runHeron(spawnHeron(), () => IN_BAND, heronTiming().visibleFor);
-    expect(run.state.phase).toBe('patrol');
-    expect(run.state.pos).toEqual(HERON_ROUTE.waypoints[1]);
-  });
-
-  it('tells a view its cycle phase', () => {
-    const timing = heronTiming();
-    const phaseAt = (seconds: number, target: Point): string | undefined =>
-      predatorCycleView(runHeron(spawnHeron(), () => target, seconds).state, HERON)?.phase;
-    expect(phaseAt(1, IN_BAND)).toBe('glideIn');
-    expect(phaseAt(timing.warnAt + 0.5, IN_BAND)).toBe('warn');
-    expect(phaseAt(timing.warnAt + 0.5, { x: IN_BAND.x + 80, y: IN_BAND.y })).toBe('warn');
-    expect(phaseAt(timing.warnAt + 0.5, BELOW_BAND)).toBe('glideOff');
-    expect(phaseAt(timing.visibleFor + 1, BELOW_BAND)).toBe('gap');
-    expect(predatorCycleView(spawnHeron(), HERON)).toEqual({ phase: 'glideIn', cycleTime: 0, timing });
-  });
-
-  it('shows the dip while striking at a moved axolotl', () => {
-    const sideways: Point = { x: IN_BAND.x + 80, y: IN_BAND.y };
-    const started = runHeron(heronWarning(IN_BAND), () => sideways, HERON.windup).state;
-    expect(predatorCycleView(started, HERON)?.phase).toBe('dip');
   });
 });
 
-describe('tilapia without a cycle', () => {
-  it('has no cycle view, is always shown and never gains a cycle clock', () => {
+const STALKER_RULES: Readonly<PredatorRules> = Object.freeze({
+  sightCover: true,
+  fixedStrikeSpot: true,
+  stillCooldown: true,
+});
+
+/** Test-only species with every shared rule: it hunts by sight, stabs a fixed spot and stands still in cooldown. */
+const STALKER_SPECIES: Readonly<PredatorSpecies> = Object.freeze({
+  id: 'testStalker',
+  name: 'Test stalker',
+  tuning: TEST_TUNING,
+  meetRange: 150,
+  fact: { id: 'testStalker', name: 'Test stalker', title: 'Meet the test stalker', body: 'Test only.' },
+  rules: STALKER_RULES,
+});
+
+const STALKER_ROUTE: PredatorRoute = {
+  id: 'stalker-route',
+  waypoints: [
+    { x: 1000, y: 200 },
+    { x: 1200, y: 200 },
+  ],
+  species: STALKER_SPECIES,
+};
+
+const STALKER_CTX: PredatorContext = {
+  safeArea: CTX.safeArea,
+  bounds: CTX.bounds,
+  tuning: STALKER_SPECIES.tuning,
+  rules: STALKER_SPECIES.rules,
+};
+const STALKER_COVERED: PredatorContext = { ...STALKER_CTX, targetInCover: true };
+
+/** A binary fraction, so step times add up exactly. */
+const STALKER_DT = 1 / 64;
+const SPOT: Point = { x: 1060, y: 200 };
+
+interface StalkerRun {
+  state: PredatorState;
+  events: PredatorEvent[];
+  positions: Point[];
+}
+
+function spawnStalker(): PredatorState {
+  return createPredator(STALKER_ROUTE, STALKER_SPECIES.id);
+}
+
+/** Steps a predator for `seconds` in STALKER_DT steps, stopping after a step with an event of type `until`. */
+function runStalker(
+  start: PredatorState,
+  target: Point,
+  seconds: number,
+  ctx: PredatorContext = STALKER_CTX,
+  until?: PredatorEvent['type'],
+): StalkerRun {
+  let state = start;
+  const events: PredatorEvent[] = [];
+  const positions: Point[] = [];
+  for (let i = 0; i < Math.round(seconds / STALKER_DT); i++) {
+    const result = stepPredator(state, target, STALKER_DT, ctx);
+    state = result.state;
+    events.push(...result.events);
+    positions.push(state.pos);
+    if (until && result.events.some((event) => event.type === until)) break;
+  }
+  return { state, events, positions };
+}
+
+function stalkerWarning(target: Point = SPOT): PredatorState {
+  const result = stepPredator(spawnStalker(), target, STALKER_DT, STALKER_CTX);
+  expect(eventTypes(result.events)).toEqual(['telegraphStart']);
+  return result.state;
+}
+
+describe('shared rule: sight cover', () => {
+  it('does not warn at a target in cover, and a species without the rule ignores cover', () => {
+    const hidden = stepPredator(spawnStalker(), SPOT, STALKER_DT, STALKER_COVERED);
+    expect(hidden.events).toEqual([]);
+    expect(hidden.state.phase).toBe('patrol');
+    expect(eventTypes(stepPredator(spawnStalker(), SPOT, STALKER_DT, STALKER_CTX).events)).toEqual(['telegraphStart']);
+    const noRule = stepPredator(spawn(), IN_RANGE, 0.25, { ...CTX, targetInCover: true });
+    expect(eventTypes(noRule.events)).toEqual(['telegraphStart']);
+  });
+
+  it('cancels a warning whose target is in cover at the end-of-warning re-check', () => {
+    const cancelled = runStalker(stalkerWarning(), SPOT, WINDUP, STALKER_COVERED, 'telegraphCancel');
+    expect(eventTypes(cancelled.events)).toEqual(['telegraphCancel']);
+    expect(cancelled.state.phase).toBe('cooldown');
+    expect(cancelled.state.duration).toBe(TEST_TUNING.cooldown);
+    expect(Object.keys(cancelled.state)).not.toContain('strikeSpot');
+  });
+
+  it('only re-checks cover at the end of the warning', () => {
+    const half = runStalker(stalkerWarning(), SPOT, WINDUP / 2, STALKER_COVERED);
+    expect(half.events).toEqual([]);
+    const struck = runStalker(half.state, SPOT, WINDUP, STALKER_CTX, 'lungeStart');
+    expect(eventTypes(struck.events)).toEqual(['lungeStart']);
+  });
+
+  it('never connects a strike with a target in cover, even at the spot', () => {
+    const struck = runStalker(stalkerWarning(), SPOT, WINDUP, STALKER_CTX, 'lungeStart');
+    const stab = runStalker(struck.state, SPOT, TEST_TUNING.lungeDuration * 2, STALKER_COVERED, 'lungeEnd');
+    expect(stab.events).toEqual([{ type: 'lungeEnd', connected: false }]);
+    expect(stab.positions).toHaveLength(Math.round(TEST_TUNING.lungeDuration / STALKER_DT));
+  });
+});
+
+describe('shared rule: fixed strike spot and stab', () => {
+  it('fixes the strike spot at warning start and stabs it from where it stands, missing a target that moved', () => {
+    const warned = stalkerWarning();
+    expect(warned.strikeSpot).toEqual(SPOT);
+    expect(warned.pos).toEqual({ x: 1000, y: 200 });
+    const moved: Point = { x: 1040, y: 260 };
+    const struck = runStalker(warned, moved, WINDUP, STALKER_CTX, 'lungeStart');
+    expect(struck.events).toEqual([{ type: 'lungeStart', aim: { x: 1, y: 0 } }]);
+    expect(struck.state.strikeSpot).toEqual(SPOT);
+    const stab = runStalker(struck.state, moved, TEST_TUNING.lungeDuration * 2, STALKER_CTX, 'lungeEnd');
+    expect(stab.events).toEqual([{ type: 'lungeEnd', connected: false }]);
+    expect(stab.state.phase).toBe('cooldown');
+    expect(Object.keys(stab.state)).not.toContain('strikeSpot');
+    for (const pos of [...struck.positions, ...stab.positions]) expect(pos).toEqual({ x: 1000, y: 200 });
+  });
+
+  it('connects once the stab tip comes within hitRadius of a target that stayed at the spot', () => {
+    const struck = runStalker(stalkerWarning(), SPOT, WINDUP, STALKER_CTX, 'lungeStart');
+    let state = struck.state;
+    let events: PredatorEvent[] = [];
+    while (events.length === 0) {
+      const result = stepPredator(state, SPOT, STALKER_DT, STALKER_CTX);
+      events = result.events;
+      if (events.length === 0) {
+        expect(lungeConnects(result.state, SPOT, TEST_TUNING)).toBe(false);
+        state = result.state;
+      }
+    }
+    expect(events).toEqual([{ type: 'lungeEnd', connected: true }]);
+    const tipGap = Math.hypot(SPOT.x - 1000, SPOT.y - 200) * (1 - (state.elapsed + STALKER_DT) / TEST_TUNING.lungeDuration);
+    expect(tipGap).toBeLessThanOrEqual(TEST_TUNING.hitRadius);
+    expect(state.elapsed + STALKER_DT).toBeLessThan(TEST_TUNING.lungeDuration);
+  });
+
+  it('works out the stab tip from the state alone, in a straight line over the strike', () => {
+    const lunging: PredatorState = {
+      ...spawnStalker(),
+      phase: 'lunge',
+      elapsed: 0.25,
+      duration: 0.5,
+      aim: { x: 0.6, y: 0.8 },
+      strikeSpot: { x: 1060, y: 280 },
+    };
+    expect(stabTip(lunging)).toEqual({ x: 1030, y: 240 });
+    expect(stabTip({ ...lunging, elapsed: 0 })).toEqual({ x: 1000, y: 200 });
+    expect(stabTip({ ...lunging, elapsed: 0.5 })).toEqual({ x: 1060, y: 280 });
+    expect(stabTip({ ...lunging, elapsed: 0.75 })).toEqual({ x: 1060, y: 280 });
+    expect(stabTip({ ...lunging, elapsed: 0, duration: 0 })).toEqual({ x: 1060, y: 280 });
+    expect(stabTip({ ...lunging, phase: 'telegraph' })).toEqual({ x: 1000, y: 200 });
+    expect(stabTip(striking({ x: 1, y: 0 }))).toEqual({ x: 1000, y: 200 });
+    expect(lungeConnects({ ...lunging, elapsed: 0.5 }, { x: 1060, y: 280 }, TEST_TUNING)).toBe(true);
+    expect(lungeConnects(lunging, { x: 1060, y: 280 }, TEST_TUNING)).toBe(false);
+  });
+
+  it('never gives a predator without the rule a strike spot', () => {
     let state = spawn();
-    expect(predatorCycleView(state, TEST_TUNING)).toBeNull();
     const seen = new Set<string>();
     for (let i = 0; i < 40; i++) {
       state = stepPredator(state, IN_RANGE, 0.1, CTX).state;
       seen.add(state.phase);
-      expect(Object.keys(state)).not.toContain('cycleTime');
-      expect(predatorVisible(state, TEST_TUNING)).toBe(true);
+      expect(Object.keys(state)).not.toContain('strikeSpot');
     }
     expect([...seen].sort()).toEqual(['cooldown', 'lunge', 'telegraph']);
+  });
+});
+
+describe('shared rule: still cooldown', () => {
+  const cooling: PredatorState = { ...spawnStalker(), phase: 'cooldown', elapsed: 0, duration: TEST_TUNING.cooldown };
+
+  it('stands still facing the target through the cooldown, then patrols again', () => {
+    const left: Point = { x: 900, y: 200 };
+    const partway = runStalker(cooling, left, TEST_TUNING.cooldown / 2);
+    expect(partway.events).toEqual([]);
+    expect(partway.state.facing).toBe(-1);
+    for (const pos of partway.positions) expect(pos).toEqual({ x: 1000, y: 200 });
+    const done = runStalker(partway.state, FAR, TEST_TUNING.cooldown, STALKER_CTX, 'cooldownEnd');
+    expect(eventTypes(done.events)).toEqual(['cooldownEnd']);
+    expect(done.state.facing).toBe(1);
+    const wading = runStalker(done.state, FAR, 0.5);
+    expect(wading.state.phase).toBe('patrol');
+    expect(wading.state.pos.x).toBeGreaterThan(1000);
+  });
+
+  it('swims its route through the cooldown without the rule', () => {
+    const swimming = runStalker(cooling, FAR, TEST_TUNING.cooldown / 2, { ...STALKER_CTX, rules: { fixedStrikeSpot: true } });
+    expect(swimming.state.phase).toBe('cooldown');
+    expect(swimming.state.pos.x).toBeGreaterThan(1000);
   });
 });

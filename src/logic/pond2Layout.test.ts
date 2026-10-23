@@ -10,7 +10,7 @@ import { PERK_CAPS, SNACK_MAGNET_PULL_SPEED } from './perks';
 import { PLASTIC_WORM } from './plasticWorms';
 import { HERON_STRETCH_Y, POND_2_AREA_ID, POND_2_LAYOUT } from './pond2Layout';
 import { POND_LAYOUT } from './pondLayout';
-import { HERON_SHADOW_CYCLE, HERON_SPECIES, routeLoopDistance } from './predators';
+import { HERON_SPECIES, routeLoopDistance } from './predators';
 import { SNACK_DART, createSnackDarts, snackDarterIds, stepSnackDarts, type SnackDartAvoid } from './snackDart';
 import { stepSwim, type SwimState } from './swimPhysics';
 import { FINDS, HERON, LEGS, PLASTIC_WORMS, RISK, SNACK_REACH, SWIM, TILAPIA, tripTreasureTuning } from './tuning';
@@ -45,8 +45,18 @@ const WORM_CURRENT_CLEARANCE =
   PLASTIC_WORMS.queasyTime * SWIM.maxSpeed * (1 + PERK_CAPS.speed / 100) * PLASTIC_WORMS.speedFactor +
   SNACK_REACH.headAhead +
   PLASTIC_WORM.reach;
-/** Lowest a heron strike spot may be: the beak dip art reaches 120 px below the surface. */
-const BEAK_LOWEST_Y = SURF + 120;
+/** Deepest point a heron can warn at: its reach below its stretch. */
+const HERON_REACH_LOWEST_Y = HERON_STRETCH_Y + HERON.lungeRange;
+/** Lowest axolotl centre a heron stab can hit: a stab tip at the deepest warn point hits within its hit radius. */
+const HERON_HIT_LOWEST_Y = HERON_REACH_LOWEST_Y + HERON.hitRadius;
+/** y of the deep lane under the heron stretches, below every stab and inside the swim bounds. */
+const DEEP_LANE_Y = 280;
+/** Shortest length of a heron's wading stretch, in px. */
+const HERON_STRETCH_MIN = 120;
+/** Longest length of a heron's wading stretch, in px. */
+const HERON_STRETCH_MAX = 200;
+/** Left edge of the back half of Area 3, where the herons stand. */
+const BACK_HALF_X = 1440;
 const FRAME = 1 / 60;
 const BEAT_MAX_SECONDS = 180;
 const WAYPOINT_REACH = 8;
@@ -55,7 +65,7 @@ const DART_ANGLES = 72;
 
 const zone = buildZone(POND_2_LAYOUT, DEFAULT_ZONE_SEED);
 const pond1 = buildZone(POND_LAYOUT, DEFAULT_ZONE_SEED);
-const heron = zone.predatorRoutes[0];
+const herons = zone.predatorRoutes;
 
 function pond2(seed: number): ZoneLayout {
   return buildZone(POND_2_LAYOUT, seed);
@@ -90,14 +100,19 @@ function currentDistance(point: Point, current: CurrentZone): number {
   return shapeDistance(point, { kind: 'rect', x0: current.x0, x1: current.x1, y0: current.y0, y1: current.y1 });
 }
 
-/** Distance from a point to the heron's stretch, the measure its reach uses. */
-function heronDistance(point: Point): number {
-  return routeLoopDistance(point, heron.waypoints);
+/** Distance from a point to the nearest heron stretch, the measure each heron's reach uses. */
+function heronDistance(point: Point, layout: ZoneLayout = zone): number {
+  return Math.min(...layout.predatorRoutes.map((route) => routeLoopDistance(point, route.waypoints)));
 }
 
-/** Whether the heron can warn at a point: within its reach of the stretch and outside the safe area. */
+/** Whether some heron can warn at a point: within its reach of its stretch and outside the safe area. */
 function inHeronReach(point: Point, layout: ZoneLayout): boolean {
-  return heronDistance(point) <= HERON.lungeRange && !inSafeArea(point, layout.safeArea);
+  return heronDistance(point, layout) <= HERON.lungeRange && !inSafeArea(point, layout.safeArea);
+}
+
+/** Shortest distance from a point to any heron waypoint, where a heron turns. */
+function heronTurnDistance(point: Point, layout: ZoneLayout = zone): number {
+  return turnDistance(point, layout.predatorRoutes);
 }
 
 function inBounds(point: Point, layout: ZoneLayout): boolean {
@@ -107,18 +122,6 @@ function inBounds(point: Point, layout: ZoneLayout): boolean {
 
 function wormCentres(layout: ZoneLayout): Point[] {
   return layout.hazards.map((hazard) => hazardCentre(hazard.shape));
-}
-
-/** The point of the main path at `x`; throws when the path does not reach x. */
-function mainPathAt(x: number, path: readonly Point[]): Point {
-  for (let i = 0; i + 1 < path.length; i++) {
-    const [a, b] = [path[i], path[i + 1]];
-    if (x >= a.x && x <= b.x) {
-      const share = b.x === a.x ? 0 : (x - a.x) / (b.x - a.x);
-      return { x, y: a.y + (b.y - a.y) * share };
-    }
-  }
-  throw new Error(`mainPathAt: the main path does not reach x ${x}`);
 }
 
 /** One frame of a one-leg swim steered at `target`, with the area's currents and reed drag. */
@@ -196,14 +199,14 @@ describe('POND_2_LAYOUT', () => {
     expect(Object.isFrozen(POND_2_LAYOUT.elements)).toBe(true);
   });
 
-  it('has 24 snacks, 5 plastic worms, 4 tilapia, the heron and 8 treasure slots', () => {
+  it('has 24 snacks, 5 plastic worms, 4 tilapia, two herons and 8 treasure slots', () => {
     for (const seed of ALL_SEEDS) {
       const layout = pond2(seed);
       expect(layout.collectibles).toHaveLength(24);
       expect(layout.collectibles.filter((snack) => snack.kind === 'worm')).toHaveLength(14);
       expect(layout.collectibles.filter((snack) => snack.kind === 'bug')).toHaveLength(10);
       expect(layout.tilapiaRoutes).toHaveLength(4);
-      expect(layout.predatorRoutes).toHaveLength(1);
+      expect(layout.predatorRoutes).toHaveLength(2);
     }
     expect(zone.hazards.map((hazard) => hazard.id)).toEqual([1, 2, 3, 4, 5].map((n) => `pond-2/plastic-worm-${n}`));
     for (const hazard of zone.hazards) {
@@ -214,12 +217,12 @@ describe('POND_2_LAYOUT', () => {
     expect(POND_2_LAYOUT.treasures).toBe(POND_2_TREASURES);
   });
 
-  it('has one heron on a two-point stretch and its shadow cycle from the trip start', () => {
+  it('has exactly two herons, heron-0 and heron-1, each on a two-point stretch, and no timing element (#111)', () => {
     expect(zone.predatorRoutes).toEqual([
-      { id: 'heron-0', waypoints: [{ x: 2200, y: HERON_STRETCH_Y }, { x: 2620, y: HERON_STRETCH_Y }], species: HERON_SPECIES },
+      { id: 'heron-0', waypoints: [{ x: 2190, y: HERON_STRETCH_Y }, { x: 2370, y: HERON_STRETCH_Y }], species: HERON_SPECIES },
+      { id: 'heron-1', waypoints: [{ x: 2440, y: HERON_STRETCH_Y }, { x: 2620, y: HERON_STRETCH_Y }], species: HERON_SPECIES },
     ]);
-    expect(zone.elements).toEqual([{ id: 'heron-shadow-0', type: HERON_SHADOW_CYCLE, offset: 0 }]);
-    expect(HERON_SHADOW_CYCLE).toMatchObject({ id: 'heron-shadow-cycle', kind: 'cycle', period: 8, activeFor: 4 });
+    expect(zone.elements).toEqual([]);
   });
 
   it('builds the same fixed content for every seed', () => {
@@ -263,32 +266,44 @@ describe('Area 3 hiding spots', () => {
     }
   });
 
-  it.each(ALL_SEEDS)('keep the Common and Rare pad spots, out of the heron band for seed %i', (seed) => {
-    const padSpots = pond2(seed).spots.filter((spot) => spot.cover === 'pad');
+  it.each(ALL_SEEDS)('keep the Common and Rare pad spots, out of every heron reach for seed %i', (seed) => {
+    const layout = pond2(seed);
+    const padSpots = layout.spots.filter((spot) => spot.cover === 'pad');
     expect(padSpots.map((spot) => [spot.id, spot.rarity])).toEqual([
       ['pond-2/spot-pad-a', 'common'],
       ['pond-2/spot-pad-b', 'rare'],
     ]);
-    const common = padSpots[0];
-    expect(heronDistance(common)).toBeGreaterThan(HERON.lungeRange * 2);
-    expect(heronDistance(padSpots[1])).toBeGreaterThan(HERON.lungeRange);
+    for (const spot of padSpots) {
+      expect(heronDistance(spot, layout), spot.id).toBeGreaterThan(HERON.lungeRange);
+      expect(inHeronReach(spot, layout), spot.id).toBe(false);
+    }
   });
 
-  it('puts every Epic and Legendary spot in the heron strike zone, in the root arch or past the stream', () => {
+  it('puts every Epic and Legendary spot in a heron strike zone, in the root arch or past the stream', () => {
     const risky = zone.spots.filter((spot) => spot.rarity === 'epic' || spot.rarity === 'legendary');
-    expect(risky.map((spot) => spot.cover)).toEqual([...Array(6).fill('cave'), ...Array(4).fill('pastCurrent')]);
+    expect(risky.map((spot) => spot.cover)).toEqual([...Array(4).fill('cave'), ...Array(4).fill('pastCurrent')]);
     for (const spot of risky) {
       expect(inHeronReach(spot, zone), spot.id).toBe(true);
-      expect(spot.y, spot.id).toBeLessThanOrEqual(BEAK_LOWEST_Y);
+      expect(spot.y, spot.id).toBeLessThanOrEqual(HERON_REACH_LOWEST_Y);
       const band = spot.rarity === 'legendary' ? [-Infinity, HERON.lungeRange / 2] : [HERON.lungeRange / 2, HERON.lungeRange];
       expect(heronDistance(spot), spot.id).toBeGreaterThan(band[0]);
       expect(heronDistance(spot), spot.id).toBeLessThanOrEqual(band[1]);
     }
   });
 
-  it('keeps every Common and Rare spot out of the heron reach', () => {
-    for (const spot of zone.spots.filter((candidate) => candidate.rarity === 'common' || candidate.rarity === 'rare')) {
-      expect(heronDistance(spot), spot.id).toBeGreaterThan(HERON.lungeRange);
+  it.each(ALL_SEEDS)('keeps every Common and Rare spot farther than the heron reach from every stretch for seed %i', (seed) => {
+    const layout = pond2(seed);
+    for (const spot of layout.spots.filter((candidate) => candidate.rarity === 'common' || candidate.rarity === 'rare')) {
+      for (const route of layout.predatorRoutes) {
+        expect(routeLoopDistance(spot, route.waypoints), `${spot.id} to ${route.id}`).toBeGreaterThan(HERON.lungeRange);
+      }
+    }
+  });
+
+  it.each(ALL_SEEDS)('keeps every spot at least the turn clearance from every heron waypoint for seed %i', (seed) => {
+    const layout = pond2(seed);
+    for (const spot of layout.spots) {
+      expect(heronTurnDistance(spot, layout), spot.id).toBeGreaterThanOrEqual(RISK.turnClearance);
     }
   });
 
@@ -310,19 +325,21 @@ describe('Area 3 hiding spots', () => {
 });
 
 describe('Area 3 root arch, the cave', () => {
-  it('hangs from just under the surface, inside the swim bounds and above the beak dip limit', () => {
+  it('hangs from just under the surface, inside the swim bounds and above the deepest heron warn point', () => {
     const bounds = swimBounds(zone);
     expect(zone.cave).toEqual({ id: 'pond-2/cave', x0: 2432, x1: 2568, y0: 96, y1: 200 });
     expect(zone.cave.y0).toBeGreaterThanOrEqual(bounds.minY);
-    expect(zone.cave.y1).toBeLessThanOrEqual(BEAK_LOWEST_Y);
+    expect(zone.cave.y1).toBeLessThanOrEqual(HERON_REACH_LOWEST_Y);
     expect(POND_2_LAYOUT.bankChunks).toEqual([Math.floor((zone.cave.x0 + zone.cave.x1) / 2 / 480)]);
   });
 
-  it('sits under the heron stretch, beyond the stream and the spots past it', () => {
-    const [start, end] = heron.waypoints;
+  it('sits under heron-1, beyond the stream, the spots past it and heron-0', () => {
+    const [first, second] = herons;
     const current = zone.currents[0];
-    expect(zone.cave.x0).toBeGreaterThan(start.x);
-    expect(zone.cave.x1).toBeLessThan(end.x);
+    expect(second.id).toBe('heron-1');
+    expect(zone.cave.x0).toBeGreaterThan(first.waypoints[1].x);
+    expect(zone.cave.x1).toBeGreaterThan(second.waypoints[0].x);
+    expect(zone.cave.x1).toBeLessThan(second.waypoints[1].x);
     expect(zone.cave.x0).toBeGreaterThan(current.x1 + PAST_CURRENT_DEPTH);
     for (const spot of zone.spots.filter((candidate) => candidate.cover === 'cave')) {
       expect(coversAt(spot, zone), spot.id).toEqual(['cave']);
@@ -342,7 +359,7 @@ describe('Area 3 tilapia, heron, current and stranding places', () => {
     expect(routeGap(zone.tilapiaRoutes[0], zone.tilapiaRoutes[1])).toBe(290);
   });
 
-  it('keeps tilapia routes and the heron stretch in the water and out of the safe area', () => {
+  it('keeps tilapia routes and the heron stretches in the water and out of the safe area', () => {
     for (const route of [...zone.tilapiaRoutes, ...zone.predatorRoutes]) {
       for (const point of route.waypoints) {
         expect(inBounds(point, zone), route.id).toBe(true);
@@ -351,24 +368,35 @@ describe('Area 3 tilapia, heron, current and stranding places', () => {
     }
   });
 
-  it('keeps the heron band near the surface: its reach ends 60 px below the stretch, above the beak dip limit', () => {
-    const [start, end] = heron.waypoints;
-    expect(start.y).toBe(HERON_STRETCH_Y);
-    expect(end.y).toBe(HERON_STRETCH_Y);
-    expect(end.x).toBeGreaterThan(start.x);
-    expect(HERON_STRETCH_Y + HERON.lungeRange).toBeLessThanOrEqual(BEAK_LOWEST_Y);
-    expect(zoneThreats(zone).filter((threat) => threat.kind === 'route' && !threat.tilapia)).toEqual([
-      { kind: 'route', route: heron, strike: HERON.lungeRange, tilapia: false },
-    ]);
+  it('puts each heron stretch at y 120 in the back half, 120 to 200 px long, with a 110 px reach to y 230', () => {
+    for (const route of herons) {
+      const [start, end] = route.waypoints;
+      expect(route.waypoints, route.id).toHaveLength(2);
+      expect(start.y, route.id).toBe(HERON_STRETCH_Y);
+      expect(end.y, route.id).toBe(HERON_STRETCH_Y);
+      expect(start.x, route.id).toBeGreaterThanOrEqual(BACK_HALF_X);
+      expect(end.x - start.x, route.id).toBeGreaterThanOrEqual(HERON_STRETCH_MIN);
+      expect(end.x - start.x, route.id).toBeLessThanOrEqual(HERON_STRETCH_MAX);
+    }
+    expect(HERON_STRETCH_Y).toBe(120);
+    expect(HERON_REACH_LOWEST_Y).toBe(230);
+    expect(HERON_HIT_LOWEST_Y).toBe(256);
+    expect(zoneThreats(zone).filter((threat) => threat.kind === 'route' && !threat.tilapia)).toEqual(
+      herons.map((route) => ({ kind: 'route', route, strike: HERON.lungeRange, tilapia: false })),
+    );
   });
 
-  it('keeps a deep lane under the whole heron stretch that the heron and the tilapia leave open', () => {
-    const [start, end] = heron.waypoints;
-    for (let x = start.x; x <= end.x; x += LANE_STEP) {
-      const lane = mainPathAt(x, zone.mainPath);
-      expect(lane.y, `lane at x ${x}`).toBeGreaterThan(HERON_STRETCH_Y + HERON.lungeRange);
-      expect(inHeronReach(lane, zone), `lane at x ${x}`).toBe(false);
-      expect(routeDistance(lane, zone.tilapiaRoutes), `lane at x ${x}`).toBeGreaterThan(TILAPIA.lungeRange);
+  it('keeps a deep lane below y 230 under each heron stretch that every heron and tilapia leave open', () => {
+    expect(DEEP_LANE_Y).toBeGreaterThan(HERON_HIT_LOWEST_Y);
+    for (const route of herons) {
+      const [start, end] = route.waypoints;
+      for (let x = start.x; x <= end.x; x += LANE_STEP) {
+        const lane = { x, y: DEEP_LANE_Y };
+        expect(inBounds(lane, zone), `${route.id} lane at x ${x}`).toBe(true);
+        expect(heronDistance(lane), `${route.id} lane at x ${x}`).toBeGreaterThan(HERON.lungeRange + HERON.hitRadius);
+        expect(inHeronReach(lane, zone), `${route.id} lane at x ${x}`).toBe(false);
+        expect(routeDistance(lane, zone.tilapiaRoutes), `${route.id} lane at x ${x}`).toBeGreaterThan(TILAPIA.lungeRange);
+      }
     }
   });
 
@@ -386,7 +414,7 @@ describe('Area 3 tilapia, heron, current and stranding places', () => {
     expect(SWIM.maxSpeed * LEGS.speedByLegs[0] - strength(zone.currents[0])).toBeGreaterThan(0);
   });
 
-  it.each(ALL_SEEDS)('keeps every stranding place 80 px from every route, out of the heron reach and clear of spots, currents and the cave for seed %i', (seed) => {
+  it.each(ALL_SEEDS)('keeps every stranding place 80 px from every route, out of every heron reach and clear of spots, currents and the cave for seed %i', (seed) => {
     const layout = pond2(seed);
     expect(layout.strandingPlaces.map((place) => place.id)).toEqual([1, 2, 3, 4, 5, 6].map((n) => `pond-2/strand-${n}`));
     for (const place of layout.strandingPlaces) {
@@ -410,7 +438,7 @@ describe('Area 3 tilapia, heron, current and stranding places', () => {
 describe('Area 3 exit', () => {
   const { exit } = POND_2_AREA;
 
-  it('sits at the far end, inside the bounds, out of the safe area, the heron reach and the ring', () => {
+  it('sits at the far end, inside the bounds, out of the safe area, every heron reach and the ring', () => {
     expect(exit.x).toBeGreaterThan(Math.max(...zone.currents.map((current) => current.x1)));
     expect(inBounds(exit, zone)).toBe(true);
     expect(inSafeArea(exit, zone.safeArea)).toBe(false);
@@ -437,7 +465,7 @@ describe('Area 3 plastic worms', () => {
     }
   });
 
-  it('sit farther than a lunge from every tilapia route and out of the heron reach', () => {
+  it('sit farther than a lunge from every tilapia route and out of every heron reach', () => {
     for (const [index, worm] of worms.entries()) {
       for (const route of zone.tilapiaRoutes) {
         for (const [a, b] of loopSegments(route.waypoints)) {
@@ -532,7 +560,7 @@ describe('Area 3 snacks', () => {
 });
 
 describe('Area 3 difficulty', () => {
-  it('is a little longer and harder than Area 2: wider, more snacks, faster drift, a stronger stream, more slots, darters and the heron', () => {
+  it('is a little longer and harder than Area 2: wider, more snacks, faster drift, a stronger stream, more slots, darters and two herons', () => {
     const strength = (layout: ZoneLayout) => Math.max(...layout.currents.map((current) => Math.hypot(current.force.x, current.force.y)));
     expect(zone.width).toBeGreaterThan(pond1.width);
     expect(zone.tilapiaRoutes.length).toBeGreaterThanOrEqual(pond1.tilapiaRoutes.length);
@@ -541,7 +569,7 @@ describe('Area 3 difficulty', () => {
     expect(strength(zone)).toBeGreaterThan(strength(pond1));
     expect(tripTreasureTuning(POND_2_AREA_ID).slots).toBeGreaterThan(tripTreasureTuning(POND_AREA.id).slots);
     expect(pond1.predatorRoutes).toHaveLength(0);
-    expect(zone.predatorRoutes.map((route) => route.species.id)).toEqual(['heron']);
+    expect(zone.predatorRoutes.map((route) => route.species.id)).toEqual(['heron', 'heron']);
     expect(zone.hazards.length).toBeGreaterThan(0);
   });
 });

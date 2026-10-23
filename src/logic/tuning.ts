@@ -107,23 +107,6 @@ export interface TilapiaTuning {
   bumpCooldown: number;
 }
 
-/**
- * Warning cycle of a predator species whose warning starts on a timer instead of on sight. One cycle
- * is the glide-in, the warning (max(windup, minWindup)), the strike (lungeDuration), the cooldown
- * (the glide-off) and the gap, in that order; a pass with no strike lasts the same.
- */
-export interface PredatorCycleTuning {
-  /** Seconds from the start of a cycle to the warn mark, where a warning may start. */
-  glideIn: number;
-  /** Seconds at the end of each cycle during which the predator is away and not shown. */
-  gap: number;
-}
-
-/** Heron tuning: the shared predator values plus its timer-started warning cycle. */
-export interface HeronTuning extends TilapiaTuning {
-  cycle: Readonly<PredatorCycleTuning>;
-}
-
 /** Carried-home transition tuning, used after the fourth leg is lost. */
 export interface CarryTuning {
   /** Full-motion carry speed in px/s along a straight line to the Home Spot. */
@@ -307,31 +290,30 @@ export const TILAPIA: Readonly<TilapiaTuning> = Object.freeze({
 });
 
 /**
- * Provisional heron values (issue #98); tune in play. One cycle lasts 8 s: the shadow glides in for
- * 2 s, warns for 1.2 s (longer than the tilapia's 0.9 s, above the PRD's 0.8 s floor), the beak
- * dips for 0.4 s, the shadow glides off for 0.4 s (the cooldown), then the heron is away for 4 s.
- * The beak dips where the warning started, so lungeSpeed is 0. lungeRange is the depth of the
- * near-surface band the heron reaches, measured from its route; deeper water is out of reach.
- * Hit reach matches a Medium axolotl at every size (PRD F4), as the tilapia's does. contactRadius
- * and bumpSpeed are 0 and never read, because the heron never touches or bumps (HERON_SPECIES in
- * src/logic/predators.ts). patrolSpeed is 0 because the shadow glides on the cycle clock, not at a
- * speed. bodyRadius is 0 because a shadow has no body to keep off the safe area, so the dip spot
- * stays where the warning started.
+ * Provisional heron values (PRD N3, issue #111); tune in play. The heron is a wading stalker: it
+ * wades its stretch at patrolSpeed, warns on sight for 1.2 s (longer than the tilapia's 0.9 s, above
+ * the PRD's 0.8 s floor) when the axolotl is within lungeRange of where it stands, then stabs the
+ * spot fixed at the warning start in lungeDuration and stands still for the 3 s cooldown.
+ * lungeSpeed is the stab's top speed (its reach over its duration); no heron rule reads it, because
+ * the stab tip moves from the heron to the fixed spot (stabTip in src/logic/predators.ts). Hit
+ * reach matches a Medium axolotl at every size (PRD F4), as the tilapia's does. contactRadius and
+ * bumpSpeed are 0 and never read, because the heron never touches or bumps (HERON_SPECIES).
+ * bodyRadius is 0 because the heron stands with its body above the water and only its beak reaches
+ * in, so nothing keeps it off the safe area.
  */
-export const HERON: Readonly<HeronTuning> = Object.freeze({
+export const HERON: Readonly<TilapiaTuning> = Object.freeze({
   minWindup: 0.8,
   windup: 1.2,
-  cooldown: 0.4,
-  lungeRange: 60,
-  lungeSpeed: 0,
-  lungeDuration: 0.4,
+  cooldown: 3,
+  lungeRange: 110,
+  lungeSpeed: 110 / 0.3,
+  lungeDuration: 0.3,
   hitRadius: 26,
   contactRadius: 0,
   bodyRadius: 0,
-  patrolSpeed: 0,
+  patrolSpeed: 20,
   bumpSpeed: 0,
   bumpCooldown: 0.6,
-  cycle: Object.freeze({ glideIn: 2, gap: 4 }),
 });
 
 /** Provisional carried-home values; a gentle float of 1.5 to 5 s, or a 1.5 s still bubble. */

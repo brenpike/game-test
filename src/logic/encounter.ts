@@ -1,4 +1,5 @@
 import { hazardCentre, legHazardAt, type HazardSpawn } from './hazards';
+import { inSightCover, type SightCoverGeometry } from './hiding';
 import { createLegs, isProtected, speedUpRegrowth, tryHit, updateLegs, type LegsState } from './legs';
 import {
   TILAPIA_SPECIES,
@@ -15,7 +16,10 @@ import { LEGS, SWIM, TILAPIA, type LegTuning, type TilapiaTuning } from './tunin
 import type { Vec2 } from './vec';
 import {
   swimBounds,
+  type CaveArea,
+  type PadSpec,
   type Point,
+  type ReedPatch,
   type SafeArea,
   type SwimBounds,
   type TilapiaRoute,
@@ -25,18 +29,22 @@ import {
 /**
  * The zone parts an encounter is built from. An `EncounterState` is one too, so it can be reset.
  * Absent `predatorRoutes` or `hazards` mean none. Absent `tilapia` means the context's tilapia tuning.
+ * The optional sight cover geometry (`reedPatches`, `pads`, `cave`) is what a species with the
+ * `sightCover` rule cannot see into; absent parts mean no such cover.
  */
-export type EncounterSource = Pick<ZoneLayout, 'safeArea' | 'tilapiaRoutes' | 'tilapia'> & {
-  predatorRoutes?: readonly PredatorRoute[];
-  hazards?: readonly HazardSpawn[];
-};
+export type EncounterSource = Pick<ZoneLayout, 'safeArea' | 'tilapiaRoutes' | 'tilapia'> &
+  SightCoverGeometry & {
+    predatorRoutes?: readonly PredatorRoute[];
+    hazards?: readonly HazardSpawn[];
+  };
 
 /**
  * Legs plus every predator for one trip. Immutable: `stepEncounter` returns a new object.
  * `predators` holds one tilapia per `tilapiaRoutes` entry, in order, then one predator per
  * `predatorRoutes` entry, in order. `tripOver` is true after the fourth leg is lost;
  * every later step is a no-op until the encounter is reset. `tilapia`, when set, is the area's own
- * tilapia tuning, played in place of the context's.
+ * tilapia tuning, played in place of the context's. `reedPatches`, `pads` and `cave` are the
+ * source's sight cover geometry, each present only when the source has it.
  */
 export interface EncounterState {
   safeArea: SafeArea;
@@ -44,6 +52,9 @@ export interface EncounterState {
   tilapia?: Readonly<TilapiaTuning>;
   predatorRoutes: PredatorRoute[];
   hazards: HazardSpawn[];
+  reedPatches?: ReedPatch[];
+  pads?: PadSpec[];
+  cave?: CaveArea;
   legs: LegsState;
   predators: PredatorState[];
   /** Seconds left before another bump can happen; 0 when a bump is ready. */
@@ -125,8 +136,8 @@ function tilapiaSpeciesFor(tuning: Readonly<TilapiaTuning>): Readonly<PredatorSp
 
 /**
  * Starts a trip: every leg present, no protection, Shell unused, each predator at the start of
- * its route. Routes, hazards and the source's own tilapia tuning (only when set) are copied;
- * species and hazard types are shared.
+ * its route. Routes, hazards, sight cover geometry and the source's own tilapia tuning (only when
+ * set) are copied; species and hazard types are shared.
  */
 export function createEncounter(
   source: EncounterSource,
@@ -148,6 +159,7 @@ export function createEncounter(
     ...(source.tilapia ? { tilapia: { ...source.tilapia } } : {}),
     predatorRoutes,
     hazards,
+    ...copySightCover(source),
     legs: createLegs(legTuning),
     predators: [
       ...tilapiaRoutes.map((route) => createPredator(route, TILAPIA_SPECIES.id)),
@@ -198,7 +210,9 @@ export function resetEncounter(
  * regrowing in the same step as a hit emits `regrown` before `hit`.
  *
  * Tuning: a tilapia uses the encounter's own tilapia tuning when set, else `ctx.tilapia`; every
- * other species uses its own tuning and rule hook (see `predatorSpecies`).
+ * other species uses its own tuning, rule hook and shared rules (see `predatorSpecies`). A species
+ * with the `sightCover` rule is told whether the axolotl is in the encounter's sight cover
+ * (`inSightCover`); the tilapia ignores cover.
  *
  * Stagger (PRD A1): only one predator attacks at a time, whatever its species. A predator may
  * start a telegraph only while no other predator is telegraphing or lunging (judged on the
@@ -322,6 +336,10 @@ function stepPredators(
       telegraphBlocked: otherPredatorAttacking(current.predators, i),
       hook: species.hook,
     };
+    if (species.rules) {
+      predatorCtx.rules = species.rules;
+      predatorCtx.targetInCover = species.rules.sightCover === true && inSightCover(axolotlPos, current);
+    }
     const result = stepPredator(current.predators[i], axolotlPos, dt, predatorCtx);
     current.predators[i] = result.state;
     const sourceId = result.state.routeId;
@@ -425,6 +443,15 @@ function regrowEvents(before: LegsState, after: LegsState): EncounterEvent[] {
     if (now === 'present') events.push({ type: 'regrown', leg });
   }
   return events;
+}
+
+/** Copies each sight cover part the source has; an absent part stays absent. */
+function copySightCover(source: SightCoverGeometry): SightCoverGeometry {
+  const cover: SightCoverGeometry = {};
+  if (source.reedPatches) cover.reedPatches = source.reedPatches.map((patch) => ({ ...patch }));
+  if (source.pads) cover.pads = source.pads.map((pad) => ({ ...pad }));
+  if (source.cave) cover.cave = { ...source.cave };
+  return cover;
 }
 
 function copyRoute(route: TilapiaRoute): TilapiaRoute {
