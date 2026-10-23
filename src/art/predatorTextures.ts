@@ -17,21 +17,16 @@ import {
   paintProtectedHalo,
 } from './drawEffects';
 import {
-  HERON_BEAK_TEX,
   HERON_BODY_TEX,
   HERON_HEAD_TEX,
-  HERON_SHADOW_TEX,
   HERON_STAB_HEAD_TEX,
   HERON_STAB_NECK_TEX,
-  paintHeronBeakDip,
   paintHeronBody,
   paintHeronHead,
-  paintHeronShadow,
   paintHeronStabHead,
   paintHeronStabNeck,
   type HeronBodyFrame,
   type HeronHeadPose,
-  type HeronShadowTone,
 } from './drawHeron';
 import {
   LEG_ICON_SIZE,
@@ -63,9 +58,6 @@ export const PREDATOR_TEX = {
   halo: 'fx-halo',
   carryBubble: 'fx-carry-bubble',
   regrowMark: 'leg-regrow-mark',
-  heronShadow: 'heron-shadow',
-  heronShadowWarning: 'heron-shadow-warning',
-  heronBeakDip: 'heron-beak-dip',
   heronBodyStand: 'heron-body-stand',
   heronBodyStepA: 'heron-body-step-a',
   heronBodyStepB: 'heron-body-step-b',
@@ -88,14 +80,7 @@ const HERON_HEAD_KEYS: Readonly<Record<HeronHeadPose, string>> = {
   warn: PREDATOR_TEX.heronHeadWarn,
 };
 
-/** Fixed key of each heron shadow tone. */
-const HERON_SHADOW_KEYS: Readonly<Record<HeronShadowTone, string>> = {
-  glide: PREDATOR_TEX.heronShadow,
-  warning: PREDATOR_TEX.heronShadowWarning,
-};
-
 const TILAPIA_POSES: readonly TilapiaPose[] = ['swim', 'windup', 'lunge', 'rest'];
-const HERON_SHADOW_TONES: readonly HeronShadowTone[] = ['glide', 'warning'];
 const HERON_BODY_FRAMES: readonly HeronBodyFrame[] = ['stand', 'stepA', 'stepB'];
 const HERON_HEAD_POSES: readonly HeronHeadPose[] = ['rest', 'warn'];
 const LEG_ICON_KINDS: readonly LegIconKind[] = ['present', 'outline'];
@@ -127,15 +112,9 @@ export interface PredatorTextures {
   /** Regrow sparkle. Anchor is the top-left of the REGROW_MARK_SIZE box. */
   readonly regrowMark: TexInfo;
   /**
-   * Heron shadow, one still frame per tone (HERON_SHADOW_TEX), facing right. The
-   * warning tone is the same shape, darker. Anchor is the body centre.
-   */
-  readonly heronShadow: Readonly<Record<HeronShadowTone, TexInfo>>;
-  /** Heron beak dip (HERON_BEAK_TEX). Anchor is the beak tip; the neck runs off the top edge. */
-  readonly heronBeakDip: TexInfo;
-  /**
    * Wading heron body and legs, one still frame each (HERON_BODY_TEX), facing right.
-   * Anchor is between the legs on the art water line. Under reduced motion hold `stand`.
+   * Anchor is on the art water line (HERON_WATER_LINE_Y) directly under the resting beak tip,
+   * the heron's logic point; the body trails toward -x. Under reduced motion hold `stand`.
    */
   readonly heronBody: Readonly<Record<HeronBodyFrame, TexInfo>>;
   /**
@@ -177,14 +156,6 @@ export function bakePredatorTextures(scene: Phaser.Scene, bakeScale: number): Pr
   const regrowSize: TexSize = { w: REGROW_MARK_SIZE, h: REGROW_MARK_SIZE, originX: 0, originY: 0 };
   const regrowMark = add(bake(scene, PREDATOR_TEX.regrowMark, regrowSize, bakeScale, paintRegrowMark));
 
-  const heronShadow = {} as Record<HeronShadowTone, TexInfo>;
-  for (const tone of HERON_SHADOW_TONES) {
-    heronShadow[tone] = add(
-      bake(scene, HERON_SHADOW_KEYS[tone], HERON_SHADOW_TEX, bakeScale, (ctx) => paintHeronShadow(ctx, tone)),
-    );
-  }
-  const heronBeakDip = add(bake(scene, PREDATOR_TEX.heronBeakDip, HERON_BEAK_TEX, bakeScale, paintHeronBeakDip));
-
   const heronBody = {} as Record<HeronBodyFrame, TexInfo>;
   for (const frame of HERON_BODY_FRAMES) {
     heronBody[frame] = add(
@@ -214,8 +185,6 @@ export function bakePredatorTextures(scene: Phaser.Scene, bakeScale: number): Pr
     carryBubble,
     legIcons,
     regrowMark,
-    heronShadow,
-    heronBeakDip,
     heronBody,
     heronHead,
     heronStabHead,

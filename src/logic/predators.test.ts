@@ -8,8 +8,6 @@ import {
   createPredator,
   lungeConnects,
   phaseProgress,
-  predatorCycleTiming,
-  predatorCycleView,
   routeLoopDistance,
   stabTip,
   stepPredator,
@@ -336,14 +334,11 @@ describe('heron species', () => {
     expect(Object.isFrozen(HERON)).toBe(true);
   });
 
-  it('has no warning cycle and never gains a cycle clock', () => {
-    expect(predatorCycleTiming(HERON)).toBeNull();
-    expect(predatorCycleView(spawnHeron(), HERON)).toBeNull();
+  it('runs only the shared sight-based phase events', () => {
     const run = runHeron(spawnHeron(), () => IN_REACH, 12);
     expect(new Set(run.events.map((entry) => entry.event.type))).toEqual(
       new Set(['telegraphStart', 'lungeStart', 'lungeEnd', 'cooldownEnd']),
     );
-    expect(Object.keys(run.state)).not.toContain('cycleTime');
   });
 });
 

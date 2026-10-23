@@ -1,17 +1,13 @@
 import { HERON_FACT, HERON_MEET_RANGE, TILAPIA_FACT, TILAPIA_MEET_RANGE, type FactCard } from './factCards';
-import { HERON, TILAPIA, type PredatorCycleTuning, type TilapiaTuning } from './tuning';
+import { HERON, TILAPIA, type TilapiaTuning } from './tuning';
 import { normalize, scale, type Vec2 } from './vec';
 import { inSafeArea, type Point, type SafeArea, type SwimBounds, type TilapiaRoute } from './zone';
 
 /** Predator phase. `telegraph` is the warning and `lunge` is the strike. */
 export type PredatorPhase = 'patrol' | 'telegraph' | 'lunge' | 'cooldown';
 
-/**
- * Patrol, warning and strike tuning of one predator species. `cycle` is read only by
- * `predatorCycleTiming` and `predatorCycleView`; `stepPredator` ignores it, and no species sets it
- * since issue #111 removed the timer-started heron.
- */
-export type PredatorTuning = TilapiaTuning & { cycle?: Readonly<PredatorCycleTuning> };
+/** Patrol, warning and strike tuning of one predator species. */
+export type PredatorTuning = TilapiaTuning;
 
 /**
  * Species rule hook. `mayWarn` gates only the start of a warning and the re-check at the end of
@@ -63,8 +59,6 @@ export type PredatorRoute = TilapiaRoute & { species: Readonly<PredatorSpecies> 
  * `species` is the species id. `elapsed` is seconds spent in the current phase and `duration` is
  * that phase's length in seconds, locked on entry (0 for patrol, which has no end).
  * `aim` is the unit strike direction, locked at strike start; it is null outside the lunge phase.
- * `cycleTime` is read only by `predatorCycleView`, as seconds into a warning cycle; `stepPredator`
- * never sets it, so it is absent on every predator it steps.
  * `strikeSpot` is for a species with the `fixedStrikeSpot` rule only: where its strike goes, fixed
  * at warning start and kept through the warning and strike. It is absent in every other phase and
  * on every other species.
@@ -80,7 +74,6 @@ export interface PredatorState {
   elapsed: number;
   duration: number;
   aim: Point | null;
-  cycleTime?: number;
   strikeSpot?: Point;
 }
 
@@ -113,30 +106,6 @@ export interface PredatorContext {
 export interface PredatorStepResult {
   state: PredatorState;
   events: PredatorEvent[];
-}
-
-/** Times within one warning cycle of a timer species, in seconds from the cycle start. */
-export interface PredatorCycleTiming {
-  /** Length of one cycle. */
-  period: number;
-  /** The warn mark, at the end of the glide-in: the only time a warning may start. */
-  warnAt: number;
-  /** End of the shown part of the cycle; the gap runs from here to `period`. */
-  visibleFor: number;
-}
-
-/**
- * A timer predator's part of its cycle, as a view draws it: `glideIn` before the warn mark,
- * `warn` while warning, `dip` while striking, `glideOff` from the mark to the gap (a pass, or after
- * a dip or a cancel), then `gap`, when the predator is away and not shown.
- */
-export type PredatorCyclePhase = 'glideIn' | 'warn' | 'dip' | 'glideOff' | 'gap';
-
-/** What a view needs to animate a timer predator; `state.pos` is where its shadow is. */
-export interface PredatorCycleView {
-  phase: PredatorCyclePhase;
-  cycleTime: number;
-  timing: PredatorCycleTiming;
 }
 
 interface PhaseStep {
@@ -271,33 +240,6 @@ export function routeLoopDistance(pos: Point, waypoints: readonly Point[]): numb
   return best;
 }
 
-/**
- * The warning cycle times of tuning with a `cycle`, or null without one; no species has a cycle
- * since issue #111. The cycle is the glide-in, the warning (max(windup, minWindup)), the strike
- * (lungeDuration), the cooldown and the gap, so a warning that starts at the warn mark always ends
- * before the gap.
- * Throws RangeError when the period is not greater than 0.
- */
-export function predatorCycleTiming(tuning: PredatorTuning): PredatorCycleTiming | null {
-  const { cycle } = tuning;
-  if (!cycle) return null;
-  const warnAt = cycle.glideIn;
-  const visibleFor = warnAt + warningTime(tuning) + tuning.lungeDuration + tuning.cooldown;
-  const period = visibleFor + cycle.gap;
-  if (!(period > 0)) {
-    throw new RangeError(`predatorCycleTiming: period must be > 0, got ${period}`);
-  }
-  return { period, warnAt, visibleFor };
-}
-
-/** Where a predator is in its warning cycle, for a view; null for tuning without a cycle. */
-export function predatorCycleView(state: PredatorState, tuning: PredatorTuning): PredatorCycleView | null {
-  const timing = predatorCycleTiming(tuning);
-  if (!timing) return null;
-  const cycleTime = state.cycleTime ?? 0;
-  return { phase: cyclePhase(state, cycleTime, timing), cycleTime, timing };
-}
-
 /** Fraction of the current phase completed, in [0, 1]; always 0 while patrolling. */
 export function phaseProgress(state: PredatorState): number {
   if (state.duration <= 0) return 0;
@@ -385,13 +327,6 @@ function stepPatrol(
     return { state: telegraph, used: 0, event: { type: 'telegraphStart' } };
   }
   return { state: swimRoute(state, dt, ctx), used: dt, event: null };
-}
-
-function cyclePhase(state: PredatorState, cycleTime: number, timing: PredatorCycleTiming): PredatorCyclePhase {
-  if (state.phase === 'telegraph') return 'warn';
-  if (state.phase === 'lunge') return 'dip';
-  if (cycleTime >= timing.visibleFor) return 'gap';
-  return cycleTime < timing.warnAt ? 'glideIn' : 'glideOff';
 }
 
 /** The warning length: windup, but never below the minWindup floor. */

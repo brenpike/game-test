@@ -1,11 +1,11 @@
 /**
  * Headless fairness check for the risk ladder (issue #70): every placed treasure can be grabbed
- * without being hit, by timing or a Tail Dash, under the real encounter rules, the heron's included.
+ * without being hit, by timing or a Tail Dash, under the real encounter rules, the herons' included.
  */
 import { describe, expect, it } from 'vitest';
 import { createEncounter, createEncounterContext, stepEncounter, type EncounterContext, type EncounterState } from './encounter';
 import { CHINAMPA_LAYOUT, CHINAMPA_TILAPIA } from './chinampaLayout';
-import { meetsThreatRiskRule, routeDistance, turnDistance, zoneThreats } from './hiding';
+import { inSightCover, meetsThreatRiskRule, routeDistance, turnDistance, zoneThreats } from './hiding';
 import { legSwimTuning } from './legs';
 import { POND_2_LAYOUT } from './pond2Layout';
 import { POND_LAYOUT } from './pondLayout';
@@ -15,6 +15,7 @@ import {
   DEFAULT_ZONE_SEED,
   buildCanalZone,
   buildZone,
+  inSafeArea,
   swimBounds,
   type HidingSpot,
   type Point,
@@ -127,6 +128,24 @@ function nearestSafeStart(spot: Point, zone: ZoneLayout): Point {
     if (found) return found;
   }
   throw new Error(`nearestSafeStart: no safe start within ${SEARCH_MAX_RADIUS} px of (${spot.x}, ${spot.y})`);
+}
+
+/** Whether some predator route's species can warn at a point: within its lunge range of its route and outside the safe area. */
+function inPredatorReach(point: Point, zone: ZoneLayout): boolean {
+  return !inSafeArea(point, zone.safeArea) && !outOfPredatorReach(point, zone);
+}
+
+/**
+ * Where to wait to check that a pot is risky: the pot itself when it is open water, else the nearest
+ * uncovered point on the straight way in from its safe start that a heron can reach, since a heron
+ * cannot see into cover. Throws when no point on the way in is both uncovered and in reach.
+ */
+function heronWaitPoint(pot: HidingSpot, zone: ZoneLayout): Point {
+  if (!inSightCover(pot, zone)) return { x: pot.x, y: pot.y };
+  const wayIn = swimPositions(nearestSafeStart(pot, zone), pot, false);
+  const open = wayIn.filter((pos) => !inSightCover(pos, zone) && inPredatorReach(pos, zone));
+  if (open.length === 0) throw new Error(`heronWaitPoint: no uncovered point a heron can reach on the way in to ${pot.id}`);
+  return open[open.length - 1];
 }
 
 /** Axolotl centre after each step of a straight swim at full-leg top speed, the first DASH_STEPS dashing when `dash`. */
@@ -270,32 +289,48 @@ describe('pond risk fairness on other seeds', () => {
 describe('risk fairness on the default Area 3 zone', () => {
   const { zone, ctx, longestLoop, startWindow, lastStartIndex, parkSteps } = pond2;
   const spots = poolSpots(zone);
-  const heron = zone.predatorRoutes[0];
+  const herons = zone.predatorRoutes;
+  /** Seconds a heron takes to wade there and back along its two-point stretch. */
+  const wadeSeconds = herons.map((route) => {
+    const [start, end] = route.waypoints;
+    return (2 * Math.hypot(end.x - start.x, end.y - start.y)) / HERON.patrolSpeed;
+  });
 
-  it('has pool spots, the heron, start times over its cycle and hazards that never hit', () => {
+  it('has pool spots, two herons, start times over the longest tilapia loop and heron wade, and hazards that never hit', () => {
     expect(spots.length).toBeGreaterThan(0);
-    expect(zone.predatorRoutes.map((route) => route.species.id)).toEqual(['heron']);
-    expect(startWindow).toBe(Math.max(longestLoop, 8));
+    expect(herons.map((route) => [route.id, route.species.id])).toEqual([
+      ['heron-0', 'heron'],
+      ['heron-1', 'heron'],
+    ]);
+    expect(startWindow).toBeCloseTo(Math.max(longestLoop, ...wadeSeconds), 9);
+    expect(startWindow).toBeGreaterThan(longestLoop);
     expect(lastStartIndex).toBe(Math.floor(startWindow / START_STEP));
     expect(parkSteps).toBe(Math.max(TAIL_STEPS, tailSteps(HERON)));
+    expect(parkSteps * DT).toBeGreaterThanOrEqual(HERON.windup + HERON.lungeDuration);
     expect(zone.hazards.length).toBeGreaterThan(0);
     expect(zone.hazards.every((hazard) => !hazard.type.costsLeg)).toBe(true);
     expect(ctx.bounds).toEqual(swimBounds(zone));
   });
 
-  it('catches a hit when the axolotl waits at each Legendary pot', () => {
+  it('catches a hit when the axolotl waits at each Legendary pot, or for a pot in cover at the nearest uncovered point on its way in that a heron can reach', () => {
     const pots = spots.filter((spot) => spot.rarity === 'legendary');
     expect(pots.length).toBeGreaterThan(0);
+    expect(pots.some((pot) => inSightCover(pot, zone))).toBe(true);
     for (const pot of pots) {
-      const waiting = Array.from({ length: Math.ceil(startWindow / DT) }, () => ({ x: pot.x, y: pot.y }));
+      const wait = heronWaitPoint(pot, zone);
+      expect(inSightCover(wait, zone), pot.id).toBe(false);
+      expect(inPredatorReach(wait, zone), pot.id).toBe(true);
+      const waiting = Array.from({ length: Math.ceil(startWindow / DT) }, () => ({ x: wait.x, y: wait.y }));
       expect(pathHits(createEncounter(zone), waiting, ctx), pot.id).toBe(true);
     }
   });
 
-  it.each(spots)('finds a safe start outside tilapia lunge range and the heron reach for $id', (spot) => {
+  it.each(spots)('finds a safe start outside tilapia lunge range and every heron reach for $id', (spot) => {
     const start = nearestSafeStart(spot, zone);
     expect(routeDistance(start, zone.tilapiaRoutes)).toBeGreaterThan(TILAPIA.lungeRange);
-    expect(routeLoopDistance(start, heron.waypoints)).toBeGreaterThan(HERON.lungeRange);
+    for (const route of herons) {
+      expect(routeLoopDistance(start, route.waypoints), route.id).toBeGreaterThan(HERON.lungeRange);
+    }
   });
 
   it.each(spots)('lets the axolotl grab $id without a hit for some start time', (spot) => {

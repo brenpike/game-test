@@ -8,9 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { HALO_RX, HALO_RY, paintProtectedHalo } from './drawEffects';
 import {
   HERON_BEAK,
-  HERON_BEAK_NECK,
   HERON_BEAK_REST_TIP,
-  HERON_BEAK_TEX,
   HERON_BODY_TEX,
   HERON_FEATHER,
   HERON_FEATHER_LINE,
@@ -19,24 +17,18 @@ import {
   HERON_HEAD_TEX,
   HERON_HEAD_TIP,
   HERON_NECK_BASE,
-  HERON_SHADOW,
-  HERON_SHADOW_TEX,
-  HERON_SHADOW_WARNING,
   HERON_SHINE,
   HERON_STAB_HEAD_BACK,
   HERON_STAB_HEAD_TEX,
   HERON_STAB_NECK_LEN,
   HERON_STAB_NECK_TEX,
   HERON_WATER_LINE_Y,
-  paintHeronBeakDip,
   paintHeronBody,
   paintHeronHead,
-  paintHeronShadow,
   paintHeronStabHead,
   paintHeronStabNeck,
   type HeronBodyFrame,
   type HeronHeadPose,
-  type HeronShadowTone,
 } from './drawHeron';
 import { DEPTH } from './layers';
 import { paintLegIcon } from './drawLegIcons';
@@ -494,15 +486,9 @@ describe('leg icons (guide 3g, 10)', () => {
 // Heron
 // ---------------------------------------------------------------------------
 
-/** Both heron shadow tones; a missing tone is a type error. */
-const SHADOW_TONE_FILL: Readonly<Record<HeronShadowTone, string>> = {
-  glide: HERON_SHADOW,
-  warning: HERON_SHADOW_WARNING,
-};
-const SHADOW_TONES = Object.keys(SHADOW_TONE_FILL) as HeronShadowTone[];
 /**
- * Pond backgrounds the shadow can lie on (guide 3c): water shallow, mid and deep,
- * bed top and bottom, and a grey at the pond floor, luminance 0.1687 (the darkest
+ * Pond backgrounds the heron can stand in front of (guide 3c): water shallow, mid and
+ * deep, bed top and bottom, and a grey at the pond floor, luminance 0.1687 (the darkest
  * any pond background may be). Written out, never read from habitatLook.
  */
 const POND_BACKGROUNDS: readonly (readonly [string, string])[] = [
@@ -513,17 +499,8 @@ const POND_BACKGROUNDS: readonly (readonly [string, string])[] = [
   ['bed bottom', '#9a8450'],
   ['pond floor grey', '#737373'],
 ];
-const POND_FLOOR_LUMINANCE = 0.1687;
-/** Greyscale: the glide shadow is this much darker than the water under it, at least. */
-const SHADOW_DARKER_RATIO = 1.4;
-/** Greyscale: the warning tone is this much darker than the glide tone, at least. */
-const WARNING_DARKER_RATIO = 1.3;
-/** Greyscale: the ink outline still stands apart from the darkest (warning) fill. */
-const OUTLINE_ON_SHADOW_RATIO = 1.5;
 /** The guide's least padding round a sprite at 1x. */
 const MIN_PAD = 4;
-/** Outer-edge blobs of the beak dip: the beak, then the head, crest and neck. */
-const BEAK_DIP_BLOBS = 2;
 /** The hero's belly: no heron fill is lighter (guide 7c hierarchy). */
 const HERO_BELLY = '#ffe3ed';
 
@@ -548,51 +525,12 @@ interface Box {
   maxY: number;
 }
 
-/**
- * Conservative bounds of a recorded path: every point and control point; an
- * ellipse or arc counts its centre plus its larger radius each way.
- */
-function pathBounds(cmds: readonly unknown[][]): Box {
-  const box: Box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-  const grow = (x: number, y: number, r = 0): void => {
-    box.minX = Math.min(box.minX, x - r);
-    box.minY = Math.min(box.minY, y - r);
-    box.maxX = Math.max(box.maxX, x + r);
-    box.maxY = Math.max(box.maxY, y + r);
-  };
-  for (const [name, ...args] of cmds) {
-    const nums = args as number[];
-    if (name === 'ellipse') grow(nums[0], nums[1], Math.max(nums[2], nums[3]));
-    else if (name === 'arc') grow(nums[0], nums[1], nums[2]);
-    else for (let i = 0; i + 1 < nums.length; i += 2) grow(nums[i], nums[i + 1]);
-  }
-  return box;
-}
-
-/** Bounds of a draw op, the ink included: half a stroke's width outside its path. */
-function opBounds(op: Op): Box {
-  const box = pathBounds(op.args[0] as unknown[][]);
-  const half = isStroke(op) ? op.lineWidth / 2 : 0;
-  return { minX: box.minX - half, minY: box.minY - half, maxX: box.maxX + half, maxY: box.maxY + half };
-}
-
 /** The frame as a box in local units. */
 function frameBox(tex: TexSize): Box {
   return { minX: -tex.originX, minY: -tex.originY, maxX: tex.w - tex.originX, maxY: tex.h - tex.originY };
 }
 
 describe('heron colours (guide 3g, 10)', () => {
-  it.each(SHADOW_TONES)('%s: the shadow fill is ink, see-through', (tone) => {
-    const [r, g, b, a] = rgbaOf(SHADOW_TONE_FILL[tone]);
-    expect([r, g, b]).toEqual(channelsOf(INK));
-    expect(a).toBeGreaterThan(0);
-    expect(a).toBeLessThan(1);
-  });
-
-  it('the warning tone is the denser shade', () => {
-    expect(rgbaOf(HERON_SHADOW_WARNING)[3]).toBeGreaterThan(rgbaOf(HERON_SHADOW)[3]);
-  });
-
   it.each([
     ['HERON_FEATHER', HERON_FEATHER],
     ['HERON_BEAK', HERON_BEAK],
@@ -606,119 +544,6 @@ describe('heron colours (guide 3g, 10)', () => {
     const [r, g, b, a] = rgbaOf(HERON_SHINE);
     expect([r, g, b]).toEqual([255, 255, 255]);
     expect(a).toBeLessThan(1);
-  });
-});
-
-describe('heron shadow greyscale (guide 10): a dark shape with an ink outline', () => {
-  it.each(POND_BACKGROUNDS)('on %s (%s)', (_name, background) => {
-    expect(relativeLuminance(background)).toBeGreaterThanOrEqual(POND_FLOOR_LUMINANCE);
-    // the ink outline alone is 3:1 or better on every pond background
-    expect(contrastRatio(INK, background)).toBeGreaterThanOrEqual(3);
-    const glide = compositeOver(HERON_SHADOW, background);
-    const warning = compositeOver(HERON_SHADOW_WARNING, background);
-    expect(relativeLuminance(glide)).toBeLessThan(relativeLuminance(background));
-    expect(contrastRatio(glide, background)).toBeGreaterThanOrEqual(SHADOW_DARKER_RATIO);
-    expect(relativeLuminance(warning)).toBeLessThan(relativeLuminance(glide));
-    expect(contrastRatio(warning, glide)).toBeGreaterThanOrEqual(WARNING_DARKER_RATIO);
-    expect(contrastRatio(INK, warning)).toBeGreaterThanOrEqual(OUTLINE_ON_SHADOW_RATIO);
-  });
-});
-
-describe('heron shadow (still frames)', () => {
-  it.each(SHADOW_TONES)('%s: one see-through fill, then one opaque INK outline of LW on the same path', (tone) => {
-    const { ops } = record((ctx) => paintHeronShadow(ctx, tone));
-    expect(ops).toHaveLength(2);
-    const [fill, ink] = ops;
-    expect(isFill(fill)).toBe(true);
-    expect(fill.fillStyle).toBe(SHADOW_TONE_FILL[tone]);
-    expect(isStroke(ink)).toBe(true);
-    expect(ink.strokeStyle).toBe(INK);
-    expect(ink.lineWidth).toBe(LW);
-    expect(JSON.stringify(ink.args)).toBe(JSON.stringify(fill.args));
-    expect(ops.every((op) => op.globalAlpha === 1)).toBe(true);
-  });
-
-  it('the warning tone is the same shape with the same ink, only darker', () => {
-    const glide = record((ctx) => paintHeronShadow(ctx, 'glide')).ops;
-    const warning = record((ctx) => paintHeronShadow(ctx, 'warning')).ops;
-    expect(JSON.stringify(warning.map((op) => op.args))).toBe(JSON.stringify(glide.map((op) => op.args)));
-    expect(warning.map((op) => op.lineWidth)).toEqual(glide.map((op) => op.lineWidth));
-    expect(warning[0].fillStyle).not.toBe(glide[0].fillStyle);
-  });
-
-  it('is one closed smooth outline with no sharp corners', () => {
-    const { ops } = record((ctx) => paintHeronShadow(ctx, 'glide'));
-    const names = (ops[0].args[0] as unknown[][]).map(([name]) => name);
-    expect(names[0]).toBe('moveTo');
-    expect(names.at(-1)).toBe('closePath');
-    expect(names.slice(1, -1).every((name) => name === 'quadraticCurveTo')).toBe(true);
-  });
-
-  it.each(SHADOW_TONES)('%s: fits HERON_SHADOW_TEX with the ink and at least 4 px of padding', (tone) => {
-    const { ops } = record((ctx) => paintHeronShadow(ctx, tone));
-    const frame = frameBox(HERON_SHADOW_TEX);
-    for (const op of ops) {
-      const box = opBounds(op);
-      expect(box.minX - frame.minX).toBeGreaterThanOrEqual(MIN_PAD);
-      expect(box.minY - frame.minY).toBeGreaterThanOrEqual(MIN_PAD);
-      expect(frame.maxX - box.maxX).toBeGreaterThanOrEqual(MIN_PAD);
-      expect(frame.maxY - box.maxY).toBeGreaterThanOrEqual(MIN_PAD);
-    }
-  });
-});
-
-describe('heron beak dip (still frame)', () => {
-  const rec = (): Recording => record((ctx) => paintHeronBeakDip(ctx));
-
-  it('every outer-edge fill is HERON_BEAK or HERON_FEATHER, opaque, inked in opaque INK at 2 x LW', () => {
-    const { ops } = rec();
-    const pairs = blobPairs(ops);
-    expect(pairs.map(({ fill }) => fill.fillStyle)).toEqual([HERON_BEAK, HERON_FEATHER]);
-    expect(pairs).toHaveLength(BEAK_DIP_BLOBS);
-    for (const { ink, fill } of pairs) {
-      expect(fill.globalAlpha).toBe(1);
-      expect(ink.strokeStyle).toBe(INK);
-      expect(ink.globalAlpha).toBe(1);
-      expect(ink.lineWidth).toBe(2 * LW);
-    }
-  });
-
-  it('is gentle: a closed beak with a seam, one bead eye with glints, no open mouth', () => {
-    const { ops } = rec();
-    expect(ops.every((op) => op.globalAlpha === 1)).toBe(true);
-    const fills = new Set(ops.filter(isFill).map((op) => op.fillStyle));
-    expect(fills).toEqual(new Set([HERON_BEAK, HERON_FEATHER, HERON_SHINE, EYE, WHITE]));
-    expect(ops.filter((op) => isFill(op) && op.fillStyle === EYE)).toHaveLength(1);
-    expect(ops.filter((op) => isFill(op) && op.fillStyle === TILAPIA_MOUTH)).toHaveLength(0);
-    // the only lone ink line is the 2.0 seam down the closed beak
-    const lone = ops.filter((op) => isStroke(op) && op.lineWidth !== 2 * LW);
-    expect(lone).toHaveLength(1);
-    expect(lone[0].strokeStyle).toBe(INK);
-    expect(lone[0].lineWidth).toBe(2);
-  });
-
-  it('the beak tip is the anchor, the lowest point of the beak', () => {
-    const { ops } = rec();
-    const beak = blobPairs(ops)[0].fill;
-    const box = pathBounds(beak.args[0] as unknown[][]);
-    expect(box.maxY).toBeCloseTo(0, 9);
-    expect((box.minX + box.maxX) / 2).toBeCloseTo(0, 9);
-  });
-
-  it('fits HERON_BEAK_TEX with its ink and 4 px of padding; only the neck runs off the top', () => {
-    const { ops } = rec();
-    const frame = frameBox(HERON_BEAK_TEX);
-    expect(frame.minY).toBe(-HERON_BEAK_NECK);
-    const neck = blobPairs(ops)[1];
-    for (const op of ops) {
-      const box = opBounds(op);
-      expect(box.minX - frame.minX).toBeGreaterThanOrEqual(MIN_PAD);
-      expect(frame.maxX - box.maxX).toBeGreaterThanOrEqual(MIN_PAD);
-      expect(frame.maxY - box.maxY).toBeGreaterThanOrEqual(MIN_PAD);
-      const isNeck = op === neck.fill || op === neck.ink;
-      if (isNeck) expect(box.minY).toBeLessThan(frame.minY);
-      else expect(box.minY).toBeGreaterThanOrEqual(frame.minY);
-    }
   });
 });
 
@@ -1259,8 +1084,6 @@ describe('bakePredatorTextures', () => {
     ...(['present', 'outline'] as const).map(legIconKey),
     'leg-regrow-mark',
   ];
-  /** The old shadow and beak dip, kept until a later step removes them. */
-  const OLD_HERON = ['heron-shadow', 'heron-shadow-warning', 'heron-beak-dip'];
   /** The wading heron (issue #111). */
   const WADING_HERON = [
     'heron-body-stand',
@@ -1272,24 +1095,14 @@ describe('bakePredatorTextures', () => {
     'heron-stab-neck',
   ];
 
-  it('keeps every tilapia, effect and leg texture and the old heron, and adds the wading heron under fixed keys', () => {
+  it('keeps every tilapia, effect and leg texture, and bakes only the wading heron under fixed keys', () => {
     const { baked, made } = withFakeScene((scene, made) => ({ baked: bakePredatorTextures(scene, 2), made }));
-    const all = [...UNCHANGED, ...OLD_HERON, ...WADING_HERON].sort();
+    const all = [...UNCHANGED, ...WADING_HERON].sort();
     expect([...made.keys()].sort()).toEqual(all);
     expect(Object.keys(baked.info).sort()).toEqual(all);
-    expect(PREDATOR_TEX.heronShadow).toBe('heron-shadow');
-    expect(PREDATOR_TEX.heronShadowWarning).toBe('heron-shadow-warning');
-    expect(PREDATOR_TEX.heronBeakDip).toBe('heron-beak-dip');
-    expect(baked.heronShadow.glide.key).toBe(PREDATOR_TEX.heronShadow);
-    expect(baked.heronShadow.warning.key).toBe(PREDATOR_TEX.heronShadowWarning);
-    expect(baked.heronBeakDip.key).toBe(PREDATOR_TEX.heronBeakDip);
-    for (const [info, tex] of [
-      [baked.heronShadow.glide, HERON_SHADOW_TEX],
-      [baked.heronShadow.warning, HERON_SHADOW_TEX],
-      [baked.heronBeakDip, HERON_BEAK_TEX],
-    ] as const) {
-      expect(info.scale).toBe(2);
-      expect([info.w, info.h, info.originX, info.originY]).toEqual([tex.w, tex.h, tex.originX, tex.originY]);
+    for (const retired of ['heron-shadow', 'heron-shadow-warning', 'heron-beak-dip']) {
+      expect(made.has(retired)).toBe(false);
+      expect(Object.values(PREDATOR_TEX)).not.toContain(retired);
     }
     for (const [, canvas] of made) expect(canvas.ops.length).toBeGreaterThan(0);
   });
@@ -1331,9 +1144,6 @@ describe('bakePredatorTextures', () => {
     });
     const fillsOf = (key: string): unknown[] =>
       (made.get(key) as Recording).ops.filter(isFill).map((op) => op.fillStyle);
-    expect(fillsOf(PREDATOR_TEX.heronShadow)).toEqual([HERON_SHADOW]);
-    expect(fillsOf(PREDATOR_TEX.heronShadowWarning)).toEqual([HERON_SHADOW_WARNING]);
-    expect(fillsOf(PREDATOR_TEX.heronBeakDip)).toContain(HERON_BEAK);
     for (const key of [PREDATOR_TEX.heronBodyStand, PREDATOR_TEX.heronBodyStepA, PREDATOR_TEX.heronBodyStepB]) {
       expect(fillsOf(key)).toEqual([HERON_FEATHER]);
     }

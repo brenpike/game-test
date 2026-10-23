@@ -107,19 +107,6 @@ export interface TilapiaTuning {
   bumpCooldown: number;
 }
 
-/**
- * Warning cycle of a predator whose warning starts on a timer instead of on sight. One cycle is the
- * glide-in, the warning (max(windup, minWindup)), the strike (lungeDuration), the cooldown (the
- * glide-off) and the gap, in that order; a pass with no strike lasts the same. No species has one
- * since issue #111 made the heron warn on sight.
- */
-export interface PredatorCycleTuning {
-  /** Seconds from the start of a cycle to the warn mark, where a warning may start. */
-  glideIn: number;
-  /** Seconds at the end of each cycle during which the predator is away and not shown. */
-  gap: number;
-}
-
 /** Carried-home transition tuning, used after the fourth leg is lost. */
 export interface CarryTuning {
   /** Full-motion carry speed in px/s along a straight line to the Home Spot. */
