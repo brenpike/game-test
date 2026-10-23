@@ -30,6 +30,9 @@ export const TRAY_PX = 64;
 /** Side of one compact decorate tray square, in CSS px (PRD X5: at least 48). */
 export const COMPACT_TRAY_PX = 48;
 
+/** Most rows of tray squares on one decorate tray page (PRD C9, open question 198). */
+export const TRAY_PAGE_ROWS = 2;
+
 /** A compact icon-only tile button in CSS px: a 48 x 48 body (PRD X5) round a 32 px icon, no label. */
 export const ICON_TILE = Object.freeze({ w: 48, h: 48, iconPx: 32 });
 
@@ -177,34 +180,45 @@ export interface HubLayout {
   room: TankRoom;
 }
 
-/** Measured compact sizes of Put away and Done. */
+/** Measured compact sizes of Put away, Done and the tray page buttons (an ICON_TILE when absent). */
 export interface DecorateCompactSizes {
   putAway: Size;
   done: Size;
+  pageButton?: Size;
 }
 
 /**
- * Measured sizes of the decorate controls; `caption` is null when there is no caption. `compact`
- * defaults to an ICON_TILE Put away and COMPACT_DONE.
+ * Measured sizes of the decorate controls; `caption` is null when there is no caption. `pageButton`
+ * (Back and Next) defaults to CHEST_BUTTON. `compact` defaults to an ICON_TILE Put away and page
+ * buttons and COMPACT_DONE.
  */
 export interface DecorateSizes {
   putAway: Size;
   done: Size;
   caption: Size | null;
+  pageButton?: Size;
   compact?: DecorateCompactSizes;
 }
 
 /**
- * The decorate layout: one square per tray item, the Put away slot, Done, the caption (null when
- * hidden), whether the controls use their compact sizes, and the room of their last row.
+ * The decorate layout: one square per tray item on the shown page, the Put away slot, Done, the Back
+ * and Next page buttons (null when the tray has one page), the caption (null when hidden), whether
+ * the controls use their compact sizes, and the room of their last row. `page` is the shown page
+ * (clamped), of `pageCount`; its squares are the tray items from `trayStart`, at most `pageSize` of them.
  */
 export interface DecorateLayout {
   tray: Rect[];
   putAway: Rect;
   done: Rect;
+  previousPage: Rect | null;
+  nextPage: Rect | null;
   caption: Rect | null;
   compact: boolean;
   room: TankRoom;
+  page: number;
+  pageCount: number;
+  trayStart: number;
+  pageSize: number;
 }
 
 /** Treasure Chest measurements: wrapped text blocks at a wrap width, and fixed sizes. */
@@ -538,12 +552,13 @@ function wholeTrayCount(count: number): number {
   return Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
 }
 
-/** One decorate look: whether it is compact, the tray square side, and the Put away and Done sizes. */
+/** One decorate look: whether it is compact, the tray square side, and the Put away, Done and page button sizes. */
 interface DecorateLook {
   compact: boolean;
   trayPx: number;
   putAway: Size;
   done: Size;
+  pageButton: Size;
 }
 
 /**
@@ -571,8 +586,134 @@ function fillReach(rows: readonly FlowRow[], reach: readonly TankRoom[]): RoomFi
 
 /** The decorate controls in flow order for `count` tray squares: the squares, Put away, then Done. */
 function decorateFlow(look: DecorateLook, count: number): Size[] {
+  return [...traySquares(look, count), look.putAway, look.done];
+}
+
+/** `count` tray squares of the look. */
+function traySquares(look: DecorateLook, count: number): Size[] {
   const square: Size = { w: look.trayPx, h: look.trayPx };
-  return [...Array.from({ length: count }, () => square), look.putAway, look.done];
+  return Array.from({ length: count }, () => square);
+}
+
+/** The full and compact decorate looks for `sizes`. */
+function decorateLooks(sizes: DecorateSizes): [DecorateLook, DecorateLook] {
+  const compactSizes = sizes.compact ?? { putAway: { w: ICON_TILE.w, h: ICON_TILE.h }, done: COMPACT_DONE };
+  return [
+    { compact: false, trayPx: TRAY_PX, putAway: sizes.putAway, done: sizes.done, pageButton: sizes.pageButton ?? CHEST_BUTTON },
+    {
+      compact: true,
+      trayPx: COMPACT_TRAY_PX,
+      putAway: compactSizes.putAway,
+      done: compactSizes.done,
+      pageButton: compactSizes.pageButton ?? { w: ICON_TILE.w, h: ICON_TILE.h },
+    },
+  ];
+}
+
+/** The decorate layout without its caption and look. */
+type DecorateControls = Omit<DecorateLayout, 'caption' | 'compact'>;
+
+/**
+ * The whole tray on one page by the tray rule: `count` squares, Put away and Done in rows down the
+ * plan's rooms, else the reach rooms. Null when they fit neither.
+ */
+function onePageControls(view: HudView, frame: TankFrame, look: DecorateLook, count: number, plan: RowPlan): DecorateControls | null {
+  const flow = decorateFlow(look, count);
+  const rows = splitRows(flow, view.cssW - 2 * UI.margin);
+  const fill = fillRooms(rows, plan.rooms) ?? fillReach(rows, trayReachRooms(view, frame));
+  if (fill === null) return null;
+  const rects = placeRows(flow, rows, view.cssW / 2, fill.tops);
+  return {
+    tray: rects.slice(0, count),
+    putAway: rects[count],
+    done: rects[count + 1],
+    previousPage: null,
+    nextPage: null,
+    room: fill.room,
+    page: 0,
+    pageCount: 1,
+    trayStart: 0,
+    pageSize: count,
+  };
+}
+
+/** Sizes and rows of one tray page: `squares` tray squares in rows, then the control row (Back and Next when `paged`, Put away, Done). */
+interface PageFlow {
+  sizes: Size[];
+  rows: FlowRow[];
+  trayRows: number;
+}
+
+/** One tray page's flow: rows of `squares` squares, then the controls in rows of their own. */
+function pageFlow(look: DecorateLook, squares: number, paged: boolean, maxW: number): PageFlow {
+  const tray = traySquares(look, squares);
+  const pageButtons = paged ? [look.pageButton, look.pageButton] : [];
+  const controls = [...pageButtons, look.putAway, look.done];
+  const trayRows = splitRows(tray, maxW);
+  const controlRows = splitRows(controls, maxW).map((row) => ({ ...row, start: row.start + squares, end: row.end + squares }));
+  return { sizes: [...tray, ...controls], rows: [...trayRows, ...controlRows], trayRows: trayRows.length };
+}
+
+/** How a paged tray sits: its rows of squares a page, squares a row, and the row tops of a full page. */
+interface PagePlan {
+  rows: number;
+  perRow: number;
+  fill: RoomFill;
+}
+
+/** `rows` by the hub's order of tries in the rooms, then in the reach rooms; null when they fit neither. */
+function fillTankRows(view: HudView, frame: TankFrame, rows: readonly FlowRow[]): RoomFill | null {
+  return fillReach(rows, tankRooms(view, frame)) ?? fillReach(rows, trayReachRooms(view, frame));
+}
+
+/**
+ * The paged tray plan: as many squares a row as fit across, and the most rows a page, up to
+ * TRAY_PAGE_ROWS, for which a full page with Back and Next fits the rooms (else the reach rooms);
+ * else one row a page stacked from the top of the tallest room.
+ */
+function pagePlan(view: HudView, frame: TankFrame, look: DecorateLook): PagePlan {
+  const maxW = view.cssW - 2 * UI.margin;
+  const perRow = Math.max(1, Math.floor((maxW + UI.gap) / (look.trayPx + UI.gap)));
+  for (let rows = TRAY_PAGE_ROWS; rows >= 1; rows--) {
+    const fill = fillTankRows(view, frame, pageFlow(look, rows * perRow, true, maxW).rows);
+    if (fill !== null) return { rows, perRow, fill };
+  }
+  const room = tallestRoom(view, frame, tankRooms(view, frame));
+  return { rows: 1, perRow, fill: { tops: stackTops(pageFlow(look, perRow, true, maxW).rows, room.top), room } };
+}
+
+/** `page` as a whole page index from 0 to `pageCount - 1`; 0 when not finite. */
+function clampPage(page: number, pageCount: number): number {
+  if (!Number.isFinite(page)) return 0;
+  return Math.min(pageCount - 1, Math.max(0, Math.floor(page)));
+}
+
+/**
+ * The tray in pages by `pagePlan`: page `page` (clamped) of `count` squares, with Back, Next, Put away
+ * and Done in the row under them. Back and Next show only when there is more than one page. Every
+ * page uses the row tops of a full page, so the control row holds still as the pages turn.
+ */
+function pagedControls(view: HudView, frame: TankFrame, look: DecorateLook, count: number, page: number): DecorateControls {
+  const plan = pagePlan(view, frame, look);
+  const pageSize = plan.rows * plan.perRow;
+  const pageCount = Math.max(1, Math.ceil(count / pageSize));
+  const shown = clampPage(page, pageCount);
+  const trayStart = shown * pageSize;
+  const squares = Math.min(pageSize, count - trayStart);
+  const paged = pageCount > 1;
+  const flow = pageFlow(look, squares, paged, view.cssW - 2 * UI.margin);
+  const tops = flow.rows.map((_, index) => plan.fill.tops[index < flow.trayRows ? index : plan.rows + index - flow.trayRows]);
+  const rects = placeRows(flow.sizes, flow.rows, view.cssW / 2, tops);
+  const controls = rects.slice(squares);
+  const [previousPage, nextPage] = paged ? controls : [null, null];
+  const [putAway, done] = controls.slice(paged ? 2 : 0);
+  return { tray: rects.slice(0, squares), putAway, done, previousPage, nextPage, room: plan.fill.room, page: shown, pageCount, trayStart, pageSize };
+}
+
+/** Every control rect of `controls`: the tray squares, Put away, Done, and Back and Next when shown. */
+function controlRects(controls: DecorateControls): Rect[] {
+  const pageButtons = [controls.previousPage, controls.nextPage].filter((rect): rect is Rect => rect !== null);
+  return [...controls.tray, controls.putAway, controls.done, ...pageButtons];
 }
 
 /**
@@ -581,8 +722,10 @@ function decorateFlow(look: DecorateLook, count: number): Size[] {
  * compact sizes) and the rooms come from `maxTrayCount` squares (at least `trayCount`) by the hub's
  * order of tries, so they hold still as the tray empties; then `trayCount` squares are laid out
  * there. Rows that fit none of those rooms (a tray of more than 4) take the same order of tries in
- * the reach rooms (trayReachRooms), else stack from the top of the tallest room. The caption
- * (measured at `cssW - 2 * UI.margin`) goes by the hub focus caption rule.
+ * the reach rooms (trayReachRooms). A tray that fits neither goes in pages (PRD C9, open question
+ * 198): up to TRAY_PAGE_ROWS rows of squares a page, then Back, Next, Put away and Done in a row, by
+ * the same order of tries, showing page `page` (clamped). The caption (measured at
+ * `cssW - 2 * UI.margin`) goes by the hub focus caption rule.
  */
 export function decorateLayout(
   view: HudView,
@@ -590,29 +733,27 @@ export function decorateLayout(
   trayCount: number,
   sizes: DecorateSizes,
   maxTrayCount: number = trayCount,
+  page = 0,
 ): DecorateLayout {
   const count = wholeTrayCount(trayCount);
   const maxCount = Math.max(count, wholeTrayCount(maxTrayCount));
-  const compactSizes = sizes.compact ?? { putAway: { w: ICON_TILE.w, h: ICON_TILE.h }, done: COMPACT_DONE };
-  const looks: DecorateLook[] = [
-    { compact: false, trayPx: TRAY_PX, putAway: sizes.putAway, done: sizes.done },
-    { compact: true, trayPx: COMPACT_TRAY_PX, putAway: compactSizes.putAway, done: compactSizes.done },
-  ];
+  const looks = decorateLooks(sizes);
   const plan = planRows(view, frame, looks.map((candidate) => decorateFlow(candidate, maxCount)));
   const look = looks[plan.look];
-  const flow = decorateFlow(look, count);
-  const rows = splitRows(flow, view.cssW - 2 * UI.margin);
-  const fill = fillRooms(rows, plan.rooms) ?? fillReach(rows, trayReachRooms(view, frame)) ?? fillPlan(rows, plan);
-  const rects = placeRows(flow, rows, view.cssW / 2, fill.tops);
+  const controls = onePageControls(view, frame, look, count, plan) ?? pagedControls(view, frame, look, count, page);
   const caption = sizes.caption;
+  const controlsBottom = bottomOfAll(controlRects(controls), controls.room.top);
   return {
-    tray: rects.slice(0, count),
-    putAway: rects[count],
-    done: rects[count + 1],
-    caption: caption === null ? null : captionRect(view, frame, bottomOfAll(rects, fill.room.top), fill.room, caption, []),
+    ...controls,
+    caption: caption === null ? null : captionRect(view, frame, controlsBottom, controls.room, caption, []),
     compact: look.compact,
-    room: fill.room,
   };
+}
+
+/** The page of `layout`'s tray that holds the tray item at `itemIndex`, clamped to its pages. */
+export function trayPageOf(layout: Pick<DecorateLayout, 'pageCount' | 'pageSize'>, itemIndex: number): number {
+  if (!(layout.pageSize > 0)) return 0;
+  return clampPage(itemIndex / layout.pageSize, layout.pageCount);
 }
 
 /**

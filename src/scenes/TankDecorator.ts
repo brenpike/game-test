@@ -40,10 +40,13 @@ import {
   ALL_DECORATIONS_PLACED,
   DECORATE_HINT,
   DONE_LABEL,
+  NEXT_PAGE_LABEL,
   NO_DECORATIONS_TO_PLACE,
+  PREVIOUS_PAGE_LABEL,
   PUT_AWAY_LABEL,
 } from '../logic/tankText';
 import {
+  CHEST_BUTTON,
   COMPACT_DONE,
   COMPACT_TRAY_PX,
   ICON_TILE,
@@ -52,6 +55,7 @@ import {
   UI,
   decorateLayout,
   nextFocusIndex,
+  trayPageOf,
   type DecorateLayout,
   type DecorateSizes,
   type TankKey,
@@ -131,7 +135,7 @@ export interface TankDecoratorOptions {
 }
 
 /** A keyboard focus target in decorate mode. */
-type FocusTarget = { kind: 'tray' | 'placed'; id: string } | { kind: 'putAway' | 'done' };
+type FocusTarget = { kind: 'tray' | 'placed'; id: string } | { kind: 'previousPage' | 'nextPage' | 'putAway' | 'done' };
 
 /** One placed Decoration image, its rarity glow just behind it, the textures they show, and its CSS anchor. */
 interface DecorationSprite {
@@ -254,6 +258,15 @@ function placeButtonPair(pair: ButtonPair, rect: Rect, compact: boolean, shown: 
   inactive.setFocused(false);
 }
 
+/** Shows the variant of a tray page button `pair` the layout picks at `rect` with `focused`; hides both when `rect` is null. */
+function placePageButtonPair(pair: ButtonPair, rect: Rect | null, compact: boolean, focused: boolean): void {
+  if (rect !== null) return placeButtonPair(pair, rect, compact, true, focused);
+  for (const button of [pair.full, pair.compact]) {
+    button.container.setVisible(false);
+    button.setFocused(false);
+  }
+}
+
 /** Strokes a rounded rect `outset` px outside `rect` with the current line style. */
 function strokeOutset(graphics: Phaser.GameObjects.Graphics, rect: Rect, outset: number): void {
   graphics.strokeRoundedRect(
@@ -301,8 +314,9 @@ function strokeDashedRect(graphics: Phaser.GameObjects.Graphics, rect: Rect): vo
 /**
  * Draws the placed Decorations in the Home Tank and runs decorate mode (PRD C9, X5): a toolbar of
  * tray squares for owned Decorations not yet placed, Put away and Done, and a caption, each in its
- * full or compact look as decorateLayout picks. Placing, moving and putting away go through
- * src/logic/tank with the decorator's catalogue, so a Decoration is placed at most once and only
+ * full or compact look as decorateLayout picks. A tray that fits no room shows one page of squares
+ * at a time, with Back and Next to turn the pages, wrapping past either end. Placing, moving and
+ * putting away go through src/logic/tank with the decorator's catalogue, so a Decoration is placed at most once and only
  * where its kind may stand: Floor items on the gravel, Floating and Hanging items in the top band,
  * moving left and right only. Works by touch (tap, drag with a ghost) and by keyboard (focus cycling,
  * arrow nudges, confirm, cancel, put away). The scene owns layout persistence via onLayoutChange.
@@ -319,6 +333,8 @@ export class TankDecorator {
   private readonly caption: Phaser.GameObjects.Text;
   private readonly putAwayButtons: ButtonPair;
   private readonly doneButtons: ButtonPair;
+  private readonly previousPageButtons: ButtonPair;
+  private readonly nextPageButtons: ButtonPair;
   private readonly rings: Phaser.GameObjects.Graphics;
   private readonly ghostImage: Phaser.GameObjects.Image;
   private readonly ghostMarks: Phaser.GameObjects.Graphics;
@@ -329,6 +345,8 @@ export class TankDecorator {
   private view: SceneView | null = null;
   private frame: TankFrame | null = null;
   private decorate: DecorateLayout | null = null;
+  /** The tray page asked for; decorateLayout clamps it to the pages there are. */
+  private page = 0;
   private active = false;
   private focus: FocusTarget | null = null;
   private selection: string | null = null;
@@ -348,13 +366,12 @@ export class TankDecorator {
     this.caption = scene.add.text(0, 0, '', { ...uiTextStyle(CAPTION_PX, dpr, false), align: 'center' });
     this.putAwayButtons = this.createPutAwayButtons();
     this.doneButtons = this.createDoneButtons();
+    this.previousPageButtons = this.createPageButtons(PREVIOUS_PAGE_LABEL, 'left', -1);
+    this.nextPageButtons = this.createPageButtons(NEXT_PAGE_LABEL, 'right', 1);
     this.toolbar = scene.add
       .container(0, 0, [
         this.caption,
-        this.putAwayButtons.full.container,
-        this.putAwayButtons.compact.container,
-        this.doneButtons.full.container,
-        this.doneButtons.compact.container,
+        ...this.buttonPairs().flatMap((pair) => [pair.full.container, pair.compact.container]),
       ])
       .setDepth(depths.ui)
       .setVisible(false);
@@ -384,7 +401,7 @@ export class TankDecorator {
 
   setResolution(dpr: number): void {
     this.caption.setResolution(dpr);
-    for (const pair of [this.putAwayButtons, this.doneButtons]) {
+    for (const pair of this.buttonPairs()) {
       pair.full.setResolution(dpr);
       pair.compact.setResolution(dpr);
     }
@@ -402,11 +419,12 @@ export class TankDecorator {
     for (const sprite of this.sprites.values()) this.applyMotion(sprite);
   }
 
-  /** Starts decorate mode: shows the toolbar and makes the placed Decorations pressable, with no focus yet. */
+  /** Starts decorate mode on the first tray page: shows the toolbar and makes the placed Decorations pressable, with no focus yet. */
   enter(): void {
     this.active = true;
     this.selection = null;
     this.focus = null;
+    this.page = 0;
     this.toolbar.setVisible(true);
     for (const sprite of this.sprites.values()) sprite.image.setInteractive({ useHandCursor: true });
     this.refresh();
@@ -497,6 +515,21 @@ export class TankDecorator {
       full: createButton(scene, textures.baked, common),
       compact: createButton(scene, textures.baked, { ...common, width: COMPACT_DONE.w }),
     };
+  }
+
+  /** Back or Next: a square secondary tile CHEST_BUTTON wide, as in the Treasure Chest, and an icon-only ICON_TILE when compact. */
+  private createPageButtons(label: string, icon: 'left' | 'right', step: number): ButtonPair {
+    const { scene, textures, dpr } = this.options;
+    const common = { fill: 'secondary', shape: 'square', label, icon, dpr, pressOnDown: false, onPress: () => this.turnPage(step) } as const;
+    return {
+      full: createButton(scene, textures.baked, { ...common, size: 1, width: CHEST_BUTTON.w }),
+      compact: createButton(scene, textures.baked, { ...common, size: ICON_TILE_SIZE, iconOnly: true }),
+    };
+  }
+
+  /** Every toolbar button pair: Put away, Done, Back and Next. */
+  private buttonPairs(): ButtonPair[] {
+    return [this.putAwayButtons, this.doneButtons, this.previousPageButtons, this.nextPageButtons];
   }
 
   /** The catalogue Decoration `id`. Throws when the catalogue has none. */
@@ -615,13 +648,15 @@ export class TankDecorator {
   }
 
   /**
-   * The caption: the focused item's name, or "Put away" when the icon-only compact Put away is
-   * focused, else the hint or the empty-tray message.
+   * The caption: the focused item's name, or the label of the focused icon-only compact Put away,
+   * Back or Next, else the hint or the empty-tray message.
    */
   private captionText(compact: boolean): string {
     const focus = this.focus;
     if (focus !== null && 'id' in focus) return this.decorationOf(focus.id).name;
     if (focus?.kind === 'putAway' && compact) return PUT_AWAY_LABEL;
+    if (focus?.kind === 'previousPage' && compact) return PREVIOUS_PAGE_LABEL;
+    if (focus?.kind === 'nextPage' && compact) return NEXT_PAGE_LABEL;
     if (this.owned.length === 0) return NO_DECORATIONS_TO_PLACE;
     if (this.trayIds().length === 0) return ALL_DECORATIONS_PLACED;
     return DECORATE_HINT;
@@ -633,27 +668,47 @@ export class TankDecorator {
       putAway: buttonSize(this.putAwayButtons.full),
       done: buttonSize(this.doneButtons.full),
       caption,
-      compact: { putAway: buttonSize(this.putAwayButtons.compact), done: buttonSize(this.doneButtons.compact) },
+      pageButton: buttonSize(this.previousPageButtons.full),
+      compact: {
+        putAway: buttonSize(this.putAwayButtons.compact),
+        done: buttonSize(this.doneButtons.compact),
+        pageButton: buttonSize(this.previousPageButtons.compact),
+      },
     };
   }
 
+  /** The decorate layout of the tray as it is, on the page asked for, without a caption; null before the canvas is known. */
+  private trayLayout(): DecorateLayout | null {
+    const view = this.view;
+    const frame = this.frame;
+    if (view === null || frame === null) return null;
+    return decorateLayout(view, frame, this.trayIds().length, this.decorateSizes(null), this.owned.length, this.page);
+  }
+
+  /** The tray ids on the shown page of `layout`, or every tray id when there is no layout yet. */
+  private pageTrayIds(layout: DecorateLayout | null): string[] {
+    const ids = this.trayIds();
+    return layout === null ? ids : ids.slice(layout.trayStart, layout.trayStart + layout.tray.length);
+  }
+
   /**
-   * Lays the tray, Put away, Done and the caption out with decorateLayout, its look held still by the
-   * owned count, and shows the full or compact variant of each control as it picks.
+   * Lays the tray page, Put away, Done, Back, Next and the caption out with decorateLayout, its look
+   * held still by the owned count, keeps the page it clamps to, and shows the full or compact variant
+   * of each control as it picks.
    */
   private relayoutToolbar(): void {
     const view = this.view;
     const frame = this.frame;
-    if (view === null || frame === null) return;
+    const plain = this.trayLayout();
+    if (view === null || frame === null || plain === null) return;
     const ids = this.trayIds();
-    const maxTrayCount = this.owned.length;
-    const compact = decorateLayout(view, frame, ids.length, this.decorateSizes(null), maxTrayCount).compact;
     this.caption.setWordWrapWidth(Math.max(1, view.cssW - 2 * UI.margin), true);
-    this.caption.setText(this.captionText(compact));
+    this.caption.setText(this.captionText(plain.compact));
     const captionSize = { w: this.caption.width, h: this.caption.height };
-    const decorate = decorateLayout(view, frame, ids.length, this.decorateSizes(captionSize), maxTrayCount);
+    const decorate = decorateLayout(view, frame, ids.length, this.decorateSizes(captionSize), this.owned.length, this.page);
     this.decorate = decorate;
-    this.syncTray(ids, decorate.compact ? COMPACT_TRAY : FULL_TRAY);
+    this.page = decorate.page;
+    this.syncTray(this.pageTrayIds(decorate), decorate.compact ? COMPACT_TRAY : FULL_TRAY);
     this.trayButtons.forEach((button, index) => {
       const rect = decorate.tray[index];
       button.container.setPosition(rect.x, rect.y);
@@ -661,6 +716,8 @@ export class TankDecorator {
     const kind = this.focus?.kind;
     placeButtonPair(this.putAwayButtons, decorate.putAway, decorate.compact, this.selection !== null, kind === 'putAway');
     placeButtonPair(this.doneButtons, decorate.done, decorate.compact, true, kind === 'done');
+    placePageButtonPair(this.previousPageButtons, decorate.previousPage, decorate.compact, kind === 'previousPage');
+    placePageButtonPair(this.nextPageButtons, decorate.nextPage, decorate.compact, kind === 'nextPage');
     this.caption.setVisible(decorate.caption !== null);
     if (decorate.caption !== null) this.caption.setPosition(decorate.caption.x, decorate.caption.y);
   }
@@ -699,14 +756,16 @@ export class TankDecorator {
     return { x: topLeft.x, y: topLeft.y, w: footprint.w * frame.scale, h: footprint.h * frame.scale };
   }
 
-  /** Focus order: tray items, placed Decorations back to front, Put away when shown, Done. */
+  /** Focus order: tray items on the shown page, Back and Next when shown, placed Decorations back to front, Put away when shown, Done. */
   private focusTargets(): FocusTarget[] {
-    const tray = this.trayIds().map((id): FocusTarget => ({ kind: 'tray', id }));
+    const layout = this.trayLayout();
+    const tray = this.pageTrayIds(layout).map((id): FocusTarget => ({ kind: 'tray', id }));
+    const pageTargets: FocusTarget[] = layout !== null && layout.pageCount > 1 ? [{ kind: 'previousPage' }, { kind: 'nextPage' }] : [];
     const placed = drawOrder(this.tankLayout, this.options.catalogue).map(
       (placement): FocusTarget => ({ kind: 'placed', id: placement.id }),
     );
     const putAwayTarget: FocusTarget[] = this.selection !== null ? [{ kind: 'putAway' }] : [];
-    return [...tray, ...placed, ...putAwayTarget, { kind: 'done' }];
+    return [...tray, ...pageTargets, ...placed, ...putAwayTarget, { kind: 'done' }];
   }
 
   private setFocus(target: FocusTarget | null): void {
@@ -730,6 +789,10 @@ export class TankDecorator {
         return this.placeFromTray(focus.id);
       case 'placed':
         return this.selectPlaced(focus.id);
+      case 'previousPage':
+        return this.turnPage(-1);
+      case 'nextPage':
+        return this.turnPage(1);
       case 'putAway':
         return this.putAwaySelected();
       case 'done':
@@ -776,15 +839,25 @@ export class TankDecorator {
     this.setFocus({ kind: 'placed', id });
   }
 
-  /** Puts the selection away; focus moves to its tray square. */
+  /** Puts the selection away; the tray turns to the page of its square, and focus moves there. */
   private putAwaySelected(): void {
     const id = this.selection;
     if (!this.active || id === null) return;
     if (!this.applyChange(putAway(this.tankLayout, id), 'putAway')) return;
     this.cancelDrag();
     this.selection = null;
+    const layout = this.trayLayout();
+    if (layout !== null) this.page = trayPageOf(layout, this.trayIds().indexOf(id));
     this.focus = { kind: 'tray', id };
     this.finishChange();
+  }
+
+  /** Shows the tray page `step` away, wrapping past either end; focus on a square of the old page clears. */
+  private turnPage(step: number): void {
+    const layout = this.trayLayout();
+    if (!this.active || layout === null || layout.pageCount < 2) return;
+    this.page = nextFocusIndex(layout.page, layout.pageCount, step);
+    this.refresh();
   }
 
   private pressDone(): void {

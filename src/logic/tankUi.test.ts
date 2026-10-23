@@ -12,6 +12,7 @@ import {
   ICON_TILE,
   LABEL_BOLD_EM,
   TILE_BUTTON,
+  TRAY_PAGE_ROWS,
   TRAY_PX,
   UI,
   WIDE_BUTTON,
@@ -29,6 +30,7 @@ import {
   tankKeyFor,
   tankRooms,
   tileButtonWidth,
+  trayPageOf,
   wideButtonWidth,
   type ChestMeasure,
   type DecorateLayout,
@@ -254,13 +256,33 @@ function decorateSizes(view: HudView): DecorateSizes {
   };
 }
 
-/** The tray squares, Put away and Done of a decorate layout, named. */
+/** The tray squares, Put away, Done, and Back and Next when shown, of a decorate layout, named. */
 function decorateTargets(layout: DecorateLayout): [string, Rect][] {
+  const pageButtons: [string, Rect][] = [];
+  if (layout.previousPage !== null) pageButtons.push(['previousPage', layout.previousPage]);
+  if (layout.nextPage !== null) pageButtons.push(['nextPage', layout.nextPage]);
   return [
     ...layout.tray.map((rect, i): [string, Rect] => [`tray ${i}`, rect]),
     ['putAway', layout.putAway],
     ['done', layout.done],
+    ...pageButtons,
   ];
+}
+
+/** Problems with a layout's page fields: the shown page's squares, its start, and Back and Next only with more than one page. */
+function pageProblems(label: string, layout: DecorateLayout, trayCount: number): string[] {
+  const problems: string[] = [];
+  const expectedPages = layout.pageSize > 0 ? Math.max(1, Math.ceil(trayCount / layout.pageSize)) : 1;
+  if (layout.pageCount !== expectedPages) problems.push(`${label}: ${layout.pageCount} pages, expected ${expectedPages}`);
+  if (layout.trayStart !== layout.page * layout.pageSize) problems.push(`${label}: page starts at ${layout.trayStart}`);
+  const expectedSquares = Math.min(layout.pageSize, trayCount - layout.trayStart);
+  if (layout.tray.length !== expectedSquares) problems.push(`${label}: ${layout.tray.length} tray squares, expected ${expectedSquares}`);
+  const paged = layout.pageCount > 1;
+  if ((layout.previousPage !== null) !== paged || (layout.nextPage !== null) !== paged) {
+    problems.push(`${label}: Back and Next ${paged ? 'missing' : 'shown'}`);
+  }
+  if (!paged && layout.tray.length !== trayCount) problems.push(`${label}: one page without every tray square`);
+  return problems;
 }
 
 /** True when `row` spans an even width either side of the view's centre line. */
@@ -304,16 +326,16 @@ function captionRuleProblems(label: string, view: HudView, layout: DecorateLayou
 }
 
 /**
- * Every decorate problem on one canvas with one tray count out of `maxTrayCount`. Up to
- * ROOM_RULE_TRAY_MAX the controls stay inside the rooms and the caption always shows. A larger tray
+ * Every decorate problem on one canvas with one tray count out of `maxTrayCount`, on page `page`. Up
+ * to ROOM_RULE_TRAY_MAX the controls stay inside the rooms and the caption always shows. A larger tray
  * follows the art guide rule for trays of more than 4: its rows may reach over the floor band and the
- * caption is placed or hidden by its rule.
+ * caption is placed or hidden by its rule; a tray that fits no room goes in pages, with Back and Next.
  */
-function decorateProblems(view: HudView, trayCount: number, maxTrayCount: number): string[] {
-  const label = `decorate ${view.cssW}x${view.cssH} tray=${trayCount}/${maxTrayCount}`;
+function decorateProblems(view: HudView, trayCount: number, maxTrayCount: number, page = 0): string[] {
+  const label = `decorate ${view.cssW}x${view.cssH} tray=${trayCount}/${maxTrayCount} page=${page}`;
   const frame = tankFrame(view.cssW, view.cssH);
   const sizes = decorateSizes(view);
-  const layout = decorateLayout(view, frame, trayCount, sizes, maxTrayCount);
+  const layout = decorateLayout(view, frame, trayCount, sizes, maxTrayCount, page);
   const targets = decorateTargets(layout);
   const all: [string, Rect][] = layout.caption ? [...targets, ['caption', layout.caption]] : targets;
   const problems = [
@@ -328,9 +350,19 @@ function decorateProblems(view: HudView, trayCount: number, maxTrayCount: number
   } else {
     problems.push(...captionRuleProblems(label, view, layout, sizes.caption));
   }
-  if (layout.tray.length !== trayCount) problems.push(`${label}: ${layout.tray.length} tray squares`);
+  problems.push(...pageProblems(label, layout, trayCount));
+  if (layout.page !== page) problems.push(`${label}: shows page ${layout.page}`);
   if (layout.done.h < PRIMARY_H) problems.push(`${label}: Done under ${PRIMARY_H} px`);
   return problems;
+}
+
+/**
+ * Every decorate problem on every page of one tray. pageProblems pins each page's start, square
+ * count and the page count, so each tray item is on exactly one page.
+ */
+function trayPagesProblems(view: HudView, trayCount: number, maxTrayCount: number): string[] {
+  const first = decorateLayout(view, tankFrame(view.cssW, view.cssH), trayCount, decorateSizes(view), maxTrayCount);
+  return Array.from({ length: first.pageCount }, (_, page) => page).flatMap((page) => decorateProblems(view, trayCount, maxTrayCount, page));
 }
 
 /** Every chest problem on one canvas, including fewer than two rows per page. */
@@ -732,16 +764,16 @@ describe('decorateLayout', () => {
     expect(problems).toEqual([]);
   });
 
-  it('fits every tray up to the shipped Decorations on every supported canvas, more than 4 by the tray rule', () => {
+  it('fits every tray up to the shipped Decorations on every supported canvas, more than 4 by the tray rule, on every page', () => {
     expect(SHIPPED_DECORATIONS).toHaveLength(20);
     const maxCounts = Array.from({ length: SHIPPED_DECORATIONS.length + 1 }, (_, count) => count);
     const problems = supportedCanvases().flatMap((view) =>
       maxCounts.flatMap((maxTrayCount) =>
-        maxCounts.filter((trayCount) => trayCount <= maxTrayCount).flatMap((trayCount) => decorateProblems(view, trayCount, maxTrayCount)),
+        maxCounts.filter((trayCount) => trayCount <= maxTrayCount).flatMap((trayCount) => trayPagesProblems(view, trayCount, maxTrayCount)),
       ),
     );
     expect(problems).toEqual([]);
-  });
+  }, 30_000);
 
   it('uses 64 px tray squares and always reserves the Put away slot', () => {
     const view = { cssW: 800, cssH: 600 };
@@ -893,6 +925,155 @@ describe('decorateLayout', () => {
       ...targetProblems(label, targets),
       ...keepClearProblems(label, view, all),
     ]).toEqual([]);
+  });
+});
+
+/** The decorate layout the fit test checks: `trayCount` of `maxTrayCount` on `page`, with the caption. */
+function sceneDecorate(view: HudView, trayCount: number, maxTrayCount: number, page = 0): DecorateLayout {
+  return decorateLayout(view, tankFrame(view.cssW, view.cssH), trayCount, decorateSizes(view), maxTrayCount, page);
+}
+
+/** Canvases where a tray of 18 to 20 of the shipped Decorations fits no room and goes in pages, with the trays that page. */
+const PAGED_TRAYS: readonly [HudView, readonly number[]][] = [
+  [{ cssW: 360, cssH: 440 }, [18, 19, 20]],
+  [{ cssW: 375, cssH: 440 }, [18, 19, 20]],
+  ...[460, 480].flatMap((cssW) =>
+    [320, 340, 360, 375].map((cssH): [HudView, readonly number[]] => [{ cssW, cssH }, [19, 20]]),
+  ),
+  [{ cssW: 480, cssH: 414 }, [19, 20]],
+];
+
+describe('decorate tray pages', () => {
+  it('pages only trays of 18 to 20 at 360 and 375 x 440, and 19 or 20 at 460 and 480 by 320 to 375 and 480 x 414', () => {
+    const maxCounts = Array.from({ length: SHIPPED_DECORATIONS.length + 1 }, (_, count) => count);
+    const paged = supportedCanvases().flatMap((view) => {
+      const counts = maxCounts.filter((trayCount) => sceneDecorate(view, trayCount, SHIPPED_DECORATIONS.length).pageCount > 1);
+      return counts.length > 0 ? [`${view.cssW}x${view.cssH}: ${counts.join(',')}`] : [];
+    });
+    expect(paged).toEqual(PAGED_TRAYS.map(([view, counts]) => `${view.cssW}x${view.cssH}: ${counts.join(',')}`));
+  }, 30_000);
+
+  it('keeps every one-page tray exactly as the tray rule lays it out, with no Back or Next, whatever page is asked for', () => {
+    const problems = supportedCanvases().flatMap((view) =>
+      Array.from({ length: 18 }, (_, trayCount) => trayCount).flatMap((trayCount) => {
+        const label = `${view.cssW}x${view.cssH} tray=${trayCount}`;
+        const layout = sceneDecorate(view, trayCount, SHIPPED_DECORATIONS.length);
+        const shape = { page: 0, pageCount: 1, trayStart: 0, pageSize: trayCount, previousPage: null, nextPage: null };
+        const fields = { page: layout.page, pageCount: layout.pageCount, trayStart: layout.trayStart, pageSize: layout.pageSize, previousPage: layout.previousPage, nextPage: layout.nextPage };
+        const sameOnEveryPage = [1, -1, 7, Number.NaN].every((page) => JSON.stringify(sceneDecorate(view, trayCount, SHIPPED_DECORATIONS.length, page)) === JSON.stringify(layout));
+        return [
+          ...(JSON.stringify(fields) === JSON.stringify(shape) ? [] : [`${label}: paged`]),
+          ...(sameOnEveryPage ? [] : [`${label}: changes with the page asked for`]),
+        ];
+      }),
+    );
+    expect(problems).toEqual([]);
+  }, 30_000);
+
+  it('lays out 20 Decorations at 460 x 320 in two pages of two rows of 7, with Back, Next, Put away and Done in one row under them', () => {
+    const view = { cssW: 460, cssH: 320 };
+    const frame = tankFrame(view.cssW, view.cssH);
+    const rowXs = [26, 86, 146, 206, 266, 326, 386];
+    const first = sceneDecorate(view, 20, 20);
+    const second = sceneDecorate(view, 20, 20, 1);
+    expect(first).toMatchObject({ compact: true, page: 0, pageCount: 2, trayStart: 0, pageSize: 14 });
+    expect(first.tray).toEqual([
+      ...rowXs.map((x) => ({ x, y: 108, w: 48, h: 48 })),
+      ...rowXs.map((x) => ({ x, y: 168, w: 48, h: 48 })),
+    ]);
+    expect(second).toMatchObject({ page: 1, pageCount: 2, trayStart: 14, pageSize: 14 });
+    expect(second.tray).toEqual([56, 116, 176, 236, 296, 356].map((x) => ({ x, y: 108, w: 48, h: 48 })));
+    for (const layout of [first, second]) {
+      expect(layout.previousPage).toEqual({ x: 85, y: 236, w: 48, h: 48 });
+      expect(layout.nextPage).toEqual({ x: 145, y: 236, w: 48, h: 48 });
+      expect(layout.putAway).toEqual({ x: 205, y: 236, w: 48, h: 48 });
+      expect(layout.done).toEqual({ x: 265, y: 228, w: 110, h: 64 });
+      expect(layout.tray[0].y).toBe(topKeepClearCss(frame).y1 + UI.gap);
+      expect(bottomOf(layout.done)).toBeLessThanOrEqual(view.cssH - UI.margin);      expect(layout.caption).toBeNull();
+    }
+  });
+
+  it('lays out 20 Decorations at 360 x 440 in two pages of two rows of 5 on the wall, with the control row in the open water', () => {
+    const view = { cssW: 360, cssH: 440 };
+    const frame = tankFrame(view.cssW, view.cssH);
+    const rowXs = [36, 96, 156, 216, 276];
+    const expectedTray = [...rowXs.map((x) => ({ x, y: 16, w: 48, h: 48 })), ...rowXs.map((x) => ({ x, y: 76, w: 48, h: 48 }))];
+    const first = sceneDecorate(view, 20, 20);
+    const second = sceneDecorate(view, 20, 20, 1);
+    expect(first).toMatchObject({ compact: true, page: 0, pageCount: 2, trayStart: 0, pageSize: 10 });
+    expect(second).toMatchObject({ page: 1, pageCount: 2, trayStart: 10, pageSize: 10 });
+    for (const layout of [first, second]) {
+      expect(layout.tray).toEqual(expectedTray);
+      expect(bottomOf(layout.tray[9])).toBeLessThanOrEqual(lidTopCss(frame) - UI.gap);
+      expect(layout.previousPage).toEqual({ x: 35, y: 271, w: 48, h: 48 });
+      expect(layout.nextPage).toEqual({ x: 95, y: 271, w: 48, h: 48 });
+      expect(layout.putAway).toEqual({ x: 155, y: 271, w: 48, h: 48 });
+      expect(layout.done).toEqual({ x: 215, y: 263, w: 110, h: 64 });
+      expect(layout.done.y).toBe(topKeepClearCss(frame).y1 + UI.gap);      expect(layout.caption).toEqual({ x: 16, y: 339, w: 328, h: 67.5 });
+    }
+  });
+
+  it('counts the pages and puts each tray item on exactly one page', () => {
+    const view = { cssW: 360, cssH: 440 };
+    expect([18, 19, 20].map((trayCount) => sceneDecorate(view, trayCount, 20).pageCount)).toEqual([2, 2, 2]);
+    expect(sceneDecorate(view, 18, 20, 1)).toMatchObject({ trayStart: 10, pageSize: 10 });
+    expect(sceneDecorate(view, 18, 20, 1).tray).toHaveLength(8);
+    expect(sceneDecorate(view, 40, 40).pageCount).toBe(4);
+    expect(sceneDecorate(view, 41, 41).pageCount).toBe(5);
+    expect(sceneDecorate(view, 41, 41, 4).tray).toHaveLength(1);
+  });
+
+  it('clamps the page asked for to the pages there are, and as the tray empties', () => {
+    const view = { cssW: 460, cssH: 320 };
+    expect(sceneDecorate(view, 20, 20, 5).page).toBe(1);
+    expect(sceneDecorate(view, 20, 20, -2).page).toBe(0);
+    expect(sceneDecorate(view, 20, 20, Number.NaN).page).toBe(0);
+    expect(sceneDecorate(view, 20, 20, Number.POSITIVE_INFINITY).page).toBe(0);
+    expect(sceneDecorate(view, 20, 20, 1.7).page).toBe(1);
+    expect(sceneDecorate(view, 20, 20, 5)).toEqual(sceneDecorate(view, 20, 20, 1));
+    const emptied = sceneDecorate(view, 18, 20, 1);
+    expect(emptied).toMatchObject({ page: 0, pageCount: 1, trayStart: 0, previousPage: null, nextPage: null });
+    expect(emptied.tray).toHaveLength(18);
+  });
+
+  it('finds the page of a tray item, clamped to the pages there are', () => {
+    const paged = sceneDecorate({ cssW: 460, cssH: 320 }, 20, 20);
+    expect([0, 13, 14, 19, 99, -3].map((index) => trayPageOf(paged, index))).toEqual([0, 0, 1, 1, 1, 0]);
+    const onePage = sceneDecorate({ cssW: 460, cssH: 320 }, 18, 20);
+    expect([0, 17].map((index) => trayPageOf(onePage, index))).toEqual([0, 0]);
+    expect(trayPageOf(sceneDecorate({ cssW: 460, cssH: 320 }, 0, 20), 0)).toBe(0);
+  });
+
+  it.each([
+    { cssW: 360, cssH: 440 },
+    { cssW: 460, cssH: 320 },
+    { cssW: 480, cssH: 414 },
+    { cssW: 1280, cssH: 720 },
+  ])('keeps more Decorations than ship in pages of at most two rows, targets at least 48 px and clear of the top band, at $cssW x $cssH', (view) => {
+    const counts = [40, 60, 200];
+    expect(sceneDecorate(view, 200, 200).pageCount).toBeGreaterThan(1);
+    const problems = counts.flatMap((trayCount) => {
+      const first = sceneDecorate(view, trayCount, trayCount);
+      return Array.from({ length: first.pageCount }, (_, page) => page).flatMap((page) => {
+        const label = `decorate ${view.cssW}x${view.cssH} tray=${trayCount} page=${page}`;
+        const layout = sceneDecorate(view, trayCount, trayCount, page);
+        const targets = decorateTargets(layout);
+        const all: [string, Rect][] = layout.caption ? [...targets, ['caption', layout.caption]] : targets;
+        const trayRows = new Set(layout.tray.map((rect) => rect.y)).size;
+        const controlCentres = new Set([layout.previousPage, layout.nextPage, layout.putAway, layout.done].map((rect) => rect && rect.y + rect.h / 2));
+        const paged = layout.pageCount > 1;
+        return [
+          ...spacingProblems(label, marginBounds(view), all),
+          ...targetProblems(label, targets),
+          ...keepClearProblems(label, view, all),
+          ...centredRowProblems(label, view, all),
+          ...pageProblems(label, layout, trayCount),
+          ...(!paged || trayRows <= TRAY_PAGE_ROWS ? [] : [`${label}: ${trayRows} tray rows`]),
+          ...(!paged || controlCentres.size === 1 ? [] : [`${label}: Back, Next, Put away and Done not one row`]),
+        ];
+      });
+    });
+    expect(problems).toEqual([]);
   });
 });
 
