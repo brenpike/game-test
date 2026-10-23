@@ -14,6 +14,7 @@ export const GAME_EVENTS = Object.freeze({
   STEER: 'steer',
   EXIT_CLOSED: 'exit-closed',
   PLASTIC_WORM_SPAT: 'plastic-worm-spat',
+  GHOST_NET_SNAGGED: 'ghost-net-snagged',
 } as const);
 
 export type GameEventName = (typeof GAME_EVENTS)[keyof typeof GAME_EVENTS];
@@ -59,6 +60,11 @@ export interface PlasticWormSpatPayload {
   id: string;
 }
 
+/** Sent when a ghost net snags the explorer and a new snag starts; `id` is the net's hazard spawn id. */
+export interface GhostNetSnaggedPayload {
+  id: string;
+}
+
 /** Payload type for each event; `undefined` marks payload-less events. */
 export interface GameEventPayloads {
   [GAME_EVENTS.COLLECTED]: CollectedPayload;
@@ -73,6 +79,7 @@ export interface GameEventPayloads {
   [GAME_EVENTS.STEER]: SteerPayload;
   [GAME_EVENTS.EXIT_CLOSED]: ExitClosedPayload;
   [GAME_EVENTS.PLASTIC_WORM_SPAT]: PlasticWormSpatPayload;
+  [GAME_EVENTS.GHOST_NET_SNAGGED]: GhostNetSnaggedPayload;
 }
 
 /** Keys for values stored in the shared game registry. */
