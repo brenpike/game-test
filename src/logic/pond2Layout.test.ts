@@ -10,7 +10,7 @@ import { PERK_CAPS, SNACK_MAGNET_PULL_SPEED } from './perks';
 import { PLASTIC_WORM } from './plasticWorms';
 import { HERON_STRETCH_Y, POND_2_AREA_ID, POND_2_LAYOUT } from './pond2Layout';
 import { POND_LAYOUT } from './pondLayout';
-import { HERON_SHADOW_CYCLE, HERON_SPECIES, routeLoopDistance } from './predators';
+import { HERON_SPECIES, routeLoopDistance } from './predators';
 import { SNACK_DART, createSnackDarts, snackDarterIds, stepSnackDarts, type SnackDartAvoid } from './snackDart';
 import { stepSwim, type SwimState } from './swimPhysics';
 import { FINDS, HERON, LEGS, PLASTIC_WORMS, RISK, SNACK_REACH, SWIM, TILAPIA, tripTreasureTuning } from './tuning';
@@ -214,12 +214,11 @@ describe('POND_2_LAYOUT', () => {
     expect(POND_2_LAYOUT.treasures).toBe(POND_2_TREASURES);
   });
 
-  it('has one heron on a two-point stretch and its shadow cycle from the trip start', () => {
+  it('has one heron on a two-point stretch and no timing element (#111)', () => {
     expect(zone.predatorRoutes).toEqual([
       { id: 'heron-0', waypoints: [{ x: 2200, y: HERON_STRETCH_Y }, { x: 2620, y: HERON_STRETCH_Y }], species: HERON_SPECIES },
     ]);
-    expect(zone.elements).toEqual([{ id: 'heron-shadow-0', type: HERON_SHADOW_CYCLE, offset: 0 }]);
-    expect(HERON_SHADOW_CYCLE).toMatchObject({ id: 'heron-shadow-cycle', kind: 'cycle', period: 8, activeFor: 4 });
+    expect(zone.elements).toEqual([]);
   });
 
   it('builds the same fixed content for every seed', () => {

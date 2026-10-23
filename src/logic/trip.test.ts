@@ -1,17 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DrawnBody } from './collectibles';
 import { createEncounter, createEncounterContext, predatorSpecies } from './encounter';
-import { zoneThreats } from './hiding';
-import { meetsTilapia, type FactCard } from './factCards';
+import { HERON_MEET_RANGE, meetsTilapia, type FactCard } from './factCards';
 import { GHOST_NET, createGhostNets, isSnagged } from './ghostNets';
 import type { HazardSpawn, HazardType } from './hazards';
+import { inSightCover, zoneThreats } from './hiding';
 import {
   HERON_SPECIES,
   TILAPIA_SPECIES,
-  predatorVisible,
   type PredatorRoute,
   type PredatorSpecies,
-  type PredatorState,
 } from './predators';
 import { GAME_EVENTS, REGISTRY_KEYS } from './gameEvents';
 import { createLegs, isProtected, presentCount, tryHit, type LegsState } from './legs';
@@ -50,18 +48,7 @@ import { PLASTIC_WORM, isQueasy, spitLanding, type SpitAvoid } from './plasticWo
 import { RESCUE, pickStranding, type Stranding } from './rescue';
 import { TRIP_EVENTS, TRIP_REGISTRY_KEYS, type TripSnapshot } from './tripEvents';
 import { withStars } from './stars';
-import {
-  CARRY,
-  FINDS,
-  GHOST_NETS,
-  HERON,
-  LEGS,
-  PLASTIC_WORMS,
-  SNACK_REACH,
-  SWIM,
-  TILAPIA,
-  tripTreasureTuning,
-} from './tuning';
+import { CARRY, FINDS, GHOST_NETS, LEGS, PLASTIC_WORMS, SNACK_REACH, SWIM, TILAPIA, tripTreasureTuning } from './tuning';
 import { buildCanalZone, swimBounds, type HidingSpot, type Point } from './zone';
 
 const DT = 1 / 60;
@@ -105,6 +92,19 @@ const potZone: TripSource = {
   finds: [...findZone.finds, { id: BOW, pool: [potSpot.id] }],
   spots: [...findZone.spots, potSpot],
 };
+
+/**
+ * A trip seed whose treasure slots reach the Legendary Golden bow in its pot. A slot falls back only
+ * one step rarer (B4), so the canal's Common slots never reach it; it needs an Epic or Legendary roll.
+ */
+const POT_SEED = seedPlacing(potZone, BOW, potSpot.id);
+
+/** A trip of the pot zone with the Golden bow placed in its sealed pot. */
+function potTrip(source: TripSource = potZone): TripState {
+  const trip = createTrip(source, LEGS, [], POT_SEED);
+  expect(placedPot(trip)?.sealed).toBe(true);
+  return trip;
+}
 
 interface Drive {
   state: TripState;
@@ -309,7 +309,7 @@ describe('stepTrip Dash pots', () => {
   it('asks for a dash once per contact, keeps the pot sealed and gives no pickup or impulse', () => {
     const edge: Point = { x: potSpot.x + FINDS.containerRadius, y: potSpot.y };
     const path = [outside, edge, potSpot, potSpot, outside, potSpot];
-    let current = createTrip(potZone);
+    let current = potTrip();
     const perStep: TripEvent[][] = [];
     for (const pos of path) {
       const result = stepAt(current, pos);
@@ -326,13 +326,13 @@ describe('stepTrip Dash pots', () => {
 
   it('does not touch a pot just outside the container radius', () => {
     const away: Point = { x: potSpot.x + FINDS.containerRadius + 0.5, y: potSpot.y };
-    const result = stepAt(createTrip(potZone), away, true);
+    const result = stepAt(potTrip(), away, true);
     expect(result.events).toEqual([]);
     expect(placedPot(result.state)?.sealed).toBe(true);
   });
 
   it('breaks the pot and picks the treasure up in one step when dashing into it', () => {
-    const result = stepAt(createTrip(potZone), potSpot, true);
+    const result = stepAt(potTrip(), potSpot, true);
     expect(result.events).toEqual([potEvent('containerBroken'), pickedUpAt(BOW, potSpot)]);
     expect(result.impulse).toBeUndefined();
     expect(placedPot(result.state)?.sealed).toBe(false);
@@ -344,7 +344,7 @@ describe('stepTrip Dash pots', () => {
   it('breaks at the container radius but picks up only once the axolotl reaches the spot', () => {
     const edge: Point = { x: potSpot.x + FINDS.containerRadius, y: potSpot.y };
     const near: Point = { x: potSpot.x + FINDS.pickupRadius, y: potSpot.y };
-    const broke = stepAt(createTrip(potZone), edge, true);
+    const broke = stepAt(potTrip(), edge, true);
     expect(broke.events).toEqual([potEvent('containerBroken')]);
     expect(broke.state.holdings.bag).toEqual([]);
     const lingered = stepAt(broke.state, edge, true);
@@ -355,7 +355,7 @@ describe('stepTrip Dash pots', () => {
   });
 
   it('never picks up a sealed pot without a dash', () => {
-    const swum = walk(createTrip(potZone), Array.from({ length: 120 }, () => potSpot));
+    const swum = walk(potTrip(), Array.from({ length: 120 }, () => potSpot));
     expect(countOf(swum.events, 'pickedUp')).toBe(0);
     expect(countOf(swum.events, 'dashNeeded')).toBe(1);
     expect(swum.state.holdings.bag).toEqual([]);
@@ -364,7 +364,7 @@ describe('stepTrip Dash pots', () => {
 
   it('touches no pot while carrying', () => {
     const potRoute: TripSource = { ...potZone, tilapiaRoutes: zone.tilapiaRoutes };
-    const carry = drive(createTrip(potRoute), { axolotlPos: inRange, reduced: false, dashing: false }, 'carryStart');
+    const carry = drive(potTrip(potRoute), { axolotlPos: inRange, reduced: false, dashing: false }, 'carryStart');
     const arrived = drive(carry.state, { axolotlPos: potSpot, reduced: false, dashing: true }, 'arrivedHome');
     expect(countOf(arrived.events, 'containerBroken')).toBe(0);
     expect(countOf(arrived.events, 'dashNeeded')).toBe(0);
@@ -372,7 +372,7 @@ describe('stepTrip Dash pots', () => {
   });
 
   it('keeps the placed, touching and found arrays across steps that change none of them', () => {
-    const start = createTrip(potZone);
+    const start = potTrip();
     const away = stepAt(start, outside);
     expect(away.state.placed).toBe(start.placed);
     expect(away.state.touchingPots).toBe(start.touchingPots);
@@ -391,9 +391,10 @@ describe('stepTrip Dash pots', () => {
 });
 
 describe('per-trip placement', () => {
-  it('places every unbanked treasure at its spot, sealing pots, with nothing found', () => {
-    const trip = createTrip(potZone);
-    expect(trip.tripSeed).toBe(DEFAULT_TRIP_SEED);
+  it('places every unbanked treasure at its spot on a trip whose slots reach the Legendary, sealing pots, with nothing found', () => {
+    expect(createTrip(potZone).tripSeed).toBe(DEFAULT_TRIP_SEED);
+    const trip = potTrip();
+    expect(trip.tripSeed).toBe(POT_SEED);
     expect(trip.placed).toEqual([
       { id: PLANT, spotId: spotA.id, x: spotA.x, y: spotA.y, container: false, sealed: false },
       { id: HAT, spotId: spotB.id, x: spotB.x, y: spotB.y, container: false, sealed: false },
@@ -1243,8 +1244,8 @@ describe('determinism', () => {
   it('replays the same placement, pots and next trip without Math.random', () => {
     const random = vi.spyOn(Math, 'random');
     const path = [outside, potSpot, potSpot, outside, home];
-    const first = walk(createTrip(potZone), path, true);
-    const second = walk(createTrip(potZone), path, true);
+    const first = walk(potTrip(), path, true);
+    const second = walk(potTrip(), path, true);
     expect(second.state).toEqual(first.state);
     expect(second.events).toEqual(first.events);
     expect(newTrip(goHome(second.state).state)).toEqual(newTrip(goHome(first.state).state));
@@ -1563,86 +1564,70 @@ describe('meeting hazards and predators', () => {
   });
 });
 
-describe('meeting the heron (#98)', () => {
-  const heronRoute: PredatorRoute = {
-    id: 'heron-stretch',
-    waypoints: [
-      { x: 600, y: 100 },
-      { x: 1400, y: 100 },
-    ],
-    species: HERON_SPECIES,
-  };
+describe('meeting the heron (#111)', () => {
+  const standPoint: Point = { x: 1000, y: 100 };
+  const heronRoute: PredatorRoute = { id: 'heron-stand', waypoints: [standPoint], species: HERON_SPECIES };
   const heronZone: TripSource = { ...zone, finds: [], spots: [], tilapiaRoutes: [], predatorRoutes: [heronRoute] };
-  const deep: Point = { x: 1000, y: 290 };
-  const underStart: Point = { x: 600, y: 130 };
+  const atMeetRange: Point = { x: standPoint.x - HERON_MEET_RANGE, y: standPoint.y };
+  const pastMeetRange: Point = { x: atMeetRange.x - 0.5, y: atMeetRange.y };
 
-  function heronOf(state: TripState): PredatorState {
-    return state.encounter.predators[state.encounter.predators.length - 1];
-  }
+  it('meets the heron from the first step, within 180 px of where it stands, and not past that', () => {
+    expect(HERON_SPECIES.meetRange).toBe(HERON_MEET_RANGE);
+    expect(HERON_MEET_RANGE).toBe(180);
+    expect(stepAt(createTrip(heronZone), pastMeetRange).state.met).toEqual([]);
+    const met = stepAt(createTrip(heronZone), atMeetRange).state;
+    expect(met.met).toEqual(['heron']);
+    expect(tripSnapshot(met).factCardDue).toBe('heron');
+  });
 
-  function heronShown(state: TripState): boolean {
-    return predatorVisible(heronOf(state), HERON);
-  }
-
-  function heronGap(pos: Point): number {
-    const heron = heronOf(createTrip(heronZone)).pos;
-    return Math.hypot(heron.x - pos.x, heron.y - pos.y);
-  }
-
-  it('is never met while away, even beside its shadow spot, then met once it is shown in range', () => {
-    expect(heronGap(underStart)).toBeLessThanOrEqual(HERON_SPECIES.meetRange);
-    let state = createTrip(heronZone);
-    for (let i = 0; i < 20 * 60 && heronShown(state); i++) state = stepAt(state, deep).state;
-    expect(heronShown(state)).toBe(false);
-    expect(state.met).toEqual([]);
-    state = stepAt(state, deep).state;
-    expect(heronOf(state).pos).toEqual(heronRoute.waypoints[0]);
-
-    let awaySteps = 0;
-    while (!heronShown(state) && awaySteps < 20 * 60) {
-      expect(state.met).toEqual([]);
-      expect(tripSnapshot(state).factCardDue).toBeNull();
-      state = stepAt(state, underStart).state;
-      awaySteps += 1;
+  it('meets the heron wherever it has waded to', () => {
+    const wading: PredatorRoute = { ...heronRoute, id: 'heron-wade', waypoints: [standPoint, { x: 1250, y: 100 }] };
+    const wadeZone: TripSource = { ...heronZone, predatorRoutes: [wading] };
+    const far: Point = { x: 1250, y: 270 };
+    expect(Math.hypot(standPoint.x - far.x, standPoint.y - far.y)).toBeGreaterThan(HERON_MEET_RANGE);
+    let state = createTrip(wadeZone);
+    let steps = 0;
+    while (state.met.length === 0 && steps < 30 * 60) {
+      state = stepAt(state, far).state;
+      steps += 1;
     }
-    expect(awaySteps).toBeGreaterThan(1);
-    expect(heronShown(state)).toBe(true);
     expect(state.met).toEqual(['heron']);
-    expect(tripSnapshot(state).factCardDue).toBe('heron');
+    expect(steps).toBeGreaterThan(1);
+    const heron = state.encounter.predators[0].pos;
+    expect(Math.hypot(heron.x - far.x, heron.y - far.y)).toBeLessThanOrEqual(HERON_MEET_RANGE);
   });
 
-  it('is not met while shown but out of its meet range', () => {
-    let state = createTrip(heronZone);
-    let shownSteps = 0;
-    for (let i = 0; i < 8 * 60; i++) {
-      state = stepAt(state, deep).state;
-      if (heronShown(state)) shownSteps += 1;
-    }
-    expect(shownSteps).toBeGreaterThan(0);
-    expect(state.met).toEqual([]);
+  it('meets nothing inside the safe area, even within 180 px of the heron', () => {
+    const nearHome: PredatorRoute = { ...heronRoute, waypoints: [{ x: zone.safeArea.x1 + 100, y: 100 }] };
+    const homeZone: TripSource = { ...heronZone, predatorRoutes: [nearHome] };
+    const inSafe: Point = { x: zone.safeArea.x1 - 10, y: 150 };
+    const safe = walk(createTrip(homeZone), [inSafe, inSafe]).state;
+    expect(safe.met).toEqual([]);
+    expect(stepAt(safe, { x: zone.safeArea.x1 + 10, y: 150 }).state.met).toEqual(['heron']);
   });
 
-  it('freezes the heron cycle while paused and on the banking card', () => {
-    const findHeron: TripSource = { ...findZone, predatorRoutes: [heronRoute] };
-    const swimming = walk(createTrip(findHeron), [spotA, spotB, outside]).state;
-    const swimCycle = heronOf(swimming).cycleTime;
-    expect(swimCycle).toBeGreaterThan(0);
-    for (const dt of PAUSE_DTS) {
-      const paused = stepTrip(swimming, { axolotlPos: outside, reduced: false, dashing: false }, dt, ctx);
-      expect(paused.state).toBe(swimming);
-      expect(heronOf(paused.state).cycleTime).toBe(swimCycle);
-    }
+  it('meets the heron with the axolotl in cover: cover stops a warning, not a meeting', () => {
+    const reeds = zone.reedPatches[2];
+    const stand: Point = { x: (reeds.x0 + reeds.x1) / 2, y: 100 };
+    const hidden: Point = { x: stand.x, y: 180 };
+    const coverZone: TripSource = { ...heronZone, predatorRoutes: [{ ...heronRoute, waypoints: [stand] }] };
+    const trip = createTrip(coverZone);
+    expect(inSightCover(hidden, trip.encounter)).toBe(true);
+    const result = walk(trip, Array.from({ length: 60 }, () => hidden));
+    expect(result.state.met).toEqual(['heron']);
+    expect(result.events.filter((event) => event.type === 'telegraph')).toEqual([]);
+  });
 
-    const bankedTrip = stepAt(swimming, home).state;
-    expect(bankedTrip.phase).toBe('banked');
-    const heldCycle = heronOf(bankedTrip).cycleTime ?? 0;
-    for (const dt of [DT, 1, ...PAUSE_DTS]) {
-      const held = stepTrip(bankedTrip, { axolotlPos: home, reduced: false, dashing: false }, dt, ctx);
-      expect(held.state).toBe(bankedTrip);
-      expect(heronOf(held.state).cycleTime).toBe(heldCycle);
-    }
-    const resumed = stepAt(keepExploring(bankedTrip), home).state;
-    expect(heronOf(resumed).cycleTime).toBeCloseTo(heldCycle + DT, 9);
+  it('keeps the cover data on the next trip', () => {
+    const start = createTrip(heronZone);
+    expect(start.encounter.reedPatches).toEqual(zone.reedPatches);
+    expect(start.encounter.pads).toEqual(zone.pads);
+    expect(start.encounter.cave).toEqual(zone.cave);
+    const fresh = newTrip({ ...start, phase: 'ended', ending: { reason: 'wentHome', returned: [], bankedThisTrip: [] } });
+    expect(fresh.encounter.reedPatches).toEqual(zone.reedPatches);
+    expect(fresh.encounter.pads).toEqual(zone.pads);
+    expect(fresh.encounter.cave).toEqual(zone.cave);
+    expect(fresh.encounter.predatorRoutes).toEqual([heronRoute]);
   });
 });
 

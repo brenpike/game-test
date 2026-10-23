@@ -9,7 +9,7 @@ import { meetsThreatRiskRule, routeDistance, turnDistance, zoneThreats } from '.
 import { legSwimTuning } from './legs';
 import { POND_2_LAYOUT } from './pond2Layout';
 import { POND_LAYOUT } from './pondLayout';
-import { predatorCycleTiming, routeLoopDistance, type PredatorTuning } from './predators';
+import { routeLoopDistance, type PredatorTuning } from './predators';
 import { HERON, LEGS, RISK, SWIM, TILAPIA, type TilapiaTuning } from './tuning';
 import {
   DEFAULT_ZONE_SEED,
@@ -37,7 +37,7 @@ const cruiseSpeed = legSwimTuning(LEGS.count).maxSpeed;
 /**
  * One zone under test: the zone, an encounter context with its own bounds, its start times, and the
  * steps to wait at the start after a visit. Start times cover the longest tilapia loop and every
- * other predator's warning cycle.
+ * other predator's wade along its loop.
  */
 interface FairnessZone {
   zone: ZoneLayout;
@@ -50,9 +50,10 @@ interface FairnessZone {
 
 function fairnessZone(zone: ZoneLayout): FairnessZone {
   const tilapia = tilapiaOf(zone);
-  const longestLoop = Math.max(...zone.tilapiaRoutes.map((route) => loopSeconds(route, tilapia)));
+  const longestLoop = Math.max(...zone.tilapiaRoutes.map((route) => loopSeconds(route, tilapia.patrolSpeed)));
   const species = zone.predatorRoutes.map((route) => route.species.tuning);
-  const startWindow = Math.max(longestLoop, ...species.map(cycleSeconds));
+  const wades = zone.predatorRoutes.map((route) => loopSeconds(route, route.species.tuning.patrolSpeed));
+  const startWindow = Math.max(longestLoop, ...wades);
   return {
     zone,
     ctx: createEncounterContext({ bounds: swimBounds(zone) }),
@@ -73,25 +74,20 @@ function tailSteps(tuning: PredatorTuning): number {
   return Math.ceil((Math.max(tuning.windup, tuning.minWindup) + tuning.lungeDuration) / DT);
 }
 
-/** Seconds of one warning cycle of a timer species; 0 for a species without one. */
-function cycleSeconds(tuning: PredatorTuning): number {
-  return predatorCycleTiming(tuning)?.period ?? 0;
-}
-
 const canal = fairnessZone(buildCanalZone());
 const pond = fairnessZone(buildZone(POND_LAYOUT, DEFAULT_ZONE_SEED));
 const pond2 = fairnessZone(buildZone(POND_2_LAYOUT, DEFAULT_ZONE_SEED));
 const chinampa = fairnessZone(buildZone(CHINAMPA_LAYOUT, DEFAULT_ZONE_SEED));
 
-/** Seconds one tilapia playing `tuning` takes to patrol its whole closed loop. */
-function loopSeconds(route: TilapiaRoute, tuning: Readonly<TilapiaTuning>): number {
+/** Seconds a predator takes to patrol its whole closed loop at `speed`. */
+function loopSeconds(route: TilapiaRoute, speed: number): number {
   const points = route.waypoints;
   let perimeter = 0;
   for (let i = 0; i < points.length; i++) {
     const next = points[(i + 1) % points.length];
     perimeter += Math.hypot(next.x - points[i].x, next.y - points[i].y);
   }
-  return perimeter / tuning.patrolSpeed;
+  return perimeter / speed;
 }
 
 /** Every spot some find may be placed in. */
@@ -328,7 +324,7 @@ describe('risk fairness on the default Area 4 zone', () => {
   it('plays its own tilapia tuning: loops at its patrol speed, strikes at 145 px, waits out its own strike', () => {
     expect(zone.tilapia).toEqual(CHINAMPA_TILAPIA);
     expect(createEncounter(zone).tilapia).toEqual(CHINAMPA_TILAPIA);
-    expect(longestLoop).toBe(Math.max(...zone.tilapiaRoutes.map((route) => loopSeconds(route, CHINAMPA_TILAPIA))));
+    expect(longestLoop).toBe(Math.max(...zone.tilapiaRoutes.map((route) => loopSeconds(route, CHINAMPA_TILAPIA.patrolSpeed))));
     expect(startWindow).toBe(longestLoop);
     expect(lastStartIndex).toBe(Math.floor(startWindow / START_STEP));
     expect(parkSteps).toBe(tailSteps(CHINAMPA_TILAPIA));

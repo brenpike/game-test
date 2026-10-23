@@ -5,16 +5,17 @@
  * the stream and the root arch, so the Epic and Legendary spots there sit where it can strike.
  */
 import { POND_2_TREASURES } from './catalogue';
-import type { ElementSpawn, HazardSpawn } from './hazards';
+import type { HazardSpawn } from './hazards';
 import { PLASTIC_WORM } from './plasticWorms';
-import { HERON_SHADOW_CYCLE, HERON_SPECIES, type PredatorRoute } from './predators';
+import { HERON_SPECIES, type PredatorRoute } from './predators';
 import { BED_TOP, SURF, type AreaLayoutData, type Point } from './zone';
 
 export const POND_2_AREA_ID = 'pond-2';
 
 /**
- * y of the heron's stretch. The heron reaches 60 px from it, so its band runs from the surface down
- * to y 180, above the lowest beak dip (y 200); deeper water is out of its reach.
+ * y of the heron's stretch, the line of its beak's rest point. The heron reaches HERON.lungeRange
+ * (110 px) from where it stands on it, so it warns no deeper than y 230; deeper water is out of its
+ * reach.
  */
 export const HERON_STRETCH_Y = 120;
 
@@ -35,9 +36,6 @@ function heronStretch(id: string, x0: number, x1: number): Readonly<PredatorRout
   ];
   return Object.freeze({ id, waypoints: Object.freeze(waypoints) as Point[], species: HERON_SPECIES });
 }
-
-/** The heron's shadow cycle, starting with the trip (offset 0). */
-const HERON_SHADOW: Readonly<ElementSpawn> = Object.freeze({ id: 'heron-shadow-0', type: HERON_SHADOW_CYCLE, offset: 0 });
 
 /** The pond at dusk, Area 3, as area data: 6 screens across, 1 down. */
 export const POND_2_LAYOUT: Readonly<AreaLayoutData> = Object.freeze({
@@ -131,10 +129,10 @@ export const POND_2_LAYOUT: Readonly<AreaLayoutData> = Object.freeze({
     plasticWormAt(4, 1300, 270),
     plasticWormAt(5, 2740, 270),
   ]),
-  elements: Object.freeze([HERON_SHADOW]),
+  elements: Object.freeze([]),
   /**
    * Along the middle, up over the first tilapia and the Common pad, then on through the stream and
-   * under the heron's stretch, below its reach, to the exit.
+   * under the heron's stretch to the exit.
    */
   mainPath: Object.freeze([
     Object.freeze({ x: 120, y: 200 }),

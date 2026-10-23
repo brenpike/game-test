@@ -15,11 +15,11 @@ import { currentAt, reedDragAt } from './environment';
 import { TILAPIA_FACT } from './factCards';
 import { GAME_EVENTS, REGISTRY_KEYS } from './gameEvents';
 import type { HazardSpawn, HazardType } from './hazards';
+import { inSightCover } from './hiding';
 import { createLegs, isProtected, legSwimTuning, presentCount } from './legs';
 import {
   HERON_SPECIES,
   TILAPIA_SPECIES,
-  predatorCycleView,
   type PredatorRoute,
   type PredatorSpecies,
   type PredatorState,
@@ -661,28 +661,21 @@ describe('stagger across species', () => {
   });
 });
 
-describe('the heron in the encounter (#98)', () => {
-  const heronRoute: PredatorRoute = {
-    id: 'heron-stretch',
-    waypoints: [
-      { x: 600, y: 100 },
-      { x: 1400, y: 100 },
-    ],
-    species: HERON_SPECIES,
-  };
+describe('the heron in the encounter (#111)', () => {
+  const standPoint: Point = { x: 1000, y: 100 };
+  const heronRoute: PredatorRoute = { id: 'heron-stand', waypoints: [standPoint], species: HERON_SPECIES };
   const heronSource: EncounterSource = { ...zone, tilapiaRoutes: [], predatorRoutes: [heronRoute] };
-  const inBand: Point = { x: 1000, y: 130 };
+  const inReach: Point = { x: 1000, y: 180 };
   const shellCtx = createEncounterContext({ legs: { ...LEGS, regrowTime: 1e9 }, shell: true });
-  const period = 8;
+  /** One warning and its cooldown: the shortest time from one heron warning to the next. */
+  const round = HERON.windup + HERON.cooldown;
 
   function heronOf(state: EncounterState): PredatorState {
     return state.predators[state.predators.length - 1];
   }
 
-  function heronPhase(state: EncounterState): string {
-    const view = predatorCycleView(heronOf(state), HERON);
-    if (!view) throw new Error('the heron has no cycle');
-    return view.phase;
+  function standingAt(id: string, at: Point): PredatorRoute {
+    return { id, waypoints: [at], species: HERON_SPECIES };
   }
 
   it('builds the tilapia first, then the heron route with the heron species and its own tuning', () => {
@@ -690,123 +683,114 @@ describe('the heron in the encounter (#98)', () => {
     const state = createEncounter({ ...heronSource, tilapiaRoutes: [left] });
     expect(state.predators.map((predator) => [predator.routeId, predator.species])).toEqual([
       ['left', 'tilapia'],
-      ['heron-stretch', 'heron'],
+      ['heron-stand', 'heron'],
     ]);
     const tunedCtx = createEncounterContext({ tilapia: { ...TILAPIA, windup: 5 } });
     expect(predatorSpecies(state, state.predators[1], tunedCtx)).toBe(HERON_SPECIES);
     expect(predatorSpecies(state, state.predators[1], tunedCtx).tuning).toBe(HERON);
   });
 
-  it('never bumps, even with the axolotl on its warning spot, whatever its contactRadius', () => {
+  it('never bumps, even with the axolotl on its strike spot, whatever its contactRadius', () => {
     const wideReach: PredatorSpecies = { ...HERON_SPECIES, tuning: { ...HERON, contactRadius: 1000, bumpSpeed: 500 } };
     for (const species of [HERON_SPECIES, wideReach]) {
       const source: EncounterSource = { ...heronSource, predatorRoutes: [{ ...heronRoute, species }] };
-      const { events, impulses } = run(createEncounter(source), inBand, 2 * period, noRegrowCtx);
+      const { events, impulses } = run(createEncounter(source), inReach, 2 * round, noRegrowCtx);
       expect(typesOf(events, ['telegraph', 'hit'])).toEqual(['telegraph', 'hit', 'telegraph', 'hit']);
       expect(typesOf(events, ['bump'])).toEqual([]);
       expect(impulses).toBe(0);
     }
   });
 
-  it('lands a connected dip as one hit: one leg, protected time and the heron bump cooldown', () => {
-    const { state, events } = run(createEncounter(heronSource), inBand, period, noRegrowCtx, 'hit');
+  it('lands a connected stab as one hit from where it stands: one leg, protected time and the heron bump cooldown', () => {
+    const { state, events } = run(createEncounter(heronSource), inReach, round, noRegrowCtx, 'hit');
     expect(typesOf(events, ['telegraph', 'lunge', 'hit', 'regrowStart', 'bump'])).toEqual([
       'telegraph',
       'lunge',
       'hit',
       'regrowStart',
     ]);
-    expect(events.find((event) => event.type === 'hit')).toEqual({
-      type: 'hit',
-      sourceId: 'heron-stretch',
-      leg: 0,
-      from: inBand,
-    });
+    expect(events.find((event) => event.type === 'hit')).toEqual({ type: 'hit', sourceId: 'heron-stand', leg: 0, from: standPoint });
     expect(presentCount(state.legs)).toBe(LEGS.count - 1);
     expect(state.legs.protectedLeft).toBe(LEGS.protectedTime);
     expect(state.bumpCooldownLeft).toBe(HERON.bumpCooldown);
+    expect(heronOf(state).phase).toBe('cooldown');
+    expect(heronOf(state).pos).toEqual(standPoint);
   });
 
-  it('lets the Shell block the first dip, and the next dip costs a leg', () => {
-    const blocked = run(createEncounter(heronSource), inBand, period, shellCtx, 'shellBlock');
+  it('lets the Shell block the first stab, and the next stab costs a leg', () => {
+    const blocked = run(createEncounter(heronSource), inReach, round, shellCtx, 'shellBlock');
     expect(blocked.events.filter((event) => event.type === 'shellBlock')).toEqual([
-      { type: 'shellBlock', sourceId: 'heron-stretch', from: inBand },
+      { type: 'shellBlock', sourceId: 'heron-stand', from: standPoint },
     ]);
     expect(presentCount(blocked.state.legs)).toBe(LEGS.count);
     expect(blocked.state.legs.protectedLeft).toBe(LEGS.protectedTime);
     expect(blocked.state.bumpCooldownLeft).toBe(HERON.bumpCooldown);
     expect(blocked.state.shellUsed).toBe(true);
-    const next = run(blocked.state, inBand, period, shellCtx, 'hit');
+    const next = run(blocked.state, inReach, 2 * round, shellCtx, 'hit');
     expect(typesOf(next.events, ['hit', 'shellBlock'])).toEqual(['hit']);
     expect(presentCount(next.state.legs)).toBe(LEGS.count - 1);
   });
 
-  it('carries the axolotl home on the fourth dip', () => {
-    const { state, events } = run(createEncounter(heronSource), inBand, 5 * period, noRegrowCtx, 'carriedHome');
+  it('carries the axolotl home on the fourth stab', () => {
+    const { state, events } = run(createEncounter(heronSource), inReach, 5 * round, noRegrowCtx, 'carriedHome');
     const hits = events.filter((event) => event.type === 'hit');
     expect(hits.map((event) => event.leg)).toEqual([0, 1, 2, 3]);
     expect(events[events.length - 1]).toEqual({ type: 'carriedHome' });
     expect(state.tripOver).toBe(true);
   });
 
-  it('passes its cycle when a tilapia is already warning at the heron warn mark', () => {
-    const near: TilapiaRoute = { id: 'near', waypoints: [{ x: 1100, y: 130 }] };
-    const slowCtx = createEncounterContext({ legs: { ...LEGS, regrowTime: 1e9 }, tilapia: { ...TILAPIA, windup: 5 } });
-    let state = createEncounter({ ...heronSource, tilapiaRoutes: [near] });
-    const heronPhases = new Set<string>();
+  it('takes its cover from the zone data: never warns at an axolotl in the canal reeds, under a canal pad or in the canal cave', () => {
+    const reeds = zone.reedPatches[2];
+    const pad = zone.pads[3];
+    const hiding: { cover: string; stand: Point; axolotl: Point }[] = [
+      { cover: 'reeds', stand: { x: (reeds.x0 + reeds.x1) / 2, y: 100 }, axolotl: { x: (reeds.x0 + reeds.x1) / 2, y: 180 } },
+      { cover: 'pad', stand: { x: pad.x - 60, y: 100 }, axolotl: { x: pad.x, y: SURF + 15 } },
+      { cover: 'cave', stand: { x: zone.cave.x0 + 20, y: 100 }, axolotl: { x: zone.cave.x0 + 20, y: zone.cave.y0 + 5 } },
+    ];
+    for (const { cover, stand, axolotl } of hiding) {
+      const source: EncounterSource = { ...heronSource, predatorRoutes: [standingAt(`heron-${cover}`, stand)] };
+      const state = createEncounter(source);
+      expect(state.reedPatches).toEqual(zone.reedPatches);
+      expect(state.pads).toEqual(zone.pads);
+      expect(state.cave).toEqual(zone.cave);
+      expect(inSightCover(axolotl, state), cover).toBe(true);
+      expect(Math.hypot(axolotl.x - stand.x, axolotl.y - stand.y), cover).toBeLessThanOrEqual(HERON.lungeRange);
+      expect(typesOf(run(state, axolotl, 2 * round, noRegrowCtx).events, ['telegraph', 'lunge', 'hit']), cover).toEqual([]);
+    }
+    const open: Point = { x: inReach.x, y: inReach.y };
+    expect(inSightCover(open, createEncounter(heronSource))).toBe(false);
+    const { events } = run(createEncounter(heronSource), open, round, noRegrowCtx, 'hit');
+    expect(typesOf(events, ['telegraph', 'lunge', 'hit'])).toEqual(['telegraph', 'lunge', 'hit']);
+  });
+
+  it('lets only one predator warn or strike at a time across two herons and a tilapia (A1)', () => {
+    const fish: TilapiaRoute = { id: 'fish', waypoints: [{ x: 1000, y: 260 }] };
+    const source: EncounterSource = {
+      ...zone,
+      tilapiaRoutes: [fish],
+      predatorRoutes: [standingAt('heron-0', { x: 950, y: 100 }), standingAt('heron-1', { x: 1050, y: 100 })],
+    };
+    const axolotl: Point = { x: 1000, y: 170 };
+    let state = createEncounter(source);
     const telegraphs: string[] = [];
-    let tilapiaAtMark: string | null = null;
-    for (let i = 0; i < Math.round(period / DT); i++) {
-      const result = stepEncounter(state, inBand, DT, slowCtx);
+    for (let i = 0; i < Math.round(30 / DT) && !state.tripOver; i++) {
+      const result = stepEncounter(state, axolotl, DT, noRegrowCtx);
       state = result.state;
       expect(attackingCount(state)).toBeLessThanOrEqual(1);
-      heronPhases.add(heronPhase(state));
-      if (tilapiaAtMark === null && heronPhase(state) === 'glideOff') tilapiaAtMark = state.predators[0].phase;
       for (const event of result.events) {
         if (event.type === 'telegraph') telegraphs.push(event.sourceId);
       }
     }
-    expect(tilapiaAtMark).toBe('telegraph');
-    expect(telegraphs[0]).toBe('near');
-    expect(telegraphs).not.toContain('heron-stretch');
-    expect([...heronPhases].sort()).toEqual(['gap', 'glideIn', 'glideOff']);
+    expect(new Set(telegraphs)).toEqual(new Set(['fish', 'heron-0', 'heron-1']));
   });
 
-  it('keeps a tilapia in range from warning until the heron dip ends', () => {
-    const deep: TilapiaRoute = { id: 'deep', waypoints: [{ x: 1000, y: 290 }] };
-    const nearTilapia: Point = { x: 1000, y: 158 };
-    let state = createEncounter({ ...heronSource, tilapiaRoutes: [deep] });
-    let heronWarned = false;
-    let heronDipEnd = -1;
-    let tilapiaTelegraph = -1;
-    const telegraphs: string[] = [];
-    for (let i = 0; i < Math.round(period / DT) && tilapiaTelegraph < 0; i++) {
-      const wasDipping = heronOf(state).phase === 'lunge';
-      const result = stepEncounter(state, heronWarned ? nearTilapia : inBand, DT, noRegrowCtx);
-      state = result.state;
-      expect(attackingCount(state)).toBeLessThanOrEqual(1);
-      if (wasDipping && heronOf(state).phase !== 'lunge') heronDipEnd = i;
-      for (const event of result.events) {
-        if (event.type !== 'telegraph') continue;
-        telegraphs.push(event.sourceId);
-        if (event.sourceId === 'heron-stretch') heronWarned = true;
-        if (event.sourceId === 'deep') tilapiaTelegraph = i;
-      }
-    }
-    expect(telegraphs).toEqual(['heron-stretch', 'deep']);
-    expect(heronDipEnd).toBeGreaterThan(0);
-    expect(tilapiaTelegraph).toBe(heronDipEnd + 1);
-  });
-
-  it('freezes the heron cycle at dt=0 and every other paused dt', () => {
-    const moving = run(createEncounter(heronSource), inBand, 1, noRegrowCtx).state;
-    const cycleTime = heronOf(moving).cycleTime;
-    expect(cycleTime).toBeGreaterThan(0);
+  it('freezes the heron at dt=0 and every other paused dt', () => {
+    const warning = run(createEncounter(heronSource), inReach, 0.5, noRegrowCtx).state;
+    expect(heronOf(warning).phase).toBe('telegraph');
     for (const dt of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
-      const paused = stepEncounter(moving, inBand, dt, noRegrowCtx);
-      expect(paused.state).toBe(moving);
+      const paused = stepEncounter(warning, inReach, dt, noRegrowCtx);
+      expect(paused.state).toBe(warning);
       expect(paused.events).toEqual([]);
-      expect(heronOf(paused.state).cycleTime).toBe(cycleTime);
     }
   });
 });

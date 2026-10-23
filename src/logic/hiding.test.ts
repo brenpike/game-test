@@ -33,7 +33,6 @@ import {
   HERON_SPECIES,
   TILAPIA_SPECIES,
   createPredator,
-  predatorCycleTiming,
   routeLoopDistance,
   stepPredator,
   type PredatorContext,
@@ -652,11 +651,13 @@ describe('meetsRarity with every threat', () => {
 
 describe('heron reach and strike zone', () => {
   const stretchY = SURF + PAD_COVER_DEPTH;
+  const stretchX0 = 700;
+  const stretchX1 = 1400;
   const heronRoute: PredatorRoute = {
     id: 'heron-stretch',
     waypoints: [
-      { x: 700, y: stretchY },
-      { x: 1400, y: stretchY },
+      { x: stretchX0, y: stretchY },
+      { x: stretchX1, y: stretchY },
     ],
     species: HERON_SPECIES,
   };
@@ -664,9 +665,11 @@ describe('heron reach and strike zone', () => {
     safeArea: { x0: 40, x1: 660, y0: SURF, y1: BED_TOP },
     bounds: { minX: 0, maxX: 2000, minY: SURF, maxY: BED_TOP },
     tuning: HERON_SPECIES.tuning,
+    rules: HERON_SPECIES.rules,
   };
   const heronGeo: HidingGeometry = {
     ...GEO,
+    reedPatches: [...GEO.reedPatches, { x0: 1300, x1: 1340, y0: SURF, y1: BED_TOP, dragMul: 2.5 }],
     pads: [{ x: 1000, rx: 40, flower: false }],
     cave: { id: 'test/root-arch', x0: 1150, x1: 1250, y0: 120, y1: 220 },
     predatorRoutes: [heronRoute],
@@ -674,16 +677,16 @@ describe('heron reach and strike zone', () => {
   const threats = zoneThreats(heronGeo);
   const strike = threats[0].strike;
 
-  function warnMark(): number {
-    const timing = predatorCycleTiming(HERON_SPECIES.tuning);
-    if (!timing) throw new Error('the heron has no warning cycle');
-    return timing.warnAt;
+  /** Whether a heron standing at `stand` starts a warning at the target: the real predators.ts sight rule, cover included. */
+  function heronWarnsAt(target: Point, stand: Point): boolean {
+    const heron = createPredator({ id: 'heron-stand', waypoints: [stand] }, HERON_SPECIES.id);
+    const ctx: PredatorContext = { ...heronCtx, targetInCover: inSightCover(target, heronGeo) };
+    return stepPredator(heron, target, 0.01, ctx).events.some((event) => event.type === 'telegraphStart');
   }
 
-  /** Whether a heron at its warn mark starts a warning at the target: the real predators.ts reach rule. */
-  function heronWarnsAt(target: Point): boolean {
-    const atMark = { ...createPredator(heronRoute, HERON_SPECIES.id), cycleTime: warnMark() };
-    return stepPredator(atMark, target, 0.01, heronCtx).events.some((event) => event.type === 'telegraphStart');
+  /** The point of the stretch nearest to `pos`, where the heron stands when it is nearest. */
+  function nearestStand(pos: Point): Point {
+    return { x: Math.min(stretchX1, Math.max(stretchX0, pos.x)), y: stretchY };
   }
 
   function inStrikeZone(pos: Point): boolean {
@@ -698,58 +701,87 @@ describe('heron reach and strike zone', () => {
     return points;
   }
 
-  it('gives the heron route its species lunge range as the strike range S', () => {
+  it('gives the heron route its species lunge range as the strike range S = 110, and bands it by riskBands', () => {
     expect(threats).toEqual([{ kind: 'route', route: heronRoute, strike: HERON.lungeRange, tilapia: false }]);
-    expect(strike).toBe(60);
+    expect(strike).toBe(110);
+    expect(riskBands(strike)).toEqual({
+      common: { over: 170, upTo: Infinity },
+      rare: { over: 110, upTo: 170 },
+      epic: { over: 55, upTo: 110 },
+      legendary: { over: -Infinity, upTo: 55 },
+    });
+    const at = (distance: number): Point => ({ x: 1000, y: stretchY + distance });
+    expect(meetsThreatRiskRule(at(171), 'common', threats)).toBe(true);
+    expect(meetsThreatRiskRule(at(170), 'common', threats)).toBe(false);
+    expect(meetsThreatRiskRule(at(170), 'rare', threats)).toBe(true);
+    expect(meetsThreatRiskRule(at(110), 'epic', threats)).toBe(true);
+    expect(meetsThreatRiskRule(at(56), 'epic', threats)).toBe(true);
+    expect(meetsThreatRiskRule(at(55), 'legendary', threats)).toBe(true);
   });
 
-  it('warns at a sampled point exactly when it is in the strike zone (riskDistance <= S outside the safe area)', () => {
+  it('warns at a sampled point, standing on the nearest point of its stretch, exactly when the point is in the strike zone and not in cover', () => {
     const points = samplePoints();
-    const mismatches = points.filter((pos) => heronWarnsAt(pos) !== inStrikeZone(pos));
+    const mismatches = points.filter(
+      (pos) => heronWarnsAt(pos, nearestStand(pos)) !== (inStrikeZone(pos) && !inSightCover(pos, heronGeo)),
+    );
     const reachRule = points.filter(
       (pos) => (routeLoopDistance(pos, heronRoute.waypoints) <= HERON.lungeRange && !inSafeArea(pos, heronCtx.safeArea)) !== inStrikeZone(pos),
     );
     expect(mismatches).toEqual([]);
     expect(reachRule).toEqual([]);
-    expect(points.some(inStrikeZone)).toBe(true);
+    expect(points.some((pos) => inStrikeZone(pos) && !inSightCover(pos, heronGeo))).toBe(true);
     expect(points.some((pos) => !inStrikeZone(pos))).toBe(true);
   });
 
-  it('counts the zone edge, exactly S from the route, as in reach', () => {
-    const edge = { x: 1000, y: stretchY + strike };
-    expect(riskDistance(edge, threats)).toBe(strike);
-    expect(heronWarnsAt(edge)).toBe(true);
-    expect(heronWarnsAt({ x: 1000, y: stretchY + strike + 1 })).toBe(false);
-  });
-
-  it('never reaches deep water below the band', () => {
-    for (const pos of [{ x: 1000, y: stretchY + strike + 10 }, { x: 1000, y: BED_TOP }, { x: 1200, y: 215 }]) {
-      expect(riskDistance(pos, threats)).toBeGreaterThan(strike);
-      expect(heronWarnsAt(pos)).toBe(false);
+  it('never warns, from anywhere on its stretch, at a point outside the strike zone', () => {
+    const outside = samplePoints().filter((pos) => !inStrikeZone(pos));
+    for (let x = stretchX0; x <= stretchX1; x += 50) {
+      const stand = { x, y: stretchY };
+      expect(outside.filter((pos) => heronWarnsAt(pos, stand)), `standing at x ${x}`).toEqual([]);
     }
   });
 
-  it('never reaches the safe area, even within S of the route', () => {
-    const sheltered = { x: 650, y: stretchY };
-    expect(riskDistance(sheltered, threats)).toBeLessThanOrEqual(strike);
-    expect(heronWarnsAt(sheltered)).toBe(false);
+  it('counts the zone edge, exactly S from where it stands, as in reach', () => {
+    const stand = { x: 1000, y: stretchY };
+    const edge = { x: 1000, y: stretchY + strike };
+    expect(riskDistance(edge, threats)).toBe(strike);
+    expect(heronWarnsAt(edge, stand)).toBe(true);
+    expect(heronWarnsAt({ x: 1000, y: stretchY + strike + 1 }, stand)).toBe(false);
   });
 
-  it('gives no protection under a pad or in a cave or root arch: only depth and the safe area protect', () => {
+  it('never reaches deep water below the zone', () => {
+    for (const pos of [{ x: 1000, y: stretchY + strike + 10 }, { x: 1000, y: BED_TOP }, { x: 1100, y: 225 }]) {
+      expect(riskDistance(pos, threats)).toBeGreaterThan(strike);
+      expect(heronWarnsAt(pos, nearestStand(pos))).toBe(false);
+    }
+  });
+
+  it('never reaches the safe area, even within S of where it stands', () => {
+    const sheltered = { x: 650, y: stretchY };
+    expect(riskDistance(sheltered, threats)).toBeLessThanOrEqual(strike);
+    expect(heronWarnsAt(sheltered, nearestStand(sheltered))).toBe(false);
+  });
+
+  it('never warns at a covered point under a pad, in the root arch or in reeds, though the risk ladder still counts it as near', () => {
     const underThePad = { x: 1000, y: stretchY - 10 };
     const archMouth = { x: 1200, y: 130 };
-    const archMiddle = { x: 1200, y: 160 };
+    const archDeep = { x: 1200, y: 200 };
+    const inTheReeds = { x: 1320, y: 150 };
     expect(coversAt(underThePad, heronGeo)).toContain('pad');
     expect(coversAt(archMouth, heronGeo)).toContain('cave');
-    expect(coversAt(archMiddle, heronGeo)).toContain('cave');
-    for (const pos of [underThePad, archMouth, archMiddle]) {
-      expect(heronWarnsAt(pos)).toBe(true);
+    expect(coversAt(archDeep, heronGeo)).toContain('cave');
+    expect(coversAt(inTheReeds, heronGeo)).toContain('reeds');
+    for (const pos of [underThePad, archMouth, archDeep, inTheReeds]) {
+      expect(inSightCover(pos, heronGeo)).toBe(true);
       expect(inStrikeZone(pos)).toBe(true);
+      expect(heronWarnsAt(pos, nearestStand(pos))).toBe(false);
+      expect(heronWarnsAt({ x: pos.x, y: pos.y }, { x: pos.x, y: stretchY })).toBe(false);
     }
     expect(meetsThreatRiskRule(underThePad, 'legendary', threats)).toBe(true);
     expect(meetsThreatRiskRule(archMouth, 'legendary', threats)).toBe(true);
-    expect(meetsThreatRiskRule(archMiddle, 'epic', threats)).toBe(true);
-    expect(meetsThreatRiskRule(archMiddle, 'common', threats)).toBe(false);
+    expect(meetsThreatRiskRule(archDeep, 'epic', threats)).toBe(true);
+    expect(meetsThreatRiskRule(archDeep, 'common', threats)).toBe(false);
+    expect(meetsThreatRiskRule(inTheReeds, 'legendary', threats)).toBe(true);
   });
 });
 

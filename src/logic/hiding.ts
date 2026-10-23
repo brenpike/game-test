@@ -232,9 +232,10 @@ export function riskBands(strike: number): RiskTuning['band'] {
 
 /**
  * Distance from a point to one threat: to its closed patrol loop, or to its shape edge (0 inside).
- * A route is measured with routeLoopDistance, the measure a timer species warns by, so a heron's
- * warning reach outside the safe area and its strike zone (riskDistance within its strike) are one
- * rule. No cover (reeds, pad, cave) shortens or blocks it.
+ * A route is measured with routeLoopDistance. A predator warns from where it is on its route, so
+ * every point it can warn at is within its strike of the route. No cover (reeds, pad, cave)
+ * shortens or blocks the distance: a covered spot still counts as near a sight hunter such as the
+ * heron, because getting in and out of it crosses the hunter's reach.
  */
 function threatDistance(pos: Point, threat: Threat): number {
   return threat.kind === 'route' ? routeLoopDistance(pos, threat.route.waypoints) : shapeDistance(pos, threat.shape);
