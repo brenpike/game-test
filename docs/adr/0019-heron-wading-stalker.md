@@ -1,4 +1,4 @@
-# ADR 0018: Heron wading stalker
+# ADR 0019: Heron wading stalker
 
 - Status: Accepted
 - Date: 2026-10-22
@@ -108,6 +108,7 @@ The generic timing-element data stays for later areas: the `'cycle'` element kin
 - A new sight hunter, a stabbing species or a species that stands still in its cooldown opts into `PredatorRules` with no new rule code. Its warning, strike, leg cost, fact card and B10 reach work as for the tilapia.
 - No species has a timer-started warning. A later timed predator needs a new rule and a new ADR.
 - The heron changes leave the tilapia, the canal and Area 2 playing as before, which the canal and pond golden tests show. The one-step treasure fallback (B4) and the 40% stranding chance (C2) from issue #111 do reach them: some trips place different treasures once treasures are banked or returned, and stranded axolotls turn up more often.
+- Area 3's narrowest hazard gap on its main path is now 136.09 px, between `pond-2/plastic-worm-1` and `pond-2/plastic-worm-2`, not 96.09 px between its last plastic worm and the heron: the heron's reach rose from 60 to 110 px, so the main path at y 200 now runs inside the herons' reach. Area 4's 64 px gap is still tighter, so the level layout ladder holds. Under the one-step fallback, Area 4 (9 slots; 4 Common and 4 Rare treasures; the Scarecrow always placed) leaves at least one slot empty in 136 of 200 fresh trips (84 one empty, 52 two empty). Whether that is fine is PRD open question 220.
 - New ids load under ADR 0012's additive rule; no `SAVE_VERSION` bump.
 - Hiding in cover now protects the axolotl from the heron but not from the tilapia.
 
