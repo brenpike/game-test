@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-10-23
+
+### Changed
+
+- Two herons now stand and wade in the back of Area 3, the Lily pad pond. When you swim close near the surface, a heron freezes and pulls its neck into an S, then stabs fast at where you were. Swim away while it is an S to dodge it, swim deep, or hide in the reeds, under a lily pad or in the root arch, where a heron cannot see you (#111).
+- Stranded axolotls turn up a little more often, on about 4 trips in 10 (#111).
+- The source for the heron's fact card was checked again (#111).
+
+### Fixed
+
+- When an area's common treasures are all found, a treasure slot no longer jumps to a much rarer treasure, so a trip can no longer fill up with Legendaries (#111).
+
 ## [0.30.0] - 2026-10-22
 
 ### Added
