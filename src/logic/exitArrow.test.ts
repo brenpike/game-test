@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CANAL_AREA, CHINAMPA_AREA, POND_2_AREA, POND_AREA } from './areas';
+import { CANAL_AREA, CHINAMPA_2_AREA, CHINAMPA_AREA, POND_2_AREA, POND_AREA } from './areas';
 import { exitArrowSide } from './exitArrow';
 import { areaSize } from './zone';
 
@@ -9,6 +9,11 @@ describe('exitArrowSide', () => {
       const { width } = areaSize(area.layout.screensWide, area.layout.screensTall);
       expect(exitArrowSide(area.exit, width), area.id).toBe('right');
     }
+  });
+
+  it('points left for Area 5, the U-turn, whose exit is under the Home Spot', () => {
+    const { width } = areaSize(CHINAMPA_2_AREA.layout.screensWide, CHINAMPA_2_AREA.layout.screensTall);
+    expect(exitArrowSide(CHINAMPA_2_AREA.exit, width)).toBe('left');
   });
 
   it('points left for an exit in the left half', () => {

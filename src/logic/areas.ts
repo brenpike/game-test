@@ -1,3 +1,4 @@
+import { CHINAMPA_2_AREA_ID, CHINAMPA_2_LAYOUT } from './chinampa2Layout';
 import { CHINAMPA_AREA_ID, CHINAMPA_LAYOUT } from './chinampaLayout';
 import type { SnackDrift } from './collectibles';
 import { REFUGE_FACT_CARDS, TILAPIA_FACT, type FactCard } from './factCards';
@@ -23,7 +24,7 @@ export const CANAL_HABITAT: Readonly<Habitat> = Object.freeze({ id: 'canal', nam
 /** The lily pad pond habitat, home of Area 2. */
 export const POND_HABITAT: Readonly<Habitat> = Object.freeze({ id: 'pond', name: 'Lily pad pond', look: 'pond' });
 
-/** The chinampa gardens habitat, home of Area 4. */
+/** The chinampa gardens habitat, home of Areas 4 and 5. */
 export const CHINAMPA_HABITAT: Readonly<Habitat> = Object.freeze({ id: 'chinampa', name: 'Chinampa gardens', look: 'chinampa' });
 
 /** Every habitat. */
@@ -154,8 +155,31 @@ export const CHINAMPA_AREA: Readonly<AreaData> = Object.freeze({
   snackDart: SNACK_DART,
 });
 
+/** Area 5, the chinampa gardens again, the first U-turn area, where the garter snakes hunt. */
+export const CHINAMPA_2_AREA: Readonly<AreaData> = Object.freeze({
+  id: CHINAMPA_2_AREA_ID,
+  number: 5,
+  habitatId: CHINAMPA_HABITAT.id,
+  layout: CHINAMPA_2_LAYOUT,
+  /**
+   * Provisional exit straight under the Home Spot, at the end of the main path back along the
+   * bottom row, inside the swim bounds, out of the safe area and every predator's reach, clear of
+   * every ghost net and mat, and clear of every hiding spot by more than the exit radius plus the
+   * find pickup radius.
+   */
+  exit: Object.freeze({ x: 120, y: 625, radius: 40 }),
+  specialTreasureId: 'chinampa/pinata',
+  /**
+   * Provisional drift, a little faster than Area 4 (PRD H4): the same amplitudes with shorter
+   * periods, peak speed about 15.8 px/s. That is below the 17 px/s a one-leg axolotl makes against
+   * the gap current and at most half the 40 px/s Snack magnet pull.
+   */
+  snackDrift: Object.freeze({ amplitudeX: 16, amplitudeY: 8, periodX: 7.5, periodY: 6.0 }),
+  snackDart: SNACK_DART,
+});
+
 /** Every area, in area-number order. */
-export const AREAS: readonly Readonly<AreaData>[] = Object.freeze([CANAL_AREA, POND_AREA, POND_2_AREA, CHINAMPA_AREA]);
+export const AREAS: readonly Readonly<AreaData>[] = Object.freeze([CANAL_AREA, POND_AREA, POND_2_AREA, CHINAMPA_AREA, CHINAMPA_2_AREA]);
 
 /** The area with this id, or undefined when there is none. */
 export function areaById(id: string): Readonly<AreaData> | undefined {
