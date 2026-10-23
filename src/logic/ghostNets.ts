@@ -44,12 +44,25 @@ export function isSnagged(state: GhostNetState): boolean {
   return state.snagLeft > 0;
 }
 
-function netIdsInReach(nets: readonly Readonly<HazardSpawn>[], pos: Point): string[] {
-  return nets.filter((net) => hazardTouches(net, pos)).map((net) => net.id);
-}
-
-function sameIds(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((id, i) => id === right[i]);
+/**
+ * The ids of the nets whose reach holds `pos`, in data order. Returns `prior` itself when the ids
+ * are the same as `prior`, so a step on which they do not change, in reach or not, allocates no
+ * array; a new array is built only when they change.
+ */
+function netIdsInReach(nets: readonly Readonly<HazardSpawn>[], pos: Point, prior: readonly string[]): readonly string[] {
+  let changed: string[] | null = null;
+  let matched = 0;
+  for (const net of nets) {
+    if (!hazardTouches(net, pos)) continue;
+    if (changed === null && prior[matched] === net.id) {
+      matched += 1;
+      continue;
+    }
+    changed ??= prior.slice(0, matched);
+    changed.push(net.id);
+  }
+  if (changed !== null) return changed;
+  return matched === prior.length ? prior : prior.slice(0, matched);
 }
 
 /**
@@ -67,8 +80,7 @@ export function stepGhostNets(
   tuning: SnagTime = GHOST_NETS,
 ): GhostNetState {
   if (!(dt > 0) || !Number.isFinite(dt)) return state;
-  const found = netIdsInReach(state.nets, pos);
-  const inReach = sameIds(found, state.inReach) ? state.inReach : found;
+  const inReach = netIdsInReach(state.nets, pos, state.inReach);
   const entered = state.inReach.length === 0 && inReach.length > 0;
   const snagLeft = entered && !isSnagged(state) ? tuning.snagTime : Math.max(0, state.snagLeft - dt);
   if (snagLeft === state.snagLeft && inReach === state.inReach) return state;

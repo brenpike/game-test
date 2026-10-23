@@ -178,6 +178,24 @@ describe('stepGhostNets', () => {
     expect(stepGhostNets(outside, OUTSIDE, DT)).toBe(outside);
   });
 
+  it('keeps the same reach list while the nets holding the explorer stay the same', () => {
+    const start = createGhostNets([NET_A, NET_B]);
+    expect(stepGhostNets(start, OUTSIDE, DT).inReach).toBe(start.inReach);
+
+    const snagged = stepGhostNets(start, INSIDE_BOTH, DT);
+    expect(snagged.inReach).toEqual([NET_A.id, NET_B.id]);
+    const counting = stepGhostNets(snagged, INSIDE_BOTH, DT);
+    expect(counting.snagLeft).toBeCloseTo(GHOST_NETS.snagTime - DT);
+    expect(counting.inReach).toBe(snagged.inReach);
+
+    const intoA = stepGhostNets(counting, INSIDE_A, DT);
+    expect(intoA.inReach).toEqual([NET_A.id]);
+    expect(stepGhostNets(intoA, INSIDE_A, DT).inReach).toBe(intoA.inReach);
+    const intoB = stepGhostNets(intoA, { x: 650, y: 250 }, DT);
+    expect(intoB.inReach).toEqual([NET_B.id]);
+    expect(stepGhostNets(intoB, OUTSIDE, DT).inReach).toEqual([]);
+  });
+
   it('never mutates its input', () => {
     const start = createGhostNets([NET_A, NET_B]);
     const frozen = Object.freeze({ ...start, nets: Object.freeze([...start.nets]), inReach: Object.freeze([]) });
