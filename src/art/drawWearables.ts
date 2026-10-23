@@ -1,12 +1,13 @@
 /**
- * Worn looks of the twenty-five Wearables (guide 6a, 6i, 6q; PRD C10, F9, F13): the
+ * Worn looks of the thirty-one Wearables (guide 6a, 6i, 6q; PRD C10, F9, F13): the
  * canal's Sun hat, Shell necklace, Heart glasses, Golden bow, Tank top, Diving
  * tank, Stripy socks and Flippers, the pond's Lily flower crown, Pond-weed
  * scarf, Dragonfly glasses, Raincoat, Ladybug backpack, Rainbow dragonfly wings
  * and Froggy boots, and the pond Area 3's Feather cap, Lily-pad socks,
  * Water-lily shirt, Pearl tail charm and Firefly cape, and the chinampa Area 4's
  * Straw sun hat, Marigold necklace, Garden overalls, Monarch hair clip and Monarch
- * wings, painted on the anchors
+ * wings, and the chinampa Area 5's Bee headband, Bandana, Sunflower sunglasses,
+ * Embroidered shirt, Hummingbird tail ribbon and Rainbow serape cape, painted on the anchors
  * and footprints of drawAxolotlParts.ts. Each is the 7e catalogue icon's design re-fitted to its
  * footprint, with ink widths never scaled (guide 4b). Every worn silhouette
  * (`shape`, inkedShape and `blob`) uses the item ink ITEM_LW 2.0 (#88): thinner
@@ -41,6 +42,15 @@
  * stripe alpha, the overalls' patch, the cream monarch spots and ink veins. The
  * Monarch hair clip and the Monarch wings never use red, and no look has net-like
  * lines, so no worn look reads as a wound or as a ghost net.
+ *
+ * The Area 5 looks (issue #103) keep to the same footprints and the same rules. Their
+ * outer fills are the icons' own colours, imported by name from drawTreasures.ts
+ * (BEE_HEADBAND_FILL, BANDANA_FILL, SUNFLOWER_FRAME, EMBROIDERED_SHIRT_FILL,
+ * HUMMINGBIRD_RIBBON_FILL, SERAPE_STRIPES; each 9:1 or better with ink, none red), so
+ * a worn look and its icon cannot drift. Their other colours are internal details: ink at the stripe alpha, the
+ * sunflower's brown centre, the shirt's embroidery petals and the serape's stripes.
+ * The Sunflower sunglasses keep the glasses construction (clear lens tint, never dark),
+ * so the eyes always show. No look has net-like lines.
  */
 import { ell, inkMany, line, seg, shape } from './canvasKit';
 import { roundedPolygon, type Pt } from './drawBadges';
@@ -70,7 +80,23 @@ import {
   type WearableSlot,
 } from './drawAxolotlParts';
 import { INK, WHITE } from './palette';
-import { GARDEN_OVERALLS_FILL, MARIGOLD_PETAL, MONARCH_BODY, MONARCH_SPOT, MONARCH_WING, STRAW_HAT_FILL } from './drawTreasures';
+import {
+  BANDANA_FILL,
+  BEE_HEADBAND_FILL,
+  EMBROIDERED_SHIRT_FILL,
+  EMBROIDERY_BAND,
+  EMBROIDERY_PETALS,
+  GARDEN_OVERALLS_FILL,
+  HUMMINGBIRD_RIBBON_FILL,
+  MARIGOLD_PETAL,
+  MONARCH_BODY,
+  MONARCH_SPOT,
+  MONARCH_WING,
+  SERAPE_STRIPES,
+  STRAW_HAT_FILL,
+  SUNFLOWER_CENTRE,
+  SUNFLOWER_FRAME,
+} from './drawTreasures';
 import {
   BOAT_TRIM,
   BOW_FILL,
@@ -151,12 +177,18 @@ export type WearableArtSlug =
   | 'marigold-necklace'
   | 'garden-overalls'
   | 'monarch-hair-clip'
-  | 'monarch-wings';
+  | 'monarch-wings'
+  | 'bee-headband'
+  | 'bandana'
+  | 'sunflower-sunglasses'
+  | 'embroidered-shirt'
+  | 'hummingbird-tail-ribbon'
+  | 'rainbow-serape-cape';
 
 /**
  * The slot each art slug is worn in (guide 6i). The canal's eight come first, the
- * pond's seven after them, the pond Area 3's five next and the chinampa Area 4's five
- * last, so WEARABLE_ART_SLUGS finds each slot's canal slug first.
+ * pond's seven after them, the pond Area 3's five next, the chinampa Area 4's five and the
+ * chinampa Area 5's six last, so WEARABLE_ART_SLUGS finds each slot's canal slug first.
  */
 export const WEARABLE_ART_SLOT: Readonly<Record<WearableArtSlug, WearableSlot>> = {
   'sun-hat': 'head',
@@ -184,6 +216,12 @@ export const WEARABLE_ART_SLOT: Readonly<Record<WearableArtSlug, WearableSlot>> 
   'garden-overalls': 'shirt',
   'monarch-hair-clip': 'head',
   'monarch-wings': 'back',
+  'bee-headband': 'head',
+  bandana: 'neck',
+  'sunflower-sunglasses': 'face',
+  'embroidered-shirt': 'shirt',
+  'hummingbird-tail-ribbon': 'tail',
+  'rainbow-serape-cape': 'back',
 };
 
 /** The canal's art slug of each slot, in slot order (PRD order): one per slot, though a slot can hold more than one slug. */
@@ -2065,6 +2103,381 @@ function paintMonarchWings(ctx: CanvasRenderingContext2D, box: BackFrameBox): vo
 }
 
 // ---------------------------------------------------------------------------
+// Head: Bee headband (Common)
+// ---------------------------------------------------------------------------
+
+/** The band's fill ends along x (the round ends included), and its thickness. */
+const BEE_BAND_X0 = 18.4;
+const BEE_BAND_X1 = 41.8;
+const BEE_BAND_THICK = 4.6;
+/** The band's lowest fill y: its ink (2.0) then ends at the Head footprint's lowest y, -19.5. */
+const BEE_BAND_FLOOR = -21.5;
+/** How far inside the head outline's fill (below its top edge) the band's lower edge rests, where the floor allows. */
+const BEE_BAND_SINK = 0.6;
+/** The bee stripes: ink bars at the stripe alpha across the band, at these x, this wide. */
+const BEE_STRIPES: readonly number[] = [22, 25.8, 36.2, 39.4];
+const BEE_STRIPE_W = 1.8;
+/** The two antennae: where each leaves the band (x), the curve's control point and the bobble centre, and the stem and bobble sizes. */
+const BEE_ANTENNAE: readonly { readonly baseX: number; readonly ctrl: Pt; readonly tip: Pt }[] = [
+  { baseX: 28.4, ctrl: { x: 26.4, y: -33.4 }, tip: { x: 24.4, y: -38.4 } },
+  { baseX: 33.6, ctrl: { x: 36.2, y: -33.4 }, tip: { x: 38.4, y: -38.2 } },
+];
+const BEE_STEM_W = 2.2;
+const BEE_BOBBLE_R = 3;
+
+/** y of the head outline's upper edge at x. */
+function headTopAt(x: number): number {
+  const { cx, cy, rx, ry } = HEAD_ELLIPSE;
+  return cy - ry * Math.sqrt(Math.max(0, 1 - ((x - cx) / rx) ** 2));
+}
+
+/** y of the band's lower edge at x: on the head top, or the floor where the head falls away toward the snout. */
+function beeBandLowerAt(x: number): number {
+  return Math.min(headTopAt(x) + BEE_BAND_SINK, BEE_BAND_FLOOR);
+}
+
+/** The band as one closed path: its upper edge rear to front, a round front end, its lower edge back, a round rear end. */
+function beeBandPath(): Path2D {
+  const r = BEE_BAND_THICK / 2;
+  const xa = BEE_BAND_X0 + r;
+  const xb = BEE_BAND_X1 - r;
+  const steps = Math.round((xb - xa) / 0.5);
+  const xs = Array.from({ length: steps + 1 }, (_, i) => xa + ((xb - xa) * i) / steps);
+  const band = new Path2D();
+  xs.forEach((x, i) => (i === 0 ? band.moveTo(x, beeBandLowerAt(x) - BEE_BAND_THICK) : band.lineTo(x, beeBandLowerAt(x) - BEE_BAND_THICK)));
+  band.arc(xb, beeBandLowerAt(xb) - r, r, -Math.PI / 2, Math.PI / 2);
+  for (let i = steps; i >= 0; i--) band.lineTo(xs[i], beeBandLowerAt(xs[i]));
+  band.arc(xa, beeBandLowerAt(xa) - r, r, Math.PI / 2, (3 * Math.PI) / 2);
+  band.closePath();
+  return band;
+}
+
+/**
+ * Common (issue #103): a #ffe566 bee-yellow headband hugging the head top, with two
+ * little bee antennae (a curved stem and a round bobble each) springing from it and
+ * splaying up and out. Band, stems and bobbles are one silhouette: every ink stroke
+ * (2.0 outside the fill all round) before every fill, so no ink crosses a joint. The
+ * bee stripes are four bars of ink at alpha 0.30 across the band (the same colour
+ * darkened, not a second colour); one shine on the rear bobble; no trim. The band rests
+ * on the head: its lower edge sits 0.6 inside the head outline's fill, except toward the
+ * snout, where the head falls away and it keeps the Head footprint's floor (lowest ink
+ * y -19.5). Ink included it fills HEAD_FOOTPRINT, x 16.4 to 43.8, the bobbles' top about
+ * y -43.4, clear of the gill stems (x 16 or more), the lash reach circles and the cheek
+ * heart.
+ */
+function paintBeeHeadband(ctx: CanvasRenderingContext2D): void {
+  const band = beeBandPath();
+  const stems = BEE_ANTENNAE.map((a) => {
+    const base: Pt = { x: a.baseX, y: beeBandLowerAt(a.baseX) - BEE_BAND_THICK * 0.6 };
+    const stem = new Path2D();
+    stem.moveTo(base.x, base.y);
+    stem.quadraticCurveTo(a.ctrl.x, a.ctrl.y, a.tip.x, a.tip.y);
+    return stem;
+  });
+  const bobbles = BEE_ANTENNAE.map((a) => ellipsePath(a.tip.x, a.tip.y, BEE_BOBBLE_R, BEE_BOBBLE_R));
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 2 * ITEM_LW;
+  ctx.stroke(band);
+  for (const bobble of bobbles) ctx.stroke(bobble);
+  ctx.lineWidth = BEE_STEM_W + 2 * ITEM_LW;
+  for (const stem of stems) ctx.stroke(stem);
+  ctx.fillStyle = BEE_HEADBAND_FILL;
+  ctx.fill(band);
+  for (const bobble of bobbles) ctx.fill(bobble);
+  ctx.strokeStyle = BEE_HEADBAND_FILL;
+  ctx.lineWidth = BEE_STEM_W;
+  for (const stem of stems) ctx.stroke(stem);
+  ctx.save();
+  ctx.clip(band);
+  ctx.globalAlpha = SOCK_STRIPE_ALPHA;
+  ctx.fillStyle = INK;
+  for (const x of BEE_STRIPES) ctx.fill(rectPath(x - BEE_STRIPE_W / 2, -40, x + BEE_STRIPE_W / 2, -15));
+  ctx.restore();
+  shine(ctx, BEE_ANTENNAE[0].tip.x - 1, BEE_ANTENNAE[0].tip.y - 1, 1.1, 0.6, -0.6);
+}
+
+// ---------------------------------------------------------------------------
+// Neck: Bandana (Common)
+// ---------------------------------------------------------------------------
+
+/** The polka dots: x of each along the band (clear of the shine at x 12.5 to 16.5), alternating between these shares of the band's height, and the dot radius. */
+const BANDANA_DOT_X: readonly number[] = [9, 19.5, 23.8, 28.1, 32.4, 36.7];
+const BANDANA_DOT_AT: readonly [number, number] = [0.62, 0.38];
+const BANDANA_DOT_R = 0.8;
+
+/**
+ * Common (issue #103): the Pond-weed scarf's band (the whole Neck footprint, under the
+ * chin and round the back of the neck, one `blob` with 0.6 of ink outside the fill,
+ * kept inside LW / 2 of the silhouette outline) in a #f2c8ff orchid kerchief, with
+ * six polka dots in ink at alpha 0.30, alternating high and low along the band (the
+ * same colour darkened, not a second colour), clipped to it, and one shine. No trim.
+ * It keeps every clearance of the scarf's band, so it keeps off the gill-root zone
+ * and the cheek heart zone; the mouth paints over its front.
+ */
+function paintBandana(ctx: CanvasRenderingContext2D): void {
+  const band = scarfBandPath();
+  silhouette(ctx, [{ path: band, fill: BANDANA_FILL }], SCARF_OL);
+  ctx.save();
+  ctx.clip(band);
+  ctx.globalAlpha = SOCK_STRIPE_ALPHA;
+  ctx.fillStyle = INK;
+  BANDANA_DOT_X.forEach((x, i) => {
+    const upper = scarfUpperAt(x);
+    const y = upper + BANDANA_DOT_AT[i % 2] * (scarfLowerAt(x) - upper);
+    ctx.fill(ellipsePath(x, y, BANDANA_DOT_R, BANDANA_DOT_R));
+  });
+  ctx.restore();
+  shine(ctx, 14.5, 16.4, 2, 0.6);
+}
+
+// ---------------------------------------------------------------------------
+// Face: Sunflower sunglasses (Rare)
+// ---------------------------------------------------------------------------
+
+/** The sunflower on the bridge: centre (the Heart glasses' gem place), petal count, how far out each petal sits and its radii. */
+const SUNFLOWER_AT: Pt = { x: 35.25, y: -14.85 };
+const SUNFLOWER_PETALS = 8;
+const SUNFLOWER_PETAL_OUT = 1.6;
+const SUNFLOWER_PETAL_RX = 0.9;
+const SUNFLOWER_PETAL_RY = 0.7;
+const SUNFLOWER_CENTRE_R = 1.25;
+/** Ink round the sunflower: the thin band ink (1.2, 0.6 outside), as the gem's outline. */
+const SUNFLOWER_OL = BAND_LW / 2;
+
+/**
+ * Rare (issue #103): the glasses construction (guide 6i) in #ffed7a sunflower yellow:
+ * the same merged two-lens frame with a band of 3.5 (colour 2.1, ink 0.7 each side), a
+ * clear lens tint (white at 0.25, never dark) and the eyes painting above it, so
+ * the eyes always show. Its one trim is a small sunflower perched on the bridge,
+ * above the top notch, in the one place that clears both eye zones and stays in the
+ * Face footprint (the Heart glasses' gem place): eight petals in the frame yellow,
+ * merged into one `blob` with 0.6 of ink outside, round a #a8682a seed-brown centre.
+ * Its petal tips reach the gem's radius, 2.5. No gem (that is the Heart glasses' Epic detail).
+ */
+function paintSunflowerSunglasses(ctx: CanvasRenderingContext2D): void {
+  const frame = glassesPath();
+  ctx.fillStyle = GLASSES_LENS;
+  ctx.fill(frame);
+  inkMany(ctx, [seg(frame, GLASSES_BAND_W, SUNFLOWER_FRAME, GLASSES_BAND_OL)]);
+  const petals = Array.from({ length: SUNFLOWER_PETALS }, (_, k) => {
+    const a = -Math.PI / 2 + (k * TAU) / SUNFLOWER_PETALS;
+    return ellipsePath(
+      SUNFLOWER_AT.x + Math.cos(a) * SUNFLOWER_PETAL_OUT,
+      SUNFLOWER_AT.y + Math.sin(a) * SUNFLOWER_PETAL_OUT,
+      SUNFLOWER_PETAL_RX,
+      SUNFLOWER_PETAL_RY,
+      a,
+    );
+  });
+  silhouette(
+    ctx,
+    [
+      ...petals.map((path) => ({ path, fill: SUNFLOWER_FRAME })),
+      { path: ellipsePath(SUNFLOWER_AT.x, SUNFLOWER_AT.y, SUNFLOWER_CENTRE_R, SUNFLOWER_CENTRE_R), fill: SUNFLOWER_CENTRE },
+    ],
+    SUNFLOWER_OL,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shirt: Embroidered shirt (Rare)
+// ---------------------------------------------------------------------------
+
+/** The embroidered hem band's place: how far down the torso half it starts (share of the inset ry below the centre line), and its height. */
+const EMBROIDERY_BAND_AT = 0.56;
+const EMBROIDERY_BAND_H = 3;
+/** Thin ink lines on each side of the hem band, as the Water-lily shirt's. */
+const EMBROIDERY_BAND_LW = 0.6;
+/** The chest flower: its centre a share of the way along the Shirt and above the torso centre line (share of the inset ry). */
+const EMBROIDERY_FLOWER_AT = 0.5;
+const EMBROIDERY_FLOWER_RISE = 0.1;
+/** The flower's five petals, one thread colour each: each centred this far out, with these radii, and the ink round the flower. */
+const EMBROIDERY_PETAL_OUT = 2.6;
+const EMBROIDERY_PETAL_RX = 2.25;
+const EMBROIDERY_PETAL_RY = 1.7;
+const EMBROIDERY_FLOWER_OL = 0.6;
+const EMBROIDERY_CENTRE_R = 0.9;
+/** The gap kept between the flower's ink and the neckline's ink (2.0 wide, its front at the apex x). */
+const EMBROIDERY_NECK_GAP = 0.2;
+
+/**
+ * Rare (issue #103): the Tank top's silhouette (the whole Shirt footprint, `shape`
+ * 2.0, the neckline arc) in a #fff4dc cream blouse, with one hem band in #7ee0c8 teal thread
+ * (the one trim band, between two 0.6 ink lines, clipped inside the silhouette), and one
+ * colourful flower embroidered on the chest: five merged petals in pink, orange, yellow, sky and lilac, a small `blob` with 0.6
+ * of ink outside, round a centre of ink at alpha 0.30. The flower sits half way along the Shirt
+ * (or further back, where the neckline would cut it, keeping 0.2 from the neckline ink) and
+ * 0.1 of the inset ry above the centre line, clear of the band and of the shine. One shine
+ * placed as on the Tank top. The flower is a picture detail; the counted Rare detail is
+ * the band. It sits inside the silhouette, so it never reaches the torso edge band, the
+ * front line, the tail root or a leg. No sleeves.
+ */
+function paintEmbroideredShirt(ctx: CanvasRenderingContext2D, look: AxolotlArtLook): void {
+  const outline = shirtOutline(look);
+  const shirt = shirtGeometry(look);
+  const e = shirt.inset;
+  inkedShape(ctx, outline.body, EMBROIDERED_SHIRT_FILL, () => {
+    const y0 = e.cy + e.ry * EMBROIDERY_BAND_AT;
+    trimBand(ctx, { x0: outline.xr - 1, x1: outline.xf + 1, y0, y1: y0 + EMBROIDERY_BAND_H }, EMBROIDERY_BAND, true, EMBROIDERY_BAND_LW);
+    const reach = EMBROIDERY_PETAL_OUT + EMBROIDERY_PETAL_RX + EMBROIDERY_FLOWER_OL;
+    const cx = Math.min(
+      outline.xr + (outline.xf - outline.xr) * EMBROIDERY_FLOWER_AT,
+      shirt.neckline.apexX - 2 * outline.half - reach - EMBROIDERY_NECK_GAP,
+    );
+    const cy = e.cy - e.ry * EMBROIDERY_FLOWER_RISE;
+    const petals = EMBROIDERY_PETALS.map((fill, k) => {
+      const a = -Math.PI / 2 + (k * TAU) / EMBROIDERY_PETALS.length;
+      return {
+        path: ellipsePath(
+          cx + Math.cos(a) * EMBROIDERY_PETAL_OUT,
+          cy + Math.sin(a) * EMBROIDERY_PETAL_OUT,
+          EMBROIDERY_PETAL_RX,
+          EMBROIDERY_PETAL_RY,
+          a,
+        ),
+        fill,
+      };
+    });
+    silhouette(ctx, petals, EMBROIDERY_FLOWER_OL);
+    ctx.save();
+    ctx.globalAlpha = SOCK_STRIPE_ALPHA;
+    ctx.fillStyle = INK;
+    ctx.fill(ellipsePath(cx, cy, EMBROIDERY_CENTRE_R, EMBROIDERY_CENTRE_R));
+    ctx.restore();
+  });
+  shirtShine(ctx, outline);
+}
+
+// ---------------------------------------------------------------------------
+// Tail: Hummingbird tail ribbon (Epic)
+// ---------------------------------------------------------------------------
+
+/** The knot, in the Tail frame: its centre (a little into the core, as the bow's knot) and radii. */
+const HUMMINGBIRD_KNOT: Pt = { x: 0, y: 1.4 };
+const HUMMINGBIRD_KNOT_RX = 3.2;
+const HUMMINGBIRD_KNOT_RY = 3.4;
+/** The two feather loops that rise from the knot, the head-side one first: axis angle, half length and half width. */
+const HUMMINGBIRD_LOOPS: readonly { readonly rot: number; readonly half: number; readonly wide: number }[] = [
+  { rot: -1.15, half: 6.8, wide: 3.3 },
+  { rot: -Math.PI + 1.15, half: 5.8, wide: 3 },
+];
+/**
+ * The two forked streamers that hang from the knot like a hummingbird's tail: which side, how far the axis tips
+ * down from the tail line (radians) and its length. The one toward the tail tip is short, as the Golden bow's and the
+ * Pearl tail charm's, so a Dream marker star past it stays clear at every swim phase.
+ */
+const HUMMINGBIRD_STREAMERS: readonly { readonly side: 1 | -1; readonly angle: number; readonly length: number }[] = [
+  { side: 1, angle: 0.5, length: 14 },
+  { side: -1, angle: 0.8, length: 8 },
+];
+/** A streamer's shape along its axis (a) and across it (b): where the base is, the half widths, and how deep the fork cuts. */
+const STREAMER_BASE_A = 0.5;
+const STREAMER_BASE_HALF = 2.1;
+const STREAMER_END_HALF = 3;
+const STREAMER_FORK = 3;
+
+/** A forked streamer from the knot, a closed path in the Tail frame. */
+function streamerPath(side: 1 | -1, angle: number, length: number): Path2D {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const at = (a: number, b: number): Pt => ({ x: HUMMINGBIRD_KNOT.x + side * (a * c - b * s), y: HUMMINGBIRD_KNOT.y + a * s + b * c });
+  return roundedPolygon(
+    [
+      at(STREAMER_BASE_A, -STREAMER_BASE_HALF),
+      at(length, -STREAMER_END_HALF),
+      at(length - STREAMER_FORK, 0),
+      at(length, STREAMER_END_HALF),
+      at(STREAMER_BASE_A, STREAMER_BASE_HALF),
+    ],
+    [0.8, 0.8, 0.5, 0.8, 0.8],
+  );
+}
+
+/**
+ * Epic (issue #103): a bow of #9eecd6 iridescent ribbon: two feather loops rising from
+ * the knot and two forked streamers hanging over the tail core like a hummingbird's
+ * tail, one merged `blob` silhouette (ink 2.0 all outside the fill), with one rounded
+ * gem (radius 2.5, outline 1.2, the Golden bow's pink) on the knot: the Epic detail. One
+ * shine on the head-side loop; no trim. Painted in the Tail frame (x' along the local tail
+ * direction toward the head, y' down). The streamer toward the tail tip is short (to
+ * x' about -7.7), as the Golden bow's, so a Dream marker star past it stays clear at
+ * every swim phase. Everything, ink included, stays within TAIL_SLOT_REACH of the anchor.
+ */
+function paintHummingbirdTailRibbon(ctx: CanvasRenderingContext2D): void {
+  const loops = HUMMINGBIRD_LOOPS.map((l) => {
+    const dx = Math.cos(l.rot);
+    const dy = Math.sin(l.rot);
+    return leafPath(HUMMINGBIRD_KNOT.x + dx * l.half, HUMMINGBIRD_KNOT.y + dy * l.half, l.half, l.wide, l.rot);
+  });
+  const streamers = HUMMINGBIRD_STREAMERS.map((s) => streamerPath(s.side, s.angle, s.length));
+  const knot = ellipsePath(HUMMINGBIRD_KNOT.x, HUMMINGBIRD_KNOT.y, HUMMINGBIRD_KNOT_RX, HUMMINGBIRD_KNOT_RY);
+  silhouette(ctx, [...loops, ...streamers, knot].map((path) => ({ path, fill: HUMMINGBIRD_RIBBON_FILL })));
+  const head = HUMMINGBIRD_LOOPS[0];
+  const along = { x: Math.cos(head.rot), y: Math.sin(head.rot) };
+  shine(ctx, HUMMINGBIRD_KNOT.x + along.x * head.half - along.y * -0.9, HUMMINGBIRD_KNOT.y + along.y * head.half + along.x * -0.9, 1.2, 0.55, head.rot);
+  gem(ctx, HUMMINGBIRD_KNOT.x, HUMMINGBIRD_KNOT.y, BOW_GEM, BAND_LW);
+}
+
+// ---------------------------------------------------------------------------
+// Back: Rainbow serape cape (Legendary)
+// ---------------------------------------------------------------------------
+
+/** How far the cape's top edge sags between the shoulders (a draped blanket), and its collar corner radius. */
+const SERAPE_SAG = 1.8;
+const SERAPE_CORNER_R = 2.4;
+/** Thin ink lines between the stripes, so pale neighbours read apart. */
+const SERAPE_LINE_LW = 0.6;
+/** The gold clasp band at the front: from this far behind the front end to this far, and the star's place behind the front. */
+const SERAPE_BAND_FROM = 4.4;
+const SERAPE_BAND_TO = 2;
+const SERAPE_BAND_LW = 0.6;
+const SERAPE_STAR_BACK = 9;
+const SERAPE_STAR_V = -7;
+
+/**
+ * Legendary (issue #103): a serape draped along the back, its top edge sagging a little between square, softly
+ * rounded ends, striped from the rear to the front in six pale rainbow stripes (pink, orange, yellow, green, blue
+ * and violet, none red) with thin ink lines between them. It is one `blob` silhouette (ink 2.0 all outside the
+ * fill) in the Back box of the look, ink included: the fills are 2.0 inside the box, so the serape runs the box's
+ * length and stands 13 proud of the back. The stripes are clipped inside the silhouette; the first stripe is the
+ * silhouette's own fill. The Legendary trim is one #ffc12e clasp band across the front (between two 0.6 ink
+ * lines, clipped inside) and one static 4-point star (R 3, outline 1.2) behind it. One shine. No gem. Painted in
+ * the Back frame (x' along the torso edge toward the snout, y' + into the body), so its lower edge, y' +1,
+ * keeps off the Shirt.
+ */
+function paintRainbowSerapeCape(ctx: CanvasRenderingContext2D, box: BackFrameBox): void {
+  const top = box.minV + ITEM_LW;
+  const bottom = box.maxV - ITEM_LW;
+  const rear = box.minU + ITEM_LW;
+  const front = box.maxU - ITEM_LW;
+  const length = front - rear;
+  const cape = new Path2D();
+  cape.moveTo(rear, bottom);
+  cape.lineTo(rear, top + SERAPE_CORNER_R);
+  cape.quadraticCurveTo(rear, top, rear + SERAPE_CORNER_R, top);
+  cape.quadraticCurveTo(rear + length / 2, top + 2 * SERAPE_SAG, front - SERAPE_CORNER_R, top);
+  cape.quadraticCurveTo(front, top, front, top + SERAPE_CORNER_R);
+  cape.lineTo(front, bottom);
+  cape.closePath();
+  silhouette(ctx, [{ path: cape, fill: SERAPE_STRIPES[0] }]);
+  ctx.save();
+  ctx.clip(cape);
+  const edge = (i: number): number => rear + (length * i) / SERAPE_STRIPES.length;
+  SERAPE_STRIPES.forEach((fill, i) => {
+    if (i === 0) return;
+    ctx.fillStyle = fill;
+    ctx.fill(rectPath(edge(i), top - 1, i === SERAPE_STRIPES.length - 1 ? front + 1 : edge(i + 1), bottom + 1));
+  });
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = SERAPE_LINE_LW;
+  for (let i = 1; i < SERAPE_STRIPES.length; i++) ctx.stroke(line(edge(i), top - 1, edge(i), bottom + 1));
+  trimBand(ctx, { x0: front - SERAPE_BAND_FROM, x1: front - SERAPE_BAND_TO, y0: top - 1, y1: bottom + 1 }, GOLD_TRIM, false, SERAPE_BAND_LW);
+  ctx.restore();
+  shine(ctx, rear + 2, top + 3.4, 1, 0.7, -0.1);
+  legendStar(ctx, front - SERAPE_STAR_BACK, SERAPE_STAR_V, BAND_LW);
+}
+
+// ---------------------------------------------------------------------------
 // Entry points
 // ---------------------------------------------------------------------------
 
@@ -2164,6 +2577,26 @@ export function paintBodyWearable(
     case 'monarch-wings': {
       const back = backFootprint(look);
       inFrame(ctx, back.frame, () => paintMonarchWings(ctx, back.box));
+      break;
+    }
+    case 'bee-headband':
+      paintBeeHeadband(ctx);
+      break;
+    case 'bandana':
+      paintBandana(ctx);
+      break;
+    case 'sunflower-sunglasses':
+      paintSunflowerSunglasses(ctx);
+      break;
+    case 'embroidered-shirt':
+      paintEmbroideredShirt(ctx, look);
+      break;
+    case 'hummingbird-tail-ribbon':
+      inFrame(ctx, tailSlotFrame(axolotlBodyGeometry(look).tail, swim, tailAmp), () => paintHummingbirdTailRibbon(ctx));
+      break;
+    case 'rainbow-serape-cape': {
+      const back = backFootprint(look);
+      inFrame(ctx, back.frame, () => paintRainbowSerapeCape(ctx, back.box));
       break;
     }
     default:

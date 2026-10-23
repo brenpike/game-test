@@ -1,5 +1,13 @@
-import { HERON_FACT, HERON_MEET_RANGE, TILAPIA_FACT, TILAPIA_MEET_RANGE, type FactCard } from './factCards';
-import { HERON, TILAPIA, type TilapiaTuning } from './tuning';
+import {
+  GARTER_SNAKE_FACT,
+  GARTER_SNAKE_MEET_RANGE,
+  HERON_FACT,
+  HERON_MEET_RANGE,
+  TILAPIA_FACT,
+  TILAPIA_MEET_RANGE,
+  type FactCard,
+} from './factCards';
+import { GARTER_SNAKE, HERON, TILAPIA, type TilapiaTuning } from './tuning';
 import { normalize, scale, type Vec2 } from './vec';
 import { inSafeArea, type Point, type SafeArea, type SwimBounds, type TilapiaRoute } from './zone';
 
@@ -141,8 +149,25 @@ export const HERON_SPECIES: Readonly<PredatorSpecies> = Object.freeze({
   neverTouches: true,
 });
 
+/**
+ * The garter snake (issue #103): it swims its stretch at the surface and plays the tilapia's shared
+ * rules with its own tuning. It warns when the axolotl is within reach of its head, darts along the
+ * aim locked at the end of the warning, swims its route through the cooldown and bumps gently.
+ */
+export const GARTER_SNAKE_SPECIES: Readonly<PredatorSpecies> = Object.freeze({
+  id: 'garter-snake',
+  name: 'Garter snake',
+  tuning: GARTER_SNAKE,
+  meetRange: GARTER_SNAKE_MEET_RANGE,
+  fact: GARTER_SNAKE_FACT,
+});
+
 /** Every predator species. */
-export const PREDATOR_SPECIES: readonly Readonly<PredatorSpecies>[] = Object.freeze([TILAPIA_SPECIES, HERON_SPECIES]);
+export const PREDATOR_SPECIES: readonly Readonly<PredatorSpecies>[] = Object.freeze([
+  TILAPIA_SPECIES,
+  HERON_SPECIES,
+  GARTER_SNAKE_SPECIES,
+]);
 
 /** Creates a patrolling predator of `speciesId` at the route's first waypoint, heading for the second. */
 export function createPredator(route: TilapiaRoute, speciesId: string): PredatorState {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { HERON_FACT, HERON_MEET_RANGE, TILAPIA_FACT, TILAPIA_MEET_RANGE } from './factCards';
 import { routeDistance } from './hiding';
 import {
+  GARTER_SNAKE_SPECIES,
   HERON_SPECIES,
   PREDATOR_SPECIES,
   TILAPIA_SPECIES,
@@ -87,7 +88,7 @@ describe('predator species', () => {
     expect(TILAPIA_SPECIES.fact).toBe(TILAPIA_FACT);
     expect(TILAPIA_SPECIES.hook).toBeUndefined();
     expect(TILAPIA_SPECIES.neverTouches).toBeUndefined();
-    expect(PREDATOR_SPECIES).toEqual([TILAPIA_SPECIES, HERON_SPECIES]);
+    expect(PREDATOR_SPECIES).toEqual([TILAPIA_SPECIES, HERON_SPECIES, GARTER_SNAKE_SPECIES]);
     expect(Object.isFrozen(TILAPIA_SPECIES)).toBe(true);
     expect(Object.isFrozen(PREDATOR_SPECIES)).toBe(true);
   });
