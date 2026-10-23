@@ -9,7 +9,7 @@ import type { TexInfo } from '../art/textures';
 import type { EncounterState } from '../logic/encounter';
 import { isProtected } from '../logic/legs';
 import type { MotionProfile } from '../logic/motion';
-import { HERON_SPECIES, TILAPIA_SPECIES } from '../logic/predators';
+import { GARTER_SNAKE_SPECIES, HERON_SPECIES, TILAPIA_SPECIES } from '../logic/predators';
 import { anchorWorld } from '../logic/spriteAnchor';
 import { phaseProgress, type TilapiaPhase, type TilapiaState } from '../logic/tilapia';
 import type { TripEvent } from '../logic/trip';
@@ -121,14 +121,17 @@ function axolotlSizeFactor(axolotl: Phaser.GameObjects.Container, bake: AxolotlR
 }
 
 /**
- * Draws the tilapia, its telegraph, the leg-loss poof, regrow sparkles, the snack speed-up
- * star, the Shell sparkle, the protected halo and the carry-home bubble. Visual only: every timer here is driven by the frame `dt`, so it
+ * Draws the tilapia, its telegraph, the leg-loss poof (for a hit by any predator), regrow
+ * sparkles, the snack speed-up star, the Shell sparkle, the protected halo and the carry-home bubble. Visual only: every timer here is driven by the frame `dt`, so it
  * freezes with the scene, and nothing here changes game state.
  */
 export class PredatorView {
   private readonly scene: Phaser.Scene;
   private readonly assets: GameAssets;
-  /** Sprites of each encounter predator, in `predators` order; null for a heron (HeronView draws it). */
+  /**
+   * Sprites of each encounter predator, in `predators` order; null for a heron (HeronView draws it)
+   * and a garter snake (GarterSnakeView draws it).
+   */
   private readonly predators: (TilapiaSprites | null)[];
   private readonly poofs: LegEffect[];
   private readonly regrowSparkles: LegEffect[];
@@ -147,7 +150,8 @@ export class PredatorView {
 
   /**
    * `speciesIds` holds the species id of each encounter predator, in `predators` order.
-   * Only the tilapia gets sprites here; a heron is skipped, as HeronView draws it.
+   * Only the tilapia gets sprites here; a heron and a garter snake are skipped, as HeronView and
+   * GarterSnakeView draw them.
    * Throws for any other species, which has no art.
    */
   constructor(scene: Phaser.Scene, assets: GameAssets, speciesIds: readonly string[]) {
@@ -229,7 +233,7 @@ export class PredatorView {
   }
 
   private createPredatorSprites(speciesId: string): TilapiaSprites | null {
-    if (speciesId === HERON_SPECIES.id) return null;
+    if (speciesId === HERON_SPECIES.id || speciesId === GARTER_SNAKE_SPECIES.id) return null;
     if (speciesId !== TILAPIA_SPECIES.id) {
       throw new Error(`PredatorView: no art for predator species ${speciesId}`);
     }

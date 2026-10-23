@@ -348,7 +348,9 @@ export const HERON: Readonly<TilapiaTuning> = Object.freeze({
  * surface at patrolSpeed, warns with ripple rings for 0.8 s (the PRD's 0.8 s floor) when the
  * axolotl is within lungeRange of its head, then darts lungeSpeed x lungeDuration = 126 px and rests
  * for the 2 s cooldown. Hit, touch and body reach, and the gentle bump, are the tilapia's, so they
- * match a Medium axolotl at every size (PRD F4).
+ * match a Medium axolotl at every size (PRD F4). It warns only while its head is on its stretch,
+ * so its depth stays bounded without a dart cap (the `warnOnRoute` rule on GARTER_SNAKE_SPECIES in
+ * src/logic/predators.ts).
  */
 export const GARTER_SNAKE: Readonly<TilapiaTuning> = Object.freeze({
   minWindup: 0.8,

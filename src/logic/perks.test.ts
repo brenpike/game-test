@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CANAL_AREA } from './areas';
 import {
   ALL_TREASURES,
+  CHINAMPA_2_TREASURES,
   CHINAMPA_TREASURES,
   PERK_VALUES,
   POND_2_TREASURES,
@@ -88,6 +89,9 @@ const AREA_3_WEARABLE_IDS: readonly string[] = POND_2_TREASURES.filter((treasure
 const AREA_4_WEARABLE_IDS: readonly string[] = CHINAMPA_TREASURES.filter((treasure) => treasure.category === 'wearable').map(
   (treasure) => treasure.id,
 );
+const AREA_5_WEARABLE_IDS: readonly string[] = CHINAMPA_2_TREASURES.filter((treasure) => treasure.category === 'wearable').map(
+  (treasure) => treasure.id,
+);
 
 describe('outfitPerks', () => {
   it('gives nothing for an empty outfit', () => {
@@ -166,6 +170,22 @@ describe('catalogue Wearable perks (F9)', () => {
       ['chinampa/monarch-wings', 'legendary', 'back', { type: 'speed', value: 10 }],
     ]);
     for (const wearable of area4) {
+      expect(PERK_ORDER, wearable.id).toContain(wearable.perk.type);
+      expect(wearable.perk.value, wearable.id).toBe(PERK_VALUES[wearable.perk.type][wearable.rarity]);
+    }
+  });
+
+  it('gives the Area 5 Wearables existing perks at the PERK_VALUES value for their rarity (ND-19)', () => {
+    const area5 = CATALOGUE_WEARABLES.filter((wearable) => AREA_5_WEARABLE_IDS.includes(wearable.id));
+    expect(area5.map((wearable) => [wearable.id, wearable.rarity, wearable.slot, wearable.perk])).toEqual([
+      ['chinampa/bee-headband', 'common', 'head', { type: 'snackMagnet', value: 30 }],
+      ['chinampa/bandana', 'common', 'neck', { type: 'speed', value: 4 }],
+      ['chinampa/sunflower-sunglasses', 'rare', 'face', { type: 'treasureSense', value: 25 }],
+      ['chinampa/embroidered-shirt', 'rare', 'shirt', { type: 'regrowth', value: 15 }],
+      ['chinampa/hummingbird-tail-ribbon', 'epic', 'tail', { type: 'speed', value: 8 }],
+      ['chinampa/rainbow-serape-cape', 'legendary', 'back', { type: 'shell', value: 1 }],
+    ]);
+    for (const wearable of area5) {
       expect(PERK_ORDER, wearable.id).toContain(wearable.perk.type);
       expect(wearable.perk.value, wearable.id).toBe(PERK_VALUES[wearable.perk.type][wearable.rarity]);
     }

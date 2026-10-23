@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { HERON_FACT, HERON_MEET_RANGE, TILAPIA_FACT, TILAPIA_MEET_RANGE } from './factCards';
+import {
+  GARTER_SNAKE_FACT,
+  GARTER_SNAKE_MEET_RANGE,
+  HERON_FACT,
+  HERON_MEET_RANGE,
+  TILAPIA_FACT,
+  TILAPIA_MEET_RANGE,
+} from './factCards';
 import { routeDistance } from './hiding';
 import {
   GARTER_SNAKE_SPECIES,
   HERON_SPECIES,
   PREDATOR_SPECIES,
+  ROUTE_WARN_TOLERANCE,
   TILAPIA_SPECIES,
   createPredator,
   lungeConnects,
@@ -20,7 +28,7 @@ import {
   type PredatorState,
   type PredatorTuning,
 } from './predators';
-import { HERON, TILAPIA } from './tuning';
+import { GARTER_SNAKE, HERON, TILAPIA } from './tuning';
 import type { Point } from './zone';
 
 const TEST_TUNING: Readonly<PredatorTuning> = Object.freeze({
@@ -91,6 +99,23 @@ describe('predator species', () => {
     expect(PREDATOR_SPECIES).toEqual([TILAPIA_SPECIES, HERON_SPECIES, GARTER_SNAKE_SPECIES]);
     expect(Object.isFrozen(TILAPIA_SPECIES)).toBe(true);
     expect(Object.isFrozen(PREDATOR_SPECIES)).toBe(true);
+  });
+
+  it('describes the garter snake: its own tuning, meet range and fact, warning only on its route, and bumping', () => {
+    expect(GARTER_SNAKE_SPECIES).toEqual({
+      id: 'garter-snake',
+      name: 'Garter snake',
+      tuning: GARTER_SNAKE,
+      meetRange: GARTER_SNAKE_MEET_RANGE,
+      fact: GARTER_SNAKE_FACT,
+      rules: { warnOnRoute: true },
+    });
+    expect(GARTER_SNAKE_SPECIES.tuning).toBe(GARTER_SNAKE);
+    expect(GARTER_SNAKE_SPECIES.fact).toBe(GARTER_SNAKE_FACT);
+    expect(GARTER_SNAKE_SPECIES.hook).toBeUndefined();
+    expect(GARTER_SNAKE_SPECIES.neverTouches).toBeUndefined();
+    expect(Object.isFrozen(GARTER_SNAKE_SPECIES)).toBe(true);
+    expect(Object.isFrozen(GARTER_SNAKE_SPECIES.rules)).toBe(true);
   });
 
   it('creates a patrolling predator carrying its species id', () => {
@@ -770,5 +795,115 @@ describe('shared rule: still cooldown', () => {
     const swimming = runStalker(cooling, FAR, TEST_TUNING.cooldown / 2, { ...STALKER_CTX, rules: { fixedStrikeSpot: true } });
     expect(swimming.state.phase).toBe('cooldown');
     expect(swimming.state.pos.x).toBeGreaterThan(1000);
+  });
+});
+
+/** Test-only species with only the warn-on-route rule. */
+const LINER_SPECIES: Readonly<PredatorSpecies> = Object.freeze({
+  id: 'testLiner',
+  name: 'Test liner',
+  tuning: TEST_TUNING,
+  meetRange: 150,
+  fact: { id: 'testLiner', name: 'Test liner', title: 'Meet the test liner', body: 'Test only.' },
+  rules: Object.freeze({ warnOnRoute: true }),
+});
+
+const LINE_Y = 200;
+const LINER_ROUTE: PredatorRoute = {
+  id: 'liner-route',
+  waypoints: [
+    { x: 1000, y: LINE_Y },
+    { x: 1200, y: LINE_Y },
+  ],
+  species: LINER_SPECIES,
+};
+
+const LINER_CTX: PredatorContext = {
+  safeArea: CTX.safeArea,
+  bounds: CTX.bounds,
+  tuning: LINER_SPECIES.tuning,
+  rules: LINER_SPECIES.rules,
+};
+const NO_RULE_CTX: PredatorContext = { ...LINER_CTX, rules: undefined };
+
+/** A patrolling liner heading for its second waypoint, at `pos`. */
+function linerAt(pos: Point): PredatorState {
+  return { ...createPredator(LINER_ROUTE, LINER_SPECIES.id), pos };
+}
+
+/** A liner warning at `pos`, its warning about to end. */
+function linerWarningAt(pos: Point): PredatorState {
+  return { ...linerAt(pos), phase: 'telegraph', elapsed: WINDUP - STALKER_DT, duration: WINDUP };
+}
+
+describe('shared rule: warn on route', () => {
+  const onLine: Point = { x: 1100, y: LINE_Y };
+  const offLine: Point = { x: 1100, y: LINE_Y + ROUTE_WARN_TOLERANCE + 0.5 };
+  const atTolerance: Point = { x: 1100, y: LINE_Y + ROUTE_WARN_TOLERANCE };
+  const below: Point = { x: 1100, y: 250 };
+
+  it('warns while on its route', () => {
+    expect(eventTypes(stepPredator(linerAt(LINER_ROUTE.waypoints[0]), { x: 1060, y: LINE_Y }, STALKER_DT, LINER_CTX).events)).toEqual([
+      'telegraphStart',
+    ]);
+    expect(eventTypes(stepPredator(linerAt(onLine), below, STALKER_DT, LINER_CTX).events)).toEqual(['telegraphStart']);
+  });
+
+  it('keeps patrolling with no events when off its route by more than the tolerance, with the target in range', () => {
+    expect(routeLoopDistance(offLine, LINER_ROUTE.waypoints)).toBeGreaterThan(ROUTE_WARN_TOLERANCE);
+    const run = runStalker(linerAt(offLine), below, 0.25, LINER_CTX);
+    expect(run.events).toEqual([]);
+    expect(run.state.phase).toBe('patrol');
+    expect(run.state.pos.x).toBeGreaterThan(offLine.x);
+  });
+
+  it('counts a predator exactly at the tolerance as on its route (inclusive)', () => {
+    expect(routeLoopDistance(atTolerance, LINER_ROUTE.waypoints)).toBe(ROUTE_WARN_TOLERANCE);
+    expect(eventTypes(stepPredator(linerAt(atTolerance), below, STALKER_DT, LINER_CTX).events)).toEqual(['telegraphStart']);
+  });
+
+  it('cancels a warning off its route at the end-of-warning re-check, and strikes from on its route', () => {
+    const cancelled = stepPredator(linerWarningAt(offLine), below, STALKER_DT, LINER_CTX);
+    expect(eventTypes(cancelled.events)).toEqual(['telegraphCancel']);
+    expect(cancelled.state.phase).toBe('cooldown');
+    expect(cancelled.state.duration).toBe(TEST_TUNING.cooldown);
+    const midway = stepPredator({ ...linerWarningAt(offLine), elapsed: 0 }, below, STALKER_DT, LINER_CTX);
+    expect(midway.events).toEqual([]);
+    expect(midway.state.phase).toBe('telegraph');
+    expect(eventTypes(stepPredator(linerWarningAt(atTolerance), below, STALKER_DT, LINER_CTX).events)).toEqual(['lungeStart']);
+  });
+
+  it('leaves a species without the rule warning off its route', () => {
+    expect(eventTypes(stepPredator(linerAt(offLine), below, STALKER_DT, NO_RULE_CTX).events)).toEqual(['telegraphStart']);
+    const ruleOff: PredatorContext = { ...LINER_CTX, rules: { warnOnRoute: false } };
+    expect(eventTypes(stepPredator(linerAt(offLine), below, STALKER_DT, ruleOff).events)).toEqual(['telegraphStart']);
+    expect(eventTypes(stepPredator(linerWarningAt(offLine), below, STALKER_DT, NO_RULE_CTX).events)).toEqual(['lungeStart']);
+  });
+
+  it('cannot warn after a strike leaves it off its line until it swims back within the tolerance', () => {
+    const struck: PredatorState = {
+      ...linerAt(LINER_ROUTE.waypoints[0]),
+      phase: 'lunge',
+      elapsed: 0,
+      duration: TEST_TUNING.lungeDuration,
+      aim: { x: 0, y: 1 },
+    };
+    const above = (state: PredatorState): Point => ({ x: state.pos.x, y: state.pos.y - 40 });
+    let state = struck;
+    let blockedPatrolSteps = 0;
+    let warnedFrom: Point | null = null;
+    for (let i = 0; i < Math.round(20 / STALKER_DT) && warnedFrom === null; i++) {
+      const result = stepPredator(state, above(state), STALKER_DT, LINER_CTX);
+      if (eventTypes(result.events).includes('telegraphStart')) warnedFrom = result.state.pos;
+      else if (state.phase === 'patrol') blockedPatrolSteps++;
+      state = result.state;
+    }
+    expect(warnedFrom).not.toBeNull();
+    expect(routeLoopDistance(warnedFrom ?? struck.pos, LINER_ROUTE.waypoints)).toBeLessThanOrEqual(ROUTE_WARN_TOLERANCE);
+    expect(blockedPatrolSteps * STALKER_DT).toBeGreaterThan(1);
+    const seconds = TEST_TUNING.lungeDuration + TEST_TUNING.cooldown + 0.25;
+    const noRule = runStalker(struck, { x: 1000, y: 260 }, seconds, NO_RULE_CTX, 'telegraphStart');
+    expect(eventTypes(noRule.events)).toEqual(['lungeEnd', 'cooldownEnd', 'telegraphStart']);
+    expect(routeLoopDistance(noRule.state.pos, LINER_ROUTE.waypoints)).toBeGreaterThan(ROUTE_WARN_TOLERANCE);
   });
 });

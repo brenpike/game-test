@@ -888,14 +888,17 @@ describe('Dream colour step', () => {
     expect(reduceStyler(state, { type: 'moreColours', perPage: MAX_STEP_OPTIONS }, noRandom).state.dreamPage).toBe(0);
   });
 
-  it('pages 15 options as 8 then 7 with More colours, wrapping, Real colour first on page 1', () => {
+  it('pages 17 options as 8, 8 then 1 with More colours, wrapping, Real colour first on page 1', () => {
     let state = dreamOn(ALL_DREAMS);
-    expect(dreamPageCount(state)).toBe(2);
+    expect(dreamPageCount(state)).toBe(3);
     expect(optionIds(state)).toHaveLength(8);
     expect(optionIds(state)[0]).toBe(REAL_COLOUR_OPTION_ID);
     expect(allPageIds(state)).toEqual([REAL_COLOUR_OPTION_ID, ...ALL_DREAMS]);
     state = reduceStyler(state, { type: 'moreColours', perPage: MAX_STEP_OPTIONS }, noRandom).state;
-    expect(optionIds(state)).toEqual(ALL_DREAMS.slice(7));
+    expect(optionIds(state)).toEqual(ALL_DREAMS.slice(7, 15));
+    expect(state.focus).toEqual({ kind: 'moreColours' });
+    state = reduceStyler(state, { type: 'moreColours', perPage: MAX_STEP_OPTIONS }, noRandom).state;
+    expect(optionIds(state)).toEqual(['plum']);
     expect(state.focus).toEqual({ kind: 'moreColours' });
     state = reduceStyler(state, { type: 'moreColours', perPage: MAX_STEP_OPTIONS }, noRandom).state;
     expect(state.dreamPage).toBe(0);
@@ -1126,6 +1129,7 @@ describe('Outfit step', () => {
       { id: 'pond/feather-cap', label: 'Feather cap' },
       { id: 'chinampa/straw-sun-hat', label: 'Straw sun hat' },
       { id: 'chinampa/monarch-hair-clip', label: 'Monarch hair clip' },
+      { id: 'chinampa/bee-headband', label: 'Bee headband' },
     ]);
     expect(chosenIndex(head)).toBe(0);
     expect(head.focus).toEqual({ kind: 'option', index: 0 });

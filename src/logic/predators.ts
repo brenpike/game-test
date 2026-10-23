@@ -36,12 +36,21 @@ export interface PredatorRuleHook {
  * strike is a stab whose tip (`stabTip`) moves from the predator to that spot.
  * `stillCooldown`: through the cooldown the predator stands still, facing the target, instead of
  * swimming its route.
+ * `warnOnRoute`: the predator warns only while it is on its route, within `ROUTE_WARN_TOLERANCE`
+ * of it as a closed loop (`routeLoopDistance`, inclusive). Off its route, for example after a
+ * strike carried it away, it does not warn and cancels a warning at its end; it swims its route
+ * through the cooldown and patrol, and may warn again once back on it. A one-waypoint route counts
+ * as on route only at that point.
  */
 export interface PredatorRules {
   sightCover?: boolean;
   fixedStrikeSpot?: boolean;
   stillCooldown?: boolean;
+  warnOnRoute?: boolean;
 }
+
+/** How far in px a predator with the `warnOnRoute` rule may be from its route and still warn (inclusive). */
+export const ROUTE_WARN_TOLERANCE = 2;
 
 /**
  * One predator species: its tuning, meet range in px, fact card, optional rule hook and optional
@@ -153,6 +162,9 @@ export const HERON_SPECIES: Readonly<PredatorSpecies> = Object.freeze({
  * The garter snake (issue #103): it swims its stretch at the surface and plays the tilapia's shared
  * rules with its own tuning. It warns when the axolotl is within reach of its head, darts along the
  * aim locked at the end of the warning, swims its route through the cooldown and bumps gently.
+ * With the `warnOnRoute` rule (owner decision on #103, 2026-10-23, option 1) it warns only while
+ * its head is on its stretch: after a dart it swims back to the line before it can warn again, so
+ * repeated dives never walk it deeper. The dart itself is unchanged and has no depth cap.
  */
 export const GARTER_SNAKE_SPECIES: Readonly<PredatorSpecies> = Object.freeze({
   id: 'garter-snake',
@@ -160,6 +172,7 @@ export const GARTER_SNAKE_SPECIES: Readonly<PredatorSpecies> = Object.freeze({
   tuning: GARTER_SNAKE,
   meetRange: GARTER_SNAKE_MEET_RANGE,
   fact: GARTER_SNAKE_FACT,
+  rules: Object.freeze({ warnOnRoute: true }),
 });
 
 /** Every predator species. */
@@ -302,6 +315,8 @@ export function phaseProgress(state: PredatorState): number {
  * as `strikeSpot`; the strike aims at that spot, the predator does not move, and the strike
  * connects when its `stabTip` is within hitRadius of an exposed target, checked every step. Leaving
  * the strike drops the spot. With `stillCooldown`, the cooldown holds position and faces the target.
+ * With `warnOnRoute`, the predator must also be within `ROUTE_WARN_TOLERANCE` of its route
+ * (`routeLoopDistance`) to start a warning and at the end-of-warning re-check; movement is unchanged.
  */
 export function stepPredator(
   state: PredatorState,
@@ -435,13 +450,23 @@ function enterCooldown(state: PredatorState, ctx: PredatorContext): PredatorStat
   return cooldown;
 }
 
-/** Whether a warning may start or proceed: in range, target exposed and the hook allows it. */
+/**
+ * Whether a warning may start or proceed: in range, target exposed, the hook allows it and, for a
+ * species with the `warnOnRoute` rule, the predator is on its route.
+ */
 function canWarn(state: PredatorState, target: Point, ctx: PredatorContext): boolean {
   return (
+    onRouteToWarn(state, ctx) &&
     inLungeRange(state.pos, target, ctx.tuning) &&
     targetExposed(target, ctx) &&
     (ctx.hook?.mayWarn?.(state.pos, target) ?? true)
   );
+}
+
+/** True without the `warnOnRoute` rule; with it, whether the predator is within `ROUTE_WARN_TOLERANCE` of its route. */
+function onRouteToWarn(state: PredatorState, ctx: PredatorContext): boolean {
+  if (!ctx.rules?.warnOnRoute) return true;
+  return routeLoopDistance(state.pos, state.waypoints) <= ROUTE_WARN_TOLERANCE;
 }
 
 /**
