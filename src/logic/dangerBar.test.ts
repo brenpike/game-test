@@ -7,6 +7,7 @@ import {
   movingThreatCount,
   predatorTypeCount,
 } from './dangerBar';
+import { DEV_DANGER_AREA } from './devAreas';
 import { PUNTING_POLE, movingHazardSpawn } from './movingHazards';
 import {
   CARP_SPECIES,
@@ -18,7 +19,7 @@ import {
   type PredatorSpecies,
 } from './predators';
 import { CARP, GARTER_SNAKE, TILAPIA, type ChaseTuning } from './tuning';
-import { SCREEN_W, SURF, WORLD_H, type Point, type TilapiaRoute, type ZoneLayout } from './zone';
+import { DEFAULT_ZONE_SEED, SCREEN_W, SURF, WORLD_H, buildZone, type Point, type TilapiaRoute, type ZoneLayout } from './zone';
 
 const PATH_Y = 200;
 const STRIKE = 50;
@@ -244,5 +245,33 @@ describe('meetsRampDangerBar', () => {
   it('throws a RangeError for an area without a ramp bar', () => {
     expect(() => meetsRampDangerBar(1, rampLayout())).toThrow(RangeError);
     expect(() => meetsRampDangerBar(4, rampLayout())).toThrow(RangeError);
+  });
+});
+
+/**
+ * The dev danger area (PRD open question 262, ND-15) shows every danger part but does not meet the
+ * full bar: 6 moving threats over 12 screens, where the bar asks for 9, and a 899 px quiet stretch
+ * from the second pole's reach, down the dive and along the bottom row to the last tilapia's reach.
+ */
+describe('the dev danger area', () => {
+  const zone = buildZone(DEV_DANGER_AREA.layout, DEFAULT_ZONE_SEED);
+
+  it('has 6 moving threats: two tilapia, a garter snake, a carp and two punting poles', () => {
+    expect(movingThreatCount(zone)).toBe(6);
+  });
+
+  it('has 3 predator species and 1 moving hazard type', () => {
+    expect(predatorTypeCount(zone)).toBe(3);
+    expect(movingHazardTypeCount(zone)).toBe(1);
+  });
+
+  it('has a longest quiet stretch of about 899 px', () => {
+    expect(longestQuietStretch(zone)).toBeCloseTo(899.16, 2);
+  });
+
+  it('does not meet the full danger bar: 9 moving threats are asked for over 12 screens, and the quiet stretch is over one screen', () => {
+    expect(meetsFullDangerBar(zone)).toBe(false);
+    expect(meetsFullDangerBar({ ...zone, width: 2 * SCREEN_W, height: WORLD_H })).toBe(false);
+    expect(meetsFullDangerBar({ ...zone, width: 2 * SCREEN_W, height: WORLD_H, mainPath: zone.mainPath.slice(0, 3) })).toBe(true);
   });
 });
