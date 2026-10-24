@@ -109,6 +109,7 @@ Follow-ups:
 - Bake on demand: bake an area's scenery when its trip starts, not at boot.
 - The real areas, issues #75 to #78, each checked by the one-new-thing test. Area 4, issue #76, is built in [ADR 0018](0018-chinampa-gardens-ghost-nets-and-predator-ladder.md).
 - Area 5, issue #103, generalises this framework in [ADR 0020](0020-u-turn-areas-garter-snake-and-hyacinth-mats.md): the U-turn shape (the exit may sit under the start, with the past-current side and the exit arrow worked out from the area's own data), element blocking (the water hyacinth mats block the explorer only), element fact cards, and a new shared predator rule option, `warnOnRoute`.
+- The danger pass, phase 1, issue #117, adds shared parts in [ADR 0021](0021-danger-pass-chase-rule-and-moving-hazards.md): the opt-in chase rule and `tunedSpecies` for per-area species tuning, the moving hazard type with its own encounter clock, drifting ghost nets, the common carp, danger parts outside the one-new-thing rule, mobile snacks, and a second dev area, `dev-danger-area`.
 - The refuge, issue #74: built in [ADR 0017](0017-xochimilco-refuge-and-habitat-milestones.md).
 - The owner measures the dev area's frame time ([ADR 0013](0013-axolotl-rig-and-frame-budget.md), fourth case).
 - The owner confirms the items marked above (PRD open questions 111 onward).

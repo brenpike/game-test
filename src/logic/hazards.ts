@@ -37,10 +37,24 @@ export interface HazardType {
   fact: FactCard;
 }
 
+/**
+ * A hazard's drift (N3): it eases back and forth along the straight path from its place to its
+ * place plus (`dx`, `dy`), once per `period` seconds of element time, `offset` seconds ahead.
+ */
+export interface NetDrift {
+  readonly dx: number;
+  readonly dy: number;
+  /** Seconds for one full trip there and back. Must be greater than 0. */
+  readonly period: number;
+  readonly offset: number;
+}
+
 export interface HazardSpawn {
   id: string;
   type: HazardType;
   shape: HazardShape;
+  /** Drift path (N3); absent means the hazard never moves. */
+  drift?: NetDrift;
 }
 
 export interface ElementType {
@@ -157,4 +171,50 @@ export function elementSweep(element: Readonly<ElementSpawn>): HazardRect | null
   const pair = element.matPair;
   if (!pair) return null;
   return { kind: 'rect', x0: pair.x0, x1: pair.x1, y0: pair.rowTop, y1: pair.rowBottom };
+}
+
+/** Returns the shape moved by (`dx`, `dy`). */
+function translateShape(shape: HazardShape, dx: number, dy: number): HazardShape {
+  if (shape.kind === 'circle') return { ...shape, x: shape.x + dx, y: shape.y + dy };
+  return { ...shape, x0: shape.x0 + dx, x1: shape.x1 + dx, y0: shape.y0 + dy, y1: shape.y1 + dy };
+}
+
+/** Returns the shape's bounding rect. */
+function shapeBounds(shape: HazardShape): HazardRect {
+  if (shape.kind === 'rect') return shape;
+  return {
+    kind: 'rect',
+    x0: shape.x - shape.r,
+    x1: shape.x + shape.r,
+    y0: shape.y - shape.r,
+    y1: shape.y + shape.r,
+  };
+}
+
+/**
+ * Where the hazard's shape is at element time `t` (N3): its place plus its share of the drift
+ * path, (1 - cos(2π(t + offset) / period)) / 2. With no drift, returns `hazard.shape` itself.
+ */
+export function hazardShapeAt(hazard: Readonly<HazardSpawn>, t: number): HazardShape {
+  const drift = hazard.drift;
+  if (!drift) return hazard.shape;
+  const share = (1 - Math.cos((2 * Math.PI * (t + drift.offset)) / drift.period)) / 2;
+  return translateShape(hazard.shape, share * drift.dx, share * drift.dy);
+}
+
+/**
+ * The bounding rect of every place the hazard's shape can be over its whole drift path (N3).
+ * With no drift, returns `hazard.shape` itself.
+ */
+export function hazardSweep(hazard: Readonly<HazardSpawn>): HazardShape {
+  const drift = hazard.drift;
+  if (!drift) return hazard.shape;
+  const start = shapeBounds(hazard.shape);
+  return {
+    kind: 'rect',
+    x0: start.x0 + Math.min(0, drift.dx),
+    x1: start.x1 + Math.max(0, drift.dx),
+    y0: start.y0 + Math.min(0, drift.dy),
+    y1: start.y1 + Math.max(0, drift.dy),
+  };
 }

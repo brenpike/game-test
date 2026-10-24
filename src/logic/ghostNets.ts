@@ -1,6 +1,6 @@
 import { GHOST_NET_FACT } from './factCards';
-import { hazardTouches, type HazardSpawn, type HazardType } from './hazards';
-import { GHOST_NETS, type GhostNetTuning, type SwimTuning } from './tuning';
+import { hazardShapeAt, shapeDistance, type HazardSpawn, type HazardType, type NetDrift } from './hazards';
+import { DRIFTING_NETS, GHOST_NETS, type GhostNetTuning, type SwimTuning } from './tuning';
 import type { Point } from './zone';
 
 const TAU = Math.PI * 2;
@@ -33,6 +33,32 @@ type SnagTime = Pick<GhostNetTuning, 'snagTime'>;
 type SnagSpeed = Pick<GhostNetTuning, 'speedFactor'>;
 type SnagWriggle = Pick<GhostNetTuning, 'wriggleAmp' | 'wrigglePeriod'>;
 
+/**
+ * A ghost net's drift for area data (ND-11, PRD open question 258): there and back along (`dx`,
+ * `dy`) once per `period` seconds of element time, `offset` seconds ahead (hazardShapeAt). Throws
+ * RangeError when a value is not finite, when `period` is not greater than 0 or when the path is
+ * longer than DRIFTING_NETS.maxPath px.
+ */
+export function netDrift(dx: number, dy: number, period: number, offset: number): Readonly<NetDrift> {
+  if (![dx, dy, period, offset].every(Number.isFinite)) {
+    throw new RangeError(`netDrift: dx ${dx}, dy ${dy}, period ${period} and offset ${offset} must be finite`);
+  }
+  if (!(period > 0)) throw new RangeError(`netDrift: period must be > 0, got ${period}`);
+  const path = Math.hypot(dx, dy);
+  if (path > DRIFTING_NETS.maxPath) {
+    throw new RangeError(`netDrift: path ${path} px must be at most ${DRIFTING_NETS.maxPath} px`);
+  }
+  return Object.freeze({ dx, dy, period, offset });
+}
+
+/**
+ * Whether `pos` is within the net's reach of where the net is at element time `elementTime`
+ * (hazardShapeAt, N3), edge inclusive. A net with no drift is measured at its own shape.
+ */
+export function netTouchesAt(net: Readonly<HazardSpawn>, pos: Point, elementTime: number): boolean {
+  return shapeDistance(pos, hazardShapeAt(net, elementTime)) <= net.type.reach;
+}
+
 /** The ghost net hazards, in data order; other hazards are skipped. Not snagged, in no net's reach. */
 export function createGhostNets(hazards: readonly Readonly<HazardSpawn>[]): GhostNetState {
   const nets = hazards.filter((hazard) => hazard.type.id === GHOST_NET.id);
@@ -45,15 +71,20 @@ export function isSnagged(state: GhostNetState): boolean {
 }
 
 /**
- * The ids of the nets whose reach holds `pos`, in data order. Returns `prior` itself when the ids
+ * The ids of the nets whose reach holds `pos` at `elementTime`, in data order. Returns `prior` itself when the ids
  * are the same as `prior`, so a step on which they do not change, in reach or not, allocates no
  * array; a new array is built only when they change.
  */
-function netIdsInReach(nets: readonly Readonly<HazardSpawn>[], pos: Point, prior: readonly string[]): readonly string[] {
+function netIdsInReach(
+  nets: readonly Readonly<HazardSpawn>[],
+  pos: Point,
+  elementTime: number,
+  prior: readonly string[],
+): readonly string[] {
   let changed: string[] | null = null;
   let matched = 0;
   for (const net of nets) {
-    if (!hazardTouches(net, pos)) continue;
+    if (!netTouchesAt(net, pos, elementTime)) continue;
     if (changed === null && prior[matched] === net.id) {
       matched += 1;
       continue;
@@ -66,8 +97,9 @@ function netIdsInReach(nets: readonly Readonly<HazardSpawn>[], pos: Point, prior
 }
 
 /**
- * Steps the ghost nets by `dt` seconds with the explorer's body centre at `pos`. Snag time counts
- * down, floored at 0. A new snag of `tuning.snagTime` seconds starts only when the explorer enters
+ * Steps the ghost nets by `dt` seconds with the explorer's body centre at `pos`, each net measured
+ * where it is at element time `elementTime` (netTouchesAt, N3, ND-11). Snag time counts down,
+ * floored at 0. A new snag of `tuning.snagTime` seconds starts only when the explorer enters
  * the reach of the nets (in no net's reach on the last step, in some net's reach now) and `state`
  * is not snagged: never every step inside, never stacked, and entering overlapping nets at once is
  * one entry. So a new snag starts exactly when `state` is not snagged and the result is. Returns
@@ -77,10 +109,11 @@ export function stepGhostNets(
   state: GhostNetState,
   pos: Point,
   dt: number,
+  elementTime = 0,
   tuning: SnagTime = GHOST_NETS,
 ): GhostNetState {
   if (!(dt > 0) || !Number.isFinite(dt)) return state;
-  const inReach = netIdsInReach(state.nets, pos, state.inReach);
+  const inReach = netIdsInReach(state.nets, pos, elementTime, state.inReach);
   const entered = state.inReach.length === 0 && inReach.length > 0;
   const snagLeft = entered && !isSnagged(state) ? tuning.snagTime : Math.max(0, state.snagLeft - dt);
   if (snagLeft === state.snagLeft && inReach === state.inReach) return state;

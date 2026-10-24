@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { CANAL_TREASURES, RARITIES, treasureById, type Rarity } from './catalogue';
-import { elementSweep, shapeDistance, type ElementSpawn, type ElementType, type HazardSpawn, type HazardType } from './hazards';
+import { CHINAMPA_2_LAYOUT } from './chinampa2Layout';
+import { CHINAMPA_LAYOUT } from './chinampaLayout';
+import { netDrift } from './ghostNets';
+import {
+  elementSweep,
+  hazardSweep,
+  shapeDistance,
+  type ElementSpawn,
+  type ElementType,
+  type HazardSpawn,
+  type HazardType,
+} from './hazards';
 import { coversAt, inReeds, isDeep, routeDistance, spotMatchesLabels, turnDistance } from './hiding';
+import { mobileSnackMix, shrimpRule, tadpoleLane, tadpoleRule } from './mobileSnacks';
+import { PUNTING_POLE, movingHazardSpawn, movingHazardSweep } from './movingHazards';
 import { POND_2_LAYOUT } from './pond2Layout';
 import { POND_LAYOUT } from './pondLayout';
 import { inSafeArea } from './tilapia';
@@ -900,6 +913,153 @@ describe('existing layouts', () => {
       expect(zone).not.toHaveProperty('tilapia');
       expect(zone).not.toHaveProperty('bankOverhangs');
       expect(zone.spots.some((spot) => spot.cover === 'bank')).toBe(false);
+    }
+  });
+});
+
+const DRIFTING_NET: HazardSpawn = {
+  id: 'net-0',
+  type: TEST_LITTER,
+  shape: { kind: 'rect', x0: 420, x1: 460, y0: 180, y1: 220 },
+  drift: netDrift(160, 0, 16, 0),
+};
+
+describe('drifting nets in the snack starts (ND-11)', () => {
+  it.each(ALL_SEEDS)('keeps every snack start SNACK_HAZARD_CLEARANCE from the whole drift path for seed %i', (seed) => {
+    const zone = buildZone(canalWith({ hazards: [DRIFTING_NET] }), seed);
+    expect(zone.collectibles).toHaveLength(16);
+    for (const snack of zone.collectibles) {
+      const distance = shapeDistance(snack, hazardSweep(DRIFTING_NET));
+      expect(distance, `${snack.id} is ${distance.toFixed(1)} px from the drift path`).toBeGreaterThanOrEqual(SNACK_HAZARD_CLEARANCE);
+    }
+  });
+
+  it('tests drift paths that reach snacks the still net would leave', () => {
+    const still: HazardSpawn = { id: DRIFTING_NET.id, type: TEST_LITTER, shape: DRIFTING_NET.shape };
+    const changed = ALL_SEEDS.filter(
+      (seed) =>
+        JSON.stringify(buildZone(canalWith({ hazards: [DRIFTING_NET] }), seed).collectibles) !==
+        JSON.stringify(buildZone(canalWith({ hazards: [still] }), seed).collectibles),
+    );
+    expect(changed.length).toBeGreaterThan(0);
+  });
+
+  it.each(ALL_SEEDS)('places snacks as before for a net with no drift for seed %i', (seed) => {
+    const still: HazardSpawn = { id: 'net-0', type: TEST_LITTER, shape: { kind: 'circle', x: -1000, y: -1000, r: 10 } };
+    expect(buildZone(canalWith({ hazards: [still] }), seed).collectibles).toEqual(buildCanalZone(seed).collectibles);
+  });
+
+  it('copies the drift, sharing no object with the data, and adds no drift key to a still hazard', () => {
+    const still: HazardSpawn = { id: 'litter-0', type: TEST_LITTER, shape: { kind: 'circle', x: 600, y: 200, r: 14 } };
+    const [net, litter] = buildZone(canalWith({ hazards: [DRIFTING_NET, still] }), 3).hazards;
+    expect(net).toEqual(DRIFTING_NET);
+    expect(net.drift).not.toBe(DRIFTING_NET.drift);
+    expect(net.shape).not.toBe(DRIFTING_NET.shape);
+    expect(litter).toStrictEqual(still);
+    expect(litter).not.toHaveProperty('drift');
+  });
+});
+
+const POLES = [movingHazardSpawn('canal/punting-pole-1', PUNTING_POLE, 640, 0), movingHazardSpawn('canal/punting-pole-2', PUNTING_POLE, 1300, 2, 120)];
+
+describe('moving hazards in the layout (ND-8)', () => {
+  it.each(ALL_SEEDS)('keeps every snack start SNACK_HAZARD_CLEARANCE from every moving hazard sweep for seed %i', (seed) => {
+    const zone = buildZone(canalWith({ movingHazards: POLES }), seed);
+    expect(zone.collectibles).toHaveLength(16);
+    for (const snack of zone.collectibles) {
+      for (const pole of POLES) {
+        const distance = shapeDistance(snack, movingHazardSweep(pole));
+        expect(distance, `${snack.id} is ${distance.toFixed(1)} px from ${pole.id}`).toBeGreaterThanOrEqual(SNACK_HAZARD_CLEARANCE);
+      }
+    }
+  });
+
+  it('tests sweeps that sit where the canal would put snacks', () => {
+    const tooClose = ALL_SEEDS.filter((seed) =>
+      buildCanalZone(seed).collectibles.some((snack) => POLES.some((pole) => shapeDistance(snack, movingHazardSweep(pole)) < SNACK_HAZARD_CLEARANCE)),
+    );
+    expect(tooClose.length).toBeGreaterThan(0);
+  });
+
+  it.each(ALL_SEEDS)('copies the spawns with no rand() draws when no sweep is near for seed %i', (seed) => {
+    const far = [movingHazardSpawn('canal/punting-pole-9', PUNTING_POLE, -1000, 0)];
+    const zone = buildZone(canalWith({ movingHazards: far }), seed);
+    const { movingHazards, ...rest } = zone;
+    expect(movingHazards).toEqual(far);
+    expect(movingHazards?.[0]).not.toBe(far[0]);
+    expect(rest).toStrictEqual(buildCanalZone(seed));
+  });
+});
+
+const TADPOLE = tadpoleRule(60);
+const MIX = mobileSnackMix({
+  tadpole: TADPOLE,
+  lanes: [tadpoleLane(TADPOLE, 400, 200, 120, 0, 0), tadpoleLane(TADPOLE, 1700, 240, 0, -100, 1.5)],
+  shrimp: shrimpRule(60, 1.2, 60, 145),
+  spots: [
+    { x: 560, y: 140 },
+    { x: 1250, y: 250 },
+    { x: 1800, y: 130 },
+  ],
+});
+
+describe('mobile snacks in the layout (ND-22, ND-23)', () => {
+  it.each(ALL_SEEDS)('keeps the seeded snacks and appends tadpoles then shrimp, with no rand() draw, for seed %i', (seed) => {
+    const canal = buildCanalZone(seed);
+    const zone = buildZone(canalWith({ mobileSnacks: MIX }), seed);
+    const { mobileSnacks, collectibles, ...rest } = zone;
+    expect(mobileSnacks).toEqual(MIX);
+    expect(collectibles.slice(0, canal.collectibles.length)).toEqual(canal.collectibles);
+    expect(collectibles.slice(canal.collectibles.length)).toStrictEqual([
+      { id: 'snack-tadpole-1', kind: 'tadpole', x: 400, y: 200, lane: { dx: 120, dy: 0, speed: 60, offset: 0 } },
+      { id: 'snack-tadpole-2', kind: 'tadpole', x: 1700, y: 240, lane: { dx: 0, dy: -100, speed: 60, offset: 1.5 } },
+      { id: 'snack-shrimp-1', kind: 'shrimp', x: 560, y: 140 },
+      { id: 'snack-shrimp-2', kind: 'shrimp', x: 1250, y: 250 },
+      { id: 'snack-shrimp-3', kind: 'shrimp', x: 1800, y: 130 },
+    ]);
+    const { collectibles: canalSnacks, ...canalRest } = canal;
+    expect(canalSnacks).toHaveLength(16);
+    expect(rest).toStrictEqual(canalRest);
+  });
+
+  it('copies the mix, sharing no object with the data', () => {
+    const zone = buildZone(canalWith({ mobileSnacks: MIX }), 3);
+    expect(zone.mobileSnacks).not.toBe(MIX);
+    expect(zone.mobileSnacks?.tadpole).not.toBe(MIX.tadpole);
+    expect(zone.mobileSnacks?.shrimp).not.toBe(MIX.shrimp);
+    expect(zone.mobileSnacks?.lanes[0]).not.toBe(MIX.lanes[0]);
+    expect(zone.mobileSnacks?.spots[0]).not.toBe(MIX.spots[0]);
+  });
+
+  it('builds only tadpoles or only shrimp, with no key for the missing rule', () => {
+    const tadpoles = buildZone(canalWith({ mobileSnacks: mobileSnackMix({ tadpole: TADPOLE, lanes: MIX.lanes, spots: [] }) }), 3);
+    expect(tadpoles.collectibles.filter((snack) => snack.kind === 'shrimp')).toEqual([]);
+    expect(tadpoles.mobileSnacks).not.toHaveProperty('shrimp');
+    const shrimp = buildZone(canalWith({ mobileSnacks: mobileSnackMix({ lanes: [], shrimp: MIX.shrimp, spots: MIX.spots }) }), 3);
+    expect(shrimp.collectibles.filter((snack) => snack.kind === 'tadpole')).toEqual([]);
+    expect(shrimp.mobileSnacks).not.toHaveProperty('tadpole');
+  });
+
+  it('refuses lanes without a tadpole rule and spots without a shrimp rule', () => {
+    expect(() => buildZone(canalWith({ mobileSnacks: { lanes: MIX.lanes, spots: [] } }), 3)).toThrow(RangeError);
+    expect(() => buildZone(canalWith({ mobileSnacks: { lanes: [], spots: MIX.spots } }), 3)).toThrow(RangeError);
+  });
+
+  it.each([
+    ['canal', CANAL_LAYOUT],
+    ['pond-1', POND_LAYOUT],
+    ['pond-2', POND_2_LAYOUT],
+    ['chinampa-1', CHINAMPA_LAYOUT],
+    ['chinampa-2', CHINAMPA_2_LAYOUT],
+  ] as const)('%s has no moving hazards or mobile snacks, so its zone has no key for them', (_, layout) => {
+    expect(layout.movingHazards).toBeUndefined();
+    expect(layout.mobileSnacks).toBeUndefined();
+    for (const seed of ALL_SEEDS) {
+      const zone = buildZone(layout, seed);
+      expect(zone).not.toHaveProperty('movingHazards');
+      expect(zone).not.toHaveProperty('mobileSnacks');
+      expect(zone.collectibles.every((snack) => snack.kind === 'worm' || snack.kind === 'bug')).toBe(true);
+      expect(zone.collectibles.every((snack) => !('lane' in snack))).toBe(true);
     }
   });
 });

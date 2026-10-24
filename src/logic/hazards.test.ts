@@ -5,11 +5,13 @@ import {
   elementSweep,
   hazardCentre,
   hazardMet,
+  hazardShapeAt,
+  hazardSweep,
   hazardTouches,
   legHazardAt,
   shapeDistance,
 } from './hazards';
-import type { ElementSpawn, HazardSpawn, HazardType } from './hazards';
+import type { ElementSpawn, HazardRect, HazardSpawn, HazardType } from './hazards';
 
 const TEST_FACT: FactCard = {
   id: 'test-fact',
@@ -266,5 +268,121 @@ describe('elementSweep', () => {
     if (!sweep) throw new Error('expected a sweep');
     sweep.x0 = 0;
     expect(MATS.matPair?.x0).toBe(400);
+  });
+});
+
+const DRIFTING_RECT: HazardSpawn = {
+  ...RECT,
+  id: 'drifting-rect',
+  drift: { dx: 160, dy: -40, period: 16, offset: 0 },
+};
+
+const DRIFTING_CIRCLE: HazardSpawn = {
+  ...CIRCLE,
+  id: 'drifting-circle',
+  drift: { dx: -60, dy: 30, period: 10, offset: 0 },
+};
+
+function rectAt(hazard: HazardSpawn, t: number): HazardRect {
+  const shape = hazardShapeAt(hazard, t);
+  if (shape.kind !== 'rect') throw new Error(`expected a rect, got ${shape.kind}`);
+  return shape;
+}
+
+describe('hazardShapeAt', () => {
+  it('returns the still hazard its own shape object at any time', () => {
+    expect(hazardShapeAt(RECT, 0)).toBe(RECT.shape);
+    expect(hazardShapeAt(CIRCLE, 7.3)).toBe(CIRCLE.shape);
+  });
+
+  it('starts at the place, reaches the far end at half a period and comes back', () => {
+    expect(hazardShapeAt(DRIFTING_RECT, 0)).toEqual(RECT.shape);
+    const far = rectAt(DRIFTING_RECT, 8);
+    expect(far.x0).toBeCloseTo(360);
+    expect(far.x1).toBeCloseTo(460);
+    expect(far.y0).toBeCloseTo(10);
+    expect(far.y1).toBeCloseTo(110);
+    const back = rectAt(DRIFTING_RECT, 16);
+    expect(back.x0).toBeCloseTo(200);
+    expect(back.y0).toBeCloseTo(50);
+  });
+
+  it('is halfway along the path at a quarter period, keeping its size', () => {
+    const mid = rectAt(DRIFTING_RECT, 4);
+    expect(mid.x0).toBeCloseTo(280);
+    expect(mid.x1).toBeCloseTo(380);
+    expect(mid.y0).toBeCloseTo(30);
+    expect(mid.y1).toBeCloseTo(130);
+  });
+
+  it('eases to a stop at both ends and moves fastest in the middle', () => {
+    const step = 0.01;
+    const moved = (t: number): number =>
+      rectAt(DRIFTING_RECT, t + step).x0 - rectAt(DRIFTING_RECT, t).x0;
+    expect(Math.abs(moved(0))).toBeLessThan(0.001);
+    expect(Math.abs(moved(8))).toBeLessThan(0.001);
+    expect(moved(4 - step / 2)).toBeCloseTo(160 * Math.PI / 16 * step, 4);
+  });
+
+  it('runs ahead by its offset', () => {
+    const ahead: HazardSpawn = { ...DRIFTING_RECT, drift: { ...DRIFTING_RECT.drift!, offset: 3 } };
+    for (const t of [0, 1.5, 5, 12]) {
+      expect(hazardShapeAt(ahead, t)).toEqual(hazardShapeAt(DRIFTING_RECT, t + 3));
+    }
+    expect(rectAt(ahead, 5).x0).toBeCloseTo(360);
+  });
+
+  it('moves a circle by its centre and keeps its radius', () => {
+    const far = hazardShapeAt(DRIFTING_CIRCLE, 5);
+    expect(far.kind).toBe('circle');
+    if (far.kind !== 'circle') return;
+    expect(far.x).toBeCloseTo(40);
+    expect(far.y).toBeCloseTo(130);
+    expect(far.r).toBe(20);
+  });
+
+  it('never changes the spawn shape', () => {
+    hazardShapeAt(DRIFTING_RECT, 8);
+    hazardShapeAt(DRIFTING_CIRCLE, 5);
+    expect(RECT.shape).toEqual({ kind: 'rect', x0: 200, x1: 300, y0: 50, y1: 150 });
+    expect(CIRCLE.shape).toEqual({ kind: 'circle', x: 100, y: 100, r: 20 });
+  });
+});
+
+describe('hazardSweep', () => {
+  it('returns the still hazard its own shape object', () => {
+    expect(hazardSweep(RECT)).toBe(RECT.shape);
+    expect(hazardSweep(CIRCLE)).toBe(CIRCLE.shape);
+  });
+
+  it('bounds a rect over its whole path with positive dx and negative dy', () => {
+    expect(hazardSweep(DRIFTING_RECT)).toEqual({ kind: 'rect', x0: 200, x1: 460, y0: 10, y1: 150 });
+  });
+
+  it('bounds a rect over its whole path with negative dx and positive dy', () => {
+    const drifting: HazardSpawn = { ...RECT, drift: { dx: -50, dy: 70, period: 12, offset: 4 } };
+    expect(hazardSweep(drifting)).toEqual({ kind: 'rect', x0: 150, x1: 300, y0: 50, y1: 220 });
+  });
+
+  it('bounds a circle over its whole path as a rect', () => {
+    expect(hazardSweep(DRIFTING_CIRCLE)).toEqual({
+      kind: 'rect',
+      x0: 20,
+      x1: 120,
+      y0: 80,
+      y1: 150,
+    });
+  });
+
+  it('holds the shape at every time along the path', () => {
+    const sweep = hazardSweep(DRIFTING_RECT);
+    if (sweep.kind !== 'rect') throw new Error('expected a rect sweep');
+    for (let t = 0; t < 16; t += 0.5) {
+      const shape = rectAt(DRIFTING_RECT, t);
+      expect(shape.x0).toBeGreaterThanOrEqual(sweep.x0 - 1e-9);
+      expect(shape.x1).toBeLessThanOrEqual(sweep.x1 + 1e-9);
+      expect(shape.y0).toBeGreaterThanOrEqual(sweep.y0 - 1e-9);
+      expect(shape.y1).toBeLessThanOrEqual(sweep.y1 + 1e-9);
+    }
   });
 });

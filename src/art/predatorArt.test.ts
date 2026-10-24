@@ -1,10 +1,33 @@
 /**
- * Tilapia, heron, garter snake, protected ring and leg icon colour rules (guide 3g, 6q, 10), headless.
+ * Tilapia, heron, garter snake, carp, protected ring and leg icon colour rules (guide 3g, 6q, 10), headless.
  * The painters run against a recording context and a stub Path2D (the same approach as
  * treasureArt.test.ts): every fill and stroke is kept with the style, width and alpha it
  * was painted under, and every context call is logged.
  */
 import { describe, expect, it, vi } from 'vitest';
+import {
+  CARP_BARBEL,
+  CARP_BELLY,
+  CARP_BODY,
+  CARP_BODY_RX,
+  CARP_BODY_RY,
+  CARP_FIN,
+  CARP_FRAMES,
+  CARP_PUFF,
+  CARP_PUFF_LOBES,
+  CARP_PUFF_SPECKS,
+  CARP_PUFF_TEX,
+  CARP_SCALE,
+  CARP_SHINE,
+  CARP_SWIM_FRAMES,
+  CARP_TEX,
+  carpGeometry,
+  carpNoseTip,
+  paintCarp,
+  paintCarpPuff,
+  paintCarpPuffStill,
+  type CarpFrame,
+} from './drawCarp';
 import { HALO_RX, HALO_RY, paintProtectedHalo } from './drawEffects';
 import {
   HERON_BEAK,
@@ -138,6 +161,13 @@ const DOCUMENTED_COLOURS: readonly (readonly [string, string, string])[] = [
   ['GARTER_BODY', GARTER_BODY, '#6f9a45'],
   ['GARTER_STRIPE', GARTER_STRIPE, '#efe49a'],
   ['GARTER_SHINE', GARTER_SHINE, 'rgba(255,255,255,0.55)'],
+  ['CARP_BODY', CARP_BODY, '#c9973f'],
+  ['CARP_BELLY', CARP_BELLY, '#f2dea0'],
+  ['CARP_FIN', CARP_FIN, '#a66f2a'],
+  ['CARP_BARBEL', CARP_BARBEL, '#8d5a1f'],
+  ['CARP_SCALE', CARP_SCALE, 'rgba(120,75,20,0.4)'],
+  ['CARP_SHINE', CARP_SHINE, 'rgba(255,255,255,0.5)'],
+  ['CARP_PUFF', CARP_PUFF, '#d6c29a'],
   ['BUBBLE_FILL (carried-home bubble)', BUBBLE_FILL, 'rgba(255,255,255,0.38)'],
   ['CARRY_RIM', CARRY_RIM, 'rgba(255,255,255,0.9)'],
   ['BUBBLE_STROKE (carried-home bubble)', BUBBLE_STROKE, 'rgba(43,35,80,0.85)'],
@@ -159,6 +189,13 @@ const DOCUMENTED_RATIOS: readonly (readonly [string, string, string, number])[] 
   ['GARTER_BODY vs INK', GARTER_BODY, INK, 4.38],
   ['GARTER_STRIPE vs INK', GARTER_STRIPE, INK, 11.13],
   ['GARTER_STRIPE vs GARTER_BODY', GARTER_STRIPE, GARTER_BODY, 2.54],
+  ['CARP_BODY vs INK', CARP_BODY, INK, 5.47],
+  ['CARP_BELLY vs INK', CARP_BELLY, INK, 10.78],
+  ['CARP_FIN vs INK', CARP_FIN, INK, 3.38],
+  ['CARP_BARBEL vs INK', CARP_BARBEL, INK, 2.48],
+  ['CARP_PUFF vs INK', CARP_PUFF, INK, 8.25],
+  ['CARP_BELLY vs CARP_BODY', CARP_BELLY, CARP_BODY, 1.97],
+  ['CARP_BODY vs CARP_FIN', CARP_BODY, CARP_FIN, 1.62],
 ];
 
 /**
@@ -1405,6 +1442,313 @@ describe('garter snake ripple ring (the warning cue; guide 7k)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Common carp (issue #117; PRD N2, N3)
+// ---------------------------------------------------------------------------
+
+/** The least the belly must be lighter than the body, and the body lighter than the fins: the greyscale cues (guide 10). */
+const CARP_BELLY_RATIO = 1.9;
+const CARP_FIN_RATIO = 1.5;
+/** The puff reaches the outer edge, so it must be this much against INK (its ink line holds the rest). */
+const CARP_PUFF_INK_RATIO = 8;
+/** Longest a barbel's control polygon may be: they are short. */
+const CARP_BARBEL_MAX_LEN = 13;
+
+/** The recorded parts of a painted carp frame. */
+function carpParts(frame: CarpFrame): {
+  ops: Op[];
+  blobs: { ink: Op; fill: Op }[];
+  barbels: { ink: Op; colour: Op }[];
+  mouth: Op;
+} {
+  const { ops } = record((ctx) => paintCarp(ctx, frame));
+  const mouths = ops.filter(
+    (op) => isStroke(op) && op.strokeStyle === INK && op.lineWidth === 2 && cmdsOf(op).some((cmd) => cmd[0] === 'quadraticCurveTo'),
+  );
+  expect(mouths).toHaveLength(1);
+  return { ops, blobs: blobPairs(ops), barbels: tubePairs(ops), mouth: mouths[0] };
+}
+
+/** Whether (x, y) is inside the carp frame's body ellipse, shrunk by `margin` px. */
+function insideCarpBody(frame: CarpFrame, x: number, y: number, margin: number): boolean {
+  const { cx, cy, rx, ry, rot } = carpGeometry(frame).body;
+  const dx = x - cx;
+  const dy = y - cy;
+  const u = dx * Math.cos(rot) + dy * Math.sin(rot);
+  const v = -dx * Math.sin(rot) + dy * Math.cos(rot);
+  return (u / (rx - margin)) ** 2 + (v / (ry - margin)) ** 2 <= 1;
+}
+
+describe('carp colours (guide 3g, 10)', () => {
+  it('the body is at the chinampa luminance floor or more, so its ink is held by the floor like the snake and the ghost net, and it is no lighter than the hero', () => {
+    expect(relativeLuminance(CARP_BODY)).toBeGreaterThanOrEqual(CHINAMPA_FLOOR);
+    expect(contrastRatio(CARP_BODY, INK)).toBeGreaterThanOrEqual(INK_EDGE_RATIO);
+    expect(relativeLuminance(CARP_BODY)).toBeLessThan(relativeLuminance(HERO_BELLY));
+  });
+
+  it('every part that reaches the outer edge is 3:1 or better against INK', () => {
+    expect(contrastRatio(CARP_FIN, INK)).toBeGreaterThanOrEqual(INK_EDGE_RATIO);
+    expect(contrastRatio(CARP_BODY, INK)).toBeGreaterThanOrEqual(INK_EDGE_RATIO);
+    expect(contrastRatio(CARP_PUFF, INK)).toBeGreaterThanOrEqual(CARP_PUFF_INK_RATIO);
+  });
+
+  it('tells the belly from the body, and the body from the fins, by value alone, the lighter above (the greyscale cue)', () => {
+    expect(contrastRatio(CARP_BELLY, CARP_BODY)).toBeGreaterThanOrEqual(CARP_BELLY_RATIO);
+    expect(relativeLuminance(CARP_BELLY)).toBeGreaterThan(relativeLuminance(CARP_BODY));
+    expect(relativeLuminance(CARP_BELLY)).toBeLessThan(relativeLuminance(HERO_BELLY));
+    expect(contrastRatio(CARP_BODY, CARP_FIN)).toBeGreaterThanOrEqual(CARP_FIN_RATIO);
+    expect(relativeLuminance(CARP_BODY)).toBeGreaterThan(relativeLuminance(CARP_FIN));
+  });
+
+  it('reads apart from the tilapia by value: the carp body is much darker than the tilapia body', () => {
+    expect(contrastRatio(CARP_BODY, TILAPIA_BODY)).toBeGreaterThanOrEqual(1.6);
+    expect(relativeLuminance(CARP_BODY)).toBeLessThan(relativeLuminance(TILAPIA_BODY));
+  });
+
+  it('is a bronze-gold, nowhere near red: not the hero pink, not a mouth red', () => {
+    const [r, g, b] = channelsOf(CARP_BODY);
+    expect(r).toBeGreaterThan(g);
+    expect(g).toBeGreaterThan(b);
+    for (const frame of CARP_FRAMES) {
+      for (const op of carpParts(frame).ops) {
+        for (const colour of [op.fillStyle, op.strokeStyle]) {
+          expect(colour).not.toBe(TILAPIA_MOUTH);
+          expect(colour).not.toBe(LEGS_FILL);
+        }
+      }
+    }
+  });
+
+  it('the shine and the scale marks are see-through, so they never reach the edge', () => {
+    for (const colour of [CARP_SHINE, CARP_SCALE]) expect(rgbaOf(colour)[3]).toBeLessThan(1);
+    expect(rgbaOf(CARP_SHINE).slice(0, 3)).toEqual([255, 255, 255]);
+  });
+});
+
+describe('carp anchors and sizes', () => {
+  it('shares one integer frame between every frame, with the anchor inside it and the tail behind it', () => {
+    expect(Number.isInteger(CARP_TEX.w) && Number.isInteger(CARP_TEX.h)).toBe(true);
+    expect(CARP_TEX.originX).toBeGreaterThan(0);
+    expect(CARP_TEX.originX).toBeLessThan(CARP_TEX.w);
+    expect(CARP_TEX.originY).toBeGreaterThan(0);
+    expect(CARP_TEX.originY).toBeLessThan(CARP_TEX.h);
+    expect(CARP_TEX.originX).toBeGreaterThan(CARP_TEX.w - CARP_TEX.originX);
+  });
+
+  it('lists five frames: three swim frames, the warning and the sweep', () => {
+    expect([...CARP_FRAMES]).toEqual(['swim0', 'swim1', 'swim2', 'warn', 'sweep']);
+    expect([...CARP_SWIM_FRAMES]).toEqual(['swim0', 'swim1', 'swim2']);
+  });
+
+  it.each(CARP_FRAMES)('%s: every part fits CARP_TEX with its ink and at least 4 px of padding', (frame) => {
+    expectPadded(carpParts(frame).ops, CARP_TEX);
+  });
+
+  it('is a plump body about the size of the carp\'s 32 px body radius, centred on the anchor', () => {
+    expect([CARP_BODY_RX, CARP_BODY_RY]).toEqual([32, 22]);
+    for (const frame of ['swim0', 'swim1', 'swim2'] as const) {
+      const { cx, cy, rx, ry, rot } = carpGeometry(frame).body;
+      expect([cx, cy, rx, ry, rot]).toEqual([0, 0, 32, 22, 0]);
+    }
+  });
+});
+
+describe('carp poses', () => {
+  it('the three swim frames only differ in the tail: the tail fan steps down, the body stays put', () => {
+    const [a, b, c] = CARP_SWIM_FRAMES.map(carpGeometry);
+    expect(a.tailFin.cy).toBeLessThan(b.tailFin.cy);
+    expect(b.tailFin.cy).toBeLessThan(c.tailFin.cy);
+    for (const g of [a, c]) {
+      expect(g.body).toEqual(b.body);
+      expect(g.eye).toEqual(b.eye);
+      expect(g.mouth).toEqual(b.mouth);
+    }
+  });
+
+  it('warn: the nose is tipped down, about 22 degrees, and the nose sits well below the anchor line', () => {
+    const swimNose = carpNoseTip('swim1');
+    const warnNose = carpNoseTip('warn');
+    expect(swimNose).toEqual({ x: 32, y: 0 });
+    expect(warnNose.y).toBeGreaterThan(8);
+    expect(warnNose.x).toBeLessThan(swimNose.x);
+    expect(carpGeometry('warn').body.rot).toBeGreaterThan(0.3);
+    expect(carpGeometry('warn').body.rot).toBeLessThan(0.5);
+    // the tail rises as the nose drops, and the eye drops with the head
+    expect(carpGeometry('warn').tailFin.cy).toBeLessThan(carpGeometry('swim1').tailFin.cy);
+    expect(carpGeometry('warn').eye[1]).toBeGreaterThan(carpGeometry('swim1').eye[1]);
+  });
+
+  it('sweep: the tail is swung much wider than any swim frame and the fan is opened', () => {
+    const sweep = carpGeometry('sweep');
+    const reach = (frame: CarpFrame): number => Math.abs(carpGeometry(frame).tailFin.cy);
+    for (const frame of CARP_SWIM_FRAMES) expect(Math.abs(sweep.tailFin.cy)).toBeGreaterThan(reach(frame) + 10);
+    expect(sweep.tailFin.ry).toBeGreaterThan(carpGeometry('swim1').tailFin.ry);
+    // the body does not lunge: the head stays at the front, level to a few degrees (under 0.15 rad)
+    expect(Math.abs(sweep.body.rot)).toBeLessThan(0.15);
+  });
+
+  it('every frame is drawn differently', () => {
+    const drawn = CARP_FRAMES.map((frame) => JSON.stringify(carpParts(frame).ops.map((op) => op.args)));
+    expect(new Set(drawn).size).toBe(CARP_FRAMES.length);
+  });
+});
+
+describe('carp body (round, inked, no points)', () => {
+  it.each(CARP_FRAMES)('%s: tail fan, stalk, dorsal fin and body are four inked ellipses, back to front', (frame) => {
+    const { blobs } = carpParts(frame);
+    expect(blobs).toHaveLength(4);
+    expect(blobs.map((b) => b.fill.fillStyle)).toEqual([CARP_FIN, CARP_BODY, CARP_FIN, CARP_BODY]);
+    for (const { ink } of blobs) {
+      expect(ink.strokeStyle).toBe(INK);
+      expect(ink.lineWidth).toBeCloseTo(2 * LW, 9);
+    }
+    for (const { fill } of blobs) {
+      const [cx, cy, rx, ry] = ellipseOf(fill);
+      expect([cx, cy, rx, ry].every(Number.isFinite)).toBe(true);
+      expect(Math.min(rx, ry)).toBeGreaterThanOrEqual(5);
+    }
+  });
+
+  it.each(CARP_FRAMES)('%s: the belly, the scale marks and the shine stay inside the body', (frame) => {
+    const { ops } = carpParts(frame);
+    const g = carpGeometry(frame);
+    const belly = ops.find((op) => isFill(op) && op.fillStyle === CARP_BELLY)!;
+    expect(ellipseOf(belly).slice(0, 4)).toEqual([g.belly.cx, g.belly.cy, g.belly.rx, g.belly.ry]);
+    for (const angle of [0, 1, 2, 3, 4, 5, 6]) {
+      const u = g.belly.rx * Math.cos(angle);
+      const v = g.belly.ry * Math.sin(angle);
+      const x = g.belly.cx + u * Math.cos(g.belly.rot) - v * Math.sin(g.belly.rot);
+      const y = g.belly.cy + u * Math.sin(g.belly.rot) + v * Math.cos(g.belly.rot);
+      expect(insideCarpBody(frame, x, y, 2)).toBe(true);
+    }
+    const marks = ops.filter((op) => isStroke(op) && op.strokeStyle === CARP_SCALE);
+    expect(marks).toHaveLength(3);
+    for (const mark of marks) {
+      for (const cmd of cmdsOf(mark)) {
+        const nums = cmd.slice(1) as number[];
+        for (let i = 0; i + 1 < nums.length; i += 2) expect(insideCarpBody(frame, nums[i], nums[i + 1], 3)).toBe(true);
+      }
+    }
+    expect(ops.filter((op) => isFill(op) && op.fillStyle === CARP_SHINE)).toHaveLength(1);
+  });
+});
+
+describe('carp face (never scary, never biting)', () => {
+  it.each(CARP_FRAMES)('%s: one closed ink smile line, inside the body, and no mouth interior', (frame) => {
+    const { ops, mouth } = carpParts(frame);
+    expect(cmdsOf(mouth).map(([name]) => name)).toEqual(['moveTo', 'quadraticCurveTo']);
+    const [start, curve] = cmdsOf(mouth) as unknown as [string, ...number[]][];
+    for (const [x, y] of [
+      [start[1], start[2]],
+      [curve[3], curve[4]],
+    ]) {
+      expect(insideCarpBody(frame, x, y, 1)).toBe(true);
+    }
+    // the only fills are body colours, the belly, the shine, the eye and its glints: no mouth interior, no tooth, no tongue
+    expect(styleOfFills(ops)).toEqual(new Set([CARP_FIN, CARP_BODY, CARP_BELLY, CARP_SHINE, EYE, WHITE]));
+  });
+
+  it.each(CARP_FRAMES)('%s: one bead eye with two glints, above the smile and inside the body', (frame) => {
+    const { ops } = carpParts(frame);
+    const bead = ops.find((op) => isFill(op) && op.fillStyle === EYE)!;
+    const [ex, ey, r] = ellipseOf(bead);
+    expect(r).toBeGreaterThan(4);
+    expect(insideCarpBody(frame, ex, ey, r)).toBe(true);
+    expect(ops.filter(isFill).find((op) => op.fillStyle === WHITE)!.args[0]).toHaveLength(4);
+    const g = carpGeometry(frame);
+    expect([ex, ey]).toEqual([g.eye[0], g.eye[1]]);
+  });
+
+  it.each(CARP_FRAMES)('%s: two short barbels in front of the snout, each a round-capped inked tube', (frame) => {
+    const { ops, barbels } = carpParts(frame);
+    expect(barbels).toHaveLength(2);
+    const g = carpGeometry(frame);
+    const bodyFill = ops.findIndex((op) => isFill(op) && op.fillStyle === CARP_BODY && cmdsOf(op).some((cmd) => cmd[0] === 'ellipse' && cmd[3] === CARP_BODY_RX));
+    barbels.forEach(({ ink, colour }, i) => {
+      expect(colour.strokeStyle).toBe(CARP_BARBEL);
+      expect(colour.lineWidth).toBe(2.6);
+      expect(ink.lineWidth).toBeCloseTo(2.6 + 2 * 1.4, 9);
+      expect(ops.indexOf(colour)).toBeGreaterThan(bodyFill);
+      const [a, b, c] = g.barbels[i];
+      const poly = Math.hypot(b[0] - a[0], b[1] - a[1]) + Math.hypot(c[0] - b[0], c[1] - b[1]);
+      expect(poly).toBeLessThanOrEqual(CARP_BARBEL_MAX_LEN);
+      // the tip leaves the body: that is what makes a barbel read
+      expect(insideCarpBody(frame, c[0], c[1], 0)).toBe(false);
+    });
+  });
+
+  it.each(CARP_FRAMES)('%s: paints only carp colours, ink, the eye and white glints', (frame) => {
+    const { ops } = carpParts(frame);
+    const styles = new Set(ops.flatMap((op) => (isFill(op) ? [op.fillStyle] : [op.strokeStyle])));
+    expect(styles).toEqual(new Set([INK, CARP_BODY, CARP_FIN, CARP_BELLY, CARP_BARBEL, CARP_SCALE, CARP_SHINE, EYE, WHITE]));
+  });
+});
+
+/** Every fill straight after an INK stroke on the same path, whatever the ink's width. */
+function inkedFills(ops: readonly Op[]): { ink: Op; fill: Op }[] {
+  const pairs: { ink: Op; fill: Op }[] = [];
+  for (let i = 1; i < ops.length; i++) {
+    const prev = ops[i - 1];
+    if (isFill(ops[i]) && isStroke(prev) && prev.strokeStyle === INK && JSON.stringify(prev.args) === JSON.stringify(ops[i].args)) {
+      pairs.push({ ink: prev, fill: ops[i] });
+    }
+  }
+  return pairs;
+}
+
+describe('carp mud puff (the warning cue; ink outline for greyscale)', () => {
+  const moving = record(paintCarpPuff).ops;
+  const still = record(paintCarpPuffStill).ops;
+
+  it('the moving puff is one inked cloud of four lobes and two inked specks', () => {
+    const pairs = inkedFills(moving);
+    expect(pairs).toHaveLength(1 + CARP_PUFF_SPECKS.length);
+    for (const { ink, fill } of pairs) {
+      expect(fill.fillStyle).toBe(CARP_PUFF);
+      expect(ink.strokeStyle).toBe(INK);
+    }
+    // the cloud's ink is LW outside, so in greyscale it reads as a dark-light-dark cloud
+    expect(pairs[0].ink.lineWidth).toBeCloseTo(2 * LW, 9);
+    expect(cmdsOf(pairs[0].fill).filter((cmd) => cmd[0] === 'ellipse')).toHaveLength(CARP_PUFF_LOBES.length);
+    // each speck's ink is 1.6 each side, thinner than the cloud's
+    expect(pairs.slice(1).map((pair) => pair.ink.lineWidth)).toEqual(CARP_PUFF_SPECKS.map(() => 3.2));
+    expect(moving.every((op) => op.globalAlpha === 1)).toBe(true);
+  });
+
+  it('the still puff is the same inked cloud with no specks, so nothing in it suggests movement', () => {
+    const pairs = blobPairs(still);
+    expect(pairs).toHaveLength(1);
+    expect(still).toHaveLength(2);
+    expect(still[0].args).toEqual(moving[0].args);
+    expect(still[1].args).toEqual(moving[1].args);
+    expect(pairs[0].ink.lineWidth).toBeCloseTo(2 * LW, 9);
+    expect(pairs[0].fill.fillStyle).toBe(CARP_PUFF);
+  });
+
+  it('is small: the cloud fits well inside 40 px and is centred near the anchor', () => {
+    for (const [x, y, r] of CARP_PUFF_LOBES) expect(Math.hypot(x, y) + r).toBeLessThanOrEqual(16);
+    const cloud = tightOpBounds(blobPairs(still)[0].ink);
+    expect(cloud.maxX - cloud.minX).toBeLessThan(40);
+    expect(cloud.maxY - cloud.minY).toBeLessThan(40);
+  });
+
+  it('has no "!" bubble and no glint: the nose-down pose with the puff is the cue', () => {
+    expect(new Set(moving.map((op) => (isFill(op) ? op.fillStyle : op.strokeStyle)))).toEqual(new Set([INK, CARP_PUFF]));
+  });
+
+  it('fits CARP_PUFF_TEX with its ink and at least 4 px of padding, anchored on the main lobe', () => {
+    expectPadded(moving, CARP_PUFF_TEX);
+    expectPadded(still, CARP_PUFF_TEX);
+    expect(CARP_PUFF_LOBES[0].slice(0, 2)).toEqual([0, 0]);
+    expect(CARP_PUFF_TEX.originX).toBeGreaterThan(0);
+    expect(CARP_PUFF_TEX.originY).toBeGreaterThan(0);
+  });
+
+  it('keeps 3:1 on any background: the ink line holds the edge and the puff is 8:1 against it', () => {
+    expect(contrastRatio(CARP_PUFF, INK)).toBeGreaterThanOrEqual(CARP_PUFF_INK_RATIO);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Bake
 // ---------------------------------------------------------------------------
 
@@ -1463,9 +1807,20 @@ describe('bakePredatorTextures', () => {
     'garter-snake-ripple',
   ];
 
-  it('keeps every tilapia, effect and leg texture, and bakes only the wading heron and the garter snake under fixed keys', () => {
+  /** The common carp (issue #117): five frames and two mud puffs. */
+  const CARP = [
+    'carp-swim-0',
+    'carp-swim-1',
+    'carp-swim-2',
+    'carp-warn',
+    'carp-sweep',
+    'carp-puff',
+    'carp-puff-still',
+  ];
+
+  it('keeps every tilapia, effect and leg texture, and bakes only the wading heron, the garter snake and the carp under fixed keys', () => {
     const { baked, made } = withFakeScene((scene, made) => ({ baked: bakePredatorTextures(scene, 2), made }));
-    const all = [...UNCHANGED, ...WADING_HERON, ...GARTER_SNAKE].sort();
+    const all = [...UNCHANGED, ...WADING_HERON, ...GARTER_SNAKE, ...CARP].sort();
     expect([...made.keys()].sort()).toEqual(all);
     expect(Object.keys(baked.info).sort()).toEqual(all);
     for (const retired of ['heron-shadow', 'heron-shadow-warning', 'heron-beak-dip']) {
@@ -1595,5 +1950,66 @@ describe('bakePredatorTextures', () => {
     expect(ring.some((op) => isStroke(op) && op.strokeStyle === WHITE)).toBe(true);
     const argsOf = (key: string): string => JSON.stringify((made.get(key) as Recording).ops.map((op) => op.args));
     expect(new Set(keys.map(argsOf)).size).toBe(keys.length);
+  });
+
+  it('bakes each carp frame under its own key at its own size, and both puffs at the puff size', () => {
+    const baked = withFakeScene((scene) => bakePredatorTextures(scene, 2));
+    expect(PREDATOR_TEX.carpSwim0).toBe('carp-swim-0');
+    expect(PREDATOR_TEX.carpSwim1).toBe('carp-swim-1');
+    expect(PREDATOR_TEX.carpSwim2).toBe('carp-swim-2');
+    expect(PREDATOR_TEX.carpWarn).toBe('carp-warn');
+    expect(PREDATOR_TEX.carpSweep).toBe('carp-sweep');
+    expect(PREDATOR_TEX.carpPuff).toBe('carp-puff');
+    expect(PREDATOR_TEX.carpPuffStill).toBe('carp-puff-still');
+    expect(baked.carp.swim0.key).toBe('carp-swim-0');
+    expect(baked.carp.swim1.key).toBe('carp-swim-1');
+    expect(baked.carp.swim2.key).toBe('carp-swim-2');
+    expect(baked.carp.warn.key).toBe('carp-warn');
+    expect(baked.carp.sweep.key).toBe('carp-sweep');
+    expect(baked.carpPuff.key).toBe('carp-puff');
+    expect(baked.carpPuffStill.key).toBe('carp-puff-still');
+    for (const frame of CARP_FRAMES) {
+      const info = baked.carp[frame];
+      expect(info.scale).toBe(2);
+      expect([info.w, info.h, info.originX, info.originY]).toEqual([CARP_TEX.w, CARP_TEX.h, CARP_TEX.originX, CARP_TEX.originY]);
+    }
+    for (const info of [baked.carpPuff, baked.carpPuffStill]) {
+      expect(info.scale).toBe(2);
+      expect([info.w, info.h, info.originX, info.originY]).toEqual([
+        CARP_PUFF_TEX.w,
+        CARP_PUFF_TEX.h,
+        CARP_PUFF_TEX.originX,
+        CARP_PUFF_TEX.originY,
+      ]);
+    }
+  });
+
+  it('paints each carp texture with its own painter and tone', () => {
+    const made = withFakeScene((scene, made) => {
+      bakePredatorTextures(scene, 1);
+      return made;
+    });
+    const frameKeys = [
+      PREDATOR_TEX.carpSwim0,
+      PREDATOR_TEX.carpSwim1,
+      PREDATOR_TEX.carpSwim2,
+      PREDATOR_TEX.carpWarn,
+      PREDATOR_TEX.carpSweep,
+    ];
+    for (const key of frameKeys) {
+      const ops = (made.get(key) as Recording).ops;
+      expect(ops.some((op) => isFill(op) && op.fillStyle === CARP_BODY)).toBe(true);
+      expect(ops.some((op) => isStroke(op) && op.strokeStyle === CARP_BARBEL)).toBe(true);
+      expect(ops.some((op) => isFill(op) && op.fillStyle === EYE)).toBe(true);
+    }
+    for (const key of [PREDATOR_TEX.carpPuff, PREDATOR_TEX.carpPuffStill]) {
+      const ops = (made.get(key) as Recording).ops;
+      expect(ops.some((op) => isFill(op) && op.fillStyle === CARP_PUFF)).toBe(true);
+      expect(ops.some((op) => isStroke(op) && op.strokeStyle === INK)).toBe(true);
+      expect(ops.some((op) => isFill(op) && op.fillStyle === EYE)).toBe(false);
+    }
+    const argsOf = (key: string): string => JSON.stringify((made.get(key) as Recording).ops.map((op) => op.args));
+    expect(new Set(frameKeys.map(argsOf)).size).toBe(frameKeys.length);
+    expect(argsOf(PREDATOR_TEX.carpPuff)).not.toBe(argsOf(PREDATOR_TEX.carpPuffStill));
   });
 });

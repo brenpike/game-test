@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-10-24
+
+### Added
+
+- The shared parts for a harder danger pass are ready. The shipped areas do not change yet: everything below shows only in the dev area for now, tadpoles and shrimp included (#117).
+- Predators that chase you on a leash: they follow you for a while, then let go (#117).
+- The common carp, with its own fact card and art (#117).
+- Trajinera punting poles that jab down into the water and cost a leg (#117).
+- Ghost nets that drift slowly through the water (#117).
+- Tadpoles that swim along short lanes, with a fact card and art (#117).
+- Freshwater shrimp that flick away when you get close, with a fact card and art (#117).
+
 ## [0.31.0] - 2026-10-23
 
 ### Added

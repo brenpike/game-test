@@ -1,6 +1,7 @@
 import { hazardCentre, legHazardAt, type HazardSpawn } from './hazards';
 import { inSightCover, type SightCoverGeometry } from './hiding';
 import { createLegs, isProtected, speedUpRegrowth, tryHit, updateLegs, type LegsState } from './legs';
+import { movingHazardTipDepth, movingHazardTouches, type MovingHazardSpawn } from './movingHazards';
 import {
   TILAPIA_SPECIES,
   bumpImpulse,
@@ -15,6 +16,7 @@ import {
 import { LEGS, SWIM, TILAPIA, type LegTuning, type TilapiaTuning } from './tuning';
 import type { Vec2 } from './vec';
 import {
+  SURF,
   swimBounds,
   type CaveArea,
   type PadSpec,
@@ -28,14 +30,16 @@ import {
 
 /**
  * The zone parts an encounter is built from. An `EncounterState` is one too, so it can be reset.
- * Absent `predatorRoutes` or `hazards` mean none. Absent `tilapia` means the context's tilapia tuning.
- * The optional sight cover geometry (`reedPatches`, `pads`, `cave`) is what a species with the
- * `sightCover` rule cannot see into; absent parts mean no such cover.
+ * Absent `predatorRoutes`, `hazards` or `movingHazards` mean none. Absent `tilapia` means the
+ * context's tilapia tuning. The optional sight cover geometry (`reedPatches`, `pads`, `cave`) is
+ * what a species with the `sightCover` rule cannot see into; absent parts mean no such cover.
  */
 export type EncounterSource = Pick<ZoneLayout, 'safeArea' | 'tilapiaRoutes' | 'tilapia'> &
   SightCoverGeometry & {
     predatorRoutes?: readonly PredatorRoute[];
     hazards?: readonly HazardSpawn[];
+    /** Moving hazards (ND-8, PRD open question 255); absent or empty means none. */
+    movingHazards?: readonly MovingHazardSpawn[];
   };
 
 /**
@@ -44,7 +48,9 @@ export type EncounterSource = Pick<ZoneLayout, 'safeArea' | 'tilapiaRoutes' | 't
  * `predatorRoutes` entry, in order. `tripOver` is true after the fourth leg is lost;
  * every later step is a no-op until the encounter is reset. `tilapia`, when set, is the area's own
  * tilapia tuning, played in place of the context's. `reedPatches`, `pads` and `cave` are the
- * source's sight cover geometry, each present only when the source has it.
+ * source's sight cover geometry, each present only when the source has it. `movingHazards` and
+ * `hazardTime`, their clock in seconds, are present only when the source has one or more moving
+ * hazards (ND-8, PRD open question 255).
  */
 export interface EncounterState {
   safeArea: SafeArea;
@@ -52,6 +58,9 @@ export interface EncounterState {
   tilapia?: Readonly<TilapiaTuning>;
   predatorRoutes: PredatorRoute[];
   hazards: HazardSpawn[];
+  movingHazards?: MovingHazardSpawn[];
+  /** Seconds of moving hazard time: 0 at the start of every trip, advanced only by `stepEncounter`. */
+  hazardTime?: number;
   reedPatches?: ReedPatch[];
   pads?: PadSpec[];
   cave?: CaveArea;
@@ -76,9 +85,10 @@ export interface EncounterContext {
 
 /**
  * Encounter events, in the order they happened within the step.
- * `sourceId` is the route id of the predator involved, or the hazard id for a hazard hit.
- * `leg` is a slot index. `from` is the predator centre at the moment of the hit, Shell block or
- * bump, or the hazard shape centre for a hazard hit or block.
+ * `sourceId` is the route id of the predator involved, or the hazard or moving hazard spawn id for
+ * a hazard hit. `leg` is a slot index. `from` is the predator centre at the moment of the hit,
+ * Shell block or bump, the hazard shape centre for a hazard hit or block, or the tip of the shaft
+ * for a moving hazard hit or block.
  * `shellBlock` is a hit the Shell perk blocked: no leg lost, protected time started (PRD A22).
  */
 export type EncounterEvent =
@@ -136,8 +146,9 @@ function tilapiaSpeciesFor(tuning: Readonly<TilapiaTuning>): Readonly<PredatorSp
 
 /**
  * Starts a trip: every leg present, no protection, Shell unused, each predator at the start of
- * its route. Routes, hazards, sight cover geometry and the source's own tilapia tuning (only when
- * set) are copied; species and hazard types are shared.
+ * its route. Routes, hazards (with their drift, when set), moving hazards, sight cover geometry
+ * and the source's own tilapia tuning (only when set) are copied; species and hazard types are
+ * shared. The moving hazard clock starts at 0, and only when the source has a moving hazard.
  */
 export function createEncounter(
   source: EncounterSource,
@@ -148,17 +159,14 @@ export function createEncounter(
     ...copyRoute(route),
     species: route.species,
   }));
-  const hazards = (source.hazards ?? []).map((hazard) => ({
-    id: hazard.id,
-    type: hazard.type,
-    shape: { ...hazard.shape },
-  }));
+  const hazards = (source.hazards ?? []).map(copyHazard);
   return {
     safeArea: { ...source.safeArea },
     tilapiaRoutes,
     ...(source.tilapia ? { tilapia: { ...source.tilapia } } : {}),
     predatorRoutes,
     hazards,
+    ...copyMovingHazards(source),
     ...copySightCover(source),
     legs: createLegs(legTuning),
     predators: [
@@ -206,8 +214,9 @@ export function resetEncounter(
  * callers should clamp dt to the same limit, since time above it is dropped.
  *
  * Order within a step: legs first (regrowth, then protected time), then each predator in
- * `predators` order, then one hazard check, then one bump check. So a leg that finishes
- * regrowing in the same step as a hit emits `regrown` before `hit`.
+ * `predators` order, then one hazard check, then one moving hazard check, then one bump check. At
+ * most one hit lands per step. So a leg that finishes regrowing in the same step as a hit emits
+ * `regrown` before `hit`.
  *
  * Tuning: a tilapia uses the encounter's own tilapia tuning when set, else `ctx.tilapia`; every
  * other species uses its own tuning, rule hook and shared rules (see `predatorSpecies`). A species
@@ -240,8 +249,15 @@ export function resetEncounter(
  * (`legHazardAt`) hits it the same way, with `from` at the hazard shape centre. A hazard hit
  * leaves the bump cooldown unchanged. Slow-only hazards never hit.
  *
- * Shell (PRD A22, F11): with `ctx.shell` on, the first hit of the trip, from a predator or a
- * hazard, that protected time does not block is blocked instead. It costs no leg, starts
+ * Moving hazards (ND-8, PRD open question 255): `hazardTime`, when present, advances by the capped
+ * step on every step that runs, so it stops with a 0 step and once the trip is over. When no
+ * predator or hazard hit landed this step, protected time was not running at the step start and
+ * the trip is not over, the first moving hazard touching the axolotl at the new `hazardTime`
+ * (`movingHazardTouches`) hits it the same way (A4, A5, A11), with `from` at the tip of its shaft.
+ * A moving hazard hit leaves the bump cooldown unchanged and is never a bump.
+ *
+ * Shell (PRD A22, F11): with `ctx.shell` on, the first hit of the trip, from a predator, a hazard
+ * or a moving hazard, that protected time does not block is blocked instead. It costs no leg, starts
  * protected time and, for a predator, the bump cooldown as a hit does, and emits `shellBlock`,
  * never `hit`. A hit that protected time blocks leaves the Shell unused. Every later hit
  * removes one leg as usual.
@@ -267,6 +283,7 @@ export function stepEncounter(
     ...state,
     legs,
     bumpCooldownLeft: Math.max(0, state.bumpCooldownLeft - step),
+    ...(state.hazardTime === undefined ? {} : { hazardTime: state.hazardTime + step }),
   };
   const canHit = !isProtected(state.legs);
   const pass = stepPredators(timed, axolotlPos, step, ctx, canHit);
@@ -278,6 +295,12 @@ export function stepEncounter(
     current = hazardPass.state;
     hit = hazardPass.hit;
     events.push(...hazardPass.events);
+  }
+  if (!hit && canHit && !current.tripOver) {
+    const movingPass = applyMovingHazard(current, axolotlPos, ctx);
+    current = movingPass.state;
+    hit = movingPass.hit;
+    events.push(...movingPass.events);
   }
   if (hit || current.tripOver || current.bumpCooldownLeft > 0) {
     return { state: current, events };
@@ -376,6 +399,19 @@ function applyHazard(state: EncounterState, axolotlPos: Point, ctx: EncounterCon
 }
 
 /**
+ * Hits the axolotl from the first moving hazard whose shaft touches it at the encounter's
+ * `hazardTime`, if any, from the tip of that shaft; the bump cooldown is unchanged.
+ */
+function applyMovingHazard(state: EncounterState, axolotlPos: Point, ctx: EncounterContext): HitPass {
+  const { movingHazards, hazardTime } = state;
+  if (!movingHazards || hazardTime === undefined) return { state, events: [], hit: false };
+  const spawn = movingHazards.find((candidate) => movingHazardTouches(candidate, hazardTime, axolotlPos));
+  if (!spawn) return { state, events: [], hit: false };
+  const from: Point = { x: spawn.x, y: SURF + movingHazardTipDepth(spawn, hazardTime) };
+  return applyHit(state, { id: spawn.id, from }, ctx);
+}
+
+/**
  * Applies a hit from `source`; a protected or legless axolotl loses nothing.
  * An unused Shell blocks the hit instead of a leg loss.
  */
@@ -443,6 +479,22 @@ function regrowEvents(before: LegsState, after: LegsState): EncounterEvent[] {
     if (now === 'present') events.push({ type: 'regrown', leg });
   }
   return events;
+}
+
+/** A copy of the hazard sharing its type; the drift (ND-11, PRD open question 258) is copied only when set. */
+function copyHazard(hazard: Readonly<HazardSpawn>): HazardSpawn {
+  const copy: HazardSpawn = { id: hazard.id, type: hazard.type, shape: { ...hazard.shape } };
+  if (hazard.drift) copy.drift = { ...hazard.drift };
+  return copy;
+}
+
+/**
+ * The source's moving hazards, each a copy sharing its type, with the clock at 0. Empty, with no
+ * `movingHazards` or `hazardTime` key, when the source has none.
+ */
+function copyMovingHazards(source: EncounterSource): Pick<EncounterState, 'movingHazards' | 'hazardTime'> {
+  if (!source.movingHazards || source.movingHazards.length === 0) return {};
+  return { movingHazards: source.movingHazards.map((spawn) => ({ ...spawn })), hazardTime: 0 };
 }
 
 /** Copies each sight cover part the source has; an absent part stays absent. */

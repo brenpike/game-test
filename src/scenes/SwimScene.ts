@@ -5,6 +5,7 @@ import { AXO_SIZE_SCALE } from '../art/drawAxolotlParts';
 import { dreamSheenAt } from '../art/drawDreamOverlay';
 import { artOutfit } from '../art/drawWearables';
 import type { HabitatLook } from '../art/habitatLook';
+import type { MobileSnackTextures } from '../art/mobileSnackTextures';
 import { DEPTH } from '../art/layers';
 import { axolotlPalette, T_STATIC } from '../art/palette';
 import { BUBBLE_RADII, type SceneryTextures, type TexInfo } from '../art/textures';
@@ -43,14 +44,24 @@ import { elementSweep, type HazardRect } from '../logic/hazards';
 import { hintSparkleRadius } from '../logic/hints';
 import { blockExplorer, type MatAvoid } from '../logic/hyacinthMats';
 import { legSwimTuning } from '../logic/legs';
+import {
+  metSnackTypeIds,
+  mobileSnackAvoid,
+  oneTimeDarts,
+  snackMagnetSpeed,
+  tadpoleLaneBoxes,
+  type MobileSnackAvoid,
+  type MobileSnackPoseScene,
+} from '../logic/mobileSnacks';
 import { motionProfile, type MotionProfile } from '../logic/motion';
 import { outfitPerks, perkTripContext, perkTuning, type PerkTuning } from '../logic/perks';
 import { isQueasy, queasySwimTuning, type SpitAvoid } from '../logic/plasticWorms';
-import { GARTER_SNAKE_SPECIES, HERON_SPECIES } from '../logic/predators';
+import { CARP_SPECIES, GARTER_SNAKE_SPECIES, HERON_SPECIES } from '../logic/predators';
 import { mulberry32 } from '../logic/rng';
 import { tripStranding } from '../logic/rescue';
 import { explorerAxolotl, restoreSnacks, tripStart } from '../logic/session';
-import { createSnackDarts, stepSnackDarts, type SnackDartAvoid, type SnackDartState } from '../logic/snackDart';
+import { createShrimpFlicks, stepShrimpFlicks, type ShrimpFlickState } from '../logic/shrimpFlick';
+import { stepSnackDarts, type SnackDartAvoid, type SnackDartState } from '../logic/snackDart';
 import { steerFromKeys, type KeyState } from '../logic/steering';
 import { startDashVelocity, stepSwim, swimIntensity, type SwimBounds, type SwimState } from '../logic/swimPhysics';
 import { createDash, dashCharge, tryStartDash, updateDash, type DashState } from '../logic/tailDash';
@@ -62,6 +73,7 @@ import {
   goHome,
   keepExploring,
   markFactCardSeen,
+  meetSnacks,
   sameTripSnapshot,
   stepTrip,
   tripAxolotlPos,
@@ -74,7 +86,7 @@ import {
 import { TRIP_EVENTS, TRIP_REGISTRY_KEYS, type TripSnapshot } from '../logic/tripEvents';
 import { LEGS, SWIM, type SwimTuning } from '../logic/tuning';
 import { len, type Vec2 } from '../logic/vec';
-import { SURF, swimBounds, waveY, type CurrentZone, type ZoneLayout } from '../logic/zone';
+import { SURF, swimBounds, waveY, type CollectibleKind, type CurrentZone, type ZoneLayout } from '../logic/zone';
 import {
   SCENE_KEYS,
   areaFor,
@@ -89,6 +101,7 @@ import {
   type SceneView,
   type SwimStart,
 } from './BootScene';
+import { CarpView } from './CarpView';
 import { ExitView } from './ExitView';
 import { FireflyView } from './FireflyView';
 import { GarterSnakeView } from './GarterSnakeView';
@@ -97,7 +110,9 @@ import { HeronView } from './HeronView';
 import { HomeSpotView } from './HomeSpotView';
 import { HUD_EVENTS, type FactCardSeenPayload } from './HudScene';
 import { HyacinthMatView } from './HyacinthMatView';
+import { MobileSnackView } from './MobileSnackView';
 import { addMotionTween, settleMotionTweens } from './motionTweens';
+import { MovingHazardView } from './MovingHazardView';
 import { PlasticWormView } from './PlasticWormView';
 import { PredatorView } from './PredatorView';
 import { readSession, returnToHomeTank } from './sceneFlow';
@@ -176,6 +191,19 @@ function wrapInto(value: number, min: number, max: number): number {
   return min + ((((value - min) % span) + span) % span);
 }
 
+/** Whether the zone has any tadpole or shrimp. */
+function hasMobileSnacks(zone: Pick<ZoneLayout, 'mobileSnacks'>): boolean {
+  const mix = zone.mobileSnacks;
+  return mix !== undefined && mix.lanes.length + mix.spots.length > 0;
+}
+
+/** How many mobile snack types (tadpole, shrimp) the snacks hold: 0, 1 or 2. */
+function countMobileSnackTypes(snacks: readonly Readonly<{ kind: CollectibleKind }>[]): number {
+  const tadpoles = snacks.some((snack) => snack.kind === 'tadpole') ? 1 : 0;
+  const shrimp = snacks.some((snack) => snack.kind === 'shrimp') ? 1 : 0;
+  return tadpoles + shrimp;
+}
+
 function placeBaked(image: Phaser.GameObjects.Image, info: TexInfo): Phaser.GameObjects.Image {
   return image.setOrigin(info.originNormX, info.originNormY).setScale(1 / info.scale);
 }
@@ -215,6 +243,14 @@ export class SwimScene extends Phaser.Scene {
   private snackDarts: SnackDartState | null = null;
   /** Where a darted snack must not land; built again only when the plastic worms move. */
   private snackDartAvoid: SnackDartAvoid | null = null;
+  /** Flick state of the trip's shrimp (ND-25), or null in an area with no shrimp. */
+  private shrimpFlicks: ShrimpFlickState | null = null;
+  /** Where a flicking shrimp must not land (ND-26); built again only when the plastic worms move. */
+  private shrimpAvoid: MobileSnackAvoid | null = null;
+  /** The Snack magnet's pull in px/s (ND-28), worked out once per trip from the perks and the zone. */
+  private magnetSpeed = 0;
+  /** Mobile snack types in the area not met yet this trip (ND-29); the meet check runs only while above 0. */
+  private snackTypesToMeet = 0;
   /** Each water hyacinth mat pair's whole sweep (elementSweep), or null in an area with no mats. Fixed for the trip. */
   private matSweeps: HazardRect[] | null = null;
   /** Where a mat may never push the explorer, or null in an area with no mats. Fixed for the trip. */
@@ -257,6 +293,14 @@ export class SwimScene extends Phaser.Scene {
   private fireflyView: FireflyView | null = null;
   /** The ghost nets and the snag cue, or null in an area with no ghost nets. */
   private ghostNetView: GhostNetView | null = null;
+  /** The common carp, or null in an area with no carp route. */
+  private carpView: CarpView | null = null;
+  /** The moving hazards, or null in an area with no moving hazards. */
+  private movingHazardView: MovingHazardView | null = null;
+  /** The tadpole and shrimp poses, or null in an area with no mobile snacks. */
+  private mobileSnackView: MobileSnackView | null = null;
+  /** What every mobile snack pose shares this frame, reused each frame. */
+  private mobileSnackScene: MobileSnackPoseScene = { clock: 0, reduced: false, head: { x: 0, y: 0 } };
   private homeSpotView!: HomeSpotView;
   private treasureView!: TreasureView;
   private plasticWormView!: PlasticWormView;
@@ -328,6 +372,10 @@ export class SwimScene extends Phaser.Scene {
     this.queasyCheeks = null;
     this.snackDarts = null;
     this.snackDartAvoid = null;
+    this.shrimpFlicks = null;
+    this.shrimpAvoid = null;
+    this.magnetSpeed = 0;
+    this.snackTypesToMeet = 0;
     this.matSweeps = null;
     this.matAvoid = null;
     this.heronView = null;
@@ -335,6 +383,9 @@ export class SwimScene extends Phaser.Scene {
     this.hyacinthMatView = null;
     this.fireflyView = null;
     this.ghostNetView = null;
+    this.carpView = null;
+    this.movingHazardView = null;
+    this.mobileSnackView = null;
     this.swimPhase = (TAU * T_STATIC) / 1.2;
     this.gillPhase = (TAU * T_STATIC) / 0.8;
   }
@@ -372,7 +423,8 @@ export class SwimScene extends Phaser.Scene {
     });
     this.setItems(restoreSnacks(zone.collectibles, start.eatenSnacks));
     this.allDone = this.snackTally.left === 0;
-    this.snackDarts = area.snackDart ? createSnackDarts(zone.collectibles, area.snackDart) : null;
+    this.snackDarts = oneTimeDarts(area, zone);
+    this.setUpMobileSnacks();
     const stranding = tripStranding(start.ownedMorphs, start.waitingStranded, zone.strandingPlaces, start.tripSeed);
     this.trip = createTrip(zone, LEGS, start.banked, start.tripSeed, {
       stranding,
@@ -450,6 +502,21 @@ export class SwimScene extends Phaser.Scene {
    * grown mats (two per pair) and its result point, and a blocked step builds one new swim state;
    * HyacinthMatView takes a render argument object and builds matRects' result for each pair: the
    * same bounded class as the residual below, bounded by the area's mat pair count.
+   * Danger parts and mobile snacks (#117): Areas 1 to 5 build and call nothing new, for the danger
+   * parts and for snacks alike. CarpView, MovingHazardView and MobileSnackView are made once per
+   * trip, and only in an area with a carp route, with moving hazards or with mobile snacks. The
+   * one-time darts come from oneTimeDarts, which gives today's darters in an area with no shrimp.
+   * The Snack magnet's pull is worked out once per trip (snackMagnetSpeed), and is exactly the
+   * perk's pull with no mobile snacks. The shrimp flick state, the meet count and the tadpole
+   * `keepClear` boxes exist only in an area with shrimp or tadpoles. There, stepShrimpFlicks
+   * allocates nothing when no flick starts and none glides; while one glides it builds a new items
+   * array, one object per moved shrimp and a new flick state, and setItems works the tally out
+   * again: bounded by the shrimp count. Its avoid object is built again only when the plastic worms
+   * move. metSnackTypeIds runs only while some snack type in the area is unmet, and returns a shared
+   * empty list when none is met. MobileSnackView reuses one pose and one scene object and allocates
+   * only the head point (headPoint) per frame. CarpView reuses its sprites and allocates only its
+   * render argument object; MovingHazardView allocates its render argument object and
+   * movingHazardPhase's result per spawn. GhostNetView takes the element time and allocates nothing.
    * Recorded residual, inherited from main: stepSwim and stepTrip return new immutable state and
    * event lists each frame, syncSnapshot builds a trip snapshot to compare, the views take a render
    * argument object, and the reeds-near Set, bubble views and surface x list are rebuilt each frame.
@@ -472,9 +539,13 @@ export class SwimScene extends Phaser.Scene {
     // INVARIANT: a trip that left swimming in its step eats nothing.
     if (this.trip.phase === 'swimming') {
       const head = headPoint(this.body);
-      // INVARIANT: the dart runs before the Snack magnet and the eat, so a darter hops before either reads it.
+      // INVARIANT: the dart and the shrimp flick run before the Snack magnet and the eat, so a darter
+      // hops and a shrimp flicks before either reads it.
       this.dartSnacks(head, dt);
+      this.flickShrimp(head, dt);
       this.pullSnacks(head, dt);
+      // INVARIANT: the meet runs before the eat, so a snack type eaten on the frame it comes in range is met.
+      this.meetMobileSnacks();
       this.collectSnacks(head);
       this.eatPlasticWormsAtHead();
     }
@@ -569,6 +640,22 @@ export class SwimScene extends Phaser.Scene {
     this.matAvoid = { bounds: this.bounds, nets: this.trip.ghostNets.nets, currents: this.zone.currents };
   }
 
+  /**
+   * Works out the trip's mobile snack parts once per trip (ND-24 to ND-29): the Snack magnet's pull,
+   * and, only in an area with mobile snacks, the tadpole lane boxes a spat plastic worm keeps clear
+   * of, the shrimp flick state and the snack types to meet. An area with no mobile snacks gets
+   * exactly the perk's pull and nothing else.
+   */
+  private setUpMobileSnacks(): void {
+    const zone = this.zone;
+    this.magnetSpeed = snackMagnetSpeed(this.perks.snackMagnetSpeed, zone);
+    const mix = zone.mobileSnacks;
+    if (!mix) return;
+    if (mix.lanes.length > 0) this.spitAvoid = { ...this.spitAvoid, keepClear: tadpoleLaneBoxes(zone) };
+    if (mix.shrimp && mix.spots.length > 0) this.shrimpFlicks = createShrimpFlicks(zone.collectibles, mix.shrimp);
+    this.snackTypesToMeet = countMobileSnackTypes(zone.collectibles);
+  }
+
   private buildWorld(): void {
     const { zone, scenery } = this;
     const baked = this.assets.baked;
@@ -609,7 +696,7 @@ export class SwimScene extends Phaser.Scene {
     this.snacks.clear();
     for (const item of this.items) {
       if (item.collected) continue;
-      const info = item.kind === 'worm' ? baked.worm : baked.bug;
+      const info = this.snackTexture(item.kind);
       this.snacks.set(
         item.id,
         placeBaked(this.add.image(item.x, item.y, info.key), info).setDepth(DEPTH.collectibles),
@@ -637,6 +724,12 @@ export class SwimScene extends Phaser.Scene {
     this.garterSnakeView = predators.some((predator) => predator.species === GARTER_SNAKE_SPECIES.id)
       ? new GarterSnakeView(this, this.assets, predators)
       : null;
+    this.carpView = predators.some((predator) => predator.species === CARP_SPECIES.id)
+      ? new CarpView(this, this.assets, predators)
+      : null;
+    const movingHazards = this.trip.encounter.movingHazards ?? [];
+    this.movingHazardView = movingHazards.length > 0 ? new MovingHazardView(this, this.assets, movingHazards) : null;
+    this.mobileSnackView = hasMobileSnacks(zone) ? new MobileSnackView(this.mobileSnackTextures()) : null;
     this.hyacinthMatView = this.matSweeps !== null ? new HyacinthMatView(this, this.assets, this.trip.elements) : null;
     this.fireflyView = this.look.firefliesPerScreen > 0 ? new FireflyView(this, this.assets, this.look, zone) : null;
 
@@ -684,6 +777,31 @@ export class SwimScene extends Phaser.Scene {
         .setScale(1 / info.scale)
         .setDepth(DEPTH.bg);
     });
+  }
+
+  /**
+   * The baked texture a snack sprite starts with: the worm or the bug, a tadpole's tail frame 0 or a
+   * shrimp's rest frame. Throws when a tadpole or a shrimp has no baked mobile snack texture.
+   */
+  private snackTexture(kind: CollectibleKind): TexInfo {
+    if (kind === 'worm') return this.assets.baked.worm;
+    if (kind === 'bug') return this.assets.baked.bug;
+    const textures = this.mobileSnackTextures();
+    if (kind === 'shrimp') return textures.shrimp.rest;
+    const info: TexInfo | undefined = textures.tadpole[0];
+    if (!info) {
+      throw new Error('SwimScene: no tadpole tail frame 0 in the baked mobile snack textures');
+    }
+    return info;
+  }
+
+  /** GameAssets.mobileSnacks; throws when they were not baked, which an area with mobile snacks needs. */
+  private mobileSnackTextures(): MobileSnackTextures {
+    const textures = this.assets.mobileSnacks;
+    if (textures === null) {
+      throw new Error('SwimScene: tadpoles and shrimp need the baked mobile snack textures');
+    }
+    return textures;
   }
 
   /** The Common hint star, the one the last snacks share (PRD H3). */
@@ -841,13 +959,57 @@ export class SwimScene extends Phaser.Scene {
     return this.snackDartAvoid;
   }
 
-  /** Snack magnet (PRD A19): pulls the snacks in the perk radius toward `head`, before the eat. */
+  /**
+   * Shrimp flick (PRD H4, ND-25): a ready shrimp near `head` flicks away, after the one-time darts
+   * and before the Snack magnet and the eat. Only in an area with shrimp; every other area calls
+   * nothing here. Allocates nothing when no flick starts or glides.
+   */
+  private flickShrimp(head: Vec2, dt: number): void {
+    if (this.shrimpFlicks === null) return;
+    const step = stepShrimpFlicks(
+      this.items,
+      head,
+      this.snackView,
+      this.shrimpFlicks,
+      !this.motion.ambient,
+      this.flickAvoid(),
+      dt,
+    );
+    if (!step) return;
+    this.shrimpFlicks = step.state;
+    this.setItems(step.items);
+  }
+
+  /** Where a flicking shrimp must not land (mobileSnackAvoid), built again only when the plastic worm positions change. */
+  private flickAvoid(): MobileSnackAvoid {
+    const worms = this.trip.plasticWorms.worms;
+    if (this.shrimpAvoid === null || this.shrimpAvoid.worms !== worms) {
+      this.shrimpAvoid = mobileSnackAvoid(this.zone, worms);
+    }
+    return this.shrimpAvoid;
+  }
+
+  /**
+   * Meets the area's snack types (PRD A21, ND-29): a tadpole or shrimp type met for the first time
+   * this trip comes due as a fact card. Calls nothing once every type is met, or in an area with no
+   * mobile snacks.
+   */
+  private meetMobileSnacks(): void {
+    if (this.snackTypesToMeet === 0) return;
+    const ids = metSnackTypeIds(this.items, this.swim, this.zone.safeArea, this.trip.met, this.snackView);
+    if (ids.length === 0) return;
+    this.trip = meetSnacks(this.trip, ids);
+    this.snackTypesToMeet = Math.max(0, this.snackTypesToMeet - ids.length);
+    this.syncSnapshot();
+  }
+
+  /** Snack magnet (PRD A19, ND-28): pulls the snacks in the perk radius toward `head` at the trip's pull, before the eat. */
   private pullSnacks(head: Vec2, dt: number): void {
     const pulled = pullSnacksToward(
       this.items,
       head,
       this.perks.snackMagnetRadius,
-      this.perks.snackMagnetSpeed,
+      this.magnetSpeed,
       dt,
       this.snackView,
     );
@@ -1116,6 +1278,8 @@ export class SwimScene extends Phaser.Scene {
     this.strandedView.destroy();
     this.heronView?.destroy();
     this.garterSnakeView?.destroy();
+    this.carpView?.destroy();
+    this.movingHazardView?.destroy();
     this.hyacinthMatView?.destroy();
     this.axolotlView.destroy();
   }
@@ -1145,10 +1309,13 @@ export class SwimScene extends Phaser.Scene {
     });
     this.heronView?.render({ encounter: this.trip.encounter, axolotl: this.swim, motion: this.motion, dt });
     this.garterSnakeView?.render({ encounter: this.trip.encounter, axolotl: this.swim, motion: this.motion, dt });
+    this.carpView?.render({ encounter: this.trip.encounter, motion: this.motion, dt, axolotl: this.swim });
+    this.movingHazardView?.render({ encounter: this.trip.encounter, motion: this.motion });
     this.hyacinthMatView?.render({ elementTime: this.trip.elementTime, motion: this.motion, time: this.clock });
     this.fireflyView?.render(this.motion, this.clock);
     this.renderReeds(dt, t);
     this.renderSnacks();
+    this.renderMobileSnacks();
     this.renderSnackStars(dt, t);
     this.renderStreaks(dt);
     this.renderBubbles(dt);
@@ -1194,7 +1361,7 @@ export class SwimScene extends Phaser.Scene {
       baseScale,
     );
     this.renderQueasyCheeks();
-    this.ghostNetView?.render(isSnagged(this.trip.ghostNets), body);
+    this.ghostNetView?.render(isSnagged(this.trip.ghostNets), body, this.trip.elementTime);
   }
 
   /**
@@ -1290,6 +1457,20 @@ export class SwimScene extends Phaser.Scene {
       if (!sprite) continue;
       sprite.setPosition(drawnSnackX(item, i, frame), drawnSnackY(item, i, frame));
     }
+  }
+
+  /**
+   * Each tadpole's and shrimp's frame, facing and sway (MobileSnackView), after renderSnacks places
+   * them. Only in an area with mobile snacks; every other area calls nothing here.
+   */
+  private renderMobileSnacks(): void {
+    const view = this.mobileSnackView;
+    if (view === null) return;
+    const scene = this.mobileSnackScene;
+    scene.clock = this.clock;
+    scene.reduced = !this.motion.ambient;
+    scene.head = headPoint(this.body);
+    view.render(this.items, this.snacks, this.snackView, scene, this.shrimpFlicks);
   }
 
   /**

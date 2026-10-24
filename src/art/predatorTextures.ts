@@ -1,6 +1,6 @@
 /**
  * Phaser glue for the predators and leg loss (issues #7, #98 and #103): bakes the
- * tilapia, heron, garter snake, effect and leg icon painters into CanvasTextures.
+ * tilapia, heron, garter snake, carp, effect and leg icon painters into CanvasTextures.
  * Visual only. No game state, no input, no physics.
  *
  * Same rules as textures.ts: every texture is drawn at `bakeScale`, so a
@@ -8,6 +8,15 @@
  */
 import * as Phaser from 'phaser';
 import type { TexSize } from './canvasKit';
+import {
+  CARP_FRAMES,
+  CARP_PUFF_TEX,
+  CARP_TEX,
+  paintCarp,
+  paintCarpPuff,
+  paintCarpPuffStill,
+  type CarpFrame,
+} from './drawCarp';
 import {
   CARRY_BUBBLE_TEX,
   HALO_TEX,
@@ -80,7 +89,23 @@ export const PREDATOR_TEX = {
   garterSnakeHold: 'garter-snake-hold',
   garterSnakeDart: 'garter-snake-dart',
   garterRipple: 'garter-snake-ripple',
+  carpSwim0: 'carp-swim-0',
+  carpSwim1: 'carp-swim-1',
+  carpSwim2: 'carp-swim-2',
+  carpWarn: 'carp-warn',
+  carpSweep: 'carp-sweep',
+  carpPuff: 'carp-puff',
+  carpPuffStill: 'carp-puff-still',
 } as const;
+
+/** Fixed key of each carp frame. */
+const CARP_KEYS: Readonly<Record<CarpFrame, string>> = {
+  swim0: PREDATOR_TEX.carpSwim0,
+  swim1: PREDATOR_TEX.carpSwim1,
+  swim2: PREDATOR_TEX.carpSwim2,
+  warn: PREDATOR_TEX.carpWarn,
+  sweep: PREDATOR_TEX.carpSweep,
+};
 
 /** Fixed key of each garter snake frame. */
 const GARTER_SNAKE_KEYS: Readonly<Record<GarterSnakeFrame, string>> = {
@@ -159,9 +184,20 @@ export interface PredatorTextures {
   readonly garterSnake: Readonly<Record<GarterSnakeFrame, TexInfo>>;
   /** One ripple ring (GARTER_RIPPLE_TEX), the garter snake's warning cue. Anchor is the ring centre. */
   readonly garterRipple: TexInfo;
+  /**
+   * Common carp, one still frame each (CARP_TEX), facing right: `swim0` to `swim2` (the tail one
+   * step up, straight, one step down; the scene steps 0, 1, 2, 1), `warn` (nose down) and `sweep`
+   * (the tail swung wide). `swim1` is the one held pose for reduced motion. Anchor is the body
+   * centre, the carp's logic point; the tail trails toward -x.
+   */
+  readonly carp: Readonly<Record<CarpFrame, TexInfo>>;
+  /** The moving mud puff (CARP_PUFF_TEX), the carp's warning cue with the `warn` pose. Anchor is the main lobe's centre. */
+  readonly carpPuff: TexInfo;
+  /** The still mud puff (CARP_PUFF_TEX, no specks), for reduced motion. Anchor is the main lobe's centre. */
+  readonly carpPuffStill: TexInfo;
 }
 
-/** Bake the tilapia, heron, garter snake, effect and leg icon textures into the scene's texture manager. */
+/** Bake the tilapia, heron, garter snake, carp, effect and leg icon textures into the scene's texture manager. */
 export function bakePredatorTextures(scene: Phaser.Scene, bakeScale: number): PredatorTextures {
   const info: Record<string, TexInfo> = {};
   const add = (t: TexInfo): TexInfo => {
@@ -214,6 +250,12 @@ export function bakePredatorTextures(scene: Phaser.Scene, bakeScale: number): Pr
     );
   }
   const garterRipple = add(bake(scene, PREDATOR_TEX.garterRipple, GARTER_RIPPLE_TEX, bakeScale, paintGarterRipple));
+  const carp = {} as Record<CarpFrame, TexInfo>;
+  for (const frame of CARP_FRAMES) {
+    carp[frame] = add(bake(scene, CARP_KEYS[frame], CARP_TEX, bakeScale, (ctx) => paintCarp(ctx, frame)));
+  }
+  const carpPuff = add(bake(scene, PREDATOR_TEX.carpPuff, CARP_PUFF_TEX, bakeScale, paintCarpPuff));
+  const carpPuffStill = add(bake(scene, PREDATOR_TEX.carpPuffStill, CARP_PUFF_TEX, bakeScale, paintCarpPuffStill));
 
   return {
     info,
@@ -231,5 +273,8 @@ export function bakePredatorTextures(scene: Phaser.Scene, bakeScale: number): Pr
     heronStabNeck,
     garterSnake,
     garterRipple,
+    carp,
+    carpPuff,
+    carpPuffStill,
   };
 }

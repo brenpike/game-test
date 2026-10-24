@@ -33,10 +33,15 @@
  * `hyacinthMat` (the water hyacinth mats, issue #103) sits just above the haze and below
  * `heronBody`: what is drawn is what blocks, so the mats are never hazed, and every cue object
  * (the garter snake, snacks, treasures, the axolotl) draws in front of them. The garter snake
- * reuses `tilapia` and its ripple rings use `fx`.
+ * reuses `tilapia` and its ripple rings use `fx`. The common carp (issue #117) reuses `tilapia` too,
+ * and its mud puff uses `fx`.
+ * `movingHazard` (a moving hazard's boat shadow, shaft and bow, issue #117) sits just over the
+ * tilapia and below `heronStab`: a cue object above the haze and every snack, behind the halo and the
+ * axolotl, so the pole is never drawn over the hero. The surface and the pads draw over the bow's
+ * hull at the water line. Its ripple ring uses `fx`.
  * Full order: bg < caveBack < hiddenTreasure < reeds < caveFront = currentMarker
  * < haze < hyacinthMat < heronBody < homeSpot < homeRing < treasureGlow < treasure
- * < collectibles < tilapia < heronStab < halo < friend < axolotl < queasyTint
+ * < collectibles < tilapia < movingHazard < heronStab < halo < friend < axolotl < queasyTint
  * < bubbles < surface < pads < fireflies < hint < fx < ui.
  */
 export const DEPTH = {
@@ -66,6 +71,8 @@ export const DEPTH = {
   collectibles: 30,
   /** Provisional. Predator: behind the axolotl, in front of collectibles. */
   tilapia: 35,
+  /** Provisional. Moving hazard shadow, shaft and bow: in front of the tilapia, behind the heron stab, the halo and the axolotl. */
+  movingHazard: 36,
   /** Provisional. Wading heron stab head and neck piece: in front of the tilapia, behind the halo and the axolotl. */
   heronStab: 37,
   /** Provisional. Protected halo: behind the axolotl, in front of the tilapia. */

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { threatIds } from './areas';
 import { headPoint, type DrawnBody } from './collectibles';
 import { PLASTIC_WORM_FACT } from './factCards';
-import { legHazardAt, type HazardSpawn } from './hazards';
+import { legHazardAt, shapeDistance, type HazardRect, type HazardSpawn } from './hazards';
 import { zoneThreats } from './hiding';
 import { legSwimTuning } from './legs';
 import {
@@ -20,7 +20,7 @@ import {
 } from './plasticWorms';
 import { mulberry32 } from './rng';
 import { PLASTIC_WORMS, SNACK_REACH, SWIM } from './tuning';
-import { inSafeArea, isInsideCurrent, type Point } from './zone';
+import { SNACK_HAZARD_CLEARANCE, inSafeArea, isInsideCurrent, type Point } from './zone';
 
 const AVOID: SpitAvoid = {
   bounds: { minX: 40, maxX: 2360, minY: 94, maxY: 296 },
@@ -193,6 +193,62 @@ describe('eatPlasticWorm', () => {
       expect(inSafeArea(to, AVOID.safeArea)).toBe(false);
       expect(AVOID.currents.some((current) => isInsideCurrent(to, current))).toBe(false);
     }
+  });
+
+  describe('keepClear (ND-26)', () => {
+    const body = bodyWithHeadAt({ x: 500, y: 200 });
+    const landing = spitLanding(body);
+
+    function boxRightOfLanding(gap: number): HazardRect {
+      return { kind: 'rect', x0: landing.x + gap, x1: landing.x + gap + 60, y0: 150, y1: 250 };
+    }
+
+    it('leaves the worm where it is when the landing is closer than SNACK_HAZARD_CLEARANCE to a box', () => {
+      const state = stateWithWorms({ x: 500, y: 200 });
+      const avoid: SpitAvoid = { ...FAR_AVOID, keepClear: [boxRightOfLanding(SNACK_HAZARD_CLEARANCE - 0.01)] };
+      const eaten = eatOrFail(state, body, avoid);
+      expect(eaten.spat.to).toEqual({ x: 500, y: 200 });
+      expect(eaten.state.worms).toBe(state.worms);
+      expect(eaten.state.queasyLeft).toBe(PLASTIC_WORMS.queasyTime);
+    });
+
+    it('lands when the landing is exactly SNACK_HAZARD_CLEARANCE from a box', () => {
+      const avoid: SpitAvoid = { ...FAR_AVOID, keepClear: [boxRightOfLanding(SNACK_HAZARD_CLEARANCE)] };
+      expect(eatOrFail(stateWithWorms({ x: 500, y: 200 }), body, avoid).spat.to).toEqual(landing);
+    });
+
+    it('changes nothing when absent, empty or far from the landing', () => {
+      const state = stateWithWorms({ x: 500, y: 200 }, { x: 900, y: 200 });
+      const without = eatOrFail(state, body);
+      const far: HazardRect = { kind: 'rect', x0: 2000, x1: 2100, y0: 100, y1: 300 };
+      expect(eatOrFail(state, body, { ...FAR_AVOID, keepClear: [] })).toEqual(without);
+      expect(eatOrFail(state, body, { ...FAR_AVOID, keepClear: [far] })).toEqual(without);
+      expect(without.spat.to).toEqual(landing);
+    });
+
+    it('never lands a worm within SNACK_HAZARD_CLEARANCE of a box', () => {
+      const lanes: HazardRect[] = [
+        { kind: 'rect', x0: 500, x1: 800, y0: 150, y1: 250 },
+        { kind: 'rect', x0: 1500, x1: 1700, y0: 100, y1: 200 },
+      ];
+      const avoid: SpitAvoid = { ...AVOID, keepClear: lanes };
+      let stayed = 0;
+      for (let seed = 1; seed <= 300; seed++) {
+        const rand = mulberry32(seed);
+        const worm = openWaterPoint(rand);
+        const facing: 1 | -1 = rand() < 0.5 ? 1 : -1;
+        const rotation = (rand() - 0.5) * 2;
+        const eaten = eatPlasticWorm(stateWithWorms(worm), bodyWithHeadAt(worm, facing, rotation), avoid);
+        if (eaten === null) throw new Error(`seed ${seed}: expected the worm to be eaten`);
+        const to = eaten.spat.to;
+        if (to.x === worm.x && to.y === worm.y) {
+          stayed++;
+          continue;
+        }
+        for (const lane of lanes) expect(shapeDistance(to, lane)).toBeGreaterThanOrEqual(SNACK_HAZARD_CLEARANCE);
+      }
+      expect(stayed).toBeGreaterThan(0);
+    });
   });
 
   it('returns null with no worms', () => {

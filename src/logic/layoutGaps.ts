@@ -4,8 +4,9 @@
  * hazard gap at least the safe passing width and to rank areas by their tightest passage.
  */
 import { GHOST_NET } from './ghostNets';
-import type { HazardShape } from './hazards';
+import { hazardSweep, type HazardShape } from './hazards';
 import { zoneThreats } from './hiding';
+import { movingHazardSweep, type MovingHazardSpawn } from './movingHazards';
 import { PERK_CAPS } from './perks';
 import { GHOST_NETS, SWIM } from './tuning';
 import type { Point, ZoneLayout } from './zone';
@@ -13,8 +14,13 @@ import type { Point, ZoneLayout } from './zone';
 /** Spacing in px of the points sampled along a loop or a rect outline. */
 const SAMPLE_STEP = 1;
 
-/** The zone geometry the gap measure reads: its hazards and its predator routes with their tuning. */
-type GapGeometry = Pick<ZoneLayout, 'hazards' | 'tilapiaRoutes' | 'tilapia' | 'predatorRoutes'>;
+/**
+ * The zone geometry the gap measure reads: its hazards, its predator routes with their tuning and
+ * its moving hazards (ND-8). Absent moving hazards mean none.
+ */
+type GapGeometry = Pick<ZoneLayout, 'hazards' | 'tilapiaRoutes' | 'tilapia' | 'predatorRoutes'> & {
+  movingHazards?: readonly Readonly<MovingHazardSpawn>[];
+};
 
 /**
  * The safe passing width: the least clear width of a gap, between the places the body centre must
@@ -54,16 +60,20 @@ export interface Gap {
 }
 
 /**
- * Every obstacle of a zone: each hazard by its reach, then each extra shape by its keep-out, then
- * each predator route by its strike range (zoneThreats). No extras gives the zone's own obstacles.
+ * Every obstacle of a zone: each hazard by its reach from its whole drift path (hazardSweep, N3),
+ * then each moving hazard sweep by its touch reach (ND-8), then each extra shape by its keep-out,
+ * then each predator route by its strike range (zoneThreats). No extras gives the zone's own obstacles.
  */
 export function obstaclesOf(layout: GapGeometry, extras: readonly ExtraObstacle[] = []): Obstacle[] {
-  const hazards = layout.hazards.map((hazard): Obstacle => ({ id: hazard.id, kind: 'shape', shape: hazard.shape, keepOut: hazard.type.reach }));
+  const hazards = layout.hazards.map((hazard): Obstacle => ({ id: hazard.id, kind: 'shape', shape: hazardSweep(hazard), keepOut: hazard.type.reach }));
+  const moving = (layout.movingHazards ?? []).map(
+    (spawn): Obstacle => ({ id: spawn.id, kind: 'shape', shape: movingHazardSweep(spawn), keepOut: spawn.type.touchReach }),
+  );
   const shapes = extras.map((extra): Obstacle => ({ id: extra.id, kind: 'shape', shape: extra.shape, keepOut: extra.keepOut }));
   const routes = zoneThreats(layout).flatMap((threat): Obstacle[] =>
     threat.kind === 'route' ? [{ id: threat.route.id, kind: 'route', waypoints: threat.route.waypoints, keepOut: threat.strike }] : [],
   );
-  return [...hazards, ...shapes, ...routes];
+  return [...hazards, ...moving, ...shapes, ...routes];
 }
 
 /** Every gap between two obstacles of a zone, with any extra shape obstacles. */

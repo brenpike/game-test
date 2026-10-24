@@ -721,3 +721,27 @@ export const CAVE_INTERIOR = '#031d33';
 export const MARKER_STONE = PEBBLE_C;
 /** Past-the-current marker carving, provisional. Internal detail line, never ink. */
 export const MARKER_CARVE = PEBBLE_E;
+
+// ---- Mobile snacks: tadpole and freshwater shrimp (guide 3g and 7b, provisional) ----
+// Every value in this section is derived (provisional). Both are cue objects with an opaque ink
+// outline, so each outer fill keeps 3:1 or better against ink. They are told apart from the worm,
+// the bug and the plastic worm by shape first (see drawMobileSnacks.ts) and by value second.
+/**
+ * Tadpole body and head: a dark olive brown, luminance 0.1741, 3.07:1 with ink and 3.72:1 with the
+ * eye bead. Much darker than the earthworm snack (#e0b095, 0.4907) and the bug shell, so it reads
+ * as a dark round blob by value alone.
+ */
+export const TADPOLE_BODY = '#86723a';
+/** Tadpole belly patch: a pale sand, luminance 0.6713, 9.89:1 with ink and 3.22:1 lighter than the body. Inside the silhouette, never an edge. */
+export const TADPOLE_BELLY = '#e4d6a0';
+/** Tadpole tail fin: a lighter olive tan, luminance 0.3912, 6.05:1 with ink. It reaches the outer edge. */
+export const TADPOLE_FIN = '#b8a864';
+/**
+ * Shrimp body and head: a pale blue grey, luminance 0.6685, 9.85:1 with ink. A cool, light tone,
+ * 1.32:1 lighter than the earthworm snack and far lighter than the tadpole.
+ */
+export const SHRIMP_BODY = '#c4d9e2';
+/** Shrimp tail fan: lighter than the body, luminance 0.7639, 11.16:1 with ink. It reaches the outer edge. */
+export const SHRIMP_FIN = '#d6e5ec';
+/** Shrimp soft bands across the body. See-through and inside the silhouette, so alpha is allowed; never ink. */
+export const SHRIMP_BAND = 'rgba(70,110,140,0.35)';

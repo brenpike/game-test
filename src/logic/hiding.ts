@@ -5,6 +5,7 @@
  */
 import type { Rarity } from './catalogue';
 import { shapeDistance, type HazardShape, type HazardSpawn } from './hazards';
+import { movingHazardSweep, type MovingHazardSpawn } from './movingHazards';
 import { routeLoopDistance, type PredatorRoute } from './predators';
 import { RISK, TILAPIA, type RiskTuning, type TilapiaTuning } from './tuning';
 import {
@@ -32,9 +33,9 @@ export const PAST_CURRENT_DEPTH = 140;
 export const RISK_COMMON_MARGIN = 60;
 
 /**
- * The zone geometry the hiding rules read. Absent predator routes or hazards mean none; together
- * with the tilapia routes they are the zone's threats. Absent `tilapia` means the TILAPIA tuning;
- * absent `bankOverhangs` means no bank cover.
+ * The zone geometry the hiding rules read. Absent predator routes, hazards or moving hazards mean
+ * none; together with the tilapia routes they are the zone's threats. Absent `tilapia` means the
+ * TILAPIA tuning; absent `bankOverhangs` means no bank cover.
  */
 export type HidingGeometry = Pick<
   ZoneLayout,
@@ -42,13 +43,15 @@ export type HidingGeometry = Pick<
 > & {
   predatorRoutes?: readonly Readonly<PredatorRoute>[];
   hazards?: readonly Readonly<HazardSpawn>[];
+  movingHazards?: readonly Readonly<MovingHazardSpawn>[];
 };
 
 /**
  * One thing a hiding spot's risk is measured against, with its strike range in px. A route threat is
  * a predator's patrol loop; `tilapia` marks a tilapia route, whose bands come from the risk tuning
  * unless `tuned` marks it as played with its area's own tuning, banded by riskBands(strike).
- * A shape threat is a leg-costing hazard, its strike range being the hazard's reach from the shape edge.
+ * A shape threat is a leg-costing hazard, its strike range being the hazard's reach from the shape
+ * edge, or a moving hazard, its shape being its sweep and its strike range its touch reach (ND-8).
  */
 export type Threat =
   | { kind: 'route'; route: Readonly<TilapiaRoute>; strike: number; tilapia: boolean; tuned?: true }
@@ -216,17 +219,23 @@ export function meetsRiskRule(pos: Point, rarity: Rarity, routes: readonly Tilap
 
 /**
  * Every threat in a zone: each tilapia route with the tilapia lunge range, each other predator route
- * with its species' lunge range, then each leg-costing hazard with its reach. A geometry with its
- * own tilapia tuning gives its tilapia routes that tuning's lunge range, marked `tuned`; without one
- * they get TILAPIA's. Slow-only hazards are not threats.
+ * with its species' lunge range, then each leg-costing hazard with its reach, then each moving
+ * hazard by its sweep with its touch reach (ND-8). A geometry with its own tilapia tuning gives its
+ * tilapia routes that tuning's lunge range, marked `tuned`; without one they get TILAPIA's.
+ * Slow-only hazards, drifting nets included (N3), are not threats.
  */
-export function zoneThreats(geo: Pick<HidingGeometry, 'tilapiaRoutes' | 'tilapia' | 'predatorRoutes' | 'hazards'>): Threat[] {
+export function zoneThreats(
+  geo: Pick<HidingGeometry, 'tilapiaRoutes' | 'tilapia' | 'predatorRoutes' | 'hazards' | 'movingHazards'>,
+): Threat[] {
   const threats: Threat[] = geo.tilapiaRoutes.map((route) => tilapiaThreat(route, geo.tilapia));
   for (const route of geo.predatorRoutes ?? []) {
     threats.push({ kind: 'route', route, strike: route.species.tuning.lungeRange, tilapia: false });
   }
   for (const hazard of geo.hazards ?? []) {
     if (hazard.type.costsLeg) threats.push({ kind: 'shape', shape: hazard.shape, strike: hazard.type.reach });
+  }
+  for (const spawn of geo.movingHazards ?? []) {
+    threats.push({ kind: 'shape', shape: movingHazardSweep(spawn), strike: spawn.type.touchReach });
   }
   return threats;
 }
@@ -254,9 +263,12 @@ export function riskBands(strike: number): RiskTuning['band'] {
 /**
  * Distance from a point to one threat: to its closed patrol loop, or to its shape edge (0 inside).
  * A route is measured with routeLoopDistance. A predator warns from where it is on its route, so
- * every point it can warn at is within its strike of the route. No cover (reeds, pad, cave)
- * shortens or blocks the distance: a covered spot still counts as near a sight hunter such as the
- * heron, because getting in and out of it crosses the hunter's reach.
+ * every point it can warn at is within its strike of the route. The chase is ignored (PRD open
+ * question 252, ND-5): a chaser's strike stays its lungeRange from its patrol loop. Its chase widens
+ * where it can warn by the same leash for every spot near it, so the ladder's order holds. The
+ * other option is S = lungeRange + leash, which leaves almost no Common spots in a full-bar area.
+ * No cover (reeds, pad, cave) shortens or blocks the distance: a covered spot still counts as near
+ * a sight hunter such as the heron, because getting in and out of it crosses the hunter's reach.
  */
 function threatDistance(pos: Point, threat: Threat): number {
   return threat.kind === 'route' ? routeLoopDistance(pos, threat.route.waypoints) : shapeDistance(pos, threat.shape);

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DrawnBody } from './collectibles';
 import { createEncounter, createEncounterContext, predatorSpecies } from './encounter';
 import { HERON_MEET_RANGE, meetsTilapia, type FactCard } from './factCards';
-import { GHOST_NET, createGhostNets, isSnagged } from './ghostNets';
+import { GHOST_NET, createGhostNets, isSnagged, netDrift } from './ghostNets';
 import type { ElementSpawn, ElementType, HazardSpawn, HazardType } from './hazards';
 import { inSightCover, zoneThreats } from './hiding';
 import {
@@ -13,6 +13,7 @@ import {
 } from './predators';
 import { GAME_EVENTS, REGISTRY_KEYS } from './gameEvents';
 import { createLegs, isProtected, presentCount, tryHit, type LegsState } from './legs';
+import { PUNTING_POLE, movingHazardSpawn } from './movingHazards';
 import { CANAL_AREA } from './areas';
 import { treasureById } from './catalogue';
 import {
@@ -29,6 +30,7 @@ import {
   keepExploring,
   legsSnapshot,
   markFactCardSeen,
+  meetSnacks,
   newTrip,
   sameTripSnapshot,
   stepTrip,
@@ -49,7 +51,7 @@ import { RESCUE, pickStranding, type Stranding } from './rescue';
 import { TRIP_EVENTS, TRIP_REGISTRY_KEYS, type TripSnapshot } from './tripEvents';
 import { withStars } from './stars';
 import { CARRY, FINDS, GHOST_NETS, LEGS, PLASTIC_WORMS, SNACK_REACH, SWIM, TILAPIA, tripTreasureTuning } from './tuning';
-import { buildCanalZone, swimBounds, type HidingSpot, type Point } from './zone';
+import { SURF, buildCanalZone, swimBounds, type HidingSpot, type Point } from './zone';
 
 const DT = 1 / 60;
 const PAUSE_DTS = [0, -1, Number.NaN, Number.POSITIVE_INFINITY];
@@ -2493,5 +2495,163 @@ describe('elements in the trip (#103)', () => {
       hazards: [{ id: 'mud', type: TEST_MUD, shape: { kind: 'circle', x: 1050, y: 200, r: 10 } }],
     };
     expect(stepAt(createTrip(source), { x: 1020, y: 200 }).state.met).toEqual(['test-pike', 'test-mud', 'test-mats']);
+  });
+});
+
+describe('moving hazards in the trip (ND-8)', () => {
+  const testFact = (id: string): FactCard => ({ id, name: id, title: id, body: id });
+  const POLE_X = 1000;
+  /** Offset -3 puts the pole 3 s into its cycle at hazard time 0: held at full depth. */
+  const heldPole = movingHazardSpawn('pole-1', PUNTING_POLE, POLE_X, -3);
+  const restingPole = movingHazardSpawn('pole-1', PUNTING_POLE, POLE_X, 0);
+  const poleZone: TripSource = { ...zone, finds: [], spots: [], tilapiaRoutes: calmRoutes, movingHazards: [heldPole] };
+  const restingZone: TripSource = { ...poleZone, movingHazards: [restingPole] };
+  const underPole: Point = { x: POLE_X, y: 200 };
+  const calm: Point = { x: 700, y: 120 };
+  const sweepEdge = POLE_X + PUNTING_POLE.halfWidth;
+  const atMeet: Point = { x: sweepEdge + PUNTING_POLE.meetRange, y: 200 };
+  const pastMeet: Point = { x: sweepEdge + PUNTING_POLE.meetRange + 0.5, y: 200 };
+
+  it('keeps every trip and encounter key unchanged without moving hazards', () => {
+    const plain = createTrip(zone);
+    const empty = createTrip({ ...zone, movingHazards: [] });
+    expect(empty).toEqual(plain);
+    expect(Object.keys(empty.encounter)).toEqual(Object.keys(plain.encounter));
+    expect(stepAt(empty, calm).state).toEqual(stepAt(plain, calm).state);
+  });
+
+  it('starts the moving hazard clock at 0 and advances it on swimming steps only', () => {
+    const trip = createTrip(restingZone);
+    expect(trip.encounter.movingHazards).toEqual([restingPole]);
+    expect(trip.encounter.hazardTime).toBe(0);
+    expect(stepAt(trip, calm).state.encounter.hazardTime).toBe(DT);
+    for (const dt of PAUSE_DTS) {
+      expect(stepTrip(trip, { axolotlPos: calm, reduced: false, dashing: false }, dt, ctx).state).toBe(trip);
+    }
+  });
+
+  it('holds the clock while carrying and restarts it on newTrip', () => {
+    const carry = drive(createTrip(poleZone), { axolotlPos: underPole, reduced: false, dashing: false }, 'carryStart').state;
+    expect(carry.phase).toBe('carrying');
+    const clock = carry.encounter.hazardTime;
+    expect(clock).toBeGreaterThan(0);
+    const done = drive(carry, { axolotlPos: underPole, reduced: false, dashing: false }, 'arrivedHome').state;
+    expect(done.phase).toBe('ended');
+    expect(done.encounter.hazardTime).toBe(clock);
+    const next = newTrip(done);
+    expect(next.encounter.hazardTime).toBe(0);
+    expect(next.encounter.movingHazards).toEqual([heldPole]);
+    expect(next.encounter).toEqual(createTrip(poleZone).encounter);
+  });
+
+  it('counts a pole hit in legsLost, so Star 3 is not earned', () => {
+    const hit = drive(createTrip(poleZone), { axolotlPos: underPole, reduced: false, dashing: false }, 'hit');
+    expect(hit.events.find((event) => event.type === 'hit')).toMatchObject({ sourceId: 'pole-1' });
+    expect(hit.state.legsLost).toBe(1);
+    const stars = beatArea(hit.state, { specialTreasureId: PLANT }).state.ending?.stars;
+    expect(stars?.legsOrRescue).toBe(false);
+    expect(beatArea(createTrip(poleZone), { specialTreasureId: PLANT }).state.ending?.stars?.legsOrRescue).toBe(true);
+  });
+
+  it('meets the pole at exactly its meet range from its sweep, not past it, and makes its card due', () => {
+    expect(stepAt(createTrip(restingZone), pastMeet).state.met).toEqual([]);
+    const met = stepAt(createTrip(restingZone), atMeet).state;
+    expect(met.met).toEqual([PUNTING_POLE.id]);
+    expect(tripSnapshot(met).factCardDue).toBe(PUNTING_POLE.id);
+  });
+
+  it('meets it by its sweep while it rests, and gives its type id once for several poles', () => {
+    const below: Point = { x: POLE_X, y: SURF + PUNTING_POLE.depth + PUNTING_POLE.meetRange };
+    expect(stepAt(createTrip(restingZone), below).state.met).toEqual([PUNTING_POLE.id]);
+    const second = movingHazardSpawn('pole-2', PUNTING_POLE, POLE_X + 40, 1);
+    const twoPoles: TripSource = { ...restingZone, movingHazards: [restingPole, second] };
+    const met = walk(createTrip(twoPoles), [atMeet, { x: POLE_X + 20, y: 300 }]).state;
+    expect(met.met).toEqual([PUNTING_POLE.id]);
+  });
+
+  it('meets nothing inside the safe area', () => {
+    const nearSafe = movingHazardSpawn('pole-near', PUNTING_POLE, zone.safeArea.x1 + 20, 0);
+    const inSafe: Point = { x: zone.safeArea.x1 - 10, y: 200 };
+    expect(stepAt(createTrip({ ...restingZone, movingHazards: [nearSafe] }), inSafe).state.met).toEqual([]);
+  });
+
+  it('lists moving hazards after still hazards and before elements met on one step', () => {
+    const TEST_MUD: HazardType = { id: 'test-mud', name: 'Test mud', costsLeg: false, reach: 0, meetRange: 60, fact: testFact('test-mud') };
+    const TEST_MATS: ElementType = { id: 'test-mats', name: 'Test mats', kind: 'cycle', period: 8, activeFor: 4, meetRange: 60, fact: testFact('test-mats') };
+    const mats: ElementSpawn = {
+      id: 'mats-a',
+      type: TEST_MATS,
+      offset: 0,
+      matPair: { x0: 900, x1: 1000, rowTop: 150, rowBottom: 250, channelY: 200, openHeight: 60 },
+    };
+    const source: TripSource = {
+      ...restingZone,
+      movingHazards: [movingHazardSpawn('pole-far', PUNTING_POLE, 1100, 0)],
+      hazards: [{ id: 'mud', type: TEST_MUD, shape: { kind: 'circle', x: 1050, y: 200, r: 10 } }],
+      elements: [mats],
+    };
+    expect(stepAt(createTrip(source), { x: 1020, y: 200 }).state.met).toEqual(['test-mud', PUNTING_POLE.id, 'test-mats']);
+  });
+});
+
+describe('drifting ghost nets in the trip (ND-11)', () => {
+  const drift = netDrift(200, 0, 16, 0);
+  const driftingNet: HazardSpawn = { id: 'test/net-drift', type: GHOST_NET, shape: { kind: 'rect', x0: 900, x1: 1000, y0: 150, y1: 250 }, drift };
+  const driftZone: TripSource = { ...zone, finds: [], spots: [], tilapiaRoutes: calmRoutes, hazards: [driftingNet] };
+  /** Half a drift period in: the net is at the far end of its path, 1100..1200. */
+  const halfway = drift.period / 2;
+  const onMovedNet: Point = { x: 1150, y: 200 };
+  const onStartPlace: Point = { x: 950, y: 200 };
+
+  function tripAt(elementTime: number): TripState {
+    return { ...createTrip(driftZone), elementTime: elementTime - DT };
+  }
+
+  it('snags and meets the net where it is now, at the element time the step reaches', () => {
+    const moved = stepAt(tripAt(halfway), onMovedNet);
+    expect(moved.events).toEqual([{ type: 'snagged', id: driftingNet.id, at: onMovedNet }]);
+    expect(moved.state.ghostNets.snagLeft).toBe(GHOST_NETS.snagTime);
+    expect(moved.state.met).toEqual([GHOST_NET.id]);
+  });
+
+  it('neither snags nor meets the net where it is not now', () => {
+    const atStart = stepAt(tripAt(DT), onMovedNet);
+    expect(atStart.events).toEqual([]);
+    expect(atStart.state.met).toEqual([]);
+    const left = stepAt(tripAt(halfway), onStartPlace);
+    expect(countOf(left.events, 'snagged')).toBe(0);
+    expect(left.state.met).toEqual([]);
+    expect(isSnagged(left.state.ghostNets)).toBe(false);
+  });
+
+  it('snags the net at its start place at element time 0, as a still net would', () => {
+    const start = stepAt(createTrip(driftZone), onStartPlace);
+    expect(start.events).toEqual([{ type: 'snagged', id: driftingNet.id, at: onStartPlace }]);
+  });
+});
+
+describe('meetSnacks (ND-29)', () => {
+  it('appends each new id once, in order, and makes its card due', () => {
+    const trip = createTrip(zone);
+    const met = meetSnacks(trip, ['tadpole', 'shrimp', 'tadpole']);
+    expect(met.met).toEqual(['tadpole', 'shrimp']);
+    expect(trip.met).toEqual([]);
+    expect(tripSnapshot(met).factCardDue).toBe('tadpole');
+    expect(tripSnapshot(markFactCardSeen(met, 'tadpole')).factCardDue).toBe('shrimp');
+    expect(meetSnacks(meetSnacks(trip, ['tadpole']), ['shrimp', 'tadpole']).met).toEqual(['tadpole', 'shrimp']);
+  });
+
+  it('returns the same state when nothing is new', () => {
+    const trip = createTrip(zone);
+    expect(meetSnacks(trip, [])).toBe(trip);
+    const met = meetSnacks(trip, ['tadpole']);
+    expect(meetSnacks(met, ['tadpole'])).toBe(met);
+  });
+
+  it('never makes a card due that was already seen', () => {
+    const seen = createTrip(zone, LEGS, [], DEFAULT_TRIP_SEED, { factCardsSeen: ['tadpole'] });
+    const met = meetSnacks(seen, ['tadpole']);
+    expect(met.met).toEqual(['tadpole']);
+    expect(tripSnapshot(met).factCardDue).toBeNull();
   });
 });

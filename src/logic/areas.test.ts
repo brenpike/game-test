@@ -38,17 +38,22 @@ import { DEV_AREAS, DEV_TEST_AREA } from './devAreas';
 import {
   AXOLOTL_REFUGES_FACT,
   CANAL_CLEAN_UPS_FACT,
+  CARP_FACT,
   GARTER_SNAKE_FACT,
   GHOST_NET_FACT,
   HERON_FACT,
   PLASTIC_WORM_FACT,
+  SHRIMP_FACT,
+  TADPOLE_FACT,
   TILAPIA_FACT,
   WATER_HYACINTH_FACT,
   type FactCard,
 } from './factCards';
 import type { ElementType, HazardType } from './hazards';
+import { mobileSnackMix, shrimpRule, tadpoleLane, tadpoleRule } from './mobileSnacks';
+import { PUNTING_POLE, movingHazardSpawn, type MovingHazardType } from './movingHazards';
 import { SNACK_MAGNET_PULL_SPEED } from './perks';
-import { TILAPIA_SPECIES, type PredatorSpecies } from './predators';
+import { CARP_SPECIES, TILAPIA_SPECIES, type PredatorSpecies } from './predators';
 import { POND_2_AREA_ID, POND_2_LAYOUT } from './pond2Layout';
 import { POND_AREA_ID, POND_LAYOUT } from './pondLayout';
 import { SNACK_DART } from './snackDart';
@@ -93,10 +98,21 @@ const TEST_GATE: ElementType = { id: 'test-gate', name: 'Test gate', kind: 'cycl
 const TEST_TIDE: ElementType = { id: 'test-tide', name: 'Test tide', kind: 'cycle', period: 6, activeFor: 3 };
 const TEST_MATS: ElementType = { ...TEST_GATE, id: 'test-mats', name: 'Test mats', meetRange: 60, fact: testFact('test-mats') };
 const TEST_LOCK: ElementType = { ...TEST_TIDE, id: 'test-lock', name: 'Test lock', fact: testFact('test-lock') };
+const TEST_RAM: MovingHazardType = { ...PUNTING_POLE, id: 'test-ram', name: 'Test ram', fact: testFact('test-ram') };
+const TEST_OAR: MovingHazardType = { ...PUNTING_POLE, id: 'test-oar', name: 'Test oar', fact: testFact('test-oar') };
+const TEST_TADPOLE = tadpoleRule(30);
+const TEST_TADPOLE_LANES = [tadpoleLane(TEST_TADPOLE, 700, 300, 100, 0, 0), tadpoleLane(TEST_TADPOLE, 1100, 300, 0, 80, 0)];
+const TEST_SHRIMP = shrimpRule(60, 1.5, 40, 120);
+const TEST_SHRIMP_SPOTS = [{ x: 1300, y: 320 }, { x: 1500, y: 320 }];
+const SHRIMP_THEN_TADPOLES = mobileSnackMix({ shrimp: TEST_SHRIMP, spots: TEST_SHRIMP_SPOTS, tadpole: TEST_TADPOLE, lanes: TEST_TADPOLE_LANES });
+const TADPOLES_ONLY = mobileSnackMix({ tadpole: TEST_TADPOLE, lanes: TEST_TADPOLE_LANES, spots: [] });
+const SHRIMP_ONLY = mobileSnackMix({ shrimp: TEST_SHRIMP, spots: TEST_SHRIMP_SPOTS, lanes: [] });
 
-/** Canal layout data with these threats and elements in place of the canal's. */
+/** Canal layout data with these threats, elements and mobile snacks in place of the canal's. */
 function layoutWith(
-  extra: Partial<Pick<AreaLayoutData, 'tilapiaRoutes' | 'predatorRoutes' | 'hazards' | 'elements'>>,
+  extra: Partial<
+    Pick<AreaLayoutData, 'tilapiaRoutes' | 'predatorRoutes' | 'hazards' | 'elements' | 'movingHazards' | 'mobileSnacks'>
+  >,
 ): AreaLayoutData {
   return { ...CANAL_LAYOUT, ...extra };
 }
@@ -107,6 +123,14 @@ function areaWith(id: string, number: number, layout: AreaLayoutData): AreaData 
 
 function pikeRoute(id: string) {
   return { id, waypoints: [{ x: 700, y: 262 }, { x: 790, y: 262 }], species: TEST_PIKE };
+}
+
+function carpRoute(id: string) {
+  return { ...pikeRoute(id), species: CARP_SPECIES };
+}
+
+function ramAt(id: string, type: MovingHazardType = TEST_RAM) {
+  return movingHazardSpawn(id, type, 1000, 0);
 }
 
 function glassAt(id: string, type: HazardType = TEST_GLASS) {
@@ -356,6 +380,26 @@ describe('threats', () => {
     expect(threatFactCards(layout)).toEqual([TILAPIA_FACT, TEST_PIKE.fact, TEST_GLASS.fact, TEST_MUD.fact]);
   });
 
+  it('lists moving hazard types after the still hazard types, each once (ND-8)', () => {
+    const layout = layoutWith({
+      hazards: [glassAt('glass-0')],
+      movingHazards: [ramAt('ram-0'), ramAt('oar-0', TEST_OAR), ramAt('ram-1')],
+    });
+    expect(threatIds(layout)).toEqual(['tilapia', 'test-glass', 'test-ram', 'test-oar']);
+    expect(threatFactCards(layout)).toEqual([TILAPIA_FACT, TEST_GLASS.fact, TEST_RAM.fact, TEST_OAR.fact]);
+    expect(threatIds(buildZone(layout, DEFAULT_ZONE_SEED))).toEqual(['tilapia', 'test-glass', 'test-ram', 'test-oar']);
+  });
+
+  it('still names the danger parts: the carp and every moving hazard type (ND-13)', () => {
+    const layout = layoutWith({ predatorRoutes: [carpRoute('carp-0')], movingHazards: [ramAt('oar-0', TEST_OAR)] });
+    expect(threatIds(layout)).toEqual(['tilapia', 'carp', 'test-oar']);
+    expect(threatFactCards(layout)).toEqual([TILAPIA_FACT, CARP_FACT, TEST_OAR.fact]);
+  });
+
+  it('names no mobile snack type as a threat', () => {
+    expect(threatIds(layoutWith({ mobileSnacks: SHRIMP_THEN_TADPOLES }))).toEqual(['tilapia']);
+  });
+
   it('leaves out the tilapia when there are no tilapia routes', () => {
     const layout = layoutWith({ tilapiaRoutes: [], hazards: [glassAt('glass-0')] });
     expect(threatIds(layout)).toEqual(['test-glass']);
@@ -415,6 +459,54 @@ describe('sourceFactCards', () => {
       ids: ['tilapia', 'test-pike', 'test-glass', 'test-mats', 'test-lock'],
       cards: [TILAPIA_FACT, TEST_PIKE.fact, TEST_GLASS.fact, TEST_MATS.fact, TEST_LOCK.fact],
     });
+  });
+
+  it('puts the moving hazard cards after the still hazard cards and before the element cards', () => {
+    const layout = layoutWith({
+      hazards: [glassAt('glass-0')],
+      movingHazards: [ramAt('ram-0')],
+      elements: [elementOf('mats-0', TEST_MATS)],
+    });
+    expect(sourceFactCards(layout)).toEqual({
+      ids: ['tilapia', 'test-glass', 'test-ram', 'test-mats'],
+      cards: [TILAPIA_FACT, TEST_GLASS.fact, TEST_RAM.fact, TEST_MATS.fact],
+    });
+  });
+
+  it('puts the snack type cards after the element cards, tadpole first (ND-29), from its data or its zone', () => {
+    const layout = layoutWith({
+      movingHazards: [ramAt('ram-0')],
+      elements: [elementOf('mats-0', TEST_MATS)],
+      mobileSnacks: SHRIMP_THEN_TADPOLES,
+    });
+    const expected = {
+      ids: ['tilapia', 'test-ram', 'test-mats', 'tadpole', 'shrimp'],
+      cards: [TILAPIA_FACT, TEST_RAM.fact, TEST_MATS.fact, TADPOLE_FACT, SHRIMP_FACT],
+    };
+    expect(sourceFactCards(layout)).toEqual(expected);
+    expect(sourceFactCards(buildZone(layout, DEFAULT_ZONE_SEED))).toEqual(expected);
+  });
+
+  it('gives a snack type card only for the snack types the area has', () => {
+    expect(sourceFactCards(layoutWith({ mobileSnacks: TADPOLES_ONLY })).ids).toEqual(['tilapia', 'tadpole']);
+    expect(sourceFactCards(layoutWith({ mobileSnacks: SHRIMP_ONLY })).ids).toEqual(['tilapia', 'shrimp']);
+    expect(sourceFactCards(layoutWith({ mobileSnacks: mobileSnackMix({ lanes: [], spots: [] }) })).ids).toEqual(['tilapia']);
+  });
+
+  it('puts each area\'s snack type cards after its element cards, in area-table order, each once', () => {
+    const areas = [
+      areaWith('one', 1, layoutWith({ mobileSnacks: SHRIMP_ONLY })),
+      areaWith('two', 2, layoutWith({ elements: [elementOf('mats-0', TEST_MATS)], mobileSnacks: SHRIMP_THEN_TADPOLES })),
+    ];
+    expect(areaFactCards(areas)).toEqual([TILAPIA_FACT, SHRIMP_FACT, TEST_MATS.fact, TADPOLE_FACT]);
+    expect(bookFactCards(areas)).toEqual([
+      TILAPIA_FACT,
+      SHRIMP_FACT,
+      TEST_MATS.fact,
+      TADPOLE_FACT,
+      AXOLOTL_REFUGES_FACT,
+      CANAL_CLEAN_UPS_FACT,
+    ]);
   });
 
   it('keeps an element card out when a threat has its id', () => {
@@ -522,6 +614,35 @@ describe('newThingsByArea', () => {
       { areaId: 'two', threats: ['test-glass'], elements: [] },
     ]);
     expect(areasOverNewLimit(areas)).toEqual([]);
+  });
+
+  it('leaves the carp, every moving hazard type and both snack types out of the count (ND-13, ND-27)', () => {
+    const areas = [
+      CANAL_AREA,
+      areaWith(
+        'danger-parts',
+        2,
+        layoutWith({
+          predatorRoutes: [carpRoute('carp-0')],
+          hazards: [glassAt('glass-0')],
+          movingHazards: [ramAt('ram-0'), ramAt('oar-0', TEST_OAR)],
+          elements: [elementOf('mats-0', TEST_MATS)],
+          mobileSnacks: SHRIMP_THEN_TADPOLES,
+        }),
+      ),
+    ];
+    expect(newThingsByArea(areas)).toEqual([
+      { areaId: 'canal', threats: ['tilapia'], elements: [] },
+      { areaId: 'danger-parts', threats: ['test-glass'], elements: ['test-mats'] },
+    ]);
+    expect(areasOverNewLimit(areas)).toEqual([]);
+    expect(threatIds(areas[1].layout)).toEqual(['tilapia', 'carp', 'test-glass', 'test-ram', 'test-oar']);
+    expect(sourceFactCards(areas[1].layout).ids).toEqual(['tilapia', 'carp', 'test-glass', 'test-ram', 'test-oar', 'test-mats', 'tadpole', 'shrimp']);
+  });
+
+  it('still counts a species that is not marked a danger part', () => {
+    const areas = [areaWith('pike', 1, layoutWith({ predatorRoutes: [pikeRoute('pike-0'), carpRoute('carp-0')] }))];
+    expect(newThingsByArea(areas)).toEqual([{ areaId: 'pike', threats: ['tilapia', 'test-pike'], elements: [] }]);
   });
 
   it('detects an area that adds two new threats or two new elements', () => {
