@@ -18,7 +18,14 @@ import {
   type CardSection,
   type TextFit,
 } from './cardFit';
-import { REFUGE_FACT_CARDS, type FactCard } from './factCards';
+import {
+  CARP_FACT,
+  PUNTING_POLE_FACT,
+  REFUGE_FACT_CARDS,
+  SHRIMP_FACT,
+  TADPOLE_FACT,
+  type FactCard,
+} from './factCards';
 import {
   FIRST_FIND_KINDS,
   FIRST_FIND_TEXT,
@@ -536,6 +543,75 @@ describe('refuge fact card copy fit (C14)', () => {
     { cssW: 1024, cssH: 768 },
   ])('shows both refuge fact card bodies in full at the body width at $cssW x $cssH', (canvas) => {
     for (const card of REFUGE_FACT_CARDS) {
+      const combination = factCardCombination(card, canvas);
+      const fit = fitCard(combination.availH, combination.sections);
+      expect(fit.clipped, card.id).toBe(false);
+      expect(fit.bodyVariant, card.id).toBe(0);
+    }
+  });
+});
+
+/** The danger pass fact cards (C13): the carp, the punting pole, the tadpole and the shrimp. */
+const DANGER_PASS_FACT_CARDS: readonly Readonly<FactCard>[] = [CARP_FACT, PUNTING_POLE_FACT, TADPOLE_FACT, SHRIMP_FACT];
+
+describe('danger pass fact card copy fit (C13)', () => {
+  it('checks the carp, the punting pole, the tadpole and the shrimp fact cards', () => {
+    expect(DANGER_PASS_FACT_CARDS.map((card) => card.id)).toEqual(['carp', 'punting-pole', 'tadpole', 'shrimp']);
+  });
+
+  it('fits every danger pass fact card on every supported canvas without clipping', () => {
+    const problems = supportedCanvases().flatMap((canvas) =>
+      DANGER_PASS_FACT_CARDS.flatMap((card) => {
+        const combination = factCardCombination(card, canvas);
+        return fitProblems(combination, fitCard(combination.availH, combination.sections));
+      }),
+    );
+    expect(problems).toEqual([]);
+  });
+
+  it.each([SMALLEST_CANVAS.landscape, SMALLEST_CANVAS.portrait])(
+    'shows every danger pass fact card in full at $cssW x $cssH',
+    (canvas) => {
+      for (const card of DANGER_PASS_FACT_CARDS) {
+        const combination = factCardCombination(card, canvas);
+        const fit = fitCard(combination.availH, combination.sections);
+        const wrapW = factCardBodyWrapWidths(canvas.cssW)[fit.bodyVariant];
+        expect(fit.clipped, card.id).toBe(false);
+        expect(fit.bodyLines, card.id).toBe(bodyFit(card.body, wrapW).lines);
+      }
+    },
+  );
+
+  it('wraps every danger pass fact card body at the body width, except the shrimp at 320 x 440, which uses the tight width', () => {
+    const tightBodies = supportedCanvases().flatMap((canvas) =>
+      DANGER_PASS_FACT_CARDS.flatMap((card) => {
+        const combination = factCardCombination(card, canvas);
+        return fitCard(combination.availH, combination.sections).bodyVariant === 0 ? [] : [combination.label];
+      }),
+    );
+    expect(tightBodies).toEqual(['shrimp fact 320x440']);
+  });
+
+  it('fits the shrimp body at 320 x 440 only at the tight width', () => {
+    const canvas = SMALLEST_CANVAS.portrait;
+    const availH = canvas.cssH - 2 * CARD.margin;
+    const [bodyW, tightW] = factCardBodyWrapWidths(canvas.cssW);
+    const titleH = titleHeight(SHRIMP_FACT.title, cardTightTextWidth(canvas.cssW));
+    const fitAt = (wrapW: number): CardFit =>
+      fitCard(availH, [
+        { kind: 'fixed', height: titleH },
+        { kind: 'body', variants: [bodyFit(SHRIMP_FACT.body, wrapW)] },
+        { kind: 'actions', height: BUTTON_H },
+      ]);
+    expect(fitAt(bodyW).clipped).toBe(true);
+    expect(fitAt(tightW).clipped).toBe(false);
+  });
+
+  it.each([
+    { cssW: 800, cssH: 600 },
+    { cssW: 1024, cssH: 768 },
+  ])('shows every danger pass fact card body in full at the body width at $cssW x $cssH', (canvas) => {
+    for (const card of DANGER_PASS_FACT_CARDS) {
       const combination = factCardCombination(card, canvas);
       const fit = fitCard(combination.availH, combination.sections);
       expect(fit.clipped, card.id).toBe(false);

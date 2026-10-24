@@ -137,7 +137,27 @@ export const WATER_HYACINTH_FACT: Readonly<FactCard> = Object.freeze({
   body: 'Water hyacinth is a floating plant that grows very fast. In Xochimilco it can cover the canals and block the light. People clear it out to keep the water healthy.',
 });
 
-/** The common carp fact card, shown the first time the axolotl meets a carp (PRD C13). */
+/**
+ * The common carp fact card, shown the first time the axolotl meets a carp (PRD C13).
+ * Sources, checked 2026-10-24 (web research only; the game fetches nothing):
+ * Zambrano, Valiente and Vander Zanden, "Food web overlap among native axolotl (Ambystoma mexicanum)
+ * and two exotic fishes: carp (Cyprinus carpio) and tilapia (Oreochromis niloticus) in Xochimilco,
+ * Mexico City", Biological Invasions 12(9):3061-3069 (2010), doi:10.1007/s10530-010-9697-8 (read as
+ * the FAO AGRIS record https://agris.fao.org/search/en/records/65dfea8f0f3e94b9e5dd96ab; carp and
+ * tilapia were brought to Xochimilco for aquaculture more than 20 years earlier and now dominate it)
+ * for "people brought to Xochimilco";
+ * IUCN SSC Invasive Species Specialist Group, Global Invasive Species Database, Cyprinus carpio,
+ * https://www.iucngisd.org/gisd/species.php?sc=60 (adults feed by "sucking up mud from the bottom";
+ * feeding "churns up the sediments on the bottom of the water", "resulting in increased siltation
+ * and bioturbidity") for "dig in the mud for food and make the water cloudy";
+ * National Geographic Kids, "Axolotl", https://kids.nationalgeographic.com/animals/amphibians/facts/axolotl
+ * (carp and tilapia "compete with axolotls for food and also eat axolotl eggs") and The Wildlife
+ * Society, "Creating refuges for axolotls in Mexico City", 2021-12-06,
+ * https://wildlife.org/creating-refuges-for-axolotls-in-mexico-city/ ("carp will feed on axolotl
+ * eggs") for "They also eat axolotl eggs".
+ * Owner to verify: the egg claim rests on these two secondary sources; no primary study of carp
+ * eating axolotl eggs in Xochimilco was found. "Big fish" is not checked against a size source.
+ */
 export const CARP_FACT: Readonly<FactCard> = Object.freeze({
   id: 'carp',
   name: 'Common carp',
@@ -145,7 +165,30 @@ export const CARP_FACT: Readonly<FactCard> = Object.freeze({
   body: 'Common carp are big fish that people brought to Xochimilco. They dig in the mud for food and make the water cloudy. They also eat axolotl eggs.',
 });
 
-/** The punting pole fact card, shown the first time the axolotl meets a punting pole (PRD C13). */
+/**
+ * The punting pole fact card, shown the first time the axolotl meets a punting pole (PRD C13).
+ * Sources, checked 2026-10-24 (web research only; the game fetches nothing):
+ * Alex Zaragoza, NPR, "In Mexico City, A Technicolor Borough Serves Up Tasty Street Foods - On Water",
+ * 2017-01-02 (read as the KPBS reprint
+ * https://www.kpbs.org/news/2017/01/02/in-mexico-city-a-technicolor-borough-serves-up; "Xochimilco's
+ * famous trajineras - vibrantly painted barges"; a chalupa, a smaller canal boat, is steered "by
+ * pushing against the canal floor with a long wooden pole");
+ * Sarah Freeman, National Geographic, "This fragile wetland is dying. Tour boats could be its
+ * unlikely savior.", 2022-01-25,
+ * https://www.nationalgeographic.com/travel/article/nanobubbles-tour-boats-could-rescue-endangered-mexican-wetland
+ * ("colorful tour boats known as trajineras, wend along a sun-dappled canal"; "Remeros still make
+ * barge poles as their ancestors did"; dead algae "settles at the bottom of the canal as sediment");
+ * Ciudades Patrimonio de Mexico, "Xochimilco", https://ciudadespatrimonio.mx/xochimilco/?lang=en
+ * ("trajineras ornamentadas"; the chinampas are "anclados al fondo pantanoso", the marshy bottom);
+ * Wikipedia, "Xochimilco", https://en.wikipedia.org/wiki/Xochimilco (Xochimilco made "rafts, canoes
+ * and trajineras, pushed along the shallow waters by a pole");
+ * Wikipedia, "Trajinera", https://en.wikipedia.org/wiki/Trajinera ("a traditional, flat-bottomed
+ * wooden rowing boat, suited to the conditions of Lake Xochimilco", cited there to Fodor's).
+ * Owner to verify: "flat-bottomed" rests on Wikipedia (its Fodor's source returned 403); the same
+ * Wikipedia page says a rower uses an oar, while the other sources describe poles; "the mud" is the
+ * sources' canal floor, sediment and marshy bottom. UNESCO World Heritage Centre, "Historic Centre of
+ * Mexico City and Xochimilco", https://whc.unesco.org/en/list/412 returned 403 and was not read.
+ */
 export const PUNTING_POLE_FACT: Readonly<FactCard> = Object.freeze({
   id: 'punting-pole',
   name: 'Punting pole',
@@ -153,7 +196,19 @@ export const PUNTING_POLE_FACT: Readonly<FactCard> = Object.freeze({
   body: 'Trajineras are bright, flat-bottomed boats on the canals of Xochimilco. A boater pushes each one along with a long pole that reaches down to the mud.',
 });
 
-/** The tadpole fact card, shown the first time the axolotl meets a tadpole (PRD C13). */
+/**
+ * The tadpole fact card, shown the first time the axolotl meets a tadpole (PRD C13).
+ * Sources, checked 2026-10-24 (web research only; the game fetches nothing):
+ * The Australian Museum, "Interactive: Frog life cycle, from egg to adult",
+ * https://australian.museum/learn/teachers/learning/frog-life-cycle/ ("Most tadpoles hatch from eggs
+ * as fully aquatic larvae"; "They breathe through gills and use a long tail to swim"; "Hind legs
+ * emerge first, followed by front legs") for the first two sentences;
+ * National Geographic Kids, "Axolotl", https://kids.nationalgeographic.com/animals/amphibians/facts/axolotl
+ * ("Axolotls eat whatever they can get their jaws on, including mollusks, worms, insect larvae,
+ * crustaceans, tadpoles") and Animal Diversity Web, Ambystoma mexicanum (Amy Majchrzak),
+ * https://animaldiversity.org/accounts/Ambystoma_mexicanum/ ("axolotls will eat anything that they
+ * can catch"; its animal foods list includes amphibians) for the third.
+ */
 export const TADPOLE_FACT: Readonly<FactCard> = Object.freeze({
   id: 'tadpole',
   name: 'Tadpole',
@@ -161,7 +216,23 @@ export const TADPOLE_FACT: Readonly<FactCard> = Object.freeze({
   body: 'Tadpoles are baby frogs. They swim by wiggling their tails, and they grow legs as they get bigger. Axolotls hunt small water animals like tadpoles.',
 });
 
-/** The freshwater shrimp fact card, shown the first time the axolotl meets a shrimp (PRD C13). */
+/**
+ * The freshwater shrimp fact card, shown the first time the axolotl meets a shrimp (PRD C13).
+ * Sources, checked 2026-10-24 (web research only; the game fetches nothing):
+ * The Australian Museum, "Freshwater Shrimp" (Paratya australiensis),
+ * https://australian.museum/learn/animals/crustaceans/freshwater-shrimp/ ("five pairs of long thin
+ * legs"; it "uses a flick of the tail to move quickly and escape from predators");
+ * Derwent Estuary Program, "Species of the Derwent", https://www.derwentestuary.org.au/species/shrimp
+ * (the glass shrimp Paratya australiensis has "a vigorous backward-flicking escape response";
+ * "Freshwater shrimp live in freshwater creeks and streams") for "zip backward";
+ * San Diego Zoo Wildlife Alliance Library, "Diet & Feeding - Axolotl (Ambystoma mexicanum) Fact
+ * Sheet", https://ielc.libguides.com/sdzg/factsheets/axolotl/diet (wild adults eat "Small
+ * crustaceans") and National Geographic Kids, "Axolotl",
+ * https://kids.nationalgeographic.com/animals/amphibians/facts/axolotl (axolotls eat "crustaceans")
+ * for the third sentence.
+ * Owner to verify: "tiny" (the Australian Museum lists a size of 7 cm); the shrimp sources are
+ * Australian species, not species of Xochimilco.
+ */
 export const SHRIMP_FACT: Readonly<FactCard> = Object.freeze({
   id: 'shrimp',
   name: 'Freshwater shrimp',
