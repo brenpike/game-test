@@ -7,7 +7,9 @@ import type { GhostNetSize } from '../art/drawChinampa';
 import { CAVE_H, CAVE_W } from '../art/drawFinds';
 import { streamColumnFor, type ReedLook } from '../art/drawScenery';
 import { habitatLook, type HabitatLook } from '../art/habitatLook';
+import { bakeMobileSnackTextures, type MobileSnackTextures } from '../art/mobileSnackTextures';
 import { bakeMorphTextures, type MorphTextures } from '../art/morphTextures';
+import { bakeMovingHazardTextures, type MovingHazardTextures } from '../art/movingHazardTextures';
 import { INK, LW, UI_FONT } from '../art/palette';
 import { bakePondTextures, type PondTextures } from '../art/pondTextures';
 import { bakePredatorTextures, type PredatorTextures } from '../art/predatorTextures';
@@ -91,6 +93,10 @@ export interface BakedDecorationPack {
  * `chinampa` holds the chinampa props (the root tangle cave, the bank overhang, the gap edges, the
  * ghost nets of every size the areas' ghost nets have, and the snag cue), baked only when some area's
  * look needs them or some area has ghost nets, else null. `refuge` holds the Xochimilco refuge art.
+ * `movingHazards` holds the moving hazard textures by look id, only for the looks some area's moving
+ * hazards use, or null when no area has a moving hazard. `mobileSnacks` holds the tadpole and shrimp
+ * textures, baked only when some area has mobile snacks, else null. "Some area" counts the dev area
+ * when one was loaded. The carp frames are part of `predator`.
  */
 export interface GameAssets {
   areas: readonly Readonly<AreaData>[];
@@ -109,6 +115,8 @@ export interface GameAssets {
   pond: PondTextures | null;
   chinampa: ChinampaTextures | null;
   refuge: RefugeTextures;
+  movingHazards: MovingHazardTextures | null;
+  mobileSnacks: MobileSnackTextures | null;
 }
 
 /** What the swim scene and its HUD start from: the game assets and the id of the area to swim in. */
@@ -524,6 +532,31 @@ function bakeChinampaProps(
   return needed || sizes.length > 0 ? bakeChinampaTextures(scene, bakeScale, { ghostNetSizes: sizes }) : null;
 }
 
+/** The look ids of every area's moving hazards, each once, in first-use order. */
+function movingHazardLooks(areas: readonly Readonly<AreaData>[]): string[] {
+  const looks = new Set<string>();
+  for (const area of areas) {
+    for (const spawn of area.layout.movingHazards ?? []) looks.add(spawn.type.look);
+  }
+  return [...looks];
+}
+
+/** The moving hazard textures of the looks the areas use, baked once each. Null when no area has a moving hazard. */
+function bakeMovingHazards(
+  scene: Phaser.Scene,
+  areas: readonly Readonly<AreaData>[],
+  bakeScale: number,
+): MovingHazardTextures | null {
+  const looks = movingHazardLooks(areas);
+  return looks.length > 0 ? bakeMovingHazardTextures(scene, bakeScale, looks) : null;
+}
+
+/** Whether area `area` has any tadpole lane or shrimp spot. */
+function hasMobileSnacks(area: Readonly<AreaData>): boolean {
+  const mix = area.layout.mobileSnacks;
+  return mix !== undefined && mix.lanes.length + mix.spots.length > 0;
+}
+
 /** Builds every area's zone, bakes every texture at the fitted scale, then starts the title. */
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -568,6 +601,8 @@ export class BootScene extends Phaser.Scene {
         : { decorations: devDecorPack.decorations, textures: devDecorPack.bake(this, bakeScale, TANK.decorationPx) };
     const pond = bakePondProps(this, areas, bakeScale);
     const chinampa = bakeChinampaProps(this, areas, bakeScale);
+    const movingHazards = bakeMovingHazards(this, areas, bakeScale);
+    const mobileSnacks = areas.some(hasMobileSnacks) ? bakeMobileSnackTextures(this, bakeScale) : null;
     const assets: GameAssets = {
       areas,
       zones,
@@ -585,6 +620,8 @@ export class BootScene extends Phaser.Scene {
       pond,
       chinampa,
       refuge,
+      movingHazards,
+      mobileSnacks,
     };
     this.scene.start(SCENE_KEYS.title, assets);
   }

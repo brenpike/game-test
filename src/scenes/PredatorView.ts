@@ -9,7 +9,7 @@ import type { TexInfo } from '../art/textures';
 import type { EncounterState } from '../logic/encounter';
 import { isProtected } from '../logic/legs';
 import type { MotionProfile } from '../logic/motion';
-import { GARTER_SNAKE_SPECIES, HERON_SPECIES, TILAPIA_SPECIES } from '../logic/predators';
+import { TILAPIA_SPECIES } from '../logic/predators';
 import { anchorWorld } from '../logic/spriteAnchor';
 import { phaseProgress, type TilapiaPhase, type TilapiaState } from '../logic/tilapia';
 import type { TripEvent } from '../logic/trip';
@@ -121,16 +121,21 @@ function axolotlSizeFactor(axolotl: Phaser.GameObjects.Container, bake: AxolotlR
 }
 
 /**
- * Draws the tilapia, its telegraph, the leg-loss poof (for a hit by any predator), regrow
- * sparkles, the snack speed-up star, the Shell sparkle, the protected halo and the carry-home bubble. Visual only: every timer here is driven by the frame `dt`, so it
- * freezes with the scene, and nothing here changes game state.
+ * Draws the tilapia, its telegraph, the leg-loss poof (for a hit from any source: a predator, a
+ * hazard or a moving hazard spawn), regrow sparkles, the snack speed-up star, the Shell sparkle,
+ * the protected halo and the carry-home bubble. Visual only: every timer here is driven by the
+ * frame `dt`, so it freezes with the scene, and nothing here changes game state.
+ *
+ * The poof and the halo never look up the hit's source: the poof sits at the lost leg's root and
+ * the halo on the axolotl, so a hit whose `sourceId` is a moving hazard spawn id (not a predator
+ * route id) draws exactly like a predator's.
  */
 export class PredatorView {
   private readonly scene: Phaser.Scene;
   private readonly assets: GameAssets;
   /**
-   * Sprites of each encounter predator, in `predators` order; null for a heron (HeronView draws it)
-   * and a garter snake (GarterSnakeView draws it).
+   * Sprites of each encounter predator, in `predators` order; null for every species but the
+   * tilapia (HeronView, GarterSnakeView and CarpView draw theirs).
    */
   private readonly predators: (TilapiaSprites | null)[];
   private readonly poofs: LegEffect[];
@@ -150,9 +155,8 @@ export class PredatorView {
 
   /**
    * `speciesIds` holds the species id of each encounter predator, in `predators` order.
-   * Only the tilapia gets sprites here; a heron and a garter snake are skipped, as HeronView and
-   * GarterSnakeView draw them.
-   * Throws for any other species, which has no art.
+   * Only the tilapia gets sprites here; every other species is skipped, so a new species never gets
+   * a tilapia sprite. Its own view draws it.
    */
   constructor(scene: Phaser.Scene, assets: GameAssets, speciesIds: readonly string[]) {
     this.scene = scene;
@@ -187,7 +191,8 @@ export class PredatorView {
 
   /**
    * Starts the effects for this step's trip events: a poof on a hit, sparkles on a regrown leg and
-   * the Shell sparkle on a hit the Shell blocked (PRD A22).
+   * the Shell sparkle on a hit the Shell blocked (PRD A22). A hit is read by its leg only, whatever
+   * its source (a predator route, a hazard or a moving hazard spawn).
    */
   handleEvents(events: readonly TripEvent[]): void {
     for (const event of events) {
@@ -233,10 +238,7 @@ export class PredatorView {
   }
 
   private createPredatorSprites(speciesId: string): TilapiaSprites | null {
-    if (speciesId === HERON_SPECIES.id || speciesId === GARTER_SNAKE_SPECIES.id) return null;
-    if (speciesId !== TILAPIA_SPECIES.id) {
-      throw new Error(`PredatorView: no art for predator species ${speciesId}`);
-    }
+    if (speciesId !== TILAPIA_SPECIES.id) return null;
     const predator = this.assets.predator;
     return {
       body: bakedImage(this.scene, predator.tilapia.swim, DEPTH.tilapia),
