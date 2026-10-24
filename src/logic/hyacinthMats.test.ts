@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { WATER_HYACINTH_FACT } from './factCards';
-import { GHOST_NET } from './ghostNets';
+import { GHOST_NET, netDrift } from './ghostNets';
 import {
   elementActive,
   elementSweep,
@@ -313,6 +313,17 @@ describe('blockExplorer push-out', () => {
     const prev: Point = { x: 560, y: 220 };
     const nets = [netSpawn('net-left', 450, 470, 200, 240), netSpawn('net-right', 680, 700, 200, 240)];
     expect(() => block(prev, prev, CLOSING_ONTO_T, [MATS_A], { ...NO_AVOID, nets })).toThrow(/mats-a/);
+  });
+
+  it('avoids a drifting net where it is at the element time, not where it was', () => {
+    const prev: Point = { x: 560, y: 220 };
+    const left: Point = { x: A_LEFT, y: 220 };
+    const right: Point = { x: A_RIGHT, y: 220 };
+    const halfCycle = 8 - CLOSING_ONTO_T;
+    const driftedIn = { ...netSpawn('net-drifted-in', 250, 270, 200, 240), drift: netDrift(200, 0, 16, halfCycle) };
+    expect(block(prev, prev, CLOSING_ONTO_T, [MATS_A], { ...NO_AVOID, nets: [driftedIn] })).toEqual(right);
+    const driftedAway = { ...netSpawn('net-drifted-away', 450, 470, 200, 240), drift: netDrift(-200, 0, 16, halfCycle) };
+    expect(block(prev, prev, CLOSING_ONTO_T, [MATS_A], { ...NO_AVOID, nets: [driftedAway] })).toEqual(left);
   });
 
 });

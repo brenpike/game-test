@@ -5,6 +5,8 @@ import {
   createGhostNets,
   endSnag,
   isSnagged,
+  netDrift,
+  netTouchesAt,
   snagSwimTuning,
   snagWriggle,
   stepGhostNets,
@@ -14,7 +16,7 @@ import { legHazardAt, type HazardSpawn } from './hazards';
 import { zoneThreats } from './hiding';
 import { legSwimTuning } from './legs';
 import { PLASTIC_WORM } from './plasticWorms';
-import { GHOST_NETS, SWIM } from './tuning';
+import { DRIFTING_NETS, GHOST_NETS, SWIM } from './tuning';
 import type { Point } from './zone';
 
 const DT = 1 / 60;
@@ -32,6 +34,9 @@ const OUTSIDE: Point = { x: 500 - GHOST_NETS.reach - 1, y: 250 };
 const AT_EDGE: Point = { x: 500 - GHOST_NETS.reach, y: 250 };
 const INSIDE_A: Point = { x: 520, y: 250 };
 const INSIDE_BOTH: Point = { x: 590, y: 250 };
+/** NET_A drifting 200 px right over 16 s: at 500..600 at t 0, 600..700 at t 4 and 700..800 at t 8. */
+const DRIFTING_A: HazardSpawn = { ...NET_A, id: 'test/ghost-net-drifting', drift: netDrift(200, 0, 16, 0) };
+const WHERE_DRIFTED: Point = { x: 750, y: 250 };
 
 /** Steps once per position, each with `dt`. */
 function stepThrough(state: GhostNetState, positions: readonly Point[], dt = DT): GhostNetState {
@@ -82,6 +87,93 @@ describe('createGhostNets', () => {
 
   it('has no nets when the area has none', () => {
     expect(createGhostNets([OTHER_SPAWN]).nets).toEqual([]);
+  });
+});
+
+describe('netDrift', () => {
+  it('returns a frozen drift with the given values', () => {
+    const drift = netDrift(120, -160, DRIFTING_NETS.period, 8);
+    expect(drift).toEqual({ dx: 120, dy: -160, period: 16, offset: 8 });
+    expect(Object.isFrozen(drift)).toBe(true);
+  });
+
+  it('accepts a path of exactly 200 px and refuses a longer one', () => {
+    expect(DRIFTING_NETS.maxPath).toBe(200);
+    expect(netDrift(200, 0, 16, 0).dx).toBe(200);
+    expect(netDrift(-120, 160, 16, 0).dy).toBe(160);
+    expect(() => netDrift(200.01, 0, 16, 0)).toThrow(RangeError);
+    expect(() => netDrift(0, -200.01, 16, 0)).toThrow(RangeError);
+    expect(() => netDrift(150, 150, 16, 0)).toThrow(RangeError);
+  });
+
+  it.each([0, -1])('refuses period %s', (period) => {
+    expect(() => netDrift(100, 0, period, 0)).toThrow(RangeError);
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])('refuses %s in any value', (bad) => {
+    expect(() => netDrift(bad, 0, 16, 0)).toThrow(RangeError);
+    expect(() => netDrift(0, bad, 16, 0)).toThrow(RangeError);
+    expect(() => netDrift(100, 0, bad, 0)).toThrow(RangeError);
+    expect(() => netDrift(100, 0, 16, bad)).toThrow(RangeError);
+  });
+});
+
+describe('netTouchesAt', () => {
+  it('measures a drifting net where it is at the element time', () => {
+    expect(netTouchesAt(DRIFTING_A, INSIDE_A, 0)).toBe(true);
+    expect(netTouchesAt(DRIFTING_A, WHERE_DRIFTED, 0)).toBe(false);
+    expect(netTouchesAt(DRIFTING_A, { x: 650, y: 250 }, 4)).toBe(true);
+    expect(netTouchesAt(DRIFTING_A, INSIDE_A, 8)).toBe(false);
+    expect(netTouchesAt(DRIFTING_A, WHERE_DRIFTED, 8)).toBe(true);
+    expect(netTouchesAt(DRIFTING_A, { x: 800 + GHOST_NETS.reach, y: 250 }, 8)).toBe(true);
+    expect(netTouchesAt(DRIFTING_A, { x: 800 + GHOST_NETS.reach + 1, y: 250 }, 8)).toBe(false);
+  });
+
+  it.each([0, 3.7, 8, -5, 1000])('measures a still net at its own shape at element time %s', (t) => {
+    expect(netTouchesAt(NET_A, INSIDE_A, t)).toBe(true);
+    expect(netTouchesAt(NET_A, AT_EDGE, t)).toBe(true);
+    expect(netTouchesAt(NET_A, OUTSIDE, t)).toBe(false);
+  });
+});
+
+describe('stepGhostNets with drifting nets', () => {
+  it('snags at the moving rect: inside where the net is now, not where it was', () => {
+    const start = createGhostNets([DRIFTING_A]);
+    const snagged = stepGhostNets(start, WHERE_DRIFTED, DT, 8);
+    expect(snagged.snagLeft).toBe(GHOST_NETS.snagTime);
+    expect(snagged.inReach).toEqual([DRIFTING_A.id]);
+    expect(stepGhostNets(start, WHERE_DRIFTED, DT, 0)).toBe(start);
+    expect(stepGhostNets(start, INSIDE_A, DT, 8)).toBe(start);
+  });
+
+  it('snags when the net drifts onto a still explorer', () => {
+    const start = createGhostNets([DRIFTING_A]);
+    const before = stepGhostNets(start, WHERE_DRIFTED, DT, 2);
+    expect(isSnagged(before)).toBe(false);
+    expect(isSnagged(stepGhostNets(before, WHERE_DRIFTED, DT, 8))).toBe(true);
+  });
+
+  it('follows the drift offset', () => {
+    const ahead: HazardSpawn = { ...DRIFTING_A, drift: netDrift(200, 0, 16, 8) };
+    expect(isSnagged(stepGhostNets(createGhostNets([ahead]), WHERE_DRIFTED, DT, 0))).toBe(true);
+    expect(isSnagged(stepGhostNets(createGhostNets([ahead]), INSIDE_A, DT, 0))).toBe(false);
+  });
+
+  it('measures at element time 0 when none is given', () => {
+    const start = createGhostNets([DRIFTING_A]);
+    expect(stepGhostNets(start, INSIDE_A, DT)).toEqual(stepGhostNets(start, INSIDE_A, DT, 0));
+    expect(stepGhostNets(start, WHERE_DRIFTED, DT)).toBe(start);
+  });
+
+  it.each([0, 3.7, 8, 1000])('leaves still nets unchanged at element time %s', (t) => {
+    const start = createGhostNets([NET_A, NET_B]);
+    expect(stepGhostNets(start, INSIDE_BOTH, DT, t)).toEqual(stepGhostNets(start, INSIDE_BOTH, DT));
+    expect(stepGhostNets(start, OUTSIDE, DT, t)).toBe(start);
+  });
+
+  it('never costs a leg', () => {
+    expect(DRIFTING_A.type.costsLeg).toBe(false);
+    expect(legHazardAt([DRIFTING_A], INSIDE_A)).toBeUndefined();
   });
 });
 

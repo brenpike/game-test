@@ -1,5 +1,6 @@
 import { WATER_HYACINTH_FACT } from './factCards';
-import { hazardTouches, type ElementSpawn, type ElementType, type HazardRect, type HazardSpawn, type MatPair } from './hazards';
+import { netTouchesAt } from './ghostNets';
+import type { ElementSpawn, ElementType, HazardRect, HazardSpawn, MatPair } from './hazards';
 import { legSpeedFactor } from './legs';
 import { HYACINTH_MATS, SWIM, type HyacinthMatTuning } from './tuning';
 import { isInsideCurrent, type CurrentZone, type Point, type SwimBounds } from './zone';
@@ -54,7 +55,7 @@ export interface MatRects {
 
 /**
  * What a mat may never push the explorer into or out of: the swim bounds, the ghost nets (their
- * reach, hazardTouches) and the currents.
+ * reach where they are at the push's element time, netTouchesAt, ND-11) and the currents.
  */
 export interface MatAvoid {
   bounds: SwimBounds;
@@ -198,29 +199,32 @@ export function explorerInMat(
   return grownMats(spawns, elementTime, tuning.bodyGrow).some((mat) => insideMat(pos, mat));
 }
 
-/** Whether a push may land the explorer at `pos`: in bounds, in no mat, no net's reach and no current. */
-function isPushTargetClear(pos: Point, mats: readonly GrownMat[], avoid: MatAvoid): boolean {
+/**
+ * Whether a push may land the explorer at `pos`: in bounds, in no mat, no net's reach where the net
+ * is at `elementTime` (ND-11) and no current.
+ */
+function isPushTargetClear(pos: Point, mats: readonly GrownMat[], avoid: MatAvoid, elementTime: number): boolean {
   const { bounds } = avoid;
   if (pos.x < bounds.minX || pos.x > bounds.maxX || pos.y < bounds.minY || pos.y > bounds.maxY) return false;
   if (mats.some((mat) => insideMat(pos, mat))) return false;
-  if (avoid.nets.some((net) => hazardTouches(net, pos))) return false;
+  if (avoid.nets.some((net) => netTouchesAt(net, pos, elementTime))) return false;
   return !avoid.currents.some((current) => isInsideCurrent(pos, current));
 }
 
 /**
  * `pos` itself when it is in no mat; else `pos` pushed along the channel (x only) to the nearer
  * grown channel end of the first mat holding it, `x0 - bodyGrow` or `x1 + bodyGrow` (the left end
- * on a tie). When that end is not clear (isPushTargetClear) the other end is used. Throws Error when
- * neither end is clear, which area data must rule out.
+ * on a tie). When that end is not clear at `elementTime` (isPushTargetClear) the other end is used.
+ * Throws Error when neither end is clear, which area data must rule out.
  */
-function pushOutOfMats(pos: Point, mats: readonly GrownMat[], avoid: MatAvoid): Point {
+function pushOutOfMats(pos: Point, mats: readonly GrownMat[], avoid: MatAvoid, elementTime: number): Point {
   const holder = mats.find((mat) => insideMat(pos, mat));
   if (!holder) return pos;
   const left: Point = { x: holder.x0, y: pos.y };
   const right: Point = { x: holder.x1, y: pos.y };
   const [nearer, farther] = pos.x - holder.x0 <= holder.x1 - pos.x ? [left, right] : [right, left];
-  if (isPushTargetClear(nearer, mats, avoid)) return nearer;
-  if (isPushTargetClear(farther, mats, avoid)) return farther;
+  if (isPushTargetClear(nearer, mats, avoid, elementTime)) return nearer;
+  if (isPushTargetClear(farther, mats, avoid, elementTime)) return farther;
   throw new Error(`blockExplorer: neither channel end of mat pair ${holder.id} is clear at y ${pos.y}`);
 }
 
@@ -250,8 +254,8 @@ function sweepY(from: Point, toY: number, mats: readonly GrownMat[]): number {
  * The explorer's body centre after a step from `prev` to `next` (the swim step's result, inside
  * `avoid.bounds`) with the mats of `spawns` at `elementTime`. Each mat is solid, grown by
  * `bodyGrow` (explorerInMat). First, a mat that has closed onto `prev` pushes it along the channel
- * to the nearer channel end (pushOutOfMats), never into a mat, a net's reach, a current or out of
- * bounds. Then the move runs along x and then along y, each stopped at the first grown mat face it
+ * to the nearer channel end (pushOutOfMats), never into a mat, a net's reach (where the net is at
+ * `elementTime`), a current or out of bounds. Then the move runs along x and then along y, each stopped at the first grown mat face it
  * would enter, so a Tail Dash or a bump never passes through a mat. The result is never inside a
  * grown mat and stays in bounds. A mat never hits and never costs a leg. Returns a copy of `next`
  * when no spawn has a mat pair. Throws Error when a push has no clear channel end.
@@ -266,7 +270,7 @@ export function blockExplorer(
 ): Point {
   const mats = grownMats(spawns, elementTime, tuning.bodyGrow);
   if (mats.length === 0) return { x: next.x, y: next.y };
-  const start = pushOutOfMats(prev, mats, avoid);
+  const start = pushOutOfMats(prev, mats, avoid, elementTime);
   const x = sweepX(start, next.x, mats);
   const y = sweepY({ x, y: start.y }, next.y, mats);
   return { x, y };

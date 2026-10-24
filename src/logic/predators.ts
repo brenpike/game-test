@@ -1,4 +1,6 @@
 import {
+  CARP_FACT,
+  CARP_MEET_RANGE,
   GARTER_SNAKE_FACT,
   GARTER_SNAKE_MEET_RANGE,
   HERON_FACT,
@@ -7,7 +9,7 @@ import {
   TILAPIA_MEET_RANGE,
   type FactCard,
 } from './factCards';
-import { GARTER_SNAKE, HERON, TILAPIA, type TilapiaTuning } from './tuning';
+import { CARP, GARTER_SNAKE, HERON, LEGS, SWIM, TILAPIA, type ChaseTuning, type TilapiaTuning } from './tuning';
 import { normalize, scale, type Vec2 } from './vec';
 import { inSafeArea, type Point, type SafeArea, type SwimBounds, type TilapiaRoute } from './zone';
 
@@ -55,7 +57,8 @@ export const ROUTE_WARN_TOLERANCE = 2;
 /**
  * One predator species: its tuning, meet range in px, fact card, optional rule hook and optional
  * shared rules. `neverTouches` true means the predator never touches or bumps the axolotl, whatever
- * its contactRadius; absent means it may.
+ * its contactRadius; absent means it may. `dangerPart` true marks a danger part (PRD open question
+ * 260, ND-13); absent means it is not one.
  */
 export interface PredatorSpecies {
   id: string;
@@ -66,6 +69,7 @@ export interface PredatorSpecies {
   hook?: PredatorRuleHook;
   rules?: Readonly<PredatorRules>;
   neverTouches?: boolean;
+  dangerPart?: true;
 }
 
 /** A patrol route carrying the species that swims it. */
@@ -133,6 +137,11 @@ interface PhaseStep {
 
 const MAX_PHASE_STEPS = 8;
 const PROGRESS_EPSILON = 1e-9;
+/**
+ * Slack in px for the chase: a chase stops this far inside the lungeRange, so float error never
+ * leaves it just outside reach, and a chaser counts as within its leash up to this far past it.
+ */
+const CHASE_TOLERANCE = 1e-6;
 
 /** The tilapia, the first predator species. */
 export const TILAPIA_SPECIES: Readonly<PredatorSpecies> = Object.freeze({
@@ -175,12 +184,62 @@ export const GARTER_SNAKE_SPECIES: Readonly<PredatorSpecies> = Object.freeze({
   rules: Object.freeze({ warnOnRoute: true }),
 });
 
+/**
+ * The common carp (PRD open question 253, ND-6): it plays the shared rules with its own tuning and
+ * no rule options, and is a danger part (PRD open question 260, ND-13).
+ */
+export const CARP_SPECIES: Readonly<PredatorSpecies> = Object.freeze({
+  id: 'carp',
+  name: 'Common carp',
+  tuning: CARP,
+  meetRange: CARP_MEET_RANGE,
+  fact: CARP_FACT,
+  dangerPart: true,
+});
+
 /** Every predator species. */
 export const PREDATOR_SPECIES: readonly Readonly<PredatorSpecies>[] = Object.freeze([
   TILAPIA_SPECIES,
   HERON_SPECIES,
   GARTER_SNAKE_SPECIES,
+  CARP_SPECIES,
 ]);
+
+/**
+ * `species` played with `tuning` (PRD open questions 248 and 250, ND-1 and ND-3): the same id, name,
+ * meet range, fact card, hook and rules. Throws a RangeError when the tuning's chase is outside its
+ * limits, or when it gives a chase to a species with the `fixedStrikeSpot` or `stillCooldown` rule.
+ */
+export function tunedSpecies(
+  species: Readonly<PredatorSpecies>,
+  tuning: Readonly<PredatorTuning>,
+): Readonly<PredatorSpecies> {
+  if (tuning.chase) {
+    if (species.rules?.fixedStrikeSpot || species.rules?.stillCooldown) {
+      throw new RangeError(`tunedSpecies: ${species.id} cannot chase`);
+    }
+    checkChaseLimits(species.id, tuning.chase, tuning);
+  }
+  return Object.freeze({ ...species, tuning });
+}
+
+/**
+ * Throws a RangeError unless the chase speed is strictly between the 2-leg and 4-leg top speeds,
+ * the sight is finite and greater than the lungeRange, and the leash is finite and 0 or more.
+ */
+function checkChaseLimits(speciesId: string, chase: Readonly<ChaseTuning>, tuning: Readonly<PredatorTuning>): void {
+  const slowest = SWIM.maxSpeed * LEGS.speedByLegs[1];
+  const fastest = SWIM.maxSpeed * LEGS.speedByLegs[LEGS.count - 1];
+  if (!(chase.speed > slowest && chase.speed < fastest)) {
+    throw new RangeError(`tunedSpecies: ${speciesId} chase speed ${chase.speed} is not between ${slowest} and ${fastest}`);
+  }
+  if (!(Number.isFinite(chase.sight) && chase.sight > tuning.lungeRange)) {
+    throw new RangeError(`tunedSpecies: ${speciesId} chase sight ${chase.sight} is not greater than lungeRange ${tuning.lungeRange}`);
+  }
+  if (!(Number.isFinite(chase.leash) && chase.leash >= 0)) {
+    throw new RangeError(`tunedSpecies: ${speciesId} chase leash ${chase.leash} is not 0 or more`);
+  }
+}
 
 /** Creates a patrolling predator of `speciesId` at the route's first waypoint, heading for the second. */
 export function createPredator(route: TilapiaRoute, speciesId: string): PredatorState {
@@ -317,6 +376,9 @@ export function phaseProgress(state: PredatorState): number {
  * the strike drops the spot. With `stillCooldown`, the cooldown holds position and faces the target.
  * With `warnOnRoute`, the predator must also be within `ROUTE_WARN_TOLERANCE` of its route
  * (`routeLoopDistance`) to start a warning and at the end-of-warning re-check; movement is unchanged.
+ *
+ * Chase (PRD open question 249, ND-2): only with `ctx.tuning.chase`, and only on patrol when no
+ * warning starts. See `chaseStep`. Without a chase, patrol is unchanged.
  */
 export function stepPredator(
   state: PredatorState,
@@ -366,7 +428,79 @@ function stepPatrol(
     if (ctx.rules?.fixedStrikeSpot) telegraph.strikeSpot = { x: target.x, y: target.y };
     return { state: telegraph, used: 0, event: { type: 'telegraphStart' } };
   }
+  if (ctx.tuning.chase && mayChase(state, target, ctx.tuning.chase, ctx)) {
+    return { state: chaseStep(state, target, dt, ctx.tuning.chase, ctx), used: dt, event: null };
+  }
   return { state: swimRoute(state, dt, ctx), used: dt, event: null };
+}
+
+/**
+ * Whether a patrolling predator chases this step: the target is exposed and within `sight` of it
+ * (inclusive), and the predator is within its leash of its patrol loop. Beyond its leash it swims
+ * its route instead, which brings it back.
+ */
+function mayChase(state: PredatorState, target: Point, chase: Readonly<ChaseTuning>, ctx: PredatorContext): boolean {
+  return (
+    targetExposed(target, ctx) &&
+    distance(state.pos, target) <= chase.sight &&
+    routeLoopDistance(state.pos, state.waypoints) <= chaseLeash(chase, ctx) + CHASE_TOLERANCE
+  );
+}
+
+/** The chase leash in px: 0 for a species with the `warnOnRoute` rule, so it chases along its route only. */
+function chaseLeash(chase: Readonly<ChaseTuning>, ctx: PredatorContext): number {
+  return ctx.rules?.warnOnRoute ? 0 : chase.leash;
+}
+
+/**
+ * One chase step: toward the target at chase `speed`, stopping at the lungeRange. A move that would
+ * end past the leash ends on the leash edge, on the line from the nearest point of the patrol loop.
+ * The move is then clamped as any move (`moveClamped`). A clamped end past the leash, or nearer the
+ * target than both the lungeRange and the start, holds the predator where it is. It faces the way it
+ * moves. The waypoint is kept, so swimming the route afterwards brings it back.
+ */
+function chaseStep(
+  state: PredatorState,
+  target: Point,
+  dt: number,
+  chase: Readonly<ChaseTuning>,
+  ctx: PredatorContext,
+): PredatorState {
+  const gap = distance(state.pos, target);
+  const closing = Math.max(0, Math.min(chase.speed * dt, gap - (ctx.tuning.lungeRange - CHASE_TOLERANCE)));
+  const step = scale(normalize({ x: target.x - state.pos.x, y: target.y - state.pos.y }), closing);
+  const leash = chaseLeash(chase, ctx);
+  const leashed = withinLeash({ x: state.pos.x + step.x, y: state.pos.y + step.y }, state.waypoints, leash);
+  const pos = moveClamped(state.pos, { x: leashed.x - state.pos.x, y: leashed.y - state.pos.y }, ctx);
+  const nearest = Math.min(gap, ctx.tuning.lungeRange) - 2 * CHASE_TOLERANCE;
+  const held =
+    routeLoopDistance(pos, state.waypoints) > leash + CHASE_TOLERANCE || distance(pos, target) < nearest;
+  if (held) return state;
+  return { ...state, pos, facing: faceToward(state.facing, pos.x - state.pos.x) };
+}
+
+/** `pos`, or the point `leash` px from the nearest point of the loop toward `pos` when it is farther. */
+function withinLeash(pos: Point, waypoints: readonly Point[], leash: number): Point {
+  const near = nearestOnLoop(pos, waypoints);
+  const away = Math.hypot(pos.x - near.x, pos.y - near.y);
+  if (away <= leash) return pos;
+  const share = leash / away;
+  return { x: near.x + (pos.x - near.x) * share, y: near.y + (pos.y - near.y) * share };
+}
+
+/** The nearest point to `pos` on a route as a closed loop; `pos` itself with no waypoints. */
+function nearestOnLoop(pos: Point, waypoints: readonly Point[]): Point {
+  let best: Point = pos;
+  let bestDistance = Infinity;
+  for (let i = 0; i < waypoints.length; i++) {
+    const near = nearestOnSegment(pos, waypoints[i], waypoints[(i + 1) % waypoints.length]);
+    const away = Math.hypot(pos.x - near.x, pos.y - near.y);
+    if (away < bestDistance) {
+      best = near;
+      bestDistance = away;
+    }
+  }
+  return best;
 }
 
 /** The warning length: windup, but never below the minWindup floor. */
