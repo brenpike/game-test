@@ -14,10 +14,11 @@ import {
 } from './encounter';
 import { metThreatIds, type ThreatSighting } from './factCards';
 import { createGhostNets, endSnag, isSnagged, stepGhostNets, type GhostNetState } from './ghostNets';
-import { elementSweep, shapeDistance, type ElementSpawn } from './hazards';
+import { elementSweep, hazardShapeAt, shapeDistance, type ElementSpawn } from './hazards';
 import { zoneThreats } from './hiding';
 import { createLegs, isProtected, presentCount, quantizeProgress, type LegsState } from './legs';
 import { isAxolotlFindId, type RealMorphId } from './morphs';
+import { movingHazardSweep } from './movingHazards';
 import { DEFAULT_TRIP_SEED, nextTripSeed, placeTreasures, type PlacedFind } from './placement';
 import {
   createPlasticWorms,
@@ -111,9 +112,10 @@ export interface CarryState {
  * exploring). `heldAt` is where the axolotl is held while 'banked', else null. `ending` is set only
  * in 'ended'. `rescue` is this trip's stranded axolotl, or null when there is none; once reached its
  * id is a Trip Bag find like any other. `factCardsSeen` is the hazard and predator ids whose fact
- * cards were seen, before or during this trip, and `met` the hazard and predator ids the axolotl met
- * this trip, in meet order.
- * `legsLost` is how many legs tilapia hits took this trip; a leg grown back still counts.
+ * cards were seen, before or during this trip, and `met` the hazard, moving hazard type, predator,
+ * element and snack type ids the axolotl met this trip, in meet order.
+ * `legsLost` is how many legs hits took this trip, from predators, hazards and moving hazards; a leg
+ * grown back still counts.
  * `plasticWorms` is where each plastic worm is and the explorer's queasy time left; queasy time
  * runs only on swimming steps, ends when the carry starts or the trip ends, and never affects a
  * following stranded axolotl.
@@ -121,7 +123,8 @@ export interface CarryState {
  * steps, ends when the carry starts or the trip ends, and never affects a following stranded axolotl.
  * `elements` is the trip's timing and puzzle elements and `elementTime` their clock in seconds: 0
  * when the trip starts, and it advances only on swimming steps, so it stops while paused, banked,
- * carrying or ended.
+ * carrying or ended. A drifting ghost net is where `hazardShapeAt` puts it at `elementTime` (ND-11,
+ * PRD open question 258).
  */
 export interface TripState {
   phase: TripPhase;
@@ -326,7 +329,8 @@ function copyTripElement(element: Readonly<ElementSpawn>): ElementSpawn {
  * Dash pot is sealed again. The treasures returned when carried home (`ending.returned`) come back this trip, always
  * placed, and the area's special treasure is always placed while unbanked, on top of the treasure
  * slots. Every plastic worm is back at its spawn and the axolotl is neither queasy nor snagged. The
- * elements are the same and the element clock is back at 0. It
+ * elements and moving hazards are the same, and the element clock and the moving hazard clock are
+ * back at 0. It
  * passes no other trip options, so the new trip has no stranded axolotl and every fact card counts
  * as unseen. Any other phase returns the input state unchanged.
  */
@@ -366,6 +370,21 @@ export function keepExploring(state: TripState): TripState {
 export function markFactCardSeen(state: TripState, id: string): TripState {
   if (state.factCardsSeen.includes(id)) return state;
   return { ...state, factCardsSeen: [...state.factCardsSeen, id] };
+}
+
+/**
+ * The trip with each snack type id in `ids` met (ND-29, PRD open question 276, A21): the ids not
+ * already in `met` are appended, in `ids` order and each once, so a card not seen yet comes due
+ * through the same rule as every other met id. Returns `state` itself when nothing is new.
+ */
+export function meetSnacks(state: TripState, ids: readonly string[]): TripState {
+  let met = state.met;
+  for (const id of ids) {
+    if (met.includes(id)) continue;
+    if (met === state.met) met = [...state.met];
+    met.push(id);
+  }
+  return met === state.met ? state : { ...state, met };
 }
 
 /**
@@ -469,7 +488,8 @@ export function beatArea(state: TripState, ctx: StarContext): TripStepResult {
  * banked or ended trip, returns the input state unchanged with no events. `dt` is capped at
  * `SWIM.dtMax`.
  *
- * Swimming: steps the encounter; each `hit` adds one to `legsLost`. When it ends (fourth leg lost) the carry starts in the same
+ * Swimming: steps the encounter; each `hit`, from a predator, a hazard or a moving hazard, adds one
+ * to `legsLost`. When it ends (fourth leg lost) the carry starts in the same
  * step: `carryStart` is emitted and any bump impulse is dropped.
  * Otherwise, in placed order, every sealed Dash pot within the container radius breaks when
  * `input.dashing` (`containerBroken`), or emits `dashNeeded` when the axolotl was not already
@@ -481,10 +501,13 @@ export function beatArea(state: TripState, ctx: StarContext): TripStepResult {
  * Before the banking check, a waiting stranded axolotl within reach goes into the Trip Bag and
  * onto `found` (`rescued`); a following one swims behind the axolotl and a safe one swims to its
  * rest point by the Home Spot. It is never part of the encounter, so it cannot be hit. The first
- * step where the axolotl meets a hazard, predator or element adds its id to `met`. When the carry starts, a following
+ * step where the axolotl meets a hazard, moving hazard, predator or element adds its id to `met`.
+ * When the carry starts, a following
  * stranded axolotl goes back to its place. Queasy time counts down by the capped step, and ends
  * when the carry starts. The ghost nets step with the axolotl centre and the capped step
- * (`stepGhostNets`): a new snag emits `snagged`, and snag time ends when the carry starts. A snag
+ * (`stepGhostNets`): a new snag emits `snagged`, and snag time ends when the carry starts. Snags and
+ * meetings measure each drifting net where it is at the element time this step reaches, the
+ * previous element time plus the capped step (ND-11, PRD open question 258). A snag
  * never touches the legs, protected time, the Shell, the finds or the exit; a following stranded
  * axolotl is never snagged. The element clock advances by the capped step on every swimming step.
  * Carrying: the encounter is not stepped, so legs stay frozen, and nothing is picked up. The
@@ -657,15 +680,18 @@ function isPassedEvent(event: EncounterEvent): event is PassedEncounterEvent {
 /**
  * Every predator and hazard of `encounter` not in `met` as the axolotl at `pos` sees it, predators
  * first, in encounter order: a predator by centre distance and its species meet range, a hazard by
- * shape distance and its type meet range. Every predator is always shown, so any may be met; cover
- * does not stop a meeting. Then each element not in `met` whose type has a fact card and a meet
- * range and which has a sweep, in element order, by shape distance to its sweep.
+ * shape distance, where it is at `elementTime` (hazardShapeAt), and its type meet range. Every
+ * predator is always shown, so any may be met; cover does not stop a meeting. Then each moving
+ * hazard whose type is not in `met`, in encounter order, by shape distance to its sweep and its type
+ * meet range (ND-8, PRD open question 255). Then each element not in `met` whose type has a fact
+ * card and a meet range and which has a sweep, in element order, by shape distance to its sweep.
  */
 function unmetSightings(
   encounter: EncounterState,
   elements: readonly ElementSpawn[],
   pos: Point,
   met: readonly string[],
+  elementTime: number,
   ctx: EncounterContext,
 ): ThreatSighting[] {
   const sightings: ThreatSighting[] = [];
@@ -676,7 +702,13 @@ function unmetSightings(
   }
   for (const hazard of encounter.hazards) {
     if (met.includes(hazard.type.id)) continue;
-    sightings.push({ id: hazard.type.id, distance: shapeDistance(pos, hazard.shape), meetRange: hazard.type.meetRange });
+    const shape = hazardShapeAt(hazard, elementTime);
+    sightings.push({ id: hazard.type.id, distance: shapeDistance(pos, shape), meetRange: hazard.type.meetRange });
+  }
+  for (const spawn of encounter.movingHazards ?? []) {
+    if (met.includes(spawn.type.id)) continue;
+    const distance = shapeDistance(pos, movingHazardSweep(spawn));
+    sightings.push({ id: spawn.type.id, distance, meetRange: spawn.type.meetRange });
   }
   for (const element of elements) {
     const sighting = elementSighting(element, pos, met);
@@ -698,18 +730,19 @@ function elementSighting(element: ElementSpawn, pos: Point, met: readonly string
 }
 
 /**
- * `met` with the ids of the hazards, predators and elements the axolotl at `pos` meets now
- * appended, in sighting order. Runs every swimming frame, so it returns `met` itself when nothing
- * new is met.
+ * `met` with the ids of the hazards, moving hazards, predators and elements the axolotl at `pos`
+ * meets now at `elementTime` appended, in sighting order. Runs every swimming frame, so it returns
+ * `met` itself when nothing new is met.
  */
 function meetThreats(
   met: string[],
   encounter: EncounterState,
   elements: readonly ElementSpawn[],
   pos: Point,
+  elementTime: number,
   ctx: EncounterContext,
 ): string[] {
-  const sightings = unmetSightings(encounter, elements, pos, met, ctx);
+  const sightings = unmetSightings(encounter, elements, pos, met, elementTime, ctx);
   if (sightings.length === 0) return met;
   const metNow = metThreatIds(pos, encounter.safeArea, sightings);
   return metNow.length === 0 ? met : [...met, ...metNow];
@@ -753,8 +786,8 @@ function stepSwimming(state: TripState, input: TripInput, step: number, ctx: Tri
   const pots = touchPots(state, input, ctx.finds, events);
   const pickup = pickUpNearby({ ...state, ...pots }, input.axolotlPos, ctx.finds, events);
   const rescued = stepRescue({ ...state, ...pickup }, input.axolotlPos, step, events);
-  const ghostNets = stepSnag(state.ghostNets, input.axolotlPos, step, events);
-  const met = meetThreats(state.met, result.state, state.elements, input.axolotlPos, ctx.encounter);
+  const ghostNets = stepSnag(state.ghostNets, input.axolotlPos, step, elementTime, events);
+  const met = meetThreats(state.met, result.state, state.elements, input.axolotlPos, elementTime, ctx.encounter);
   const inside = isInHomeSpot(input.axolotlPos, state.homeSpot);
   const next: TripState = {
     ...state,
@@ -774,11 +807,18 @@ function stepSwimming(state: TripState, input: TripInput, step: number, ctx: Tri
 }
 
 /**
- * Steps the ghost nets with the explorer centre `pos` by `step` seconds, pushing `snagged` when a
- * new snag starts. Returns the state's own ghost nets when nothing changed.
+ * Steps the ghost nets with the explorer centre `pos` by `step` seconds, each net where it is at
+ * `elementTime`, pushing `snagged` when a new snag starts. Returns the state's own ghost nets when
+ * nothing changed.
  */
-function stepSnag(nets: GhostNetState, pos: Point, step: number, events: TripEvent[]): GhostNetState {
-  const next = stepGhostNets(nets, pos, step);
+function stepSnag(
+  nets: GhostNetState,
+  pos: Point,
+  step: number,
+  elementTime: number,
+  events: TripEvent[],
+): GhostNetState {
+  const next = stepGhostNets(nets, pos, step, elementTime);
   if (!isSnagged(nets) && isSnagged(next)) {
     events.push({ type: 'snagged', id: next.inReach[0], at: { x: pos.x, y: pos.y } });
   }

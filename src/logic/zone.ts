@@ -1,12 +1,15 @@
 import { CANAL_TREASURES, type Rarity, type Treasure } from './catalogue';
 import {
   elementSweep,
+  hazardSweep,
   shapeDistance,
   type ElementSpawn,
   type ElementType,
   type HazardRect,
   type HazardSpawn,
 } from './hazards';
+import type { MobileSnackMix, SnackLane } from './mobileSnacks';
+import { movingHazardSweep, type MovingHazardSpawn } from './movingHazards';
 import type { PredatorRoute } from './predators';
 import { mulberry32 } from './rng';
 import { FINDS, type TilapiaTuning } from './tuning';
@@ -37,7 +40,10 @@ const REED_BASE_Y = 326;
 const SNACK_MIN_SPACING = 40;
 const SNACK_START_CLEARANCE = 90;
 const SNACK_MAX_ATTEMPTS = 400;
-/** Minimum distance in px from every snack to every hazard shape's edge and every element sweep. */
+/**
+ * Minimum distance in px from every snack start to every hazard's drift sweep (hazardSweep), every
+ * element sweep and every moving hazard's sweep.
+ */
 export const SNACK_HAZARD_CLEARANCE = 80;
 const SPOT_HOME_CLEARANCE = FINDS.pickupRadius + 8;
 
@@ -98,13 +104,15 @@ export interface CurrentZone {
   force: Point;
 }
 
-export type CollectibleKind = 'worm' | 'bug';
+export type CollectibleKind = 'worm' | 'bug' | 'tadpole' | 'shrimp';
 
 export interface CollectibleSpawn {
   id: string;
   kind: CollectibleKind;
   x: number;
   y: number;
+  /** A tadpole's lane from x and y (ND-24); absent on every other snack. */
+  lane?: SnackLane;
 }
 
 export interface PadSpec {
@@ -239,6 +247,10 @@ export interface ZoneLayout {
   tilapia?: Readonly<TilapiaTuning>;
   /** Overhanging bank rectangles, the bank cover; absent means none. */
   bankOverhangs?: BankOverhang[];
+  /** Moving hazards (ND-8); absent means none. */
+  movingHazards?: MovingHazardSpawn[];
+  /** Mobile snacks (ND-23); absent means none. Their spawns are in `collectibles`. */
+  mobileSnacks?: MobileSnackMix;
 }
 
 /** An area's size in world px. */
@@ -293,6 +305,13 @@ export interface AreaLayoutData {
   readonly bankOverhangs?: readonly Readonly<BankOverhang>[];
   /** Fixed hiding spots under the overhanging bank, ids `spot-bank-<n>`, after the fixed pads; absent means none. */
   readonly bankSpots?: readonly FixedSpotData[];
+  /** Moving hazards, built with movingHazardSpawn() (ND-8); absent means none. */
+  readonly movingHazards?: readonly Readonly<MovingHazardSpawn>[];
+  /**
+   * Mobile snacks, built with mobileSnackMix() (ND-23): fixed area data, never seeded. Absent means
+   * none.
+   */
+  readonly mobileSnacks?: Readonly<MobileSnackMix>;
 }
 
 /** The canal cave. */
@@ -522,7 +541,7 @@ function isSnackSpotClear(
   );
   return (
     spaced &&
-    hazards.every((hazard) => shapeDistance(candidate, hazard.shape) >= SNACK_HAZARD_CLEARANCE) &&
+    hazards.every((hazard) => shapeDistance(candidate, hazardSweep(hazard)) >= SNACK_HAZARD_CLEARANCE) &&
     sweeps.every((sweep) => shapeDistance(candidate, sweep) >= SNACK_HAZARD_CLEARANCE)
   );
 }
@@ -573,17 +592,19 @@ function snackAreas(data: AreaLayoutData, current: CurrentZone | undefined, boun
   return [...inCurrent, ...strata];
 }
 
-/** The sweep of every element that has geometry, in data order. */
-function elementSweeps(elements: readonly Readonly<ElementSpawn>[]): HazardRect[] {
-  return elements.flatMap((element) => {
+/** The sweep of every element that has geometry, then of every moving hazard, in data order. */
+function snackSweeps(data: Readonly<AreaLayoutData>): HazardRect[] {
+  const elementSweeps = data.elements.flatMap((element) => {
     const sweep = elementSweep(element);
     return sweep ? [sweep] : [];
   });
+  return [...elementSweeps, ...(data.movingHazards ?? []).map(movingHazardSweep)];
 }
 
 /**
- * Snack starts, each SNACK_HAZARD_CLEARANCE px or more from every hazard shape and element sweep.
- * Only candidates near a hazard or sweep are redrawn, so an area with neither makes the same draws.
+ * Snack starts, each SNACK_HAZARD_CLEARANCE px or more from every hazard's drift sweep, element
+ * sweep and moving hazard sweep. Only candidates near one are redrawn, so an area with none makes
+ * the same draws.
  */
 function buildSnacks(
   rand: () => number,
@@ -592,7 +613,7 @@ function buildSnacks(
   bounds: SwimBounds,
 ): CollectibleSpawn[] {
   const kinds = shuffleKinds(rand, data);
-  const sweeps = elementSweeps(data.elements);
+  const sweeps = snackSweeps(data);
   const placed: Point[] = [];
   for (const area of snackAreas(data, current, bounds)) {
     placed.push(pickSnackSpot(rand, area, placed, data, sweeps));
@@ -600,6 +621,32 @@ function buildSnacks(
   return placed
     .sort((a, b) => a.x - b.x)
     .map((spot, i) => ({ id: `snack-${i}`, kind: kinds[i], x: spot.x, y: spot.y }));
+}
+
+/** The tadpole spawns, in lane order, each at its lane start carrying its lane. */
+function tadpoleSpawns(mix: Readonly<MobileSnackMix>): CollectibleSpawn[] {
+  const rule = mix.tadpole;
+  if (mix.lanes.length === 0) return [];
+  if (!rule) throw new RangeError('buildZone: tadpole lanes need a tadpole rule');
+  return mix.lanes.map((lane, i): CollectibleSpawn => ({
+    id: `snack-tadpole-${i + 1}`,
+    kind: 'tadpole',
+    x: lane.x,
+    y: lane.y,
+    lane: { dx: lane.dx, dy: lane.dy, speed: rule.speed, offset: lane.offset },
+  }));
+}
+
+/**
+ * The mobile snack spawns (ND-22, ND-23), appended after the seeded snacks with no rand() draw:
+ * tadpoles, then shrimp, in data order, ids `snack-tadpole-<n>` and `snack-shrimp-<n>` from 1.
+ * Throws RangeError for lanes without a tadpole rule or spots without a shrimp rule.
+ */
+function mobileSnackSpawns(mix: Readonly<MobileSnackMix> | undefined): CollectibleSpawn[] {
+  if (!mix) return [];
+  if (mix.spots.length > 0 && !mix.shrimp) throw new RangeError('buildZone: shrimp spots need a shrimp rule');
+  const shrimps = mix.spots.map((spot, i): CollectibleSpawn => ({ id: `snack-shrimp-${i + 1}`, kind: 'shrimp', x: spot.x, y: spot.y }));
+  return [...tadpoleSpawns(mix), ...shrimps];
 }
 
 function buildPads(rand: () => number, padCount: number, width: number): PadSpec[] {
@@ -753,18 +800,38 @@ function copyElement(element: Readonly<ElementSpawn>): ElementSpawn {
   };
 }
 
+/** A copy of the mix sharing no object with the data; optional rules copied only when set. */
+function copyMobileSnackMix(mix: Readonly<MobileSnackMix>): MobileSnackMix {
+  return {
+    ...(mix.tadpole ? { tadpole: { ...mix.tadpole } } : {}),
+    lanes: mix.lanes.map((lane) => ({ ...lane })),
+    ...(mix.shrimp ? { shrimp: { ...mix.shrimp } } : {}),
+    spots: mix.spots.map((spot) => ({ ...spot })),
+  };
+}
+
+/** A copy of the hazard sharing no object with the data; its drift copied only when set. */
+function copyHazard(hazard: Readonly<HazardSpawn>): HazardSpawn {
+  return { ...hazard, shape: { ...hazard.shape }, ...(hazard.drift ? { drift: { ...hazard.drift } } : {}) };
+}
+
 /** The layout's optional fields, each copied only when its data is set. */
-function optionalLayoutParts(data: Readonly<AreaLayoutData>): Pick<ZoneLayout, 'tilapia' | 'bankOverhangs'> {
+function optionalLayoutParts(
+  data: Readonly<AreaLayoutData>,
+): Pick<ZoneLayout, 'tilapia' | 'bankOverhangs' | 'movingHazards' | 'mobileSnacks'> {
   return {
     ...(data.tilapia ? { tilapia: { ...data.tilapia } } : {}),
     ...(data.bankOverhangs ? { bankOverhangs: data.bankOverhangs.map((overhang) => ({ ...overhang })) } : {}),
+    ...(data.movingHazards ? { movingHazards: data.movingHazards.map((spawn) => ({ ...spawn })) } : {}),
+    ...(data.mobileSnacks ? { mobileSnacks: copyMobileSnackMix(data.mobileSnacks) } : {}),
   };
 }
 
 /**
  * Deterministically builds an area's zone layout from its data and a mulberry32 seed. The rules
  * read the layout's width, height and bedTop, never the canal constants. The optional tilapia
- * tuning, bank overhangs and bank spots make no rand() draws.
+ * tuning, bank overhangs, bank spots, moving hazards and mobile snacks make no rand() draws; only
+ * snack starts near a drifting net's path or a moving hazard's sweep are redrawn.
  */
 export function buildZone(data: Readonly<AreaLayoutData>, seed: number): ZoneLayout {
   const rand = mulberry32(seed);
@@ -782,7 +849,7 @@ export function buildZone(data: Readonly<AreaLayoutData>, seed: number): ZoneLay
 
   const currents: CurrentZone[] = data.currents.map((current) => ({ ...current, force: { ...current.force } }));
 
-  const collectibles = buildSnacks(rand, data, currents[0], bounds);
+  const collectibles = [...buildSnacks(rand, data, currents[0], bounds), ...mobileSnackSpawns(data.mobileSnacks)];
   const pads = [
     ...buildPads(rand, data.padCount, size.width),
     ...(data.fixedPads ?? []).map((pad): PadSpec => ({ x: pad.x, rx: pad.rx, flower: pad.flower })),
@@ -809,7 +876,7 @@ export function buildZone(data: Readonly<AreaLayoutData>, seed: number): ZoneLay
     safeArea,
     tilapiaRoutes: buildTilapiaRoutes(data.tilapiaRoutes),
     predatorRoutes: data.predatorRoutes.map(copyPredatorRoute),
-    hazards: data.hazards.map((hazard) => ({ ...hazard, shape: { ...hazard.shape } })),
+    hazards: data.hazards.map(copyHazard),
     elements: data.elements.map(copyElement),
     homeSpot,
     finds: buildFinds(data.treasures, spots),

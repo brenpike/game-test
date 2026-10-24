@@ -14,9 +14,11 @@ import {
 import { currentAt, reedDragAt } from './environment';
 import { TILAPIA_FACT } from './factCards';
 import { GAME_EVENTS, REGISTRY_KEYS } from './gameEvents';
+import { GHOST_NET, netDrift } from './ghostNets';
 import type { HazardSpawn, HazardType } from './hazards';
 import { inSightCover } from './hiding';
 import { createLegs, isProtected, legSwimTuning, presentCount } from './legs';
+import { PUNTING_POLE, movingHazardSpawn } from './movingHazards';
 import {
   HERON_SPECIES,
   TILAPIA_SPECIES,
@@ -961,5 +963,137 @@ describe('sight cover and the shared predator rules in the encounter', () => {
     expect(moved.events.find((event) => event.type === 'lunge')).toEqual({ type: 'lunge', sourceId: 'stalker', aim: { x: 0, y: 1 } });
     expect(moved.state.predators[0].pos).toEqual(standPoint);
     expect(presentCount(moved.state.legs)).toBe(LEGS.count);
+  });
+});
+
+describe('moving hazards in the encounter (ND-8)', () => {
+  const POLE_X = 1000;
+  /** Offset -3 puts the pole 3 s into its cycle at hazard time 0: held at full depth. */
+  const heldPole = movingHazardSpawn('pole-1', PUNTING_POLE, POLE_X, -3);
+  const restingPole = movingHazardSpawn('pole-1', PUNTING_POLE, POLE_X, 0);
+  const underPole: Point = { x: POLE_X, y: 200 };
+  const poleTip: Point = { x: POLE_X, y: SURF + PUNTING_POLE.depth };
+  const clear: Point = { x: 1500, y: 200 };
+  const shellCtx = createEncounterContext({ legs: { ...LEGS, regrowTime: 1e9 }, shell: true });
+
+  function poleEncounter(spawn = heldPole, extra: Partial<EncounterSource> = {}): EncounterState {
+    return createEncounter({ ...zone, tilapiaRoutes: [], movingHazards: [spawn], ...extra });
+  }
+
+  it('adds no keys to an encounter whose source has no moving hazards', () => {
+    const plain = createEncounter(zone);
+    const empty = createEncounter({ ...zone, movingHazards: [] });
+    expect(empty).toEqual(plain);
+    expect(Object.keys(empty)).toEqual(Object.keys(plain));
+    expect(plain).not.toHaveProperty('movingHazards');
+    expect(plain).not.toHaveProperty('hazardTime');
+    const stepped = stepEncounter(plain, clear, DT).state;
+    expect(Object.keys(stepped)).toEqual(Object.keys(plain));
+  });
+
+  it('copies the moving hazards, sharing their type, with the clock at 0', () => {
+    const state = poleEncounter();
+    expect(state.movingHazards).toEqual([heldPole]);
+    expect(state.movingHazards?.[0]).not.toBe(heldPole);
+    expect(state.movingHazards?.[0].type).toBe(PUNTING_POLE);
+    expect(state.hazardTime).toBe(0);
+  });
+
+  it("copies a hazard's drift only when it is set", () => {
+    const drift = netDrift(160, 0, 16, 0);
+    const still: HazardSpawn = { id: 'net-still', type: GHOST_NET, shape: { kind: 'rect', x0: 900, x1: 1000, y0: 150, y1: 250 } };
+    const drifting: HazardSpawn = { ...still, id: 'net-drift', drift };
+    const state = createEncounter({ ...zone, hazards: [still, drifting] });
+    expect(state.hazards).toEqual([still, drifting]);
+    expect(state.hazards[0]).not.toHaveProperty('drift');
+    expect(state.hazards[1].drift).toEqual(drift);
+  });
+
+  it('advances the clock by the capped step and stops it on a 0 step or a finished trip', () => {
+    const state = poleEncounter(restingPole);
+    expect(stepEncounter(state, clear, DT).state.hazardTime).toBe(DT);
+    expect(stepEncounter(state, clear, 1).state.hazardTime).toBe(SWIM.dtMax);
+    for (const dt of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(stepEncounter(state, clear, dt).state).toBe(state);
+    }
+    const over: EncounterState = { ...state, hazardTime: 1.5, tripOver: true };
+    expect(stepEncounter(over, clear, DT).state).toBe(over);
+  });
+
+  it('restarts the clock at 0 on resetEncounter', () => {
+    const swum = run(poleEncounter(restingPole), clear, 1).state;
+    expect(swum.hazardTime).toBeGreaterThan(0);
+    const fresh = resetEncounter(swum);
+    expect(fresh.hazardTime).toBe(0);
+    expect(fresh).toEqual(poleEncounter(restingPole));
+  });
+
+  it('never touches while resting or warning', () => {
+    const { state, events } = run(poleEncounter(restingPole), underPole, PUNTING_POLE.restFor + PUNTING_POLE.warnFor - 2 * DT, noRegrowCtx);
+    expect(typesOf(events, ['hit', 'shellBlock'])).toEqual([]);
+    expect(presentCount(state.legs)).toBe(LEGS.count);
+  });
+
+  it('costs one leg from the tip and leaves the bump cooldown unchanged', () => {
+    const start: EncounterState = { ...poleEncounter(), bumpCooldownLeft: 0.5 };
+    const result = stepEncounter(start, underPole, DT, noRegrowCtx);
+    expect(result.events).toEqual([
+      { type: 'hit', sourceId: 'pole-1', leg: 0, from: poleTip },
+      { type: 'regrowStart', leg: 0 },
+    ]);
+    expect(presentCount(result.state.legs)).toBe(LEGS.count - 1);
+    expect(result.state.legs.protectedLeft).toBe(LEGS.protectedTime);
+    expect(result.state.bumpCooldownLeft).toBeCloseTo(0.5 - DT, 9);
+    expect(result.impulse).toBeUndefined();
+  });
+
+  it('costs one leg per touch, with protected time covering the rest of the touch', () => {
+    const touch = run(poleEncounter(), underPole, 3.5, noRegrowCtx);
+    expect(typesOf(touch.events, ['hit'])).toEqual(['hit']);
+    expect(presentCount(touch.state.legs)).toBe(LEGS.count - 1);
+    const next = run(touch.state, underPole, 0.5, noRegrowCtx, 'hit');
+    expect(typesOf(next.events, ['hit'])).toEqual(['hit']);
+    expect(presentCount(next.state.legs)).toBe(LEGS.count - 2);
+  });
+
+  it('lets the Shell block the first pole hit', () => {
+    const result = stepEncounter(poleEncounter(), underPole, DT, shellCtx);
+    expect(result.events).toEqual([{ type: 'shellBlock', sourceId: 'pole-1', from: poleTip }]);
+    expect(presentCount(result.state.legs)).toBe(LEGS.count);
+    expect(result.state.legs.protectedLeft).toBe(LEGS.protectedTime);
+    expect(result.state.shellUsed).toBe(true);
+  });
+
+  it('carries the axolotl home on the fourth leg', () => {
+    const { state, events } = run(poleEncounter(), underPole, 60, noRegrowCtx, 'carriedHome');
+    const hits = events.filter((event) => event.type === 'hit');
+    expect(hits.map((event) => event.leg)).toEqual([0, 1, 2, 3]);
+    expect(hits.every((event) => event.sourceId === 'pole-1')).toBe(true);
+    expect(events[events.length - 1]).toEqual({ type: 'carriedHome' });
+    expect(state.tripOver).toBe(true);
+    expect(stepEncounter(state, underPole, DT).state).toBe(state);
+  });
+
+  it('lands at most one hit per step, a predator first, then a still hazard', () => {
+    const target = underPole;
+    const lunging = lungingAt(target, createEncounter(zone).legs);
+    const withPole: EncounterState = { ...lunging, movingHazards: [heldPole], hazardTime: 0 };
+    const predatorFirst = stepEncounter(withPole, target, DT, noRegrowCtx);
+    expect(typesOf(predatorFirst.events, ['hit', 'shellBlock'])).toEqual(['hit']);
+    expect(predatorFirst.events[0]).toMatchObject({ type: 'hit', sourceId: lunging.predators[0].routeId });
+    expect(presentCount(predatorFirst.state.legs)).toBe(LEGS.count - 1);
+
+    const spikeType: HazardType = { id: 'test-spike', name: 'Test spike', costsLeg: true, reach: 0, meetRange: 40, fact: TILAPIA_FACT };
+    const spike: HazardSpawn = { id: 'spike', type: spikeType, shape: { kind: 'circle', x: POLE_X, y: 200, r: 20 } };
+    const hazardFirst = stepEncounter(poleEncounter(heldPole, { hazards: [spike] }), target, DT, noRegrowCtx);
+    expect(typesOf(hazardFirst.events, ['hit', 'shellBlock'])).toEqual(['hit']);
+    expect(hazardFirst.events[0]).toMatchObject({ type: 'hit', sourceId: 'spike' });
+    expect(presentCount(hazardFirst.state.legs)).toBe(LEGS.count - 1);
+  });
+
+  it('is never a bump', () => {
+    const { events, impulses } = run(poleEncounter(), underPole, 8, shellCtx);
+    expect(typesOf(events, ['bump'])).toEqual([]);
+    expect(impulses).toBe(0);
   });
 });

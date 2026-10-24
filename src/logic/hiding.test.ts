@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { RARITIES } from './catalogue';
 import { CHINAMPA_LAYOUT } from './chinampaLayout';
 import type { FactCard } from './factCards';
+import { GHOST_NET, netDrift } from './ghostNets';
 import type { HazardSpawn, HazardType } from './hazards';
 import {
   MAIN_PATH_REACH,
@@ -32,6 +33,7 @@ import {
   type PastCurrentBand,
   type Threat,
 } from './hiding';
+import { PUNTING_POLE, movingHazardSpawn, movingHazardSweep } from './movingHazards';
 import { POND_2_LAYOUT } from './pond2Layout';
 import { POND_LAYOUT } from './pondLayout';
 import {
@@ -44,7 +46,7 @@ import {
   type PredatorRoute,
   type PredatorSpecies,
 } from './predators';
-import { HERON, RISK, TILAPIA } from './tuning';
+import { HERON, RISK, TILAPIA, TILAPIA_CHASE } from './tuning';
 import { BED_TOP, CANAL_LAYOUT, SURF, inSafeArea, type CurrentZone, type HidingSpot, type Point, type TilapiaRoute } from './zone';
 
 const CURRENT: CurrentZone = { id: 'current-0', x0: 400, x1: 600, y0: 120, y1: 280, force: { x: -70, y: 0 } };
@@ -548,6 +550,8 @@ const LINE_ROUTE: TilapiaRoute = { id: 'line', waypoints: [{ x: 0, y: 0 }, { x: 
 const EEL_ROUTE: PredatorRoute = { id: 'eel', waypoints: [{ x: 0, y: 1000 }, { x: 10000, y: 1000 }], species: TEST_EEL };
 const SPIKE: HazardSpawn = { id: 'spike-0', type: TEST_SPIKE, shape: { kind: 'circle', x: 5000, y: 1000, r: 10 } };
 const WEED: HazardSpawn = { id: 'weed-0', type: TEST_WEED, shape: { kind: 'rect', x0: 0, x1: 10000, y0: 900, y1: 1100 } };
+/** A punting pole at x 5000: its sweep is x 4995 to 5005, from the surface down 180 px. */
+const POLE = movingHazardSpawn('pole-0', PUNTING_POLE, 5000, 0);
 
 describe('riskBands', () => {
   it('gives exactly RISK.band for the tilapia lunge range', () => {
@@ -578,6 +582,40 @@ describe('zoneThreats', () => {
   it('ignores slow-only hazards and absent predator routes or hazards', () => {
     expect(zoneThreats({ tilapiaRoutes: [], hazards: [WEED] })).toEqual([]);
     expect(zoneThreats({ tilapiaRoutes: [] })).toEqual([]);
+  });
+
+  it('lists each moving hazard after the hazards: its sweep as the shape, its touch reach as the strike (ND-8)', () => {
+    const threats = zoneThreats({ tilapiaRoutes: [LINE_ROUTE], predatorRoutes: [EEL_ROUTE], hazards: [SPIKE], movingHazards: [POLE] });
+    expect(threats).toHaveLength(4);
+    expect(threats[2]).toEqual({ kind: 'shape', shape: SPIKE.shape, strike: TEST_SPIKE.reach });
+    expect(threats[3]).toEqual({ kind: 'shape', shape: movingHazardSweep(POLE), strike: PUNTING_POLE.touchReach });
+    expect(threats[3]).toEqual({ kind: 'shape', shape: { kind: 'rect', x0: 4995, x1: 5005, y0: SURF, y1: SURF + 180 }, strike: 18 });
+  });
+
+  it('bands a spot near a moving hazard by riskBands of its touch reach', () => {
+    const pole = zoneThreats({ tilapiaRoutes: [], movingHazards: [POLE] });
+    const below = (distance: number): Point => ({ x: 5000, y: SURF + 180 + distance });
+    expect(meetsThreatRiskRule(below(15), 'epic', pole)).toBe(true);
+    expect(meetsThreatRiskRule(below(15), 'rare', pole)).toBe(false);
+    expect(meetsThreatRiskRule(below(5), 'legendary', pole)).toBe(true);
+    expect(meetsThreatRiskRule(below(100), 'common', pole)).toBe(true);
+  });
+
+  it('keeps a chasing predator\'s strike at its lungeRange from its loop, without the leash (ND-5)', () => {
+    const chaser: PredatorRoute = { ...EEL_ROUTE, species: { ...TEST_EEL, tuning: { ...TEST_EEL.tuning, chase: TILAPIA_CHASE } } };
+    expect(zoneThreats({ tilapiaRoutes: [], predatorRoutes: [chaser] })).toEqual([{ kind: 'route', route: chaser, strike: 80, tilapia: false }]);
+    const tuned = zoneThreats({ tilapiaRoutes: [LINE_ROUTE], tilapia: { ...AREA_TILAPIA, chase: TILAPIA_CHASE } });
+    expect(tuned).toEqual([{ kind: 'route', route: LINE_ROUTE, strike: AREA_TILAPIA.lungeRange, tilapia: true, tuned: true }]);
+  });
+
+  it('never lists a drifting net: nets never cost a leg (N3)', () => {
+    const drifting: HazardSpawn = { id: 'net-0', type: GHOST_NET, shape: { kind: 'circle', x: 0, y: 200, r: 40 }, drift: netDrift(160, 0, 16, 0) };
+    expect(zoneThreats({ tilapiaRoutes: [], hazards: [drifting] })).toEqual([]);
+  });
+
+  it('gives the same threats with an empty moving hazard list as with none', () => {
+    const geo = { tilapiaRoutes: [LINE_ROUTE], predatorRoutes: [EEL_ROUTE], hazards: [SPIKE, WEED] };
+    expect(zoneThreats({ ...geo, movingHazards: [] })).toEqual(zoneThreats(geo));
   });
 });
 

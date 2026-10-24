@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GHOST_NET } from './ghostNets';
+import { GHOST_NET, netDrift } from './ghostNets';
 import type { HazardShape, HazardSpawn } from './hazards';
 import {
   NET_CURRENT_CLEARANCE,
@@ -12,8 +12,9 @@ import {
   type ExtraObstacle,
   type Gap,
 } from './layoutGaps';
+import { PUNTING_POLE, movingHazardSpawn, movingHazardSweep } from './movingHazards';
 import { TILAPIA } from './tuning';
-import type { Point, TilapiaRoute, ZoneLayout } from './zone';
+import { SURF, type Point, type TilapiaRoute, type ZoneLayout } from './zone';
 
 const NET_TEN = { ...GHOST_NET, reach: 10 };
 const STRIKE = 30;
@@ -83,6 +84,35 @@ describe('obstaclesOf', () => {
     expect(obstaclesOf(geo, [])).toEqual(obstaclesOf(geo));
   });
 
+  it("keeps a still hazard's own shape object", () => {
+    const still = net('net-1', rect(200, 260, 0, 100));
+    const [obstacle] = obstaclesOf(geometry([still]));
+    expect(obstacle.kind === 'shape' && obstacle.shape).toBe(still.shape);
+  });
+
+  it('measures a drifting net by its whole drift path (N3)', () => {
+    const drifting: HazardSpawn = { ...net('net-1', rect(200, 260, 0, 100)), drift: netDrift(-120, 40, 16, 0) };
+    expect(obstaclesOf(geometry([drifting]))).toEqual([{ id: 'net-1', kind: 'shape', shape: rect(80, 260, 0, 140), keepOut: 10 }]);
+  });
+
+  it('lists each moving hazard sweep after the hazards and before the extras, by its touch reach (ND-8)', () => {
+    const pole = movingHazardSpawn('pole-1', PUNTING_POLE, 600, 0);
+    const geo = { ...geometry([net('net-1', rect(200, 260, 0, 100))], [square]), movingHazards: [pole] };
+    const mat: ExtraObstacle = { id: 'mat-1', shape: rect(400, 500, 0, 50), keepOut: 4 };
+    expect(obstaclesOf(geo, [mat])).toEqual([
+      { id: 'net-1', kind: 'shape', shape: rect(200, 260, 0, 100), keepOut: 10 },
+      { id: 'pole-1', kind: 'shape', shape: movingHazardSweep(pole), keepOut: PUNTING_POLE.touchReach },
+      { id: 'mat-1', kind: 'shape', shape: rect(400, 500, 0, 50), keepOut: 4 },
+      { id: 'route-1', kind: 'route', waypoints: square.waypoints, keepOut: STRIKE },
+    ]);
+    expect(movingHazardSweep(pole)).toEqual(rect(595, 605, SURF, SURF + 180));
+  });
+
+  it('gives the same obstacles with an empty moving hazard list as with none', () => {
+    const geo = geometry([net('net-1', rect(200, 260, 0, 100))], [square]);
+    expect(obstaclesOf({ ...geo, movingHazards: [] })).toEqual(obstaclesOf(geo));
+  });
+
   it('puts extra shapes after the hazards and before the routes, with their own keep-out', () => {
     const geo = geometry([net('net-1', rect(200, 260, 0, 100))], [square]);
     const mat: ExtraObstacle = { id: 'mat-1', shape: rect(400, 500, 0, 50), keepOut: 4 };
@@ -127,6 +157,25 @@ describe('gapsOf', () => {
     expect(gap.between).toBe('route-1 and route-2');
     expect(gap.width).toBe(200 - 2 * STRIKE);
     expect(gap.hazard).toBe(false);
+  });
+
+  it("measures a drifting net's gap from the end of its drift path", () => {
+    const still = gapsOf(geometry([net('a', rect(0, 100, 0, 100)), net('b', rect(200, 300, 0, 100))]));
+    expect(still[0].width).toBe(80);
+    const drifting: HazardSpawn = { ...net('a', rect(0, 100, 0, 100)), drift: netDrift(50, 0, 16, 0) };
+    const [gap] = gapsOf(geometry([drifting, net('b', rect(200, 300, 0, 100))]));
+    expect(gap.width).toBe(30);
+    expect(gap.from).toEqual({ x: 160, y: 50 });
+    expect(gap.to).toEqual({ x: 190, y: 50 });
+  });
+
+  it('measures a gap beside a moving hazard sweep, less its touch reach', () => {
+    const pole = movingHazardSpawn('pole-1', PUNTING_POLE, 300, 0);
+    const geo = { ...geometry([net('a', rect(0, 100, SURF, SURF + 180))]), movingHazards: [pole] };
+    const [gap] = gapsOf(geo);
+    expect(gap.between).toBe('a and pole-1');
+    expect(gap.width).toBe(295 - 100 - 10 - PUNTING_POLE.touchReach);
+    expect(gap.hazard).toBe(true);
   });
 
   it('adds the gaps beside an extra obstacle', () => {

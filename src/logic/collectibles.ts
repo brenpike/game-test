@@ -1,3 +1,4 @@
+import type { SnackLane } from './mobileSnacks';
 import { SNACK_REACH, type SnackReachTuning } from './tuning';
 import type { CollectibleKind, CollectibleSpawn, Point, SwimBounds } from './zone';
 
@@ -9,6 +10,8 @@ export interface Collectible {
   x: number;
   y: number;
   collected: boolean;
+  /** A tadpole's lane from its stored x and y (ND-24); absent on every other snack. */
+  lane?: SnackLane;
 }
 
 export interface CollectResult {
@@ -16,9 +19,14 @@ export interface CollectResult {
   newly: Collectible[];
 }
 
-/** Fresh, uncollected collectibles for each spawn. */
+function createCollectible(spawn: CollectibleSpawn): Collectible {
+  const item: Collectible = { id: spawn.id, kind: spawn.kind, x: spawn.x, y: spawn.y, collected: false };
+  return spawn.lane ? { ...item, lane: { ...spawn.lane } } : item;
+}
+
+/** Fresh, uncollected collectibles for each spawn; a lane is copied only when the spawn has one. */
 export function createCollectibles(spawns: readonly CollectibleSpawn[]): Collectible[] {
-  return spawns.map((spawn) => ({ id: spawn.id, kind: spawn.kind, x: spawn.x, y: spawn.y, collected: false }));
+  return spawns.map(createCollectible);
 }
 
 /**
@@ -192,13 +200,46 @@ export function snackBobY(index: number, bobT: number, bobbing: boolean): number
   return bobbing ? SNACK_BOB_PX * Math.sin((2 * Math.PI * bobT) / SNACK_BOB_PERIOD + index) : 0;
 }
 
-/** Drawn x of the snack at `index` in `frame`: `snackX` at the frame's drift time. Allocates nothing. */
+/**
+ * Where a tadpole is on its there-and-back cycle at drift time `t` (s), as a share in [0, 1): s / 2L,
+ * where s = ((t + offset) x speed) mod 2L and L is the lane length (ND-24). Under 0.5 it swims out
+ * from the lane start; from 0.5 it swims back. 0 on a lane of length 0.
+ */
+export function tadpoleLaneCycle(lane: Readonly<SnackLane>, t: number): number {
+  const loop = 2 * Math.hypot(lane.dx, lane.dy);
+  if (loop === 0) return 0;
+  const along = ((t + lane.offset) * lane.speed) % loop;
+  return (along < 0 ? along + loop : along) / loop;
+}
+
+/** The tadpole's share of its lane at drift time `t`: d / L, where d = min(s, 2L - s). */
+function tadpoleLaneShare(lane: Readonly<SnackLane>, t: number): number {
+  const cycle = tadpoleLaneCycle(lane, t);
+  return 2 * Math.min(cycle, 1 - cycle);
+}
+
+/**
+ * Drawn x of the snack at `index` in `frame`: `snackX` at the frame's drift time. A tadpole (one with
+ * a lane, ND-24) is drawn on its lane instead: its stored x plus dx x d / L, clamped to the frame's
+ * bounds, with no drift, the same with and without reduced motion. Allocates nothing.
+ */
 export function drawnSnackX(item: Collectible, index: number, frame: SnackFrame): number {
+  const lane = item.lane;
+  if (lane) {
+    return clamp(item.x + lane.dx * tadpoleLaneShare(lane, frame.driftT), frame.bounds.minX, frame.bounds.maxX);
+  }
   return snackX(item, index, frame.driftT, frame.drift, frame.bounds);
 }
 
-/** Drawn y of the snack at `index` in `frame`: `snackY` plus its bob. Allocates nothing. */
+/**
+ * Drawn y of the snack at `index` in `frame`: `snackY` plus its bob. A tadpole is drawn on its lane
+ * as in drawnSnackX, with no drift and no bob. Allocates nothing.
+ */
 export function drawnSnackY(item: Collectible, index: number, frame: SnackFrame): number {
+  const lane = item.lane;
+  if (lane) {
+    return clamp(item.y + lane.dy * tadpoleLaneShare(lane, frame.driftT), frame.bounds.minY, frame.bounds.maxY);
+  }
   return snackY(item, index, frame.driftT, frame.drift, frame.bounds) + snackBobY(index, frame.bobT, frame.bobbing);
 }
 
