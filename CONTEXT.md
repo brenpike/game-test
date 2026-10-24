@@ -59,7 +59,25 @@ One of up to 3 rewards for beating an area, kept forever once earned.
 The one treasure per area that earns a star when the area is beaten with it owned; always Common or Rare; the canal's is the Toy boat, Area 2's is the Frog statue, Area 3's is the Wooden duck decoy (Rare), Area 4's is the Scarecrow (Rare), and Area 5's is the Piñata (Rare).
 
 **Snack**:
-A worm or bug the axolotl eats by touching it with its head; not a trip find, it speeds up regrowth while a leg is missing, and every snack must be eaten to open the exit. In some areas a few snacks dart a short hop away when the axolotl gets close, each at most once per **Trip** (3 in Area 3); darting is part of the growth rule (N2), not a new **Timing element**.
+A worm, a bug or a **Mobile snack** the axolotl eats by touching it with its head; not a trip find, it speeds up regrowth while a leg is missing, and every snack must be eaten to open the exit. In some areas a few snacks dart a short hop away when the axolotl gets close, each at most once per **Trip** (3 in Area 3); darting is part of the growth rule (N2), not a new **Timing element**.
+
+**Mobile snack**:
+A **Snack** that moves on its own: a **Tadpole** or a **Freshwater shrimp**. It counts as one snack, like a worm or a bug, for the counter, the last-3 **Hint sparkle**, opening the **Exit**, speeding up **Regrowth**, and starting over when **Carried home**. Mobile snacks are fixed area data, never placed by chance, and each is eaten, pulled by the Snack magnet, and met where it is drawn. A mobile snack is not a **Hazard** or a **Timing element**, so the one-new-thing rule and the **Danger bar** never count it. No real area has mobile snacks yet; the **Snack ramp** brings them in from Area 2 (the danger pass, phase 2), and only the dev area `'dev-danger-area'` shows them now.
+_Avoid_: prey, moving food
+
+**Tadpole**:
+A **Mobile snack** (`'tadpole'` in code), a baby frog that wiggles there and back along its **Lane** at its area's speed and turns at once at each end. It never drifts or bobs, and a one-leg axolotl always swims faster than any tadpole. Under reduced motion it slides along its lane without wiggling. Its fact card is "Meet the tadpole".
+
+**Freshwater shrimp**:
+A **Mobile snack** (`'shrimp'` in code) that rests, drifting and bobbing like a worm, then flicks straight backward, away from the axolotl's head, when the head comes near; it flicks again after each rest, with no limit. A one-leg axolotl that swims straight at a shrimp that has just landed always reaches it before its rest ends. In an area with shrimp, the shrimp replace the snacks that dart once. Under reduced motion a flick lands at once. Its fact card is "Freshwater shrimp".
+_Avoid_: prawn
+
+**Lane**:
+A **Tadpole**'s short straight way there and back, 80 to 160 px long, written in its area's data (`TadpoleLane` in area data, `SnackLane` on the snack). Every lane keeps clear of the safe area, the **Home Spot**, every **Current**, every **Hazard**, every predator's strike reach, and every **Plastic worm**, and a spat plastic worm never lands near one.
+_Avoid_: route (a route is a **Predator**'s patrol)
+
+**Snack ramp**:
+The PRD's rule (H4, N2) for how many of an area's **Snacks** are **Mobile snacks**, and how fast they are, rising by area: none in Area 1, about 20% in Area 2, about 35% in Area 3, about 50% in Area 4, about 60% in Area 5, and up to about 70% from Area 6 on, with faster tadpoles and quicker shrimp each step. Every area keeps its snack total. Every area issue from Area 2 on must meet it, beside the **Danger bar**.
 
 **Current**:
 A stretch of flowing water in an area that pushes the axolotl, and that rarer treasures hide past. In Area 4 and Area 5 it is the water flowing sideways through the gap between two chinampas in the bottom row; Area 4's flows left and Area 5's flows right.
@@ -91,11 +109,28 @@ _Avoid_: hint star
 ### Hazards, predators and legs
 
 **Hazard**:
-Something in an area, defined as data with its own rules, that may cost the axolotl a leg or only slow it, such as a predator. A slow-only hazard, such as the **Plastic worm**, never costs a leg, never starts **Protected time**, and is not a threat for hiding spots (B10).
+Something in an area, defined as data with its own rules, that may cost the axolotl a leg or only slow it, such as a predator. A slow-only hazard, such as the **Plastic worm**, never costs a leg, never starts **Protected time**, and is not a threat for hiding spots (B10). A hazard may stay still or move: a **Moving hazard** moves on its own cycle and costs a leg on touch, and a **Drifting ghost net** moves and only slows.
 
 **Predator**:
-A kind of **Hazard**: an animal that hunts, with a visible warning before every strike; every predator follows the same shared rules, and each species is data. A species' warning starts by distance, when the axolotl comes near (the **Tilapia** and the **Garter snake**), or on sight, when the axolotl is within the predator's reach and not in cover (the **Heron**). A species may warn only while it is on its route (the **Garter snake**), so after a strike it swims back to its route before it can warn again.
+A kind of **Hazard**: an animal that hunts, with a visible warning before every strike; every predator follows the same shared rules, and each species is data. A species' warning starts by distance, when the axolotl comes near (the **Tilapia**, the **Garter snake** and the **Common carp**), or on sight, when the axolotl is within the predator's reach and not in cover (the **Heron**). A species may warn only while it is on its route (the **Garter snake**), so after a strike it swims back to its route before it can warn again. A predator whose area gives it a chase follows the **Chase rule** on patrol, within its **Leash**, before it warns; the **Heron** never chases. Any species may be tuned per area in its area's own data, and stays the same species.
 _Avoid_: monster
+
+**Chase rule**:
+The shared rule (`chase` in a predator's tuning) by which a **Predator** on patrol swims toward an exposed axolotl within its sight, at a chase speed between the 2-leg and 4-leg top speeds, and stops at its strike reach, where it warns, or waits while another predator warns or lunges. It never goes farther than its **Leash** from its patrol route, and when the axolotl is out of sight or in the safe area it swims back along its route. Chasing is not attacking: any number of predators may chase at once. There is no extra cue, and **Tail Dash** always outruns a chaser. A predator chases only when its area's data gives it a chase; no real area does yet (the danger pass, phase 2).
+_Avoid_: aggro, hunt mode
+
+**Leash**:
+How far in px a chasing **Predator** may go from its patrol route (`leash` in code). A species that warns only on its route, such as the **Garter snake**, has a leash of 0, so it chases along its stretch only. Hiding-spot risk (B10) ignores the leash: a predator's strike reach is still measured from its route.
+
+**Danger part**:
+A **Predator** or **Hazard** type added by the danger pass to make areas busier, which does not count toward an area's one new **Hazard** or **Predator** (N2): the **Common carp** and every **Moving hazard** type. The mark is on the species or type itself (`dangerPart` in code). A danger part still has its own **Fun-fact card** and is still met.
+
+**Danger bar**:
+The PRD's measure (N2) of how busy an area from Area 4 on must be: about one moving threat (each **Tilapia**, each other **Predator** and each **Moving hazard**) per screen, at least 2 **Predator** species and 1 **Moving hazard** type, every predator chasing, and no stretch of the main path longer than one screen (480 px) with no moving threat in reach. The gentle stakes stay (G2).
+_Avoid_: difficulty
+
+**Ramp bar**:
+The gentler **Danger bar** for Area 2 and Area 3: the **Tilapia** chase with a short **Leash**, no quiet stretch of the main path longer than 480 px, and no **Moving hazard** in Area 2 and at most one type in Area 3. Area 1 stays gentle, with no chase and no moving hazard.
 
 **Tilapia**:
 The invasive fish that patrol the canal, the first **Predator**. From Area 4 on, each area's tilapia can be tuned as area data, one step tighter per area (the predator ladder): Area 4's warn a little more briefly and strike a little faster and farther. Areas 1 to 3 keep the first tuning.
@@ -109,6 +144,10 @@ _Avoid_: monster, bird alone
 The striped snake that hunts in Area 5 (N3), at the surface (`'garter-snake'` in code). Two snakes swim slowly along short straight stretches with their heads at y 100, in a gentle S-wiggle. When the axolotl comes within 110 px of a snake's head, it stops and ripple rings spread from its head for 0.8 seconds, then it darts in a straight line, so swimming away or swimming deep during the rings dodges it. It warns only while its head is on its stretch, so repeated darts never walk it deeper: its hits reach no deeper than about y 254, and the water below y 260, the whole bottom row included, is safe. Cover does not hide the axolotl from it. A touch is a gentle bump that costs no leg. Its mouth is always closed, and it never bites, holds or eats the axolotl.
 _Avoid_: monster
 
+**Common carp**:
+A big, round, bronze-gold invasive fish with two short barbels (`'carp'` in code), a **Predator** on the shared rules with no special rules, and a **Danger part**. It roots along the bed. Before its strike it tips its nose down and puffs a small mud cloud, then makes a slow, wide tail sweep along the aim fixed at the end of its warning. A touch is a gentle bump that costs no leg. Its mouth is closed and it has no teeth; it never bites or holds the axolotl. Its fact card is "Meet the carp". No real area has a carp yet (the danger pass, phase 2).
+_Avoid_: monster, koi
+
 **Plastic worm**:
 A bit of plastic in the Lily pad pond that looks like a worm, the first slow-only **Hazard**. Touching it with the head eats it, which makes the **Explorer** **Queasy**, and the axolotl spits it out a little way ahead. It is never a **Snack**, never counts toward opening the **Exit**, and the worms start over each **Trip**.
 _Avoid_: worm alone (a worm is a **Snack**)
@@ -121,15 +160,27 @@ _Avoid_: sick, poisoned, damage
 A torn, loose, old fishing net anchored in the water of the Chinampa gardens, a slow-only **Hazard** (`'ghost-net'` in code); Area 4 has five. Swimming into one makes the **Explorer** **Snagged**. It is not fishing line.
 _Avoid_: trap; net alone in docs (say **Ghost net**)
 
+**Drifting ghost net**:
+A **Ghost net** that drifts slowly back and forth along a short straight path, at most 200 px, on a 16 s cycle, slowing at each end, laid along the flow of a nearby **Current**. It snags where it is now, like any **Ghost net**, and never costs a leg. Everything placed in an area keeps clear of its whole drift path. Under reduced motion it still drifts. No real area has one yet (the danger pass, phase 2).
+_Avoid_: moving net, floating net
+
 **Snagged**:
 How the **Explorer** is for 2 seconds after swimming into a **Ghost net**: it wriggles free and swims at 0.5 of its top speed. **Tail Dash** and speeding up are not slowed, no leg is lost, and swimming into a net while snagged does nothing, so snags never stack. A new snag starts only on swimming into a net's reach, never while staying in it. Snag time pauses while the game is paused or a banking card shows, and ends when the axolotl starts being **Carried home**, on **Go home**, on beating the area, or at the end of the trip. A small snag cue shows over its head; under reduced motion there is no wriggle, so the cue and the slowdown show the snag.
 _Avoid_: trapped, caught, stuck, damage
 
+**Moving hazard**:
+A **Hazard** that moves on a fixed cycle of its own and costs a leg on touch, with a warning (its **Telegraph**) of at least 0.8 seconds before each move into the water; its looks are data. It is not a **Predator**, so it does not wait its turn: it may move while a predator warns or lunges. It is not a **Timing element**, because a timing element never costs a leg. Every moving hazard type is a **Danger part**. The first is the **Punting pole**.
+_Avoid_: trap, obstacle
+
+**Punting pole**:
+The first **Moving hazard** (`'punting-pole'` in code): a trajinera boat's long pole that jabs straight down from the surface on a 4 s cycle, 180 px deep. Before each jab the boat's shadow darkens on the water and the pole's tip dips to the surface with a ripple ring. Touching the jabbed pole costs a leg; the water below its tip is safe. Only the boat's bright painted bow shows, with no people, and the pole is never shown hitting or pinning the axolotl. Its fact card is "Trajineras". No real area has one yet (the danger pass, phase 2).
+_Avoid_: oar, stick
+
 **Telegraph**:
-A predator's visible warning before a lunge; the tilapia's is a glint and a wind-up pose, the heron's is freezing and pulling its neck into an S, and the garter snake's is stopping in a held S with ripple rings spreading from its head.
+A predator's or **Moving hazard**'s visible warning before a lunge or a jab; the tilapia's is a glint and a wind-up pose, the heron's is freezing and pulling its neck into an S, the garter snake's is stopping in a held S with ripple rings spreading from its head, the common carp's is tipping its nose down with a mud puff, and the punting pole's is the boat's shadow darkening while the pole's tip dips with a ripple ring.
 
 **Lunge**:
-A predator's strike; the tilapia's is a quick dash at the axolotl, the heron's is a stab with its beak at the spot where the axolotl was when its S-neck began, and the garter snake's is a straight dart along the aim fixed at the end of its warning.
+A predator's strike; the tilapia's is a quick dash at the axolotl, the heron's is a stab with its beak at the spot where the axolotl was when its S-neck began, the garter snake's is a straight dart along the aim fixed at the end of its warning, and the common carp's is a slow, wide tail sweep along the aim fixed at the end of its warning.
 
 **Hit**:
 A predator's strike, or a **Hazard** that costs a leg, that connects.
@@ -292,14 +343,18 @@ A themed group of Wearables, named by a Wearable's optional set ID, that unlocks
 - **Carried home** sends every unbanked **Trip find** back into the **Area** and starts the **Snacks** over; banked items and **Stars** are untouched
 - An **Area** has exactly one **Exit**, one **Special treasure**, many **Snacks**, many **Hiding spots**, and up to 3 **Stars**
 - An **Area** belongs to exactly one **Habitat**; a **Habitat** holds one or more **Areas**
-- Each **Area** adds at most one new **Hazard** or **Predator** and at most one new timing or puzzle element that no earlier **Area** has
+- Each **Area** adds at most one new **Hazard** or **Predator** and at most one new timing or puzzle element that no earlier **Area** has; **Danger parts** and **Mobile snacks** do not count toward either
 - Area 1 is always unlocked, and beating Area N (earning its exit **Star**) unlocks Area N+1; there are no star gates, and any unlocked **Area** can be replayed from the **Area map**
 - The **Exit** opens only when every **Snack** in its **Area** is eaten
 - Each **Trip** fills its **Area**'s **Treasure slots** with unbanked **Treasures**, each slot's **Rarity** picked by chance, plus any lost **Treasures** and the unbanked **Special treasure** on top, and one **Hiding spot** per **Treasure** picked for that **Trip**, from that **Treasure**'s pool; no two **Treasures** share a spot in one **Trip**
 - A Legendary **Treasure** always hides in a **Dash pot**, which only **Tail Dash** can break
 - A **Hint sparkle** marks a hidden **Treasure** when the axolotl is near, and each of the last 3 **Snacks**
-- A **Predator** is a **Hazard**, and a **Tilapia**, a **Heron** and a **Garter snake** are **Predators**; a **Predator**'s **Telegraph** always comes before its **Lunge**, whether its warning starts by distance or on sight, and only one **Predator** in an **Area** warns or lunges at a time, a **Heron**, a **Garter snake** and a **Tilapia** included
+- A **Predator** is a **Hazard**, and a **Tilapia**, a **Heron**, a **Garter snake** and a **Common carp** are **Predators**; a **Predator**'s **Telegraph** always comes before its **Lunge**, whether its warning starts by distance or on sight, and only one **Predator** in an **Area** warns or lunges at a time, a **Heron**, a **Garter snake**, a **Common carp** and a **Tilapia** included
 - A **Garter snake** warns only while its head is on its stretch, so the water below y 260, the whole bottom row included, is out of its reach
+- A **Predator** with the **Chase rule** chases only on patrol and within its **Leash**; chasing is not warning or lunging, so any number of **Predators** may chase at once, and a **Garter snake** chases along its stretch only
+- A **Moving hazard** is a **Hazard** that costs a leg, but not a **Predator** and not a **Timing element**; its **Telegraph** always comes before its jab, and it keeps its own cycle whatever the **Predators** do
+- A **Drifting ghost net** is a **Ghost net**: it only slows, it is never a **Hit**, and it is never a threat for **Hiding spots** (B10)
+- A **Mobile snack** is a **Snack**; a **Tadpole** swims its **Lane**, a **Freshwater shrimp** flicks away again after each rest, and in an **Area** with **Freshwater shrimp** no **Snack** darts once
 - A **Water hyacinth mat** is a **Timing element**, not a **Hazard**: it blocks only the **Explorer**, never costs a leg and is never a **Hit**, so the Shell **Perk** plays no part
 - A **Hit** is a **Lunge** that connects, or a touch on a **Hazard** that costs a leg; it starts **Protected time** and causes exactly one **Leg loss**, except a hit blocked by a Shell **Perk** (at most one per trip), which costs no leg; a **Hazard** that only slows never hits
 - Eating a **Plastic worm** makes the **Explorer** **Queasy**; it is not a **Hit**, so the Shell **Perk** plays no part, and it costs no leg
@@ -336,7 +391,7 @@ A themed group of Wearables, named by a Wearable's optional set ID, that unlocks
 ## Flagged ambiguities
 
 - "zone" (the README, the PRD problem statement and A1, and `src/logic/zone.ts` with `ZoneLayout` and `ZONE_W`) and **Area** both name the canal: resolved: **Area** is the domain term; "zone" is the swim-test name that survives in code.
-- "collectible" means **Snacks** in code (`src/logic/collectibles.ts`, `CollectibleKind = 'worm' | 'bug'`) but the PRD defines a **Treasure** as "a hidden collectible": resolved: say **Snack** for worms and bugs and **Treasure** for hidden finds; avoid "collectible" for either in new work.
+- "collectible" means **Snacks** in code (`src/logic/collectibles.ts`, `CollectibleKind = 'worm' | 'bug' | 'tadpole' | 'shrimp'`) but the PRD defines a **Treasure** as "a hidden collectible": resolved: say **Snack** for worms, bugs, tadpoles and shrimp and **Treasure** for hidden finds; avoid "collectible" for either in new work.
 - "hint star" (art style guide 7e) and "hint sparkle" (PRD B7 and H3) name the same cue: resolved: **Hint sparkle**, matching the PRD; the PRD lists an art style guide follow-up (issue #31). Art style guide 7e now covers the snack sparkle (#31); the guide-wide "hint star" to "hint sparkle" rename is a follow-up.
 - "slot" means a Wearable **Slot** in the PRD, but code also has `LegSlot` (one leg in the legs display) and `CardSlot`: resolved: **Slot** alone always means a Wearable slot; say "leg" for legs. A **Treasure slot** is not a Wearable **Slot**: always say "treasure slot" in full.
 - "Go home" and **Carried home** both end a trip and both send the axolotl home: resolved: distinct concepts; **Go home** is the player's choice and banks first (`wentHome` in code), **Carried home** follows the fourth **Leg loss** and loses unbanked finds (`carriedHome` in code).

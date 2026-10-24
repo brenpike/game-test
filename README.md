@@ -93,7 +93,7 @@ They work only on the dev server, never in the build (`npm run build`, `npm run 
 |---|---|
 | `?perf` | Shows a frame-time overlay (live p50 and p95 frame time, p95 axolotl drawing time, and texture bakes) and logs a p50/p95 summary to the console every 30 s of frames. Stores and sends nothing. |
 | `?compare` | Runs only the rig compare view: the reference `drawAxolotl` on the left, the axolotl rig on the right, in the same pose. Keys: `x` `t` `b` `a` `z` `g` `e` `u` `s` cycle the look, `m` the morph, `d` the Dream colour, `o` the full outfit, `l` the leg state; `h` Tail Dash, `p` pause, `n` step, `r` still pose, `v` overlay the rig on the reference at 50%. Shift steps back. The on-screen legend lists them all; see [`src/scenes/RigCompareScene.ts`](src/scenes/RigCompareScene.ts). |
-| `?area=<id>` | Loads a test area instead of the area map. For example, `?area=dev-test-area` loads a 6 x 2 screen test area for play-testing and the frame-time check. Absent from the production build. |
+| `?area=<id>` | Loads a test area instead of the area map. For example, `?area=dev-test-area` loads a 6 x 2 screen test area for play-testing and the frame-time check, and `?area=dev-danger-area` loads a 6 x 2 screen chinampa area with every danger part and mobile snack. Absent from the production build. |
 | `?decor` | Adds three test Decorations to the Home Tank: a lily pad that floats, a firefly jar that hangs, and a wide string of lights that hangs. They are yours for this page session only: never saved and never in the Treasure Chest. Absent from the production build. |
 | `?renderer=canvas` | Forces Phaser's Canvas renderer instead of WebGL. |
 

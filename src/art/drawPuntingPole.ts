@@ -1,6 +1,6 @@
 /**
  * Punting pole painters: the trajinera's bow, the pole, the boat's shadow and the tip's ripple ring
- * (issue #117; PRD N3, open question 255, ND-9). The moving hazard look `punting-pole`.
+ * (issue #117; PRD N3, open question 256, ND-9). The moving hazard look `punting-pole`.
  *
  * Every shape, size and colour here is derived (provisional). It follows guide sections 2, 4, 5, 10
  * and the garter snake's ripple ring (7k). The boat is a Xochimilco trajinera: a flat, bright,
