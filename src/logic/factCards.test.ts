@@ -3,6 +3,8 @@ import {
   AXOLOTL_REFUGES_FACT,
   BOY_OR_GIRL_FACT,
   CANAL_CLEAN_UPS_FACT,
+  CARP_FACT,
+  CARP_MEET_RANGE,
   FACT_CARD_OK_LABEL,
   FACT_CARD_UNFOUND_HINT,
   GARTER_SNAKE_FACT,
@@ -11,7 +13,12 @@ import {
   HERON_FACT,
   HERON_MEET_RANGE,
   PLASTIC_WORM_FACT,
+  PUNTING_POLE_FACT,
   REFUGE_FACT_CARDS,
+  SHRIMP_FACT,
+  SHRIMP_MEET_RANGE,
+  TADPOLE_FACT,
+  TADPOLE_MEET_RANGE,
   TILAPIA_FACT,
   TILAPIA_MEET_RANGE,
   WATER_HYACINTH_FACT,
@@ -21,7 +28,7 @@ import {
   unfoundFactCardHint,
   type ThreatSighting,
 } from './factCards';
-import { GARTER_SNAKE, GHOST_NETS, HERON, HYACINTH_MATS, TILAPIA } from './tuning';
+import { CARP, GARTER_SNAKE, GHOST_NETS, HERON, HYACINTH_MATS, PUNTING_POLES, TILAPIA } from './tuning';
 import type { SafeArea } from './zone';
 
 const BANNED = [
@@ -240,6 +247,118 @@ describe('water hyacinth fact card copy', () => {
 
   it('uses a meet range larger than the body grow', () => {
     expect(HYACINTH_MATS.meetRange).toBeGreaterThan(HYACINTH_MATS.bodyGrow);
+  });
+});
+
+const EARLIER_CARD_IDS = [
+  TILAPIA_FACT.id,
+  BOY_OR_GIRL_FACT.id,
+  PLASTIC_WORM_FACT.id,
+  HERON_FACT.id,
+  GHOST_NET_FACT.id,
+  GARTER_SNAKE_FACT.id,
+  WATER_HYACINTH_FACT.id,
+  ...REFUGE_FACT_CARDS.map((card) => card.id),
+];
+
+describe('carp fact card copy', () => {
+  it('has the carp id, name, title and body, and no hint of its own', () => {
+    expect(CARP_FACT).toEqual({
+      id: 'carp',
+      name: 'Common carp',
+      title: 'Meet the carp',
+      body: 'Common carp are big fish that people brought to Xochimilco. They dig in the mud for food and make the water cloudy. They also eat axolotl eggs.',
+    });
+    expect(CARP_FACT.unfoundHint).toBeUndefined();
+  });
+
+  it('has an id apart from the other cards', () => {
+    expect(EARLIER_CARD_IDS).not.toContain(CARP_FACT.id);
+  });
+
+  it.each([CARP_FACT.name, CARP_FACT.title, CARP_FACT.body])('"%s" avoids banned words', (text) => {
+    expect(findBannedWords(text)).toEqual([]);
+  });
+
+  it('uses a meet range of 180 px, larger than the lunge range', () => {
+    expect(CARP_MEET_RANGE).toBe(180);
+    expect(CARP_MEET_RANGE).toBeGreaterThan(CARP.lungeRange);
+  });
+});
+
+describe('punting pole fact card copy', () => {
+  it('has the punting-pole id, name, title and body, and no hint of its own', () => {
+    expect(PUNTING_POLE_FACT).toEqual({
+      id: 'punting-pole',
+      name: 'Punting pole',
+      title: 'Trajineras',
+      body: 'Trajineras are bright, flat-bottomed boats on the canals of Xochimilco. A boater pushes each one along with a long pole that reaches down to the mud.',
+    });
+    expect(PUNTING_POLE_FACT.unfoundHint).toBeUndefined();
+  });
+
+  it('has an id apart from the other cards', () => {
+    expect([...EARLIER_CARD_IDS, CARP_FACT.id]).not.toContain(PUNTING_POLE_FACT.id);
+  });
+
+  it.each([PUNTING_POLE_FACT.name, PUNTING_POLE_FACT.title, PUNTING_POLE_FACT.body])(
+    '"%s" avoids banned words',
+    (text) => {
+      expect(findBannedWords(text)).toEqual([]);
+    },
+  );
+
+  it('uses a meet range of 180 px, larger than the touch reach', () => {
+    expect(PUNTING_POLES.meetRange).toBe(180);
+    expect(PUNTING_POLES.meetRange).toBeGreaterThan(PUNTING_POLES.halfWidth + PUNTING_POLES.touchReach);
+  });
+});
+
+describe('tadpole fact card copy', () => {
+  it('has the tadpole id, name, title and body, and no hint of its own', () => {
+    expect(TADPOLE_FACT).toEqual({
+      id: 'tadpole',
+      name: 'Tadpole',
+      title: 'Meet the tadpole',
+      body: 'Tadpoles are baby frogs. They swim by wiggling their tails, and they grow legs as they get bigger. Axolotls hunt small water animals like tadpoles.',
+    });
+    expect(TADPOLE_FACT.unfoundHint).toBeUndefined();
+  });
+
+  it('has an id apart from the other cards', () => {
+    expect([...EARLIER_CARD_IDS, CARP_FACT.id, PUNTING_POLE_FACT.id]).not.toContain(TADPOLE_FACT.id);
+  });
+
+  it.each([TADPOLE_FACT.name, TADPOLE_FACT.title, TADPOLE_FACT.body])('"%s" avoids banned words', (text) => {
+    expect(findBannedWords(text)).toEqual([]);
+  });
+
+  it('uses a meet range of 120 px', () => {
+    expect(TADPOLE_MEET_RANGE).toBe(120);
+  });
+});
+
+describe('shrimp fact card copy', () => {
+  it('has the shrimp id, name, title and body, and no hint of its own', () => {
+    expect(SHRIMP_FACT).toEqual({
+      id: 'shrimp',
+      name: 'Freshwater shrimp',
+      title: 'Freshwater shrimp',
+      body: 'Freshwater shrimp are tiny animals with many legs. When something comes near, they flick their tails and zip backward. Axolotls hunt small water animals like these.',
+    });
+    expect(SHRIMP_FACT.unfoundHint).toBeUndefined();
+  });
+
+  it('has an id apart from the other cards', () => {
+    expect([...EARLIER_CARD_IDS, CARP_FACT.id, PUNTING_POLE_FACT.id, TADPOLE_FACT.id]).not.toContain(SHRIMP_FACT.id);
+  });
+
+  it.each([SHRIMP_FACT.name, SHRIMP_FACT.title, SHRIMP_FACT.body])('"%s" avoids banned words', (text) => {
+    expect(findBannedWords(text)).toEqual([]);
+  });
+
+  it('uses a meet range of 120 px', () => {
+    expect(SHRIMP_MEET_RANGE).toBe(120);
   });
 });
 

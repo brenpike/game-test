@@ -1,8 +1,16 @@
 import type { DrawnBody } from './collectibles';
 import { PLASTIC_WORM_FACT } from './factCards';
-import { hazardCentre, type HazardSpawn, type HazardType } from './hazards';
+import { hazardCentre, shapeDistance, type HazardRect, type HazardSpawn, type HazardType } from './hazards';
 import { PLASTIC_WORMS, SNACK_REACH, type PlasticWormTuning, type SwimTuning } from './tuning';
-import { inSafeArea, isInsideCurrent, type CurrentZone, type Point, type SafeArea, type SwimBounds } from './zone';
+import {
+  SNACK_HAZARD_CLEARANCE,
+  inSafeArea,
+  isInsideCurrent,
+  type CurrentZone,
+  type Point,
+  type SafeArea,
+  type SwimBounds,
+} from './zone';
 
 const TAU = Math.PI * 2;
 
@@ -40,6 +48,8 @@ export interface SpitAvoid {
   bounds: SwimBounds;
   currents: readonly CurrentZone[];
   safeArea: SafeArea;
+  /** Boxes a landing must stay SNACK_HAZARD_CLEARANCE px or more from (ND-26). */
+  keepClear?: readonly HazardRect[];
 }
 
 /** A spat plastic worm: its id, where it was and where it is now. */
@@ -126,7 +136,11 @@ function clampToBounds(pos: Point, bounds: SwimBounds): Point {
 }
 
 function isLandingClear(pos: Point, avoid: SpitAvoid): boolean {
-  return !inSafeArea(pos, avoid.safeArea) && !avoid.currents.some((current) => isInsideCurrent(pos, current));
+  return (
+    !inSafeArea(pos, avoid.safeArea) &&
+    !avoid.currents.some((current) => isInsideCurrent(pos, current)) &&
+    !avoid.keepClear?.some((box) => shapeDistance(pos, box) < SNACK_HAZARD_CLEARANCE)
+  );
 }
 
 /**
@@ -148,7 +162,8 @@ function wormIndexAtHead(worms: readonly PlasticWorm[], body: DrawnBody): number
  * then spits it out. Returns null, allocating nothing, when queasy or when no worm is in reach.
  * Otherwise starts `tuning.queasyTime` seconds of queasy time and moves only that worm to
  * spitLanding clamped to `avoid.bounds`; the worm stays where it is when that landing is inside a
- * current or the safe area (edges count as inside).
+ * current or the safe area (edges count as inside), or less than SNACK_HAZARD_CLEARANCE px from
+ * any `avoid.keepClear` box (ND-26).
  */
 export function eatPlasticWorm(
   state: PlasticWormState,

@@ -137,6 +137,38 @@ export const WATER_HYACINTH_FACT: Readonly<FactCard> = Object.freeze({
   body: 'Water hyacinth is a floating plant that grows very fast. In Xochimilco it can cover the canals and block the light. People clear it out to keep the water healthy.',
 });
 
+/** The common carp fact card, shown the first time the axolotl meets a carp (PRD C13). */
+export const CARP_FACT: Readonly<FactCard> = Object.freeze({
+  id: 'carp',
+  name: 'Common carp',
+  title: 'Meet the carp',
+  body: 'Common carp are big fish that people brought to Xochimilco. They dig in the mud for food and make the water cloudy. They also eat axolotl eggs.',
+});
+
+/** The punting pole fact card, shown the first time the axolotl meets a punting pole (PRD C13). */
+export const PUNTING_POLE_FACT: Readonly<FactCard> = Object.freeze({
+  id: 'punting-pole',
+  name: 'Punting pole',
+  title: 'Trajineras',
+  body: 'Trajineras are bright, flat-bottomed boats on the canals of Xochimilco. A boater pushes each one along with a long pole that reaches down to the mud.',
+});
+
+/** The tadpole fact card, shown the first time the axolotl meets a tadpole (PRD C13). */
+export const TADPOLE_FACT: Readonly<FactCard> = Object.freeze({
+  id: 'tadpole',
+  name: 'Tadpole',
+  title: 'Meet the tadpole',
+  body: 'Tadpoles are baby frogs. They swim by wiggling their tails, and they grow legs as they get bigger. Axolotls hunt small water animals like tadpoles.',
+});
+
+/** The freshwater shrimp fact card, shown the first time the axolotl meets a shrimp (PRD C13). */
+export const SHRIMP_FACT: Readonly<FactCard> = Object.freeze({
+  id: 'shrimp',
+  name: 'Freshwater shrimp',
+  title: 'Freshwater shrimp',
+  body: 'Freshwater shrimp are tiny animals with many legs. When something comes near, they flick their tails and zip backward. Axolotls hunt small water animals like these.',
+});
+
 /**
  * The axolotl refuges fact card, found on a visit to the refuge (PRD C14).
  * Sources (owner to verify): Tec Science (Tec de Monterrey), "How to Save the mexican Axolotl? Start
@@ -212,6 +244,25 @@ export const HERON_MEET_RANGE = 180;
  * 110 px lunge range so the card can show before the first dart.
  */
 export const GARTER_SNAKE_MEET_RANGE = 180;
+
+/**
+ * Centre distance in px within which the axolotl meets a carp (PRD open question 253, ND-6).
+ * Provisional; tune in play. The same as the tilapia's, and larger than the carp's 120 px lunge
+ * range so the card can show before the first sweep.
+ */
+export const CARP_MEET_RANGE = 180;
+
+/**
+ * Centre distance in px from an uncollected tadpole, where it is drawn, within which the axolotl
+ * meets a tadpole (PRD open question 276, ND-29). Provisional; tune in play.
+ */
+export const TADPOLE_MEET_RANGE = 120;
+
+/**
+ * Centre distance in px from an uncollected shrimp, where it is drawn, within which the axolotl
+ * meets a shrimp (PRD open question 276, ND-29). Provisional; tune in play.
+ */
+export const SHRIMP_MEET_RANGE = 120;
 
 /**
  * Whether the axolotl at `pos` meets a tilapia: `pos` is outside the safe area (edges count as

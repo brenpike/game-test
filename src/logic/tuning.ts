@@ -79,6 +79,19 @@ export interface LegTuning {
   wobblePeriod: number;
 }
 
+/**
+ * A predator's chase on patrol (PRD open questions 249 and 250, ND-2 and ND-3): it swims toward an
+ * exposed axolotl in sight, no nearer than its lungeRange and never past its leash.
+ */
+export interface ChaseTuning {
+  /** Centre distance in px within which an exposed axolotl is chased; greater than the lungeRange. */
+  sight: number;
+  /** Farthest distance in px from the patrol loop a chase step may end; 0 or more. */
+  leash: number;
+  /** Chase speed in px/s; strictly between the 2-leg and 4-leg top speeds. */
+  speed: number;
+}
+
 /** Tilapia patrol, telegraph and lunge tuning. */
 export interface TilapiaTuning {
   /** Shortest allowed telegraph wind-up in seconds; the PRD floor. */
@@ -105,6 +118,8 @@ export interface TilapiaTuning {
   bumpSpeed: number;
   /** Seconds after a bump before another bump can apply. */
   bumpCooldown: number;
+  /** The chase on patrol; absent means the predator never chases. */
+  chase?: ChaseTuning;
 }
 
 /** Carried-home transition tuning, used after the fourth leg is lost. */
@@ -222,6 +237,60 @@ export interface HyacinthMatTuning {
   meetRange: number;
   /** Seconds into the cycle at which each pair's open window starts, in pair order. */
   offsets: readonly number[];
+}
+
+/** Punting pole tuning: a moving hazard that jabs down from the surface on a fixed cycle. */
+export interface PuntingPoleTuning {
+  /** Seconds at rest, up and out of the water, at the start of each cycle. */
+  restFor: number;
+  /** Seconds of the warning (the telegraph), still out of the water; at least the 0.8 s floor. */
+  warnFor: number;
+  /** Seconds over which the tip goes down to the depth at a steady speed. */
+  jabFor: number;
+  /** Seconds the tip holds at the depth. */
+  holdFor: number;
+  /** Seconds over which the tip lifts back up at a steady speed. */
+  liftFor: number;
+  /** Depth in px below the surface the tip reaches. */
+  depth: number;
+  /** Shaft half width in px. */
+  halfWidth: number;
+  /** Distance in px from the shaft within which the body centre touches it (inclusive). */
+  touchReach: number;
+  /** Range in px from the pole's sweep within which the axolotl meets it, unlocking its fact card. */
+  meetRange: number;
+}
+
+/** Drifting ghost net limits: how slowly and how far a net may drift. */
+export interface DriftingNetTuning {
+  /** Default drift cycle length in seconds. */
+  period: number;
+  /** Longest drift path in px. */
+  maxPath: number;
+}
+
+/** Tadpole limits: every area's tadpole rule and lanes stay inside them. */
+export interface TadpoleTuning {
+  /** Highest tadpole speed in px/s. */
+  maxSpeed: number;
+  /** Shortest lane length in px. */
+  laneMin: number;
+  /** Longest lane length in px. */
+  laneMax: number;
+}
+
+/** Freshwater shrimp limits: every area's shrimp rule stays inside them. */
+export interface ShrimpTuning {
+  /** Shortest rest in seconds after a flick lands. */
+  minRest: number;
+  /** Shortest flick distance in px. */
+  minFlick: number;
+  /** Longest flick distance in px. */
+  maxFlick: number;
+  /** Highest flick speed in px/s. */
+  maxFlickSpeed: number;
+  /** Speed in px/s a one-leg axolotl is counted to close on a landed shrimp, for the catch limit. */
+  catchSpeed: number;
 }
 
 /** Treasure hint sparkle tuning. */
@@ -367,6 +436,63 @@ export const GARTER_SNAKE: Readonly<TilapiaTuning> = Object.freeze({
   bumpCooldown: TILAPIA.bumpCooldown,
 });
 
+/**
+ * Provisional common carp values (PRD open question 253, ND-6); tune in play. The carp roots along
+ * the bed at patrolSpeed, warns for 1.0 s, then sweeps its tail 200 x 0.6 = 120 px along the aim
+ * locked at the end of the warning, and rests for the 2.5 s cooldown. Its hit, touch and body reach
+ * are larger than the tilapia's because it is a bigger fish; the gentle bump is the tilapia's.
+ */
+export const CARP: Readonly<TilapiaTuning> = Object.freeze({
+  minWindup: 0.8,
+  windup: 1.0,
+  cooldown: 2.5,
+  lungeRange: 120,
+  lungeSpeed: 200,
+  lungeDuration: 0.6,
+  hitRadius: 38,
+  contactRadius: 41,
+  bodyRadius: 32,
+  patrolSpeed: 35,
+  bumpSpeed: 160,
+  bumpCooldown: 0.6,
+});
+
+/**
+ * Provisional chase defaults for each predator type (PRD open question 251, ND-4); tune in play.
+ * None is wired into a real area. Each speed is strictly between the 2-leg (112.5 px/s) and 4-leg
+ * (150 px/s) top speeds, and each sight is greater than its predator's lungeRange (ND-3). This one
+ * is for a tilapia in a full-bar area.
+ */
+export const TILAPIA_CHASE: Readonly<ChaseTuning> = Object.freeze({
+  sight: 240,
+  leash: 160,
+  speed: 125,
+});
+
+/** Provisional chase default for a tilapia in a ramp-bar area (PRD open question 251, ND-4). */
+export const TILAPIA_RAMP_CHASE: Readonly<ChaseTuning> = Object.freeze({
+  sight: 200,
+  leash: 80,
+  speed: 115,
+});
+
+/**
+ * Provisional chase default for a garter snake (PRD open question 251, ND-4). It chases along its
+ * stretch only, so its leash is 0.
+ */
+export const GARTER_SNAKE_CHASE: Readonly<ChaseTuning> = Object.freeze({
+  sight: 200,
+  leash: 0,
+  speed: 120,
+});
+
+/** Provisional chase default for a common carp (PRD open question 251, ND-4). */
+export const CARP_CHASE: Readonly<ChaseTuning> = Object.freeze({
+  sight: 220,
+  leash: 120,
+  speed: 115,
+});
+
 /** Provisional carried-home values; a gentle float of 1.5 to 5 s, or a 1.5 s still bubble. */
 export const CARRY: Readonly<CarryTuning> = Object.freeze({
   speed: 300,
@@ -504,6 +630,59 @@ export const HYACINTH_MATS: Readonly<HyacinthMatTuning> = Object.freeze({
   bodyGrow: GHOST_NETS.reach,
   meetRange: 180,
   offsets: Object.freeze([0, 4]),
+});
+
+/**
+ * Provisional punting pole values (PRD open question 256, ND-9); tune in play. A 4 s cycle: rest
+ * 1.6 s, warn 1.0 s, jab 0.3 s, hold 0.5 s and lift 0.6 s. The tip reaches 180 px below the surface
+ * on a 10 px pole. touchReach is the ghost net reach, the Medium body's half height, so the danger
+ * zone is x ± 23 px from the surface to 198 px below it. The axolotl meets a pole within 180 px of
+ * its sweep, as it meets a tilapia.
+ */
+export const PUNTING_POLES: Readonly<PuntingPoleTuning> = Object.freeze({
+  restFor: 1.6,
+  warnFor: 1.0,
+  jabFor: 0.3,
+  holdFor: 0.5,
+  liftFor: 0.6,
+  depth: 180,
+  halfWidth: 5,
+  touchReach: 18,
+  meetRange: 180,
+});
+
+/**
+ * Provisional drifting ghost net values (PRD open question 258, ND-11); tune in play. A 16 s cycle
+ * along a path of at most 200 px; a 160 px path peaks at about 31 px/s, well under a one-leg
+ * axolotl's 90 px/s.
+ */
+export const DRIFTING_NETS: Readonly<DriftingNetTuning> = Object.freeze({
+  period: 16,
+  maxPath: 200,
+});
+
+/**
+ * Tadpole limits (PRD open questions 269 and 271, ND-22 and ND-24); limits only, with no per-area
+ * values. maxSpeed is 0.8 x a one-leg axolotl's 90 px/s, so a one-leg axolotl always swims faster.
+ */
+export const TADPOLES: Readonly<TadpoleTuning> = Object.freeze({
+  maxSpeed: 72,
+  laneMin: 80,
+  laneMax: 160,
+});
+
+/**
+ * Freshwater shrimp limits (PRD open questions 269 and 272, ND-22 and ND-25); limits only, with no
+ * per-area values. maxFlickSpeed is a four-leg axolotl's top speed. catchSpeed is a one-leg
+ * axolotl's 90 px/s less a 20 px/s allowance for drift, for the catch limit
+ * restFor x catchSpeed >= triggerRadius + flickDistance - 36.
+ */
+export const SHRIMP: Readonly<ShrimpTuning> = Object.freeze({
+  minRest: 1.0,
+  minFlick: 24,
+  maxFlick: 72,
+  maxFlickSpeed: 150,
+  catchSpeed: 70,
 });
 
 /** Provisional hint values; rarer treasures get a subtler, shorter-range hint (PRD B7). */
