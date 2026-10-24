@@ -1,8 +1,10 @@
 import { CHINAMPA_2_AREA_ID, CHINAMPA_2_LAYOUT } from './chinampa2Layout';
 import { CHINAMPA_AREA_ID, CHINAMPA_LAYOUT } from './chinampaLayout';
 import type { SnackDrift } from './collectibles';
-import { REFUGE_FACT_CARDS, TILAPIA_FACT, type FactCard } from './factCards';
+import { REFUGE_FACT_CARDS, SHRIMP_FACT, TADPOLE_FACT, TILAPIA_FACT, type FactCard } from './factCards';
 import type { ElementSpawn, HazardSpawn } from './hazards';
+import type { MobileSnackMix } from './mobileSnacks';
+import type { MovingHazardSpawn } from './movingHazards';
 import type { PredatorRoute } from './predators';
 import { POND_2_AREA_ID, POND_2_LAYOUT } from './pond2Layout';
 import { POND_AREA_ID, POND_LAYOUT } from './pondLayout';
@@ -215,12 +217,18 @@ export interface ThreatSource {
   readonly tilapiaRoutes: readonly unknown[];
   readonly predatorRoutes: readonly Readonly<PredatorRoute>[];
   readonly hazards: readonly Readonly<HazardSpawn>[];
+  /** Moving hazards (ND-8); absent means none. */
+  readonly movingHazards?: readonly Readonly<MovingHazardSpawn>[];
 }
 
-/** One threat: a hazard or predator id and its fact card. */
+/**
+ * One threat: a hazard or predator id and its fact card. `dangerPart` true marks a danger part,
+ * left out of the one-new-thing count (PRD open question 260, ND-13).
+ */
 interface Threat {
   id: string;
   fact: Readonly<FactCard>;
+  dangerPart?: true;
 }
 
 /** Threats in order, the first of each id kept. */
@@ -233,17 +241,30 @@ function uniqueThreats(threats: readonly Threat[]): Threat[] {
   });
 }
 
-/** The tilapia when there are tilapia routes, then each predator species, then each hazard type. */
+/**
+ * The tilapia when there are tilapia routes, then each predator species, then each hazard type,
+ * then each moving hazard type (ND-8), each id once.
+ */
 function listThreats(source: ThreatSource): Threat[] {
   const tilapia: Threat[] = source.tilapiaRoutes.length > 0 ? [{ id: 'tilapia', fact: TILAPIA_FACT }] : [];
-  const predators = source.predatorRoutes.map((route): Threat => ({ id: route.species.id, fact: route.species.fact }));
+  const predators = source.predatorRoutes.map(
+    ({ species }): Threat => ({ id: species.id, fact: species.fact, dangerPart: species.dangerPart }),
+  );
   const hazards = source.hazards.map((hazard): Threat => ({ id: hazard.type.id, fact: hazard.type.fact }));
-  return uniqueThreats([...tilapia, ...predators, ...hazards]);
+  const movingHazards = (source.movingHazards ?? []).map(
+    (spawn): Threat => ({ id: spawn.type.id, fact: spawn.type.fact, dangerPart: spawn.type.dangerPart }),
+  );
+  return uniqueThreats([...tilapia, ...predators, ...hazards, ...movingHazards]);
 }
 
-/** The parts of area data or a zone layout that name its fact cards: its threats and its elements. */
+/**
+ * The parts of area data or a zone layout that name its fact cards: its threats, its elements and
+ * its mobile snacks.
+ */
 export interface FactCardSource extends ThreatSource {
   readonly elements: readonly Readonly<ElementSpawn>[];
+  /** Mobile snacks (ND-23); absent means none. */
+  readonly mobileSnacks?: Readonly<MobileSnackMix>;
 }
 
 /** An area's fact card ids and cards, in the same order. */
@@ -260,14 +281,29 @@ function listElementCards(elements: readonly Readonly<ElementSpawn>[]): Threat[]
   });
 }
 
-/** The threats (listThreats order), then the element types that carry a fact card, each id once. */
+/**
+ * The card of each mobile snack type the area has, tadpole first (ND-29): the tadpole when it has a
+ * tadpole lane, the shrimp when it has a shrimp spot.
+ */
+function listSnackCards(mix: Readonly<MobileSnackMix> | undefined): Threat[] {
+  if (mix === undefined) return [];
+  const tadpole: Threat[] = mix.lanes.length > 0 ? [{ id: TADPOLE_FACT.id, fact: TADPOLE_FACT }] : [];
+  const shrimp: Threat[] = mix.spots.length > 0 ? [{ id: SHRIMP_FACT.id, fact: SHRIMP_FACT }] : [];
+  return [...tadpole, ...shrimp];
+}
+
+/**
+ * The threats (listThreats order), then the element types that carry a fact card, then the mobile
+ * snack types (listSnackCards order), each id once.
+ */
 function listFactCards(source: FactCardSource): Threat[] {
-  return uniqueThreats([...listThreats(source), ...listElementCards(source.elements)]);
+  return uniqueThreats([...listThreats(source), ...listElementCards(source.elements), ...listSnackCards(source.mobileSnacks)]);
 }
 
 /**
  * An area's fact card ids and cards: its hazard and predator cards in threatIds order, then the
- * card of each element type that carries one, in element order, each id once.
+ * card of each element type that carries one, in element order, then the card of each mobile snack
+ * type it has, tadpole first (ND-29), each id once.
  */
 export function sourceFactCards(source: FactCardSource): SourceFactCards {
   const cards = listFactCards(source);
@@ -276,7 +312,8 @@ export function sourceFactCards(source: FactCardSource): SourceFactCards {
 
 /**
  * Ids of every hazard and predator in an area, each once: 'tilapia' when it has tilapia routes,
- * then predator species ids, then hazard type ids (leg-costing and slow-only alike).
+ * then predator species ids, then hazard type ids (leg-costing and slow-only alike), then moving
+ * hazard type ids. Danger parts are included (ND-13).
  */
 export function threatIds(source: ThreatSource): string[] {
   return listThreats(source).map((threat) => threat.id);
@@ -317,16 +354,24 @@ function takeNewIds(ids: readonly string[], seen: Set<string>): string[] {
   return fresh;
 }
 
+/** Ids of an area's threats that count toward the one-new-thing rule: every threat but the danger parts (ND-13). */
+function countedThreatIds(source: ThreatSource): string[] {
+  return listThreats(source)
+    .filter((threat) => threat.dangerPart !== true)
+    .map((threat) => threat.id);
+}
+
 /**
  * Per area, in area order, the hazards or predators and the timing or puzzle elements that no
- * earlier area has. Carried-forward ids are not new.
+ * earlier area has. Carried-forward ids are not new. Danger parts and mobile snack types are never
+ * counted (ND-13, ND-27).
  */
 export function newThingsByArea(areas: readonly Readonly<AreaData>[] = AREAS): NewThings[] {
   const seenThreats = new Set<string>();
   const seenElements = new Set<string>();
   return areas.map((area) => ({
     areaId: area.id,
-    threats: takeNewIds(threatIds(area.layout), seenThreats),
+    threats: takeNewIds(countedThreatIds(area.layout), seenThreats),
     elements: takeNewIds(
       area.layout.elements.map((element) => element.type.id),
       seenElements,

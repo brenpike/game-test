@@ -1,4 +1,4 @@
-import { inSafeArea, type Point, type SafeArea } from './zone';
+import type { Point, SafeArea } from './zone';
 
 /** A Collection Book fact card. */
 export interface FactCard {
@@ -265,6 +265,17 @@ export const TADPOLE_MEET_RANGE = 120;
 export const SHRIMP_MEET_RANGE = 120;
 
 /**
+ * Whether a point lies inside the safe area (inclusive edges). Mirrors zone.ts `inSafeArea` so
+ * factCards stays a leaf module with no runtime import: zone.ts loads movingHazards.ts, which
+ * reads PUNTING_POLE_FACT from here while this module would still be loading.
+ */
+function isInSafeArea(point: Point, safeArea: SafeArea): boolean {
+  return (
+    point.x >= safeArea.x0 && point.x <= safeArea.x1 && point.y >= safeArea.y0 && point.y <= safeArea.y1
+  );
+}
+
+/**
  * Whether the axolotl at `pos` meets a tilapia: `pos` is outside the safe area (edges count as
  * inside) and some tilapia centre is within `range` (inclusive).
  */
@@ -274,7 +285,7 @@ export function meetsTilapia(
   safeArea: SafeArea,
   range = TILAPIA_MEET_RANGE,
 ): boolean {
-  if (inSafeArea(pos, safeArea)) return false;
+  if (isInSafeArea(pos, safeArea)) return false;
   return tilapias.some((tilapia) => Math.hypot(tilapia.pos.x - pos.x, tilapia.pos.y - pos.y) <= range);
 }
 
@@ -293,7 +304,7 @@ export interface ThreatSighting {
  * else each sighting within its meet range (inclusive), each id once, in sighting order.
  */
 export function metThreatIds(pos: Point, safeArea: SafeArea, sightings: readonly ThreatSighting[]): string[] {
-  if (inSafeArea(pos, safeArea)) return [];
+  if (isInSafeArea(pos, safeArea)) return [];
   const metIds: string[] = [];
   for (const sighting of sightings) {
     if (sighting.distance <= sighting.meetRange && !metIds.includes(sighting.id)) metIds.push(sighting.id);
